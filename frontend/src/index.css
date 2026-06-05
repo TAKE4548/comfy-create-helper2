@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0F0F11;
+    --surface: #18181C;
+    --surface-2: #1F1F25;
+    --accent-green: #3ecf8e;
+    --accent-purple: #7C6FDD;
+    --border: rgba(255, 255, 255, 0.08);
+    --text-primary: #E4E4E7;
+    --text-muted: #A1A1AA;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #0F0F11;
+    color: #E4E4E7;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    height: 100%;
+  }
+}
+
+@layer utilities {
+  /* カスタムスクロールバー */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  /* グラスモーフィズム */
+  .glass {
+    background: rgba(24, 24, 28, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* グリッドパターン背景 */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* アクセントカラーのグロー */
+  .glow-green {
+    box-shadow: 0 0 20px rgba(62, 207, 142, 0.3);
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(124, 111, 221, 0.3);
+  }
+
+  /* テキストグラデーション */
+  .text-gradient-green {
+    background: linear-gradient(135deg, #3ecf8e, #2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ボーダーグロー */
+  .border-glow-green {
+    border-color: rgba(62, 207, 142, 0.5);
+    box-shadow: 0 0 0 1px rgba(62, 207, 142, 0.2);
+  }
+
+  .border-glow-purple {
+    border-color: rgba(124, 111, 221, 0.5);
+    box-shadow: 0 0 0 1px rgba(124, 111, 221, 0.2);
+  }
+}
+
+/* トランジション */
+* {
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* フォーカスリング */
+:focus-visible {
+  outline: 2px solid #3ecf8e;
+  outline-offset: 2px;
+}
+
+/* プログレスバーアニメーション */
+@keyframes progress-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #3ecf8e 0%,
+    #5eedaa 30%,
+    #3ecf8e 60%,
+    #2bb87a 100%
+  );
+  background-size: 200% auto;
+  animation: progress-shimmer 1.5s linear infinite;
+}

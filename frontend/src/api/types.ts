@@ -1,0 +1,229 @@
+/**
+ * API types for Prompt Surgeon v2
+ * Auto-generated shape: matches FastAPI schemas.py
+ */
+
+// ─── MappingMaster ─────────────────────────────────────────────
+
+export interface MappingMaster {
+  id: number
+  role: string
+  expected_class_types: string[] | null
+  param_name: string
+  input_type: 'textarea' | 'int' | 'float' | 'select'
+  display_name: string
+  title_patterns: string[] | null
+}
+
+export interface MappingMasterCreate {
+  role: string
+  expected_class_types?: string[]
+  param_name: string
+  input_type: string
+  display_name: string
+  title_patterns?: string[]
+}
+
+// ─── Workflow ───────────────────────────────────────────────────
+
+export interface WorkflowMapping {
+  id: number
+  master_id: number
+  node_id: string
+  role: string
+  param_name: string
+  input_type: string
+  display_name: string
+}
+
+export interface WorkflowSummary {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface Workflow {
+  id: number
+  name: string
+  json_body: Record<string, unknown>
+  mappings: WorkflowMapping[]
+  created_at: string
+}
+
+export interface WorkflowCreate {
+  name: string
+  json_body: Record<string, unknown>
+  mappings: { master_id: number; node_id: string }[]
+}
+
+// ─── Workflow Scan ──────────────────────────────────────────────
+
+export interface ScanMatchedItem {
+  master_id: number
+  role: string
+  node_id: string
+  node_title: string
+  status: string
+}
+
+export interface ScanWarningItem {
+  master_id: number
+  role: string
+  status: string
+  node_ids?: string[]
+  node_id?: string
+  actual_class_type?: string
+}
+
+export interface ScanResult {
+  matched: ScanMatchedItem[]
+  warnings: ScanWarningItem[]
+}
+
+// ─── Snapshot ───────────────────────────────────────────────────
+
+export interface SnapshotSummary {
+  id: number
+  workflow_id: number
+  image_path: string | null
+  created_at: string
+}
+
+export interface Snapshot {
+  id: number
+  workflow_id: number
+  params: Record<string, unknown>
+  image_path: string | null
+  created_at: string
+}
+
+export interface SnapshotCreate {
+  workflow_id: number
+  image_path?: string
+  params: Record<string, unknown>
+}
+
+// ─── Album ──────────────────────────────────────────────────────
+
+export interface AlbumItem {
+  snapshot_id: number
+  sequence_order: number
+  image_path: string | null
+}
+
+export interface AlbumSummary {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface Album {
+  id: number
+  name: string
+  created_at: string
+  items: AlbumItem[]
+}
+
+export interface AlbumCreate {
+  name: string
+  snapshot_ids: number[]
+}
+
+// ─── Category ───────────────────────────────────────────────────
+
+export interface Category {
+  id: number
+  name: string
+}
+
+// ─── LoRA ───────────────────────────────────────────────────────
+
+export interface TriggerWordSet {
+  id: number
+  name: string
+  words: string[]
+}
+
+export interface Lora {
+  id: number
+  model_name: string
+  description: string | null
+  recommended_strength_min: number | null
+  recommended_strength_max: number | null
+  category_id: number | null
+  thumbnail_path: string | null
+  file_path: string | null
+  trigger_word_sets: TriggerWordSet[]
+  created_at: string
+}
+
+export interface LoraCreate {
+  model_name: string
+  description?: string
+  recommended_strength_min?: number
+  recommended_strength_max?: number
+  category_id?: number
+  thumbnail_path?: string
+  file_path?: string
+  trigger_word_sets: { name: string; words: string[] }[]
+}
+
+// ─── TagSet ─────────────────────────────────────────────────────
+
+export interface TagSet {
+  id: number
+  name: string
+  description: string | null
+  category_id: number | null
+  tags: string[]
+  created_at: string
+}
+
+export interface TagSetCreate {
+  name: string
+  description?: string
+  category_id?: number
+  tags: string[]
+}
+
+// ─── LLM Audit ──────────────────────────────────────────────────
+
+export interface AuditRequest {
+  audit_types: ('interference' | 'vocabulary' | 'physical')[]
+  positive: string
+  negative: string
+  intent: string
+  model_hint?: string
+}
+
+export interface InterferenceItem {
+  tag: string
+  reason: string
+}
+
+export interface VocabularyItem {
+  suggestion: string
+  effect: string
+}
+
+export interface PhysicalResult {
+  status: string
+  note: string | null
+  alternatives: string[]
+}
+
+export interface AuditResult {
+  interference?: InterferenceItem[]
+  vocabulary?: VocabularyItem[]
+  physical?: PhysicalResult
+}
+
+// ─── LLM Prompts ────────────────────────────────────────────────
+
+export interface LlmPrompt {
+  id: number
+  key: string
+  content: string
+  description: string | null
+  updated_at: string
+}
