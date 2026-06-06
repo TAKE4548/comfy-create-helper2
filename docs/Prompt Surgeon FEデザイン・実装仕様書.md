@@ -34,6 +34,7 @@
 
 * **Header:** 現在開いている画面のタイトルと、コンテキスト情報（Generate画面ならワークフロー選択、LoRA画面ならバッジ等）を表示。  
 * **Sidebar:** Generate, LoRAs, Tags, History の4つのメインタブを切り替える。アイコンを選択状態（アクティブ）にした場合は、アクセントカラー(\#3ecf8e)でハイライトする。
+  * **折り畳み機能 (Collapsible):** デスクトップ表示時、サイドバー最上部のトグルボタン（`#sidebar-toggle`）で通常幅（`w-56`）とミニバー（アイコンのみの表示状態：`w-16`）を切り替え可能。伸縮時は300msのスムーズなアニメーションを伴い、折り畳み状態はブラウザの `localStorage`（キー：`prompt-surgeon-sidebar-collapsed`）に保持される。
 
 ### **3.2 生成画面 (Generate View)**
 

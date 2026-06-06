@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   Zap, Layers, Tag, Clock, Settings,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 const navItems = [
@@ -12,18 +14,46 @@ const navItems = [
 ]
 
 export function AppShell() {
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    return localStorage.getItem('prompt-surgeon-sidebar-collapsed') === 'true'
+  })
+
+  const toggleSidebar = () => {
+    setIsCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('prompt-surgeon-sidebar-collapsed', String(next))
+      return next
+    })
+  }
+
   return (
     <div className="flex h-full bg-background">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-16 xl:w-56 bg-surface border-r border-[rgba(255,255,255,0.06)] flex-shrink-0">
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-4 py-5 border-b border-[rgba(255,255,255,0.06)]">
-          <div className="w-8 h-8 rounded-lg bg-accent-green flex items-center justify-center flex-shrink-0 glow-green">
-            <Zap size={16} className="text-background font-bold" />
-          </div>
-          <span className="hidden xl:block text-sm font-semibold text-zinc-200 tracking-wide">
-            Prompt Surgeon
-          </span>
+      <aside
+        className={`hidden lg:flex flex-col bg-surface border-r border-[rgba(255,255,255,0.06)] flex-shrink-0 transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'w-16' : 'w-56'
+        }`}
+      >
+        {/* Logo / Header */}
+        <div className={`flex items-center px-4 py-5 border-b border-[rgba(255,255,255,0.06)] ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+          {!isCollapsed && (
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="w-8 h-8 rounded-lg bg-accent-green flex items-center justify-center flex-shrink-0 glow-green">
+                <Zap size={16} className="text-background font-bold" />
+              </div>
+              <span className="text-sm font-semibold text-zinc-200 tracking-wide whitespace-nowrap">
+                Prompt Surgeon
+              </span>
+            </div>
+          )}
+          <button
+            onClick={toggleSidebar}
+            id="sidebar-toggle"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 focus:outline-none transition-colors"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
         </div>
 
         {/* Nav */}
@@ -48,9 +78,15 @@ export function AppShell() {
                     size={18}
                     className={`flex-shrink-0 ${isActive ? 'text-accent-green' : 'text-zinc-400 group-hover:text-zinc-200'}`}
                   />
-                  <span className="hidden xl:block text-sm font-medium">{label}</span>
-                  {isActive && (
-                    <div className="hidden xl:block ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
+                  <span
+                    className={`text-sm font-medium overflow-hidden whitespace-nowrap transition-all duration-300 ${
+                      isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                  {isActive && !isCollapsed && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
                   )}
                 </>
               )}
@@ -59,8 +95,14 @@ export function AppShell() {
         </nav>
 
         {/* Version */}
-        <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)]">
-          <p className="hidden xl:block text-xs text-zinc-600">v2.0.0</p>
+        <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)] flex items-center justify-center">
+          <p
+            className={`text-xs text-zinc-600 overflow-hidden whitespace-nowrap transition-all duration-300 ${
+              isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+            }`}
+          >
+            v2.0.0
+          </p>
         </div>
       </aside>
 
