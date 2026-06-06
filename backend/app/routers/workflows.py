@@ -33,15 +33,50 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 id=m.id,
                 master_id=m.master_id,
                 node_id=m.node_id,
-                role=m.master.role,
-                param_name=m.master.param_name,
-                input_type=m.master.input_type,
-                display_name=m.master.display_name,
+                role=m.master.role if m.master else None,
+                param_name=m.master.param_name if m.master else None,
+                input_type=m.master.input_type if m.master else None,
+                display_name=m.master.display_name if m.master else None,
             )
             for m in wf.mappings
         ],
     )
     return result
+
+
+@router.put("/{workflow_id}", response_model=schemas.WorkflowSummary)
+def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Session = Depends(get_db)):
+    wf = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    if payload.name is not None:
+        existing = db.query(models.Workflow).filter(
+            models.Workflow.name == payload.name,
+            models.Workflow.id != workflow_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Workflow name already exists")
+        wf.name = payload.name
+
+    if payload.json_body is not None:
+        wf.json_body = json.dumps(payload.json_body)
+
+    if payload.mappings is not None:
+        db.query(models.WorkflowMapping).filter(
+            models.WorkflowMapping.workflow_id == workflow_id
+        ).delete()
+        for m in payload.mappings:
+            db.add(models.WorkflowMapping(
+                workflow_id=workflow_id,
+                master_id=m.master_id,
+                node_id=m.node_id,
+            ))
+
+    db.commit()
+    db.refresh(wf)
+    return wf
+
 
 
 @router.post("", response_model=schemas.WorkflowSummary, status_code=status.HTTP_201_CREATED)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Clock, Trash2, Download, BookOpen, ImageOff, X, Plus } from 'lucide-react'
+import { Clock, Trash2, Download, BookOpen, ImageOff, X } from 'lucide-react'
 import { snapshotsApi, albumsApi, workflowsApi } from '../api/client'
 import type { SnapshotSummary, Album } from '../api/types'
 

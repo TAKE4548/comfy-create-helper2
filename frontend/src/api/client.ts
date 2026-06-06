@@ -25,6 +25,7 @@ export const workflowsApi = {
   list: () => request('/workflows'),
   get: (id: number) => request(`/workflows/${id}`),
   create: (data: unknown) => request('/workflows', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: unknown) => request(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/workflows/${id}`, { method: 'DELETE' }),
   scan: (json_body: unknown) => request('/workflows/scan', { method: 'POST', body: JSON.stringify({ json_body }) }),
 }

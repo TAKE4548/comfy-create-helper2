@@ -30,10 +30,10 @@ export interface WorkflowMapping {
   id: number
   master_id: number
   node_id: string
-  role: string
-  param_name: string
-  input_type: string
-  display_name: string
+  role: string | null
+  param_name: string | null
+  input_type: string | null
+  display_name: string | null
 }
 
 export interface WorkflowSummary {
@@ -55,6 +55,13 @@ export interface WorkflowCreate {
   json_body: Record<string, unknown>
   mappings: { master_id: number; node_id: string }[]
 }
+
+export interface WorkflowUpdate {
+  name?: string
+  json_body?: Record<string, unknown>
+  mappings?: { master_id: number; node_id: string }[]
+}
+
 
 // ─── Workflow Scan ──────────────────────────────────────────────
 

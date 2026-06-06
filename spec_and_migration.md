@@ -113,12 +113,12 @@ ComfyUIはローカルサーバーなのでReactから直接アクセス（生�
 **ローカルLLMサーバー**
 - プロンプト監査・提案機能のLLM推論
 - OpenAI互換API（`/v1/chat/completions`）を提供するサーバーであれば何でも可
-- 現状はOllamaを使用。ROCm対応の観点からvllmへの移行を検討中
+- 現状はLMStudioを使用（OpenAI互換形式）
 - FastAPIから呼び出す。接続先はBEの設定値で切り替えられるため、サーバー変更時にフロント・コード変更不要
 
 ```
 # BE設定で切り替えるだけ
-LLM_BASE_URL=http://localhost:11434/v1  # Ollama
+LLM_BASE_URL=http://localhost:1234/v1  # LMStudio
 LLM_BASE_URL=http://localhost:8000/v1   # vllm
 ```
 
@@ -288,7 +288,7 @@ frontend/src/api/ が再生成される
 
 - Streamlitの再実行モデルによるUI表現の制約が目立ってきた
 - ComfyUIへのアクセスがStreamlit側とReactカスタムコンポーネント側で分断されていた
-- LLMがOllamaでAPIキー管理が不要になり、FastAPIをプロキシとして使う理由がなくなった
+- LLMがLMStudioになり、APIキー管理が不要になり、FastAPIをプロキシとして使う理由がなくなった
 - 既存のReactカスタムコンポーネント資産があり、全面React移行のベースとして活用できる
 
 ---

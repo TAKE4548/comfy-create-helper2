@@ -51,14 +51,14 @@ React からポート `8188` に直接アクセス。別途起動しておくこ
 |---------|-----------------|-----------|
 | FastAPI | 8000 | React |
 | ComfyUI | 8188 | React（直接） |
-| LLM サーバー（Ollama 等） | 11434 | FastAPI 経由 |
+| LLM サーバー（LMStudio） | 1234 | FastAPI 経由 |
 
 ## 環境変数（backend/.env）
 
 ```env
 DATABASE_URL=sqlite:///../db/prompt_surgeon.db
 SNAPSHOT_DIR=../db/snapshots
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=qwen2.5:7b
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_MODEL=qwen3.5-9b-sushi-coder-rl
 COMFY_URL=http://localhost:8188
 ```

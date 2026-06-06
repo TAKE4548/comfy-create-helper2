@@ -34,10 +34,10 @@ class WorkflowMappingRead(BaseModel):
     id: int
     master_id: int
     node_id: str
-    role: str
-    param_name: str
-    input_type: str
-    display_name: str
+    role: Optional[str] = None
+    param_name: Optional[str] = None
+    input_type: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 class WorkflowMappingCreate(BaseModel):
@@ -68,6 +68,13 @@ class WorkflowRead(BaseModel):
     json_body: dict[str, Any]
     mappings: list[WorkflowMappingRead] = []
     created_at: datetime
+
+
+class WorkflowUpdate(BaseModel):
+    name: Optional[str] = None
+    json_body: Optional[dict[str, Any]] = None
+    mappings: Optional[list[WorkflowMappingCreate]] = None
+
 
 
 # ─────────────────────────────────────
