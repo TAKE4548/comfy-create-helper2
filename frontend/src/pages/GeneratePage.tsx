@@ -104,13 +104,18 @@ export function GeneratePage() {
     setParamValues(init)
   }, [workflow])
 
-  // Show preview as latest batch image when done
+  // executed イベントで previewImage が更新されたらバッチに追加
+  // isGenerating は executed ハンドラ内で同時に false にセットされるため、ここではチェック不要
   useEffect(() => {
-    if (previewImage && !isGenerating) {
-      setBatchImages((prev) => [previewImage, ...prev.slice(0, 7)])
+    if (previewImage) {
+      setBatchImages((prev) => {
+        // 同じ URL の重複追加を防ぐ
+        if (prev[0] === previewImage) return prev
+        return [previewImage, ...prev.slice(0, 7)]
+      })
       setSelectedImg(previewImage)
     }
-  }, [previewImage, isGenerating])
+  }, [previewImage])
 
   const runAudit = useMutation({
     mutationFn: async () => {

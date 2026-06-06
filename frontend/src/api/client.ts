@@ -95,3 +95,9 @@ export const llmPromptsApi = {
   list: () => request('/llm-prompts'),
   update: (key: string, data: unknown) => request(`/llm-prompts/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
 }
+
+// ─── Config ─────────────────────────────────────────────────────
+export const configApi = {
+  get: () => request<{ comfy_url: string }>('/config'),
+}
+

@@ -1,13 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings, Wand2, ChevronDown, Save, RefreshCw } from 'lucide-react'
-import { llmPromptsApi } from '../api/client'
+import { llmPromptsApi, configApi } from '../api/client'
 import type { LlmPrompt } from '../api/types'
+import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 
 export function SettingsPage() {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
+
+  const [comfyUrl, setComfyUrl] = useState<string>('http://localhost:8188')
+
+  useEffect(() => {
+    configApi.get()
+      .then((config) => {
+        if (config && config.comfy_url) {
+          setComfyUrl(config.comfy_url)
+        }
+      })
+      .catch((e) => {
+        console.error('Failed to fetch comfy_url:', e)
+      })
+  }, [])
+
   const [saved, setSaved] = useState<string | null>(null)
 
   const { data: prompts, isLoading } = useQuery({
@@ -141,9 +157,9 @@ export function SettingsPage() {
           <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-3">
             {[
               { label: 'FastAPI Backend', url: 'http://localhost:8000/health' },
-              { label: 'ComfyUI', url: 'http://localhost:8188' },
+              { label: 'ComfyUI', url: resolveComfyUrl(comfyUrl) },
             ].map(({ label, url }) => (
-              <ConnectionStatus key={url} label={label} url={url} />
+              <ConnectionStatus key={label} label={label} url={url} />
             ))}
           </div>
         </section>

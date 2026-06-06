@@ -4,9 +4,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-
-const COMFY_URL = 'http://localhost:8188'
-const COMFY_WS_URL = 'ws://localhost:8188'
+import { configApi } from '../api/client'
 
 export interface ComfyProgress {
   value: number
@@ -25,18 +23,49 @@ export interface UseComfyWebSocketReturn {
   clearPreview: () => void
 }
 
+export function resolveComfyUrl(url: string | null): string {
+  if (!url) return 'http://127.0.0.1:8188'
+  return url.replace('localhost', '127.0.0.1')
+}
+
 export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null)
+  const [comfyUrl, setComfyUrl] = useState<string | null>(null)
+  // comfyUrl を ref でも保持し、handleMessage コールバック内でも最新値を参照できるようにする
+  const comfyUrlRef = useRef<string | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [progress, setProgress] = useState<ComfyProgress | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [currentPromptId, setCurrentPromptId] = useState<string | null>(null)
 
-  const resolvedClientId = clientId ?? 'prompt-surgeon-' + Math.random().toString(36).slice(2, 9)
+  // useRef で clientId を固定：再レンダリングごとに新しいIDが生成されるのを防ぐ
+  const clientIdRef = useRef<string>(clientId ?? 'prompt-surgeon-' + Math.random().toString(36).slice(2, 9))
+  const resolvedClientId = clientIdRef.current
 
+  // Fetch ComfyUI config on mount
   useEffect(() => {
-    const ws = new WebSocket(`${COMFY_WS_URL}/ws?clientId=${resolvedClientId}`)
+    configApi.get()
+      .then((config) => {
+        const url = (config && config.comfy_url) ? config.comfy_url : 'http://localhost:8188'
+        setComfyUrl(url)
+        comfyUrlRef.current = url
+      })
+      .catch((e) => {
+        console.error('Failed to fetch comfy_url, fallback to localhost:', e)
+        setComfyUrl('http://localhost:8188')
+        comfyUrlRef.current = 'http://localhost:8188'
+      })
+  }, [])
+
+  // Establish WebSocket connection when comfyUrl is available
+  useEffect(() => {
+    if (!comfyUrl) return
+
+    const resolvedUrl = resolveComfyUrl(comfyUrl)
+    const wsUrl = resolvedUrl.replace(/^http/, 'ws')
+    const ws = new WebSocket(`${wsUrl}/ws?clientId=${resolvedClientId}`)
+    ws.binaryType = 'blob'
     wsRef.current = ws
 
     ws.onopen = () => setIsConnected(true)
@@ -45,8 +74,16 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
 
     ws.onmessage = (event) => {
       if (event.data instanceof Blob) {
-        // Binary preview image
+        // Binary preview image as Blob
         const url = URL.createObjectURL(event.data)
+        console.log('Received preview Blob image URL:', url)
+        setPreviewImage(url)
+        return
+      } else if (event.data instanceof ArrayBuffer) {
+        // Convert ArrayBuffer to Blob for preview
+        const blob = new Blob([event.data])
+        const url = URL.createObjectURL(blob)
+        console.log('Received preview ArrayBuffer image URL:', url)
         setPreviewImage(url)
         return
       }
@@ -61,15 +98,15 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
     return () => {
       ws.close()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comfyUrl]) // resolvedClientId は useRef で固定されているため依存不要
 
   const handleMessage = useCallback((msg: Record<string, unknown>) => {
     const type = msg.type as string
     const data = msg.data as Record<string, unknown>
 
     switch (type) {
-      case 'progress':
+      case 'progress': {
         setIsGenerating(true)
         const value = data.value as number
         const max = data.max as number
@@ -79,6 +116,7 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
           percentage: max > 0 ? Math.round((value / max) * 100) : 0,
         })
         break
+      }
 
       case 'execution_start':
         setIsGenerating(true)
@@ -86,8 +124,24 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
         setCurrentPromptId(data.prompt_id as string)
         break
 
+      case 'executed': {
+        // ComfyUI の最終出力画像は executed イベントの output.images に含まれる
+        // バイナリ WebSocket フレームは途中プレビューのみ
+        const output = data.output as Record<string, unknown> | undefined
+        const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
+        if (images && images.length > 0) {
+          const img = images[0]
+          const baseUrl = resolveComfyUrl(comfyUrlRef.current)
+          const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+          console.log('Fetching final output image:', viewUrl)
+          setPreviewImage(viewUrl)
+        }
+        setIsGenerating(false)
+        setProgress({ value: 1, max: 1, percentage: 100 })
+        break
+      }
+
       case 'execution_complete':
-      case 'executed':
         setIsGenerating(false)
         setProgress({ value: 1, max: 1, percentage: 100 })
         break
@@ -103,8 +157,9 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
   const queuePrompt = useCallback(async (
     workflow: Record<string, unknown>
   ): Promise<string | null> => {
+    const activeUrl = resolveComfyUrl(comfyUrl)
     try {
-      const res = await fetch(`${COMFY_URL}/prompt`, {
+      const res = await fetch(`${activeUrl}/prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -115,6 +170,7 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
       if (!res.ok) throw new Error(`ComfyUI returned ${res.status}`)
       const data = await res.json()
       setIsGenerating(true)
+      console.log('Queueing prompt, clearing preview')
       setPreviewImage(null)
       setProgress(null)
       return data.prompt_id ?? null
@@ -122,16 +178,17 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
       console.error('Failed to queue prompt:', e)
       return null
     }
-  }, [resolvedClientId])
+  }, [comfyUrl, resolvedClientId])
 
   const cancelGeneration = useCallback(async () => {
+    const activeUrl = resolveComfyUrl(comfyUrl)
     try {
-      await fetch(`${COMFY_URL}/interrupt`, { method: 'POST' })
+      await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
       setIsGenerating(false)
     } catch (e) {
       console.error('Failed to cancel:', e)
     }
-  }, [])
+  }, [comfyUrl])
 
   const clearPreview = useCallback(() => {
     setPreviewImage(null)

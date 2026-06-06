@@ -218,3 +218,9 @@ app.include_router(llm_prompts.router)
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "2.0.0"}
+
+
+@app.get("/api/config")
+def get_config():
+    return {"comfy_url": settings.comfy_url}
+
