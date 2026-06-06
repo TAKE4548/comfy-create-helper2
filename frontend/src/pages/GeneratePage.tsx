@@ -1,19 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Save,
   Loader2, ChevronRight, Wand2, AlertCircle, CheckCircle2,
-  Plus, ImageOff,
+  ImageOff, ScanLine,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, auditApi, snapshotsApi } from '../api/client'
-import type { Workflow, AuditResult } from '../api/types'
+import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi } from '../api/client'
+import type { Workflow, AuditResult, MappingMaster } from '../api/types'
 import { useComfyWebSocket } from '../hooks/useComfyWebSocket'
-
-const COMFY_URL = 'http://localhost:8188'
+import { RescanModal } from '../components/RescanModal'
 
 export function GeneratePage() {
   const qc = useQueryClient()
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
+  const [rescanOpen, setRescanOpen] = useState(false)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [batchSize, setBatchSize] = useState(1)
   const [seedMode, setSeedMode] = useState<'random' | 'fixed'>('random')
@@ -39,15 +39,66 @@ export function GeneratePage() {
     enabled: !!selectedWorkflowId,
   })
 
+  const [selectedMasters, setSelectedMasters] = useState<Record<number, number>>({})
+
+  const { data: mappingMasters } = useQuery({
+    queryKey: ['mapping-masters'],
+    queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>,
+  })
+
+  const { data: loras } = useQuery({
+    queryKey: ['loras'],
+    queryFn: () => lorasApi.list() as Promise<any[]>,
+  })
+
+  const updateWorkflowMutation = useMutation({
+    mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string }[] }) => {
+      return workflowsApi.update(workflowId, { mappings })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
+      qc.invalidateQueries({ queryKey: ['workflows'] })
+      setSelectedMasters({})
+    },
+  })
+
+  const handleUpdateMapping = async (mappingId: number, newMasterId: number) => {
+    if (!workflow || !selectedWorkflowId) return
+    const updatedMappings = workflow.mappings.map((m) => {
+      if (m.id === mappingId) {
+        return { master_id: newMasterId, node_id: m.node_id }
+      }
+      return { master_id: m.master_id, node_id: m.node_id }
+    })
+    await updateWorkflowMutation.mutateAsync({
+      workflowId: selectedWorkflowId,
+      mappings: updatedMappings,
+    })
+  }
+
   // Initialize params when workflow changes
   useEffect(() => {
     if (!workflow) return
+    console.log("DEBUG: Loading workflow params:", workflow.name)
     const init: Record<string, string> = {}
+    const wfJson = (workflow.json_body || {}) as Record<string, any>
     workflow.mappings.forEach((m) => {
-      if (m.input_type === 'textarea' || m.input_type === 'select') {
-        init[m.role] = ''
-      } else {
-        init[m.role] = ''
+      if (m.role) {
+        let val = ''
+        if (m.node_id && m.param_name) {
+          const node = wfJson[m.node_id]
+          console.log(`DEBUG: Mapping [${m.role}] Node: ${m.node_id}, Param: ${m.param_name}, NodeExists: ${!!node}`)
+          if (node && node.inputs) {
+            console.log(`DEBUG: Node [${m.node_id}] inputs:`, node.inputs)
+            if (node.inputs[m.param_name] !== undefined) {
+              val = String(node.inputs[m.param_name])
+            } else if (node.inputs['value'] !== undefined) {
+              val = String(node.inputs['value'])
+            }
+          }
+        }
+        console.log(`DEBUG: Target [${m.role}] resolved value: "${val}"`)
+        init[m.role] = val
       }
     })
     setParamValues(init)
@@ -98,6 +149,7 @@ export function GeneratePage() {
     const wfJson = { ...workflow.json_body } as Record<string, unknown>
     // Inject params into workflow JSON
     workflow.mappings.forEach((m) => {
+      if (!m.role || !m.param_name) return
       const node = wfJson[m.node_id] as Record<string, unknown> | undefined
       if (!node) return
       const inputs = node.inputs as Record<string, unknown>
@@ -105,9 +157,16 @@ export function GeneratePage() {
       const val = m.input_type === 'int'
         ? parseInt(paramValues[m.role] || '0')
         : m.input_type === 'float'
-          ? parseFloat(paramValues[m.role] || '0')
+          ? parseFloat(paramValues[m.role] || '0.0')
           : paramValues[m.role] || ''
-      inputs[m.param_name] = val
+      
+      if (inputs[m.param_name] !== undefined) {
+        inputs[m.param_name] = val
+      } else if (inputs['value'] !== undefined) {
+        inputs['value'] = val
+      } else {
+        inputs[m.param_name] = val
+      }
     })
     // Inject seed
     const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
@@ -123,10 +182,15 @@ export function GeneratePage() {
   }
 
   // Group mappings by type
-  const textMappings = workflow?.mappings.filter((m) => m.input_type === 'textarea') ?? []
-  const paramMappings = workflow?.mappings.filter((m) => m.input_type !== 'textarea' && m.role !== 'Sampler_Seed') ?? []
+  const validMappings = workflow?.mappings.filter((m) => m.role !== null && m.role !== undefined) ?? []
+  const invalidMappings = workflow?.mappings.filter((m) => m.role === null || m.role === undefined) ?? []
+
+  const textMappings = validMappings.filter((m) => m.input_type === 'textarea') ?? []
+  const paramMappings = validMappings.filter((m) => m.input_type !== 'textarea' && m.role !== 'Sampler_Seed') ?? []
+
 
   return (
+    <>
     <div className="flex h-full overflow-hidden">
       {/* Left Column */}
       <div className="w-[420px] xl:w-[480px] flex-shrink-0 border-r border-[rgba(255,255,255,0.06)] flex flex-col overflow-hidden">
@@ -136,18 +200,29 @@ export function GeneratePage() {
             <h1 className="text-base font-semibold text-zinc-200">Generate</h1>
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
           </div>
-          {/* Workflow selector */}
-          <select
-            id="workflow-select"
-            value={selectedWorkflowId ?? ''}
-            onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-            className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50"
-          >
-            <option value="">Select workflow…</option>
-            {workflows?.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
+          {/* Workflow selector + Rescan button */}
+          <div className="flex items-center gap-2">
+            <select
+              id="workflow-select"
+              value={selectedWorkflowId ?? ''}
+              onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
+              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50"
+            >
+              <option value="">Select workflow…</option>
+              {workflows?.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+            <button
+              id="rescan-btn"
+              onClick={() => setRescanOpen(true)}
+              disabled={!selectedWorkflowId}
+              title="マッピングを再スキャン・修正"
+              className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ScanLine size={14} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
@@ -239,6 +314,62 @@ export function GeneratePage() {
             )}
           </div>
 
+          {/* Mapping Error Panel */}
+          {selectedWorkflowId && invalidMappings.length > 0 && (
+            <div className="rounded-lg border border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.05)] p-4 space-y-3">
+              <div className="flex items-center gap-2 text-rose-400">
+                <AlertCircle size={16} />
+                <h3 className="text-xs font-semibold uppercase tracking-wider">マッピングエラー検出</h3>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                ワークフロー内に紐付け先マスタが無効なノードがあります。正しい役割を選択して修正してください。
+              </p>
+              <div className="space-y-2.5 pt-1">
+                {invalidMappings.map((m) => {
+                  const currentSelectedMasterId = selectedMasters[m.id] ?? '';
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3 rounded-lg border border-[rgba(255,255,255,0.04)] bg-surface-2/60 flex flex-col gap-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono text-zinc-400">
+                          Node ID: <strong className="text-zinc-200">{m.node_id}</strong>
+                        </span>
+                        <span className="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">
+                          エラー
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          id={`param-error-select-${m.node_id}`}
+                          value={currentSelectedMasterId}
+                          onChange={(e) => setSelectedMasters((prev) => ({ ...prev, [m.id]: Number(e.target.value) }))}
+                          className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-zinc-300 focus:outline-none focus:border-rose-500/40"
+                        >
+                          <option value="">役割を選択してください…</option>
+                          {mappingMasters?.map((master) => (
+                            <option key={master.id} value={master.id}>
+                              {master.display_name} ({master.role})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          id={`param-error-fix-btn-${m.node_id}`}
+                          onClick={() => handleUpdateMapping(m.id, Number(currentSelectedMasterId))}
+                          disabled={!currentSelectedMasterId || updateWorkflowMutation.isPending}
+                          className="px-3 py-1.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {updateWorkflowMutation.isPending ? '保存中…' : '修正'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Prompt inputs */}
           {textMappings.length === 0 && !selectedWorkflowId && (
             <p className="text-center text-zinc-600 text-sm py-8">Select a workflow to begin.</p>
@@ -247,9 +378,9 @@ export function GeneratePage() {
             <div key={m.id} className="space-y-1.5">
               <label className="text-xs font-medium text-zinc-400">{m.display_name}</label>
               <textarea
-                id={`prompt-${m.role}`}
-                value={paramValues[m.role] ?? ''}
-                onChange={(e) => setParamValues((p) => ({ ...p, [m.role]: e.target.value }))}
+                id={`prompt-${m.role!}`}
+                value={paramValues[m.role!] ?? ''}
+                onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
                 rows={3}
                 className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-accent-green/40 custom-scrollbar transition-colors hover:border-[rgba(255,255,255,0.15)]"
                 placeholder={`Enter ${m.display_name}…`}
@@ -261,19 +392,42 @@ export function GeneratePage() {
           {paramMappings.length > 0 && (
             <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 p-3 space-y-3">
               <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Parameters</p>
-              {paramMappings.map((m) => (
-                <div key={m.id} className="flex items-center justify-between gap-4">
-                  <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
-                  <input
-                    id={`param-${m.role}`}
-                    type="number"
-                    value={paramValues[m.role] ?? ''}
-                    onChange={(e) => setParamValues((p) => ({ ...p, [m.role]: e.target.value }))}
-                    step={m.input_type === 'float' ? 0.1 : 1}
-                    className="w-24 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right"
-                  />
-                </div>
-              ))}
+              {paramMappings.map((m) => {
+                if (m.input_type === 'select') {
+                  return (
+                    <div key={m.id} className="flex items-center justify-between gap-4">
+                      <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
+                      <select
+                        id={`param-${m.role!}`}
+                        value={paramValues[m.role!] ?? ''}
+                        onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
+                        className="w-48 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+                      >
+                        <option value="">Select option…</option>
+                        {loras?.map((lora) => (
+                          <option key={lora.id} value={lora.model_name}>
+                            {lora.model_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={m.id} className="flex items-center justify-between gap-4">
+                    <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
+                    <input
+                      id={`param-${m.role!}`}
+                      type="number"
+                      value={paramValues[m.role!] ?? ''}
+                      onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
+                      step={m.input_type === 'float' ? 0.1 : 1}
+                      className="w-24 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right"
+                    />
+                  </div>
+                )
+              })}
 
               {/* Batch Size */}
               <div className="flex items-center justify-between gap-4">
@@ -421,5 +575,19 @@ export function GeneratePage() {
         </div>
       </div>
     </div>
+
+    {/* Rescan Modal */}
+    {rescanOpen && workflow && (
+      <RescanModal
+        workflowId={selectedWorkflowId!}
+        workflowJson={workflow.json_body}
+        onClose={() => setRescanOpen(false)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
+          setRescanOpen(false)
+        }}
+      />
+    )}
+    </>
   )
 }
