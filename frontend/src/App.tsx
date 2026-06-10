@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppShell } from './components/layout/AppShell'
@@ -6,6 +7,7 @@ import { LoRAsPage } from './pages/LoRAsPage'
 import { TagsPage } from './pages/TagsPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { useGenerationStore } from './store/useGenerationStore'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,6 +19,12 @@ const queryClient = new QueryClient({
 })
 
 function App() {
+  const initializeStore = useGenerationStore((state) => state.initialize)
+
+  useEffect(() => {
+    initializeStore()
+  }, [initializeStore])
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

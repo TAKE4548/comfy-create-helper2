@@ -7,26 +7,42 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi } from '../api/client'
 import type { Workflow, AuditResult, MappingMaster } from '../api/types'
-import { useComfyWebSocket } from '../hooks/useComfyWebSocket'
+import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 
 export function GeneratePage() {
   const qc = useQueryClient()
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
   const [rescanOpen, setRescanOpen] = useState(false)
-  const [paramValues, setParamValues] = useState<Record<string, string>>({})
-  const [batchSize, setBatchSize] = useState(1)
-  const [seedMode, setSeedMode] = useState<'random' | 'fixed'>('random')
-  const [seed, setSeed] = useState(42)
-  const [batchImages, setBatchImages] = useState<string[]>([])
-  const [selectedImg, setSelectedImg] = useState<string | null>(null)
   const [auditOpen, setAuditOpen] = useState(false)
   const [auditIntent, setAuditIntent] = useState('')
   const [auditTypes, setAuditTypes] = useState<string[]>(['interference'])
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null)
   const [auditStatus, setAuditStatus] = useState<'idle' | 'loading' | 'done'>('idle')
 
-  const { queuePrompt, isGenerating, progress, previewImage, isConnected } = useComfyWebSocket()
+  const {
+    clientId,
+    isConnected,
+    isGenerating,
+    progress,
+    activeClientId,
+    filterOwnSession,
+    setFilterOwnSession,
+    selectedWorkflowId,
+    setSelectedWorkflowId,
+    paramValues,
+    setParamValues,
+    batchSize,
+    setBatchSize,
+    seedMode,
+    setSeedMode,
+    seed,
+    setSeed,
+    batchImages,
+    selectedImg,
+    setSelectedImg,
+    comfyHistoryImages,
+    queuePrompt,
+  } = useGenerationStore()
 
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
@@ -104,18 +120,7 @@ export function GeneratePage() {
     setParamValues(init)
   }, [workflow])
 
-  // executed イベントで previewImage が更新されたらバッチに追加
-  // isGenerating は executed ハンドラ内で同時に false にセットされるため、ここではチェック不要
-  useEffect(() => {
-    if (previewImage) {
-      setBatchImages((prev) => {
-        // 同じ URL の重複追加を防ぐ
-        if (prev[0] === previewImage) return prev
-        return [previewImage, ...prev.slice(0, 7)]
-      })
-      setSelectedImg(previewImage)
-    }
-  }, [previewImage])
+
 
   const runAudit = useMutation({
     mutationFn: async () => {
@@ -182,9 +187,12 @@ export function GeneratePage() {
         inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed
       }
     }
-    setBatchImages([])
     await queuePrompt(wfJson)
   }
+
+  const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
+  const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
+  const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0
 
   // Group mappings by type
   const validMappings = workflow?.mappings.filter((m) => m.role !== null && m.role !== undefined) ?? []
@@ -204,6 +212,11 @@ export function GeneratePage() {
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-zinc-200">Generate</h1>
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
+            {isGenerating && activeClientId !== clientId && (
+              <span className="text-[10px] text-zinc-500 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">
+                他セッションで生成中...
+              </span>
+            )}
           </div>
           {/* Workflow selector + Rescan button */}
           <div className="flex items-center gap-2">
@@ -385,7 +398,7 @@ export function GeneratePage() {
               <textarea
                 id={`prompt-${m.role!}`}
                 value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
+                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                 rows={3}
                 className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-accent-green/40 custom-scrollbar transition-colors hover:border-[rgba(255,255,255,0.15)]"
                 placeholder={`Enter ${m.display_name}…`}
@@ -405,7 +418,7 @@ export function GeneratePage() {
                       <select
                         id={`param-${m.role!}`}
                         value={paramValues[m.role!] ?? ''}
-                        onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
+                        onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                         className="w-48 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
                       >
                         <option value="">Select option…</option>
@@ -426,7 +439,7 @@ export function GeneratePage() {
                       id={`param-${m.role!}`}
                       type="number"
                       value={paramValues[m.role!] ?? ''}
-                      onChange={(e) => setParamValues((p) => ({ ...p, [m.role!]: e.target.value }))}
+                      onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                       step={m.input_type === 'float' ? 0.1 : 1}
                       className="w-24 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right"
                     />
@@ -454,7 +467,7 @@ export function GeneratePage() {
                 <div className="flex items-center gap-2">
                   <button
                     id="seed-toggle"
-                    onClick={() => setSeedMode((m) => m === 'random' ? 'fixed' : 'random')}
+                    onClick={() => setSeedMode(seedMode === 'random' ? 'fixed' : 'random')}
                     className={`p-1.5 rounded border transition-all ${
                       seedMode === 'random'
                         ? 'border-accent-green/50 text-accent-green bg-accent-green/10'
@@ -483,7 +496,7 @@ export function GeneratePage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Main Preview */}
         <div className="flex-1 relative overflow-hidden bg-grid">
-          {isGenerating ? (
+          {isGeneratingHere ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
               <Loader2 size={32} className="animate-spin text-accent-green" />
               {progress && (
@@ -529,22 +542,39 @@ export function GeneratePage() {
         </div>
 
         {/* Thumbnail Strip */}
-        {batchImages.length > 0 && (
+        {showStrip && (
           <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3">
-            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-              {batchImages.map((img, i) => (
-                <button
-                  key={i}
-                  id={`thumb-${i}`}
-                  onClick={() => setSelectedImg(img)}
-                  className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${
-                    selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'
-                  }`}
-                >
-                  <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-zinc-400 font-medium">History</span>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="session-filter-toggle"
+                  checked={filterOwnSession}
+                  onChange={(e) => setFilterOwnSession(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
+                />
+                <span className="text-[11px] text-zinc-400">自セッションのみ表示</span>
+              </label>
             </div>
+            {displayImages.length > 0 ? (
+              <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                {displayImages.map((img, i) => (
+                  <button
+                    key={i}
+                    id={`thumb-${i}`}
+                    onClick={() => setSelectedImg(img)}
+                    className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${
+                      selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'
+                    }`}
+                  >
+                    <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
+            )}
           </div>
         )}
 
@@ -553,13 +583,18 @@ export function GeneratePage() {
           <button
             id="generate-btn"
             onClick={handleGenerate}
-            disabled={isGenerating || !selectedWorkflowId}
+            disabled={(isGenerating && activeClientId === clientId) || !selectedWorkflowId}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95"
           >
-            {isGenerating ? (
+            {isGenerating && activeClientId === clientId ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
                 Processing…
+              </>
+            ) : isGenerating && activeClientId !== clientId ? (
+              <>
+                <Zap size={16} />
+                Generate Batch (キュー追加)
               </>
             ) : (
               <>
