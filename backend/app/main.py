@@ -27,31 +27,35 @@ logger = logging.getLogger(__name__)
 def seed_initial_data(db):
     """Insert initial data if tables are empty."""
     # ─── Mapping Master seed data ─────────────────────────────────
-    if db.query(models.MappingMaster).count() == 0:
-        masters = [
-            {"role": "Main_Positive_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Main positive prompt", "title_patterns": ["MainPrompt", "Main_positive", "Main_Positive_Prompt"]},
-            {"role": "Face_Positive_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Face positive prompt", "title_patterns": ["FacePrompt", "Face_positive", "Face_Positive_Prompt"]},
-            {"role": "Negative_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Negative prompt", "title_patterns": ["Main_negative", "Negative_Prompt"]},
-            {"role": "Sampler_Seed", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "seed", "input_type": "int", "display_name": "Sampler Seed", "title_patterns": ["MainSampler", "Sampler_Seed"]},
-            {"role": "Sampler_Steps", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "steps", "input_type": "int", "display_name": "Sampler Steps", "title_patterns": ["MainSampler", "Sampler_Steps"]},
-            {"role": "Sampler_cfg", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "cfg", "input_type": "float", "display_name": "Sampler CFG", "title_patterns": ["MainSampler", "Sampler_cfg"]},
-            {"role": "Sampler_denoise", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "denoise", "input_type": "float", "display_name": "Sampler Denoise", "title_patterns": ["MainSampler", "Sampler_denoise"]},
-            {"role": "Prompt_Quality", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Quality Tags", "title_patterns": ["QualityPrompt", "Prompt_Quality", "Quality"]},
-            {"role": "Prompt_Core", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Core Settings", "title_patterns": ["CorePrompt", "Prompt_Core", "CoreSettings"]},
-            {"role": "Prompt_Char_Series", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Character / Series", "title_patterns": ["CharSeriesPrompt", "Prompt_Char_Series", "Character"]},
-            {"role": "Prompt_Char_Body_Outfit", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Body & Outfit", "title_patterns": ["BodyOutfitPrompt", "Prompt_Char_Body_Outfit", "Body"]},
-            {"role": "Prompt_Pose_Action", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Pose & Action", "title_patterns": ["PoseActionPrompt", "Prompt_Pose_Action", "Pose"]},
-            {"role": "Prompt_Expression", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Expression", "title_patterns": ["ExpressionPrompt", "Prompt_Expression", "Expression"]},
-            {"role": "Prompt_Composition", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Composition", "title_patterns": ["CompositionPrompt", "Prompt_Composition", "Composition"]},
-            {"role": "Prompt_Background_Environment", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Background & Environment", "title_patterns": ["BackgroundPrompt", "Prompt_Background_Environment", "Background"]},
-            {"role": "Prompt_Lighting", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Lighting", "title_patterns": ["LightingPrompt", "Prompt_Lighting", "Lighting"]},
-            {"role": "Character_Lora_Model", "expected_class_types": ["LoraLoader"], "param_name": "lora_name", "input_type": "select", "display_name": "Character LoRA Model", "title_patterns": ["LoraName", "lora_name", "Character_Lora"]},
-            {"role": "Character_Lora_Strength_Model", "expected_class_types": ["LoraLoader"], "param_name": "strength_model", "input_type": "float", "display_name": "Character LoRA Strength (Model)", "title_patterns": ["LoraStrengthModel", "strength_model"]},
-            {"role": "FDetailer_Steps", "expected_class_types": ["FaceDetailer"], "param_name": "steps", "input_type": "int", "display_name": "FaceDetailer Steps", "title_patterns": ["FaceDetailer", "FDetailer_Steps"]},
-            {"role": "FDetailer_cfg", "expected_class_types": ["FaceDetailer"], "param_name": "cfg", "input_type": "float", "display_name": "FaceDetailer CFG", "title_patterns": ["FaceDetailer", "FDetailer_cfg"]},
-            {"role": "FDetailer_denoise", "expected_class_types": ["FaceDetailer"], "param_name": "denoise", "input_type": "float", "display_name": "FaceDetailer Denoise", "title_patterns": ["FaceDetailer", "FDetailer_denoise"]},
-        ]
-        for m in masters:
+    masters = [
+        {"role": "Main_Positive_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Main positive prompt", "title_patterns": ["MainPrompt", "Main_positive", "Main_Positive_Prompt"]},
+        {"role": "Face_Positive_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Face positive prompt", "title_patterns": ["FacePrompt", "Face_positive", "Face_Positive_Prompt"]},
+        {"role": "Negative_Prompt", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Negative prompt", "title_patterns": ["Main_negative", "Negative_Prompt"]},
+        {"role": "Sampler_Seed", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "seed", "input_type": "int", "display_name": "Sampler Seed", "title_patterns": ["MainSampler", "Sampler_Seed"]},
+        {"role": "Sampler_Steps", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "steps", "input_type": "int", "display_name": "Sampler Steps", "title_patterns": ["MainSampler", "Sampler_Steps"]},
+        {"role": "Sampler_cfg", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "cfg", "input_type": "float", "display_name": "Sampler CFG", "title_patterns": ["MainSampler", "Sampler_cfg"]},
+        {"role": "Sampler_denoise", "expected_class_types": ["KSampler", "KSamplerAdvanced"], "param_name": "denoise", "input_type": "float", "display_name": "Sampler Denoise", "title_patterns": ["MainSampler", "Sampler_denoise"]},
+        {"role": "Prompt_Quality", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Quality Tags", "title_patterns": ["QualityPrompt", "Prompt_Quality", "Quality"]},
+        {"role": "Prompt_Core", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Core Settings", "title_patterns": ["CorePrompt", "Prompt_Core", "CoreSettings"]},
+        {"role": "Prompt_Char_Series", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Character / Series", "title_patterns": ["CharSeriesPrompt", "Prompt_Char_Series", "Character"]},
+        {"role": "Prompt_Char_Lora_Face", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Character LoRA Face", "title_patterns": ["Prompt_Char_Lora_Face", "Prompt_Char_Lora_Face_Prompt", "Char_Lora_Face", "CharLoraFacePrompt", "CharLoraFace", "CharLora_Face"]},
+        {"role": "Prompt_Char_Lora_Other", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Character LoRA Other", "title_patterns": ["Prompt_Char_Lora_Other", "Prompt_Char_Lora_Other_Prompt", "Char_Lora_Other", "CharLoraOtherPrompt", "CharLoraOther", "CharLora_Other"]},
+        {"role": "Prompt_Char_Body_Outfit", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Body & Outfit", "title_patterns": ["BodyOutfitPrompt", "Prompt_Char_Body_Outfit", "Body"]},
+        {"role": "Prompt_Pose_Action", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Pose & Action", "title_patterns": ["PoseActionPrompt", "Prompt_Pose_Action", "Pose"]},
+        {"role": "Prompt_Expression", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Expression", "title_patterns": ["ExpressionPrompt", "Prompt_Expression", "Expression"]},
+        {"role": "Prompt_Composition", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Composition", "title_patterns": ["CompositionPrompt", "Prompt_Composition", "Composition"]},
+        {"role": "Prompt_Background_Environment", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Background & Environment", "title_patterns": ["BackgroundPrompt", "Prompt_Background_Environment", "Background"]},
+        {"role": "Prompt_Lighting", "expected_class_types": ["CLIPTextEncode", "PrimitiveNode", "PrimitiveStringMultiline"], "param_name": "text", "input_type": "textarea", "display_name": "Lighting", "title_patterns": ["LightingPrompt", "Prompt_Lighting", "Lighting"]},
+        {"role": "Character_Lora_Model", "expected_class_types": ["LoraLoader"], "param_name": "lora_name", "input_type": "select", "display_name": "Character LoRA Model", "title_patterns": ["LoraName", "lora_name", "Character_Lora"]},
+        {"role": "Character_Lora_Strength_Model", "expected_class_types": ["LoraLoader"], "param_name": "strength_model", "input_type": "float", "display_name": "Character LoRA Strength (Model)", "title_patterns": ["LoraStrengthModel", "strength_model"]},
+        {"role": "FDetailer_Steps", "expected_class_types": ["FaceDetailer"], "param_name": "steps", "input_type": "int", "display_name": "FaceDetailer Steps", "title_patterns": ["FaceDetailer", "FDetailer_Steps"]},
+        {"role": "FDetailer_cfg", "expected_class_types": ["FaceDetailer"], "param_name": "cfg", "input_type": "float", "display_name": "FaceDetailer CFG", "title_patterns": ["FaceDetailer", "FDetailer_cfg"]},
+        {"role": "FDetailer_denoise", "expected_class_types": ["FaceDetailer"], "param_name": "denoise", "input_type": "float", "display_name": "FaceDetailer Denoise", "title_patterns": ["FaceDetailer", "FDetailer_denoise"]},
+    ]
+
+    for m in masters:
+        existing = db.query(models.MappingMaster).filter(models.MappingMaster.role == m["role"]).first()
+        if not existing:
             db.add(models.MappingMaster(
                 role=m["role"],
                 expected_class_types=json.dumps(m["expected_class_types"]),
@@ -60,7 +64,8 @@ def seed_initial_data(db):
                 display_name=m["display_name"],
                 title_patterns=json.dumps(m["title_patterns"]),
             ))
-        logger.info("Seeded mapping_master table.")
+            logger.info(f"Added mapping master: {m['role']}")
+    db.commit()
 
     # ─── LLM Prompts seed ─────────────────────────────────────────
     if db.query(models.LlmPrompt).count() == 0:
@@ -168,6 +173,34 @@ def seed_initial_data(db):
         for name in ["キャラクター系", "ポーズ・行動系", "構図・画角系", "表情系", "背景・環境系"]:
             db.add(models.TagsetCategory(name=name))
         logger.info("Seeded tagset_categories table.")
+
+    # ─── Workflow 'ume_' (ID: 1) mapping correction ──────────────
+    workflow = db.query(models.Workflow).filter(models.Workflow.id == 1).first()
+    if workflow:
+        mapping_corrections = {
+            "366:344": "Prompt_Char_Lora_Face",
+            "366:345": "Prompt_Char_Lora_Other",
+            "366:361": "Prompt_Composition",
+            "366:351": "Prompt_Background_Environment",
+        }
+        for node_id, role in mapping_corrections.items():
+            master = db.query(models.MappingMaster).filter(models.MappingMaster.role == role).first()
+            if master:
+                mapping = db.query(models.WorkflowMapping).filter(
+                    models.WorkflowMapping.workflow_id == 1,
+                    models.WorkflowMapping.node_id == node_id
+                ).first()
+                if mapping:
+                    if mapping.master_id != master.id:
+                        mapping.master_id = master.id
+                        logger.info(f"Updated mapping for node {node_id} to {role} (master_id: {master.id})")
+                else:
+                    db.add(models.WorkflowMapping(
+                        workflow_id=1,
+                        master_id=master.id,
+                        node_id=node_id
+                    ))
+                    logger.info(f"Created mapping for node {node_id} to {role} (master_id: {master.id})")
 
     db.commit()
 
