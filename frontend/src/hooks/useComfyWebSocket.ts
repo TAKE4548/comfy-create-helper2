@@ -24,8 +24,14 @@ export interface UseComfyWebSocketReturn {
 }
 
 export function resolveComfyUrl(url: string | null): string {
-  if (!url) return 'http://127.0.0.1:8188'
-  return url.replace('localhost', '127.0.0.1')
+  if (!url) {
+    return typeof window !== 'undefined' ? `${window.location.origin}/comfy` : 'http://127.0.0.1:8188'
+  }
+  // URLがローカルループバック（localhost/127.0.0.1）を指す場合、Viteプロキシの `/comfy` を使用する
+  if (url.includes('localhost') || url.includes('127.0.0.1')) {
+    return typeof window !== 'undefined' ? `${window.location.origin}/comfy` : url.replace('localhost', '127.0.0.1')
+  }
+  return url
 }
 
 export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {

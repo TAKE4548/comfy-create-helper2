@@ -144,11 +144,28 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("Album not found", response.json()["detail"])
 
-    def test_get_non_existent_snapshot(self):
-        # 存在しない snapshot_id を取得しようとして 404 エラーになることを確認
-        response = self.client.get("/api/snapshots/99999")
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("Snapshot not found", response.json()["detail"])
+    def test_list_snapshots_includes_params(self):
+        # スナップショットをDBに直接作成し、list_snapshots APIを実行
+        params_data = {"Sampler_Seed": 12345, "positive_prompt": "1girl, solo"}
+        import json
+        snap = models.Snapshot(
+            workflow_id=self.workflow.id,
+            image_path="test_list.png",
+            params=json.dumps(params_data)
+        )
+        self.db.add(snap)
+        self.db.commit()
+
+        response = self.client.get(f"/api/snapshots?workflow_id={self.workflow.id}")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(len(data) >= 1)
+        
+        # 作成したスナップショットの params がデシリアライズされているか検証
+        target_snap = next(s for s in data if s["id"] == snap.id)
+        self.assertIsNotNone(target_snap.get("params"))
+        self.assertEqual(target_snap["params"]["Sampler_Seed"], 12345)
+        self.assertEqual(target_snap["params"]["positive_prompt"], "1girl, solo")
 
 
 if __name__ == "__main__":

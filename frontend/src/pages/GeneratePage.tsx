@@ -11,6 +11,43 @@ import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 import { TagChipEditor } from '../components/TagChipEditor'
 
+interface SnapshotSummaryWithParams {
+  id: number
+  workflow_id: number
+  image_path: string | null
+  created_at: string
+  params?: Record<string, any>
+}
+
+function formatDateTime(dateStr: string): string {
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    const pad = (num: number) => String(num).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    const mm = pad(d.getMonth() + 1)
+    const dd = pad(d.getDate())
+    const hh = pad(d.getHours())
+    const min = pad(d.getMinutes())
+    const ss = pad(d.getSeconds())
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`
+  } catch {
+    return dateStr
+  }
+}
+
+function getPromptPrefix(params?: Record<string, any>): string {
+  if (!params) return ''
+  const posKey = Object.keys(params).find(key => {
+    const k = key.toLowerCase()
+    return (k.includes('positive') || k.includes('prompt')) && !k.includes('negative')
+  })
+  if (!posKey) return ''
+  const promptVal = String(params[posKey] || '')
+  if (promptVal.length <= 25) return promptVal
+  return promptVal.slice(0, 25) + '...'
+}
+
 export function GeneratePage() {
   const isMobile = window.location.pathname.startsWith('/mobile') || window.innerWidth < 1024;
   const qc = useQueryClient()
@@ -20,6 +57,7 @@ export function GeneratePage() {
   const [auditTypes, setAuditTypes] = useState<string[]>(['interference'])
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null)
   const [auditStatus, setAuditStatus] = useState<'idle' | 'loading' | 'done'>('idle')
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | ''>('')
   
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
   const [targetAlbumId, setTargetAlbumId] = useState<number | "">("")
@@ -60,6 +98,36 @@ export function GeneratePage() {
   } = useGenerationStore()
 
   const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
+
+  const { data: snapshots } = useQuery({
+    queryKey: ['snapshots', selectedWorkflowId],
+    queryFn: () => snapshotsApi.list(selectedWorkflowId!) as Promise<SnapshotSummaryWithParams[]>,
+    enabled: !!selectedWorkflowId,
+  })
+
+  const handleLoadSnapshot = (id: number) => {
+    const snapshot = snapshots?.find((s) => s.id === id)
+    if (snapshot && snapshot.params) {
+      const newParams: Record<string, string> = {}
+      Object.entries(snapshot.params).forEach(([key, val]) => {
+        newParams[key] = String(val)
+      })
+      setParamValues(newParams)
+
+      if (snapshot.params['Sampler_Seed'] !== undefined) {
+        const seedVal = Number(snapshot.params['Sampler_Seed'])
+        if (!isNaN(seedVal)) {
+          setSeed(seedVal)
+          setSeedMode('fixed')
+        }
+      }
+    }
+    setSelectedSnapshotId('')
+  }
+
+  useEffect(() => {
+    setSelectedSnapshotId('')
+  }, [selectedWorkflowId])
   const [selectedLoraForModal, setSelectedLoraForModal] = useState<{ role: string; lora: Lora } | null>(null)
   const [selectedTriggerSetId, setSelectedTriggerSetId] = useState<number | 'default'>('default')
   const [loraStrength, setLoraStrength] = useState<number>(1.0)
@@ -374,6 +442,7 @@ export function GeneratePage() {
   const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
   const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
   const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0
+  const hasHistory = !!selectedWorkflowId && !!snapshots && snapshots.length > 0
 
   // Group mappings by type
   const validMappings = workflow?.mappings.filter((m) => m.role !== null && m.role !== undefined) ?? []
@@ -405,19 +474,48 @@ export function GeneratePage() {
               id="workflow-select"
               value={selectedWorkflowId ?? ''}
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50"
+              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate"
             >
               <option value="">Select workflow…</option>
               {workflows?.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
+            <select
+              id="snapshot-history-select"
+              value={selectedSnapshotId}
+              onChange={(e) => {
+                const val = e.target.value
+                if (val) {
+                  handleLoadSnapshot(Number(val))
+                }
+              }}
+              disabled={!hasHistory}
+              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 disabled:opacity-45 disabled:cursor-not-allowed max-w-[140px] truncate"
+            >
+              {!hasHistory ? (
+                <option value="">履歴なし</option>
+              ) : (
+                <>
+                  <option value="">過去スナップショットを選択...</option>
+                  {snapshots?.map((s) => {
+                    const dateStr = formatDateTime(s.created_at)
+                    const promptPrefix = getPromptPrefix(s.params)
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {dateStr} - {promptPrefix}
+                      </option>
+                    )
+                  })}
+                </>
+              )}
+            </select>
             <button
               id="rescan-btn"
               onClick={() => setRescanOpen(true)}
               disabled={!selectedWorkflowId}
               title="マッピングを再スキャン・修正"
-              className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex-shrink-0"
             >
               <ScanLine size={14} />
             </button>

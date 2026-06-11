@@ -156,7 +156,7 @@ export function SettingsPage() {
           </div>
           <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-3">
             {[
-              { label: 'FastAPI Backend', url: 'http://localhost:8000/health' },
+              { label: 'FastAPI Backend', url: typeof window !== 'undefined' ? `${window.location.origin}/health` : 'http://localhost:8000/health' },
               { label: 'ComfyUI', url: resolveComfyUrl(comfyUrl) },
             ].map(({ label, url }) => (
               <ConnectionStatus key={label} label={label} url={url} />

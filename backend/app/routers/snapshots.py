@@ -17,7 +17,16 @@ def list_snapshots(workflow_id: Optional[int] = None, db: Session = Depends(get_
     q = db.query(models.Snapshot)
     if workflow_id is not None:
         q = q.filter(models.Snapshot.workflow_id == workflow_id)
-    return q.order_by(models.Snapshot.created_at.desc()).all()
+    snapshots = q.order_by(models.Snapshot.created_at.desc()).all()
+    return [
+        schemas.SnapshotSummary(
+            id=s.id,
+            workflow_id=s.workflow_id,
+            image_path=s.image_path,
+            created_at=s.created_at,
+            params=json.loads(s.params) if s.params else None
+        ) for s in snapshots
+    ]
 
 
 @router.get("/{snapshot_id}", response_model=schemas.SnapshotRead)
@@ -103,7 +112,13 @@ def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_d
 
     db.commit()
     db.refresh(s)
-    return s
+    return schemas.SnapshotSummary(
+        id=s.id,
+        workflow_id=s.workflow_id,
+        image_path=s.image_path,
+        created_at=s.created_at,
+        params=json.loads(s.params) if s.params else None
+    )
 
 
 @router.delete("/{snapshot_id}", status_code=status.HTTP_204_NO_CONTENT)

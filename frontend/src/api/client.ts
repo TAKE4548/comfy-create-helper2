@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-const BASE_URL = 'http://localhost:8000/api'
+const BASE_URL = '/api'
 
 async function request<T>(
   path: string,

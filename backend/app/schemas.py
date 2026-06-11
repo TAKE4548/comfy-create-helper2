@@ -160,6 +160,7 @@ class SnapshotSummary(BaseModel):
     workflow_id: int
     image_path: Optional[str] = None
     created_at: datetime
+    params: Optional[dict[str, Any]] = None
 
 
 # ─────────────────────────────────────
