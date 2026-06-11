@@ -131,9 +131,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     : null
   
   let storedParams: Record<string, string> = {}
-  try {
-    storedParams = JSON.parse(localStorage.getItem('prompt-surgeon-params') || '{}')
-  } catch {}
+  if (storedWorkflowId !== null) {
+    try {
+      storedParams = JSON.parse(localStorage.getItem('prompt-surgeon-params-wf-' + storedWorkflowId) || '{}')
+    } catch {}
+  }
 
   let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
   try {
@@ -389,14 +391,23 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       set({ selectedWorkflowId: id })
       if (id !== null) {
         localStorage.setItem('prompt-surgeon-workflow-id', String(id))
+        let params: Record<string, string> = {}
+        try {
+          params = JSON.parse(localStorage.getItem('prompt-surgeon-params-wf-' + id) || '{}')
+        } catch {}
+        set({ paramValues: params })
       } else {
         localStorage.removeItem('prompt-surgeon-workflow-id')
+        set({ paramValues: {} })
       }
     },
 
     setParamValues: (values: Record<string, string>) => {
       set({ paramValues: values })
-      localStorage.setItem('prompt-surgeon-params', JSON.stringify(values))
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId !== null) {
+        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(values))
+      }
     },
 
     addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => {
@@ -425,7 +436,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         paramValues: updatedParams,
       })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
-      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId !== null) {
+        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
+      }
     },
 
     removeAppliedAsset: (role: string, id: string) => {
@@ -454,7 +468,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         paramValues: updatedParams,
       })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
-      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId !== null) {
+        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
+      }
     },
 
     toggleAppliedAsset: (role: string, id: string) => {
@@ -489,7 +506,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         paramValues: updatedParams,
       })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
-      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId !== null) {
+        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
+      }
     },
 
     setBatchSize: (size: number) => {

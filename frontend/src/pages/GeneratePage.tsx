@@ -145,6 +145,16 @@ export function GeneratePage() {
     },
   })
 
+  const saveDefaultParamsMutation = useMutation({
+    mutationFn: async ({ workflowId, json_body }: { workflowId: number; json_body: Record<string, unknown> }) => {
+      return workflowsApi.update(workflowId, { json_body })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
+      qc.invalidateQueries({ queryKey: ['workflows'] })
+    },
+  })
+
   const handleUpdateMapping = async (mappingId: number, newMasterId: number) => {
     if (!workflow || !selectedWorkflowId) return
     const updatedMappings = workflow.mappings.map((m) => {
@@ -163,6 +173,18 @@ export function GeneratePage() {
   useEffect(() => {
     if (!workflow) return
     console.log("DEBUG: Loading workflow params:", workflow.name)
+    
+    const savedStr = localStorage.getItem("prompt-surgeon-params-wf-" + workflow.id)
+    if (savedStr) {
+      try {
+        const savedParams = JSON.parse(savedStr)
+        setParamValues(savedParams)
+        return
+      } catch (e) {
+        console.error("Failed to parse workflow saved params:", e)
+      }
+    }
+
     const init: Record<string, string> = {}
     const wfJson = (workflow.json_body || {}) as Record<string, any>
     workflow.mappings.forEach((m) => {
@@ -185,6 +207,7 @@ export function GeneratePage() {
       }
     })
     setParamValues(init)
+    localStorage.setItem("prompt-surgeon-params-wf-" + workflow.id, JSON.stringify(init))
   }, [workflow])
 
 
@@ -248,6 +271,64 @@ export function GeneratePage() {
       setNewAlbumName("")
     }
   })
+
+  const handleSaveDefaultParams = async () => {
+    if (!workflow || !selectedWorkflowId) return
+    const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, any>
+    workflow.mappings.forEach((m) => {
+      if (!m.role || !m.param_name) return
+      const node = wfJson[m.node_id]
+      if (!node || !node.inputs) return
+      
+      let val: string | number = ''
+      if (m.input_type === 'int') {
+        val = parseInt(paramValues[m.role] || '0')
+      } else if (m.input_type === 'float') {
+        val = parseFloat(paramValues[m.role] || '0.0')
+      } else {
+        val = paramValues[m.role] || ''
+      }
+
+      if (node.inputs[m.param_name] !== undefined) {
+        node.inputs[m.param_name] = val
+      } else if (node.inputs['value'] !== undefined) {
+        node.inputs['value'] = val
+      } else {
+        node.inputs[m.param_name] = val
+      }
+    })
+
+    await saveDefaultParamsMutation.mutateAsync({
+      workflowId: selectedWorkflowId,
+      json_body: wfJson,
+    })
+
+    localStorage.setItem("prompt-surgeon-params-wf-" + selectedWorkflowId, JSON.stringify(paramValues))
+  }
+
+  const handleResetDefaultParams = () => {
+    if (!workflow || !selectedWorkflowId) return
+    const init: Record<string, string> = {}
+    const wfJson = (workflow.json_body || {}) as Record<string, any>
+    workflow.mappings.forEach((m) => {
+      if (m.role) {
+        let val = ''
+        if (m.node_id && m.param_name) {
+          const node = wfJson[m.node_id]
+          if (node && node.inputs) {
+            if (node.inputs[m.param_name] !== undefined) {
+              val = String(node.inputs[m.param_name])
+            } else if (node.inputs['value'] !== undefined) {
+              val = String(node.inputs['value'])
+            }
+          }
+        }
+        init[m.role] = val
+      }
+    })
+    setParamValues(init)
+    localStorage.setItem("prompt-surgeon-params-wf-" + selectedWorkflowId, JSON.stringify(init))
+  }
 
   const handleGenerate = async () => {
     if (!workflow) return
@@ -453,6 +534,44 @@ export function GeneratePage() {
               </div>
             )}
           </div>
+
+          {/* Workflow Settings Card */}
+          {selectedWorkflowId && workflow && (
+            <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/60 p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-300">ワークフロー設定</span>
+                <span className="text-[10px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  id="save-workflow-defaults-btn"
+                  onClick={handleSaveDefaultParams}
+                  disabled={saveDefaultParamsMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 hover:border-accent-green/40 text-accent-green text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {saveDefaultParamsMutation.isPending ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      保存中…
+                    </>
+                  ) : (
+                    <>
+                      <Save size={12} />
+                      デフォルト保存
+                    </>
+                  )}
+                </button>
+                <button
+                  id="reset-workflow-defaults-btn"
+                  onClick={handleResetDefaultParams}
+                  disabled={saveDefaultParamsMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  デフォルトにリセット
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Mapping Error Panel */}
           {selectedWorkflowId && invalidMappings.length > 0 && (
