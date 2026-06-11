@@ -109,10 +109,38 @@ class ScanResult(BaseModel):
 # ─────────────────────────────────────
 # Snapshot
 # ─────────────────────────────────────
+class SnapshotLoraCreate(BaseModel):
+    lora_id: int
+    strength: float
+
+
+class SnapshotLoraRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    snapshot_id: int
+    lora_id: int
+    strength: float
+
+
+class SnapshotTagSetCreate(BaseModel):
+    tag_set_id: int
+
+
+class SnapshotTagSetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    snapshot_id: int
+    tag_set_id: int
+
+
 class SnapshotCreate(BaseModel):
     workflow_id: int
     image_path: Optional[str] = None
     params: dict[str, Any]
+    album_id: Optional[int] = None
+    new_album_name: Optional[str] = None
+    loras: list[SnapshotLoraCreate] = []
+    tag_sets: list[SnapshotTagSetCreate] = []
 
 
 class SnapshotRead(BaseModel):
@@ -122,6 +150,8 @@ class SnapshotRead(BaseModel):
     params: dict[str, Any]
     image_path: Optional[str] = None
     created_at: datetime
+    loras: list[SnapshotLoraRead] = []
+    tag_sets: list[SnapshotTagSetRead] = []
 
 
 class SnapshotSummary(BaseModel):

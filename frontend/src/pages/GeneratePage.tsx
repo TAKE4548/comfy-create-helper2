@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Save,
   Loader2, ChevronRight, Wand2, AlertCircle, CheckCircle2,
-  ImageOff, ScanLine,
+  ImageOff, ScanLine, Plus, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi } from '../api/client'
-import type { Workflow, AuditResult, MappingMaster } from '../api/types'
+import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, albumsApi } from '../api/client'
+import type { Workflow, AuditResult, MappingMaster, Lora, TagSet, AlbumSummary } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
+import { TagChipInput } from '../components/TagChipInput'
 
 export function GeneratePage() {
   const qc = useQueryClient()
@@ -18,6 +19,15 @@ export function GeneratePage() {
   const [auditTypes, setAuditTypes] = useState<string[]>(['interference'])
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null)
   const [auditStatus, setAuditStatus] = useState<'idle' | 'loading' | 'done'>('idle')
+  
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
+  const [targetAlbumId, setTargetAlbumId] = useState<number | "">("")
+  const [newAlbumName, setNewAlbumName] = useState("")
+
+  const { data: albums } = useQuery({
+    queryKey: ['albums'],
+    queryFn: () => albumsApi.list() as Promise<AlbumSummary[]>,
+  })
 
   const {
     clientId,
@@ -42,7 +52,13 @@ export function GeneratePage() {
     setSelectedImg,
     comfyHistoryImages,
     queuePrompt,
+    appliedAssets,
+    addAppliedAsset,
+    removeAppliedAsset,
+    toggleAppliedAsset,
   } = useGenerationStore()
+
+  const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
 
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
@@ -64,8 +80,60 @@ export function GeneratePage() {
 
   const { data: loras } = useQuery({
     queryKey: ['loras'],
-    queryFn: () => lorasApi.list() as Promise<any[]>,
+    queryFn: () => lorasApi.list() as Promise<Lora[]>,
   })
+
+  const { data: tagSets } = useQuery({
+    queryKey: ['tag-sets'],
+    queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
+  })
+
+  const handleAddLoraAsset = (role: string, lora: Lora) => {
+    // 1. Calculate default strength (rounded to one decimal place)
+    const min = lora.recommended_strength_min
+    const max = lora.recommended_strength_max
+    let strength = 1.0
+    if (min != null && max != null) {
+      strength = Math.round(((min + max) / 2) * 10) / 10
+    } else if (min != null) {
+      strength = min
+    } else if (max != null) {
+      strength = max
+    }
+
+    // 2. Extract filename without path and without extension
+    const path = lora.file_path || lora.model_name || ''
+    const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, "") || 'lora'
+
+    // 3. Get first trigger set words or merge all trigger set words
+    const twsWords = lora.trigger_word_sets && lora.trigger_word_sets.length > 0
+      ? lora.trigger_word_sets[0].words
+      : []
+
+    // 4. Construct loraPromptString
+    const loraPromptString = `<lora:${filename}:${strength}>`
+
+    // 5. Add to store
+    addAppliedAsset(role, {
+      type: 'lora',
+      assetId: lora.id,
+      name: lora.description || filename,
+      tags: twsWords,
+      loraPromptString,
+    })
+
+    setOpenAddAssetRole(null)
+  }
+
+  const handleAddTagSetAsset = (role: string, ts: TagSet) => {
+    addAppliedAsset(role, {
+      type: 'tagset',
+      assetId: ts.id,
+      name: ts.name,
+      tags: ts.tags || [],
+    })
+    setOpenAddAssetRole(null)
+  }
 
   const updateWorkflowMutation = useMutation({
     mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string }[] }) => {
@@ -145,13 +213,41 @@ export function GeneratePage() {
   const saveSnapshot = useMutation({
     mutationFn: async () => {
       if (!selectedWorkflowId || !selectedImg) return
+      
+      const allApplied = Object.values(appliedAssets).flat()
+      const activeLoras = allApplied
+        .filter((a) => a.type === 'lora' && a.enabled)
+        .map((a) => {
+          let strength = 1.0
+          if (a.loraPromptString) {
+            const parts = a.loraPromptString.replace(/[<>]/g, '').split(':')
+            if (parts.length >= 3) {
+              strength = parseFloat(parts[2]) || 1.0
+            }
+          }
+          return { lora_id: a.assetId, strength }
+        })
+      const activeTagSets = allApplied
+        .filter((a) => a.type === 'tagset' && a.enabled)
+        .map((a) => ({ tag_set_id: a.assetId }))
+
       await snapshotsApi.create({
         workflow_id: selectedWorkflowId,
         image_path: selectedImg,
         params: paramValues,
+        album_id: targetAlbumId ? Number(targetAlbumId) : undefined,
+        new_album_name: newAlbumName || undefined,
+        loras: activeLoras,
+        tag_sets: activeTagSets,
       })
       qc.invalidateQueries({ queryKey: ['snapshots'] })
+      qc.invalidateQueries({ queryKey: ['albums'] })
     },
+    onSuccess: () => {
+      setIsSaveModalOpen(false)
+      setTargetAlbumId("")
+      setNewAlbumName("")
+    }
   })
 
   const handleGenerate = async () => {
@@ -164,11 +260,25 @@ export function GeneratePage() {
       if (!node) return
       const inputs = node.inputs as Record<string, unknown>
       if (!inputs) return
-      const val = m.input_type === 'int'
-        ? parseInt(paramValues[m.role] || '0')
-        : m.input_type === 'float'
-          ? parseFloat(paramValues[m.role] || '0.0')
-          : paramValues[m.role] || ''
+      let val: string | number = ''
+      if (m.input_type === 'int') {
+        val = parseInt(paramValues[m.role] || '0')
+      } else if (m.input_type === 'float') {
+        val = parseFloat(paramValues[m.role] || '0.0')
+      } else if (m.input_type === 'textarea') {
+        const rawVal = paramValues[m.role] || ''
+        const roleAssets = appliedAssets[m.role] || []
+        const activeAssets = roleAssets.filter((a) => a.enabled)
+        const assetTags = activeAssets.flatMap((a) => a.tags)
+        const loraPrompts = activeAssets
+          .filter((a) => a.type === 'lora' && a.loraPromptString)
+          .map((a) => a.loraPromptString!)
+        
+        const allPieces = [rawVal, ...assetTags, ...loraPrompts].filter(Boolean)
+        val = allPieces.join(', ')
+      } else {
+        val = paramValues[m.role] || ''
+      }
       
       if (inputs[m.param_name] !== undefined) {
         inputs[m.param_name] = val
@@ -392,19 +502,124 @@ export function GeneratePage() {
           {textMappings.length === 0 && !selectedWorkflowId && (
             <p className="text-center text-zinc-600 text-sm py-8">Select a workflow to begin.</p>
           )}
-          {textMappings.map((m) => (
-            <div key={m.id} className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-400">{m.display_name}</label>
-              <textarea
-                id={`prompt-${m.role!}`}
-                value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                rows={3}
-                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-accent-green/40 custom-scrollbar transition-colors hover:border-[rgba(255,255,255,0.15)]"
-                placeholder={`Enter ${m.display_name}…`}
-              />
-            </div>
-          ))}
+          {textMappings.map((m) => {
+            const isNegative = m.role?.toLowerCase().includes('negative')
+            const variant = isNegative ? 'negative' : 'positive'
+            
+            return (
+              <div key={m.id} className="space-y-1.5 relative">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-400">{m.display_name}</label>
+                  {/* Popover for Add Asset */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      id={`add-asset-btn-${m.role!}`}
+                      onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all"
+                    >
+                      <Plus size={10} />
+                      Add Asset
+                    </button>
+                    {openAddAssetRole === m.role && (
+                      <div className="absolute right-0 mt-1 w-64 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl z-20 max-h-80 overflow-y-auto custom-scrollbar p-2 space-y-3">
+                        {/* LoRAs Section */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-zinc-500 uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">LoRAs</p>
+                          <div className="space-y-0.5 mt-1">
+                            {loras && loras.length > 0 ? (
+                              loras.map((lora) => (
+                                <button
+                                  type="button"
+                                  key={lora.id}
+                                  onClick={() => handleAddLoraAsset(m.role!, lora)}
+                                  className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate"
+                                  title={lora.description || lora.model_name}
+                                >
+                                  {lora.description || lora.model_name.split('/').pop()?.replace('.safetensors', '')}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No LoRAs found</p>
+                            )}
+                          </div>
+                        </div>
+                        {/* Tag Sets Section */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-[#7C6FDD] uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">Tag Sets</p>
+                          <div className="space-y-0.5 mt-1">
+                            {tagSets && tagSets.length > 0 ? (
+                              tagSets.map((ts) => (
+                                <button
+                                  type="button"
+                                  key={ts.id}
+                                  onClick={() => handleAddTagSetAsset(m.role!, ts)}
+                                  className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate"
+                                  title={ts.description || ts.name}
+                                >
+                                  {ts.name}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No Tag Sets found</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <TagChipInput
+                  id={`prompt-${m.role!}`}
+                  value={paramValues[m.role!] ?? ''}
+                  onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                  placeholder={`Enter ${m.display_name}…`}
+                  variant={variant}
+                />
+                
+                {/* Applied Asset Chips */}
+                {appliedAssets[m.role!] && appliedAssets[m.role!].length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {appliedAssets[m.role!].map((asset) => (
+                      <div
+                        key={asset.id}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] transition-all ${
+                          asset.enabled
+                            ? asset.type === 'lora'
+                              ? 'bg-accent-green/5 text-accent-green border-accent-green/20'
+                              : 'bg-[#7C6FDD]/5 text-[#a99ef7] border-[#7C6FDD]/20'
+                            : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/80 opacity-40'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={asset.enabled}
+                          onChange={() => toggleAppliedAsset(m.role!, asset.id)}
+                          className="w-3 h-3 rounded border-zinc-800 accent-accent-green cursor-pointer"
+                        />
+                        <span
+                          className="font-medium select-none cursor-pointer"
+                          onClick={() => toggleAppliedAsset(m.role!, asset.id)}
+                        >
+                          {asset.type === 'lora' ? 'LoRA: ' : 'TagSet: '}{asset.name}
+                          {asset.type === 'lora' && asset.loraPromptString && (
+                            <span className="text-[9px] opacity-75 ml-1 font-mono">({asset.loraPromptString.split(':').pop()?.replace('>', '')})</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeAppliedAsset(m.role!, asset.id)}
+                          className="text-current/40 hover:text-red-400 transition-colors"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
 
           {/* Parameters */}
           {paramMappings.length > 0 && (
@@ -605,8 +820,8 @@ export function GeneratePage() {
           </button>
           <button
             id="save-snapshot-btn"
-            onClick={() => saveSnapshot.mutate()}
-            disabled={!selectedImg || saveSnapshot.isPending}
+            onClick={() => setIsSaveModalOpen(true)}
+            disabled={!selectedImg}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             <Save size={15} />
@@ -627,6 +842,104 @@ export function GeneratePage() {
           setRescanOpen(false)
         }}
       />
+    )}
+
+    {/* Save Snapshot Modal */}
+    {isSaveModalOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div 
+          className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative animate-scale-up"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-zinc-200">スナップショットを保存</h3>
+            <button
+              id="close-save-modal-btn"
+              onClick={() => {
+                setIsSaveModalOpen(false)
+                setTargetAlbumId("")
+                setNewAlbumName("")
+              }}
+              className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Form */}
+          <div className="space-y-4">
+            {/* Album selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-400">保存先アルバム</label>
+              <select
+                id="save-album-select"
+                value={targetAlbumId}
+                onChange={(e) => {
+                  setTargetAlbumId(e.target.value === "" ? "" : Number(e.target.value))
+                }}
+                disabled={!!newAlbumName}
+                className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-accent-green/50 disabled:opacity-40 transition-all"
+              >
+                <option value="">アルバムを選択しない (None)</option>
+                {albums?.map((album) => (
+                  <option key={album.id} value={album.id}>
+                    {album.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-center py-1">
+              <span className="h-[1px] w-full bg-[rgba(255,255,255,0.06)]" />
+              <span className="text-[10px] text-zinc-600 px-3 uppercase tracking-wider">or</span>
+              <span className="h-[1px] w-full bg-[rgba(255,255,255,0.06)]" />
+            </div>
+
+            {/* New Album input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-400">新規アルバムを作成して保存</label>
+              <input
+                id="new-album-name-input"
+                type="text"
+                placeholder="新規アルバム名を入力…"
+                value={newAlbumName}
+                onChange={(e) => {
+                  setNewAlbumName(e.target.value)
+                  if (e.target.value) {
+                    setTargetAlbumId("")
+                  }
+                }}
+                className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-accent-green/50 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              id="cancel-save-modal-btn"
+              onClick={() => {
+                setIsSaveModalOpen(false)
+                setTargetAlbumId("")
+                setNewAlbumName("")
+              }}
+              className="px-4 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-medium hover:bg-white/5 transition-all"
+            >
+              キャンセル
+            </button>
+            <button
+              id="confirm-save-modal-btn"
+              onClick={() => saveSnapshot.mutate()}
+              disabled={saveSnapshot.isPending}
+              className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all glow-green flex items-center gap-2"
+            >
+              {saveSnapshot.isPending && <Loader2 size={14} className="animate-spin" />}
+              {saveSnapshot.isPending ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   )

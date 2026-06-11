@@ -89,6 +89,28 @@ export interface ScanResult {
 
 // ─── Snapshot ───────────────────────────────────────────────────
 
+export interface SnapshotLoraCreate {
+  lora_id: number
+  strength: number
+}
+
+export interface SnapshotLoraRead {
+  id: number
+  snapshot_id: number
+  lora_id: number
+  strength: number
+}
+
+export interface SnapshotTagSetCreate {
+  tag_set_id: number
+}
+
+export interface SnapshotTagSetRead {
+  id: number
+  snapshot_id: number
+  tag_set_id: number
+}
+
 export interface SnapshotSummary {
   id: number
   workflow_id: number
@@ -102,12 +124,18 @@ export interface Snapshot {
   params: Record<string, unknown>
   image_path: string | null
   created_at: string
+  loras?: SnapshotLoraRead[]
+  tag_sets?: SnapshotTagSetRead[]
 }
 
 export interface SnapshotCreate {
   workflow_id: number
   image_path?: string
   params: Record<string, unknown>
+  album_id?: number
+  new_album_name?: string
+  loras?: SnapshotLoraCreate[]
+  tag_sets?: SnapshotTagSetCreate[]
 }
 
 // ─── Album ──────────────────────────────────────────────────────

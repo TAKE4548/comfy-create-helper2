@@ -68,6 +68,12 @@ class Snapshot(Base):
     album_items: Mapped[list["AlbumItem"]] = relationship(
         back_populates="snapshot", cascade="all, delete-orphan"
     )
+    loras: Mapped[list["SnapshotLora"]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
+    tag_sets: Mapped[list["SnapshotTagSet"]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
 
 
 class Album(Base):
@@ -122,6 +128,7 @@ class Lora(Base):
     trigger_word_sets: Mapped[list["LoraTriggerWordSet"]] = relationship(
         back_populates="lora", cascade="all, delete-orphan"
     )
+    snapshots: Mapped[list["SnapshotLora"]] = relationship(back_populates="lora")
 
 
 class LoraTriggerWordSet(Base):
@@ -155,6 +162,7 @@ class TagSet(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")
+    snapshots: Mapped[list["SnapshotTagSet"]] = relationship(back_populates="tag_set")
 
 
 class LlmPrompt(Base):
@@ -165,3 +173,28 @@ class LlmPrompt(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SnapshotLora(Base):
+    __tablename__ = "snapshot_loras"
+    __table_args__ = (UniqueConstraint("snapshot_id", "lora_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
+    lora_id: Mapped[int] = mapped_column(ForeignKey("loras.id", ondelete="CASCADE"), nullable=False)
+    strength: Mapped[float] = mapped_column(Float, nullable=False)
+
+    snapshot: Mapped["Snapshot"] = relationship(back_populates="loras")
+    lora: Mapped["Lora"] = relationship(back_populates="snapshots")
+
+
+class SnapshotTagSet(Base):
+    __tablename__ = "snapshot_tag_sets"
+    __table_args__ = (UniqueConstraint("snapshot_id", "tag_set_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
+    tag_set_id: Mapped[int] = mapped_column(ForeignKey("tag_sets.id", ondelete="CASCADE"), nullable=False)
+
+    snapshot: Mapped["Snapshot"] = relationship(back_populates="tag_sets")
+    tag_set: Mapped["TagSet"] = relationship(back_populates="snapshots")

@@ -39,6 +39,16 @@ export interface ComfyQueueResponse {
   queue_pending: Array<[number, string, any, { client_id?: string }, any]>
 }
 
+export interface AppliedAsset {
+  id: string; // unique key (e.g. `lora-1-12345`)
+  type: 'lora' | 'tagset';
+  assetId: number; // DB ID
+  name: string; // display name
+  enabled: boolean; // toggle state
+  tags: string[]; // tagset tags or LoRA trigger words
+  loraPromptString?: string; // LoRA prompt embedded string `<lora:filename:strength>`
+}
+
 export interface GenerationState {
   clientId: string
   isConnected: boolean
@@ -57,6 +67,7 @@ export interface GenerationState {
   batchImages: string[]
   selectedImg: string | null
   comfyHistoryImages: string[]
+  appliedAssets: Record<string, AppliedAsset[]>
   
   initialize: () => void
   setFilterOwnSession: (filter: boolean) => void
@@ -66,6 +77,9 @@ export interface GenerationState {
   setSeedMode: (mode: 'random' | 'fixed') => void
   setSeed: (seed: number) => void
   setSelectedImg: (img: string | null) => void
+  addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => void
+  removeAppliedAsset: (role: string, id: string) => void
+  toggleAppliedAsset: (role: string, id: string) => void
   queuePrompt: (workflow: Record<string, unknown>) => Promise<string | null>
   cancelGeneration: () => void
   clearPreview: () => void
@@ -90,6 +104,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
   let storedParams: Record<string, string> = {}
   try {
     storedParams = JSON.parse(localStorage.getItem('prompt-surgeon-params') || '{}')
+  } catch {}
+
+  let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
+  try {
+    storedAppliedAssets = JSON.parse(localStorage.getItem('prompt-surgeon-applied-assets') || '{}')
   } catch {}
 
   const storedBatchSize = localStorage.getItem('prompt-surgeon-batch-size')
@@ -209,6 +228,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     batchImages: storedBatchImages,
     selectedImg: verifiedSelectedImg,
     comfyHistoryImages: [],
+    appliedAssets: storedAppliedAssets,
 
     initialize: () => {
       if (isInitializing || ws) return
@@ -348,6 +368,44 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     setParamValues: (values: Record<string, string>) => {
       set({ paramValues: values })
       localStorage.setItem('prompt-surgeon-params', JSON.stringify(values))
+    },
+
+    addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => {
+      const current = get().appliedAssets
+      const roleAssets = current[role] || []
+      const newAsset: AppliedAsset = {
+        ...asset,
+        id: `${asset.type}-${asset.assetId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        enabled: true,
+      }
+      const updated = {
+        ...current,
+        [role]: [...roleAssets, newAsset],
+      }
+      set({ appliedAssets: updated })
+      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+    },
+
+    removeAppliedAsset: (role: string, id: string) => {
+      const current = get().appliedAssets
+      const roleAssets = current[role] || []
+      const updated = {
+        ...current,
+        [role]: roleAssets.filter((a) => a.id !== id),
+      }
+      set({ appliedAssets: updated })
+      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+    },
+
+    toggleAppliedAsset: (role: string, id: string) => {
+      const current = get().appliedAssets
+      const roleAssets = current[role] || []
+      const updated = {
+        ...current,
+        [role]: roleAssets.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a)),
+      }
+      set({ appliedAssets: updated })
+      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
     },
 
     setBatchSize: (size: number) => {
