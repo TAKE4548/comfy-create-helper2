@@ -9,9 +9,10 @@ import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi, tagS
 import type { Workflow, AuditResult, MappingMaster, Lora, TagSet, AlbumSummary } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
-import { TagChipInput } from '../components/TagChipInput'
+import { TagChipEditor } from '../components/TagChipEditor'
 
 export function GeneratePage() {
+  const isMobile = window.location.pathname.startsWith('/mobile') || window.innerWidth < 1024;
   const qc = useQueryClient()
   const [rescanOpen, setRescanOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -412,12 +413,23 @@ export function GeneratePage() {
                       <div>
                         <p className="text-zinc-500 font-medium mb-1">Interference</p>
                         {auditResult.interference.map((item, i) => (
-                          <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)]">
-                            <AlertCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <span className="text-red-300 font-mono">{item.tag}</span>
-                              <span className="text-zinc-500 ml-2">{item.reason}</span>
+                          <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
+                            <div className="flex gap-2 items-start">
+                              <AlertCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="text-red-300 font-mono">{item.tag}</span>
+                                <span className="text-zinc-500 ml-2">{item.reason}</span>
+                              </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('tag-chip-editor:disable-tag', { detail: { tag: item.tag } }));
+                              }}
+                              className="text-[10px] px-1.5 py-0.5 bg-red-950/30 hover:bg-red-900/40 text-red-300 border border-red-900/30 rounded transition-colors"
+                            >
+                              無効化
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -426,12 +438,23 @@ export function GeneratePage() {
                       <div>
                         <p className="text-zinc-500 font-medium mb-1">Suggestions</p>
                         {auditResult.vocabulary.map((item, i) => (
-                          <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)]">
-                            <CheckCircle2 size={12} className="text-accent-green mt-0.5 flex-shrink-0" />
-                            <div>
-                              <span className="text-accent-green font-mono">+{item.suggestion}</span>
-                              <span className="text-zinc-500 ml-2">{item.effect}</span>
+                          <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
+                            <div className="flex gap-2 items-start">
+                              <CheckCircle2 size={12} className="text-accent-green mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="text-accent-green font-mono">+{item.suggestion}</span>
+                                <span className="text-zinc-500 ml-2">{item.effect}</span>
+                              </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('tag-chip-editor:add-tag', { detail: { tag: item.suggestion } }));
+                              }}
+                              className="text-[10px] px-1.5 py-0.5 bg-emerald-950/30 hover:bg-emerald-900/40 text-accent-green border border-emerald-900/30 rounded transition-colors"
+                            >
+                              追加
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -569,13 +592,23 @@ export function GeneratePage() {
                     )}
                   </div>
                 </div>
-                <TagChipInput
-                  id={`prompt-${m.role!}`}
-                  value={paramValues[m.role!] ?? ''}
-                  onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
-                  placeholder={`Enter ${m.display_name}…`}
-                  variant={variant}
-                />
+                {isMobile ? (
+                  <textarea
+                    id={`prompt-${m.role!}`}
+                    value={paramValues[m.role!] ?? ''}
+                    onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                    placeholder={`Enter ${m.display_name}…`}
+                    className="w-full min-h-[80px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40"
+                  />
+                ) : (
+                  <TagChipEditor
+                    id={`prompt-${m.role!}`}
+                    value={paramValues[m.role!] ?? ''}
+                    onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                    placeholder={`Enter ${m.display_name}…`}
+                    variant={variant}
+                  />
+                )}
                 
                 {/* Applied Asset Chips */}
                 {appliedAssets[m.role!] && appliedAssets[m.role!].length > 0 && (

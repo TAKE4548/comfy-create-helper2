@@ -1,0 +1,301 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  arrayMove,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { parseToChips, chipsToString, TagChip as TagChipType } from './useChipParser';
+import { useChipHistory } from './useChipHistory';
+import { TagChip } from './TagChip';
+import { TagInput } from './TagInput';
+import { FileText, LayoutGrid } from 'lucide-react';
+import './tagChipEditor.css';
+
+interface TagChipEditorProps {
+  id?: string;
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  variant?: string;
+}
+
+export const TagChipEditor: React.FC<TagChipEditorProps> = ({
+  id,
+  value,
+  onChange,
+  placeholder = 'Add tag...',
+}) => {
+  const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(parseToChips(value));
+  const [isTextMode, setIsTextMode] = useState(false);
+  const [textValue, setTextValue] = useState('');
+  const [inputValue, setInputValue] = useState('');
+
+  const prevChipsString = useRef(value);
+
+  // `@dnd-kit` センサーの設定
+  // 入力エリアなどの干渉を防ぐため、ドラッグ判定の最小距離(8px)を設定
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // 外部から value プロップスが更新されたら同期する
+  useEffect(() => {
+    if (value !== prevChipsString.current) {
+      const newChips = parseToChips(value);
+      setChips(newChips, false);
+      prevChipsString.current = value;
+      if (isTextMode) {
+        setTextValue(value);
+      }
+    }
+  }, [value, setChips, isTextMode]);
+
+  // 内部のチップステートが変わったら外部へ通知
+  useEffect(() => {
+    const newStr = chipsToString(state);
+    if (newStr !== value) {
+      prevChipsString.current = newStr;
+      onChange(newStr);
+    }
+  }, [state, onChange, value]);
+
+  // イベントリスナー用に最新の state を保持
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  // 外部カスタムイベントハンドリング
+  useEffect(() => {
+    const handleDisableTag = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tag: string }>;
+      const tagToDisable = customEvent.detail?.tag;
+      if (!tagToDisable) return;
+
+      const current = stateRef.current;
+      const next = current.map((chip) =>
+        chip.text.toLowerCase() === tagToDisable.toLowerCase()
+          ? { ...chip, enabled: false }
+          : chip
+      );
+      setChips(next, true);
+    };
+
+    const handleAddTag = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tag: string }>;
+      const tagToAdd = customEvent.detail?.tag;
+      if (!tagToAdd) return;
+
+      const current = stateRef.current;
+      const exists = current.some(
+        (chip) => chip.text.toLowerCase() === tagToAdd.toLowerCase()
+      );
+      if (!exists) {
+        const newChip: TagChipType = {
+          id: Math.random().toString(36).substring(2, 9),
+          text: tagToAdd,
+          enabled: true,
+        };
+        setChips([...current, newChip], true);
+      }
+    };
+
+    window.addEventListener('tag-chip-editor:disable-tag', handleDisableTag);
+    window.addEventListener('tag-chip-editor:add-tag', handleAddTag);
+    return () => {
+      window.removeEventListener('tag-chip-editor:disable-tag', handleDisableTag);
+      window.removeEventListener('tag-chip-editor:add-tag', handleAddTag);
+    };
+  }, [setChips]);
+
+  // ドラッグ完了時の処理
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = state.findIndex((chip) => chip.id === active.id);
+    const newIndex = state.findIndex((chip) => chip.id === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newChips = arrayMove(state, oldIndex, newIndex);
+      setChips(newChips, true); // 順序入れ替えを履歴に積む
+    }
+  };
+
+  // テキストモードトグル処理
+  const handleSwitchToTextMode = () => {
+    setTextValue(chipsToString(state));
+    setIsTextMode(true);
+  };
+
+  const handleSwitchToChipMode = () => {
+    const newChips = parseToChips(textValue);
+    setChips(newChips, true); // 編集確定したテキストを履歴に積む
+    setIsTextMode(false);
+  };
+
+  // Ctrl+Z / Ctrl+Y による Undo/Redo ショートカット
+  const handleContainerKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+      e.preventDefault();
+      if (canUndo) undo();
+    } else if (
+      ((e.ctrlKey || e.metaKey) && e.key === 'y') ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')
+    ) {
+      e.preventDefault();
+      if (canRedo) redo();
+    }
+  };
+
+  // チップのアクションハンドラ
+  const handleToggle = (id: string) => {
+    const next = state.map((chip) =>
+      chip.id === id ? { ...chip, enabled: !chip.enabled } : chip
+    );
+    setChips(next, true);
+  };
+
+  const handleDelete = (id: string) => {
+    const next = state.filter((chip) => chip.id !== id);
+    setChips(next, true);
+  };
+
+  const handleEdit = (id: string, newText: string) => {
+    const next = state.map((chip) =>
+      chip.id === id ? { ...chip, text: newText } : chip
+    );
+    setChips(next, true);
+  };
+
+  const handleDuplicate = (id: string) => {
+    const index = state.findIndex((chip) => chip.id === id);
+    if (index === -1) return;
+    const chipToDuplicate = state[index];
+    const newChip: TagChipType = {
+      id: Math.random().toString(36).substring(2, 9),
+      text: chipToDuplicate.text,
+      enabled: chipToDuplicate.enabled,
+    };
+    const next = [...state];
+    next.splice(index + 1, 0, newChip);
+    setChips(next, true);
+  };
+
+  const handleAddTags = (newTexts: string[]) => {
+    const newChips = newTexts.map((txt) => ({
+      id: Math.random().toString(36).substring(2, 9),
+      text: txt,
+      enabled: true,
+    }));
+    setChips([...state, ...newChips], true);
+  };
+
+  const handleRemoveLast = () => {
+    if (state.length === 0) return;
+    const next = state.slice(0, -1);
+    setChips(next, true);
+  };
+
+  return (
+    <div className="w-full flex flex-col gap-1.5" id={id}>
+      {/* モードトグルとステータス表示 */}
+      <div className="flex justify-between items-center text-xs text-[#A1A1AA]">
+        <span>
+          {isTextMode ? 'Text Mode (Comma separated)' : 'Chips Mode'}
+          {(!isTextMode && (canUndo || canRedo)) && (
+            <span className="ml-2 opacity-60">
+              ({canUndo ? 'Ctrl+Z: Undo' : ''} {canRedo ? 'Ctrl+Y: Redo' : ''})
+            </span>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={isTextMode ? handleSwitchToChipMode : handleSwitchToTextMode}
+          className="flex items-center gap-1.5 px-2 py-1 bg-[#1F1F25] hover:bg-zinc-800 text-[#E4E4E7] border border-[rgba(255,255,255,0.08)] rounded transition-colors"
+        >
+          {isTextMode ? (
+            <>
+              <LayoutGrid size={12} />
+              <span>チップモード切替</span>
+            </>
+          ) : (
+            <>
+              <FileText size={12} />
+              <span>テキスト入力モード切替</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* エディタのメイン部分 */}
+      <div onKeyDown={handleContainerKeyDown} className="outline-none">
+        {isTextMode ? (
+          <div className="tag-chip-editor-container">
+            <textarea
+              value={textValue}
+              onChange={(e) => {
+                setTextValue(e.target.value);
+                const newChips = parseToChips(e.target.value);
+                setChips(newChips, false);
+              }}
+              placeholder={placeholder}
+              className="tag-chip-editor-textarea"
+            />
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="tag-chip-editor-container">
+              <SortableContext items={state} strategy={horizontalListSortingStrategy}>
+                {state.map((chip) => (
+                  <TagChip
+                    key={chip.id}
+                    id={chip.id}
+                    text={chip.text}
+                    enabled={chip.enabled}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                    onEdit={handleEdit}
+                    onDuplicate={handleDuplicate}
+                  />
+                ))}
+              </SortableContext>
+
+              {/* 新規タグ入力 */}
+              <TagInput
+                value={inputValue}
+                onChange={setInputValue}
+                onAddTags={handleAddTags}
+                onRemoveLast={handleRemoveLast}
+                placeholder={state.length === 0 ? placeholder : ''}
+              />
+            </div>
+          </DndContext>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default TagChipEditor;
