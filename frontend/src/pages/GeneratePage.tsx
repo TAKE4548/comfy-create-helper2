@@ -60,6 +60,9 @@ export function GeneratePage() {
   } = useGenerationStore()
 
   const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
+  const [selectedLoraForModal, setSelectedLoraForModal] = useState<{ role: string; lora: Lora } | null>(null)
+  const [selectedTriggerSetId, setSelectedTriggerSetId] = useState<number | 'default'>('default')
+  const [loraStrength, setLoraStrength] = useState<number>(1.0)
 
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
@@ -89,32 +92,29 @@ export function GeneratePage() {
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
   })
 
-  const handleAddLoraAsset = (role: string, lora: Lora) => {
-    // 1. Calculate default strength (rounded to one decimal place)
-    const min = lora.recommended_strength_min
-    const max = lora.recommended_strength_max
-    let strength = 1.0
-    if (min != null && max != null) {
-      strength = Math.round(((min + max) / 2) * 10) / 10
-    } else if (min != null) {
-      strength = min
-    } else if (max != null) {
-      strength = max
-    }
-
-    // 2. Extract filename without path and without extension
+  const handleAddLoraAsset = (
+    role: string,
+    lora: Lora,
+    strength: number,
+    triggerSetId: number | 'default'
+  ) => {
+    // 1. Extract filename without path and without extension
     const path = lora.file_path || lora.model_name || ''
     const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, "") || 'lora'
 
-    // 3. Get first trigger set words or merge all trigger set words
-    const twsWords = lora.trigger_word_sets && lora.trigger_word_sets.length > 0
-      ? lora.trigger_word_sets[0].words
-      : []
+    // 2. Get words from the selected trigger set
+    let twsWords: string[] = []
+    if (triggerSetId !== 'default') {
+      const selectedSet = lora.trigger_word_sets?.find(s => s.id === triggerSetId)
+      if (selectedSet) {
+        twsWords = selectedSet.words
+      }
+    }
 
-    // 4. Construct loraPromptString
-    const loraPromptString = `<lora:${filename}:${strength}>`
+    // 3. Construct loraPromptString
+    const loraPromptString = `<lora:${filename}:${strength.toFixed(1)}>`
 
-    // 5. Add to store
+    // 4. Add to store
     addAppliedAsset(role, {
       type: 'lora',
       assetId: lora.id,
@@ -122,8 +122,6 @@ export function GeneratePage() {
       tags: twsWords,
       loraPromptString,
     })
-
-    setOpenAddAssetRole(null)
   }
 
   const handleAddTagSetAsset = (role: string, ts: TagSet) => {
@@ -267,16 +265,7 @@ export function GeneratePage() {
       } else if (m.input_type === 'float') {
         val = parseFloat(paramValues[m.role] || '0.0')
       } else if (m.input_type === 'textarea') {
-        const rawVal = paramValues[m.role] || ''
-        const roleAssets = appliedAssets[m.role] || []
-        const activeAssets = roleAssets.filter((a) => a.enabled)
-        const assetTags = activeAssets.flatMap((a) => a.tags)
-        const loraPrompts = activeAssets
-          .filter((a) => a.type === 'lora' && a.loraPromptString)
-          .map((a) => a.loraPromptString!)
-        
-        const allPieces = [rawVal, ...assetTags, ...loraPrompts].filter(Boolean)
-        val = allPieces.join(', ')
+        val = paramValues[m.role] || ''
       } else {
         val = paramValues[m.role] || ''
       }
@@ -555,7 +544,27 @@ export function GeneratePage() {
                                 <button
                                   type="button"
                                   key={lora.id}
-                                  onClick={() => handleAddLoraAsset(m.role!, lora)}
+                                  onClick={() => {
+                                  const min = lora.recommended_strength_min
+                                  const max = lora.recommended_strength_max
+                                  let initStrength = 1.0
+                                  if (min != null && max != null) {
+                                    initStrength = Math.round(((min + max) / 2) * 10) / 10
+                                  } else if (min != null) {
+                                    initStrength = min
+                                  } else if (max != null) {
+                                    initStrength = max
+                                  }
+                                  setLoraStrength(initStrength)
+                                  
+                                  if (lora.trigger_word_sets && lora.trigger_word_sets.length > 0) {
+                                    setSelectedTriggerSetId(lora.trigger_word_sets[0].id)
+                                  } else {
+                                    setSelectedTriggerSetId('default')
+                                  }
+                                  setSelectedLoraForModal({ role: m.role!, lora })
+                                  setOpenAddAssetRole(null)
+                                }}
                                   className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate"
                                   title={lora.description || lora.model_name}
                                 >
@@ -969,6 +978,159 @@ export function GeneratePage() {
             >
               {saveSnapshot.isPending && <Loader2 size={14} className="animate-spin" />}
               {saveSnapshot.isPending ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* LoRA Trigger Selection Modal */}
+    {selectedLoraForModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div
+          className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative animate-scale-up"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-200">LoRA設定</h3>
+              <p className="text-xs text-zinc-500 mt-1 truncate max-w-[320px]">
+                {selectedLoraForModal.lora.description || selectedLoraForModal.lora.model_name.split('/').pop()?.replace('.safetensors', '')}
+              </p>
+            </div>
+            <button
+              id="close-lora-modal-btn"
+              onClick={() => setSelectedLoraForModal(null)}
+              className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {/* Trigger Sets */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-400">トリガーワードセット</label>
+              <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                {selectedLoraForModal.lora.trigger_word_sets && selectedLoraForModal.lora.trigger_word_sets.length > 0 ? (
+                  <>
+                    {selectedLoraForModal.lora.trigger_word_sets.map((set) => (
+                      <label
+                        key={set.id}
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                          selectedTriggerSetId === set.id
+                            ? 'bg-[rgba(124,111,221,0.08)] border-[#7C6FDD]/40 text-zinc-200'
+                            : 'bg-surface border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-450'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="trigger-word-set"
+                          checked={selectedTriggerSetId === set.id}
+                          onChange={() => setSelectedTriggerSetId(set.id)}
+                          className="mt-0.5 w-4 h-4 text-[#7C6FDD] accent-[#7C6FDD] border-zinc-800"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold">{set.name}</p>
+                          <p className="text-[10px] text-zinc-500 truncate mt-0.5">
+                            {set.words.join(', ')}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
+                    <label
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        selectedTriggerSetId === 'default'
+                          ? 'bg-[rgba(124,111,221,0.08)] border-[#7C6FDD]/40 text-zinc-200'
+                          : 'bg-surface border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-450'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="trigger-word-set"
+                        checked={selectedTriggerSetId === 'default'}
+                        onChange={() => setSelectedTriggerSetId('default')}
+                        className="mt-0.5 w-4 h-4 text-[#7C6FDD] accent-[#7C6FDD] border-zinc-800"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold">トリガーワードなし（デフォルト）</p>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">LoRAタグのみをプロンプトに挿入します</p>
+                      </div>
+                    </label>
+                  </>
+                ) : (
+                  <div className="p-3 rounded-lg bg-surface border border-[rgba(255,255,255,0.04)] text-zinc-500 text-xs italic">
+                    登録されているトリガーワードセットはありません（デフォルト適用）
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Strength control */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-medium text-zinc-400">LoRA強度 (Strength)</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0.0}
+                    max={2.0}
+                    step={0.1}
+                    value={loraStrength}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      if (!isNaN(val)) {
+                        setLoraStrength(Math.max(0, Math.min(2, val)))
+                      }
+                    }}
+                    className="w-16 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-0.5 text-xs text-zinc-200 text-right focus:outline-none focus:border-[#7C6FDD]/50"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min={0.0}
+                  max={2.0}
+                  step={0.1}
+                  value={loraStrength}
+                  onChange={(e) => setLoraStrength(parseFloat(e.target.value))}
+                  className="flex-1 accent-[#7C6FDD] bg-surface h-1.5 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-xs font-mono text-zinc-400 w-8 text-right">{loraStrength.toFixed(1)}</span>
+              </div>
+              {selectedLoraForModal.lora.recommended_strength_min !== null && selectedLoraForModal.lora.recommended_strength_max !== null && (
+                <p className="text-[10px] text-zinc-500 text-right">
+                  推奨強度: {selectedLoraForModal.lora.recommended_strength_min} 〜 {selectedLoraForModal.lora.recommended_strength_max}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              id="cancel-lora-modal-btn"
+              onClick={() => setSelectedLoraForModal(null)}
+              className="px-4 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-medium hover:bg-white/5 transition-all"
+            >
+              キャンセル
+            </button>
+            <button
+              id="confirm-lora-modal-btn"
+              onClick={() => {
+                handleAddLoraAsset(
+                  selectedLoraForModal.role,
+                  selectedLoraForModal.lora,
+                  loraStrength,
+                  selectedTriggerSetId
+                )
+                setSelectedLoraForModal(null)
+              }}
+              className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 transition-all glow-green flex items-center gap-2"
+            >
+              適用
             </button>
           </div>
         </div>

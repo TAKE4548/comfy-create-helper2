@@ -90,6 +90,35 @@ let ws: WebSocket | null = null
 let comfyUrl: string | null = null
 let isInitializing = false
 
+export function removeAssetFromPrompt(prompt: string, tags: string[], loraPromptString?: string): string {
+  let chips = prompt.split(',').map(c => c.trim()).filter(Boolean);
+  const tagsToRemove = new Set(tags.map(t => t.toLowerCase()));
+  if (loraPromptString) {
+    tagsToRemove.add(loraPromptString.toLowerCase());
+    const match = loraPromptString.match(/<lora:([^:]+):/i);
+    if (match) {
+      const baseLoraPrefix = `<lora:${match[1]}:`.toLowerCase();
+      chips = chips.filter(chip => {
+        const lowerChip = chip.toLowerCase();
+        return !(lowerChip.startsWith(baseLoraPrefix) && lowerChip.endsWith('>'));
+      });
+    }
+  }
+  chips = chips.filter(chip => !tagsToRemove.has(chip.toLowerCase()));
+  return chips.join(', ');
+}
+
+export function addAssetToPrompt(prompt: string, tags: string[], loraPromptString?: string): string {
+  const currentVal = prompt || '';
+  const tagsToAdd = [...tags];
+  if (loraPromptString) {
+    tagsToAdd.push(loraPromptString);
+  }
+  const toAddStr = tagsToAdd.join(', ');
+  if (!currentVal) return toAddStr;
+  return `${currentVal}, ${toAddStr}`;
+}
+
 export const useGenerationStore = create<GenerationState>((set, get) => {
   // Load initial values from localStorage
   const storedClientId = localStorage.getItem('prompt-surgeon-client-id') || 
@@ -382,30 +411,85 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         ...current,
         [role]: [...roleAssets, newAsset],
       }
-      set({ appliedAssets: updated })
+      
+      const currentParams = get().paramValues
+      const currentPrompt = currentParams[role] || ''
+      const updatedPrompt = addAssetToPrompt(currentPrompt, newAsset.tags, newAsset.loraPromptString)
+      const updatedParams = {
+        ...currentParams,
+        [role]: updatedPrompt,
+      }
+      
+      set({
+        appliedAssets: updated,
+        paramValues: updatedParams,
+      })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
     },
 
     removeAppliedAsset: (role: string, id: string) => {
       const current = get().appliedAssets
       const roleAssets = current[role] || []
+      const assetToRemove = roleAssets.find((a) => a.id === id)
+      
       const updated = {
         ...current,
         [role]: roleAssets.filter((a) => a.id !== id),
       }
-      set({ appliedAssets: updated })
+      
+      let updatedParams = get().paramValues
+      if (assetToRemove && assetToRemove.enabled) {
+        const currentParams = get().paramValues
+        const currentPrompt = currentParams[role] || ''
+        const updatedPrompt = removeAssetFromPrompt(currentPrompt, assetToRemove.tags, assetToRemove.loraPromptString)
+        updatedParams = {
+          ...currentParams,
+          [role]: updatedPrompt,
+        }
+      }
+      
+      set({
+        appliedAssets: updated,
+        paramValues: updatedParams,
+      })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
     },
 
     toggleAppliedAsset: (role: string, id: string) => {
       const current = get().appliedAssets
       const roleAssets = current[role] || []
+      const assetToToggle = roleAssets.find((a) => a.id === id)
+      if (!assetToToggle) return
+
+      const nextEnabled = !assetToToggle.enabled
       const updated = {
         ...current,
-        [role]: roleAssets.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a)),
+        [role]: roleAssets.map((a) => (a.id === id ? { ...a, enabled: nextEnabled } : a)),
       }
-      set({ appliedAssets: updated })
+
+      const currentParams = get().paramValues
+      const currentPrompt = currentParams[role] || ''
+      let updatedPrompt = currentPrompt
+
+      if (nextEnabled) {
+        updatedPrompt = addAssetToPrompt(currentPrompt, assetToToggle.tags, assetToToggle.loraPromptString)
+      } else {
+        updatedPrompt = removeAssetFromPrompt(currentPrompt, assetToToggle.tags, assetToToggle.loraPromptString)
+      }
+
+      const updatedParams = {
+        ...currentParams,
+        [role]: updatedPrompt,
+      }
+
+      set({
+        appliedAssets: updated,
+        paramValues: updatedParams,
+      })
       localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      localStorage.setItem('prompt-surgeon-params', JSON.stringify(updatedParams))
     },
 
     setBatchSize: (size: number) => {
