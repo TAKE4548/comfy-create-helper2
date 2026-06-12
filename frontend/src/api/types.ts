@@ -24,6 +24,12 @@ export interface MappingMasterCreate {
   title_patterns?: string[]
 }
 
+export interface MappingMasterUsage {
+  workflow_id: number
+  workflow_name: string
+  node_id: string
+}
+
 // ─── Workflow ───────────────────────────────────────────────────
 
 export interface WorkflowMapping {

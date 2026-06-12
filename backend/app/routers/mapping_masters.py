@@ -57,6 +57,22 @@ def delete_master(master_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@router.get("/{master_id}/usages", response_model=list[dict])
+def get_master_usages(master_id: int, db: Session = Depends(get_db)):
+    mm = db.query(models.MappingMaster).filter(models.MappingMaster.id == master_id).first()
+    if not mm:
+        raise HTTPException(status_code=404, detail="MappingMaster not found")
+    mappings = db.query(models.WorkflowMapping).filter(models.WorkflowMapping.master_id == master_id).all()
+    return [
+        {
+            "workflow_id": m.workflow_id,
+            "workflow_name": m.workflow.name,
+            "node_id": m.node_id
+        }
+        for m in mappings
+    ]
+
+
 def _to_schema(mm: models.MappingMaster) -> schemas.MappingMasterRead:
     return schemas.MappingMasterRead(
         id=mm.id,
