@@ -9,6 +9,7 @@ import { workflowsApi, auditApi, snapshotsApi, mappingMastersApi, lorasApi, tagS
 import type { Workflow, AuditResult, MappingMaster, Lora, TagSet, AlbumSummary } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
+import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
 import { TagChipEditor } from '../components/TagChipEditor'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 
@@ -77,6 +78,12 @@ export function GeneratePage() {
   const [newAlbumName, setNewAlbumName] = useState("")
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
+
+  // Workflow upload states
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [uploadedJson, setUploadedJson] = useState<Record<string, unknown> | null>(null)
+  const [uploadedFileName, setUploadedFileName] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
   const { data: albums } = useQuery({
     queryKey: ['albums'],
@@ -427,6 +434,79 @@ export function GeneratePage() {
     localStorage.setItem("prompt-surgeon-params-wf-" + selectedWorkflowId, JSON.stringify(init))
   }
 
+  const handleFileSelect = (file: File) => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      alert('JSONファイルをアップロードしてください。')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target?.result as string)
+        const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name
+        setUploadedJson(json)
+        setUploadedFileName(nameWithoutExt)
+        setUploadModalOpen(true)
+      } catch {
+        alert('JSONファイルの解析に失敗しました。')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileSelect(e.dataTransfer.files[0])
+    }
+  }
+
+  const renderUploadZone = () => {
+    return (
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => document.getElementById('workflow-file-input')?.click()}
+        className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all min-h-[300px] ${
+          dragOver
+            ? 'border-accent-green bg-accent-green/5 text-zinc-200'
+            : 'border-[rgba(255,255,255,0.15)] hover:border-accent-green/50 hover:bg-white/5 text-zinc-400'
+        }`}
+      >
+        <input
+          id="workflow-file-input"
+          type="file"
+          accept=".json"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              handleFileSelect(e.target.files[0])
+            }
+          }}
+          className="hidden"
+        />
+        <Plus size={36} className="text-zinc-500 mb-3 hover:text-accent-green transition-colors" />
+        <p className="text-sm font-medium text-zinc-300 mb-1">
+          ワークフロー JSON ファイルをドラッグ＆ドロップ
+        </p>
+        <p className="text-xs text-zinc-500">
+          またはクリックしてファイルを選択してください (.json)
+        </p>
+      </div>
+    )
+  }
+
   const handleGenerate = async () => {
     if (!workflow) return
     for (let i = 0; i < batchSize; i++) {
@@ -579,7 +659,7 @@ export function GeneratePage() {
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
               className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[40%] truncate"
             >
-              <option value="">Select workflow…</option>
+              <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
               {workflows?.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
@@ -890,7 +970,9 @@ export function GeneratePage() {
         )}
 
         {textMappings.length === 0 && !selectedWorkflowId && (
-          <p className="text-center text-zinc-650 text-xs py-6">Select a workflow to begin.</p>
+          <div className="px-4 py-6">
+            {renderUploadZone()}
+          </div>
         )}
 
         {/* Active Prompt Textarea */}
@@ -1280,7 +1362,7 @@ export function GeneratePage() {
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
               className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate"
             >
-              <option value="">Select workflow…</option>
+              <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
               {workflows?.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
@@ -1576,7 +1658,9 @@ export function GeneratePage() {
 
           {/* Prompt inputs */}
           {textMappings.length === 0 && !selectedWorkflowId && (
-            <p className="text-center text-zinc-600 text-sm py-8">Select a workflow to begin.</p>
+            <div className="flex-1 flex flex-col pt-4">
+              {renderUploadZone()}
+            </div>
           )}
           {textMappings.map((m) => {
             const isNegative = m.role?.toLowerCase().includes('negative')
@@ -2058,6 +2142,23 @@ export function GeneratePage() {
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
           setRescanOpen(false)
+        }}
+      />
+    )}
+
+    {/* Upload Workflow Modal */}
+    {uploadModalOpen && uploadedJson && (
+      <UploadWorkflowModal
+        initialName={uploadedFileName}
+        workflowJson={uploadedJson}
+        onClose={() => {
+          setUploadModalOpen(false)
+          setUploadedJson(null)
+          setUploadedFileName('')
+        }}
+        onSaved={(newWorkflowId) => {
+          qc.invalidateQueries({ queryKey: ['workflows'] })
+          setSelectedWorkflowId(newWorkflowId)
         }}
       />
     )}
