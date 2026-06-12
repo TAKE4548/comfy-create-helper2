@@ -57,6 +57,7 @@ export interface GenerationState {
   previewImage: string | null
   currentPromptId: string | null
   activeClientId: string | null
+  comfyUrl: string | null // 追加
   
   filterOwnSession: boolean
   selectedWorkflowId: number | null
@@ -84,6 +85,7 @@ export interface GenerationState {
   cancelGeneration: () => void
   clearPreview: () => void
   fetchHistory: () => Promise<void>
+  setComfyUrl: (url: string) => void // 追加
 }
 
 let ws: WebSocket | null = null
@@ -249,6 +251,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     previewImage: null,
     currentPromptId: storedCurrentPromptId,
     activeClientId: null,
+    comfyUrl: localStorage.getItem('prompt-surgeon-comfy-url'),
     
     filterOwnSession: storedFilterOwn,
     selectedWorkflowId: storedWorkflowId,
@@ -265,121 +268,132 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (isInitializing || ws) return
       isInitializing = true
 
-      configApi.get()
-        .then((config) => {
-          const url = (config && config.comfy_url) ? config.comfy_url : 'http://localhost:8188'
-          comfyUrl = url
-          const resolvedUrl = resolveComfyUrl(url)
-          
-          // Reconcile queue/history state
-          reconcileState(resolvedUrl)
-          get().fetchHistory()
+      const initConnection = (url: string) => {
+        comfyUrl = url
+        set({ comfyUrl: url })
+        const resolvedUrl = resolveComfyUrl(url)
+        
+        // Reconcile queue/history state
+        reconcileState(resolvedUrl)
+        get().fetchHistory()
 
-          const wsUrl = resolvedUrl.replace(/^http/, 'ws')
-          ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
-          ws.binaryType = 'blob'
+        const wsUrl = resolvedUrl.replace(/^http/, 'ws')
+        ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
+        ws.binaryType = 'blob'
 
-          ws.onopen = () => set({ isConnected: true })
-          ws.onclose = () => set({ isConnected: false })
-          ws.onerror = () => set({ isConnected: false })
+        ws.onopen = () => set({ isConnected: true })
+        ws.onclose = () => set({ isConnected: false })
+        ws.onerror = () => set({ isConnected: false })
 
-          ws.onmessage = (event) => {
-            if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-              const blob = event.data instanceof Blob ? event.data : new Blob([event.data])
-              const url = URL.createObjectURL(blob)
-              set({ previewImage: url })
-              return
-            }
+        ws.onmessage = (event) => {
+          if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+            const blob = event.data instanceof Blob ? event.data : new Blob([event.data])
+            const url = URL.createObjectURL(blob)
+            set({ previewImage: url })
+            return
+          }
 
-            try {
-              const msg = JSON.parse(event.data)
-              const type = msg.type as string
-              const data = msg.data as Record<string, unknown>
+          try {
+            const msg = JSON.parse(event.data)
+            const type = msg.type as string
+            const data = msg.data as Record<string, unknown>
 
-              switch (type) {
-                case 'progress': {
-                  const value = data.value as number
-                  const max = data.max as number
-                  set({
-                    isGenerating: true,
-                    progress: {
-                      value,
-                      max,
-                      percentage: max > 0 ? Math.round((value / max) * 100) : 0,
-                    },
-                  })
-                  break
-                }
+            switch (type) {
+              case 'progress': {
+                const value = data.value as number
+                const max = data.max as number
+                set({
+                  isGenerating: true,
+                  progress: {
+                    value,
+                    max,
+                    percentage: max > 0 ? Math.round((value / max) * 100) : 0,
+                  },
+                })
+                break
+              }
 
-                case 'execution_start': {
-                  set({
-                    isGenerating: true,
-                    progress: null,
-                    currentPromptId: data.prompt_id as string,
-                    activeClientId: null, // will be reconciled on queue/status if needed
-                  })
-                  break
-                }
+              case 'execution_start': {
+                set({
+                  isGenerating: true,
+                  progress: null,
+                  currentPromptId: data.prompt_id as string,
+                  activeClientId: null, // will be reconciled on queue/status if needed
+                })
+                break
+              }
 
-                case 'executed': {
-                  const output = data.output as Record<string, unknown> | undefined
-                  const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
-                  if (images && images.length > 0) {
-                    const img = images[0]
-                    const baseUrl = resolveComfyUrl(comfyUrl)
-                    const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
-                    
-                    set((state) => {
-                      const nextImages = [viewUrl, ...state.batchImages.filter((x) => x !== viewUrl)].slice(0, 8)
-                      localStorage.setItem('prompt-surgeon-batch-images', JSON.stringify(nextImages))
-                      localStorage.setItem('prompt-surgeon-selected-img', viewUrl)
-                      return {
-                        previewImage: viewUrl,
-                        batchImages: nextImages,
-                        selectedImg: viewUrl,
-                        isGenerating: false,
-                        currentPromptId: null,
-                        activeClientId: null,
-                      }
-                    })
-                    localStorage.removeItem('prompt-surgeon-current-prompt-id')
-                    get().fetchHistory()
-                  }
-                  break
-                }
-
-                case 'execution_complete':
-                  set({
-                    isGenerating: false,
-                    progress: { value: 1, max: 1, percentage: 100 },
-                    currentPromptId: null,
-                    activeClientId: null,
+              case 'executed': {
+                const output = data.output as Record<string, unknown> | undefined
+                const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
+                if (images && images.length > 0) {
+                  const img = images[0]
+                  const baseUrl = resolveComfyUrl(comfyUrl)
+                  const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+                  
+                  set((state) => {
+                    const nextImages = [viewUrl, ...state.batchImages.filter((x) => x !== viewUrl)].slice(0, 8)
+                    localStorage.setItem('prompt-surgeon-batch-images', JSON.stringify(nextImages))
+                    localStorage.setItem('prompt-surgeon-selected-img', viewUrl)
+                    return {
+                      previewImage: viewUrl,
+                      batchImages: nextImages,
+                      selectedImg: viewUrl,
+                      isGenerating: false,
+                      currentPromptId: null,
+                      activeClientId: null,
+                    }
                   })
                   localStorage.removeItem('prompt-surgeon-current-prompt-id')
                   get().fetchHistory()
-                  break
-
-                case 'execution_error':
-                  set({
-                    isGenerating: false,
-                    progress: null,
-                    currentPromptId: null,
-                    activeClientId: null,
-                  })
-                  localStorage.removeItem('prompt-surgeon-current-prompt-id')
-                  break
+                }
+                break
               }
-            } catch (e) {
-              console.error('Failed to parse WebSocket message:', e)
+
+              case 'execution_complete':
+                set({
+                  isGenerating: false,
+                  progress: { value: 1, max: 1, percentage: 100 },
+                  currentPromptId: null,
+                  activeClientId: null,
+                })
+                localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                get().fetchHistory()
+                break
+
+              case 'execution_error':
+                set({
+                  isGenerating: false,
+                  progress: null,
+                  currentPromptId: null,
+                  activeClientId: null,
+                })
+                localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                break
             }
+          } catch (e) {
+            console.error('Failed to parse WebSocket message:', e)
           }
-        })
-        .catch((e) => {
-          console.error('Failed to initialize ComfyUI WebSocket store:', e)
-        })
-        .finally(() => {
-          isInitializing = false
-        })
+        }
+      }
+
+      const storedUrl = localStorage.getItem('prompt-surgeon-comfy-url')
+      if (storedUrl) {
+        initConnection(storedUrl)
+        isInitializing = false
+      } else {
+        configApi.get()
+          .then((config) => {
+            const url = (config && config.comfy_url) ? config.comfy_url : 'http://localhost:8188'
+            initConnection(url)
+          })
+          .catch((e) => {
+            console.error('Failed to initialize ComfyUI WebSocket store:', e)
+          })
+          .finally(() => {
+            isInitializing = false
+          })
+      }
     },
 
     setFilterOwnSession: (filter: boolean) => {
@@ -620,6 +634,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       } catch (e) {
         console.error('Failed to fetch comfy history:', e)
       }
+    },
+
+    setComfyUrl: (url: string) => {
+      localStorage.setItem('prompt-surgeon-comfy-url', url)
+      set({ comfyUrl: url })
+      if (ws) {
+        ws.close()
+        ws = null
+      }
+      get().initialize()
     },
   }
 })

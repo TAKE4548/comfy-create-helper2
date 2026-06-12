@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  Zap, Shuffle, Lock, Download, Save,
+  Zap, Shuffle, Lock, Download, Camera, Settings,
   Loader2, ChevronRight, Wand2, AlertCircle, CheckCircle2,
   ImageOff, ScanLine, Plus, X,
 } from 'lucide-react'
@@ -88,6 +88,7 @@ export function GeneratePage() {
     isConnected,
     isGenerating,
     progress,
+    previewImage,
     activeClientId,
     filterOwnSession,
     setFilterOwnSession,
@@ -110,9 +111,20 @@ export function GeneratePage() {
     addAppliedAsset,
     removeAppliedAsset,
     toggleAppliedAsset,
+    comfyUrl,
+    setComfyUrl,
   } = useGenerationStore()
 
   const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [localComfyUrl, setLocalComfyUrl] = useState('')
+  const [thumbnailTab, setThumbnailTab] = useState<'history' | 'snapshots'>('history')
+
+  useEffect(() => {
+    if (comfyUrl) {
+      setLocalComfyUrl(comfyUrl)
+    }
+  }, [comfyUrl])
 
   const { data: snapshots } = useQuery({
     queryKey: ['snapshots', selectedWorkflowId],
@@ -462,8 +474,45 @@ export function GeneratePage() {
     const found = snapshots?.find((s) => s.image_path === img)
     return found ? found.id : null
   })
-  const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0
+  const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0 || (!!snapshots && snapshots.length > 0)
   const hasHistory = !!selectedWorkflowId && !!snapshots && snapshots.length > 0
+
+  const handlePrevImg = () => {
+    if (!displayImages || displayImages.length === 0) return
+    const curIdx = displayImages.indexOf(selectedImg || '')
+    if (curIdx > 0) {
+      setSelectedImg(displayImages[curIdx - 1])
+    }
+  }
+
+  const handleNextImg = () => {
+    if (!displayImages || displayImages.length === 0) return
+    const curIdx = displayImages.indexOf(selectedImg || '')
+    if (curIdx !== -1 && curIdx < displayImages.length - 1) {
+      setSelectedImg(displayImages[curIdx + 1])
+    }
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      if (activeEl) {
+        const tag = activeEl.tagName.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || activeEl.getAttribute('contenteditable') === 'true') {
+          return
+        }
+      }
+
+      if (e.key === 'ArrowLeft') {
+        handlePrevImg()
+      } else if (e.key === 'ArrowRight') {
+        handleNextImg()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedImg, displayImages])
 
   // Group mappings by type
   const validMappings = workflow?.mappings.filter((m) => m.role !== null && m.role !== undefined) ?? []
@@ -514,13 +563,93 @@ export function GeneratePage() {
               id="workflow-select-mobile"
               value={selectedWorkflowId ?? ''}
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-              className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[50%] truncate"
+              className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[40%] truncate"
             >
               <option value="">Select workflow…</option>
               {workflows?.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
+            {/* Mobile Settings Button and Popover */}
+            <div className="relative flex-shrink-0 flex items-center">
+              <button
+                id="settings-toggle-btn-mobile"
+                type="button"
+                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                className={`p-1.5 rounded-md border transition-all ${
+                  isSettingsOpen 
+                    ? 'border-accent-green bg-accent-green/10 text-accent-green' 
+                    : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'
+                }`}
+                title="ComfyUI設定"
+              >
+                <Settings size={14} />
+              </button>
+              {isSettingsOpen && (
+                <div className="absolute left-[-120px] top-full mt-2 w-72 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-4 z-50 space-y-4 animate-fade-in">
+                  <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-2">
+                    <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                      <Settings size={12} className="text-accent-green" />
+                      ComfyUI設定
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-zinc-400 font-medium">ComfyUI URL</label>
+                    <input
+                      type="text"
+                      value={localComfyUrl}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setLocalComfyUrl(val)
+                        setComfyUrl(val)
+                      }}
+                      placeholder="http://localhost:8188"
+                      className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+                    />
+                  </div>
+
+                  {selectedWorkflowId && workflow && (
+                    <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-zinc-400 font-medium">ワークフロー設定</span>
+                        <span className="text-[9px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSaveDefaultParams()
+                            setIsSettingsOpen(false)
+                          }}
+                          disabled={saveDefaultParamsMutation.isPending}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 text-accent-green text-[10px] font-semibold disabled:opacity-40"
+                        >
+                          デフォルト保存
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleResetDefaultParams()
+                            setIsSettingsOpen(false)
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-[10px] font-semibold"
+                        >
+                          リセット
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <select
               id="snapshot-history-select-mobile"
               value={selectedSnapshotId}
@@ -574,33 +703,20 @@ export function GeneratePage() {
 
         {/* Main Preview */}
         <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
-          {isGeneratingHere ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-              <Loader2 size={24} className="animate-spin text-accent-green" />
-              {progress && (
-                <div className="w-48 space-y-2">
-                  <div className="flex justify-between text-[10px] text-zinc-400">
-                    <span>Processing…</span>
-                    <span>{progress.percentage}%</span>
-                  </div>
-                  <div className="h-1 bg-surface rounded-full overflow-hidden">
-                    <div
-                      className="h-full progress-shimmer rounded-full transition-all duration-200"
-                      style={{ width: `${progress.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : selectedImg ? (
-            <div className="relative w-full h-full">
+          {(previewImage || selectedImg) ? (
+            <div className="relative w-full h-full flex items-center justify-center">
               <img
-                src={selectedImg}
+                src={previewImage || selectedImg!}
                 alt="Generated"
                 className="w-full h-full object-contain"
               />
+              {isGeneratingHere && (
+                <div className="absolute top-2 right-2 bg-surface-2/80 backdrop-blur p-1.5 rounded-full border border-white/5 shadow-md">
+                  <Loader2 size={16} className="animate-spin text-accent-green" />
+                </div>
+              )}
               <a
-                href={selectedImg}
+                href={previewImage || selectedImg!}
                 download="generated.png"
                 id="download-btn-mobile"
                 className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface/80 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-medium hover:bg-surface"
@@ -610,50 +726,120 @@ export function GeneratePage() {
               </a>
             </div>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
-              <ImageOff size={32} strokeWidth={1} />
-              <p className="text-xs">No image yet</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-650">
+              {isGeneratingHere ? (
+                <Loader2 size={24} className="animate-spin text-accent-green" />
+              ) : (
+                <ImageOff size={32} strokeWidth={1} />
+              )}
+              <p className="text-xs">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
+            </div>
+          )}
+          {isGeneratingHere && progress && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-950 overflow-hidden">
+              <div
+                className="h-full bg-accent-green progress-shimmer transition-all duration-200"
+                style={{ width: `${progress.percentage}%` }}
+              />
             </div>
           )}
         </div>
 
-        {/* Thumbnail Strip */}
+        {/* Thumbnail Strip with Tabs */}
         {showStrip && (
-          <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] text-zinc-400 font-medium">History</span>
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  id="session-filter-toggle-mobile"
-                  checked={filterOwnSession}
-                  onChange={(e) => setFilterOwnSession(e.target.checked)}
-                  className="w-3 h-3 rounded accent-accent-green cursor-pointer"
-                />
-                <span className="text-[10px] text-zinc-500">自セッションのみ表示</span>
-              </label>
-            </div>
-            {displayImages.length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                {displayImages.map((img, i) => (
-                  <button
-                    key={i}
-                    id={`thumb-mobile-${i}`}
-                    onClick={() => {
-                      setSelectedImg(img)
-                      setModalPreviewIndex(i)
-                      setIsModalPreviewOpen(true)
-                    }}
-                    className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${
-                      selectedImg === img ? 'border-accent-green' : 'border-transparent'
-                    }`}
-                  >
-                    <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
+          <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-2 space-y-2">
+            <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1 flex-wrap gap-2">
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setThumbnailTab('history')}
+                  className={`text-[11px] font-semibold pb-0.5 border-b-2 transition-all ${
+                    thumbnailTab === 'history'
+                      ? 'border-accent-green text-zinc-200'
+                      : 'border-transparent text-zinc-550'
+                  }`}
+                >
+                  履歴
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setThumbnailTab('snapshots')}
+                  className={`text-[11px] font-semibold pb-0.5 border-b-2 transition-all ${
+                    thumbnailTab === 'snapshots'
+                      ? 'border-accent-green text-zinc-200'
+                      : 'border-transparent text-zinc-550'
+                  }`}
+                >
+                  スナップショット
+                </button>
               </div>
+              
+              {thumbnailTab === 'history' && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="session-filter-toggle-mobile"
+                    checked={filterOwnSession}
+                    onChange={(e) => setFilterOwnSession(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer"
+                  />
+                  <span className="text-[10px] text-zinc-500">自セッションのみ</span>
+                </label>
+              )}
+            </div>
+            
+            {thumbnailTab === 'history' ? (
+              displayImages.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                  {displayImages.map((img, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      id={`thumb-mobile-${i}`}
+                      onClick={() => {
+                        setSelectedImg(img)
+                        setModalPreviewIndex(i)
+                        setIsModalPreviewOpen(true)
+                      }}
+                      className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${
+                        selectedImg === img ? 'border-accent-green' : 'border-transparent'
+                      }`}
+                    >
+                      <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-zinc-650 py-1">No history images found for this session.</p>
+              )
             ) : (
-              <p className="text-[10px] text-zinc-600 py-1">No history images found for this session.</p>
+              snapshots && snapshots.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                  {snapshots.map((snap) => (
+                    <button
+                      key={snap.id}
+                      type="button"
+                      onClick={() => handleLoadSnapshot(snap.id)}
+                      className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded border border-[rgba(255,255,255,0.06)] bg-surface-2/40 hover:bg-surface-2 transition-all w-20 group"
+                    >
+                      <div className="w-16 h-16 rounded overflow-hidden bg-black/40">
+                        {snap.image_path ? (
+                          <img src={snap.image_path} alt="Snapshot" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-650">
+                            <ImageOff size={14} />
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[8px] text-zinc-500 text-center truncate w-full font-mono">
+                        {getPromptPrefix(snap.params) || `Snap #${snap.id}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-zinc-650 py-1 italic">No snapshots available.</p>
+              )
             )}
           </div>
         )}
@@ -904,32 +1090,6 @@ export function GeneratePage() {
             )}
           </div>
 
-          {/* Workflow Settings Card */}
-          {selectedWorkflowId && workflow && (
-            <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/60 p-3.5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-300">ワークフロー設定</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  id="save-workflow-defaults-btn-mobile"
-                  onClick={handleSaveDefaultParams}
-                  disabled={saveDefaultParamsMutation.isPending}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 hover:border-accent-green/40 text-accent-green text-xs font-semibold disabled:opacity-40"
-                >
-                  デフォルト保存
-                </button>
-                <button
-                  id="reset-workflow-defaults-btn-mobile"
-                  onClick={handleResetDefaultParams}
-                  disabled={saveDefaultParamsMutation.isPending}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-xs font-semibold"
-                >
-                  リセット
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Mapping Error Panel */}
           {selectedWorkflowId && invalidMappings.length > 0 && (
@@ -1073,7 +1233,7 @@ export function GeneratePage() {
             disabled={!selectedImg}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 transition-all"
           >
-            <Save size={15} />
+            <Camera size={15} />
           </button>
         </div>
       </div>
@@ -1105,6 +1265,86 @@ export function GeneratePage() {
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
+            {/* Desktop Settings Button and Popover */}
+            <div className="relative flex-shrink-0 flex items-center">
+              <button
+                id="settings-toggle-btn"
+                type="button"
+                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                className={`p-1.5 rounded-md border transition-all ${
+                  isSettingsOpen 
+                    ? 'border-accent-green bg-accent-green/10 text-accent-green' 
+                    : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'
+                }`}
+                title="ComfyUI設定"
+              >
+                <Settings size={14} />
+              </button>
+              {isSettingsOpen && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-4 z-50 space-y-4 animate-fade-in">
+                  <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-2">
+                    <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                      <Settings size={12} className="text-accent-green" />
+                      ComfyUI設定
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-zinc-400 font-medium">ComfyUI URL</label>
+                    <input
+                      type="text"
+                      value={localComfyUrl}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setLocalComfyUrl(val)
+                        setComfyUrl(val)
+                      }}
+                      placeholder="http://localhost:8188"
+                      className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+                    />
+                  </div>
+
+                  {selectedWorkflowId && workflow && (
+                    <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-zinc-400 font-medium">ワークフロー設定</span>
+                        <span className="text-[9px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSaveDefaultParams()
+                            setIsSettingsOpen(false)
+                          }}
+                          disabled={saveDefaultParamsMutation.isPending}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 text-accent-green text-[10px] font-semibold disabled:opacity-40"
+                        >
+                          デフォルト保存
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleResetDefaultParams()
+                            setIsSettingsOpen(false)
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-[10px] font-semibold"
+                        >
+                          リセット
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <select
               id="snapshot-history-select"
               value={selectedSnapshotId}
@@ -1257,43 +1497,6 @@ export function GeneratePage() {
             )}
           </div>
 
-          {/* Workflow Settings Card */}
-          {selectedWorkflowId && workflow && (
-            <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/60 p-3.5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-300">ワークフロー設定</span>
-                <span className="text-[10px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  id="save-workflow-defaults-btn"
-                  onClick={handleSaveDefaultParams}
-                  disabled={saveDefaultParamsMutation.isPending}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 hover:border-accent-green/40 text-accent-green text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  {saveDefaultParamsMutation.isPending ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin" />
-                      保存中…
-                    </>
-                  ) : (
-                    <>
-                      <Save size={12} />
-                      デフォルト保存
-                    </>
-                  )}
-                </button>
-                <button
-                  id="reset-workflow-defaults-btn"
-                  onClick={handleResetDefaultParams}
-                  disabled={saveDefaultParamsMutation.isPending}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  デフォルトにリセット
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Mapping Error Panel */}
           {selectedWorkflowId && invalidMappings.length > 0 && (
@@ -1593,35 +1796,23 @@ export function GeneratePage() {
       {/* Right Column */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Main Preview */}
-        <div className="flex-1 relative overflow-hidden bg-grid">
-          {isGeneratingHere ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-              <Loader2 size={32} className="animate-spin text-accent-green" />
-              {progress && (
-                <div className="w-64 space-y-2">
-                  <div className="flex justify-between text-xs text-zinc-400">
-                    <span>Processing…</span>
-                    <span>{progress.percentage}%</span>
-                  </div>
-                  <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                    <div
-                      className="h-full progress-shimmer rounded-full transition-all duration-200"
-                      style={{ width: `${progress.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : selectedImg ? (
-            <div className="relative h-full group">
+        <div 
+          className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none"
+          tabIndex={0}
+        >
+          {/* Display image if previewImage or selectedImg is available */}
+          {(previewImage || selectedImg) ? (
+            <div className="relative h-[70%] w-[70%] flex items-center justify-center border border-zinc-800 shadow-2xl rounded-lg bg-surface-2 overflow-hidden group">
               <img
-                src={selectedImg}
+                src={previewImage || selectedImg!}
                 alt="Generated"
                 className="w-full h-full object-contain"
               />
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6 gap-3">
+              
+              {/* Overlay elements */}
+              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6 gap-3 bg-black/40">
                 <a
-                  href={selectedImg}
+                  href={previewImage || selectedImg!}
                   download="generated.png"
                   id="download-btn"
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface/90 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-sm font-medium hover:bg-surface"
@@ -1630,48 +1821,157 @@ export function GeneratePage() {
                   Download
                 </a>
               </div>
+
+              {/* Hover Navigation Arrows */}
+              {displayImages.length > 1 && (
+                <>
+                  {displayImages.indexOf(selectedImg || '') > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handlePrevImg()
+                      }}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <ChevronRight size={20} className="rotate-180" />
+                    </button>
+                  )}
+                  {displayImages.indexOf(selectedImg || '') < displayImages.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleNextImg()
+                      }}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Loader spinner icon in corner if generating */}
+              {isGeneratingHere && (
+                <div className="absolute top-4 right-4 bg-surface-2/80 backdrop-blur p-2 rounded-full border border-white/10 shadow-lg">
+                  <Loader2 size={20} className="animate-spin text-accent-green" />
+                </div>
+              )}
             </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-600">
-              <ImageOff size={40} strokeWidth={1} />
-              <p className="text-sm">No image yet</p>
+              {isGeneratingHere ? (
+                <Loader2 size={40} className="animate-spin text-accent-green" />
+              ) : (
+                <ImageOff size={40} strokeWidth={1} />
+              )}
+              <p className="text-sm">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
+            </div>
+          )}
+
+          {/* 4px thin progress bar at bottom */}
+          {isGeneratingHere && progress && (
+            <div className="absolute bottom-0 left-0 right-0 h-[4px] bg-zinc-950 overflow-hidden z-10">
+              <div
+                className="h-full bg-accent-green progress-shimmer transition-all duration-200"
+                style={{ width: `${progress.percentage}%` }}
+              />
             </div>
           )}
         </div>
 
-        {/* Thumbnail Strip */}
+        {/* Thumbnail Strip with Tabs */}
         {showStrip && (
-          <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-zinc-400 font-medium">History</span>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  id="session-filter-toggle"
-                  checked={filterOwnSession}
-                  onChange={(e) => setFilterOwnSession(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
-                />
-                <span className="text-[11px] text-zinc-400">自セッションのみ表示</span>
-              </label>
-            </div>
-            {displayImages.length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                {displayImages.map((img, i) => (
-                  <button
-                    key={i}
-                    id={`thumb-${i}`}
-                    onClick={() => setSelectedImg(img)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${
-                      selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'
-                    }`}
-                  >
-                    <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
+          <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1.5">
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setThumbnailTab('history')}
+                  className={`text-xs font-semibold pb-1 border-b-2 transition-all ${
+                    thumbnailTab === 'history'
+                      ? 'border-accent-green text-zinc-150'
+                      : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  履歴 (History)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setThumbnailTab('snapshots')}
+                  className={`text-xs font-semibold pb-1 border-b-2 transition-all ${
+                    thumbnailTab === 'snapshots'
+                      ? 'border-accent-green text-zinc-150'
+                      : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  スナップショット (Snapshots)
+                </button>
               </div>
+              
+              {thumbnailTab === 'history' && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="session-filter-toggle"
+                    checked={filterOwnSession}
+                    onChange={(e) => setFilterOwnSession(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
+                  />
+                  <span className="text-[11px] text-zinc-400">自セッションのみ表示</span>
+                </label>
+              )}
+            </div>
+            
+            {thumbnailTab === 'history' ? (
+              displayImages.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                  {displayImages.map((img, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      id={`thumb-${i}`}
+                      onClick={() => setSelectedImg(img)}
+                      className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${
+                        selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'
+                      }`}
+                    >
+                      <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
+              )
             ) : (
-              <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
+              snapshots && snapshots.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                  {snapshots.map((snap) => (
+                    <button
+                      key={snap.id}
+                      type="button"
+                      onClick={() => handleLoadSnapshot(snap.id)}
+                      className="flex-shrink-0 flex flex-col items-center gap-1.5 p-1 rounded-md border border-[rgba(255,255,255,0.06)] hover:border-accent-green/45 bg-surface-2/40 hover:bg-surface-2 transition-all w-24 group"
+                    >
+                      <div className="w-20 h-20 rounded overflow-hidden bg-black/40">
+                        {snap.image_path ? (
+                          <img src={snap.image_path} alt="Snapshot" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-650">
+                            <ImageOff size={16} />
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[9px] text-zinc-400 text-center truncate w-full font-mono">
+                        {getPromptPrefix(snap.params) || `Snap #${snap.id}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-650 py-2 italic">No snapshots available for this workflow.</p>
+              )
             )}
           </div>
         )}
@@ -1702,7 +2002,7 @@ export function GeneratePage() {
             disabled={!selectedImg}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            <Save size={15} />
+            <Camera size={15} />
             <span className="hidden sm:inline">Save Snapshot</span>
           </button>
         </div>

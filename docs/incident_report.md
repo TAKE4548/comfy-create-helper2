@@ -1,29 +1,24 @@
 # 障害調査報告書 (Incident Report)
 
 ## 障害概要
-1. 生成画面にて「Batch Size」を 2 以上に設定して生成を行っても、ComfyUI に対する生成リクエストが1回しか送信されない。
-2. 自身が画像生成を開始し「生成待機中 / 生成中」の状態になると、生成ボタン（Generate Batch）が非活性（disabled）になり、ComfyUI のサーバー側キューに後続の生成ジョブを追加（キューイング）することができない。
+スナップショット一覧のアルバム（Albums）ページが空で何も表示されない。404エラーになるわけではない。
 
 ## 再現手順
-1. アプリケーションの生成画面を開く。
-2. パラメータ設定領域で `Batch Size` を `3` などの 2 以上の値に設定する。
-3. 「Generate Batch」ボタンをクリックする.
-4. ネットワーク通信（`/prompt` へのリクエスト）が 1 回しか行われていないことを確認する。
-5. 生成処理が開始されると、「Generate Batch」ボタンがグレーアウトされ、クリックできなくなることを確認する。
+1. アプリケーションの「History」画面を開く。
+2. 画面右上または表示切り替えで「Albums」タブを選択する。
+3. アルバムリスト領域が真っ白（または空）になり、作成済みのアルバムが表示されないことを確認する。
 
 ## 根本原因 (Root Cause Analysis)
-1. **バッチサイズに対するループ処理の実装漏れ**:
-   * [GeneratePage.tsx (L416-L455)](../frontend/src/pages/GeneratePage.tsx#L416-L455) の `handleGenerate` 関数において、`batchSize` パラメータが取得されているものの、それに基づいたループ処理（複数回のリクエスト送信）が実装されておらず、単一の `await queuePrompt(wfJson)` のみ実行されているため。
-   * また、複数回送信するにあたって、シード値（`seedMode` が `random` の場合は毎回乱数、`fixed` の場合はインクリメントなど）を各リクエストごとに動的に変更する制御も存在しないため。
-
-2. **自セッション生成中のボタン無効化条件**:
-   * [GeneratePage.tsx (L1053, L1682)](../frontend/src/pages/GeneratePage.tsx#L1053) において、ボタンの無効化条件が `disabled={(isGenerating && activeClientId === clientId) || !selectedWorkflowId}` となっており、自セッションが生成中の場合にボタンを無効化するロジックになっているため。
-   * 本来 ComfyUI はキュー（Queue）による非同期並行処理をサポートしており、自身が生成中であっても後続のジョブをキューに順次投入できる設計にすべきであるが、UI側で不当に制限がかかっている。
+1. **APIレスポンスのスキーマ不整合**:
+   * バックエンドのアルバム一覧API `GET /api/albums`（[albums.py:L12-L14](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/albums.py#L12-L14)）のレスポンスモデルに `list[schemas.AlbumSummary]` が指定されている。
+   * [schemas.py:L193-L198](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/schemas.py#L193-L198) において、`AlbumSummary` は `id`、`name`、`created_at` のみを持ち、`items` フィールドを含んでいない。
+2. **フロントエンドでの例外発生（レンダリングエラー）**:
+   * フロントエンドの [HistoryPage.tsx (L220-L236)](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/HistoryPage.tsx#L220-L236) では、APIから返却された各アルバム情報に対し、`album.items.slice(0, 3)` や `album.items.length` のように `items` 配列が存在することを前提としたアクセスを行っている。
+   * APIレスポンスに `items` が含まれないため `album.items` が `undefined` となり、レンダリング時に `Cannot read properties of undefined (reading 'slice')` 等のJavaScriptランタイムエラー（または例外）が発生し、アルバムタブ内の描画が失敗して何も表示されなくなる。
 
 ## 障害分類
-* **分類**: **Type A (Implementation Bug / 実装バグ・仕様不一致)**
-  * 設計書 `docs/design/REQ-009.md` の「他セッションのジョブが実行されている間でも、ComfyUI のキューに順次投入されるため『Generate Batch』ボタンは無効化せず、そのままキューイング可能」という基本方針に対し、自セッションの生成中のみ無効化されるという実装の不整合が生じているため。
+* **分類**: **Type A (Implementation Bug / 実装バグ)**
+  * バックエンドとフロントエンドの間でデータ構造（スキーマ定義）の想定に乖離があり、実行時に参照エラーを引き起こす実装上の不備であるため。
 
 ## 対策方針（※調査フェーズのため実装は行いません）
-1. `handleGenerate` 内で `batchSize` の数だけループし、各ループごとにシード値を更新（ランダム時は再生成、固定時は +1 ずつインクリメント等）した上で `queuePrompt` を送信する。
-2. 生成ボタンの無効化条件から自セッションの生成中判定（`isGenerating && activeClientId === clientId`）を除外し、ワークフローの選択状態や接続状態のみに基づいて活性・非活性を制御する。
+* `backend/app/routers/albums.py` の `list_albums` エンドポイントのレスポンスモデルを、`list[schemas.AlbumSummary]` から `list[schemas.AlbumRead]`（または `items` を含む新しいサマリースキーマ）に変更し、フロントエンドが必要とする `items` データを返却するように修正する。
