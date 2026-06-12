@@ -415,43 +415,45 @@ export function GeneratePage() {
 
   const handleGenerate = async () => {
     if (!workflow) return
-    const wfJson = { ...workflow.json_body } as Record<string, unknown>
-    // Inject params into workflow JSON
-    workflow.mappings.forEach((m) => {
-      if (!m.role || !m.param_name) return
-      const node = wfJson[m.node_id] as Record<string, unknown> | undefined
-      if (!node) return
-      const inputs = node.inputs as Record<string, unknown>
-      if (!inputs) return
-      let val: string | number = ''
-      if (m.input_type === 'int') {
-        val = parseInt(paramValues[m.role] || '0')
-      } else if (m.input_type === 'float') {
-        val = parseFloat(paramValues[m.role] || '0.0')
-      } else if (m.input_type === 'textarea') {
-        val = paramValues[m.role] || ''
-      } else {
-        val = paramValues[m.role] || ''
-      }
-      
-      if (inputs[m.param_name] !== undefined) {
-        inputs[m.param_name] = val
-      } else if (inputs['value'] !== undefined) {
-        inputs['value'] = val
-      } else {
-        inputs[m.param_name] = val
-      }
-    })
-    // Inject seed
-    const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
-    if (seedNode) {
-      const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
-      if (node) {
+    for (let i = 0; i < batchSize; i++) {
+      const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
+      // Inject params into workflow JSON
+      workflow.mappings.forEach((m) => {
+        if (!m.role || !m.param_name) return
+        const node = wfJson[m.node_id] as Record<string, unknown> | undefined
+        if (!node) return
         const inputs = node.inputs as Record<string, unknown>
-        inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed
+        if (!inputs) return
+        let val: string | number = ''
+        if (m.input_type === 'int') {
+          val = parseInt(paramValues[m.role] || '0')
+        } else if (m.input_type === 'float') {
+          val = parseFloat(paramValues[m.role] || '0.0')
+        } else if (m.input_type === 'textarea') {
+          val = paramValues[m.role] || ''
+        } else {
+          val = paramValues[m.role] || ''
+        }
+        
+        if (inputs[m.param_name] !== undefined) {
+          inputs[m.param_name] = val
+        } else if (inputs['value'] !== undefined) {
+          inputs['value'] = val
+        } else {
+          inputs[m.param_name] = val
+        }
+      })
+      // Inject seed
+      const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
+      if (seedNode) {
+        const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
+        if (node) {
+          const inputs = node.inputs as Record<string, unknown>
+          inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
+        }
       }
+      await queuePrompt(wfJson)
     }
-    await queuePrompt(wfJson)
   }
 
   const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
@@ -1050,13 +1052,13 @@ export function GeneratePage() {
           <button
             id="generate-btn-mobile"
             onClick={handleGenerate}
-            disabled={(isGenerating && activeClientId === clientId) || !selectedWorkflowId}
+            disabled={!selectedWorkflowId || !isConnected}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95"
           >
-            {isGenerating && activeClientId === clientId ? (
+            {isGenerating ? (
               <>
-                <Loader2 size={16} className="animate-spin" />
-                Processing…
+                <Zap size={16} />
+                Generate Batch (キュー追加)
               </>
             ) : (
               <>
@@ -1679,15 +1681,10 @@ export function GeneratePage() {
           <button
             id="generate-btn"
             onClick={handleGenerate}
-            disabled={(isGenerating && activeClientId === clientId) || !selectedWorkflowId}
+            disabled={!selectedWorkflowId || !isConnected}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95"
           >
-            {isGenerating && activeClientId === clientId ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Processing…
-              </>
-            ) : isGenerating && activeClientId !== clientId ? (
+            {isGenerating ? (
               <>
                 <Zap size={16} />
                 Generate Batch (キュー追加)
