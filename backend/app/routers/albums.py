@@ -9,9 +9,25 @@ from app import models, schemas
 router = APIRouter(prefix="/api/albums", tags=["albums"])
 
 
-@router.get("", response_model=list[schemas.AlbumSummary])
+@router.get("", response_model=list[schemas.AlbumRead])
 def list_albums(db: Session = Depends(get_db)):
-    return db.query(models.Album).order_by(models.Album.name).all()
+    albums = db.query(models.Album).order_by(models.Album.name).all()
+    return [
+        schemas.AlbumRead(
+            id=album.id,
+            name=album.name,
+            created_at=album.created_at,
+            items=[
+                schemas.AlbumItemRead(
+                    snapshot_id=item.snapshot_id,
+                    sequence_order=item.sequence_order,
+                    image_path=item.snapshot.image_path if item.snapshot else None,
+                )
+                for item in sorted(album.items, key=lambda x: x.sequence_order)
+            ],
+        )
+        for album in albums
+    ]
 
 
 @router.get("/{album_id}", response_model=schemas.AlbumRead)

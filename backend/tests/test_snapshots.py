@@ -166,6 +166,39 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertIsNotNone(target_snap.get("params"))
         self.assertEqual(target_snap["params"]["Sampler_Seed"], 12345)
         self.assertEqual(target_snap["params"]["positive_prompt"], "1girl, solo")
+    def test_list_albums_includes_items_and_image_paths(self):
+        # 既存アルバムを用意
+        album = models.Album(name="Test Album")
+        self.db.add(album)
+        self.db.commit()
+
+        # スナップショットを関連付ける
+        snap = models.Snapshot(
+            workflow_id=self.workflow.id,
+            image_path="test_album_img.png",
+            params="{}"
+        )
+        self.db.add(snap)
+        self.db.commit()
+
+        item = models.AlbumItem(
+            album_id=album.id,
+            snapshot_id=snap.id,
+            sequence_order=0
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        response = self.client.get("/api/albums")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # アルバムリストをアサート
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Test Album")
+        self.assertEqual(len(data[0]["items"]), 1)
+        self.assertEqual(data[0]["items"][0]["snapshot_id"], snap.id)
+        self.assertEqual(data[0]["items"][0]["image_path"], "test_album_img.png")
 
 
 if __name__ == "__main__":

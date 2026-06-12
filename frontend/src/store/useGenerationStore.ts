@@ -69,6 +69,8 @@ export interface GenerationState {
   selectedImg: string | null
   comfyHistoryImages: string[]
   appliedAssets: Record<string, AppliedAsset[]>
+  queueRunning: Array<[number, string, any, { client_id?: string }, any]>
+  queuePending: Array<[number, string, any, { client_id?: string }, any]>
   
   initialize: () => void
   setFilterOwnSession: (filter: boolean) => void
@@ -85,6 +87,7 @@ export interface GenerationState {
   cancelGeneration: () => void
   clearPreview: () => void
   fetchHistory: () => Promise<void>
+  fetchQueue: () => Promise<void>
   setComfyUrl: (url: string) => void // 追加
 }
 
@@ -212,7 +215,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const queueRes = await fetch(`${url}/queue`)
       if (queueRes.ok) {
         const queueData = (await queueRes.json()) as ComfyQueueResponse
-        const running = queueData.queue_running
+        const running = queueData.queue_running || []
+        const pending = queueData.queue_pending || []
+        
+        set({
+          queueRunning: running,
+          queuePending: pending,
+        })
         
         const activeJob = running.length > 0 ? running[0] : null
         if (activeJob) {
@@ -263,6 +272,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     selectedImg: verifiedSelectedImg,
     comfyHistoryImages: [],
     appliedAssets: storedAppliedAssets,
+    queueRunning: [],
+    queuePending: [],
 
     initialize: () => {
       if (isInitializing || ws) return
@@ -281,7 +292,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
         ws.binaryType = 'blob'
 
-        ws.onopen = () => set({ isConnected: true })
+        ws.onopen = () => {
+          set({ isConnected: true })
+          get().fetchQueue()
+        }
         ws.onclose = () => set({ isConnected: false })
         ws.onerror = () => set({ isConnected: false })
 
@@ -299,6 +313,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             const data = msg.data as Record<string, unknown>
 
             switch (type) {
+              case 'status': {
+                get().fetchQueue()
+                break
+              }
+
               case 'progress': {
                 const value = data.value as number
                 const max = data.max as number
@@ -320,6 +339,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   currentPromptId: data.prompt_id as string,
                   activeClientId: null, // will be reconciled on queue/status if needed
                 })
+                get().fetchQueue()
                 break
               }
 
@@ -347,6 +367,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   localStorage.removeItem('prompt-surgeon-current-prompt-id')
                   get().fetchHistory()
                 }
+                get().fetchQueue()
                 break
               }
 
@@ -359,6 +380,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 })
                 localStorage.removeItem('prompt-surgeon-current-prompt-id')
                 get().fetchHistory()
+                get().fetchQueue()
                 break
 
               case 'execution_error':
@@ -369,6 +391,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   activeClientId: null,
                 })
                 localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                get().fetchQueue()
                 break
             }
           } catch (e) {
@@ -577,6 +600,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (promptId) {
           localStorage.setItem('prompt-surgeon-current-prompt-id', promptId)
         }
+        await get().fetchQueue()
         return promptId
       } catch (e) {
         console.error('Failed to queue prompt:', e)
@@ -595,6 +619,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           activeClientId: null,
         })
         localStorage.removeItem('prompt-surgeon-current-prompt-id')
+        await get().fetchQueue()
       } catch (e) {
         console.error('Failed to cancel:', e)
       }
@@ -633,6 +658,23 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
       } catch (e) {
         console.error('Failed to fetch comfy history:', e)
+      }
+    },
+
+    fetchQueue: async () => {
+      if (!comfyUrl) return
+      const resolvedUrl = resolveComfyUrl(comfyUrl)
+      try {
+        const res = await fetch(`${resolvedUrl}/queue`)
+        if (res.ok) {
+          const data = (await res.json()) as ComfyQueueResponse
+          set({
+            queueRunning: data.queue_running || [],
+            queuePending: data.queue_pending || [],
+          })
+        }
+      } catch (e) {
+        console.error('Failed to fetch comfy queue:', e)
       }
     },
 

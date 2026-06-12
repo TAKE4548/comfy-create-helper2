@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Camera, Settings,
   Loader2, ChevronRight, Wand2, AlertCircle, CheckCircle2,
@@ -113,6 +113,8 @@ export function GeneratePage() {
     toggleAppliedAsset,
     comfyUrl,
     setComfyUrl,
+    queueRunning,
+    queuePending,
   } = useGenerationStore()
 
   const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
@@ -469,6 +471,18 @@ export function GeneratePage() {
   }
 
   const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
+  
+  const totalQueueCount = useMemo(() => {
+    const filterJob = (job: any) => {
+      if (!filterOwnSession) return true
+      const extra = job[3]
+      return extra?.client_id === clientId
+    }
+    const runningCount = queueRunning.filter(filterJob).length
+    const pendingCount = queuePending.filter(filterJob).length
+    return runningCount + pendingCount
+  }, [queueRunning, queuePending, filterOwnSession, clientId])
+
   const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
   const snapshotIdsForDisplay = displayImages.map((img) => {
     const found = snapshots?.find((s) => s.image_path === img)
@@ -683,23 +697,29 @@ export function GeneratePage() {
         </div>
 
         {/* Progress Line */}
-        {isGeneratingHere && progress && (
-          <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
-            <div className="flex items-center gap-1.5 min-w-0">
+        <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {isGeneratingHere ? (
               <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
-              <span className="truncate">Generating...</span>
-            </div>
-            <div className="flex items-center gap-2 flex-1 max-w-[150px]">
-              <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
-                <div
-                  className="h-full bg-accent-green progress-shimmer transition-all duration-200"
-                  style={{ width: `${progress.percentage}%` }}
-                />
-              </div>
-              <span className="font-mono text-accent-green whitespace-nowrap">{progress.percentage}%</span>
-            </div>
+            ) : (
+              <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />
+            )}
+            <span className="truncate">{isGeneratingHere ? 'Generating...' : 'Ready'}</span>
+            <span className="text-zinc-600">|</span>
+            <span className="font-semibold text-zinc-350">Queue: {totalQueueCount}</span>
           </div>
-        )}
+          <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+            <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
+              <div
+                className="h-full bg-accent-green progress-shimmer transition-all duration-200"
+                style={{ width: `${isGeneratingHere && progress ? progress.percentage : 0}%` }}
+              />
+            </div>
+            <span className="font-mono text-accent-green whitespace-nowrap">
+              {isGeneratingHere && progress ? progress.percentage : 0}%
+            </span>
+          </div>
+        </div>
 
         {/* Main Preview */}
         <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
@@ -1870,15 +1890,34 @@ export function GeneratePage() {
             </div>
           )}
 
-          {/* 4px thin progress bar at bottom */}
-          {isGeneratingHere && progress && (
-            <div className="absolute bottom-0 left-0 right-0 h-[4px] bg-zinc-950 overflow-hidden z-10">
+          {/* Status bar at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-1.5">
+            {/* 4px thin progress bar */}
+            <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
               <div
                 className="h-full bg-accent-green progress-shimmer transition-all duration-200"
-                style={{ width: `${progress.percentage}%` }}
+                style={{ width: `${isGeneratingHere && progress ? progress.percentage : 0}%` }}
               />
             </div>
-          )}
+            {/* Status text */}
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
+              <div className="flex items-center gap-2">
+                {isGeneratingHere ? (
+                  <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" />
+                ) : (
+                  <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />
+                )}
+                <span className="font-semibold text-zinc-300">
+                  {isGeneratingHere ? 'Generating...' : 'Ready'}
+                </span>
+                <span className="text-zinc-700">|</span>
+                <span className="text-zinc-350">Queue: {totalQueueCount}</span>
+              </div>
+              <span className="font-mono text-accent-green font-semibold">
+                {isGeneratingHere && progress ? progress.percentage : 0}%
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Thumbnail Strip with Tabs */}

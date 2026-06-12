@@ -10,10 +10,10 @@
 
 ## 根本原因 (Root Cause Analysis)
 1. **APIレスポンスのスキーマ不整合**:
-   * バックエンドのアルバム一覧API `GET /api/albums`（[albums.py:L12-L14](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/albums.py#L12-L14)）のレスポンスモデルに `list[schemas.AlbumSummary]` が指定されている。
-   * [schemas.py:L193-L198](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/schemas.py#L193-L198) において、`AlbumSummary` は `id`、`name`、`created_at` のみを持ち、`items` フィールドを含んでいない。
+   * バックエンドのアルバム一覧API `GET /api/albums`（[albums.py:L12-L14](../backend/app/routers/albums.py#L12-L14)）のレスポンスモデルに `list[schemas.AlbumSummary]` が指定されている。
+   * [schemas.py:L193-L198](../backend/app/schemas.py#L193-L198) において、`AlbumSummary` は `id`、`name`、`created_at` のみを持ち、`items` フィールドを含んでいない。
 2. **フロントエンドでの例外発生（レンダリングエラー）**:
-   * フロントエンドの [HistoryPage.tsx (L220-L236)](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/HistoryPage.tsx#L220-L236) では、APIから返却された各アルバム情報に対し、`album.items.slice(0, 3)` や `album.items.length` のように `items` 配列が存在することを前提としたアクセスを行っている。
+   * フロントエンドの [HistoryPage.tsx (L220-L236)](../frontend/src/pages/HistoryPage.tsx#L220-L236) では、APIから返却された各アルバム情報に対し、`album.items.slice(0, 3)` や `album.items.length` のように `items` 配列が存在することを前提としたアクセスを行っている。
    * APIレスポンスに `items` が含まれないため `album.items` が `undefined` となり、レンダリング時に `Cannot read properties of undefined (reading 'slice')` 等のJavaScriptランタイムエラー（または例外）が発生し、アルバムタブ内の描画が失敗して何も表示されなくなる。
 
 ## 障害分類
