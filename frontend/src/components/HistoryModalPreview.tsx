@@ -1,0 +1,229 @@
+import { useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { X, Loader2 } from 'lucide-react'
+import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
+import type { Snapshot, Lora, TagSet } from '../api/types'
+
+interface HistoryModalPreviewProps {
+  isOpen: boolean
+  onClose: () => void
+  images: string[]
+  currentIndex: number
+  onChangeIndex: (index: number) => void
+  snapshotIds?: (number | null)[]
+}
+
+export function HistoryModalPreview({
+  isOpen,
+  onClose,
+  images,
+  currentIndex,
+  onChangeIndex,
+  snapshotIds,
+}: HistoryModalPreviewProps) {
+  const touchStartX = useRef<number | null>(null)
+
+  const activeSnapshotId = snapshotIds && currentIndex >= 0 && currentIndex < snapshotIds.length
+    ? snapshotIds[currentIndex]
+    : null
+
+  // Fetch snapshot metadata if snapshot ID exists
+  const { data: snapshot, isLoading } = useQuery<Snapshot>({
+    queryKey: ['snapshot', activeSnapshotId],
+    queryFn: () => snapshotsApi.get(activeSnapshotId!) as Promise<Snapshot>,
+    enabled: !!activeSnapshotId && isOpen,
+  })
+
+  // Fetch all loras and tagsets to resolve IDs
+  const { data: loras } = useQuery<Lora[]>({
+    queryKey: ['loras'],
+    queryFn: () => lorasApi.list() as Promise<Lora[]>,
+    enabled: !!activeSnapshotId && isOpen,
+  })
+
+  const { data: tagSets } = useQuery<TagSet[]>({
+    queryKey: ['tag-sets'],
+    queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
+    enabled: !!activeSnapshotId && isOpen,
+  })
+
+  if (!isOpen || images.length === 0) return null
+
+  const activeImage = images[currentIndex]
+
+  // Swipe gesture handling
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return
+    const touchEndX = e.changedTouches[0].clientX
+    const diff = touchStartX.current - touchEndX
+
+    if (diff > 50) {
+      // Swipe left -> Next image
+      if (currentIndex < images.length - 1) {
+        onChangeIndex(currentIndex + 1)
+      }
+    } else if (diff < -50) {
+      // Swipe right -> Prev image
+      if (currentIndex > 0) {
+        onChangeIndex(currentIndex - 1)
+      }
+    }
+    touchStartX.current = null
+  }
+
+  // Helper to extract values from params dictionary
+  const getParamValue = (keys: string[], excludeKeys: string[] = []): string => {
+    if (!snapshot?.params) return ''
+    const matchKey = Object.keys(snapshot.params).find((key) => {
+      const k = key.toLowerCase()
+      const matchesInclude = keys.some((target) => k.includes(target.toLowerCase()))
+      const matchesExclude = excludeKeys.some((target) => k.includes(target.toLowerCase()))
+      return matchesInclude && !matchesExclude
+    })
+    return matchKey ? String(snapshot.params[matchKey]) : ''
+  }
+
+  const positivePrompt = getParamValue(['prompt', 'positive'], ['negative'])
+  const negativePrompt = getParamValue(['negative'])
+  const cfgScale = getParamValue(['cfg'])
+  const steps = getParamValue(['step'])
+  const seed = getParamValue(['seed'])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col" onClick={onClose}>
+      {/* Header with Close Button */}
+      <div className="relative h-12 flex items-center justify-end px-4" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+          aria-label="Close preview"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Image Display Area */}
+      <div
+        className="w-full flex items-center justify-center bg-black/40 relative cursor-pointer"
+        style={{ height: '60vh' }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onClick={(e) => {
+          // Only close if clicking the background area of the container, not the image itself
+          if (e.target === e.currentTarget) {
+            onClose()
+          }
+        }}
+      >
+        <img
+          src={activeImage}
+          alt={`Preview ${currentIndex + 1}`}
+          className="max-w-full max-h-full object-contain pointer-events-none select-none"
+        />
+
+        {/* Carousel indicators */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white/80 pointer-events-none">
+          {currentIndex + 1} / {images.length}
+        </div>
+      </div>
+
+      {/* Metadata Panel */}
+      <div
+        className="flex-1 overflow-y-auto p-5 bg-surface border-t border-[rgba(255,255,255,0.06)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {activeSnapshotId ? (
+          isLoading ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-zinc-400 text-xs">
+              <Loader2 size={16} className="animate-spin text-accent-green" />
+              <span>Loading snapshot metadata...</span>
+            </div>
+          ) : (
+            <div className="space-y-4 text-xs text-zinc-300">
+              {/* Prompt */}
+              {positivePrompt && (
+                <div>
+                  <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Prompt</h4>
+                  <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
+                    {positivePrompt}
+                  </div>
+                </div>
+              )}
+
+              {/* Negative Prompt */}
+              {negativePrompt && (
+                <div>
+                  <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Negative Prompt</h4>
+                  <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
+                    {negativePrompt}
+                  </div>
+                </div>
+              )}
+
+              {/* Grid of basic variables */}
+              <div className="grid grid-cols-3 gap-3">
+                {cfgScale && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">CFG Scale</span>
+                    <span className="font-mono text-zinc-200 font-semibold">{cfgScale}</span>
+                  </div>
+                )}
+                {steps && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Steps</span>
+                    <span className="font-mono text-zinc-200 font-semibold">{steps}</span>
+                  </div>
+                )}
+                {seed && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)] col-span-1">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Seed</span>
+                    <span className="font-mono text-zinc-200 font-semibold select-all break-all">{seed}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Loras & Tag Sets */}
+              {((snapshot?.loras && snapshot.loras.length > 0) || (snapshot?.tag_sets && snapshot.tag_sets.length > 0)) && (
+                <div className="space-y-2.5">
+                  <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">Applied Assets</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {snapshot?.loras?.map((loraItem, idx) => {
+                      const loraDetail = loras?.find((l) => l.id === loraItem.lora_id)
+                      return (
+                        <div
+                          key={`lora-${idx}`}
+                          className="px-2.5 py-1 rounded bg-accent-green/5 text-accent-green border border-accent-green/10 text-[10px] font-medium"
+                        >
+                          LoRA: {loraDetail?.description || loraDetail?.model_name || `ID ${loraItem.lora_id}`} (Str: {loraItem.strength})
+                        </div>
+                      )
+                    })}
+                    {snapshot?.tag_sets?.map((tagSetItem, idx) => {
+                      const tagSetDetail = tagSets?.find((t) => t.id === tagSetItem.tag_set_id)
+                      return (
+                        <div
+                          key={`tagset-${idx}`}
+                          className="px-2.5 py-1 rounded bg-[#7C6FDD]/5 text-[#a99ef7] border border-[#7C6FDD]/10 text-[10px] font-medium"
+                        >
+                          TagSet: {tagSetDetail?.name || `ID ${tagSetItem.tag_set_id}`}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        ) : (
+          <div className="text-zinc-500 italic text-center py-6 text-xs">
+            一時生成画像（スナップショット未保存）またはメタデータがありません。
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

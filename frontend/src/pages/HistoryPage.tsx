@@ -3,15 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Clock, Trash2, Download, BookOpen, ImageOff, X } from 'lucide-react'
 import { snapshotsApi, albumsApi, workflowsApi } from '../api/client'
 import type { SnapshotSummary, Album } from '../api/types'
+import { HistoryModalPreview } from '../components/HistoryModalPreview'
 
 export function HistoryPage() {
   const qc = useQueryClient()
   const [view, setView] = useState<'snapshots' | 'albums'>('snapshots')
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
-  const [selectedSnap, setSelectedSnap] = useState<number | null>(null)
   const [albumName, setAlbumName] = useState('')
   const [selectedForAlbum, setSelectedForAlbum] = useState<Set<number>>(new Set())
   const [createAlbumMode, setCreateAlbumMode] = useState(false)
+  const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
+  const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
 
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
@@ -149,11 +151,19 @@ export function HistoryPage() {
                 className={`group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
                   createAlbumMode && selectedForAlbum.has(snap.id)
                     ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30'
-                    : selectedSnap === snap.id
+                    : isModalPreviewOpen && snapshots && snapshots[modalPreviewIndex]?.id === snap.id
                       ? 'border-accent-green'
                       : 'border-transparent hover:border-zinc-700'
                 }`}
-                onClick={() => createAlbumMode ? toggleSelectForAlbum(snap.id) : setSelectedSnap(snap.id === selectedSnap ? null : snap.id)}
+                onClick={() => {
+                  if (createAlbumMode) {
+                    toggleSelectForAlbum(snap.id)
+                  } else {
+                    const idx = snapshots?.findIndex((s) => s.id === snap.id) ?? 0
+                    setModalPreviewIndex(idx >= 0 ? idx : 0)
+                    setIsModalPreviewOpen(true)
+                  }
+                }}
               >
                 <div className="aspect-square bg-surface-2">
                   {snap.image_path ? (
@@ -244,6 +254,14 @@ export function HistoryPage() {
           </div>
         )}
       </div>
+      <HistoryModalPreview
+        isOpen={isModalPreviewOpen}
+        onClose={() => setIsModalPreviewOpen(false)}
+        images={snapshots?.map((s) => s.image_path ?? '') ?? []}
+        currentIndex={modalPreviewIndex}
+        onChangeIndex={setModalPreviewIndex}
+        snapshotIds={snapshots?.map((s) => s.id) ?? []}
+      />
     </div>
   )
 }

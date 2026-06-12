@@ -10,6 +10,7 @@ import type { Workflow, AuditResult, MappingMaster, Lora, TagSet, AlbumSummary }
 import { useGenerationStore } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 import { TagChipEditor } from '../components/TagChipEditor'
+import { HistoryModalPreview } from '../components/HistoryModalPreview'
 
 interface SnapshotSummaryWithParams {
   id: number
@@ -74,6 +75,8 @@ export function GeneratePage() {
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
   const [targetAlbumId, setTargetAlbumId] = useState<number | "">("")
   const [newAlbumName, setNewAlbumName] = useState("")
+  const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
+  const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
 
   const { data: albums } = useQuery({
     queryKey: ['albums'],
@@ -453,6 +456,10 @@ export function GeneratePage() {
 
   const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
   const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
+  const snapshotIdsForDisplay = displayImages.map((img) => {
+    const found = snapshots?.find((s) => s.image_path === img)
+    return found ? found.id : null
+  })
   const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0
   const hasHistory = !!selectedWorkflowId && !!snapshots && snapshots.length > 0
 
@@ -477,7 +484,7 @@ export function GeneratePage() {
   return (
     <>
     {isMobile ? (
-      <div className="flex flex-col h-full overflow-y-auto pb-20 bg-surface relative">
+      <div className="flex flex-col h-full overflow-y-auto pb-36 bg-surface relative">
         {/* Header */}
         <div className="flex flex-col gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
           <div className="flex items-center justify-between">
@@ -543,6 +550,25 @@ export function GeneratePage() {
             </select>
           </div>
         </div>
+
+        {/* Progress Line */}
+        {isGeneratingHere && progress && (
+          <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
+              <span className="truncate">Generating...</span>
+            </div>
+            <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+              <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
+                <div
+                  className="h-full bg-accent-green progress-shimmer transition-all duration-200"
+                  style={{ width: `${progress.percentage}%` }}
+                />
+              </div>
+              <span className="font-mono text-accent-green whitespace-nowrap">{progress.percentage}%</span>
+            </div>
+          </div>
+        )}
 
         {/* Main Preview */}
         <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
@@ -611,7 +637,11 @@ export function GeneratePage() {
                   <button
                     key={i}
                     id={`thumb-mobile-${i}`}
-                    onClick={() => setSelectedImg(img)}
+                    onClick={() => {
+                      setSelectedImg(img)
+                      setModalPreviewIndex(i)
+                      setIsModalPreviewOpen(true)
+                    }}
                     className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${
                       selectedImg === img ? 'border-accent-green' : 'border-transparent'
                     }`}
@@ -1016,7 +1046,7 @@ export function GeneratePage() {
         </div>
 
         {/* Mobile Action Bar */}
-        <div className="fixed bottom-0 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
+        <div className="fixed bottom-16 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
           <button
             id="generate-btn-mobile"
             onClick={handleGenerate}
@@ -1946,6 +1976,14 @@ export function GeneratePage() {
         </div>
       </div>
     )}
+    <HistoryModalPreview
+      isOpen={isModalPreviewOpen}
+      onClose={() => setIsModalPreviewOpen(false)}
+      images={displayImages}
+      currentIndex={modalPreviewIndex}
+      onChangeIndex={setModalPreviewIndex}
+      snapshotIds={snapshotIdsForDisplay}
+    />
     </>
   )
 }
