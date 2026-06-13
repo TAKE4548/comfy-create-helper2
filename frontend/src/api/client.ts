@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage } from './types'
+import type { MappingMasterUsage, ComfyLoraModel } from './types'
 
 const BASE_URL = '/api'
 
@@ -65,6 +65,7 @@ export const lorasApi = {
   create: (data: unknown) => request('/loras', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: unknown) => request(`/loras/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/loras/${id}`, { method: 'DELETE' }),
+  getComfyModels: () => request<ComfyLoraModel[]>('/loras/comfy-models'),
 }
 
 // ─── Tag Sets ───────────────────────────────────────────────────

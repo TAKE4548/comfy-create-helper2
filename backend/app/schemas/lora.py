@@ -56,3 +56,11 @@ class LoraRead(BaseModel):
     file_path: Optional[str] = None
     trigger_word_sets: list[TriggerWordSetRead] = []
     created_at: datetime
+
+
+class ComfyLoraModel(BaseModel):
+    model_name: str
+    file_path: str
+    is_registered: bool
+    lora_id: Optional[int] = None
+

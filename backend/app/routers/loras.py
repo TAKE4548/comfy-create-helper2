@@ -1,12 +1,17 @@
 """LoRA router."""
 
 import json
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/loras", tags=["loras"])
 
@@ -99,3 +104,58 @@ def delete_lora(lora_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="LoRA not found")
     db.delete(lora)
     db.commit()
+
+
+@router.get("/comfy-models", response_model=list[schemas.ComfyLoraModel])
+async def get_comfy_lora_models(db: Session = Depends(get_db)):
+    models_list = []
+    async with httpx.AsyncClient() as client:
+        # Try primary endpoint
+        try:
+            response = await client.get(f"{settings.comfy_url}/api/models/loras", timeout=5.0)
+            if response.status_code == 404:
+                # If 404, fallback to experiment endpoint
+                response = await client.get(f"{settings.comfy_url}/api/experiment/models/loras", timeout=5.0)
+                response.raise_for_status()
+            else:
+                response.raise_for_status()
+            models_list = response.json()
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            logger.warning(f"Failed to fetch from primary loras endpoint: {e}. Trying fallback.")
+            try:
+                response = await client.get(f"{settings.comfy_url}/api/experiment/models/loras", timeout=5.0)
+                response.raise_for_status()
+                models_list = response.json()
+            except (httpx.HTTPError, httpx.RequestError) as ex:
+                logger.exception(f"Failed to fetch ComfyUI LoRA models from fallback: {ex}")
+                models_list = []
+
+    # Get registered loras
+    db_loras = db.query(models.Lora).all()
+    registered_paths = {}
+    for l in db_loras:
+        if l.file_path:
+            registered_paths[l.file_path.replace("\\", "/")] = l.id
+        elif l.model_name:
+            registered_paths[l.model_name.replace("\\", "/")] = l.id
+
+    results = []
+    if isinstance(models_list, list):
+        for path in models_list:
+            if not isinstance(path, str):
+                continue
+            normalized_path = path.replace("\\", "/")
+            base_name = normalized_path.split("/")[-1]
+            lora_id = registered_paths.get(normalized_path)
+            is_registered = lora_id is not None
+            results.append(schemas.ComfyLoraModel(
+                model_name=base_name,
+                file_path=normalized_path,
+                is_registered=is_registered,
+                lora_id=lora_id
+            ))
+
+    # Sort: unregistered first, then alphabetical by file_path
+    results.sort(key=lambda x: (x.is_registered, x.file_path))
+    return results
+

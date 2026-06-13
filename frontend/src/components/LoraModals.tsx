@@ -2,8 +2,11 @@
  * LoRA register/edit/detail modals extracted from LoRAsPage.
  */
 
+import React, { useState, useEffect, useRef } from 'react'
 import { X, Check, Copy } from 'lucide-react'
-import type { Category, Lora, LoraCreate } from '../api/types'
+import type { Category, Lora, LoraCreate, ComfyLoraModel } from '../api/types'
+import { useQuery } from '@tanstack/react-query'
+import { lorasApi } from '../api/client'
 
 // ─── Form type shared between register and edit ────────────────
 export type LoraFormState = Omit<LoraCreate, 'trigger_word_sets'> & {
@@ -24,13 +27,99 @@ function LoraFormFields({
   idPrefix: string
   categories?: Category[]
 }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const { data: comfyModels } = useQuery({
+    queryKey: ['comfy-lora-models'],
+    queryFn: lorasApi.getComfyModels,
+  })
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  const getBasename = (path: string): string => {
+    return path.split('/').pop() || path
+  }
+
+  const handleSelect = (model: ComfyLoraModel) => {
+    if (model.is_registered) return
+    setForm((f) => {
+      const nextModelName = f.model_name ? f.model_name : getBasename(model.file_path)
+      return {
+        ...f,
+        file_path: model.file_path,
+        model_name: nextModelName,
+      }
+    })
+    setIsOpen(false)
+  }
+
+  const filterText = form.file_path || ''
+  const filteredModels = comfyModels?.filter((m) =>
+    m.file_path.toLowerCase().includes(filterText.toLowerCase())
+  ) || []
+
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Model Name / Path *</label>
+        <label className="text-xs text-zinc-400 mb-1 block">Model Name *</label>
         <input id={`${idPrefix}-model-name`} value={form.model_name}
           onChange={(e) => setForm((f) => ({ ...f, model_name: e.target.value }))}
-          className={fieldCls} placeholder="category/model_name.safetensors" />
+          className={fieldCls} placeholder="my_awesome_lora" />
+      </div>
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">File Path</label>
+        <div className="relative" ref={containerRef}>
+          <input
+            id={`${idPrefix}-file-path`}
+            value={form.file_path || ''}
+            onChange={(e) => {
+              const val = e.target.value
+              setForm((f) => ({ ...f, file_path: val }))
+              setIsOpen(true)
+            }}
+            onFocus={() => setIsOpen(true)}
+            className={fieldCls}
+            placeholder="Select or enter path (e.g. folder/model.safetensors)"
+            autoComplete="off"
+          />
+          {isOpen && comfyModels && comfyModels.length > 0 && (
+            <ul className="absolute z-10 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-zinc-900 border border-[rgba(255,255,255,0.12)] rounded-lg shadow-xl py-1 text-xs custom-scrollbar">
+              {filteredModels.length > 0 ? (
+                filteredModels.map((m) => (
+                  <li
+                    key={m.file_path}
+                    onClick={() => handleSelect(m)}
+                    className={`px-3 py-2 flex justify-between items-center ${
+                      m.is_registered
+                        ? 'text-zinc-500 cursor-not-allowed opacity-50 select-none'
+                        : 'text-zinc-300 hover:bg-zinc-800 cursor-pointer'
+                    }`}
+                  >
+                    <span className="truncate mr-2">{m.file_path}</span>
+                    {m.is_registered && (
+                      <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded flex-shrink-0 font-medium">
+                        登録済み
+                      </span>
+                    )}
+                  </li>
+                ))
+              ) : (
+                <li className="px-3 py-2 text-zinc-500 italic">No matching models</li>
+              )}
+            </ul>
+          )}
+        </div>
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Description</label>
@@ -66,6 +155,7 @@ function LoraFormFields({
     </div>
   )
 }
+
 
 // ─── Register Modal ────────────────────────────────────────────
 export function LoraRegisterModal({

@@ -198,6 +198,14 @@ export interface Lora {
   created_at: string
 }
 
+export interface ComfyLoraModel {
+  model_name: string
+  file_path: string
+  is_registered: boolean
+  lora_id: number | null
+}
+
+
 export interface LoraCreate {
   model_name: string
   description?: string

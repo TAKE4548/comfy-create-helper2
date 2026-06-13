@@ -1,35 +1,43 @@
-# インシデントレポート: スマートフォン等からのアクセス時に生成メインページが表示できない問題 (画面が真っ白になる現象)
+# インシデントレポート: 生成ページでseedをランダムにしても、ランダムになっていない問題
 
 ## 1. 現象・症状
-スマートフォン等の外部デバイスから IP アドレス経由で本アプリケーションのフロントエンド（例: `http://192.168.X.X:5173`）にアクセスした際、メインの「生成（Generate）ページ」を開くと画面全体が完全に真っ白（空）になり、ヘッダーやナビゲーションバーすら表示されない。
-ただし、**「LoRA管理」や「Tags」などの他のサブページ（他ルート）はスマートフォンからでも問題なく正常に表示・操作できる**。
-また、サーバーPC上（`localhost`）でのアクセス時は、メインページも含め問題なく表示される。
+生成ページ（GeneratePage）において、シード設定を「Shuffle」（ランダムモード）に設定して画像を生成した際、生成される画像のシード値がランダムに変化せず、固定値（あるいはデフォルト値）のまま生成されてしまう。
 
 ## 2. 再現手順
-1. ホストPCにてバックエンド（FastAPI）、フロントエンド（Vite）、ComfyUI を起動する。
-2. 同一ネットワーク上のスマートフォン等のデバイスから、ホストPCの IP アドレス経由でフロントエンド（例: `http://192.168.X.X:5173/loras` や `/tags`）にアクセスし、表示されることを確認する。
-3. ナビゲーション等からメインページ（`/`）に遷移するか、直接 `http://192.168.X.X:5173/` を開く。
-4. メインページを読み込んだ直後、ページ全体が真っ白（空）になり動作を停止する。
+1. 生成ページにて、シード設定を「Shuffle」（サイコロアイコン / ランダムモード）に切り替える（入力フィールドが非活性になることを確認）。
+2. 画像生成を実行する。
+3. キューに送られたワークフローパラメータや、生成された結果のメタデータを確認すると、シード値が毎回同じ値（固定値）で実行されている。
 
 ## 3. 原因究明 (Root Cause Isolation)
-他ページが正常に動作し、メインの生成ページのみがクラッシュすることから、以下の原因が特定されました。
+調査の結果、フロントエンドの生成アクション処理におけるシード注入ロジックに不整合があることが特定されました。
 
-1. **`GeneratePage.tsx` モバイルレイアウト内での未ハンドリングエラー**
-   - アプリ全体の初期化ストア `useGenerationStore` の初期化（WebSocket作成）は全ルート共通で走るため、これが致命的なクラッシュ原因であれば全ページが真っ白になるはずですが、実際には他ページは動作しています。
-   - したがって、原因は [GeneratePage.tsx](../frontend/src/pages/GeneratePage.tsx#L494) の `isMobile` 分岐先（モバイル専用のJSXおよびそこで呼ばれるモバイル専用のプロップスやハンドラ）の中にあります。
-   - 特に、モバイルレイアウト内でレンダリングされる [ParamPanel](../frontend/src/pages/GeneratePage.tsx#L445) の `mobile` モードの引数処理や、モバイル用の各種イベントハンドラ、あるいは `isMobile` 判定時に読み込まれる `lucide-react` アイコンなどの参照不整合、またはモバイルエミュレーション時のコンポーネント未定義エラーが疑われます。
+- **該当箇所**: [useGenerateAction.ts](../frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts#L44-L51)
+  ```typescript
+  // Inject seed for Sampler_Seed role
+  const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
+  if (seedNode) {
+    const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
+    if (node) {
+      const inputs = node.inputs as Record<string, unknown>
+      inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
+    }
+  }
+  ```
+- **詳細原因**:
+  - `workflow.mappings` の処理では、対象ノードの入力パラメータ名（`m.param_name`）や、代替キー（`'value'`）を動的に判定して値を設定しています。
+  - しかし、その後のシード注入処理において、ノードの入力値（`inputs`）に設定するキー名が `inputs['seed']` とハードコードされています。
+  - ワークフロー内でシードが別名キー（例: プリミティブノードなどの `'value'`）で管理されている場合、`inputs['seed']` にランダム値を設定しても無視されてしまいます。
+  - その結果、マッピング処理で `paramValues['Sampler_Seed']`（固定値）から設定された `inputs['value']` がそのまま適用され続け、ランダム化されない現象が発生します。
 
 ## 4. 対策方針 (Proposed Solution)
-本インシデントは **Type A (Implementation Bug: 実装バグ)** に分類されます。以下の修正・調査を行うことで解決します。
+本インシデントは **Type A (Implementation Bug: 実装バグ)** に分類されます。
 
-1. **PCブラウザでのモバイルモード表示によるエラー再現と特定**
-   - サーバーPC上のブラウザのデベロッパーツール（F12）にて、画面幅を狭めて（あるいはモバイルエミュレーションを有効にして）`isMobile === true` を強制的に発生させ、コンソールに出力されるエラーログ（赤文字のスタックトレース）から例外の発生行を特定する。
-2. **該当箇所のハンドリング・修正**
-   - 特定された `GeneratePage.tsx` のモバイルレイアウト描画ロジックのエラー部分に対し、適切な null ガードやデータ初期値の設定を施す。
+- **修正の方針**:
+  - `useGenerateAction.ts` 内で `inputs['seed']` をハードコードするのではなく、対象の `seedNode` で定義されているパラメータ名（`seedNode.param_name` または `'value'` 等のフォールバック）を動的に解決してランダム値またはインクリメント値を代入するように修正します。
 
 ---
 
 ## 5. 診断チェック (Diagnostic Check)
-- **Root Cause Isolated**: Yes (原因特定フェーズ)
+- **Root Cause Isolated**: Yes
 - **Classification**: Type A (Implementation Bug)
-- **Route**: `/dev-design` へ進み、PC上でのモバイル表示エミュレーションテストの実行と、例外発生箇所の修正設計を提案します。
+- **Route**: `/dev-design` へ進み、フロントエンドの `useGenerateAction.ts` におけるシード動的キー解決ロジックの修正設計およびタスク定義に進みます。

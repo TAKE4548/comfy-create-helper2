@@ -42,6 +42,7 @@ from app.schemas.lora import (
     TriggerWordSetRead,
     LoraCreate,
     LoraRead,
+    ComfyLoraModel,
 )
 
 from app.schemas.tagset import (
@@ -73,7 +74,7 @@ __all__ = [
     # LoRA
     "CategoryCreate", "CategoryRead",
     "TriggerWordSetCreate", "TriggerWordSetRead",
-    "LoraCreate", "LoraRead",
+    "LoraCreate", "LoraRead", "ComfyLoraModel",
     # TagSet
     "TagSetCreate", "TagSetRead",
     # Audit

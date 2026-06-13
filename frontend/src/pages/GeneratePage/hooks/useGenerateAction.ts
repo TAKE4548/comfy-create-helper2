@@ -46,7 +46,15 @@ export function useGenerateAction(workflow: Workflow | undefined) {
         const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
         if (node) {
           const inputs = node.inputs as Record<string, unknown>
-          inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
+          let seedKey: string
+          if (seedNode.param_name !== null && seedNode.param_name !== undefined && inputs[seedNode.param_name] !== undefined) {
+            seedKey = seedNode.param_name
+          } else if (inputs['value'] !== undefined) {
+            seedKey = 'value'
+          } else {
+            seedKey = seedNode.param_name || 'seed'
+          }
+          inputs[seedKey] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
         }
       }
 
