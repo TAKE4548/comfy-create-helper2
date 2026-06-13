@@ -65,6 +65,9 @@ app.include_router(audit.router)
 app.include_router(llm_prompts.router)
 
 
+app.mount("/api/snapshots/images", StaticFiles(directory=settings.snapshot_path), name="snapshots_images")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "2.0.0"}

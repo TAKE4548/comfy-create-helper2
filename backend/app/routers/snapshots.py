@@ -1,11 +1,16 @@
 """Snapshots router."""
 
 import json
+import urllib.request
+import urllib.parse
+import uuid
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app import models, schemas
 
@@ -74,10 +79,43 @@ def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_d
             raise HTTPException(status_code=404, detail="Album not found")
         target_album_id = album.id
 
+    saved_image_path = payload.image_path
+    if payload.image_path and (payload.image_path.startswith("http://") or payload.image_path.startswith("https://")):
+        try:
+            parsed_url = urllib.parse.urlparse(payload.image_path)
+            queries = urllib.parse.parse_qs(parsed_url.query)
+            filename = queries.get("filename", [None])[0]
+            
+            if not filename:
+                filename = Path(parsed_url.path).name
+            if not filename or filename.strip() == "":
+                filename = f"snapshot_{uuid.uuid4().hex}.png"
+            else:
+                ext = Path(filename).suffix or ".png"
+                stem = Path(filename).stem
+                filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+            
+            target_dir = settings.snapshot_path
+            target_path = target_dir / filename
+            
+            req = urllib.request.Request(
+                payload.image_path, 
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                with open(target_path, 'wb') as f:
+                    f.write(response.read())
+            
+            saved_image_path = f"/api/snapshots/images/{filename}"
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to download snapshot image from {payload.image_path}: {e}")
+
     s = models.Snapshot(
         workflow_id=payload.workflow_id,
         params=json.dumps(payload.params),
-        image_path=payload.image_path,
+        image_path=saved_image_path,
     )
     db.add(s)
     db.flush()

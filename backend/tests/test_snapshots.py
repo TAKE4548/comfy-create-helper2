@@ -200,6 +200,31 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertEqual(data[0]["items"][0]["snapshot_id"], snap.id)
         self.assertEqual(data[0]["items"][0]["image_path"], "test_album_img.png")
 
+    def test_create_snapshot_downloads_image(self):
+        # ダミー画像を提供する外部 URL を指定してスナップショットを作成
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png",
+            "params": {},
+            "loras": [],
+            "tag_sets": []
+        }
+        import urllib.request
+        from unittest.mock import patch, MagicMock
+        
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake image content"
+        mock_response.__enter__.return_value = mock_response
+        
+        with patch('urllib.request.urlopen', return_value=mock_response):
+            response = self.client.post("/api/snapshots", json=payload)
+            self.assertEqual(response.status_code, 201)
+            data = response.json()
+            
+            # 相対パスへの変換アサーション
+            self.assertTrue(data["image_path"].startswith("/api/snapshots/images/"))
+            self.assertTrue(data["image_path"].endswith(".png"))
+
 
 if __name__ == "__main__":
     unittest.main()
