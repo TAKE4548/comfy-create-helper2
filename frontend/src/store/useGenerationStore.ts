@@ -117,6 +117,7 @@ export interface GenerationState {
 let ws: WebSocket | null = null
 let comfyUrl: string | null = null
 let isInitializing = false
+let reconnectTimer: any = null
 
 // ─── Store ────────────────────────────────────────────────────────
 export const useGenerationStore = create<GenerationState>((set, get) => {
@@ -255,6 +256,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     // ── Actions ──────────────────────────────────────────────
     initialize: () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
       if (isInitializing || ws) return
       isInitializing = true
 
@@ -276,8 +281,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
 
         ws.onopen = () => { set({ isConnected: true }); get().fetchQueue() }
-        ws.onclose = () => set({ isConnected: false })
-        ws.onerror = () => set({ isConnected: false })
+        ws.onclose = () => {
+          set({ isConnected: false })
+          ws = null
+          if (!reconnectTimer) {
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null
+              get().initialize()
+            }, 3000)
+          }
+        }
+        ws.onerror = () => {
+          set({ isConnected: false })
+          if (ws) {
+            try {
+              ws.close()
+            } catch {}
+            ws = null
+          }
+        }
 
         ws.onmessage = (event) => {
           if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
@@ -319,24 +341,30 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 const output = data.output as Record<string, unknown> | undefined
                 const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
                 if (images && images.length > 0) {
-                  const img = images[0]
                   const baseUrl = resolveComfyUrl(comfyUrl!)
-                  const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+                  const newUrls = images.map((img) => 
+                    `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+                  )
+                  const firstUrl = newUrls[0]
                   set((state) => {
-                    const nextImages = [viewUrl, ...state.batchImages.filter((x) => x !== viewUrl)].slice(0, 8)
+                    const nextImages = [...newUrls, ...state.batchImages.filter((x) => !newUrls.includes(x))].slice(0, 8)
+                    const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 50)
                     localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
-                    localStorage.setItem(LS_KEYS.SELECTED_IMG, viewUrl)
+                    localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
                     return {
-                      previewImage: viewUrl,
+                      previewImage: firstUrl,
                       batchImages: nextImages,
-                      selectedImg: viewUrl,
+                      comfyHistoryImages: nextHistoryImages,
+                      selectedImg: firstUrl,
                       isGenerating: false,
                       currentPromptId: null,
                       activeClientId: null,
                     }
                   })
                   localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-                  get().fetchHistory()
+                  setTimeout(() => {
+                    get().fetchHistory()
+                  }, 500)
                 }
                 get().fetchQueue()
                 break
@@ -345,7 +373,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               case 'execution_complete':
                 set({ isGenerating: false, progress: { value: 1, max: 1, percentage: 100 }, currentPromptId: null, activeClientId: null })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-                get().fetchHistory()
+                setTimeout(() => {
+                  get().fetchHistory()
+                }, 500)
                 get().fetchQueue()
                 break
 
@@ -516,9 +546,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (!res.ok) return
         const data = await res.json()
         const allImages: string[] = []
-        const keys = Object.keys(data).sort((a, b) => Number(b) - Number(a))
-        keys.forEach((key) => {
-          const item = data[key] as ComfyHistoryItem
+        const entries = Object.entries(data) as [string, ComfyHistoryItem][]
+        const sortedEntries = entries.sort(([, itemA], [, itemB]) => {
+          const indexA = itemA.prompt ? itemA.prompt[0] : 0
+          const indexB = itemB.prompt ? itemB.prompt[0] : 0
+          return indexB - indexA
+        })
+        sortedEntries.forEach(([key, item]) => {
           Object.values(item.outputs).forEach((out) => {
             if (out.images) {
               out.images.forEach((img) => {
@@ -550,6 +584,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     setComfyUrl: (url) => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
       localStorage.setItem(LS_KEYS.COMFY_URL, url)
       set({ comfyUrl: url })
       if (ws) { ws.close(); ws = null }
