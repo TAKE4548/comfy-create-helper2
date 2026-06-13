@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import { X, RefreshCw, AlertTriangle } from 'lucide-react'
-import type { MappingMaster, MappingMasterCreate } from '../../api/types'
+import type { MappingMaster, MappingMasterCreate } from '../api/types'
 
 const inputCls = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
 

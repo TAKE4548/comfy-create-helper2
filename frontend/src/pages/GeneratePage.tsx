@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, albumsApi } from '../api/client'
 import type { Workflow, MappingMaster, Lora, TagSet, AlbumSummary } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
+import type { AppliedAsset } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
 import { TagChipEditor } from '../components/TagChipEditor'
@@ -26,6 +27,385 @@ interface SnapshotSummaryWithParams {
   image_path: string | null
   created_at: string
   params?: Record<string, any>
+}
+
+// ── Top-level components extracted to prevent re-creation and mobile crashes ──
+
+interface SettingsPopoverProps {
+  setIsSettingsOpen: (open: boolean) => void
+  localComfyUrl: string
+  setLocalComfyUrl: (url: string) => void
+  setComfyUrl: (url: string) => void
+  selectedWorkflowId: number | null
+  workflow: any
+  handleSaveDefaultParams: () => void
+  isSavePending: boolean
+  handleResetDefaultParams: () => void
+  mobile?: boolean
+}
+
+const SettingsPopover = ({
+  setIsSettingsOpen,
+  localComfyUrl,
+  setLocalComfyUrl,
+  setComfyUrl,
+  selectedWorkflowId,
+  workflow,
+  handleSaveDefaultParams,
+  isSavePending,
+  handleResetDefaultParams,
+  mobile = false,
+}: SettingsPopoverProps) => (
+  <div className={`absolute ${mobile ? 'left-[-120px]' : 'right-0'} top-full mt-2 w-72 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-4 z-50 space-y-4 animate-fade-in`}>
+    <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-2">
+      <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+        <Settings size={12} className="text-accent-green" />ComfyUI設定
+      </span>
+      <button type="button" onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+        <X size={14} />
+      </button>
+    </div>
+    <div className="space-y-1.5">
+      <label className="text-[10px] text-zinc-400 font-medium">ComfyUI URL</label>
+      <input
+        type="text"
+        value={localComfyUrl}
+        onChange={(e) => { setLocalComfyUrl(e.target.value); setComfyUrl(e.target.value) }}
+        placeholder="http://localhost:8188"
+        className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+      />
+    </div>
+    {selectedWorkflowId && workflow && (
+      <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-zinc-400 font-medium">ワークフロー設定</span>
+          <span className="text-[9px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => { handleSaveDefaultParams(); setIsSettingsOpen(false) }}
+            disabled={isSavePending}
+            className="flex-1 py-1.5 rounded bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 text-accent-green text-[10px] font-semibold disabled:opacity-40"
+          >デフォルト保存</button>
+          <button
+            type="button"
+            onClick={() => { handleResetDefaultParams(); setIsSettingsOpen(false) }}
+            className="flex-1 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-[10px] font-semibold"
+          >リreset</button>
+        </div>
+      </div>
+    )}
+  </div>
+)
+
+interface AssetDropdownProps {
+  role: string
+  loras?: Lora[]
+  tagSets?: TagSet[]
+  setLoraStrength: (strength: number) => void
+  setSelectedTriggerSetId: (id: number | 'default') => void
+  setSelectedLoraForModal: (data: { role: string; lora: Lora } | null) => void
+  setOpenAddAssetRole: (role: string | null) => void
+  handleAddTagSetAsset: (role: string, ts: TagSet) => void
+}
+
+const AssetDropdown = ({
+  role,
+  loras,
+  tagSets,
+  setLoraStrength,
+  setSelectedTriggerSetId,
+  setSelectedLoraForModal,
+  setOpenAddAssetRole,
+  handleAddTagSetAsset,
+}: AssetDropdownProps) => (
+  <div className="absolute right-0 mt-1 w-64 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl z-20 max-h-80 overflow-y-auto custom-scrollbar p-2 space-y-3">
+    <div>
+      <p className="text-[10px] font-semibold text-zinc-505 uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">LoRAs</p>
+      <div className="space-y-0.5 mt-1">
+        {loras && loras.length > 0 ? loras.map((lora) => (
+          <button type="button" key={lora.id} onClick={() => {
+            const min = lora.recommended_strength_min, max = lora.recommended_strength_max
+            let initStrength = 1.0
+            if (min != null && max != null) initStrength = Math.round(((min + max) / 2) * 10) / 10
+            else if (min != null) initStrength = min
+            else if (max != null) initStrength = max
+            setLoraStrength(initStrength)
+            setSelectedTriggerSetId(lora.trigger_word_sets?.length ? lora.trigger_word_sets[0].id : 'default')
+            setSelectedLoraForModal({ role, lora })
+            setOpenAddAssetRole(null)
+          }} className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate" title={lora.description || lora.model_name}>
+            {lora.description || lora.model_name.split('/').pop()?.replace('.safetensors', '')}
+          </button>
+        )) : <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No LoRAs found</p>}
+      </div>
+    </div>
+    <div>
+      <p className="text-[10px] font-semibold text-[#7C6FDD] uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">Tag Sets</p>
+      <div className="space-y-0.5 mt-1">
+        {tagSets && tagSets.length > 0 ? tagSets.map((ts) => (
+          <button type="button" key={ts.id} onClick={() => handleAddTagSetAsset(role, ts)}
+            className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate" title={ts.description || ts.name}>
+            {ts.name}
+          </button>
+        )) : <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No Tag Sets found</p>}
+      </div>
+    </div>
+  </div>
+)
+
+interface AppliedAssetChipsProps {
+  role: string
+  appliedAssets: Record<string, AppliedAsset[]>
+  toggleAppliedAsset: (role: string, id: string) => void
+  removeAppliedAsset: (role: string, id: string) => void
+}
+
+const AppliedAssetChips = ({
+  role,
+  appliedAssets,
+  toggleAppliedAsset,
+  removeAppliedAsset,
+}: AppliedAssetChipsProps) => {
+  const assets = appliedAssets[role] || []
+  if (!assets.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-1">
+      {assets.map((asset) => (
+        <div key={asset.id} className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] transition-all ${
+          asset.enabled
+            ? asset.type === 'lora' ? 'bg-accent-green/5 text-accent-green border-accent-green/20' : 'bg-[#7C6FDD]/5 text-[#a99ef7] border-[#7C6FDD]/20'
+            : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/80 opacity-40'
+        }`}>
+          <input type="checkbox" checked={asset.enabled} onChange={() => toggleAppliedAsset(role, asset.id)} className="w-3 h-3 rounded border-zinc-800 accent-accent-green cursor-pointer" />
+          <span className="font-medium select-none cursor-pointer" onClick={() => toggleAppliedAsset(role, asset.id)}>
+            {asset.type === 'lora' ? 'LoRA: ' : 'TagSet: '}{asset.name}
+            {asset.type === 'lora' && asset.loraPromptString && (
+              <span className="text-[9px] opacity-75 ml-1 font-mono">({asset.loraPromptString.split(':').pop()?.replace('>', '')})</span>
+            )}
+          </span>
+          <button type="button" onClick={() => removeAppliedAsset(role, asset.id)} className="text-current/40 hover:text-red-400 transition-colors"><X size={10} /></button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface AuditPanelProps {
+  auditOpen: boolean
+  setAuditOpen: (open: boolean) => void
+  auditStatus: 'idle' | 'loading' | 'done' | 'error'
+  auditResult: any
+  auditTypes: string[]
+  setAuditTypes: (types: string[] | ((prev: string[]) => string[])) => void
+  auditIntent: string
+  setAuditIntent: (intent: string) => void
+  runAudit: () => void
+}
+
+const AuditPanel = ({
+  auditOpen,
+  setAuditOpen,
+  auditStatus,
+  auditResult,
+  auditTypes,
+  setAuditTypes,
+  auditIntent,
+  setAuditIntent,
+  runAudit,
+}: AuditPanelProps) => (
+  <div className="rounded-lg border border-[rgba(124,111,221,0.3)] bg-[rgba(124,111,221,0.05)] overflow-hidden">
+    <button id="audit-toggle" onClick={() => setAuditOpen(!auditOpen)}
+      className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[#7C6FDD] hover:bg-[rgba(124,111,221,0.1)] transition-colors">
+      <div className="flex items-center gap-2">
+        <Wand2 size={15} /><span>LLM Audit</span>
+        {auditStatus === 'loading' && <Loader2 size={13} className="animate-spin" />}
+        {auditStatus === 'done' && <CheckCircle2 size={13} className="text-accent-green" />}
+      </div>
+      <ChevronRight size={14} className={`transition-transform ${auditOpen ? 'rotate-90' : ''}`} />
+    </button>
+    {auditOpen && (
+      <div className="px-4 pb-4 space-y-3 animate-fade-in">
+        <div className="flex gap-2 flex-wrap">
+          {(['interference', 'vocabulary', 'physical'] as const).map((t) => (
+            <button key={t} onClick={() => setAuditTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
+              className={`text-xs px-2 py-1 rounded border transition-all ${auditTypes.includes(t) ? 'border-[#7C6FDD] bg-[rgba(124,111,221,0.2)] text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.1)] text-zinc-500'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <textarea id="audit-intent" placeholder="やりたいこと・変更したいこと…" value={auditIntent}
+          onChange={(e) => setAuditIntent(e.target.value)} rows={2}
+          className="w-full bg-[rgba(124,111,221,0.08)] border border-[rgba(124,111,221,0.2)] rounded-md px-3 py-2 text-xs text-zinc-300 placeholder-zinc-600 resize-none focus:outline-none focus:border-[#7C6FDD]/60" />
+        <button id="run-audit-btn" onClick={runAudit} disabled={auditStatus === 'loading'}
+          className="w-full py-2 rounded-md bg-[#7C6FDD] text-white text-xs font-semibold hover:bg-[#6d62cc] disabled:opacity-50 transition-all glow-purple">
+          {auditStatus === 'loading' ? 'Running…' : 'Run Audit'}
+        </button>
+        {auditResult && (
+          <div className="space-y-2 text-xs">
+            {auditResult.interference && auditResult.interference.length > 0 && (
+              <div>
+                <p className="text-[10px] text-zinc-505 font-medium mb-1">Interference</p>
+                {auditResult.interference.map((item: any, i: number) => (
+                  <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
+                    <div className="flex gap-2 items-start">
+                      <AlertCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
+                      <div><span className="text-red-300 font-mono">{item.tag}</span><span className="text-zinc-505 ml-2">{item.reason}</span></div>
+                    </div>
+                    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('tag-chip-editor:disable-tag', { detail: { tag: item.tag } }))}
+                      className="text-[10px] px-1.5 py-0.5 bg-red-950/30 hover:bg-red-900/40 text-red-300 border border-red-900/30 rounded transition-colors">無効化</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {auditResult.vocabulary && auditResult.vocabulary.length > 0 && (
+              <div>
+                <p className="text-[10px] text-zinc-505 font-medium mb-1">Suggestions</p>
+                {auditResult.vocabulary.map((item: any, i: number) => (
+                  <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
+                    <div className="flex gap-2 items-start">
+                      <CheckCircle2 size={12} className="text-accent-green mt-0.5 flex-shrink-0" />
+                      <div><span className="text-accent-green font-mono">+{item.suggestion}</span><span className="text-zinc-505 ml-2">{item.effect}</span></div>
+                    </div>
+                    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('tag-chip-editor:add-tag', { detail: { tag: item.suggestion } }))}
+                      className="text-[10px] px-1.5 py-0.5 bg-emerald-950/30 hover:bg-emerald-900/40 text-accent-green border border-emerald-900/30 rounded transition-colors">追加</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)
+
+interface MappingErrorPanelProps {
+  selectedWorkflowId: number | null
+  invalidMappings: any[]
+  selectedMasters: Record<number, number>
+  setSelectedMasters: (prev: Record<number, number> | ((prev: Record<number, number>) => Record<number, number>)) => void
+  mappingMasters?: MappingMaster[]
+  handleUpdateMapping: (id: number, masterId: number) => void
+  isUpdatingMapping: boolean
+}
+
+const MappingErrorPanel = ({
+  selectedWorkflowId,
+  invalidMappings,
+  selectedMasters,
+  setSelectedMasters,
+  mappingMasters,
+  handleUpdateMapping,
+  isUpdatingMapping,
+}: MappingErrorPanelProps) => {
+  if (!selectedWorkflowId || invalidMappings.length === 0) return null
+  return (
+    <div className="rounded-lg border border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.05)] p-4 space-y-3">
+      <div className="flex items-center gap-2 text-rose-400"><AlertCircle size={16} /><h3 className="text-xs font-semibold uppercase tracking-wider">マッピングエラー検出</h3></div>
+      <p className="text-xs text-zinc-400 leading-relaxed">ワークフロー内に紐付け先マスタが無効なノードがあります。正しい役割を選択して修正してください。</p>
+      <div className="space-y-2.5 pt-1">
+        {invalidMappings.map((m) => {
+          const currentSelectedMasterId = selectedMasters[m.id] ?? ''
+          return (
+            <div key={m.id} className="p-3 rounded-lg border border-[rgba(255,255,255,0.04)] bg-surface-2/60 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-zinc-400">Node ID: <strong className="text-zinc-200">{m.node_id}</strong></span>
+                <span className="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">エラー</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <select id={`param-error-select-${m.node_id}`} value={currentSelectedMasterId}
+                  onChange={(e) => setSelectedMasters((prev: Record<number, number>) => ({ ...prev, [m.id]: Number(e.target.value) }))}
+                  className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-zinc-300 focus:outline-none focus:border-rose-500/40">
+                  <option value="">役割を選択してください…</option>
+                  {mappingMasters?.map((master) => <option key={master.id} value={master.id}>{master.display_name} ({master.role})</option>)}
+                </select>
+                <button id={`param-error-fix-btn-${m.node_id}`}
+                  onClick={() => handleUpdateMapping(m.id, Number(currentSelectedMasterId))}
+                  disabled={!currentSelectedMasterId || isUpdatingMapping}
+                  className="px-3 py-1.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 text-xs font-semibold transition-all disabled:opacity-40">
+                  {isUpdatingMapping ? '保存中…' : '修正'}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+interface ParamPanelProps {
+  paramMappings: any[]
+  paramValues: Record<string, string>
+  setParamValues: (values: Record<string, string>) => void
+  loras?: Lora[]
+  batchSize: number
+  setBatchSize: (size: number) => void
+  seedMode: 'random' | 'fixed'
+  setSeedMode: (mode: 'random' | 'fixed') => void
+  seed: number
+  setSeed: (seed: number) => void
+  mobile?: boolean
+}
+
+const ParamPanel = ({
+  paramMappings,
+  paramValues,
+  setParamValues,
+  loras,
+  batchSize,
+  setBatchSize,
+  seedMode,
+  setSeedMode,
+  seed,
+  setSeed,
+  mobile = false,
+}: ParamPanelProps) => {
+  if (paramMappings.length === 0) return null
+  return (
+    <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
+      <p className="text-xs font-medium text-zinc-505 uppercase tracking-wider">Parameters</p>
+      {paramMappings.map((m) => (
+        <div key={m.id} className="flex items-center justify-between gap-4">
+          <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
+          {m.input_type === 'select' ? (
+            <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+              onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+              className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+              <option value="">Select option…</option>
+              {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.model_name}</option>)}
+            </select>
+          ) : (
+            <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}
+              onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+              step={m.input_type === 'float' ? 0.1 : 1}
+              className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
+          )}
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-4">
+        <label className="text-xs text-zinc-400">Batch Size</label>
+        <input id={`batch-size${mobile ? '-mobile' : ''}`} type="number" min={1} max={8} value={batchSize}
+          onChange={(e) => setBatchSize(Number(e.target.value))}
+          className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <label className="text-xs text-zinc-400">Seed</label>
+        <div className="flex items-center gap-2">
+          <button id={`seed-toggle${mobile ? '-mobile' : ''}`}
+            onClick={() => setSeedMode(seedMode === 'random' ? 'fixed' : 'random')}
+            className={`p-1${mobile ? '' : '.5'} rounded border transition-all ${seedMode === 'random' ? 'border-accent-green/50 text-accent-green bg-accent-green/10' : 'border-[rgba(255,255,255,0.1)] text-zinc-500'}`}>
+            {seedMode === 'random' ? <Shuffle size={mobile ? 12 : 13} /> : <Lock size={mobile ? 12 : 13} />}
+          </button>
+          <input id={`seed-input${mobile ? '-mobile' : ''}`} type="number" value={seed}
+            onChange={(e) => setSeed(Number(e.target.value))} disabled={seedMode === 'random'}
+            className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40`} />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function GeneratePage() {
@@ -233,260 +613,16 @@ export function GeneratePage() {
   )
 
   // ── Shared sub-components (inline) ───────────────────────────
-  const SettingsPopover = ({ mobile = false }: { mobile?: boolean }) => (
-    <div className={`absolute ${mobile ? 'left-[-120px]' : 'right-0'} top-full mt-2 w-72 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-4 z-50 space-y-4 animate-fade-in`}>
-      <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-2">
-        <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-          <Settings size={12} className="text-accent-green" />ComfyUI設定
-        </span>
-        <button type="button" onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
-          <X size={14} />
-        </button>
-      </div>
-      <div className="space-y-1.5">
-        <label className="text-[10px] text-zinc-400 font-medium">ComfyUI URL</label>
-        <input
-          type="text"
-          value={localComfyUrl}
-          onChange={(e) => { setLocalComfyUrl(e.target.value); setComfyUrl(e.target.value) }}
-          placeholder="http://localhost:8188"
-          className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
-        />
-      </div>
-      {selectedWorkflowId && workflow && (
-        <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-zinc-400 font-medium">ワークフロー設定</span>
-            <span className="text-[9px] text-zinc-500 font-mono">ID: {selectedWorkflowId}</span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => { handleSaveDefaultParams(); setIsSettingsOpen(false) }}
-              disabled={saveDefaultParamsMutation.isPending}
-              className="flex-1 py-1.5 rounded bg-accent-green/10 hover:bg-accent-green/20 border border-accent-green/30 text-accent-green text-[10px] font-semibold disabled:opacity-40"
-            >デフォルト保存</button>
-            <button
-              type="button"
-              onClick={() => { handleResetDefaultParams(); setIsSettingsOpen(false) }}
-              className="flex-1 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.06)] text-zinc-350 text-[10px] font-semibold"
-            >リセット</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
 
-  const AssetDropdown = ({ role }: { role: string }) => (
-    <div className="absolute right-0 mt-1 w-64 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl z-20 max-h-80 overflow-y-auto custom-scrollbar p-2 space-y-3">
-      <div>
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">LoRAs</p>
-        <div className="space-y-0.5 mt-1">
-          {loras && loras.length > 0 ? loras.map((lora) => (
-            <button type="button" key={lora.id} onClick={() => {
-              const min = lora.recommended_strength_min, max = lora.recommended_strength_max
-              let initStrength = 1.0
-              if (min != null && max != null) initStrength = Math.round(((min + max) / 2) * 10) / 10
-              else if (min != null) initStrength = min
-              else if (max != null) initStrength = max
-              setLoraStrength(initStrength)
-              setSelectedTriggerSetId(lora.trigger_word_sets?.length ? lora.trigger_word_sets[0].id : 'default')
-              setSelectedLoraForModal({ role, lora })
-              setOpenAddAssetRole(null)
-            }} className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate" title={lora.description || lora.model_name}>
-              {lora.description || lora.model_name.split('/').pop()?.replace('.safetensors', '')}
-            </button>
-          )) : <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No LoRAs found</p>}
-        </div>
-      </div>
-      <div>
-        <p className="text-[10px] font-semibold text-[#7C6FDD] uppercase px-2 py-1 border-b border-[rgba(255,255,255,0.05)]">Tag Sets</p>
-        <div className="space-y-0.5 mt-1">
-          {tagSets && tagSets.length > 0 ? tagSets.map((ts) => (
-            <button type="button" key={ts.id} onClick={() => handleAddTagSetAsset(role, ts)}
-              className="w-full text-left text-xs px-2 py-1.5 rounded text-zinc-350 hover:bg-white/5 hover:text-white truncate" title={ts.description || ts.name}>
-              {ts.name}
-            </button>
-          )) : <p className="text-[10px] text-zinc-650 px-2 py-1 italic">No Tag Sets found</p>}
-        </div>
-      </div>
-    </div>
-  )
 
-  const AppliedAssetChips = ({ role }: { role: string }) => {
-    const assets = appliedAssets[role] || []
-    if (!assets.length) return null
-    return (
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {assets.map((asset) => (
-          <div key={asset.id} className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] transition-all ${
-            asset.enabled
-              ? asset.type === 'lora' ? 'bg-accent-green/5 text-accent-green border-accent-green/20' : 'bg-[#7C6FDD]/5 text-[#a99ef7] border-[#7C6FDD]/20'
-              : 'bg-zinc-900/60 text-zinc-600 border-zinc-800/80 opacity-40'
-          }`}>
-            <input type="checkbox" checked={asset.enabled} onChange={() => toggleAppliedAsset(role, asset.id)} className="w-3 h-3 rounded border-zinc-800 accent-accent-green cursor-pointer" />
-            <span className="font-medium select-none cursor-pointer" onClick={() => toggleAppliedAsset(role, asset.id)}>
-              {asset.type === 'lora' ? 'LoRA: ' : 'TagSet: '}{asset.name}
-              {asset.type === 'lora' && asset.loraPromptString && (
-                <span className="text-[9px] opacity-75 ml-1 font-mono">({asset.loraPromptString.split(':').pop()?.replace('>', '')})</span>
-              )}
-            </span>
-            <button type="button" onClick={() => removeAppliedAsset(role, asset.id)} className="text-current/40 hover:text-red-400 transition-colors"><X size={10} /></button>
-          </div>
-        ))}
-      </div>
-    )
-  }
 
-  const AuditPanel = () => (
-    <div className="rounded-lg border border-[rgba(124,111,221,0.3)] bg-[rgba(124,111,221,0.05)] overflow-hidden">
-      <button id="audit-toggle" onClick={() => setAuditOpen(!auditOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[#7C6FDD] hover:bg-[rgba(124,111,221,0.1)] transition-colors">
-        <div className="flex items-center gap-2">
-          <Wand2 size={15} /><span>LLM Audit</span>
-          {auditStatus === 'loading' && <Loader2 size={13} className="animate-spin" />}
-          {auditStatus === 'done' && <CheckCircle2 size={13} className="text-accent-green" />}
-        </div>
-        <ChevronRight size={14} className={`transition-transform ${auditOpen ? 'rotate-90' : ''}`} />
-      </button>
-      {auditOpen && (
-        <div className="px-4 pb-4 space-y-3 animate-fade-in">
-          <div className="flex gap-2 flex-wrap">
-            {(['interference', 'vocabulary', 'physical'] as const).map((t) => (
-              <button key={t} onClick={() => setAuditTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
-                className={`text-xs px-2 py-1 rounded border transition-all ${auditTypes.includes(t) ? 'border-[#7C6FDD] bg-[rgba(124,111,221,0.2)] text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.1)] text-zinc-500'}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-          <textarea id="audit-intent" placeholder="やりたいこと・変更したいこと…" value={auditIntent}
-            onChange={(e) => setAuditIntent(e.target.value)} rows={2}
-            className="w-full bg-[rgba(124,111,221,0.08)] border border-[rgba(124,111,221,0.2)] rounded-md px-3 py-2 text-xs text-zinc-300 placeholder-zinc-600 resize-none focus:outline-none focus:border-[#7C6FDD]/60" />
-          <button id="run-audit-btn" onClick={() => runAudit.mutate()} disabled={auditStatus === 'loading'}
-            className="w-full py-2 rounded-md bg-[#7C6FDD] text-white text-xs font-semibold hover:bg-[#6d62cc] disabled:opacity-50 transition-all glow-purple">
-            {auditStatus === 'loading' ? 'Running…' : 'Run Audit'}
-          </button>
-          {auditResult && (
-            <div className="space-y-2 text-xs">
-              {auditResult.interference && auditResult.interference.length > 0 && (
-                <div>
-                  <p className="text-zinc-500 font-medium mb-1">Interference</p>
-                  {auditResult.interference.map((item, i) => (
-                    <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
-                      <div className="flex gap-2 items-start">
-                        <AlertCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
-                        <div><span className="text-red-300 font-mono">{item.tag}</span><span className="text-zinc-500 ml-2">{item.reason}</span></div>
-                      </div>
-                      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('tag-chip-editor:disable-tag', { detail: { tag: item.tag } }))}
-                        className="text-[10px] px-1.5 py-0.5 bg-red-950/30 hover:bg-red-900/40 text-red-300 border border-red-900/30 rounded transition-colors">無効化</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {auditResult.vocabulary && auditResult.vocabulary.length > 0 && (
-                <div>
-                  <p className="text-zinc-500 font-medium mb-1">Suggestions</p>
-                  {auditResult.vocabulary.map((item, i) => (
-                    <div key={i} className="flex gap-2 items-start py-1.5 border-t border-[rgba(255,255,255,0.05)] justify-between">
-                      <div className="flex gap-2 items-start">
-                        <CheckCircle2 size={12} className="text-accent-green mt-0.5 flex-shrink-0" />
-                        <div><span className="text-accent-green font-mono">+{item.suggestion}</span><span className="text-zinc-500 ml-2">{item.effect}</span></div>
-                      </div>
-                      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('tag-chip-editor:add-tag', { detail: { tag: item.suggestion } }))}
-                        className="text-[10px] px-1.5 py-0.5 bg-emerald-950/30 hover:bg-emerald-900/40 text-accent-green border border-emerald-900/30 rounded transition-colors">追加</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
 
-  const MappingErrorPanel = () => {
-    if (!selectedWorkflowId || invalidMappings.length === 0) return null
-    return (
-      <div className="rounded-lg border border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.05)] p-4 space-y-3">
-        <div className="flex items-center gap-2 text-rose-400"><AlertCircle size={16} /><h3 className="text-xs font-semibold uppercase tracking-wider">マッピングエラー検出</h3></div>
-        <p className="text-xs text-zinc-400 leading-relaxed">ワークフロー内に紐付け先マスタが無効なノードがあります。正しい役割を選択して修正してください。</p>
-        <div className="space-y-2.5 pt-1">
-          {invalidMappings.map((m) => {
-            const currentSelectedMasterId = selectedMasters[m.id] ?? ''
-            return (
-              <div key={m.id} className="p-3 rounded-lg border border-[rgba(255,255,255,0.04)] bg-surface-2/60 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-zinc-400">Node ID: <strong className="text-zinc-200">{m.node_id}</strong></span>
-                  <span className="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">エラー</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select id={`param-error-select-${m.node_id}`} value={currentSelectedMasterId}
-                    onChange={(e) => setSelectedMasters((prev) => ({ ...prev, [m.id]: Number(e.target.value) }))}
-                    className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-zinc-300 focus:outline-none focus:border-rose-500/40">
-                    <option value="">役割を選択してください…</option>
-                    {mappingMasters?.map((master) => <option key={master.id} value={master.id}>{master.display_name} ({master.role})</option>)}
-                  </select>
-                  <button id={`param-error-fix-btn-${m.node_id}`}
-                    onClick={() => handleUpdateMapping(m.id, Number(currentSelectedMasterId))}
-                    disabled={!currentSelectedMasterId || updateWorkflowMutation.isPending}
-                    className="px-3 py-1.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 text-xs font-semibold transition-all disabled:opacity-40">
-                    {updateWorkflowMutation.isPending ? '保存中…' : '修正'}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
 
-  const ParamPanel = ({ mobile = false }: { mobile?: boolean }) => {
-    if (paramMappings.length === 0) return null
-    return (
-      <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
-        <p className="text-xs font-medium text-zinc-505 uppercase tracking-wider">Parameters</p>
-        {paramMappings.map((m) => (
-          <div key={m.id} className="flex items-center justify-between gap-4">
-            <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
-            {m.input_type === 'select' ? (
-              <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
-                <option value="">Select option…</option>
-                {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.model_name}</option>)}
-              </select>
-            ) : (
-              <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                step={m.input_type === 'float' ? 0.1 : 1}
-                className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
-            )}
-          </div>
-        ))}
-        <div className="flex items-center justify-between gap-4">
-          <label className="text-xs text-zinc-400">Batch Size</label>
-          <input id={`batch-size${mobile ? '-mobile' : ''}`} type="number" min={1} max={8} value={batchSize}
-            onChange={(e) => setBatchSize(Number(e.target.value))}
-            className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <label className="text-xs text-zinc-400">Seed</label>
-          <div className="flex items-center gap-2">
-            <button id={`seed-toggle${mobile ? '-mobile' : ''}`}
-              onClick={() => setSeedMode(seedMode === 'random' ? 'fixed' : 'random')}
-              className={`p-1${mobile ? '' : '.5'} rounded border transition-all ${seedMode === 'random' ? 'border-accent-green/50 text-accent-green bg-accent-green/10' : 'border-[rgba(255,255,255,0.1)] text-zinc-500'}`}>
-              {seedMode === 'random' ? <Shuffle size={mobile ? 12 : 13} /> : <Lock size={mobile ? 12 : 13} />}
-            </button>
-            <input id={`seed-input${mobile ? '-mobile' : ''}`} type="number" value={seed}
-              onChange={(e) => setSeed(Number(e.target.value))} disabled={seedMode === 'random'}
-              className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40`} />
-          </div>
-        </div>
-      </div>
-    )
-  }
+
+
+
+
+
 
   // ════════════════════════════════════════════════════════════
   // MOBILE LAYOUT
@@ -522,7 +658,20 @@ export function GeneratePage() {
                   className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
                   <Settings size={14} />
                 </button>
-                {isSettingsOpen && <SettingsPopover mobile />}
+                {isSettingsOpen && (
+                  <SettingsPopover
+                    setIsSettingsOpen={setIsSettingsOpen}
+                    localComfyUrl={localComfyUrl}
+                    setLocalComfyUrl={setLocalComfyUrl}
+                    setComfyUrl={setComfyUrl}
+                    selectedWorkflowId={selectedWorkflowId}
+                    workflow={workflow}
+                    handleSaveDefaultParams={handleSaveDefaultParams}
+                    isSavePending={saveDefaultParamsMutation.isPending}
+                    handleResetDefaultParams={handleResetDefaultParams}
+                    mobile
+                  />
+                )}
               </div>
               <select id="snapshot-history-select-mobile" value={selectedSnapshotId}
                 onChange={(e) => { if (e.target.value) handleLoadSnapshot(Number(e.target.value)) }}
@@ -657,23 +806,69 @@ export function GeneratePage() {
                       className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
                       <Plus size={10} />Add Asset
                     </button>
-                    {openAddAssetRole === activeMapping.role && <AssetDropdown role={activeMapping.role!} />}
+                    {openAddAssetRole === activeMapping.role && (
+                      <AssetDropdown
+                        role={activeMapping.role!}
+                        loras={loras}
+                        tagSets={tagSets}
+                        setLoraStrength={setLoraStrength}
+                        setSelectedTriggerSetId={setSelectedTriggerSetId}
+                        setSelectedLoraForModal={setSelectedLoraForModal}
+                        setOpenAddAssetRole={setOpenAddAssetRole}
+                        handleAddTagSetAsset={handleAddTagSetAsset}
+                      />
+                    )}
                   </div>
                 </div>
                 <textarea id={`prompt-mobile-${activeMapping.role!}`} value={paramValues[activeMapping.role!] ?? ''}
                   onChange={(e) => setParamValues({ ...paramValues, [activeMapping.role!]: e.target.value })}
                   placeholder={`Enter ${activeMapping.display_name}…`}
                   className="w-full min-h-[100px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40" />
-                <AppliedAssetChips role={activeMapping.role!} />
+                <AppliedAssetChips
+                  role={activeMapping.role!}
+                  appliedAssets={appliedAssets}
+                  toggleAppliedAsset={toggleAppliedAsset}
+                  removeAppliedAsset={removeAppliedAsset}
+                />
               </div>
             )
           })()}
 
           {/* Mobile Settings & Parameters */}
           <div className="px-4 py-3 space-y-4">
-            <AuditPanel />
-            <MappingErrorPanel />
-            <ParamPanel mobile />
+            <AuditPanel
+              auditOpen={auditOpen}
+              setAuditOpen={setAuditOpen}
+              auditStatus={auditStatus}
+              auditResult={auditResult}
+              auditTypes={auditTypes}
+              setAuditTypes={setAuditTypes}
+              auditIntent={auditIntent}
+              setAuditIntent={setAuditIntent}
+              runAudit={() => runAudit.mutate()}
+            />
+            <MappingErrorPanel
+              selectedWorkflowId={selectedWorkflowId}
+              invalidMappings={invalidMappings}
+              selectedMasters={selectedMasters}
+              setSelectedMasters={setSelectedMasters}
+              mappingMasters={mappingMasters}
+              handleUpdateMapping={handleUpdateMapping}
+              isUpdatingMapping={updateWorkflowMutation.isPending}
+            />
+            <ParamPanel
+              mobile
+              paramMappings={paramMappings}
+              paramValues={paramValues}
+              setParamValues={setParamValues}
+              loras={loras}
+              batchSize={batchSize}
+              setBatchSize={setBatchSize}
+              seedMode={seedMode}
+              setSeedMode={setSeedMode}
+              seed={seed}
+              setSeed={setSeed}
+            />
           </div>
 
           {/* Mobile Action Bar */}
@@ -698,7 +893,8 @@ export function GeneratePage() {
   // ════════════════════════════════════════════════════════════
   // DESKTOP LAYOUT
   // ════════════════════════════════════════════════════════════
-  const Modals = () => (
+  function Modals() {
+    return (
     <>
       {rescanOpen && workflow && (
         <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} onClose={() => setRescanOpen(false)}
@@ -804,7 +1000,8 @@ export function GeneratePage() {
       <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
         images={displayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
     </>
-  )
+    )
+  }
 
   return (
     <>
@@ -832,7 +1029,19 @@ export function GeneratePage() {
                   className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
                   <Settings size={14} />
                 </button>
-                {isSettingsOpen && <SettingsPopover />}
+                {isSettingsOpen && (
+                  <SettingsPopover
+                    setIsSettingsOpen={setIsSettingsOpen}
+                    localComfyUrl={localComfyUrl}
+                    setLocalComfyUrl={setLocalComfyUrl}
+                    setComfyUrl={setComfyUrl}
+                    selectedWorkflowId={selectedWorkflowId}
+                    workflow={workflow}
+                    handleSaveDefaultParams={handleSaveDefaultParams}
+                    isSavePending={saveDefaultParamsMutation.isPending}
+                    handleResetDefaultParams={handleResetDefaultParams}
+                  />
+                )}
               </div>
               <select id="snapshot-history-select" value={selectedSnapshotId}
                 onChange={(e) => { if (e.target.value) handleLoadSnapshot(Number(e.target.value)) }}
@@ -853,8 +1062,26 @@ export function GeneratePage() {
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-            <AuditPanel />
-            <MappingErrorPanel />
+            <AuditPanel
+              auditOpen={auditOpen}
+              setAuditOpen={setAuditOpen}
+              auditStatus={auditStatus}
+              auditResult={auditResult}
+              auditTypes={auditTypes}
+              setAuditTypes={setAuditTypes}
+              auditIntent={auditIntent}
+              setAuditIntent={setAuditIntent}
+              runAudit={() => runAudit.mutate()}
+            />
+            <MappingErrorPanel
+              selectedWorkflowId={selectedWorkflowId}
+              invalidMappings={invalidMappings}
+              selectedMasters={selectedMasters}
+              setSelectedMasters={setSelectedMasters}
+              mappingMasters={mappingMasters}
+              handleUpdateMapping={handleUpdateMapping}
+              isUpdatingMapping={updateWorkflowMutation.isPending}
+            />
 
             {textMappings.length === 0 && !selectedWorkflowId && <div className="flex-1 flex flex-col pt-4">{renderUploadZone()}</div>}
 
@@ -870,19 +1097,46 @@ export function GeneratePage() {
                         className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
                         <Plus size={10} />Add Asset
                       </button>
-                      {openAddAssetRole === m.role && <AssetDropdown role={m.role!} />}
+                      {openAddAssetRole === m.role && (
+                        <AssetDropdown
+                          role={m.role!}
+                          loras={loras}
+                          tagSets={tagSets}
+                          setLoraStrength={setLoraStrength}
+                          setSelectedTriggerSetId={setSelectedTriggerSetId}
+                          setSelectedLoraForModal={setSelectedLoraForModal}
+                          setOpenAddAssetRole={setOpenAddAssetRole}
+                          handleAddTagSetAsset={handleAddTagSetAsset}
+                        />
+                      )}
                     </div>
                   </div>
                   <TagChipEditor id={`prompt-${m.role!}`} value={paramValues[m.role!] ?? ''}
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'} />
-                  <AppliedAssetChips role={m.role!} />
+                  <AppliedAssetChips
+                    role={m.role!}
+                    appliedAssets={appliedAssets}
+                    toggleAppliedAsset={toggleAppliedAsset}
+                    removeAppliedAsset={removeAppliedAsset}
+                  />
                 </div>
               )
             })}
 
-            <ParamPanel />
+            <ParamPanel
+              paramMappings={paramMappings}
+              paramValues={paramValues}
+              setParamValues={setParamValues}
+              loras={loras}
+              batchSize={batchSize}
+              setBatchSize={setBatchSize}
+              seedMode={seedMode}
+              setSeedMode={setSeedMode}
+              seed={seed}
+              setSeed={setSeed}
+            />
           </div>
         </div>
 

@@ -70,9 +70,16 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
 
     const resolvedUrl = resolveComfyUrl(comfyUrl)
     const wsUrl = resolvedUrl.replace(/^http/, 'ws')
-    const ws = new WebSocket(`${wsUrl}/ws?clientId=${resolvedClientId}`)
-    ws.binaryType = 'blob'
-    wsRef.current = ws
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(`${wsUrl}/ws?clientId=${resolvedClientId}`)
+      ws.binaryType = 'blob'
+      wsRef.current = ws
+    } catch (e) {
+      console.error('Failed to establish WebSocket connection in useComfyWebSocket:', e)
+      setIsConnected(false)
+      return
+    }
 
     ws.onopen = () => setIsConnected(true)
     ws.onclose = () => setIsConnected(false)

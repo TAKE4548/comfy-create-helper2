@@ -3,7 +3,7 @@
  */
 
 import { X, Check, Copy } from 'lucide-react'
-import type { Category, Lora, LoraCreate } from '../../api/types'
+import type { Category, Lora, LoraCreate } from '../api/types'
 
 // ─── Form type shared between register and edit ────────────────
 export type LoraFormState = Omit<LoraCreate, 'trigger_word_sets'> & {

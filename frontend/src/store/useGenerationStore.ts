@@ -266,8 +266,14 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         get().fetchHistory()
 
         const wsUrl = resolvedUrl.replace(/^http/, 'ws')
-        ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
-        ws.binaryType = 'blob'
+        try {
+          ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
+          ws.binaryType = 'blob'
+        } catch (e) {
+          console.error('Failed to establish WebSocket connection:', e)
+          set({ isConnected: false })
+          return
+        }
 
         ws.onopen = () => { set({ isConnected: true }); get().fetchQueue() }
         ws.onclose = () => set({ isConnected: false })

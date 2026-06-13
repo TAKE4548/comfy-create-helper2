@@ -3,7 +3,7 @@
  */
 
 import { X, Check, Copy } from 'lucide-react'
-import type { Category, TagSet } from '../../api/types'
+import type { Category, TagSet } from '../api/types'
 
 export interface TagSetFormState {
   name: string
