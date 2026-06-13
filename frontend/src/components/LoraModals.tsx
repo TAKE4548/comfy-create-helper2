@@ -3,10 +3,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Check, Copy } from 'lucide-react'
+import { X, Check, Copy, Trash2 } from 'lucide-react'
 import type { Category, Lora, LoraCreate, ComfyLoraModel } from '../api/types'
 import { useQuery } from '@tanstack/react-query'
 import { lorasApi } from '../api/client'
+import TagChipEditor from './TagChipEditor'
 
 // ─── Form type shared between register and edit ────────────────
 export type LoraFormState = Omit<LoraCreate, 'trigger_word_sets'> & {
@@ -34,6 +35,38 @@ function LoraFormFields({
     queryKey: ['comfy-lora-models'],
     queryFn: lorasApi.getComfyModels,
   })
+
+  const handleAddTriggerSet = () => {
+    setForm((f) => ({
+      ...f,
+      trigger_word_sets: [...(f.trigger_word_sets || []), { name: '', words: '' }],
+    }))
+  }
+
+  const handleRemoveTriggerSet = (index: number) => {
+    setForm((f) => ({
+      ...f,
+      trigger_word_sets: f.trigger_word_sets.filter((_, i) => i !== index),
+    }))
+  }
+
+  const handleUpdateTriggerSetName = (index: number, name: string) => {
+    setForm((f) => ({
+      ...f,
+      trigger_word_sets: f.trigger_word_sets.map((tws, i) =>
+        i === index ? { ...tws, name } : tws
+      ),
+    }))
+  }
+
+  const handleUpdateTriggerWords = (index: number, words: string) => {
+    setForm((f) => ({
+      ...f,
+      trigger_word_sets: f.trigger_word_sets.map((tws, i) =>
+        i === index ? { ...tws, words } : tws
+      ),
+    }))
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -152,6 +185,51 @@ function LoraFormFields({
           {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+      <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Trigger Word Sets</label>
+          <button
+            type="button"
+            onClick={handleAddTriggerSet}
+            className="text-xs font-bold text-accent-green hover:underline flex items-center gap-1"
+          >
+            + Add Set
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {(form.trigger_word_sets || []).map((tws, index) => (
+            <div key={index} className="p-3 bg-surface border border-[rgba(255,255,255,0.06)] rounded-lg space-y-2 relative">
+              <div className="flex justify-between items-center gap-2">
+                <input
+                  type="text"
+                  value={tws.name}
+                  onChange={(e) => handleUpdateTriggerSetName(index, e.target.value)}
+                  className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+                  placeholder="Set Name (e.g. Costume, Hair)"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTriggerSet(index)}
+                  className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-red-400 hover:bg-surface-2 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <div>
+                <TagChipEditor
+                  value={tws.words}
+                  onChange={(val) => handleUpdateTriggerWords(index, val)}
+                  placeholder="Enter trigger words..."
+                />
+              </div>
+            </div>
+          ))}
+          {(!form.trigger_word_sets || form.trigger_word_sets.length === 0) && (
+            <p className="text-xs text-zinc-500 italic">No trigger word sets. Click "+ Add Set" to create one.</p>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -170,7 +248,7 @@ export function LoraRegisterModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl">
+      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl max-h-[80vh] overflow-y-auto custom-scrollbar">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <h2 className="text-sm font-semibold text-zinc-200">Register LoRA Model</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
@@ -200,7 +278,7 @@ export function LoraEditModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl">
+      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl max-h-[80vh] overflow-y-auto custom-scrollbar">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <h2 className="text-sm font-semibold text-zinc-200">Edit LoRA Model</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
