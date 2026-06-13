@@ -1,89 +1,14 @@
-"""LLM audit relay service - ported and refactored from ollama_api.py."""
+"""LLM audit orchestration service.
 
-import re
-import json
+Coordinates audit_types → user_prompt construction → LLM call → parse → result assembly.
+Default system prompts (fallbacks) are defined here; overrides come from the DB.
+"""
+
 import logging
-import httpx
-from app.config import settings
+from app.services.llm_request import call_llm
+from app.services.llm_parser import parse_interference, parse_vocabulary, parse_physical
 
 logger = logging.getLogger(__name__)
-
-
-async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 180.0) -> str:
-    """Call the LLM server (OpenAI-compatible API) asynchronously."""
-    prompt_tokens = (len(system_prompt or "") + len(user_prompt or "")) / 3
-    num_ctx = int(prompt_tokens) + 8192
-    num_ctx = max(2048, min(262144, num_ctx))
-
-    payload = {
-        "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "temperature": 0.2,
-    }
-
-    # If using Ollama endpoint (/v1/chat/completions compatible)
-    url = f"{settings.llm_base_url}/chat/completions"
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-
-
-def parse_interference(text: str) -> list[dict]:
-    results = []
-    block = re.search(r'<remove_tags>(.*?)</remove_tags>', text, re.DOTALL | re.IGNORECASE)
-    if not block:
-        return results
-    pattern = re.compile(
-        r'<item>.*?<tag>(.*?)</tag>.*?<reason_jp>(.*?)</reason_jp>.*?</item>',
-        re.DOTALL | re.IGNORECASE
-    )
-    for tag, reason in pattern.findall(block.group(1)):
-        if tag.strip():
-            results.append({"tag": tag.strip(), "reason": reason.strip()})
-    return results
-
-
-def parse_vocabulary(text: str) -> list[dict]:
-    results = []
-    block = re.search(r'<suggestions>(.*?)</suggestions>', text, re.DOTALL | re.IGNORECASE)
-    if not block:
-        return results
-    pattern = re.compile(
-        r'<item>.*?<vocabulary>(.*?)</vocabulary>.*?<effect_jp>(.*?)</effect_jp>.*?</item>',
-        re.DOTALL | re.IGNORECASE
-    )
-    for vocab, effect in pattern.findall(block.group(1)):
-        if vocab.strip():
-            results.append({"suggestion": vocab.strip(), "effect": effect.strip()})
-    return results
-
-
-def parse_physical(text: str) -> dict:
-    result = {"status": "unknown", "note": None, "alternatives": []}
-    block = re.search(r'<evaluation>(.*?)</evaluation>', text, re.DOTALL | re.IGNORECASE)
-    if not block:
-        return result
-    content = block.group(1)
-    rating = re.search(r'<rating>(.*?)</rating>', content, re.IGNORECASE)
-    if rating:
-        result["status"] = rating.group(1).strip().lower()
-    reason = re.search(r'<reason_jp>(.*?)</reason_jp>', content, re.IGNORECASE)
-    if reason:
-        result["note"] = reason.group(1).strip()
-    alts_block = re.search(r'<alternatives>(.*?)</alternatives>', content, re.DOTALL | re.IGNORECASE)
-    if alts_block:
-        result["alternatives"] = [
-            a.strip() for a in re.findall(r'<item>(.*?)</item>', alts_block.group(1), re.IGNORECASE)
-            if a.strip()
-        ]
-    return result
 
 
 async def run_audit(
@@ -95,7 +20,7 @@ async def run_audit(
     system_prompts: dict[str, str],
 ) -> dict:
     """Run requested audit types and return structured results."""
-    result = {}
+    result: dict = {}
 
     if "interference" in audit_types:
         sp = system_prompts.get("audit_interference", _default_interference_prompt(model_hint))
@@ -145,7 +70,7 @@ async def run_audit(
     return result
 
 
-# ─── Default system prompts (fallback) ───────────────────────────
+# ─── Default system prompts (fallbacks when DB has no entry) ──────
 
 def _default_interference_prompt(model_hint: str) -> str:
     is_anima = str(model_hint).lower() == "anima"

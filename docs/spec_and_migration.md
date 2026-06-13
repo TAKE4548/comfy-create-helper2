@@ -1,5 +1,10 @@
 # Prompt Surgeon（仮）- 現状仕様 & React移行方針
 
+> [!WARNING]
+> **このドキュメントは移行済みです。**  
+> 現行仕様の正本は [`docs/specs/SPEC_SUMMARY.md`](./specs/SPEC_SUMMARY.md) に移行されました。  
+> 本ファイルは旧 Streamlit 時代の移行記録として参照用に保持しています。新規の参照・更新は行わないでください。
+
 ---
 
 ## 現状概要

@@ -1,5 +1,11 @@
 # Prompt Surgeon（仮）- API仕様ドラフト
 
+> [!WARNING]
+> **このドキュメントはドラフトです。**  
+> API の正本は `backend/openapi.json`（FastAPI 自動生成）です。  
+> 概要は [`docs/specs/SPEC_SUMMARY.md §7`](./specs/SPEC_SUMMARY.md#7-api-概要) を参照してください。  
+> 本ファイルは設計初期のドラフト記録として参照用に保持しています。
+
 FastAPIが提供するエンドポイントのドラフト。`docs/openapi.yaml` 起こしの前段として、主要エンドポイントのリクエスト/レスポンスを整理する。
 
 ---

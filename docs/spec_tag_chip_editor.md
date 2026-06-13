@@ -1,5 +1,10 @@
 # タグチップエディタ 詳細仕様
 
+> [!WARNING]
+> **このドキュメントは移行済みです。**  
+> 現行仕様の正本は [`docs/specs/SPEC_COMMON.md`](./specs/SPEC_COMMON.md#3-tagchipeditor-コンポーネント) に統合されました。  
+> 本ファイルは初版仕様の詳細記録として参照用に保持しています。新規の参照・更新は行わないでください。
+
 **対象プロジェクト**: Prompt Surgeon（仮）  
 **関連仕様**: `concept_core.md`, `concept_suggestion.md`, `api_spec_draft.md`  
 **作成日**: 2026-06-10

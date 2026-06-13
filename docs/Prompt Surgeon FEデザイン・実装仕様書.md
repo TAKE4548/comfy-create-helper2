@@ -1,6 +1,13 @@
 # **Prompt Surgeon フロントエンド デザイン・実装仕様書**
 
+> [!WARNING]
+> **このドキュメントは移行済みです。**  
+> デザインシステムは [`docs/specs/SPEC_COMMON.md`](./specs/SPEC_COMMON.md#1-デザインシステム)、  
+> 各画面仕様は `docs/specs/SPEC_GENERATE.md` / `SPEC_LORAS.md` / `SPEC_TAGS.md` に統合されました。  
+> 本ファイルは初版設計の記録として参照用に保持しています。
+
 本ドキュメントは、ComfyUIをバックエンドとする画像生成フロントエンドアプリ「Prompt Surgeon」のUI/UXおよび実装仕様を定義するものです。本仕様に基づいてReactコンポーネントの実装をお願いします。
+
 
 ## **1\. 技術スタック**
 

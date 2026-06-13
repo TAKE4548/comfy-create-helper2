@@ -1,6 +1,25 @@
+/**
+ * Generation store — global state for ComfyUI connection, generation progress,
+ * workflow selection, parameters, assets, and session persistence.
+ *
+ * Heavy utilities (prompt manipulation, localStorage keys) are delegated to:
+ *   - src/utils/promptUtils.ts
+ *   - src/utils/localStorageKeys.ts
+ *
+ * ComfyUI HTTP helpers (fetchHistory, fetchQueue, queuePrompt, cancelGeneration)
+ * live here as they are tightly coupled to the WebSocket state machine.
+ */
+
 import { create } from 'zustand'
 import { configApi } from '../api/client'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
+import { LS_KEYS } from '../utils/localStorageKeys'
+import { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
+
+// ─── Re-export helpers for backward compatibility ─────────────────
+export { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
+
+// ─── Type definitions ─────────────────────────────────────────────
 
 export interface ComfyProgress {
   value: number
@@ -40,16 +59,17 @@ export interface ComfyQueueResponse {
 }
 
 export interface AppliedAsset {
-  id: string; // unique key (e.g. `lora-1-12345`)
+  id: string;              // unique key (e.g. `lora-1-12345`)
   type: 'lora' | 'tagset';
-  assetId: number; // DB ID
-  name: string; // display name
-  enabled: boolean; // toggle state
-  tags: string[]; // tagset tags or LoRA trigger words
-  loraPromptString?: string; // LoRA prompt embedded string `<lora:filename:strength>`
+  assetId: number;         // DB ID
+  name: string;            // display name
+  enabled: boolean;        // toggle state
+  tags: string[];          // tagset tags or LoRA trigger words
+  loraPromptString?: string; // LoRA prompt string `<lora:filename:strength>`
 }
 
 export interface GenerationState {
+  // ─── Connection ────────────────────────────────────────────────
   clientId: string
   isConnected: boolean
   isGenerating: boolean
@@ -57,8 +77,9 @@ export interface GenerationState {
   previewImage: string | null
   currentPromptId: string | null
   activeClientId: string | null
-  comfyUrl: string | null // 追加
-  
+  comfyUrl: string | null
+
+  // ─── UI / Workflow ─────────────────────────────────────────────
   filterOwnSession: boolean
   selectedWorkflowId: number | null
   paramValues: Record<string, string>
@@ -71,7 +92,8 @@ export interface GenerationState {
   appliedAssets: Record<string, AppliedAsset[]>
   queueRunning: Array<[number, string, any, { client_id?: string }, any]>
   queuePending: Array<[number, string, any, { client_id?: string }, any]>
-  
+
+  // ─── Actions ───────────────────────────────────────────────────
   initialize: () => void
   setFilterOwnSession: (filter: boolean) => void
   setSelectedWorkflowId: (id: number | null) => void
@@ -88,90 +110,65 @@ export interface GenerationState {
   clearPreview: () => void
   fetchHistory: () => Promise<void>
   fetchQueue: () => Promise<void>
-  setComfyUrl: (url: string) => void // 追加
+  setComfyUrl: (url: string) => void
 }
 
+// ─── Module-level WebSocket singleton ─────────────────────────────
 let ws: WebSocket | null = null
 let comfyUrl: string | null = null
 let isInitializing = false
 
-export function removeAssetFromPrompt(prompt: string, tags: string[], loraPromptString?: string): string {
-  let chips = prompt.split(',').map(c => c.trim()).filter(Boolean);
-  const tagsToRemove = new Set(tags.map(t => t.toLowerCase()));
-  if (loraPromptString) {
-    tagsToRemove.add(loraPromptString.toLowerCase());
-    const match = loraPromptString.match(/<lora:([^:]+):/i);
-    if (match) {
-      const baseLoraPrefix = `<lora:${match[1]}:`.toLowerCase();
-      chips = chips.filter(chip => {
-        const lowerChip = chip.toLowerCase();
-        return !(lowerChip.startsWith(baseLoraPrefix) && lowerChip.endsWith('>'));
-      });
-    }
-  }
-  chips = chips.filter(chip => !tagsToRemove.has(chip.toLowerCase()));
-  return chips.join(', ');
-}
-
-export function addAssetToPrompt(prompt: string, tags: string[], loraPromptString?: string): string {
-  const currentVal = prompt || '';
-  const tagsToAdd = [...tags];
-  if (loraPromptString) {
-    tagsToAdd.push(loraPromptString);
-  }
-  const toAddStr = tagsToAdd.join(', ');
-  if (!currentVal) return toAddStr;
-  return `${currentVal}, ${toAddStr}`;
-}
-
+// ─── Store ────────────────────────────────────────────────────────
 export const useGenerationStore = create<GenerationState>((set, get) => {
-  // Load initial values from localStorage
-  const storedClientId = localStorage.getItem('prompt-surgeon-client-id') || 
+  // ── Restore persisted state ──────────────────────────────────
+  const storedClientId =
+    localStorage.getItem(LS_KEYS.CLIENT_ID) ||
     'prompt-surgeon-' + Math.random().toString(36).slice(2, 9)
-  localStorage.setItem('prompt-surgeon-client-id', storedClientId)
+  localStorage.setItem(LS_KEYS.CLIENT_ID, storedClientId)
 
-  const storedFilterOwn = localStorage.getItem('prompt-surgeon-filter-own') === 'true'
-  const storedWorkflowId = localStorage.getItem('prompt-surgeon-workflow-id')
-    ? Number(localStorage.getItem('prompt-surgeon-workflow-id'))
+  const storedFilterOwn = localStorage.getItem(LS_KEYS.FILTER_OWN) === 'true'
+  const storedWorkflowId = localStorage.getItem(LS_KEYS.WORKFLOW_ID)
+    ? Number(localStorage.getItem(LS_KEYS.WORKFLOW_ID))
     : null
-  
+
   let storedParams: Record<string, string> = {}
   if (storedWorkflowId !== null) {
     try {
-      storedParams = JSON.parse(localStorage.getItem('prompt-surgeon-params-wf-' + storedWorkflowId) || '{}')
+      storedParams = JSON.parse(
+        localStorage.getItem(LS_KEYS.PARAMS_PREFIX + storedWorkflowId) || '{}'
+      )
     } catch {}
   }
 
   let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
   try {
-    storedAppliedAssets = JSON.parse(localStorage.getItem('prompt-surgeon-applied-assets') || '{}')
+    storedAppliedAssets = JSON.parse(localStorage.getItem(LS_KEYS.APPLIED_ASSETS) || '{}')
   } catch {}
 
-  const storedBatchSize = localStorage.getItem('prompt-surgeon-batch-size')
-    ? Number(localStorage.getItem('prompt-surgeon-batch-size'))
+  const storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE)
+    ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE))
     : 1
 
-  const storedSeedMode = (localStorage.getItem('prompt-surgeon-seed-mode') as 'random' | 'fixed') || 'random'
-  const storedSeed = localStorage.getItem('prompt-surgeon-seed')
-    ? Number(localStorage.getItem('prompt-surgeon-seed'))
+  const storedSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
+  const storedSeed = localStorage.getItem(LS_KEYS.SEED)
+    ? Number(localStorage.getItem(LS_KEYS.SEED))
     : 42
 
   let storedBatchImages: string[] = []
   try {
-    storedBatchImages = JSON.parse(localStorage.getItem('prompt-surgeon-batch-images') || '[]')
-    // Filter out blob URLs on startup as they are invalid
+    storedBatchImages = JSON.parse(localStorage.getItem(LS_KEYS.BATCH_IMAGES) || '[]')
     storedBatchImages = storedBatchImages.filter((img) => !img.startsWith('blob:'))
   } catch {}
 
-  const storedSelectedImg = localStorage.getItem('prompt-surgeon-selected-img')
-  const verifiedSelectedImg = storedSelectedImg && !storedSelectedImg.startsWith('blob:') ? storedSelectedImg : null
+  const storedSelectedImg = localStorage.getItem(LS_KEYS.SELECTED_IMG)
+  const verifiedSelectedImg =
+    storedSelectedImg && !storedSelectedImg.startsWith('blob:') ? storedSelectedImg : null
 
-  const storedCurrentPromptId = localStorage.getItem('prompt-surgeon-current-prompt-id')
+  const storedCurrentPromptId = localStorage.getItem(LS_KEYS.CURRENT_PROMPT_ID)
 
-  // Check queue & history to reconcile state
+  // ── Reconcile generation state on startup ────────────────────
   const reconcileState = async (url: string) => {
     try {
-      // 1. Check history for currentPromptId
       const promptId = get().currentPromptId
       if (promptId) {
         const historyRes = await fetch(`${url}/history/${promptId}`)
@@ -179,9 +176,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           const historyData = await historyRes.json()
           if (historyData[promptId]) {
             const item = historyData[promptId] as ComfyHistoryItem
-            const outputs = item.outputs
             const imagesList: string[] = []
-            Object.values(outputs).forEach((out) => {
+            Object.values(item.outputs).forEach((out) => {
               if (out.images) {
                 out.images.forEach((img) => {
                   imagesList.push(
@@ -194,8 +190,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               const finalImg = imagesList[0]
               set((state) => {
                 const nextImages = [finalImg, ...state.batchImages.filter((x) => x !== finalImg)].slice(0, 8)
-                localStorage.setItem('prompt-surgeon-batch-images', JSON.stringify(nextImages))
-                localStorage.setItem('prompt-surgeon-selected-img', finalImg)
+                localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
+                localStorage.setItem(LS_KEYS.SELECTED_IMG, finalImg)
                 return {
                   previewImage: finalImg,
                   batchImages: nextImages,
@@ -204,47 +200,29 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   currentPromptId: null,
                 }
               })
-              localStorage.removeItem('prompt-surgeon-current-prompt-id')
+              localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
               return
             }
           }
         }
       }
 
-      // 2. Check general queue
       const queueRes = await fetch(`${url}/queue`)
       if (queueRes.ok) {
         const queueData = (await queueRes.json()) as ComfyQueueResponse
         const running = queueData.queue_running || []
         const pending = queueData.queue_pending || []
-        
-        set({
-          queueRunning: running,
-          queuePending: pending,
-        })
-        
+        set({ queueRunning: running, queuePending: pending })
+
         const activeJob = running.length > 0 ? running[0] : null
         if (activeJob) {
           const activePromptId = activeJob[1]
-          const activeExtra = activeJob[3]
-          const jobClientId = activeExtra?.client_id || null
-          
-          set({
-            isGenerating: true,
-            currentPromptId: activePromptId,
-            activeClientId: jobClientId,
-          })
-          localStorage.setItem('prompt-surgeon-current-prompt-id', activePromptId)
-        } else {
-          // If we had a running job stored but it is not in queue and was not found in history, clear it
-          if (promptId) {
-            set({
-              isGenerating: false,
-              currentPromptId: null,
-              activeClientId: null,
-            })
-            localStorage.removeItem('prompt-surgeon-current-prompt-id')
-          }
+          const jobClientId = activeJob[3]?.client_id || null
+          set({ isGenerating: true, currentPromptId: activePromptId, activeClientId: jobClientId })
+          localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, activePromptId)
+        } else if (promptId) {
+          set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+          localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         }
       }
     } catch (e) {
@@ -253,6 +231,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
   }
 
   return {
+    // ── Initial state ────────────────────────────────────────
     clientId: storedClientId,
     isConnected: false,
     isGenerating: false,
@@ -260,8 +239,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     previewImage: null,
     currentPromptId: storedCurrentPromptId,
     activeClientId: null,
-    comfyUrl: localStorage.getItem('prompt-surgeon-comfy-url'),
-    
+    comfyUrl: localStorage.getItem(LS_KEYS.COMFY_URL),
     filterOwnSession: storedFilterOwn,
     selectedWorkflowId: storedWorkflowId,
     paramValues: storedParams,
@@ -275,6 +253,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     queueRunning: [],
     queuePending: [],
 
+    // ── Actions ──────────────────────────────────────────────
     initialize: () => {
       if (isInitializing || ws) return
       isInitializing = true
@@ -283,8 +262,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         comfyUrl = url
         set({ comfyUrl: url })
         const resolvedUrl = resolveComfyUrl(url)
-        
-        // Reconcile queue/history state
         reconcileState(resolvedUrl)
         get().fetchHistory()
 
@@ -292,69 +269,57 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         ws = new WebSocket(`${wsUrl}/ws?clientId=${get().clientId}`)
         ws.binaryType = 'blob'
 
-        ws.onopen = () => {
-          set({ isConnected: true })
-          get().fetchQueue()
-        }
+        ws.onopen = () => { set({ isConnected: true }); get().fetchQueue() }
         ws.onclose = () => set({ isConnected: false })
         ws.onerror = () => set({ isConnected: false })
 
         ws.onmessage = (event) => {
           if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
             const blob = event.data instanceof Blob ? event.data : new Blob([event.data])
-            const url = URL.createObjectURL(blob)
-            set({ previewImage: url })
+            set({ previewImage: URL.createObjectURL(blob) })
             return
           }
-
           try {
             const msg = JSON.parse(event.data)
             const type = msg.type as string
             const data = msg.data as Record<string, unknown>
 
             switch (type) {
-              case 'status': {
+              case 'status':
                 get().fetchQueue()
                 break
-              }
 
               case 'progress': {
                 const value = data.value as number
                 const max = data.max as number
                 set({
                   isGenerating: true,
-                  progress: {
-                    value,
-                    max,
-                    percentage: max > 0 ? Math.round((value / max) * 100) : 0,
-                  },
+                  progress: { value, max, percentage: max > 0 ? Math.round((value / max) * 100) : 0 },
                 })
                 break
               }
 
-              case 'execution_start': {
+              case 'execution_start':
                 set({
                   isGenerating: true,
                   progress: null,
                   currentPromptId: data.prompt_id as string,
-                  activeClientId: null, // will be reconciled on queue/status if needed
+                  activeClientId: null,
                 })
                 get().fetchQueue()
                 break
-              }
 
               case 'executed': {
                 const output = data.output as Record<string, unknown> | undefined
                 const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
                 if (images && images.length > 0) {
                   const img = images[0]
-                  const baseUrl = resolveComfyUrl(comfyUrl)
+                  const baseUrl = resolveComfyUrl(comfyUrl!)
                   const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
-                  
                   set((state) => {
                     const nextImages = [viewUrl, ...state.batchImages.filter((x) => x !== viewUrl)].slice(0, 8)
-                    localStorage.setItem('prompt-surgeon-batch-images', JSON.stringify(nextImages))
-                    localStorage.setItem('prompt-surgeon-selected-img', viewUrl)
+                    localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
+                    localStorage.setItem(LS_KEYS.SELECTED_IMG, viewUrl)
                     return {
                       previewImage: viewUrl,
                       batchImages: nextImages,
@@ -364,7 +329,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                       activeClientId: null,
                     }
                   })
-                  localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                  localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                   get().fetchHistory()
                 }
                 get().fetchQueue()
@@ -372,25 +337,15 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               }
 
               case 'execution_complete':
-                set({
-                  isGenerating: false,
-                  progress: { value: 1, max: 1, percentage: 100 },
-                  currentPromptId: null,
-                  activeClientId: null,
-                })
-                localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                set({ isGenerating: false, progress: { value: 1, max: 1, percentage: 100 }, currentPromptId: null, activeClientId: null })
+                localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchHistory()
                 get().fetchQueue()
                 break
 
               case 'execution_error':
-                set({
-                  isGenerating: false,
-                  progress: null,
-                  currentPromptId: null,
-                  activeClientId: null,
-                })
-                localStorage.removeItem('prompt-surgeon-current-prompt-id')
+                set({ isGenerating: false, progress: null, currentPromptId: null, activeClientId: null })
+                localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchQueue()
                 break
             }
@@ -400,206 +355,130 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
       }
 
-      const storedUrl = localStorage.getItem('prompt-surgeon-comfy-url')
+      const storedUrl = localStorage.getItem(LS_KEYS.COMFY_URL)
       if (storedUrl) {
         initConnection(storedUrl)
         isInitializing = false
       } else {
         configApi.get()
           .then((config) => {
-            const url = (config && config.comfy_url) ? config.comfy_url : 'http://localhost:8188'
+            const url = config?.comfy_url || 'http://localhost:8188'
             initConnection(url)
           })
-          .catch((e) => {
-            console.error('Failed to initialize ComfyUI WebSocket store:', e)
-          })
-          .finally(() => {
-            isInitializing = false
-          })
+          .catch((e) => { console.error('Failed to initialize WebSocket store:', e) })
+          .finally(() => { isInitializing = false })
       }
     },
 
-    setFilterOwnSession: (filter: boolean) => {
+    setFilterOwnSession: (filter) => {
       set({ filterOwnSession: filter })
-      localStorage.setItem('prompt-surgeon-filter-own', String(filter))
+      localStorage.setItem(LS_KEYS.FILTER_OWN, String(filter))
     },
 
-    setSelectedWorkflowId: (id: number | null) => {
+    setSelectedWorkflowId: (id) => {
       set({ selectedWorkflowId: id })
       if (id !== null) {
-        localStorage.setItem('prompt-surgeon-workflow-id', String(id))
+        localStorage.setItem(LS_KEYS.WORKFLOW_ID, String(id))
         let params: Record<string, string> = {}
-        try {
-          params = JSON.parse(localStorage.getItem('prompt-surgeon-params-wf-' + id) || '{}')
-        } catch {}
+        try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + id) || '{}') } catch {}
         set({ paramValues: params })
       } else {
-        localStorage.removeItem('prompt-surgeon-workflow-id')
+        localStorage.removeItem(LS_KEYS.WORKFLOW_ID)
         set({ paramValues: {} })
       }
     },
 
-    setParamValues: (values: Record<string, string>) => {
+    setParamValues: (values) => {
       set({ paramValues: values })
       const activeWfId = get().selectedWorkflowId
       if (activeWfId !== null) {
-        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(values))
+        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(values))
       }
     },
 
-    addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => {
+    addAppliedAsset: (role, asset) => {
       const current = get().appliedAssets
-      const roleAssets = current[role] || []
       const newAsset: AppliedAsset = {
         ...asset,
         id: `${asset.type}-${asset.assetId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         enabled: true,
       }
-      const updated = {
-        ...current,
-        [role]: [...roleAssets, newAsset],
-      }
-      
+      const updated = { ...current, [role]: [...(current[role] || []), newAsset] }
       const currentParams = get().paramValues
-      const currentPrompt = currentParams[role] || ''
-      const updatedPrompt = addAssetToPrompt(currentPrompt, newAsset.tags, newAsset.loraPromptString)
       const updatedParams = {
         ...currentParams,
-        [role]: updatedPrompt,
+        [role]: addAssetToPrompt(currentParams[role] || '', newAsset.tags, newAsset.loraPromptString),
       }
-      
-      set({
-        appliedAssets: updated,
-        paramValues: updatedParams,
-      })
-      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      set({ appliedAssets: updated, paramValues: updatedParams })
+      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
-      }
+      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
     },
 
-    removeAppliedAsset: (role: string, id: string) => {
+    removeAppliedAsset: (role, id) => {
       const current = get().appliedAssets
       const roleAssets = current[role] || []
       const assetToRemove = roleAssets.find((a) => a.id === id)
-      
-      const updated = {
-        ...current,
-        [role]: roleAssets.filter((a) => a.id !== id),
-      }
-      
+      const updated = { ...current, [role]: roleAssets.filter((a) => a.id !== id) }
       let updatedParams = get().paramValues
-      if (assetToRemove && assetToRemove.enabled) {
-        const currentParams = get().paramValues
-        const currentPrompt = currentParams[role] || ''
-        const updatedPrompt = removeAssetFromPrompt(currentPrompt, assetToRemove.tags, assetToRemove.loraPromptString)
+      if (assetToRemove?.enabled) {
+        const currentPrompt = updatedParams[role] || ''
         updatedParams = {
-          ...currentParams,
-          [role]: updatedPrompt,
+          ...updatedParams,
+          [role]: removeAssetFromPrompt(currentPrompt, assetToRemove.tags, assetToRemove.loraPromptString),
         }
       }
-      
-      set({
-        appliedAssets: updated,
-        paramValues: updatedParams,
-      })
-      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      set({ appliedAssets: updated, paramValues: updatedParams })
+      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
-      }
+      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
     },
 
-    toggleAppliedAsset: (role: string, id: string) => {
+    toggleAppliedAsset: (role, id) => {
       const current = get().appliedAssets
       const roleAssets = current[role] || []
-      const assetToToggle = roleAssets.find((a) => a.id === id)
-      if (!assetToToggle) return
-
-      const nextEnabled = !assetToToggle.enabled
-      const updated = {
-        ...current,
-        [role]: roleAssets.map((a) => (a.id === id ? { ...a, enabled: nextEnabled } : a)),
-      }
-
-      const currentParams = get().paramValues
-      const currentPrompt = currentParams[role] || ''
-      let updatedPrompt = currentPrompt
-
-      if (nextEnabled) {
-        updatedPrompt = addAssetToPrompt(currentPrompt, assetToToggle.tags, assetToToggle.loraPromptString)
-      } else {
-        updatedPrompt = removeAssetFromPrompt(currentPrompt, assetToToggle.tags, assetToToggle.loraPromptString)
-      }
-
-      const updatedParams = {
-        ...currentParams,
-        [role]: updatedPrompt,
-      }
-
-      set({
-        appliedAssets: updated,
-        paramValues: updatedParams,
-      })
-      localStorage.setItem('prompt-surgeon-applied-assets', JSON.stringify(updated))
+      const asset = roleAssets.find((a) => a.id === id)
+      if (!asset) return
+      const nextEnabled = !asset.enabled
+      const updated = { ...current, [role]: roleAssets.map((a) => (a.id === id ? { ...a, enabled: nextEnabled } : a)) }
+      const currentPrompt = get().paramValues[role] || ''
+      const updatedPrompt = nextEnabled
+        ? addAssetToPrompt(currentPrompt, asset.tags, asset.loraPromptString)
+        : removeAssetFromPrompt(currentPrompt, asset.tags, asset.loraPromptString)
+      const updatedParams = { ...get().paramValues, [role]: updatedPrompt }
+      set({ appliedAssets: updated, paramValues: updatedParams })
+      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem('prompt-surgeon-params-wf-' + activeWfId, JSON.stringify(updatedParams))
-      }
+      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
     },
 
-    setBatchSize: (size: number) => {
-      set({ batchSize: size })
-      localStorage.setItem('prompt-surgeon-batch-size', String(size))
-    },
+    setBatchSize: (size) => { set({ batchSize: size }); localStorage.setItem(LS_KEYS.BATCH_SIZE, String(size)) },
+    setSeedMode: (mode) => { set({ seedMode: mode }); localStorage.setItem(LS_KEYS.SEED_MODE, mode) },
+    setSeed: (seed) => { set({ seed }); localStorage.setItem(LS_KEYS.SEED, String(seed)) },
 
-    setSeedMode: (mode: 'random' | 'fixed') => {
-      set({ seedMode: mode })
-      localStorage.setItem('prompt-surgeon-seed-mode', mode)
-    },
-
-    setSeed: (seed: number) => {
-      set({ seed })
-      localStorage.setItem('prompt-surgeon-seed', String(seed))
-    },
-
-    setSelectedImg: (img: string | null) => {
+    setSelectedImg: (img) => {
       set({ selectedImg: img })
       if (img && !img.startsWith('blob:')) {
-        localStorage.setItem('prompt-surgeon-selected-img', img)
+        localStorage.setItem(LS_KEYS.SELECTED_IMG, img)
       } else {
-        localStorage.removeItem('prompt-surgeon-selected-img')
+        localStorage.removeItem(LS_KEYS.SELECTED_IMG)
       }
     },
 
-    queuePrompt: async (workflow: Record<string, unknown>): Promise<string | null> => {
+    queuePrompt: async (workflow) => {
       if (!comfyUrl) return null
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
         const res = await fetch(`${activeUrl}/prompt`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: workflow,
-            client_id: get().clientId,
-          }),
+          body: JSON.stringify({ prompt: workflow, client_id: get().clientId }),
         })
         if (!res.ok) throw new Error(`ComfyUI returned ${res.status}`)
         const data = await res.json()
         const promptId = data.prompt_id ?? null
-        
-        set({
-          isGenerating: true,
-          previewImage: null,
-          progress: null,
-          currentPromptId: promptId,
-          activeClientId: get().clientId,
-        })
-        
-        if (promptId) {
-          localStorage.setItem('prompt-surgeon-current-prompt-id', promptId)
-        }
+        set({ isGenerating: true, previewImage: null, progress: null, currentPromptId: promptId, activeClientId: get().clientId })
+        if (promptId) localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
         await get().fetchQueue()
         return promptId
       } catch (e) {
@@ -613,49 +492,38 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
         await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
-        set({
-          isGenerating: false,
-          currentPromptId: null,
-          activeClientId: null,
-        })
-        localStorage.removeItem('prompt-surgeon-current-prompt-id')
+        set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+        localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         await get().fetchQueue()
       } catch (e) {
         console.error('Failed to cancel:', e)
       }
     },
 
-    clearPreview: () => {
-      set({
-        previewImage: null,
-        progress: null,
-      })
-    },
+    clearPreview: () => set({ previewImage: null, progress: null }),
 
     fetchHistory: async () => {
       if (!comfyUrl) return
       const resolvedUrl = resolveComfyUrl(comfyUrl)
       try {
         const res = await fetch(`${resolvedUrl}/history`)
-        if (res.ok) {
-          const data = await res.json()
-          const allImages: string[] = []
-          const keys = Object.keys(data).sort((a, b) => Number(b) - Number(a))
-          keys.forEach((key) => {
-            const item = data[key] as ComfyHistoryItem
-            const outputs = item.outputs
-            Object.values(outputs).forEach((out) => {
-              if (out.images) {
-                out.images.forEach((img) => {
-                  allImages.push(
-                    `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
-                  )
-                })
-              }
-            })
+        if (!res.ok) return
+        const data = await res.json()
+        const allImages: string[] = []
+        const keys = Object.keys(data).sort((a, b) => Number(b) - Number(a))
+        keys.forEach((key) => {
+          const item = data[key] as ComfyHistoryItem
+          Object.values(item.outputs).forEach((out) => {
+            if (out.images) {
+              out.images.forEach((img) => {
+                allImages.push(
+                  `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
+                )
+              })
+            }
           })
-          set({ comfyHistoryImages: allImages.slice(0, 50) })
-        }
+        })
+        set({ comfyHistoryImages: allImages.slice(0, 50) })
       } catch (e) {
         console.error('Failed to fetch comfy history:', e)
       }
@@ -668,23 +536,17 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         const res = await fetch(`${resolvedUrl}/queue`)
         if (res.ok) {
           const data = (await res.json()) as ComfyQueueResponse
-          set({
-            queueRunning: data.queue_running || [],
-            queuePending: data.queue_pending || [],
-          })
+          set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
         }
       } catch (e) {
         console.error('Failed to fetch comfy queue:', e)
       }
     },
 
-    setComfyUrl: (url: string) => {
-      localStorage.setItem('prompt-surgeon-comfy-url', url)
+    setComfyUrl: (url) => {
+      localStorage.setItem(LS_KEYS.COMFY_URL, url)
       set({ comfyUrl: url })
-      if (ws) {
-        ws.close()
-        ws = null
-      }
+      if (ws) { ws.close(); ws = null }
       get().initialize()
     },
   }

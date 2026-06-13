@@ -1,0 +1,184 @@
+/**
+ * Settings page sub-components:
+ *   - MappingMasterModal (create / edit)
+ *   - MappingMasterDeleteModal
+ *   - ConnectionStatus
+ */
+
+import { useState } from 'react'
+import { X, RefreshCw, AlertTriangle } from 'lucide-react'
+import type { MappingMaster, MappingMasterCreate } from '../../api/types'
+
+const inputCls = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
+
+// ─── Shared form state type ─────────────────────────────────────
+export interface MappingMasterFormState {
+  role: string
+  displayName: string
+  paramName: string
+  inputType: 'textarea' | 'int' | 'float' | 'select'
+  expectedClassTypes: string
+  titlePatterns: string
+}
+
+export function emptyMasterForm(): MappingMasterFormState {
+  return { role: '', displayName: '', paramName: '', inputType: 'textarea', expectedClassTypes: '', titlePatterns: '' }
+}
+
+export function masterFormToCreate(f: MappingMasterFormState): MappingMasterCreate {
+  return {
+    role: f.role,
+    display_name: f.displayName,
+    param_name: f.paramName,
+    input_type: f.inputType,
+    expected_class_types: f.expectedClassTypes.split(',').map((s) => s.trim()).filter(Boolean),
+    title_patterns: f.titlePatterns.split(',').map((s) => s.trim()).filter(Boolean),
+  }
+}
+
+export function masterToForm(mm: MappingMaster): MappingMasterFormState {
+  return {
+    role: mm.role,
+    displayName: mm.display_name,
+    paramName: mm.param_name,
+    inputType: mm.input_type,
+    expectedClassTypes: mm.expected_class_types?.join(', ') ?? '',
+    titlePatterns: mm.title_patterns?.join(', ') ?? '',
+  }
+}
+
+// ─── Create / Edit Modal ────────────────────────────────────────
+export function MappingMasterModal({
+  mode, form, setForm, isPending, onClose, onSubmit,
+}: {
+  mode: 'create' | 'edit'
+  form: MappingMasterFormState
+  setForm: React.Dispatch<React.SetStateAction<MappingMasterFormState>>
+  isPending: boolean
+  onClose: () => void
+  onSubmit: (e: React.FormEvent) => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="w-full max-w-lg bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-3">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            {mode === 'create' ? 'Create Mapping Master' : 'Edit Mapping Master'}
+          </h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={16} /></button>
+        </div>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-zinc-400 font-medium">Role (Unique Key)</label>
+              <input type="text" required value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className={inputCls} placeholder="e.g., prompt" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-zinc-400 font-medium">Display Name</label>
+              <input type="text" required value={form.displayName} onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))} className={inputCls} placeholder="e.g., ポジティブプロンプト" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-zinc-400 font-medium">Param Name</label>
+              <input type="text" required value={form.paramName} onChange={(e) => setForm((f) => ({ ...f, paramName: e.target.value }))} className={inputCls} placeholder="e.g., text" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-zinc-400 font-medium">Input Type</label>
+              <select value={form.inputType} onChange={(e) => setForm((f) => ({ ...f, inputType: e.target.value as MappingMasterFormState['inputType'] }))} className={inputCls}>
+                {(['textarea', 'int', 'float', 'select'] as const).map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] text-zinc-400 font-medium">Expected Class Types (comma separated)</label>
+            <input type="text" value={form.expectedClassTypes} onChange={(e) => setForm((f) => ({ ...f, expectedClassTypes: e.target.value }))} className={inputCls} placeholder="e.g., CLIPTextEncode, CLIPTextEncodeSDXL" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] text-zinc-400 font-medium">Title Patterns (comma separated)</label>
+            <input type="text" value={form.titlePatterns} onChange={(e) => setForm((f) => ({ ...f, titlePatterns: e.target.value }))} className={inputCls} placeholder="e.g., positive, prompt" />
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[rgba(255,255,255,0.06)]">
+            <button type="button" onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-2">Cancel</button>
+            <button type="submit" disabled={isPending}
+              className="bg-[#7C6FDD] text-white hover:bg-[#6d62cc] disabled:opacity-50 text-xs px-4 py-2 rounded-lg font-medium transition-all">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Delete Confirmation Modal ──────────────────────────────────
+export function MappingMasterDeleteModal({
+  master, usages, isLoadingUsages, isPending, onClose, onDelete,
+}: {
+  master: MappingMaster
+  usages?: { workflow_name: string; node_id: string }[]
+  isLoadingUsages: boolean
+  isPending: boolean
+  onClose: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="w-full max-w-md bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="flex items-center gap-2.5 text-red-400">
+          <AlertTriangle size={18} /><h3 className="text-sm font-semibold">Delete Mapping Master?</h3>
+        </div>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Are you sure you want to delete <span className="font-mono text-zinc-200 font-bold">{master.role}</span>? This action cannot be undone.
+        </p>
+        {isLoadingUsages ? (
+          <div className="flex items-center gap-2 text-zinc-600 text-xs py-2"><RefreshCw size={12} className="animate-spin" />Checking usage in workflows…</div>
+        ) : usages && usages.length > 0 ? (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 space-y-2">
+            <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Warning: Currently used in {usages.length} workflow mapping(s):</p>
+            <div className="max-h-28 overflow-y-auto custom-scrollbar space-y-1.5">
+              {usages.map((u, idx) => (
+                <div key={idx} className="text-[11px] text-zinc-300 flex justify-between font-mono bg-white/[0.02] px-2 py-1 rounded">
+                  <span className="truncate max-w-[200px]" title={u.workflow_name}>{u.workflow_name}</span>
+                  <span className="text-zinc-500 text-right">Node: {u.node_id}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/20 px-3 py-1.5 rounded-lg">Not currently used in any workflow mappings. Safe to delete.</p>
+        )}
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-2">Cancel</button>
+          <button type="button" onClick={onDelete} disabled={isPending}
+            className="bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 text-xs px-4 py-2 rounded-lg font-medium transition-all">Delete</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Connection Status Row ──────────────────────────────────────
+export function ConnectionStatus({ label, url }: { label: string; url: string }) {
+  const [status, setStatus] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
+  const check = async () => {
+    setStatus('checking')
+    try { await fetch(url, { signal: AbortSignal.timeout(3000) }); setStatus('ok') }
+    catch { setStatus('error') }
+  }
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-zinc-300">{label}</p>
+        <p className="text-xs text-zinc-600 font-mono">{url}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        {status !== 'idle' && (
+          <div className={`w-2 h-2 rounded-full ${status === 'checking' ? 'bg-zinc-500 animate-pulse' : status === 'ok' ? 'bg-accent-green' : 'bg-red-500'}`} />
+        )}
+        <button id={`check-${label.replace(/\s+/g, '-').toLowerCase()}`} onClick={check}
+          className="text-xs px-2 py-1 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all">
+          {status === 'checking' ? 'Checking…' : 'Ping'}
+        </button>
+      </div>
+    </div>
+  )
+}

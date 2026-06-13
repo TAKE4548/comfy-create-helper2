@@ -1,0 +1,130 @@
+# Prompt Surgeon — LoRAs ページ仕様書 (SPEC_LORAS)
+
+**バージョン**: 1.0  
+**最終更新**: 2026-06-13  
+**実装ファイル**: `frontend/src/pages/LoRAsPage.tsx`（現行 569行 ← 🟡 リファクタリング対象）
+
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
+
+---
+
+## 1. 概要
+
+ComfyUI で使用可能な LoRA モデルのメタ情報・トリガーワードセットを管理するページ。  
+ライブラリ管理（CRUD）に特化し、ワークフロー依存の有効/無効化はここでは行わない（Generate ページのアセットパネルで実施）。
+
+---
+
+## 2. 機能一覧
+
+| 機能 | 説明 |
+|---|---|
+| LoRA 一覧表示 | Grid 表示。検索・カテゴリフィルタ対応 |
+| LoRA 登録 | メタ情報・カテゴリ・推奨強度・トリガーワードセットを登録 |
+| LoRA 編集 | 登録済み LoRA のメタ情報更新 |
+| LoRA 削除 | 登録済み LoRA の削除 |
+| トリガーワードセット管理 | 1つの LoRA に複数のトリガーワードセットを登録（例: 素体系・服装A・服装B） |
+| カテゴリフィルタ | カテゴリ別にフィルタリング |
+
+---
+
+## 3. レイアウト
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ [検索バー] [カテゴリフィルタ] [Register Model ボタン]        │
+├─────────────────────────────────────────────────────────────┤
+│  LoRA カード グリッド                                        │
+│  ┌──────────────────┐  ┌──────────────────┐                 │
+│  │ [サムネイル]      │  │ [サムネイル]      │                 │
+│  │ LoRA 名          │  │ LoRA 名          │                 │
+│  │ [カテゴリバッジ]  │  │ [カテゴリバッジ]  │                 │
+│  │ トリガーワード    │  │ トリガーワード    │                 │
+│  │ 推奨強度: 0.8    │  │ 推奨強度: 0.6〜1 │                 │
+│  └──────────────────┘  └──────────────────┘                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. LoRA カード
+
+| 要素 | 仕様 |
+|---|---|
+| サムネイル | サムネイル画像がない場合は `ImageIcon` + "No Preview" プレースホルダー |
+| カテゴリバッジ | カテゴリマスタから選択した値をバッジ表示 |
+| トリガーワード | ホバー時にコピーボタン表示 |
+| 推奨強度 | 下限〜上限（例: `0.6 ~ 1.0`）または単一値（例: `0.8`）。未設定も許容 |
+| ファイルパス | フォルダアイコンをホバーで ComfyUI 側のファイルパスをツールチップ表示 |
+
+---
+
+## 5. LoRA データモデル
+
+```typescript
+interface Lora {
+  id: number;
+  model_name: string;            // ComfyUI でのモデル名（ファイル名）
+  file_path?: string;            // ComfyUI 側のファイルパス
+  description?: string;          // 自由記述（キャラ名・役割等）
+  category_id?: number;
+  category?: { id: number; name: string };
+  recommended_strength_min?: number;
+  recommended_strength_max?: number;
+  thumbnail_path?: string;
+  trigger_word_sets?: TriggerWordSet[];
+}
+
+interface TriggerWordSet {
+  id: number;
+  lora_id: number;
+  name: string;                  // セット名（例: 「素体系」「服装A」）
+  words: string[];               // トリガーワードのリスト
+}
+```
+
+---
+
+## 6. カテゴリマスタ
+
+初期シードデータ:
+- `キャラクター系`
+- `ポーズ再現系`
+- `スタイル系`
+- `コンセプト系`
+
+LoRA カテゴリはマスタから選択。設定ページでの追加/削除も可能。
+
+---
+
+## 7. API 呼び出し
+
+| 操作 | エンドポイント |
+|---|---|
+| LoRA 一覧 | `GET /api/loras` |
+| LoRA 登録 | `POST /api/loras` |
+| LoRA 更新 | `PATCH /api/loras/{id}` |
+| LoRA 削除 | `DELETE /api/loras/{id}` |
+| トリガーワードセット一覧 | `GET /api/loras/{id}/trigger-word-sets` |
+| トリガーワードセット登録 | `POST /api/loras/{id}/trigger-word-sets` |
+| トリガーワードセット更新 | `PATCH /api/loras/{id}/trigger-word-sets/{set_id}` |
+| トリガーワードセット削除 | `DELETE /api/loras/{id}/trigger-word-sets/{set_id}` |
+| カテゴリ一覧 | `GET /api/lora-categories` |
+
+---
+
+## 8. リファクタリング計画
+
+現行 569行。hooks + sub-components に分割して各ファイル ~200行以内に収める。
+
+```
+pages/LoRAsPage/（分割後）
+  index.tsx                   ← リスト表示・フィルタリングのみ（~150行）
+  hooks/
+    useLoraList.ts            ← 一覧取得・フィルタロジック
+    useLoraForm.ts            ← 登録・編集フォーム状態管理
+  components/
+    LoraCard.tsx              ← カード1件のUI
+    LoraFormModal.tsx         ← 登録・編集モーダル
+    TriggerWordSetEditor.tsx  ← トリガーワードセット管理UI
+```
