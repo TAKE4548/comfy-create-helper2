@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Camera, Settings,
-  Loader2, ChevronRight, Wand2, AlertCircle, CheckCircle2,
+  Loader2, ChevronRight, ChevronDown, Wand2, AlertCircle, CheckCircle2,
   ImageOff, ScanLine, Plus, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -420,6 +420,33 @@ export function GeneratePage() {
   }, [])
 
   const [activePromptTab, setActivePromptTab] = useState<string>('')
+
+  const [collapsedRoles, setCollapsedRoles] = useState<Record<string, boolean>>({})
+
+  const getIsRoleCollapsed = (role: string) => {
+    if (collapsedRoles[role] !== undefined) {
+      return collapsedRoles[role];
+    }
+    return localStorage.getItem(`prompt-surgeon-collapsed-${role}`) === 'true';
+  };
+
+  const setRoleCollapsed = (role: string, isCollapsed: boolean) => {
+    setCollapsedRoles((prev) => ({ ...prev, [role]: isCollapsed }));
+    localStorage.setItem(`prompt-surgeon-collapsed-${role}`, String(isCollapsed));
+  };
+
+  useEffect(() => {
+    const handleTextModeToggle = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string }>;
+      const editorId = customEvent.detail?.id;
+      if (editorId && editorId.startsWith('prompt-')) {
+        const role = editorId.replace('prompt-', '');
+        setRoleCollapsed(role, false);
+      }
+    };
+    window.addEventListener('tag-chip-editor:text-mode-toggle', handleTextModeToggle);
+    return () => window.removeEventListener('tag-chip-editor:text-mode-toggle', handleTextModeToggle);
+  }, []);
   const qc = useQueryClient()
   const [rescanOpen, setRescanOpen] = useState(false)
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | ''>('')
@@ -579,11 +606,13 @@ export function GeneratePage() {
       tags: twsWords,
       loraPromptString: `<lora:${filename}:${strength.toFixed(1)}>`,
     })
+    setRoleCollapsed(role, false)
   }
 
   const handleAddTagSetAsset = (role: string, ts: TagSet) => {
     addAppliedAsset(role, { type: 'tagset', assetId: ts.id, name: ts.name, tags: ts.tags || [] })
     setOpenAddAssetRole(null)
+    setRoleCollapsed(role, false)
   }
 
   // ── Upload zone render ───────────────────────────────────────
@@ -796,40 +825,54 @@ export function GeneratePage() {
           {textMappings.length > 0 && activePromptTab && (() => {
             const activeMapping = textMappings.find((m) => m.role === activePromptTab)
             if (!activeMapping) return null
+            const isCollapsed = getIsRoleCollapsed(activeMapping.role!)
             return (
               <div className="px-4 py-3 space-y-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-zinc-400">{activeMapping.display_name} Input</label>
-                  <div className="relative">
-                    <button type="button" id={`add-asset-btn-mobile-${activeMapping.role!}`}
-                      onClick={() => setOpenAddAssetRole(openAddAssetRole === activeMapping.role ? null : activeMapping.role!)}
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
-                      <Plus size={10} />Add Asset
-                    </button>
-                    {openAddAssetRole === activeMapping.role && (
-                      <AssetDropdown
-                        role={activeMapping.role!}
-                        loras={loras}
-                        tagSets={tagSets}
-                        setLoraStrength={setLoraStrength}
-                        setSelectedTriggerSetId={setSelectedTriggerSetId}
-                        setSelectedLoraForModal={setSelectedLoraForModal}
-                        setOpenAddAssetRole={setOpenAddAssetRole}
-                        handleAddTagSetAsset={handleAddTagSetAsset}
-                      />
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRoleCollapsed(activeMapping.role!, !isCollapsed)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+                  >
+                    {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                    <span>{activeMapping.display_name} Input</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="relative">
+                      <button type="button" id={`add-asset-btn-mobile-${activeMapping.role!}`}
+                        onClick={() => setOpenAddAssetRole(openAddAssetRole === activeMapping.role ? null : activeMapping.role!)}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
+                        <Plus size={10} />Add Asset
+                      </button>
+                      {openAddAssetRole === activeMapping.role && (
+                        <AssetDropdown
+                          role={activeMapping.role!}
+                          loras={loras}
+                          tagSets={tagSets}
+                          setLoraStrength={setLoraStrength}
+                          setSelectedTriggerSetId={setSelectedTriggerSetId}
+                          setSelectedLoraForModal={setSelectedLoraForModal}
+                          setOpenAddAssetRole={setOpenAddAssetRole}
+                          handleAddTagSetAsset={handleAddTagSetAsset}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-                <textarea id={`prompt-mobile-${activeMapping.role!}`} value={paramValues[activeMapping.role!] ?? ''}
-                  onChange={(e) => setParamValues({ ...paramValues, [activeMapping.role!]: e.target.value })}
-                  placeholder={`Enter ${activeMapping.display_name}…`}
-                  className="w-full min-h-[100px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40" />
-                <AppliedAssetChips
-                  role={activeMapping.role!}
-                  appliedAssets={appliedAssets}
-                  toggleAppliedAsset={toggleAppliedAsset}
-                  removeAppliedAsset={removeAppliedAsset}
-                />
+                {!isCollapsed && (
+                  <>
+                    <textarea id={`prompt-mobile-${activeMapping.role!}`} value={paramValues[activeMapping.role!] ?? ''}
+                      onChange={(e) => setParamValues({ ...paramValues, [activeMapping.role!]: e.target.value })}
+                      placeholder={`Enter ${activeMapping.display_name}…`}
+                      className="w-full min-h-[100px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40" />
+                    <AppliedAssetChips
+                      role={activeMapping.role!}
+                      appliedAssets={appliedAssets}
+                      toggleAppliedAsset={toggleAppliedAsset}
+                      removeAppliedAsset={removeAppliedAsset}
+                    />
+                  </>
+                )}
               </div>
             )
           })()}
@@ -1087,40 +1130,54 @@ export function GeneratePage() {
 
             {textMappings.map((m) => {
               const isNegative = m.role?.toLowerCase().includes('negative')
+              const isCollapsed = getIsRoleCollapsed(m.role!)
               return (
                 <div key={m.id} className="space-y-1.5 relative">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-zinc-400">{m.display_name}</label>
-                    <div className="relative">
-                      <button type="button" id={`add-asset-btn-${m.role!}`}
-                        onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
-                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
-                        <Plus size={10} />Add Asset
-                      </button>
-                      {openAddAssetRole === m.role && (
-                        <AssetDropdown
-                          role={m.role!}
-                          loras={loras}
-                          tagSets={tagSets}
-                          setLoraStrength={setLoraStrength}
-                          setSelectedTriggerSetId={setSelectedTriggerSetId}
-                          setSelectedLoraForModal={setSelectedLoraForModal}
-                          setOpenAddAssetRole={setOpenAddAssetRole}
-                          handleAddTagSetAsset={handleAddTagSetAsset}
-                        />
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRoleCollapsed(m.role!, !isCollapsed)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+                    >
+                      {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                      <span>{m.display_name}</span>
+                    </button>
+                    {!isCollapsed && (
+                      <div className="relative">
+                        <button type="button" id={`add-asset-btn-${m.role!}`}
+                          onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
+                          className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
+                          <Plus size={10} />Add Asset
+                        </button>
+                        {openAddAssetRole === m.role && (
+                          <AssetDropdown
+                            role={m.role!}
+                            loras={loras}
+                            tagSets={tagSets}
+                            setLoraStrength={setLoraStrength}
+                            setSelectedTriggerSetId={setSelectedTriggerSetId}
+                            setSelectedLoraForModal={setSelectedLoraForModal}
+                            setOpenAddAssetRole={setOpenAddAssetRole}
+                            handleAddTagSetAsset={handleAddTagSetAsset}
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <TagChipEditor id={`prompt-${m.role!}`} value={paramValues[m.role!] ?? ''}
-                    onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
-                    placeholder={`Enter ${m.display_name}…`}
-                    variant={isNegative ? 'negative' : 'positive'} />
-                  <AppliedAssetChips
-                    role={m.role!}
-                    appliedAssets={appliedAssets}
-                    toggleAppliedAsset={toggleAppliedAsset}
-                    removeAppliedAsset={removeAppliedAsset}
-                  />
+                  {!isCollapsed && (
+                    <>
+                      <TagChipEditor id={`prompt-${m.role!}`} value={paramValues[m.role!] ?? ''}
+                        onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                        placeholder={`Enter ${m.display_name}…`}
+                        variant={isNegative ? 'negative' : 'positive'} />
+                      <AppliedAssetChips
+                        role={m.role!}
+                        appliedAssets={appliedAssets}
+                        toggleAppliedAsset={toggleAppliedAsset}
+                        removeAppliedAsset={removeAppliedAsset}
+                      />
+                    </>
+                  )}
                 </div>
               )
             })}

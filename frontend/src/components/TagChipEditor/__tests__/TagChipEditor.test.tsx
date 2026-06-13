@@ -72,6 +72,35 @@ describe('TagChipEditor', () => {
     expect(screen.getByText('cherry')).toBeInTheDocument();
   });
 
+  it('dispatches custom event tag-chip-editor:text-mode-toggle when switching modes if id is provided', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('tag-chip-editor:text-mode-toggle', eventSpy);
+
+    render(
+      <StatefulTagChipEditor
+        initialValue="apple, banana"
+        onChange={mockOnChange}
+        id="prompt-positive"
+      />
+    );
+
+    // Switch to text mode
+    const switchBtn = screen.getByRole('button', { name: 'テキスト入力モード切替' });
+    fireEvent.click(switchBtn);
+
+    expect(eventSpy).toHaveBeenCalledTimes(1);
+    expect(eventSpy.mock.calls[0][0].detail).toEqual({ id: 'prompt-positive' });
+
+    // Switch back to chip mode
+    const switchBackBtn = screen.getByRole('button', { name: 'チップモード切替' });
+    fireEvent.click(switchBackBtn);
+
+    expect(eventSpy).toHaveBeenCalledTimes(2);
+    expect(eventSpy.mock.calls[1][0].detail).toEqual({ id: 'prompt-positive' });
+
+    window.removeEventListener('tag-chip-editor:text-mode-toggle', eventSpy);
+  });
+
   it('handles custom window events tag-chip-editor:disable-tag and tag-chip-editor:add-tag', () => {
     render(
       <StatefulTagChipEditor

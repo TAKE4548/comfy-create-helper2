@@ -143,12 +143,26 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   const handleSwitchToTextMode = () => {
     setTextValue(chipsToString(state));
     setIsTextMode(true);
+    if (id) {
+      window.dispatchEvent(
+        new CustomEvent('tag-chip-editor:text-mode-toggle', {
+          detail: { id }
+        })
+      );
+    }
   };
 
   const handleSwitchToChipMode = () => {
     const newChips = parseToChips(textValue);
     setChips(newChips, true); // 編集確定したテキストを履歴に積む
     setIsTextMode(false);
+    if (id) {
+      window.dispatchEvent(
+        new CustomEvent('tag-chip-editor:text-mode-toggle', {
+          detail: { id }
+        })
+      );
+    }
   };
 
   // Ctrl+Z / Ctrl+Y による Undo/Redo ショートカット
