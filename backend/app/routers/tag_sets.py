@@ -11,13 +11,26 @@ from app import models, schemas
 router = APIRouter(prefix="/api/tag-sets", tags=["tag-sets"])
 
 
-def _tagset_to_schema(ts: models.TagSet) -> schemas.TagSetRead:
+def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
+    snapshot_paths = [
+        r[0] for r in (
+            db.query(models.Snapshot.image_path)
+            .join(models.SnapshotTagSet, models.SnapshotTagSet.snapshot_id == models.Snapshot.id)
+            .filter(models.SnapshotTagSet.tag_set_id == ts.id)
+            .filter(models.Snapshot.image_path.isnot(None))
+            .filter(models.Snapshot.image_path != "")
+            .order_by(models.Snapshot.created_at.desc(), models.Snapshot.id.desc())
+            .limit(5)
+            .all()
+        )
+    ]
     return schemas.TagSetRead(
         id=ts.id,
         name=ts.name,
         description=ts.description,
         category_id=ts.category_id,
         tags=json.loads(ts.tags) if ts.tags else [],
+        snapshot_paths=snapshot_paths,
         created_at=ts.created_at,
     )
 
@@ -27,7 +40,7 @@ def list_tag_sets(category_id: Optional[int] = None, db: Session = Depends(get_d
     q = db.query(models.TagSet)
     if category_id is not None:
         q = q.filter(models.TagSet.category_id == category_id)
-    return [_tagset_to_schema(ts) for ts in q.order_by(models.TagSet.id.desc()).all()]
+    return [_tagset_to_schema(ts, db) for ts in q.order_by(models.TagSet.id.desc()).all()]
 
 
 @router.post("", response_model=schemas.TagSetRead, status_code=status.HTTP_201_CREATED)
@@ -41,7 +54,7 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
     db.add(ts)
     db.commit()
     db.refresh(ts)
-    return _tagset_to_schema(ts)
+    return _tagset_to_schema(ts, db)
 
 
 @router.put("/{tag_set_id}", response_model=schemas.TagSetRead)
@@ -55,7 +68,7 @@ def update_tag_set(tag_set_id: int, payload: schemas.TagSetCreate, db: Session =
     ts.tags = json.dumps(payload.tags)
     db.commit()
     db.refresh(ts)
-    return _tagset_to_schema(ts)
+    return _tagset_to_schema(ts, db)
 
 
 @router.delete("/{tag_set_id}", status_code=status.HTTP_204_NO_CONTENT)

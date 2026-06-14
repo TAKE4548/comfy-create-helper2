@@ -150,7 +150,11 @@ export interface AlbumItem {
   snapshot_id: number
   sequence_order: number
   image_path: string | null
+  created_at?: string | null
 }
+
+export type AlbumRead = Album;
+export type AlbumItemRead = AlbumItem;
 
 export interface AlbumSummary {
   id: number
@@ -195,6 +199,7 @@ export interface Lora {
   thumbnail_path: string | null
   file_path: string | null
   trigger_word_sets: TriggerWordSet[]
+  snapshot_paths?: string[]
   created_at: string
 }
 
@@ -225,6 +230,7 @@ export interface TagSet {
   description: string | null
   category_id: number | null
   tags: string[]
+  snapshot_paths?: string[]
   created_at: string
 }
 

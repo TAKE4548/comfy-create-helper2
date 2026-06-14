@@ -72,11 +72,16 @@ class AlbumOrderUpdate(BaseModel):
     snapshot_ids: list[int]
 
 
+class AlbumItemsDelete(BaseModel):
+    snapshot_ids: list[int]
+
+
 class AlbumItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     snapshot_id: int
     sequence_order: int
     image_path: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class AlbumRead(BaseModel):

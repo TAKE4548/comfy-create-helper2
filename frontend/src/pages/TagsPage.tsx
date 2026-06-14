@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Tag, Copy, Trash2, Pencil } from 'lucide-react'
 import { tagSetsApi, tagsetCategoriesApi } from '../api/client'
 import type { TagSet, Category } from '../api/types'
+import { ImageCarousel } from '../components/ImageCarousel'
 import {
   TagSetCreateModal,
   TagSetEditModal,
@@ -137,6 +138,13 @@ export function TagsPage() {
               {sets.map((ts) => (
                 <div key={ts.id} id={`tagset-card-${ts.id}`} onClick={() => setSelectedTagSetForDetail(ts)}
                   className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-3 flex flex-col justify-between gap-3 hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer min-h-[120px]">
+                  {ts.snapshot_paths && ts.snapshot_paths.length > 0 && (
+                    <ImageCarousel
+                      snapshotPaths={ts.snapshot_paths}
+                      alt={ts.name}
+                      className="aspect-video w-full rounded-lg overflow-hidden"
+                    />
+                  )}
                   <div className="space-y-1.5 min-w-0">
                     <div className="flex justify-between items-start gap-2">
                       <p className="text-xs font-semibold text-zinc-200 truncate" title={ts.name}>{ts.name}</p>

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Loader2 } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
@@ -46,6 +46,20 @@ export function HistoryModalPreview({
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
     enabled: !!activeSnapshotId && isOpen,
   })
+
+  // キーボードイベント監視 (ArrowLeft, ArrowRight)
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        if (currentIndex > 0) onChangeIndex(currentIndex - 1)
+      } else if (e.key === 'ArrowRight') {
+        if (currentIndex < images.length - 1) onChangeIndex(currentIndex + 1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, currentIndex, images.length, onChangeIndex])
 
   if (!isOpen || images.length === 0) return null
 
@@ -119,11 +133,27 @@ export function HistoryModalPreview({
           }
         }}
       >
+        {currentIndex > 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex - 1) }}
+            className="absolute left-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
+          >
+            &lt;
+          </button>
+        )}
         <img
           src={activeImage}
           alt={`Preview ${currentIndex + 1}`}
           className="max-w-full max-h-full object-contain pointer-events-none select-none"
         />
+        {currentIndex < images.length - 1 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex + 1) }}
+            className="absolute right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
+          >
+            &gt;
+          </button>
+        )}
 
         {/* Carousel indicators */}
         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white/80 pointer-events-none">

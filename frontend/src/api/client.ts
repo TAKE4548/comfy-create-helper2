@@ -56,7 +56,9 @@ export const albumsApi = {
   create: (data: unknown) => request('/albums', { method: 'POST', body: JSON.stringify(data) }),
   updateOrder: (id: number, snapshot_ids: number[]) =>
     request(`/albums/${id}/order`, { method: 'PUT', body: JSON.stringify({ snapshot_ids }) }),
-  delete: (id: number) => request(`/albums/${id}`, { method: 'DELETE' }),
+  delete: (id: number) => request('/albums/' + id, { method: 'DELETE' }),
+  deleteItems: (id: number, snapshot_ids: number[]) =>
+    request(`/albums/${id}/items/delete`, { method: 'POST', body: JSON.stringify({ snapshot_ids }) }),
 }
 
 // ─── LoRAs ──────────────────────────────────────────────────────

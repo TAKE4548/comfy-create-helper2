@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Folder, Copy, Layers, Trash2, ImageOff, Pencil } from 'lucide-react'
+import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil } from 'lucide-react'
 import { lorasApi, loraCategoriesApi } from '../api/client'
 import type { Lora, Category } from '../api/types'
+import { ImageCarousel } from '../components/ImageCarousel'
 import {
   LoraRegisterModal,
   LoraEditModal,
@@ -140,10 +141,12 @@ export function LoRAsPage() {
             return (
               <div key={lora.id} id={`lora-card-${lora.id}`} onClick={() => setSelectedLoraForDetail(lora)}
                 className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer">
-                <div className="aspect-square bg-surface-2 flex items-center justify-center relative overflow-hidden">
-                  {lora.thumbnail_path
-                    ? <img src={lora.thumbnail_path} alt={lora.model_name} className="w-full h-full object-cover" />
-                    : <div className="flex flex-col items-center gap-2 text-zinc-600"><ImageOff size={28} strokeWidth={1} /><span className="text-xs">No Preview</span></div>}
+                <ImageCarousel
+                  thumbnailPath={lora.thumbnail_path}
+                  snapshotPaths={lora.snapshot_paths}
+                  alt={lora.model_name}
+                  className="aspect-square w-full"
+                >
                   <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); openEdit(lora) }}
                     className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                     <Pencil size={13} />
@@ -153,7 +156,7 @@ export function LoRAsPage() {
                     className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
                     <Trash2 size={13} />
                   </button>
-                </div>
+                </ImageCarousel>
                 <div className="p-3 space-y-2">
                   <div>
                     <p className="text-xs font-medium text-zinc-200 truncate" title={lora.description || lora.model_name}>

@@ -154,3 +154,49 @@ class TestLorasAPI(unittest.TestCase):
         self.assertEqual(data[1]["is_registered"], True)
         self.assertEqual(data[1]["lora_id"], legacy_lora.id)
 
+    def test_lora_snapshot_paths(self):
+        # Create a workflow
+        wf = models.Workflow(name="test workflow", json_body="{}")
+        self.db.add(wf)
+        self.db.flush()
+
+        # Create snapshots and link them to lora
+        for i in range(7):
+            snap = models.Snapshot(
+                workflow_id=wf.id,
+                params="{}",
+                image_path=f"path/to/snap_{i}.png"
+            )
+            self.db.add(snap)
+            self.db.flush()
+            
+            snap_lora = models.SnapshotLora(
+                snapshot_id=snap.id,
+                lora_id=self.registered_lora.id,
+                strength=0.75
+            )
+            self.db.add(snap_lora)
+        
+        self.db.commit()
+
+        # List loras via API
+        response = self.client.get("/api/loras")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Find the registered lora
+        lora_data = next(x for x in data if x["id"] == self.registered_lora.id)
+        self.assertIn("snapshot_paths", lora_data)
+        # Should return the latest 5 snapshot paths
+        self.assertEqual(len(lora_data["snapshot_paths"]), 5)
+        # Verify it is sorted by created_at desc (which corresponds to higher IDs in SQLite sequential insertion)
+        # snap_6, snap_5, snap_4, snap_3, snap_2
+        self.assertEqual(lora_data["snapshot_paths"], [
+            "path/to/snap_6.png",
+            "path/to/snap_5.png",
+            "path/to/snap_4.png",
+            "path/to/snap_3.png",
+            "path/to/snap_2.png"
+        ])
+
+

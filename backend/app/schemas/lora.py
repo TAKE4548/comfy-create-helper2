@@ -55,6 +55,7 @@ class LoraRead(BaseModel):
     thumbnail_path: Optional[str] = None
     file_path: Optional[str] = None
     trigger_word_sets: list[TriggerWordSetRead] = []
+    snapshot_paths: list[str] = []
     created_at: datetime
 
 

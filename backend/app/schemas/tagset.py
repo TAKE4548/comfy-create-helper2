@@ -19,4 +19,5 @@ class TagSetRead(BaseModel):
     description: Optional[str] = None
     category_id: Optional[int] = None
     tags: list[str]
+    snapshot_paths: list[str] = []
     created_at: datetime

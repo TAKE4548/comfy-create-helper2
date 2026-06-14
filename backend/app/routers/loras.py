@@ -16,7 +16,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/loras", tags=["loras"])
 
 
-def _lora_to_schema(lora: models.Lora) -> schemas.LoraRead:
+def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
+    snapshot_paths = [
+        r[0] for r in (
+            db.query(models.Snapshot.image_path)
+            .join(models.SnapshotLora, models.SnapshotLora.snapshot_id == models.Snapshot.id)
+            .filter(models.SnapshotLora.lora_id == lora.id)
+            .filter(models.Snapshot.image_path.isnot(None))
+            .filter(models.Snapshot.image_path != "")
+            .order_by(models.Snapshot.created_at.desc(), models.Snapshot.id.desc())
+            .limit(5)
+            .all()
+        )
+    ]
     return schemas.LoraRead(
         id=lora.id,
         model_name=lora.model_name,
@@ -35,6 +47,7 @@ def _lora_to_schema(lora: models.Lora) -> schemas.LoraRead:
             )
             for tws in lora.trigger_word_sets
         ],
+        snapshot_paths=snapshot_paths,
     )
 
 
@@ -43,7 +56,7 @@ def list_loras(category_id: Optional[int] = None, db: Session = Depends(get_db))
     q = db.query(models.Lora)
     if category_id is not None:
         q = q.filter(models.Lora.category_id == category_id)
-    return [_lora_to_schema(l) for l in q.order_by(models.Lora.model_name).all()]
+    return [_lora_to_schema(l, db) for l in q.order_by(models.Lora.model_name).all()]
 
 
 @router.post("", response_model=schemas.LoraRead, status_code=status.HTTP_201_CREATED)
@@ -67,7 +80,7 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
         ))
     db.commit()
     db.refresh(lora)
-    return _lora_to_schema(lora)
+    return _lora_to_schema(lora, db)
 
 
 @router.put("/{lora_id}", response_model=schemas.LoraRead)
@@ -94,7 +107,7 @@ def update_lora(lora_id: int, payload: schemas.LoraCreate, db: Session = Depends
         ))
     db.commit()
     db.refresh(lora)
-    return _lora_to_schema(lora)
+    return _lora_to_schema(lora, db)
 
 
 @router.delete("/{lora_id}", status_code=status.HTTP_204_NO_CONTENT)
