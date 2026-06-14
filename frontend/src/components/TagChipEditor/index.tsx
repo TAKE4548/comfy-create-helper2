@@ -3,7 +3,8 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -45,9 +46,15 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   // `@dnd-kit` センサーの設定
   // 入力エリアなどの干渉を防ぐため、ドラッグ判定の最小距離(8px)を設定
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 500,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {

@@ -37,9 +37,15 @@ export const TagChip: React.FC<TagChipProps> = ({
 
   // ドラッグ時のインラインスタイル
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: isDragging
+      ? transform
+        ? `${CSS.Transform.toString(transform)} scale(1.05)`
+        : 'scale(1.05)'
+      : CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0.8 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    boxShadow: isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.3)' : undefined,
   };
 
   // 編集モードに入った際にインプットを選択フォーカスする

@@ -26,7 +26,8 @@ import {
   closestCenter,
   useSensor,
   useSensors,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   DragEndEvent
 } from '@dnd-kit/core'
 import {
@@ -56,10 +57,15 @@ function SortableItem({
   } = useSortable({ id, disabled })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: transform
+      ? `${CSS.Transform.toString(transform)} scale(1.05)`
+      : isDragging
+      ? 'scale(1.05)'
+      : undefined,
     transition,
-    zIndex: isDragging ? 10 : 1,
-    opacity: isDragging ? 0.8 : 1,
+    zIndex: isDragging ? 50 : 1,
+    opacity: isDragging ? 0.9 : 1,
+    boxShadow: isDragging ? '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5)' : undefined,
     touchAction: 'none'
   }
 
@@ -89,9 +95,15 @@ export function HistoryPage() {
   const [sortBy, setSortBy] = useState<'custom' | 'date-asc' | 'date-desc'>('custom')
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8 // Prevents drag-and-drop triggers on simple clicks
+      }
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 500,
+        tolerance: 5
       }
     })
   )
