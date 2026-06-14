@@ -68,6 +68,18 @@ export interface AppliedAsset {
   loraPromptString?: string; // LoRA prompt string `<lora:filename:strength>`
 }
 
+export interface ComfyQueueDeletePayload {
+  delete: string[]
+}
+
+export interface ComfyQueueClearPayload {
+  clear: true
+}
+
+export interface ComfyHistoryDeletePayload {
+  delete: string[]
+}
+
 export interface GenerationState {
   // ─── Connection ────────────────────────────────────────────────
   clientId: string
@@ -111,6 +123,8 @@ export interface GenerationState {
   fetchHistory: () => Promise<void>
   fetchQueue: () => Promise<void>
   setComfyUrl: (url: string) => void
+  cancelJob: (promptId: string) => Promise<void>
+  cancelAllJobs: () => Promise<void>
 }
 
 // ─── Module-level WebSocket singleton ─────────────────────────────
@@ -592,6 +606,91 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       set({ comfyUrl: url })
       if (ws) { ws.close(); ws = null }
       get().initialize()
+    },
+
+    cancelJob: async (promptId: string): Promise<void> => {
+      if (!comfyUrl) return
+      const activeUrl = resolveComfyUrl(comfyUrl)
+      try {
+        const isRunning = get().queueRunning.some((job) => job[1] === promptId)
+        
+        // 1. 実行中の場合は割り込みを投げる
+        if (isRunning) {
+          await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
+        } else {
+          // 2. 待機中の場合はキューから削除する
+          await fetch(`${activeUrl}/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ delete: [promptId] } as ComfyQueueDeletePayload),
+          })
+        }
+
+        // 3. 履歴に残らないよう削除を投げる (AC-5)
+        await fetch(`${activeUrl}/history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delete: [promptId] } as ComfyHistoryDeletePayload),
+        })
+
+        // 4. 自セッションの実行中ジョブであった場合はステートをリセット
+        if (promptId === get().currentPromptId) {
+          set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+          localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+        }
+
+        await get().fetchQueue()
+      } catch (e) {
+        console.error('Failed to cancel job:', e)
+      }
+    },
+
+    cancelAllJobs: async (): Promise<void> => {
+      if (!comfyUrl) return
+      const activeUrl = resolveComfyUrl(comfyUrl)
+      try {
+        // 1. 中断
+        await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
+
+        const filterJob = (job: any) => !get().filterOwnSession || job[3]?.client_id === get().clientId
+        const runningIds = get().queueRunning.map((j) => j[1])
+        const pendingIds = get().queuePending.filter(filterJob).map((j) => j[1])
+        const allIds = [...runningIds, ...pendingIds]
+
+        // 2. 待機キューのクリア
+        if (get().filterOwnSession) {
+          if (pendingIds.length > 0) {
+            await fetch(`${activeUrl}/queue`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ delete: pendingIds } as ComfyQueueDeletePayload),
+            })
+          }
+        } else {
+          await fetch(`${activeUrl}/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clear: true } as ComfyQueueClearPayload),
+          })
+        }
+
+        // 3. 履歴からの削除
+        if (allIds.length > 0) {
+          await fetch(`${activeUrl}/history`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ delete: allIds } as ComfyHistoryDeletePayload),
+          })
+        }
+
+        // 4. ステートリセット
+        set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+        localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+        
+        await get().fetchQueue()
+      } catch (e) {
+        console.error('Failed to cancel all jobs:', e)
+      }
     },
   }
 })

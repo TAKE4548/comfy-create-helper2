@@ -13,6 +13,7 @@ import { RescanModal } from '../components/RescanModal'
 import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
 import { TagChipEditor } from '../components/TagChipEditor'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
+import { JobManagementModal } from '../components/JobManagementModal'
 import { useWorkflowParams } from './GeneratePage/hooks/useWorkflowParams'
 import { useGenerateAction } from './GeneratePage/hooks/useGenerateAction'
 import { useImageNavigation } from './GeneratePage/hooks/useImageNavigation'
@@ -460,6 +461,7 @@ export function GeneratePage() {
   const [selectedLoraForModal, setSelectedLoraForModal] = useState<{ role: string; lora: Lora } | null>(null)
   const [selectedTriggerSetId, setSelectedTriggerSetId] = useState<number | 'default'>('default')
   const [loraStrength, setLoraStrength] = useState<number>(1.0)
+  const [isJobModalOpen, setIsJobModalOpen] = useState(false)
 
   // ── Store ────────────────────────────────────────────────────
   const {
@@ -722,7 +724,12 @@ export function GeneratePage() {
               {isGeneratingHere ? <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />}
               <span className="truncate">{isGeneratingHere ? 'Generating...' : 'Ready'}</span>
               <span className="text-zinc-600">|</span>
-              <span className="font-semibold text-zinc-350">Queue: {totalQueueCount}</span>
+              <span 
+                onClick={() => setIsJobModalOpen(true)}
+                className="font-semibold text-zinc-350 cursor-pointer hover:text-white transition-colors"
+              >
+                Queue: {totalQueueCount}
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-1 max-w-[150px]">
               <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
@@ -1042,6 +1049,7 @@ export function GeneratePage() {
       )}
       <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
         images={displayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
+      <JobManagementModal isOpen={isJobModalOpen} onClose={() => setIsJobModalOpen(false)} />
     </>
     )
   }
@@ -1244,7 +1252,12 @@ export function GeneratePage() {
                   {isGeneratingHere ? <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />}
                   <span className="font-semibold text-zinc-300">{isGeneratingHere ? 'Generating...' : 'Ready'}</span>
                   <span className="text-zinc-700">|</span>
-                  <span className="text-zinc-350">Queue: {totalQueueCount}</span>
+                  <span 
+                    onClick={() => setIsJobModalOpen(true)}
+                    className="text-zinc-350 cursor-pointer hover:text-white transition-colors"
+                  >
+                    Queue: {totalQueueCount}
+                  </span>
                 </div>
                 <span className="font-mono text-accent-green font-semibold">{isGeneratingHere && progress ? progress.percentage : 0}%</span>
               </div>
