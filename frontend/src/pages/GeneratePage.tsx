@@ -463,6 +463,7 @@ export function GeneratePage() {
   const [selectedTriggerSetId, setSelectedTriggerSetId] = useState<number | 'default'>('default')
   const [loraStrength, setLoraStrength] = useState<number>(1.0)
   const [isJobModalOpen, setIsJobModalOpen] = useState(false)
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
 
   // ── Store ────────────────────────────────────────────────────
   const {
@@ -515,7 +516,17 @@ export function GeneratePage() {
   const { handleGenerate } = useGenerateAction(workflow)
 
   const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
-  const { handlePrevImg, handleNextImg } = useImageNavigation(displayImages)
+  const sortedDisplayImages = useMemo(() => {
+    return sortOrder === 'desc' ? displayImages : [...displayImages].reverse()
+  }, [displayImages, sortOrder])
+  const sortedSnapshots = useMemo(() => {
+    if (!snapshots) return []
+    const copy = [...snapshots] as SnapshotSummaryWithParams[]
+    return sortOrder === 'desc'
+      ? copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      : copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  }, [snapshots, sortOrder])
+  const { handlePrevImg, handleNextImg } = useImageNavigation(sortedDisplayImages)
 
   const {
     isSaveModalOpen, setIsSaveModalOpen,
@@ -551,12 +562,14 @@ export function GeneratePage() {
     return queueRunning.filter(filterJob).length + queuePending.filter(filterJob).length
   }, [queueRunning, queuePending, filterOwnSession, clientId])
 
-  const snapshotIdsForDisplay = displayImages.map((img) => {
-    const found = snapshots?.find((s) => s.image_path === img)
-    return found ? found.id : null
-  })
-  const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0 || (!!snapshots && snapshots.length > 0)
-  const hasHistory = !!selectedWorkflowId && !!snapshots && snapshots.length > 0
+  const snapshotIdsForDisplay = useMemo(() => {
+    return sortedDisplayImages.map((img) => {
+      const found = sortedSnapshots?.find((s) => s.image_path === img)
+      return found ? found.id : null
+    })
+  }, [sortedDisplayImages, sortedSnapshots])
+  const showStrip = batchImages.length > 0 || comfyHistoryImages.length > 0 || (!!sortedSnapshots && sortedSnapshots.length > 0)
+  const hasHistory = !!selectedWorkflowId && !!sortedSnapshots && sortedSnapshots.length > 0
 
   const validMappings = workflow?.mappings.filter((m) => m.role != null) ?? []
   const invalidMappings = workflow?.mappings.filter((m) => m.role == null) ?? []
@@ -573,7 +586,7 @@ export function GeneratePage() {
 
   // ── Handlers ─────────────────────────────────────────────────
   const handleLoadSnapshot = (id: number) => {
-    const snapshot = snapshots?.find((s) => s.id === id)
+    const snapshot = sortedSnapshots?.find((s) => s.id === id)
     if (snapshot?.params) loadSnapshotParams(snapshot.params)
     setSelectedSnapshotId('')
   }
@@ -706,7 +719,7 @@ export function GeneratePage() {
                 {!hasHistory ? <option value="">履歴なし</option> : (
                   <>
                     <option value="">過去スナップショットを選択...</option>
-                    {snapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
+                    {sortedSnapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
                   </>
                 )}
               </select>
@@ -770,17 +783,33 @@ export function GeneratePage() {
                     </button>
                   ))}
                 </div>
-                {thumbnailTab === 'history' && (
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                    <input type="checkbox" id="session-filter-toggle-mobile" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer" />
-                    <span className="text-[10px] text-zinc-500">自セッションのみ</span>
-                  </label>
-                )}
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] bg-zinc-950/20">
+                    {(['desc', 'asc'] as const).map((order) => (
+                      <button
+                        key={order}
+                        type="button"
+                        onClick={() => setSortOrder(order)}
+                        className={`px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors ${
+                          sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-550 hover:text-zinc-350'
+                        }`}
+                      >
+                        {order === 'desc' ? '新しい順' : '古い順'}
+                      </button>
+                    ))}
+                  </div>
+                  {thumbnailTab === 'history' && (
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <input type="checkbox" id="session-filter-toggle-mobile" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer" />
+                      <span className="text-[10px] text-zinc-500">自セッションのみ</span>
+                    </label>
+                  )}
+                </div>
               </div>
               {thumbnailTab === 'history' ? (
-                displayImages.length > 0 ? (
+                sortedDisplayImages.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {displayImages.map((img, i) => (
+                    {sortedDisplayImages.map((img, i) => (
                       <button key={i} type="button" id={`thumb-mobile-${i}`}
                         onClick={() => { setSelectedImg(img); setModalPreviewIndex(i); setIsModalPreviewOpen(true) }}
                         className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${selectedImg === img ? 'border-accent-green' : 'border-transparent'}`}>
@@ -790,9 +819,9 @@ export function GeneratePage() {
                   </div>
                 ) : <p className="text-[10px] text-zinc-650 py-1">No history images found for this session.</p>
               ) : (
-                snapshots && snapshots.length > 0 ? (
+                sortedSnapshots && sortedSnapshots.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {snapshots.map((snap) => (
+                    {sortedSnapshots.map((snap) => (
                       <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
                         className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded border border-[rgba(255,255,255,0.06)] bg-surface-2/40 hover:bg-surface-2 transition-all w-20 group">
                         <div className="w-16 h-16 rounded overflow-hidden bg-black/40">
@@ -1014,7 +1043,7 @@ export function GeneratePage() {
         </div>
       )}
       <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
-        images={displayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
+        images={sortedDisplayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
       <JobManagementModal isOpen={isJobModalOpen} onClose={() => setIsJobModalOpen(false)} />
     </>
     )
@@ -1067,7 +1096,7 @@ export function GeneratePage() {
                 {!hasHistory ? <option value="">履歴なし</option> : (
                   <>
                     <option value="">過去スナップショットを選択...</option>
-                    {snapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
+                    {sortedSnapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
                   </>
                 )}
               </select>
@@ -1242,17 +1271,33 @@ export function GeneratePage() {
                     </button>
                   ))}
                 </div>
-                {thumbnailTab === 'history' && (
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input type="checkbox" id="session-filter-toggle" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />
-                    <span className="text-[11px] text-zinc-400">自セッションのみ表示</span>
-                  </label>
-                )}
+                <div className="flex items-center gap-3">
+                  <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] bg-zinc-950/20">
+                    {(['desc', 'asc'] as const).map((order) => (
+                      <button
+                        key={order}
+                        type="button"
+                        onClick={() => setSortOrder(order)}
+                        className={`px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors ${
+                          sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-550 hover:text-zinc-350'
+                        }`}
+                      >
+                        {order === 'desc' ? '新しい順' : '古い順'}
+                      </button>
+                    ))}
+                  </div>
+                  {thumbnailTab === 'history' && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox" id="session-filter-toggle" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />
+                      <span className="text-[11px] text-zinc-400">自セッションのみ表示</span>
+                    </label>
+                  )}
+                </div>
               </div>
               {thumbnailTab === 'history' ? (
-                displayImages.length > 0 ? (
+                sortedDisplayImages.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {displayImages.map((img, i) => (
+                    {sortedDisplayImages.map((img, i) => (
                       <button key={i} type="button" id={`thumb-${i}`} onClick={() => setSelectedImg(img)}
                         className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'}`}>
                         <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
@@ -1261,9 +1306,9 @@ export function GeneratePage() {
                   </div>
                 ) : <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
               ) : (
-                snapshots && snapshots.length > 0 ? (
+                sortedSnapshots && sortedSnapshots.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {snapshots.map((snap) => (
+                    {sortedSnapshots.map((snap) => (
                       <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
                         className="flex-shrink-0 flex flex-col items-center gap-1.5 p-1 rounded-md border border-[rgba(255,255,255,0.06)] hover:border-accent-green/45 bg-surface-2/40 hover:bg-surface-2 transition-all w-24 group">
                         <div className="w-20 h-20 rounded overflow-hidden bg-black/40">

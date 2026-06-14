@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Clock,
@@ -94,6 +94,7 @@ export function HistoryPage() {
   const [bulkSelectMode, setBulkSelectMode] = useState(false)
   const [selectedItemsForDelete, setSelectedItemsForDelete] = useState<Set<number>>(new Set())
   const [sortBy, setSortBy] = useState<'custom' | 'date-asc' | 'date-desc'>('custom')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -275,14 +276,22 @@ export function HistoryPage() {
       })
     : []
 
+  const sortedSnapshots = useMemo(() => {
+    if (!snapshots) return []
+    const copy = [...snapshots]
+    return sortOrder === 'desc'
+      ? copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      : copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  }, [snapshots, sortOrder])
+
   // Lightbox Image & ID array bindings
   const lightboxImages = selectedAlbumId !== null
     ? sortedAlbumItems.map(item => item.image_path ?? '')
-    : (snapshots?.map((s) => s.image_path ?? '') ?? [])
+    : (sortedSnapshots.map((s) => s.image_path ?? '') ?? [])
 
   const lightboxSnapshotIds = selectedAlbumId !== null
     ? sortedAlbumItems.map(item => item.snapshot_id)
-    : (snapshots?.map((s) => s.id) ?? [])
+    : (sortedSnapshots.map((s) => s.id) ?? [])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -570,7 +579,23 @@ export function HistoryPage() {
                 <option value="">All Workflows</option>
                 {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
-              <span className="text-xs text-zinc-600">{snapshots?.length ?? 0} snapshots</span>
+
+              <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
+                {(['desc', 'asc'] as const).map((order) => (
+                  <button
+                    key={order}
+                    type="button"
+                    onClick={() => setSortOrder(order)}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-550 hover:text-zinc-350'
+                    }`}
+                  >
+                    {order === 'desc' ? '新しい順' : '古い順'}
+                  </button>
+                ))}
+              </div>
+
+              <span className="text-xs text-zinc-600">{sortedSnapshots.length} snapshots</span>
             </div>
           )}
 
@@ -578,14 +603,14 @@ export function HistoryPage() {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
             {view === 'snapshots' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {snapshots?.map((snap) => (
+                {sortedSnapshots.map((snap) => (
                   <div
                     key={snap.id}
                     id={`snap-card-${snap.id}`}
                     className={`group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
                       createAlbumMode && selectedForAlbum.has(snap.id)
                         ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30'
-                        : isModalPreviewOpen && snapshots && snapshots[modalPreviewIndex]?.id === snap.id
+                        : isModalPreviewOpen && sortedSnapshots && sortedSnapshots[modalPreviewIndex]?.id === snap.id
                           ? 'border-accent-green'
                           : 'border-transparent hover:border-zinc-700'
                     }`}
@@ -593,7 +618,7 @@ export function HistoryPage() {
                       if (createAlbumMode) {
                         toggleSelectForAlbum(snap.id)
                       } else {
-                        const idx = snapshots?.findIndex((s) => s.id === snap.id) ?? 0
+                        const idx = sortedSnapshots.findIndex((s) => s.id === snap.id)
                         setModalPreviewIndex(idx >= 0 ? idx : 0)
                         setIsModalPreviewOpen(true)
                       }
@@ -635,7 +660,7 @@ export function HistoryPage() {
                     </div>
                   </div>
                 ))}
-                {(snapshots?.length === 0) && (
+                {(sortedSnapshots.length === 0) && (
                   <div className="col-span-full flex flex-col items-center py-20 text-zinc-600">
                     <Clock size={40} strokeWidth={1} />
                     <p className="mt-3 text-sm">No snapshots yet.</p>
