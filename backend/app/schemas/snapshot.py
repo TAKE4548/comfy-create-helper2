@@ -76,6 +76,10 @@ class AlbumItemsDelete(BaseModel):
     snapshot_ids: list[int]
 
 
+class AlbumItemsAdd(BaseModel):
+    snapshot_ids: list[int]
+
+
 class AlbumItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     snapshot_id: int

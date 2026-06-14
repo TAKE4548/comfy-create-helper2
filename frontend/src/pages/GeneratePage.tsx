@@ -5,8 +5,8 @@ import {
   ImageOff, ScanLine, Plus, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, albumsApi } from '../api/client'
-import type { Workflow, MappingMaster, Lora, TagSet, AlbumSummary } from '../api/types'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi } from '../api/client'
+import type { Workflow, MappingMaster, Lora, TagSet } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
 import type { AppliedAsset } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
@@ -14,6 +14,7 @@ import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
 import { TagChipEditor } from '../components/TagChipEditor'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { JobManagementModal } from '../components/JobManagementModal'
+import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 import { useWorkflowParams } from './GeneratePage/hooks/useWorkflowParams'
 import { useGenerateAction } from './GeneratePage/hooks/useGenerateAction'
 import { useImageNavigation } from './GeneratePage/hooks/useImageNavigation'
@@ -506,10 +507,6 @@ export function GeneratePage() {
     queryKey: ['tag-sets'],
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
   })
-  const { data: albums } = useQuery({
-    queryKey: ['albums'],
-    queryFn: () => albumsApi.list() as Promise<AlbumSummary[]>,
-  })
 
   // ── Extracted hooks ──────────────────────────────────────────
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
@@ -522,8 +519,6 @@ export function GeneratePage() {
 
   const {
     isSaveModalOpen, setIsSaveModalOpen,
-    targetAlbumId, setTargetAlbumId,
-    newAlbumName, setNewAlbumName,
     saveSnapshot,
   } = useSnapshotActions(selectedWorkflowId)
 
@@ -955,44 +950,15 @@ export function GeneratePage() {
           onClose={() => { setUploadModalOpen(false) }}
           onSaved={(newWorkflowId) => { qc.invalidateQueries({ queryKey: ['workflows'] }); setSelectedWorkflowId(newWorkflowId) }} />
       )}
-      {isSaveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-zinc-200">スナップショットを保存</h3>
-              <button id="close-save-modal-btn" onClick={() => { setIsSaveModalOpen(false); setTargetAlbumId(''); setNewAlbumName('') }} className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"><X size={18} /></button>
-            </div>
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-400">保存先アルバム</label>
-                <select id="save-album-select" value={targetAlbumId}
-                  onChange={(e) => setTargetAlbumId(e.target.value === '' ? '' : Number(e.target.value))} disabled={!!newAlbumName}
-                  className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-accent-green/50 disabled:opacity-40 transition-all">
-                  <option value="">アルバムを選択しない (None)</option>
-                  {albums?.map((album) => <option key={album.id} value={album.id}>{album.name}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center justify-center py-1">
-                <span className="h-[1px] w-full bg-[rgba(255,255,255,0.06)]" /><span className="text-[10px] text-zinc-600 px-3 uppercase tracking-wider">or</span><span className="h-[1px] w-full bg-[rgba(255,255,255,0.06)]" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-400">新規アルバムを作成して保存</label>
-                <input id="new-album-name-input" type="text" placeholder="新規アルバム名を入力…" value={newAlbumName}
-                  onChange={(e) => { setNewAlbumName(e.target.value); if (e.target.value) setTargetAlbumId('') }}
-                  className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-accent-green/50 transition-all" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button id="cancel-save-modal-btn" onClick={() => { setIsSaveModalOpen(false); setTargetAlbumId(''); setNewAlbumName('') }}
-                className="px-4 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-medium hover:bg-white/5 transition-all">キャンセル</button>
-              <button id="confirm-save-modal-btn" onClick={() => saveSnapshot.mutate()} disabled={saveSnapshot.isPending}
-                className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-40 transition-all glow-green flex items-center gap-2">
-                {saveSnapshot.isPending && <Loader2 size={14} className="animate-spin" />}{saveSnapshot.isPending ? '保存中…' : '保存'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddSnapshotToAlbumModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        onConfirm={(data) => saveSnapshot.mutate(data)}
+        isPending={saveSnapshot.isPending}
+        title="スナップショットを保存"
+        confirmText="保存"
+        allowNone={true}
+      />
       {selectedLoraForModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative animate-scale-up" onClick={(e) => e.stopPropagation()}>

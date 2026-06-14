@@ -1,6 +1,7 @@
 """Albums router."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -123,3 +124,36 @@ def delete_album_items(
     db.commit()
     db.refresh(album)
     return get_album(album_id, db)
+
+
+@router.post("/{album_id}/items", response_model=schemas.AlbumRead)
+def add_album_items(
+    album_id: int,
+    payload: schemas.AlbumItemsAdd,
+    db: Session = Depends(get_db)
+):
+    album = db.query(models.Album).filter(models.Album.id == album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+        
+    # Get current max sequence_order
+    max_order = db.query(func.max(models.AlbumItem.sequence_order)).filter(
+        models.AlbumItem.album_id == album_id
+    ).scalar()
+    next_order = (max_order + 1) if max_order is not None else 0
+    
+    # Add new items that are not already in the album
+    existing_snap_ids = {item.snapshot_id for item in album.items}
+    for snap_id in payload.snapshot_ids:
+        if snap_id not in existing_snap_ids:
+            db.add(models.AlbumItem(
+                album_id=album_id,
+                snapshot_id=snap_id,
+                sequence_order=next_order
+            ))
+            next_order += 1
+            
+    db.commit()
+    db.refresh(album)
+    return get_album(album_id, db)
+

@@ -12,11 +12,9 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
   const qc = useQueryClient()
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
-  const [targetAlbumId, setTargetAlbumId] = useState<number | ''>('')
-  const [newAlbumName, setNewAlbumName] = useState('')
 
   const saveSnapshot = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ albumId, newAlbumName }: { albumId: number | null; newAlbumName?: string }) => {
       if (!selectedWorkflowId || !selectedImg) return
       const allApplied = Object.values(appliedAssets).flat()
       const activeLoras = allApplied
@@ -37,8 +35,8 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
         workflow_id: selectedWorkflowId,
         image_path: selectedImg,
         params: paramValues,
-        album_id: targetAlbumId ? Number(targetAlbumId) : undefined,
-        new_album_name: newAlbumName || undefined,
+        album_id: albumId ?? undefined,
+        new_album_name: newAlbumName ?? undefined,
         loras: activeLoras,
         tag_sets: activeTagSets,
       })
@@ -47,18 +45,12 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
     },
     onSuccess: () => {
       setIsSaveModalOpen(false)
-      setTargetAlbumId('')
-      setNewAlbumName('')
     },
   })
 
   return {
     isSaveModalOpen,
     setIsSaveModalOpen,
-    targetAlbumId,
-    setTargetAlbumId,
-    newAlbumName,
-    setNewAlbumName,
     saveSnapshot,
   }
 }

@@ -85,3 +85,48 @@ class TestAlbumsAPI(unittest.TestCase):
         self.assertEqual(db_items[0].sequence_order, 0)
         self.assertEqual(db_items[1].snapshot_id, snap3.id)
         self.assertEqual(db_items[1].sequence_order, 1)
+
+    def test_add_album_items(self):
+        # 1. アルバム作成
+        album = models.Album(name="test_album")
+        self.db.add(album)
+        self.db.commit()
+        
+        # 2. スナップショットを3つ作成
+        snap1 = models.Snapshot(workflow_id=self.workflow.id, params="{}")
+        snap2 = models.Snapshot(workflow_id=self.workflow.id, params="{}")
+        snap3 = models.Snapshot(workflow_id=self.workflow.id, params="{}")
+        self.db.add_all([snap1, snap2, snap3])
+        self.db.commit()
+        
+        # 3. アルバムアイテムを登録（最初に snap1 のみ、順番 0）
+        item1 = models.AlbumItem(album_id=album.id, snapshot_id=snap1.id, sequence_order=0)
+        self.db.add(item1)
+        self.db.commit()
+        
+        # 4. 追加API呼び出し (snap2 と snap3 を追加)
+        payload = {"snapshot_ids": [snap2.id, snap3.id]}
+        response = self.client.post(f"/api/albums/{album.id}/items", json=payload)
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # 5. 検証: レスポンスのアイテム数とシーケンス順序
+        items = data["items"]
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["snapshot_id"], snap1.id)
+        self.assertEqual(items[0]["sequence_order"], 0)
+        
+        self.assertEqual(items[1]["snapshot_id"], snap2.id)
+        self.assertEqual(items[1]["sequence_order"], 1)
+        
+        self.assertEqual(items[2]["snapshot_id"], snap3.id)
+        self.assertEqual(items[2]["sequence_order"], 2)
+        
+        # 重複追加の防止をテスト (snap2 を再度追加しようとする)
+        payload2 = {"snapshot_ids": [snap2.id]}
+        response2 = self.client.post(f"/api/albums/{album.id}/items", json=payload2)
+        self.assertEqual(response2.status_code, 200)
+        data2 = response2.json()
+        self.assertEqual(len(data2["items"]), 3)
+

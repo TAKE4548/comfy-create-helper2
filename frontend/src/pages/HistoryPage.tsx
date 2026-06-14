@@ -19,6 +19,7 @@ import {
 import { snapshotsApi, albumsApi, workflowsApi } from '../api/client'
 import type { SnapshotSummary, Album } from '../api/types'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
+import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 
 // DnD Kit Imports
 import {
@@ -82,9 +83,9 @@ export function HistoryPage() {
   const qc = useQueryClient()
   const [view, setView] = useState<'snapshots' | 'albums'>('snapshots')
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
-  const [albumName, setAlbumName] = useState('')
   const [selectedForAlbum, setSelectedForAlbum] = useState<Set<number>>(new Set())
   const [createAlbumMode, setCreateAlbumMode] = useState(false)
+  const [isAddToAlbumModalOpen, setIsAddToAlbumModalOpen] = useState(false)
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
 
@@ -135,15 +136,22 @@ export function HistoryPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['snapshots'] }),
   })
 
-  const createAlbum = useMutation({
-    mutationFn: () => albumsApi.create({
-      name: albumName,
-      snapshot_ids: [...selectedForAlbum],
-    }),
+  const addToAlbumMutation = useMutation({
+    mutationFn: async ({ albumId, newAlbumName }: { albumId: number | null; newAlbumName?: string }) => {
+      if (albumId !== null) {
+        await albumsApi.addItems(albumId, [...selectedForAlbum])
+      } else if (newAlbumName) {
+        await albumsApi.create({
+          name: newAlbumName,
+          snapshot_ids: [...selectedForAlbum],
+        })
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['albums'] })
+      qc.invalidateQueries({ queryKey: ['snapshots'] })
+      setIsAddToAlbumModalOpen(false)
       setCreateAlbumMode(false)
-      setAlbumName('')
       setSelectedForAlbum(new Set())
     },
   })
@@ -505,7 +513,7 @@ export function HistoryPage() {
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all"
                 >
                   <BookOpen size={13} />
-                  New Album
+                  Add to Album
                 </button>
               )}
               {/* View Toggle */}
@@ -528,27 +536,25 @@ export function HistoryPage() {
 
           {/* Create Album Bar */}
           {createAlbumMode && (
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-[rgba(124,111,221,0.3)] bg-[rgba(124,111,221,0.05)] animate-slide-up">
-              <BookOpen size={14} className="text-[#7C6FDD] flex-shrink-0" />
-              <input
-                id="album-name-input"
-                value={albumName}
-                onChange={(e) => setAlbumName(e.target.value)}
-                placeholder="Album name…"
-                className="flex-1 bg-transparent text-sm text-zinc-200 focus:outline-none placeholder-zinc-600"
-              />
-              <span className="text-xs text-zinc-500">{selectedForAlbum.size} selected</span>
-              <button
-                id="save-album-btn"
-                onClick={() => createAlbum.mutate()}
-                disabled={!albumName || selectedForAlbum.size === 0 || createAlbum.isPending}
-                className="text-xs px-3 py-1.5 rounded-lg bg-[#7C6FDD] text-white font-medium disabled:opacity-50 transition-all"
-              >
-                Save Album
-              </button>
-              <button onClick={() => { setCreateAlbumMode(false); setSelectedForAlbum(new Set()) }}>
-                <X size={16} className="text-zinc-500" />
-              </button>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-[rgba(124,111,221,0.3)] bg-[rgba(124,111,221,0.05)] animate-slide-up">
+              <div className="flex items-center gap-2">
+                <BookOpen size={14} className="text-[#7C6FDD] flex-shrink-0" />
+                <span className="text-xs text-zinc-300">アルバムに追加するスナップショットを選択してください</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-zinc-500">{selectedForAlbum.size} selected</span>
+                <button
+                  id="save-album-btn"
+                  onClick={() => setIsAddToAlbumModalOpen(true)}
+                  disabled={selectedForAlbum.size === 0}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-[#7C6FDD] text-white font-medium disabled:opacity-50 hover:bg-[#6b5ec7] transition-all"
+                >
+                  アルバムへ追加
+                </button>
+                <button onClick={() => { setCreateAlbumMode(false); setSelectedForAlbum(new Set()) }}>
+                  <X size={16} className="text-zinc-500" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -695,6 +701,15 @@ export function HistoryPage() {
         currentIndex={modalPreviewIndex}
         onChangeIndex={setModalPreviewIndex}
         snapshotIds={lightboxSnapshotIds}
+      />
+      <AddSnapshotToAlbumModal
+        isOpen={isAddToAlbumModalOpen}
+        onClose={() => setIsAddToAlbumModalOpen(false)}
+        onConfirm={(data) => addToAlbumMutation.mutate(data)}
+        isPending={addToAlbumMutation.isPending}
+        title="選択した画像をアルバムに追加"
+        confirmText="追加"
+        allowNone={false}
       />
     </div>
   )
