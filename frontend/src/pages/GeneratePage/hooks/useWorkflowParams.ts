@@ -11,43 +11,59 @@ import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { Workflow } from '../../../api/types'
 
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
-  const { setParamValues, paramValues, setSeed, setSeedMode } = useGenerationStore()
+  const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets } = useGenerationStore()
   const qc = useQueryClient()
 
   // Initialize params when workflow loads
   useEffect(() => {
     if (!workflow) return
+    
+    // Initialize params
     const savedStr = localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflow.id)
+    let hasLoadedParams = false
     if (savedStr) {
       try {
         const savedParams = JSON.parse(savedStr)
         setParamValues(savedParams)
-        return
+        hasLoadedParams = true
       } catch (e) {
         console.error('Failed to parse workflow saved params:', e)
       }
     }
 
-    const init: Record<string, string> = {}
-    const wfJson = (workflow.json_body || {}) as Record<string, any>
-    workflow.mappings.forEach((m) => {
-      if (m.role) {
-        let val = ''
-        if (m.node_id && m.param_name) {
-          const node = wfJson[m.node_id]
-          if (node?.inputs) {
-            if (node.inputs[m.param_name] !== undefined) {
-              val = String(node.inputs[m.param_name])
-            } else if (node.inputs['value'] !== undefined) {
-              val = String(node.inputs['value'])
+    if (!hasLoadedParams) {
+      const init: Record<string, string> = {}
+      const wfJson = (workflow.json_body || {}) as Record<string, any>
+      workflow.mappings.forEach((m) => {
+        if (m.role) {
+          let val = ''
+          if (m.node_id && m.param_name) {
+            const node = wfJson[m.node_id]
+            if (node?.inputs) {
+              if (node.inputs[m.param_name] !== undefined) {
+                val = String(node.inputs[m.param_name])
+              } else if (node.inputs['value'] !== undefined) {
+                val = String(node.inputs['value'])
+              }
             }
           }
+          init[m.role] = val
         }
-        init[m.role] = val
+      })
+      setParamValues(init)
+      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(init))
+    }
+
+    // Initialize applied assets (only if not customized in local storage yet)
+    const savedAssetsStr = localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${workflow.id}`)
+    if (!savedAssetsStr && workflow.default_applied_assets) {
+      try {
+        const defaultAssets = JSON.parse(workflow.default_applied_assets)
+        setAppliedAssets(defaultAssets)
+      } catch (e) {
+        console.error('Failed to parse workflow default applied assets:', e)
       }
-    })
-    setParamValues(init)
-    localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(init))
+    }
   }, [workflow])
 
   // Load snapshot params
@@ -69,8 +85,15 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
 
   // Save current params as workflow defaults
   const saveDefaultParamsMutation = useMutation({
-    mutationFn: async ({ workflowId, json_body }: { workflowId: number; json_body: Record<string, unknown> }) =>
-      workflowsApi.update(workflowId, { json_body }),
+    mutationFn: async ({
+      workflowId,
+      json_body,
+      default_applied_assets,
+    }: {
+      workflowId: number
+      json_body: Record<string, unknown>
+      default_applied_assets?: string | null
+    }) => workflowsApi.update(workflowId, { json_body, default_applied_assets }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
       qc.invalidateQueries({ queryKey: ['workflows'] })
@@ -100,8 +123,15 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
         node.inputs[m.param_name] = val
       }
     })
-    await saveDefaultParamsMutation.mutateAsync({ workflowId: selectedWorkflowId, json_body: wfJson })
+
+    const assetsStr = JSON.stringify(appliedAssets)
+    await saveDefaultParamsMutation.mutateAsync({
+      workflowId: selectedWorkflowId,
+      json_body: wfJson,
+      default_applied_assets: assetsStr,
+    })
     localStorage.setItem(LS_KEYS.PARAMS_PREFIX + selectedWorkflowId, JSON.stringify(paramValues))
+    localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${selectedWorkflowId}`, assetsStr)
   }
 
   const handleResetDefaultParams = () => {
@@ -126,6 +156,17 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
     })
     setParamValues(init)
     localStorage.setItem(LS_KEYS.PARAMS_PREFIX + selectedWorkflowId, JSON.stringify(init))
+
+    // Reset default applied assets
+    let defaultAssets: Record<string, any> = {}
+    if (workflow.default_applied_assets) {
+      try {
+        defaultAssets = JSON.parse(workflow.default_applied_assets)
+      } catch (e) {
+        console.error('Failed to parse default applied assets:', e)
+      }
+    }
+    setAppliedAssets(defaultAssets)
   }
 
   return {

@@ -53,6 +53,7 @@ export interface Workflow {
   name: string
   json_body: Record<string, unknown>
   mappings: WorkflowMapping[]
+  default_applied_assets?: string | null
   created_at: string
 }
 
@@ -65,6 +66,7 @@ export interface WorkflowCreate {
 export interface WorkflowUpdate {
   name?: string
   json_body?: Record<string, unknown>
+  default_applied_assets?: string | null
   mappings?: { master_id: number; node_id: string }[]
 }
 
@@ -98,6 +100,7 @@ export interface ScanResult {
 export interface SnapshotLoraCreate {
   lora_id: number
   strength: number
+  role?: string
 }
 
 export interface SnapshotLoraRead {
@@ -105,16 +108,19 @@ export interface SnapshotLoraRead {
   snapshot_id: number
   lora_id: number
   strength: number
+  role: string
 }
 
 export interface SnapshotTagSetCreate {
   tag_set_id: number
+  role?: string
 }
 
 export interface SnapshotTagSetRead {
   id: number
   snapshot_id: number
   tag_set_id: number
+  role: string
 }
 
 export interface SnapshotSummary {

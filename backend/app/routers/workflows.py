@@ -28,6 +28,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
         name=wf.name,
         json_body=json.loads(wf.json_body),
         created_at=wf.created_at,
+        default_applied_assets=wf.default_applied_assets,
         mappings=[
             schemas.WorkflowMappingRead(
                 id=m.id,
@@ -61,6 +62,9 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
 
     if payload.json_body is not None:
         wf.json_body = json.dumps(payload.json_body)
+
+    if payload.default_applied_assets is not None:
+        wf.default_applied_assets = payload.default_applied_assets
 
     if payload.mappings is not None:
         db.query(models.WorkflowMapping).filter(

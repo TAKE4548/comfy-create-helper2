@@ -474,7 +474,7 @@ export function GeneratePage() {
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     batchImages, selectedImg, setSelectedImg,
     comfyHistoryImages, appliedAssets,
-    addAppliedAsset, removeAppliedAsset, toggleAppliedAsset,
+    addAppliedAsset, removeAppliedAsset, toggleAppliedAsset, setAppliedAssets,
     comfyUrl, setComfyUrl,
     queueRunning, queuePending,
   } = useGenerationStore()
@@ -585,9 +585,62 @@ export function GeneratePage() {
   }, [workflow])
 
   // ── Handlers ─────────────────────────────────────────────────
-  const handleLoadSnapshot = (id: number) => {
-    const snapshot = sortedSnapshots?.find((s) => s.id === id)
-    if (snapshot?.params) loadSnapshotParams(snapshot.params)
+  const handleLoadSnapshot = async (id: number) => {
+    try {
+      const snapshot = (await snapshotsApi.get(id)) as any
+      if (snapshot.params) {
+        loadSnapshotParams(snapshot.params)
+      }
+      
+      const rebuiltAssets: Record<string, AppliedAsset[]> = {}
+      
+      if (snapshot.loras && loras) {
+        snapshot.loras.forEach((sl: any) => {
+          const matchedLora = loras.find((l) => l.id === sl.lora_id)
+          if (matchedLora) {
+            const path = matchedLora.file_path || matchedLora.model_name || ''
+            const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, '') || 'lora'
+            const role = sl.role || 'positive'
+            
+            if (!rebuiltAssets[role]) rebuiltAssets[role] = []
+            
+            rebuiltAssets[role].push({
+              id: `lora-${sl.lora_id}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              type: 'lora',
+              assetId: sl.lora_id,
+              name: matchedLora.description || filename,
+              enabled: true,
+              tags: matchedLora.trigger_word_sets?.[0]?.words || [],
+              loraPromptString: `<lora:${filename}:${sl.strength.toFixed(1)}>`,
+            })
+          }
+        })
+      }
+      
+      if (snapshot.tag_sets && tagSets) {
+        snapshot.tag_sets.forEach((st: any) => {
+          const matchedTagSet = tagSets.find((t) => t.id === st.tag_set_id)
+          if (matchedTagSet) {
+            const role = st.role || 'positive'
+            
+            if (!rebuiltAssets[role]) rebuiltAssets[role] = []
+            
+            rebuiltAssets[role].push({
+              id: `tagset-${st.tag_set_id}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              type: 'tagset',
+              assetId: st.tag_set_id,
+              name: matchedTagSet.name,
+              enabled: true,
+              tags: matchedTagSet.tags,
+            })
+          }
+        })
+      }
+      
+      setAppliedAssets(rebuiltAssets)
+    } catch (e) {
+      console.error('Failed to load snapshot details:', e)
+    }
     setSelectedSnapshotId('')
   }
 

@@ -64,6 +64,7 @@ class WorkflowRead(BaseModel):
     name: str
     json_body: dict[str, Any]
     mappings: list[WorkflowMappingRead] = []
+    default_applied_assets: Optional[str] = None
     created_at: datetime
 
 
@@ -71,6 +72,7 @@ class WorkflowUpdate(BaseModel):
     name: Optional[str] = None
     json_body: Optional[dict[str, Any]] = None
     mappings: Optional[list[WorkflowMappingCreate]] = None
+    default_applied_assets: Optional[str] = None
 
 
 # ─── Workflow Scan ────────────────────────────────────────────────

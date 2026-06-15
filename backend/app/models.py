@@ -33,6 +33,7 @@ class Workflow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
+    default_applied_assets: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     mappings: Mapped[list["WorkflowMapping"]] = relationship(
@@ -183,6 +184,7 @@ class SnapshotLora(Base):
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
     lora_id: Mapped[int] = mapped_column(ForeignKey("loras.id", ondelete="CASCADE"), nullable=False)
     strength: Mapped[float] = mapped_column(Float, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False, default="positive")
 
     snapshot: Mapped["Snapshot"] = relationship(back_populates="loras")
     lora: Mapped["Lora"] = relationship(back_populates="snapshots")
@@ -195,6 +197,7 @@ class SnapshotTagSet(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
     tag_set_id: Mapped[int] = mapped_column(ForeignKey("tag_sets.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False, default="positive")
 
     snapshot: Mapped["Snapshot"] = relationship(back_populates="tag_sets")
     tag_set: Mapped["TagSet"] = relationship(back_populates="snapshots")

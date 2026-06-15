@@ -117,6 +117,7 @@ export interface GenerationState {
   addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => void
   removeAppliedAsset: (role: string, id: string) => void
   toggleAppliedAsset: (role: string, id: string) => void
+  setAppliedAssets: (assets: Record<string, AppliedAsset[]>) => void
   queuePrompt: (workflow: Record<string, unknown>) => Promise<string | null>
   cancelGeneration: () => void
   clearPreview: () => void
@@ -156,9 +157,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
   }
 
   let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
-  try {
-    storedAppliedAssets = JSON.parse(localStorage.getItem(LS_KEYS.APPLIED_ASSETS) || '{}')
-  } catch {}
+  if (storedWorkflowId !== null) {
+    try {
+      storedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${storedWorkflowId}`) || '{}')
+    } catch {}
+  }
 
   const storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE)
     ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE))
@@ -431,10 +434,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         localStorage.setItem(LS_KEYS.WORKFLOW_ID, String(id))
         let params: Record<string, string> = {}
         try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + id) || '{}') } catch {}
-        set({ paramValues: params })
+        
+        let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
+        try {
+          loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${id}`) || '{}')
+        } catch {}
+        
+        set({ paramValues: params, appliedAssets: loadedAppliedAssets })
       } else {
         localStorage.removeItem(LS_KEYS.WORKFLOW_ID)
-        set({ paramValues: {} })
+        set({ paramValues: {}, appliedAssets: {} })
       }
     },
 
@@ -460,9 +469,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         [role]: addAssetToPrompt(currentParams[role] || '', newAsset.tags, newAsset.loraPromptString),
       }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
+      
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      if (activeWfId !== null) {
+        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
+        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      }
     },
 
     removeAppliedAsset: (role, id) => {
@@ -479,9 +491,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
       }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
+      
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      if (activeWfId !== null) {
+        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
+        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      }
     },
 
     toggleAppliedAsset: (role, id) => {
@@ -497,9 +512,20 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         : removeAssetFromPrompt(currentPrompt, asset.tags, asset.loraPromptString)
       const updatedParams = { ...get().paramValues, [role]: updatedPrompt }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      localStorage.setItem(LS_KEYS.APPLIED_ASSETS, JSON.stringify(updated))
+      
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      if (activeWfId !== null) {
+        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
+        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+      }
+    },
+
+    setAppliedAssets: (assets) => {
+      set({ appliedAssets: assets })
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId !== null) {
+        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(assets))
+      }
     },
 
     setBatchSize: (size) => { set({ batchSize: size }); localStorage.setItem(LS_KEYS.BATCH_SIZE, String(size)) },

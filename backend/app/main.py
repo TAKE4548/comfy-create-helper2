@@ -23,9 +23,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def run_migrations():
+    """Run simple migrations for SQLite database to add missing columns."""
+    import sqlalchemy as sa
+    with engine.begin() as conn:
+        inspector = sa.inspect(conn)
+        
+        # Add default_applied_assets to workflows if not exists
+        if "workflows" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("workflows")]
+            if "default_applied_assets" not in columns:
+                conn.execute(sa.text("ALTER TABLE workflows ADD COLUMN default_applied_assets TEXT"))
+                logger.info("Migrated: Added 'default_applied_assets' column to 'workflows' table.")
+                
+        # Add role to snapshot_loras if not exists
+        if "snapshot_loras" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("snapshot_loras")]
+            if "role" not in columns:
+                conn.execute(sa.text("ALTER TABLE snapshot_loras ADD COLUMN role VARCHAR NOT NULL DEFAULT 'positive'"))
+                logger.info("Migrated: Added 'role' column to 'snapshot_loras' table.")
+                
+        # Add role to snapshot_tag_sets if not exists
+        if "snapshot_tag_sets" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("snapshot_tag_sets")]
+            if "role" not in columns:
+                conn.execute(sa.text("ALTER TABLE snapshot_tag_sets ADD COLUMN role VARCHAR NOT NULL DEFAULT 'positive'"))
+                logger.info("Migrated: Added 'role' column to 'snapshot_tag_sets' table.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
+    try:
+        run_migrations()
+    except Exception as e:
+        logger.error(f"Failed to run migration: {e}")
     db = SessionLocal()
     try:
         seed_initial_data(db)

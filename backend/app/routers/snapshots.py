@@ -50,14 +50,16 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
                 id=l.id,
                 snapshot_id=l.snapshot_id,
                 lora_id=l.lora_id,
-                strength=l.strength
+                strength=l.strength,
+                role=l.role
             ) for l in s.loras
         ],
         tag_sets=[
             schemas.SnapshotTagSetRead(
                 id=t.id,
                 snapshot_id=t.snapshot_id,
-                tag_set_id=t.tag_set_id
+                tag_set_id=t.tag_set_id,
+                role=t.role
             ) for t in s.tag_sets
         ]
     )
@@ -138,14 +140,16 @@ def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_d
             db.add(models.SnapshotLora(
                 snapshot_id=s.id,
                 lora_id=l.lora_id,
-                strength=l.strength
+                strength=l.strength,
+                role=l.role
             ))
 
     if payload.tag_sets:
         for t in payload.tag_sets:
             db.add(models.SnapshotTagSet(
                 snapshot_id=s.id,
-                tag_set_id=t.tag_set_id
+                tag_set_id=t.tag_set_id,
+                role=t.role
             ))
 
     db.commit()

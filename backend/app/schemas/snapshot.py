@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 class SnapshotLoraCreate(BaseModel):
     lora_id: int
     strength: float
+    role: str = "positive"
 
 
 class SnapshotLoraRead(BaseModel):
@@ -18,10 +19,12 @@ class SnapshotLoraRead(BaseModel):
     snapshot_id: int
     lora_id: int
     strength: float
+    role: str
 
 
 class SnapshotTagSetCreate(BaseModel):
     tag_set_id: int
+    role: str = "positive"
 
 
 class SnapshotTagSetRead(BaseModel):
@@ -29,6 +32,7 @@ class SnapshotTagSetRead(BaseModel):
     id: int
     snapshot_id: int
     tag_set_id: int
+    role: str
 
 
 class SnapshotCreate(BaseModel):
