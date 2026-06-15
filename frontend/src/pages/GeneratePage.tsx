@@ -678,6 +678,14 @@ export function GeneratePage() {
     setRoleCollapsed(role, false)
   }
 
+  const handleOpenModalPreview = () => {
+    const currentImg = previewImage || selectedImg
+    if (!currentImg) return
+    const idx = sortedDisplayImages.indexOf(currentImg)
+    setModalPreviewIndex(idx >= 0 ? idx : 0)
+    setIsModalPreviewOpen(true)
+  }
+
   // ── Upload zone render ───────────────────────────────────────
   const renderUploadZone = () => (
     <div
@@ -803,10 +811,11 @@ export function GeneratePage() {
           {/* Main Preview */}
           <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
             {(previewImage || selectedImg) ? (
-              <div className="relative w-full h-full flex items-center justify-center">
+              <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={handleOpenModalPreview}>
                 <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
                 {isGeneratingHere && <div className="absolute top-2 right-2 bg-surface-2/80 backdrop-blur p-1.5 rounded-full border border-white/5 shadow-md"><Loader2 size={16} className="animate-spin text-accent-green" /></div>}
                 <a href={previewImage || selectedImg!} download="generated.png" id="download-btn-mobile"
+                  onClick={(e) => e.stopPropagation()}
                   className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface/80 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-medium hover:bg-surface">
                   <Download size={12} />Download
                 </a>
@@ -1258,10 +1267,11 @@ export function GeneratePage() {
           {/* Main Preview */}
           <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none" tabIndex={0}>
             {(previewImage || selectedImg) ? (
-              <div className="relative h-[70%] w-[70%] flex items-center justify-center border border-zinc-800 shadow-2xl rounded-lg bg-surface-2 overflow-hidden group">
+              <div className="relative h-[70%] w-[70%] flex items-center justify-center border border-zinc-800 shadow-2xl rounded-lg bg-surface-2 overflow-hidden group cursor-pointer" onClick={handleOpenModalPreview}>
                 <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6 gap-3 bg-black/40">
                   <a href={previewImage || selectedImg!} download="generated.png" id="download-btn"
+                    onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface/90 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-sm font-medium hover:bg-surface">
                     <Download size={15} />Download
                   </a>
