@@ -1,43 +1,48 @@
-# インシデントレポート: 生成ページでseedをランダムにしても、ランダムになっていない問題
+# インシデントレポート: 生成中にスナップショット保存や生成キャンセルのモーダルが表示され、操作できなくなる問題
 
 ## 1. 現象・症状
-生成ページ（GeneratePage）において、シード設定を「Shuffle」（ランダムモード）に設定して画像を生成した際、生成される画像のシード値がランダムに変化せず、固定値（あるいはデフォルト値）のまま生成されてしまう。
+画像生成処理（Generating）の進行中（progress値が順次更新されている状態）に、スナップショット保存モーダル（`AddSnapshotToAlbumModal`）や、その他のモーダル（JobManagementModal、LoRA設定等）を開くと、進捗率（progress）が更新されて画面が再レンダリングされるたびに、モーダルがアンマウント・再マウントされ、フォーカスが外れたり入力内容がリセットされたりして、正常に操作できない。
 
 ## 2. 再現手順
-1. 生成ページにて、シード設定を「Shuffle」（サイコロアイコン / ランダムモード）に切り替える（入力フィールドが非活性になることを確認）。
-2. 画像生成を実行する。
-3. キューに送られたワークフローパラメータや、生成された結果のメタデータを確認すると、シード値が毎回同じ値（固定値）で実行されている。
+1. 生成ページにて画像生成（Generate Batch）を実行し、生成処理を開始する。
+2. 生成進行中に「Save Snapshot」ボタンを押してスナップショット保存モーダルを開く。
+3. または、ジョブ管理モーダル（生成キャンセル等の操作を含む）を開く。
+4. WebSocket経由で進捗（`progress.percentage` 等）が更新され、背後の生成進捗表示が更新されるタイミングで、モーダルの入力欄やボタンのフォーカスが失われたり、アニメーションが再実行されてまともに操作できなくなる現象が発生する。
 
 ## 3. 原因究明 (Root Cause Isolation)
-調査の結果、フロントエンドの生成アクション処理におけるシード注入ロジックに不整合があることが特定されました。
+原因は、フロントエンドのページコンポーネント `GeneratePage.tsx` 内で、モーダル群をまとめる子コンポーネント `Modals` が **`GeneratePage` のレンダリング関数内でネストして定義されていること** です。
 
-- **該当箇所**: [useGenerateAction.ts](../frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts#L44-L51)
-  ```typescript
-  // Inject seed for Sampler_Seed role
-  const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
-  if (seedNode) {
-    const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
-    if (node) {
-      const inputs = node.inputs as Record<string, unknown>
-      inputs['seed'] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
+- **該当箇所**: [GeneratePage.tsx](../frontend/src/pages/GeneratePage.tsx#L1032-L1112)
+  ```tsx
+  export function GeneratePage() {
+    ...
+    function Modals() {
+      return (
+        <>
+          {rescanOpen && workflow && ( ... )}
+          ...
+        </>
+      )
     }
+    ...
   }
   ```
+
 - **詳細原因**:
-  - `workflow.mappings` の処理では、対象ノードの入力パラメータ名（`m.param_name`）や、代替キー（`'value'`）を動的に判定して値を設定しています。
-  - しかし、その後のシード注入処理において、ノードの入力値（`inputs`）に設定するキー名が `inputs['seed']` とハードコードされています。
-  - ワークフロー内でシードが別名キー（例: プリミティブノードなどの `'value'`）で管理されている場合、`inputs['seed']` にランダム値を設定しても無視されてしまいます。
-  - その結果、マッピング処理で `paramValues['Sampler_Seed']`（固定値）から設定された `inputs['value']` がそのまま適用され続け、ランダム化されない現象が発生します。
+  - Reactでは、親コンポーネントのレンダリング関数内で別の子コンポーネントを定義すると、親が再レンダリングされるたびに子コンポーネントの「関数オブジェクト（Component Type）」が新しく再生成されます。
+  - Reactの差分検知（Reconciliation）アルゴリズムは、コンポーネントの型が変わったと判定するため、進捗更新(`progress`)等で `GeneratePage` が再レンダリングされるたびに `<Modals />` 配下の全コンポーネントツリーを一旦完全にアンマウントし、新しいコンポーネントとしてマウントし直します。
+  - これにより、モーダルの内部状態やフォーカス、DOMノードそのものが毎秒のように破壊・再構築され、操作不能になります。
 
 ## 4. 対策方針 (Proposed Solution)
 本インシデントは **Type A (Implementation Bug: 実装バグ)** に分類されます。
 
 - **修正の方針**:
-  - `useGenerateAction.ts` 内で `inputs['seed']` をハードコードするのではなく、対象の `seedNode` で定義されているパラメータ名（`seedNode.param_name` または `'value'` 等のフォールバック）を動的に解決してランダム値またはインクリメント値を代入するように修正します。
+  - ネストした `function Modals` 定義を廃止し、`GeneratePage` のメインのJSXリターン内に直接モーダルのJSXをインラインで展開するか、あるいは `Modals` コンポーネントを `GeneratePage` の外（ファイルレベルまたは別ファイル）に切り出し、必要なprops（状態およびセッターなど）を明示的に渡すように変更します。
+  - 今回は `GeneratePage` の状態変数が多いため、`Modals` 関数コンポーネントの定義を削除し、JSX自体をインラインで直接レンダリングする（あるいはコンポーネント化せず単純なヘルパー関数 or インライン評価にする）ことで、コンポーネントのアンマウント・再マウントを防ぎ、既存のDOMノードが再利用されるようにします。
 
 ---
 
 ## 5. 診断チェック (Diagnostic Check)
 - **Root Cause Isolated**: Yes
 - **Classification**: Type A (Implementation Bug)
-- **Route**: `/dev-design` へ進み、フロントエンドの `useGenerateAction.ts` におけるシード動的キー解決ロジックの修正設計およびタスク定義に進みます。
+- **Route**: `/dev-design` へ進み、フロントエンドの `GeneratePage.tsx` における `Modals` レンダリングのインライン化または外だし設計を行います。
