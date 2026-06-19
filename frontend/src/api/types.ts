@@ -10,7 +10,7 @@ export interface MappingMaster {
   role: string
   expected_class_types: string[] | null
   param_name: string
-  input_type: 'textarea' | 'int' | 'float' | 'select'
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack'
   display_name: string
   title_patterns: string[] | null
 }
@@ -236,6 +236,7 @@ export interface TagSet {
   description: string | null
   category_id: number | null
   tags: string[]
+  thumbnail_path: string | null
   snapshot_paths?: string[]
   created_at: string
 }
@@ -245,6 +246,7 @@ export interface TagSetCreate {
   description?: string
   category_id?: number
   tags: string[]
+  thumbnail_path?: string
 }
 
 // ─── LLM Audit ──────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import type { AppliedAsset } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
 import { TagChipEditor } from '../components/TagChipEditor'
+import { LoraStackEditor } from '../components/LoraStackEditor'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { JobManagementModal } from '../components/JobManagementModal'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
@@ -369,24 +370,37 @@ const ParamPanel = ({
   return (
     <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
       <p className="text-xs font-medium text-zinc-505 uppercase tracking-wider">Parameters</p>
-      {paramMappings.map((m) => (
-        <div key={m.id} className="flex items-center justify-between gap-4">
-          <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
-          {m.input_type === 'select' ? (
-            <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
-              onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-              className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
-              <option value="">Select option…</option>
-              {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.model_name}</option>)}
-            </select>
-          ) : (
-            <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}
-              onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-              step={m.input_type === 'float' ? 0.1 : 1}
-              className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
-          )}
-        </div>
-      ))}
+      {paramMappings.map((m) => {
+        if (m.input_type === 'lora_stack') {
+          return (
+            <LoraStackEditor
+              key={m.id}
+              role={m.role!}
+              paramValues={paramValues}
+              setParamValues={setParamValues}
+              loras={loras}
+            />
+          )
+        }
+        return (
+          <div key={m.id} className="flex items-center justify-between gap-4">
+            <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
+            {m.input_type === 'select' ? (
+              <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+                <option value="">Select option…</option>
+                {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.model_name}</option>)}
+              </select>
+            ) : (
+              <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}
+                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                step={m.input_type === 'float' ? 0.1 : 1}
+                className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
+            )}
+          </div>
+        )
+      })}
       <div className="flex items-center justify-between gap-4">
         <label className="text-xs text-zinc-400">Batch Size</label>
         <input id={`batch-size${mobile ? '-mobile' : ''}`} type="number" min={1} max={8} value={batchSize}

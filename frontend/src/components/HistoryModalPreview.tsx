@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, Info, Maximize2 } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
@@ -113,6 +113,41 @@ export function HistoryModalPreview({
   const cfgScale = getParamValue(['cfg'])
   const steps = getParamValue(['step'])
   const seed = getParamValue(['seed'])
+
+  const loraStacks = useMemo(() => {
+    if (!snapshot?.params) return []
+    const roles: string[] = []
+    Object.keys(snapshot.params).forEach((key) => {
+      const match = key.match(/^(.+)_lora_count$/)
+      if (match) {
+        roles.push(match[1])
+      }
+    })
+
+    return roles.map((role) => {
+      const count = parseInt(String(snapshot.params[`${role}_lora_count`]), 10) || 0
+      const items = []
+      for (let i = 1; i <= count; i++) {
+        const filePath = String(snapshot.params[`${role}_lora_name_${i}`] || '')
+        if (!filePath) continue
+        
+        const registered = loras?.find((l) => l.file_path === filePath)
+        const displayName = registered?.description ? registered.description : filePath
+
+        items.push({
+          index: i,
+          displayName,
+          wt: String(snapshot.params[`${role}_lora_wt_${i}`] ?? '0.0'),
+          model_str: String(snapshot.params[`${role}_model_str_${i}`] ?? '1.0'),
+          clip_str: String(snapshot.params[`${role}_clip_str_${i}`] ?? '1.0'),
+        })
+      }
+      return {
+        role,
+        items,
+      }
+    }).filter((stack) => stack.items.length > 0)
+  }, [snapshot?.params, loras])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col" onClick={onClose}>
@@ -245,6 +280,39 @@ export function HistoryModalPreview({
                     </div>
                   )}
                 </div>
+
+                {/* LoRA Stack */}
+                {loraStacks.map((stack) => (
+                  <div key={stack.role} className="space-y-1.5">
+                    <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">
+                      LoRA Stack ({stack.role})
+                    </h4>
+                    <div className="bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] overflow-hidden">
+                      <table className="w-full text-left text-[11px]">
+                        <thead>
+                          <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-500">
+                            <th className="p-2 font-medium">Model</th>
+                            <th className="p-2 font-medium text-right w-16">Weight</th>
+                            <th className="p-2 font-medium text-right w-16">Model Str</th>
+                            <th className="p-2 font-medium text-right w-16">Clip Str</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stack.items.map((item) => (
+                            <tr key={item.index} className="border-b border-[rgba(255,255,255,0.02)] last:border-0 text-zinc-300">
+                              <td className="p-2 truncate max-w-[200px]" title={item.displayName}>
+                                {item.displayName}
+                              </td>
+                              <td className="p-2 text-right font-mono">{item.wt}</td>
+                              <td className="p-2 text-right font-mono">{item.model_str}</td>
+                              <td className="p-2 text-right font-mono">{item.clip_str}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
 
                 {/* Loras & Tag Sets */}
                 {((snapshot?.loras && snapshot.loras.length > 0) || (snapshot?.tag_sets && snapshot.tag_sets.length > 0)) && (

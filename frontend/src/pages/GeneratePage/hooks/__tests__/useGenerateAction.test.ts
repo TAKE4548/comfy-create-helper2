@@ -118,4 +118,64 @@ describe('useGenerateAction', () => {
     expect(s1).not.toBe(s2);
     expect(s2).not.toBe(s3);
   });
+
+  it('should inject lora_stack params and delete exceeding node keys', async () => {
+    const loraStackWorkflow: Workflow = {
+      id: 2,
+      name: 'Lora Stack Workflow',
+      created_at: '',
+      json_body: {
+        '15': {
+          inputs: {
+            lora_count: 2,
+            lora_name_1: 'test_a.safetensors',
+            lora_wt_1: 0.8,
+            model_str_1: 1.0,
+            clip_str_1: 1.0,
+            lora_name_2: 'test_b.safetensors',
+            lora_wt_2: 0.5,
+            model_str_2: 1.0,
+            clip_str_2: 1.0,
+            lora_name_3: 'test_c.safetensors',
+            lora_wt_3: 0.9,
+          },
+        },
+      },
+      mappings: [
+        {
+          id: 2,
+          master_id: 2,
+          node_id: '15',
+          role: 'Lora_Stack',
+          param_name: 'lora_stack',
+          input_type: 'lora_stack',
+          display_name: 'LoRA Stack Node',
+        },
+      ],
+    };
+
+    mockStore.paramValues = {
+      'Lora_Stack_lora_count': '2',
+      'Lora_Stack_lora_name_1': 'new_a.safetensors',
+      'Lora_Stack_lora_wt_1': '0.7',
+      'Lora_Stack_model_str_1': '1.0',
+      'Lora_Stack_clip_str_1': '1.0',
+      'Lora_Stack_lora_name_2': 'new_b.safetensors',
+      'Lora_Stack_lora_wt_2': '0.6',
+      'Lora_Stack_model_str_2': '1.0',
+      'Lora_Stack_clip_str_2': '1.0',
+    };
+
+    const { handleGenerate } = useGenerateAction(loraStackWorkflow);
+    await handleGenerate();
+
+    const nodeInputs = mockStore.queuePrompt.mock.calls[0][0]['15'].inputs;
+    expect(nodeInputs['lora_count']).toBe(2);
+    expect(nodeInputs['lora_name_1']).toBe('new_a.safetensors');
+    expect(nodeInputs['lora_wt_1']).toBe(0.7);
+    expect(nodeInputs['lora_name_2']).toBe('new_b.safetensors');
+    expect(nodeInputs['lora_wt_2']).toBe(0.6);
+    expect(nodeInputs['lora_name_3']).toBeUndefined();
+    expect(nodeInputs['lora_wt_3']).toBeUndefined();
+  });
 });

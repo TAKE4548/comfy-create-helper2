@@ -17,13 +17,17 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     cancelAllJobs,
   } = useGenerationStore()
 
+  // [FIX REQ-049] useMemo を早期リターンより前に移動（React Rules of Hooks 準拠）
+  const visibleRunning = useMemo(
+    () => queueRunning.filter((job: any) => !filterOwnSession || job[3]?.client_id === clientId),
+    [queueRunning, filterOwnSession, clientId]
+  )
+  const visiblePending = useMemo(
+    () => queuePending.filter((job: any) => !filterOwnSession || job[3]?.client_id === clientId),
+    [queuePending, filterOwnSession, clientId]
+  )
+
   if (!isOpen) return null
-
-  // フィルター処理
-  const filterJob = (job: any) => !filterOwnSession || job[3]?.client_id === clientId
-
-  const visibleRunning = useMemo(() => queueRunning.filter(filterJob), [queueRunning, filterOwnSession, clientId])
-  const visiblePending = useMemo(() => queuePending.filter(filterJob), [queuePending, filterOwnSession, clientId])
 
   const totalJobsCount = visibleRunning.length + visiblePending.length
 

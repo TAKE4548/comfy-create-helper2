@@ -50,6 +50,7 @@ export function TagsPage() {
       description: editForm.description || undefined,
       category_id: editForm.category_id,
       tags: editForm.tags.split(',').map((t) => t.trim()).filter(Boolean),
+      thumbnail_path: editForm.thumbnail_path || undefined,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tag-sets'] }); setEditTagSet(null) },
   })
@@ -73,7 +74,7 @@ export function TagsPage() {
 
   const openEdit = (ts: TagSet) => {
     setEditTagSet(ts)
-    setEditForm({ name: ts.name, description: ts.description ?? '', category_id: ts.category_id ?? undefined, tags: ts.tags.join(', ') })
+    setEditForm({ name: ts.name, description: ts.description ?? '', category_id: ts.category_id ?? undefined, tags: ts.tags.join(', '), thumbnail_path: ts.thumbnail_path ?? undefined })
   }
 
   const filtered = tagSets?.filter(
@@ -138,8 +139,9 @@ export function TagsPage() {
               {sets.map((ts) => (
                 <div key={ts.id} id={`tagset-card-${ts.id}`} onClick={() => setSelectedTagSetForDetail(ts)}
                   className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-3 flex flex-col justify-between gap-3 hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer min-h-[120px]">
-                  {ts.snapshot_paths && ts.snapshot_paths.length > 0 && (
+                  {(ts.thumbnail_path || (ts.snapshot_paths && ts.snapshot_paths.length > 0)) && (
                     <ImageCarousel
+                      thumbnailPath={ts.thumbnail_path}
                       snapshotPaths={ts.snapshot_paths}
                       alt={ts.name}
                       className="aspect-video w-full rounded-lg overflow-hidden"
@@ -200,7 +202,8 @@ export function TagsPage() {
         <TagSetEditModal form={editForm} setForm={setEditForm} categories={categories}
           isPending={updateTagSet.isPending}
           onClose={() => setEditTagSet(null)}
-          onSubmit={() => updateTagSet.mutate()} />
+          onSubmit={() => updateTagSet.mutate()}
+          snapshotPaths={editTagSet.snapshot_paths} />
       )}
       {selectedTagSetForDetail && (
         <TagSetDetailModal tagSet={selectedTagSetForDetail} categories={categories}

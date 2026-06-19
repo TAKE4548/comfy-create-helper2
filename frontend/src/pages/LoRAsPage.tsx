@@ -87,6 +87,7 @@ export function LoRAsPage() {
         name: tws.name,
         words: tws.words.join(', '),
       })),
+      thumbnail_path: lora.thumbnail_path ?? undefined,
     })
   }
 
@@ -225,7 +226,8 @@ export function LoRAsPage() {
         <LoraEditModal form={editForm} setForm={setEditForm} categories={categories}
           isPending={updateLora.isPending}
           onClose={() => setEditLora(null)}
-          onSubmit={() => updateLora.mutate()} />
+          onSubmit={() => updateLora.mutate()}
+          snapshotPaths={editLora.snapshot_paths} />
       )}
       {selectedLoraForDetail && (
         <LoraDetailModal lora={selectedLoraForDetail} categories={categories}

@@ -191,8 +191,13 @@ type ChipAction =
 
 ### 3-11. Audit 機能との連携
 
-- **干渉タグ診断結果** → `suggestedDisables` props で渡し、該当チップを「無効化」状態にする（削除ではない）
-- **語彙サジェスト結果** → `suggestedAdds` props で渡し、`[+ タグ名]` ボタンでチップを追加
+props による静的な受け渡しではなく、親（GeneratePage等）とチップエディタ間の疎結合を保つためにグローバルなカスタムイベントを利用して動的に連携する。
+- **干渉タグ診断結果（無効化）**:
+  - 親側の無効化ボタン押下時に `window.dispatchEvent(new CustomEvent('tag-chip-editor:disable-tag', { detail: { tag } }))` が発行される。
+  - チップエディタ側でこのイベントを検知し、一致するタグチップの `enabled` ステータスを `false` にトグル（無効化・グレーアウト）する。
+- **語彙サジェスト結果（追加）**:
+  - 親側の追加ボタン押下時に `window.dispatchEvent(new CustomEvent('tag-chip-editor:add-tag', { detail: { tag } }))` が発行される。
+  - チップエディタ側でこのイベントを検知し、新規タグチップとして末尾に追加する。
 
 ### 3-12. スナップショット保存時
 

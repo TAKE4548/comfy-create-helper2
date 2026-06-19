@@ -187,16 +187,17 @@ class TestLorasAPI(unittest.TestCase):
         # Find the registered lora
         lora_data = next(x for x in data if x["id"] == self.registered_lora.id)
         self.assertIn("snapshot_paths", lora_data)
-        # Should return the latest 5 snapshot paths
-        self.assertEqual(len(lora_data["snapshot_paths"]), 5)
+        # Should return all 7 snapshot paths (unlimited)
+        self.assertEqual(len(lora_data["snapshot_paths"]), 7)
         # Verify it is sorted by created_at desc (which corresponds to higher IDs in SQLite sequential insertion)
-        # snap_6, snap_5, snap_4, snap_3, snap_2
         self.assertEqual(lora_data["snapshot_paths"], [
             "path/to/snap_6.png",
             "path/to/snap_5.png",
             "path/to/snap_4.png",
             "path/to/snap_3.png",
-            "path/to/snap_2.png"
+            "path/to/snap_2.png",
+            "path/to/snap_1.png",
+            "path/to/snap_0.png"
         ])
 
 

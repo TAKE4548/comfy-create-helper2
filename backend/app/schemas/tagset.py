@@ -10,6 +10,7 @@ class TagSetCreate(BaseModel):
     description: Optional[str] = None
     category_id: Optional[int] = None
     tags: list[str]
+    thumbnail_path: Optional[str] = None
 
 
 class TagSetRead(BaseModel):
@@ -19,5 +20,6 @@ class TagSetRead(BaseModel):
     description: Optional[str] = None
     category_id: Optional[int] = None
     tags: list[str]
+    thumbnail_path: Optional[str] = None
     snapshot_paths: list[str] = []
     created_at: datetime

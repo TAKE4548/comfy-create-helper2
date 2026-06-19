@@ -10,6 +10,40 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { Workflow } from '../../../api/types'
 
+function getInitialParams(workflow: Workflow): Record<string, string> {
+  const init: Record<string, string> = {}
+  const wfJson = (workflow.json_body || {}) as Record<string, any>
+  workflow.mappings.forEach((m) => {
+    if (m.role) {
+      if (m.input_type === 'lora_stack') {
+        const node = m.node_id ? wfJson[m.node_id] : null
+        const loraCount = node?.inputs?.['lora_count'] !== undefined ? Number(node.inputs['lora_count']) : 0
+        init[`${m.role}_lora_count`] = String(loraCount)
+        for (let i = 1; i <= loraCount; i++) {
+          init[`${m.role}_lora_name_${i}`] = node?.inputs?.[`lora_name_${i}`] !== undefined ? String(node.inputs[`lora_name_${i}`]) : ''
+          init[`${m.role}_lora_wt_${i}`] = node?.inputs?.[`lora_wt_${i}`] !== undefined ? String(node.inputs[`lora_wt_${i}`]) : '0.0'
+          init[`${m.role}_model_str_${i}`] = node?.inputs?.[`model_str_${i}`] !== undefined ? String(node.inputs[`model_str_${i}`]) : '1.0'
+          init[`${m.role}_clip_str_${i}`] = node?.inputs?.[`clip_str_${i}`] !== undefined ? String(node.inputs[`clip_str_${i}`]) : '1.0'
+        }
+      } else {
+        let val = ''
+        if (m.node_id && m.param_name) {
+          const node = wfJson[m.node_id]
+          if (node?.inputs) {
+            if (node.inputs[m.param_name] !== undefined) {
+              val = String(node.inputs[m.param_name])
+            } else if (node.inputs['value'] !== undefined) {
+              val = String(node.inputs['value'])
+            }
+          }
+        }
+        init[m.role] = val
+      }
+    }
+  })
+  return init
+}
+
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
   const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets } = useGenerationStore()
   const qc = useQueryClient()
@@ -32,24 +66,7 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
     }
 
     if (!hasLoadedParams) {
-      const init: Record<string, string> = {}
-      const wfJson = (workflow.json_body || {}) as Record<string, any>
-      workflow.mappings.forEach((m) => {
-        if (m.role) {
-          let val = ''
-          if (m.node_id && m.param_name) {
-            const node = wfJson[m.node_id]
-            if (node?.inputs) {
-              if (node.inputs[m.param_name] !== undefined) {
-                val = String(node.inputs[m.param_name])
-              } else if (node.inputs['value'] !== undefined) {
-                val = String(node.inputs['value'])
-              }
-            }
-          }
-          init[m.role] = val
-        }
-      })
+      const init = getInitialParams(workflow)
       setParamValues(init)
       localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(init))
     }
@@ -107,20 +124,42 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
       if (!m.role || !m.param_name) return
       const node = wfJson[m.node_id]
       if (!node?.inputs) return
-      let val: string | number = ''
-      if (m.input_type === 'int') {
-        val = parseInt(paramValues[m.role] || '0')
-      } else if (m.input_type === 'float') {
-        val = parseFloat(paramValues[m.role] || '0.0')
+
+      if (m.input_type === 'lora_stack') {
+        const loraCountVal = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
+        node.inputs['lora_count'] = loraCountVal
+        for (let i = 1; i <= loraCountVal; i++) {
+          node.inputs[`lora_name_${i}`] = paramValues[`${m.role}_lora_name_${i}`] || ''
+          node.inputs[`lora_wt_${i}`] = parseFloat(paramValues[`${m.role}_lora_wt_${i}`] || '0.0')
+          node.inputs[`model_str_${i}`] = parseFloat(paramValues[`${m.role}_model_str_${i}`] || '1.0')
+          node.inputs[`clip_str_${i}`] = parseFloat(paramValues[`${m.role}_clip_str_${i}`] || '1.0')
+        }
+        // Remove keys exceeding loraCountVal
+        Object.keys(node.inputs).forEach((k) => {
+          const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
+          if (match) {
+            const idx = parseInt(match[2], 10)
+            if (idx > loraCountVal) {
+              delete node.inputs[k]
+            }
+          }
+        })
       } else {
-        val = paramValues[m.role] || ''
-      }
-      if (node.inputs[m.param_name] !== undefined) {
-        node.inputs[m.param_name] = val
-      } else if (node.inputs['value'] !== undefined) {
-        node.inputs['value'] = val
-      } else {
-        node.inputs[m.param_name] = val
+        let val: string | number = ''
+        if (m.input_type === 'int') {
+          val = parseInt(paramValues[m.role] || '0')
+        } else if (m.input_type === 'float') {
+          val = parseFloat(paramValues[m.role] || '0.0')
+        } else {
+          val = paramValues[m.role] || ''
+        }
+        if (node.inputs[m.param_name] !== undefined) {
+          node.inputs[m.param_name] = val
+        } else if (node.inputs['value'] !== undefined) {
+          node.inputs['value'] = val
+        } else {
+          node.inputs[m.param_name] = val
+        }
       }
     })
 
@@ -136,24 +175,7 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
 
   const handleResetDefaultParams = () => {
     if (!workflow || !selectedWorkflowId) return
-    const init: Record<string, string> = {}
-    const wfJson = (workflow.json_body || {}) as Record<string, any>
-    workflow.mappings.forEach((m) => {
-      if (m.role) {
-        let val = ''
-        if (m.node_id && m.param_name) {
-          const node = wfJson[m.node_id]
-          if (node?.inputs) {
-            if (node.inputs[m.param_name] !== undefined) {
-              val = String(node.inputs[m.param_name])
-            } else if (node.inputs['value'] !== undefined) {
-              val = String(node.inputs['value'])
-            }
-          }
-        }
-        init[m.role] = val
-      }
-    })
+    const init = getInitialParams(workflow)
     setParamValues(init)
     localStorage.setItem(LS_KEYS.PARAMS_PREFIX + selectedWorkflowId, JSON.stringify(init))
 

@@ -20,7 +20,6 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
             .filter(models.Snapshot.image_path.isnot(None))
             .filter(models.Snapshot.image_path != "")
             .order_by(models.Snapshot.created_at.desc(), models.Snapshot.id.desc())
-            .limit(5)
             .all()
         )
     ]
@@ -30,6 +29,7 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
         description=ts.description,
         category_id=ts.category_id,
         tags=json.loads(ts.tags) if ts.tags else [],
+        thumbnail_path=ts.thumbnail_path,
         snapshot_paths=snapshot_paths,
         created_at=ts.created_at,
     )
@@ -50,6 +50,7 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
         description=payload.description,
         category_id=payload.category_id,
         tags=json.dumps(payload.tags),
+        thumbnail_path=payload.thumbnail_path,
     )
     db.add(ts)
     db.commit()
@@ -66,6 +67,7 @@ def update_tag_set(tag_set_id: int, payload: schemas.TagSetCreate, db: Session =
     ts.description = payload.description
     ts.category_id = payload.category_id
     ts.tags = json.dumps(payload.tags)
+    ts.thumbnail_path = payload.thumbnail_path
     db.commit()
     db.refresh(ts)
     return _tagset_to_schema(ts, db)

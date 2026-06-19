@@ -22,21 +22,42 @@ export function useGenerateAction(workflow: Workflow | undefined) {
         const inputs = node.inputs as Record<string, unknown>
         if (!inputs) return
 
-        let val: string | number = ''
-        if (m.input_type === 'int') {
-          val = parseInt(paramValues[m.role] || '0')
-        } else if (m.input_type === 'float') {
-          val = parseFloat(paramValues[m.role] || '0.0')
+        if (m.input_type === 'lora_stack') {
+          const loraCount = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
+          inputs['lora_count'] = loraCount
+          for (let idx = 1; idx <= loraCount; idx++) {
+            inputs[`lora_name_${idx}`] = paramValues[`${m.role}_lora_name_${idx}`] || ''
+            inputs[`lora_wt_${idx}`] = parseFloat(paramValues[`${m.role}_lora_wt_${idx}`] || '0.0')
+            inputs[`model_str_${idx}`] = parseFloat(paramValues[`${m.role}_model_str_${idx}`] || '1.0')
+            inputs[`clip_str_${idx}`] = parseFloat(paramValues[`${m.role}_clip_str_${idx}`] || '1.0')
+          }
+          // Remove keys exceeding loraCount
+          Object.keys(inputs).forEach((k) => {
+            const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
+            if (match) {
+              const idx = parseInt(match[2], 10)
+              if (idx > loraCount) {
+                delete inputs[k]
+              }
+            }
+          })
         } else {
-          val = paramValues[m.role] || ''
-        }
+          let val: string | number = ''
+          if (m.input_type === 'int') {
+            val = parseInt(paramValues[m.role] || '0')
+          } else if (m.input_type === 'float') {
+            val = parseFloat(paramValues[m.role] || '0.0')
+          } else {
+            val = paramValues[m.role] || ''
+          }
 
-        if (inputs[m.param_name] !== undefined) {
-          inputs[m.param_name] = val
-        } else if (inputs['value'] !== undefined) {
-          inputs['value'] = val
-        } else {
-          inputs[m.param_name] = val
+          if (inputs[m.param_name] !== undefined) {
+            inputs[m.param_name] = val
+          } else if (inputs['value'] !== undefined) {
+            inputs['value'] = val
+          } else {
+            inputs[m.param_name] = val
+          }
         }
       })
 

@@ -160,6 +160,7 @@ class TagSet(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tagset_categories.id", ondelete="SET NULL"))
     tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")

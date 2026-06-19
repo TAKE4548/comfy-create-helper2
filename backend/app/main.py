@@ -49,6 +49,13 @@ def run_migrations():
             if "role" not in columns:
                 conn.execute(sa.text("ALTER TABLE snapshot_tag_sets ADD COLUMN role VARCHAR NOT NULL DEFAULT 'positive'"))
                 logger.info("Migrated: Added 'role' column to 'snapshot_tag_sets' table.")
+                
+        # Add thumbnail_path to tag_sets if not exists
+        if "tag_sets" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("tag_sets")]
+            if "thumbnail_path" not in columns:
+                conn.execute(sa.text("ALTER TABLE tag_sets ADD COLUMN thumbnail_path TEXT"))
+                logger.info("Migrated: Added 'thumbnail_path' column to 'tag_sets' table.")
 
 
 @asynccontextmanager

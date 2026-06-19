@@ -188,6 +188,7 @@ comfy-create-helper2/
 | `FDetailer_Steps` | int | FaceDetailer Steps |
 | `FDetailer_cfg` | float | FaceDetailer CFG |
 | `FDetailer_denoise` | float | FaceDetailer Denoise |
+| `Lora_Stack` | lora_stack | LoRA Stack Node |
 
 ---
 

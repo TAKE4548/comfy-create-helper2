@@ -25,7 +25,6 @@ def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
             .filter(models.Snapshot.image_path.isnot(None))
             .filter(models.Snapshot.image_path != "")
             .order_by(models.Snapshot.created_at.desc(), models.Snapshot.id.desc())
-            .limit(5)
             .all()
         )
     ]
