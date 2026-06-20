@@ -70,7 +70,7 @@ interface MappingMaster {
   role: string;                        // 役割識別子（例: "Main_Positive_Prompt"）
   expected_class_types: string[];      // 対応する ComfyUI ノードクラス
   param_name: string;                  // ノードの入力パラメータ名
-  input_type: 'textarea' | 'int' | 'float' | 'select';
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler';
   display_name: string;                // フロントエンド表示名
   title_patterns: string[];            // 自動マッピング時のノードタイトルマッチパターン
 }

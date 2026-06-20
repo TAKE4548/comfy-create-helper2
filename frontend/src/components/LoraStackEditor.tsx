@@ -8,9 +8,10 @@ interface LoraStackEditorProps {
   paramValues: Record<string, string>
   setParamValues: (values: Record<string, string>) => void
   loras: Lora[] | undefined
+  title?: string
 }
 
-export function LoraStackEditor({ role, paramValues, setParamValues, loras }: LoraStackEditorProps) {
+export function LoraStackEditor({ role, paramValues, setParamValues, loras, title }: LoraStackEditorProps) {
   const { data: comfyModels } = useQuery({
     queryKey: ['comfy-lora-models'],
     queryFn: lorasApi.getComfyModels,
@@ -64,7 +65,7 @@ export function LoraStackEditor({ role, paramValues, setParamValues, loras }: Lo
   return (
     <div className="space-y-2 border-t border-[rgba(255,255,255,0.06)] pt-3 mt-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-zinc-400">LoRA Stack</span>
+        <span className="text-xs font-semibold text-zinc-400">{title || 'LoRA Stack'}</span>
         <button
           type="button"
           onClick={handleAddSlot}

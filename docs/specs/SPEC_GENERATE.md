@@ -81,7 +81,11 @@ interface AppliedAsset {
 
 ### 2-5. パラメータ入力パネル
 
-`input_type` が `int` / `float` / `select` / `lora_stack` のマッピングを動的生成。
+`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` のマッピングを動的生成。
+
+**サンプラ・スケジューラ選択 UI (select_sampler / select_scheduler)**:
+- `m.input_type === 'select_sampler'` の場合：ComfyUI の `/object_info` から KSampler / KSamplerAdvanced ノードの `sampler_name` の選択肢を取得してドロップダウンに表示。オフライン時は `DEFAULT_SAMPLERS` にフォールバックする。
+- `m.input_type === 'select_scheduler'` の場合：同様に ComfyUI の `/object_info` から KSampler / KSamplerAdvanced ノードの `scheduler` の選択肢を取得してドロップダウンに表示。オフライン時は `DEFAULT_SCHEDULERS` にフォールバックする。
 
 **動的 LoRA スタック UI (lora_stack)**:
 - `m.input_type === 'lora_stack'` のマッピングが存在する場合、専用の `LoraStackEditor` コンポーネントを表示。

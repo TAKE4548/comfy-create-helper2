@@ -17,13 +17,33 @@ function getInitialParams(workflow: Workflow): Record<string, string> {
     if (m.role) {
       if (m.input_type === 'lora_stack') {
         const node = m.node_id ? wfJson[m.node_id] : null
-        const loraCount = node?.inputs?.['lora_count'] !== undefined ? Number(node.inputs['lora_count']) : 0
+        let loraCount = 0
+        if (node?.inputs) {
+          const countInput = node.inputs['lora_count']
+          if (countInput !== undefined && !Array.isArray(countInput)) {
+            loraCount = Number(countInput)
+          } else {
+            // Find maximum index i (1 to 10) where inputs[`lora_name_${i}`] is defined
+            for (let i = 1; i <= 10; i++) {
+              if (node.inputs[`lora_name_${i}`] !== undefined) {
+                loraCount = i
+              }
+            }
+          }
+        }
         init[`${m.role}_lora_count`] = String(loraCount)
         for (let i = 1; i <= loraCount; i++) {
-          init[`${m.role}_lora_name_${i}`] = node?.inputs?.[`lora_name_${i}`] !== undefined ? String(node.inputs[`lora_name_${i}`]) : ''
-          init[`${m.role}_lora_wt_${i}`] = node?.inputs?.[`lora_wt_${i}`] !== undefined ? String(node.inputs[`lora_wt_${i}`]) : '0.0'
-          init[`${m.role}_model_str_${i}`] = node?.inputs?.[`model_str_${i}`] !== undefined ? String(node.inputs[`model_str_${i}`]) : '1.0'
-          init[`${m.role}_clip_str_${i}`] = node?.inputs?.[`clip_str_${i}`] !== undefined ? String(node.inputs[`clip_str_${i}`]) : '1.0'
+          const nameInput = node?.inputs?.[`lora_name_${i}`]
+          init[`${m.role}_lora_name_${i}`] = (nameInput !== undefined && !Array.isArray(nameInput)) ? String(nameInput) : ''
+
+          const wtInput = node?.inputs?.[`lora_wt_${i}`]
+          init[`${m.role}_lora_wt_${i}`] = (wtInput !== undefined && !Array.isArray(wtInput)) ? String(wtInput) : '0.0'
+
+          const modelStrInput = node?.inputs?.[`model_str_${i}`]
+          init[`${m.role}_model_str_${i}`] = (modelStrInput !== undefined && !Array.isArray(modelStrInput)) ? String(modelStrInput) : '1.0'
+
+          const clipStrInput = node?.inputs?.[`clip_str_${i}`]
+          init[`${m.role}_clip_str_${i}`] = (clipStrInput !== undefined && !Array.isArray(clipStrInput)) ? String(clipStrInput) : '1.0'
         }
       } else {
         let val = ''

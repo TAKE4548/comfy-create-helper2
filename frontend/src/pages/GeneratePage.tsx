@@ -339,6 +339,17 @@ const MappingErrorPanel = ({
   )
 }
 
+const DEFAULT_SAMPLERS = [
+  'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
+  'lms', 'dpm_fast', 'dpm_adaptive', 'dpmpp_2s_ancestral', 'dpmpp_sde',
+  'dpmpp_sde_gpu', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2m_sde_gpu',
+  'dpmpp_3m_sde', 'dpmpp_3m_sde_gpu', 'ddim', 'uni_pc', 'uni_pc_bh2'
+]
+
+const DEFAULT_SCHEDULERS = [
+  'normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform'
+]
+
 interface ParamPanelProps {
   paramMappings: any[]
   paramValues: Record<string, string>
@@ -351,6 +362,7 @@ interface ParamPanelProps {
   seed: number
   setSeed: (seed: number) => void
   mobile?: boolean
+  comfyObjectInfo?: any
 }
 
 const ParamPanel = ({
@@ -365,6 +377,7 @@ const ParamPanel = ({
   seed,
   setSeed,
   mobile = false,
+  comfyObjectInfo,
 }: ParamPanelProps) => {
   if (paramMappings.length === 0) return null
   return (
@@ -379,13 +392,32 @@ const ParamPanel = ({
               paramValues={paramValues}
               setParamValues={setParamValues}
               loras={loras}
+              title={m.display_name || undefined}
             />
           )
         }
         return (
           <div key={m.id} className="flex items-center justify-between gap-4">
             <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
-            {m.input_type === 'select' ? (
+            {m.input_type === 'select_sampler' ? (
+              <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+                <option value="">Select sampler…</option>
+                {(comfyObjectInfo?.KSampler?.input?.required?.sampler_name?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.sampler_name?.[0] || DEFAULT_SAMPLERS)?.map((name: string) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            ) : m.input_type === 'select_scheduler' ? (
+              <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+                <option value="">Select scheduler…</option>
+                {(comfyObjectInfo?.KSampler?.input?.required?.scheduler?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.scheduler?.[0] || DEFAULT_SCHEDULERS)?.map((name: string) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            ) : m.input_type === 'select' ? (
               <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                 className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
@@ -530,6 +562,16 @@ export function GeneratePage() {
     queryKey: ['workflow-presets', selectedWorkflowId],
     queryFn: () => workflowPresetsApi.list(selectedWorkflowId!) as Promise<WorkflowPreset[]>,
     enabled: !!selectedWorkflowId,
+  })
+  const { data: comfyObjectInfo } = useQuery({
+    queryKey: ['comfy-object-info', comfyUrl],
+    queryFn: async () => {
+      const res = await fetch(comfyUrl + '/object_info', { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) throw new Error('Failed to fetch object info')
+      return res.json()
+    },
+    enabled: !!comfyUrl,
+    retry: false,
   })
 
   // ── Extracted hooks ──────────────────────────────────────────
@@ -1116,6 +1158,7 @@ export function GeneratePage() {
               setSeedMode={setSeedMode}
               seed={seed}
               setSeed={setSeed}
+              comfyObjectInfo={comfyObjectInfo}
             />
           </div>
 
@@ -1417,6 +1460,7 @@ export function GeneratePage() {
               setSeedMode={setSeedMode}
               seed={seed}
               setSeed={setSeed}
+              comfyObjectInfo={comfyObjectInfo}
             />
           </div>
         </div>
