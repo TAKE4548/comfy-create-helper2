@@ -36,6 +36,17 @@ def delete_lora_category(category_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@lora_router.put("/{category_id}", response_model=schemas.CategoryRead)
+def update_lora_category(category_id: int, payload: schemas.CategoryCreate, db: Session = Depends(get_db)):
+    cat = db.query(models.LoraCategory).filter(models.LoraCategory.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="LoRA category not found")
+    cat.name = payload.name
+    db.commit()
+    db.refresh(cat)
+    return cat
+
+
 # ─── Tagset Categories ────────────────────────────────────────────
 
 @tagset_router.get("", response_model=list[schemas.CategoryRead])
@@ -59,3 +70,14 @@ def delete_tagset_category(category_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Tagset category not found")
     db.delete(cat)
     db.commit()
+
+
+@tagset_router.put("/{category_id}", response_model=schemas.CategoryRead)
+def update_tagset_category(category_id: int, payload: schemas.CategoryCreate, db: Session = Depends(get_db)):
+    cat = db.query(models.TagsetCategory).filter(models.TagsetCategory.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Tagset category not found")
+    cat.name = payload.name
+    db.commit()
+    db.refresh(cat)
+    return cat

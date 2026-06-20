@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings, Wand2, ChevronDown, Save, RefreshCw, Plus, Edit2, Trash2 } from 'lucide-react'
+import { Settings, Wand2, ChevronDown, Save, RefreshCw, Plus } from 'lucide-react'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { llmPromptsApi, configApi, mappingMastersApi } from '../api/client'

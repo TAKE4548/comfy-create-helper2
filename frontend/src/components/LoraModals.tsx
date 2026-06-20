@@ -6,7 +6,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { X, Check, Copy, Trash2, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react'
 import type { Category, Lora, LoraCreate, ComfyLoraModel } from '../api/types'
 import { useQuery } from '@tanstack/react-query'
-import { lorasApi } from '../api/client'
+import { lorasApi, loraCategoriesApi } from '../api/client'
+import { InlineCategorySelect } from './InlineCategorySelect'
 import TagChipEditor from './TagChipEditor'
 
 // ─── Form type shared between register and edit ────────────────
@@ -22,11 +23,13 @@ function LoraFormFields({
   setForm,
   idPrefix,
   categories,
+  onCategoryCreated,
 }: {
   form: LoraFormState
   setForm: React.Dispatch<React.SetStateAction<LoraFormState>>
   idPrefix: string
   categories?: Category[]
+  onCategoryCreated: (cat: Category) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -178,12 +181,15 @@ function LoraFormFields({
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Category</label>
-        <select id={`${idPrefix}-category`} value={form.category_id ?? ''}
-          onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined }))}
-          className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-accent-green/40">
-          <option value="">None</option>
-          {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <InlineCategorySelect
+          id={`${idPrefix}-category`}
+          value={form.category_id}
+          onChange={(catId) => setForm((f) => ({ ...f, category_id: catId }))}
+          categories={categories || []}
+          onCategoryCreated={onCategoryCreated}
+          apiCreateFn={loraCategoriesApi.create}
+          accentClass="accent-green"
+        />
       </div>
       <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -237,7 +243,7 @@ function LoraFormFields({
 
 // ─── Register Modal ────────────────────────────────────────────
 export function LoraRegisterModal({
-  form, setForm, categories, isPending, onClose, onSubmit,
+  form, setForm, categories, isPending, onClose, onSubmit, onCategoryCreated,
 }: {
   form: LoraFormState
   setForm: React.Dispatch<React.SetStateAction<LoraFormState>>
@@ -245,6 +251,7 @@ export function LoraRegisterModal({
   isPending: boolean
   onClose: () => void
   onSubmit: () => void
+  onCategoryCreated: (cat: Category) => void
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -254,7 +261,7 @@ export function LoraRegisterModal({
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
         </div>
         <div className="p-5">
-          <LoraFormFields form={form} setForm={setForm} idPrefix="lora" categories={categories} />
+          <LoraFormFields form={form} setForm={setForm} idPrefix="lora" categories={categories} onCategoryCreated={onCategoryCreated} />
           <button id="save-lora-btn" onClick={onSubmit} disabled={!form.model_name || isPending}
             className="w-full mt-3 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
             {isPending ? 'Saving…' : 'Register LoRA'}
@@ -267,7 +274,7 @@ export function LoraRegisterModal({
 
 // ─── Edit Modal ────────────────────────────────────────────────
 export function LoraEditModal({
-  form, setForm, categories, isPending, onClose, onSubmit, snapshotPaths,
+  form, setForm, categories, isPending, onClose, onSubmit, snapshotPaths, onCategoryCreated,
 }: {
   form: LoraFormState
   setForm: React.Dispatch<React.SetStateAction<LoraFormState>>
@@ -276,6 +283,7 @@ export function LoraEditModal({
   onClose: () => void
   onSubmit: () => void
   snapshotPaths?: string[]
+  onCategoryCreated: (cat: Category) => void
 }) {
   const images = Array.from(
     new Set(
@@ -408,7 +416,7 @@ export function LoraEditModal({
 
           {/* Right Side: Form Fields */}
           <div className="p-5 space-y-3">
-            <LoraFormFields form={form} setForm={setForm} idPrefix="edit-lora" categories={categories} />
+            <LoraFormFields form={form} setForm={setForm} idPrefix="edit-lora" categories={categories} onCategoryCreated={onCategoryCreated} />
             <div className="flex gap-2 pt-1 border-t border-[rgba(255,255,255,0.06)] mt-4">
               <button id="cancel-edit-lora-btn" onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>

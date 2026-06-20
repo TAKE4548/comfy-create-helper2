@@ -31,6 +31,7 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
         tags=json.loads(ts.tags) if ts.tags else [],
         thumbnail_path=ts.thumbnail_path,
         snapshot_paths=snapshot_paths,
+        sort_order=ts.sort_order,
         created_at=ts.created_at,
     )
 
@@ -40,7 +41,7 @@ def list_tag_sets(category_id: Optional[int] = None, db: Session = Depends(get_d
     q = db.query(models.TagSet)
     if category_id is not None:
         q = q.filter(models.TagSet.category_id == category_id)
-    return [_tagset_to_schema(ts, db) for ts in q.order_by(models.TagSet.id.desc()).all()]
+    return [_tagset_to_schema(ts, db) for ts in q.order_by(models.TagSet.sort_order, models.TagSet.id).all()]
 
 
 @router.post("", response_model=schemas.TagSetRead, status_code=status.HTTP_201_CREATED)
@@ -56,6 +57,13 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(ts)
     return _tagset_to_schema(ts, db)
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_tag_sets(payload: schemas.TagSetReorder, db: Session = Depends(get_db)):
+    for idx, tag_set_id in enumerate(payload.ordered_ids):
+        db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).update({"sort_order": idx})
+    db.commit()
 
 
 @router.put("/{tag_set_id}", response_model=schemas.TagSetRead)

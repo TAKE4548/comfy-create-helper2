@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category } from './types'
 
 const BASE_URL = '/api'
 
@@ -71,6 +71,7 @@ export const lorasApi = {
   update: (id: number, data: unknown) => request(`/loras/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/loras/${id}`, { method: 'DELETE' }),
   getComfyModels: () => request<ComfyLoraModel[]>('/loras/comfy-models'),
+  reorder: (ordered_ids: number[]) => request('/loras/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
 // ─── Tag Sets ───────────────────────────────────────────────────
@@ -79,19 +80,22 @@ export const tagSetsApi = {
   create: (data: unknown) => request('/tag-sets', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: unknown) => request(`/tag-sets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/tag-sets/${id}`, { method: 'DELETE' }),
+  reorder: (ordered_ids: number[]) => request('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
 // ─── Categories ─────────────────────────────────────────────────
 export const loraCategoriesApi = {
-  list: () => request('/lora-categories'),
-  create: (name: string) => request('/lora-categories', { method: 'POST', body: JSON.stringify({ name }) }),
-  delete: (id: number) => request(`/lora-categories/${id}`, { method: 'DELETE' }),
+  list: () => request<Category[]>('/lora-categories'),
+  create: (name: string) => request<Category>('/lora-categories', { method: 'POST', body: JSON.stringify({ name }) }),
+  update: (id: number, name: string) => request<Category>('/lora-categories/' + id, { method: 'PUT', body: JSON.stringify({ name }) }),
+  delete: (id: number) => request<void>(`/lora-categories/${id}`, { method: 'DELETE' }),
 }
 
 export const tagsetCategoriesApi = {
-  list: () => request('/tagset-categories'),
-  create: (name: string) => request('/tagset-categories', { method: 'POST', body: JSON.stringify({ name }) }),
-  delete: (id: number) => request(`/tagset-categories/${id}`, { method: 'DELETE' }),
+  list: () => request<Category[]>('/tagset-categories'),
+  create: (name: string) => request<Category>('/tagset-categories', { method: 'POST', body: JSON.stringify({ name }) }),
+  update: (id: number, name: string) => request<Category>('/tagset-categories/' + id, { method: 'PUT', body: JSON.stringify({ name }) }),
+  delete: (id: number) => request<void>(`/tagset-categories/${id}`, { method: 'DELETE' }),
 }
 
 // ─── LLM Audit ──────────────────────────────────────────────────

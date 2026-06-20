@@ -22,4 +22,9 @@ class TagSetRead(BaseModel):
     tags: list[str]
     thumbnail_path: Optional[str] = None
     snapshot_paths: list[str] = []
+    sort_order: int = 0
     created_at: datetime
+
+
+class TagSetReorder(BaseModel):
+    ordered_ids: list[int]

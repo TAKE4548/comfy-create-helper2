@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { X, Check, Copy, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react'
 import type { Category, TagSet } from '../api/types'
+import { InlineCategorySelect } from './InlineCategorySelect'
+import { tagsetCategoriesApi } from '../api/client'
 
 export interface TagSetFormState {
   name: string
@@ -13,12 +15,13 @@ export interface TagSetFormState {
 const PURPLE_INPUT = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
 
 function TagSetFormFields({
-  form, setForm, idPrefix, categories,
+  form, setForm, idPrefix, categories, onCategoryCreated,
 }: {
   form: TagSetFormState
   setForm: React.Dispatch<React.SetStateAction<TagSetFormState>>
   idPrefix: string
   categories?: Category[]
+  onCategoryCreated: (cat: Category) => void
 }) {
   return (
     <div className="space-y-3">
@@ -32,12 +35,15 @@ function TagSetFormFields({
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Category</label>
-        <select id={`${idPrefix}-category`} value={form.category_id ?? ''}
-          onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined }))}
-          className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-[#7C6FDD]/40">
-          <option value="">None</option>
-          {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <InlineCategorySelect
+          id={`${idPrefix}-category`}
+          value={form.category_id}
+          onChange={(catId) => setForm((f) => ({ ...f, category_id: catId }))}
+          categories={categories || []}
+          onCategoryCreated={onCategoryCreated}
+          apiCreateFn={tagsetCategoriesApi.create}
+          accentClass="[#7C6FDD]"
+        />
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Tags (comma-separated) *</label>
@@ -51,7 +57,7 @@ function TagSetFormFields({
 
 // ─── Create Modal ──────────────────────────────────────────────
 export function TagSetCreateModal({
-  form, setForm, categories, isPending, onClose, onSubmit,
+  form, setForm, categories, isPending, onClose, onSubmit, onCategoryCreated,
 }: {
   form: TagSetFormState
   setForm: React.Dispatch<React.SetStateAction<TagSetFormState>>
@@ -59,6 +65,7 @@ export function TagSetCreateModal({
   isPending: boolean
   onClose: () => void
   onSubmit: () => void
+  onCategoryCreated: (cat: Category) => void
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -68,7 +75,7 @@ export function TagSetCreateModal({
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
-          <TagSetFormFields form={form} setForm={setForm} idPrefix="tagset" categories={categories} />
+          <TagSetFormFields form={form} setForm={setForm} idPrefix="tagset" categories={categories} onCategoryCreated={onCategoryCreated} />
           <button id="save-tagset-btn" onClick={onSubmit} disabled={!form.name || !form.tags || isPending}
             className="w-full py-2.5 rounded-xl bg-[#7C6FDD] text-white font-bold text-sm hover:bg-[#6d62cc] disabled:opacity-50 disabled:cursor-not-allowed transition-all">
             {isPending ? 'Saving…' : 'Create Tag Set'}
@@ -81,7 +88,7 @@ export function TagSetCreateModal({
 
 // ─── Edit Modal ────────────────────────────────────────────────
 export function TagSetEditModal({
-  form, setForm, categories, isPending, onClose, onSubmit, snapshotPaths,
+  form, setForm, categories, isPending, onClose, onSubmit, snapshotPaths, onCategoryCreated,
 }: {
   form: TagSetFormState
   setForm: React.Dispatch<React.SetStateAction<TagSetFormState>>
@@ -90,6 +97,7 @@ export function TagSetEditModal({
   onClose: () => void
   onSubmit: () => void
   snapshotPaths?: string[]
+  onCategoryCreated: (cat: Category) => void
 }) {
   const images = Array.from(
     new Set(
@@ -221,7 +229,7 @@ export function TagSetEditModal({
 
           {/* Right Side: Form Fields */}
           <div className="p-5 space-y-3">
-            <TagSetFormFields form={form} setForm={setForm} idPrefix="edit-tagset" categories={categories} />
+            <TagSetFormFields form={form} setForm={setForm} idPrefix="edit-tagset" categories={categories} onCategoryCreated={onCategoryCreated} />
             <div className="flex gap-2 pt-1 border-t border-[rgba(255,255,255,0.06)] mt-4">
               <button onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>

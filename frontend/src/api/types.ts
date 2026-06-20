@@ -186,6 +186,7 @@ export interface AlbumCreate {
 export interface Category {
   id: number
   name: string
+  sort_order: number
 }
 
 // ─── LoRA ───────────────────────────────────────────────────────
@@ -207,6 +208,7 @@ export interface Lora {
   file_path: string | null
   trigger_word_sets: TriggerWordSet[]
   snapshot_paths?: string[]
+  sort_order: number
   created_at: string
 }
 
@@ -239,6 +241,7 @@ export interface TagSet {
   tags: string[]
   thumbnail_path: string | null
   snapshot_paths?: string[]
+  sort_order: number
   created_at: string
 }
 
@@ -323,4 +326,12 @@ export interface WorkflowPresetUpdate {
   batch_size?: number
   seed_mode?: string
   seed?: number
+}
+
+export interface LoraReorder {
+  ordered_ids: number[]
+}
+
+export interface TagSetReorder {
+  ordered_ids: number[]
 }

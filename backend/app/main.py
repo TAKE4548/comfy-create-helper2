@@ -71,6 +71,54 @@ def run_migrations():
                 """))
                 logger.info("Migrated: Added 'sort_order' column to 'mapping_master' table.")
 
+        # Add sort_order to loras if not exists
+        if "loras" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("loras")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE loras ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text("""
+                    UPDATE loras SET sort_order = (
+                        SELECT COUNT(*) FROM loras AS m2 WHERE m2.id <= loras.id
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'loras' table.")
+
+        # Add sort_order to tag_sets if not exists
+        if "tag_sets" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("tag_sets")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE tag_sets ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text("""
+                    UPDATE tag_sets SET sort_order = (
+                        SELECT COUNT(*) FROM tag_sets AS m2 WHERE m2.id <= tag_sets.id
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'tag_sets' table.")
+
+        # Add sort_order to lora_categories if not exists
+        if "lora_categories" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("lora_categories")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE lora_categories ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text("""
+                    UPDATE lora_categories SET sort_order = (
+                        SELECT COUNT(*) FROM lora_categories AS m2 WHERE m2.name <= lora_categories.name
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'lora_categories' table.")
+
+        # Add sort_order to tagset_categories if not exists
+        if "tagset_categories" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("tagset_categories")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE tagset_categories ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text("""
+                    UPDATE tagset_categories SET sort_order = (
+                        SELECT COUNT(*) FROM tagset_categories AS m2 WHERE m2.name <= tagset_categories.name
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'tagset_categories' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -128,6 +128,7 @@ class LoraCategory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     loras: Mapped[list["Lora"]] = relationship(back_populates="category_rel")
 
@@ -143,6 +144,7 @@ class Lora(Base):
     category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("lora_categories.id", ondelete="SET NULL"))
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
     file_path: Mapped[Optional[str]] = mapped_column(String)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["LoraCategory"]] = relationship(back_populates="loras")
@@ -168,6 +170,7 @@ class TagsetCategory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     tag_sets: Mapped[list["TagSet"]] = relationship(back_populates="category_rel")
 
@@ -181,6 +184,7 @@ class TagSet(Base):
     category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tagset_categories.id", ondelete="SET NULL"))
     tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")

@@ -15,6 +15,7 @@ class CategoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    sort_order: int = 0
 
 
 # ─── TriggerWordSet ──────────────────────────────────────────────
@@ -56,6 +57,7 @@ class LoraRead(BaseModel):
     file_path: Optional[str] = None
     trigger_word_sets: list[TriggerWordSetRead] = []
     snapshot_paths: list[str] = []
+    sort_order: int = 0
     created_at: datetime
 
 
@@ -64,4 +66,8 @@ class ComfyLoraModel(BaseModel):
     file_path: str
     is_registered: bool
     lora_id: Optional[int] = None
+
+
+class LoraReorder(BaseModel):
+    ordered_ids: list[int]
 

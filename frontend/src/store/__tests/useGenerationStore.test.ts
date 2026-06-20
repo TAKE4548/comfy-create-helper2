@@ -16,8 +16,6 @@ describe('useGenerationStore REQ-059 preview reset logic', () => {
   });
 
   it('should reset previewImage to null when setSelectedImg is called', () => {
-    const store = useGenerationStore.getState();
-    
     // Set initial state
     useGenerationStore.setState({
       previewImage: 'some_preview_image.png',

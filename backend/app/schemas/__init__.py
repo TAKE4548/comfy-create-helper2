@@ -46,11 +46,13 @@ from app.schemas.lora import (
     LoraCreate,
     LoraRead,
     ComfyLoraModel,
+    LoraReorder,
 )
 
 from app.schemas.tagset import (
     TagSetCreate,
     TagSetRead,
+    TagSetReorder,
 )
 
 from app.schemas.audit import (
@@ -85,9 +87,9 @@ __all__ = [
     # LoRA
     "CategoryCreate", "CategoryRead",
     "TriggerWordSetCreate", "TriggerWordSetRead",
-    "LoraCreate", "LoraRead", "ComfyLoraModel",
+    "LoraCreate", "LoraRead", "ComfyLoraModel", "LoraReorder",
     # TagSet
-    "TagSetCreate", "TagSetRead",
+    "TagSetCreate", "TagSetRead", "TagSetReorder",
     # Audit
     "AuditRequest", "InterferenceItem", "VocabularyItem", "PhysicalResult", "AuditResult",
     "LlmPromptUpdate", "LlmPromptRead",

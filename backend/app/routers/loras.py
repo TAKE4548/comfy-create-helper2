@@ -37,6 +37,7 @@ def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
         category_id=lora.category_id,
         thumbnail_path=lora.thumbnail_path,
         file_path=lora.file_path,
+        sort_order=lora.sort_order,
         created_at=lora.created_at,
         trigger_word_sets=[
             schemas.TriggerWordSetRead(
@@ -55,7 +56,7 @@ def list_loras(category_id: Optional[int] = None, db: Session = Depends(get_db))
     q = db.query(models.Lora)
     if category_id is not None:
         q = q.filter(models.Lora.category_id == category_id)
-    return [_lora_to_schema(l, db) for l in q.order_by(models.Lora.model_name).all()]
+    return [_lora_to_schema(l, db) for l in q.order_by(models.Lora.sort_order, models.Lora.model_name).all()]
 
 
 @router.post("", response_model=schemas.LoraRead, status_code=status.HTTP_201_CREATED)
@@ -80,6 +81,13 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(lora)
     return _lora_to_schema(lora, db)
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_loras(payload: schemas.LoraReorder, db: Session = Depends(get_db)):
+    for idx, lora_id in enumerate(payload.ordered_ids):
+        db.query(models.Lora).filter(models.Lora.id == lora_id).update({"sort_order": idx})
+    db.commit()
 
 
 @router.put("/{lora_id}", response_model=schemas.LoraRead)
