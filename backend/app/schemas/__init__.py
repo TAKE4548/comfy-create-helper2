@@ -62,6 +62,13 @@ from app.schemas.audit import (
     LlmPromptRead,
 )
 
+from app.schemas.preset import (
+    WorkflowPresetBase,
+    WorkflowPresetCreate,
+    WorkflowPresetRead,
+    WorkflowPresetUpdate,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead",
@@ -83,4 +90,6 @@ __all__ = [
     # Audit
     "AuditRequest", "InterferenceItem", "VocabularyItem", "PhysicalResult", "AuditResult",
     "LlmPromptUpdate", "LlmPromptRead",
+    # Preset
+    "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate",
 ]

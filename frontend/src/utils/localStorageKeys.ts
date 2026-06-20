@@ -16,6 +16,9 @@ export const LS_KEYS = {
   SELECTED_IMG: 'prompt-surgeon-selected-img',
   CURRENT_PROMPT_ID: 'prompt-surgeon-current-prompt-id',
   SIDEBAR_COLLAPSED: 'prompt-surgeon-sidebar-collapsed',
+  // New LocalStorage Keys:
+  SETS_PREFIX: 'prompt-surgeon-sets-wf-', // + workflowId
+  ACTIVE_SET_PREFIX: 'prompt-surgeon-active-set-wf-', // + workflowId
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

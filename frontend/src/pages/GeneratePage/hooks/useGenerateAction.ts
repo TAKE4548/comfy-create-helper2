@@ -7,81 +7,150 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 
 export function useGenerateAction(workflow: Workflow | undefined) {
-  const { paramValues, batchSize, seedMode, seed, queuePrompt } = useGenerationStore()
+  const {
+    paramValues: currentParamValues,
+    batchSize: currentBatchSize,
+    seedMode: currentSeedMode,
+    seed: currentSeed,
+    sets,
+    queuePrompt
+  } = useGenerationStore()
+
+  const injectParams = (
+    wfJson: Record<string, unknown>,
+    paramValues: Record<string, string>,
+    seedMode: 'random' | 'fixed',
+    seed: number,
+    index: number
+  ) => {
+    if (!workflow) return
+
+    // Inject paramValues into workflow JSON nodes
+    workflow.mappings.forEach((m) => {
+      if (!m.role || !m.param_name) return
+      const node = wfJson[m.node_id] as Record<string, unknown> | undefined
+      if (!node) return
+      const inputs = node.inputs as Record<string, unknown>
+      if (!inputs) return
+
+      if (m.input_type === 'lora_stack') {
+        const loraCount = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
+        inputs['lora_count'] = loraCount
+        for (let idx = 1; idx <= loraCount; idx++) {
+          inputs[`lora_name_${idx}`] = paramValues[`${m.role}_lora_name_${idx}`] || ''
+          inputs[`lora_wt_${idx}`] = parseFloat(paramValues[`${m.role}_lora_wt_${idx}`] || '0.0')
+          inputs[`model_str_${idx}`] = parseFloat(paramValues[`${m.role}_model_str_${idx}`] || '1.0')
+          inputs[`clip_str_${idx}`] = parseFloat(paramValues[`${m.role}_clip_str_${idx}`] || '1.0')
+        }
+        // Remove keys exceeding loraCount
+        Object.keys(inputs).forEach((k) => {
+          const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
+          if (match) {
+            const idx = parseInt(match[2], 10)
+            if (idx > loraCount) {
+              delete inputs[k]
+            }
+          }
+        })
+      } else {
+        let val: string | number = ''
+        if (m.input_type === 'int') {
+          val = parseInt(paramValues[m.role] || '0')
+        } else if (m.input_type === 'float') {
+          val = parseFloat(paramValues[m.role] || '0.0')
+        } else {
+          val = paramValues[m.role] || ''
+        }
+
+        if (inputs[m.param_name] !== undefined) {
+          inputs[m.param_name] = val
+        } else if (inputs['value'] !== undefined) {
+          inputs['value'] = val
+        } else {
+          inputs[m.param_name] = val
+        }
+      }
+    })
+
+    // Inject seed for Sampler_Seed role
+    const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
+    if (seedNode) {
+      const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
+      if (node) {
+        const inputs = node.inputs as Record<string, unknown>
+        let seedKey: string
+        if (seedNode.param_name !== null && seedNode.param_name !== undefined && inputs[seedNode.param_name] !== undefined) {
+          seedKey = seedNode.param_name
+        } else if (inputs['value'] !== undefined) {
+          seedKey = 'value'
+        } else {
+          seedKey = seedNode.param_name || 'seed'
+        }
+        inputs[seedKey] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + index
+      }
+    }
+  }
+
+  const waitForPrompt = (promptId: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const handleJobEvent = (e: Event) => {
+        const customEvent = e as CustomEvent<{ type: string; promptId: string }>
+        if (customEvent.detail.promptId === promptId) {
+          if (customEvent.detail.type === 'executed' || customEvent.detail.type === 'execution_complete') {
+            window.removeEventListener('comfy-job-event', handleJobEvent)
+            resolve()
+          } else if (customEvent.detail.type === 'execution_error') {
+            window.removeEventListener('comfy-job-event', handleJobEvent)
+            reject(new Error(`Execution error for prompt ${promptId}`))
+          }
+        }
+      }
+      window.addEventListener('comfy-job-event', handleJobEvent)
+      
+      // Timeout 120s
+      setTimeout(() => {
+        window.removeEventListener('comfy-job-event', handleJobEvent)
+        reject(new Error(`Timeout waiting for prompt ${promptId}`))
+      }, 120000)
+    })
+  }
 
   const handleGenerate = async () => {
     if (!workflow) return
-    for (let i = 0; i < batchSize; i++) {
+    for (let i = 0; i < currentBatchSize; i++) {
       const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-
-      // Inject paramValues into workflow JSON nodes
-      workflow.mappings.forEach((m) => {
-        if (!m.role || !m.param_name) return
-        const node = wfJson[m.node_id] as Record<string, unknown> | undefined
-        if (!node) return
-        const inputs = node.inputs as Record<string, unknown>
-        if (!inputs) return
-
-        if (m.input_type === 'lora_stack') {
-          const loraCount = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
-          inputs['lora_count'] = loraCount
-          for (let idx = 1; idx <= loraCount; idx++) {
-            inputs[`lora_name_${idx}`] = paramValues[`${m.role}_lora_name_${idx}`] || ''
-            inputs[`lora_wt_${idx}`] = parseFloat(paramValues[`${m.role}_lora_wt_${idx}`] || '0.0')
-            inputs[`model_str_${idx}`] = parseFloat(paramValues[`${m.role}_model_str_${idx}`] || '1.0')
-            inputs[`clip_str_${idx}`] = parseFloat(paramValues[`${m.role}_clip_str_${idx}`] || '1.0')
-          }
-          // Remove keys exceeding loraCount
-          Object.keys(inputs).forEach((k) => {
-            const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
-            if (match) {
-              const idx = parseInt(match[2], 10)
-              if (idx > loraCount) {
-                delete inputs[k]
-              }
-            }
-          })
-        } else {
-          let val: string | number = ''
-          if (m.input_type === 'int') {
-            val = parseInt(paramValues[m.role] || '0')
-          } else if (m.input_type === 'float') {
-            val = parseFloat(paramValues[m.role] || '0.0')
-          } else {
-            val = paramValues[m.role] || ''
-          }
-
-          if (inputs[m.param_name] !== undefined) {
-            inputs[m.param_name] = val
-          } else if (inputs['value'] !== undefined) {
-            inputs['value'] = val
-          } else {
-            inputs[m.param_name] = val
-          }
-        }
-      })
-
-      // Inject seed for Sampler_Seed role
-      const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
-      if (seedNode) {
-        const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
-        if (node) {
-          const inputs = node.inputs as Record<string, unknown>
-          let seedKey: string
-          if (seedNode.param_name !== null && seedNode.param_name !== undefined && inputs[seedNode.param_name] !== undefined) {
-            seedKey = seedNode.param_name
-          } else if (inputs['value'] !== undefined) {
-            seedKey = 'value'
-          } else {
-            seedKey = seedNode.param_name || 'seed'
-          }
-          inputs[seedKey] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + i
-        }
-      }
-
+      injectParams(wfJson, currentParamValues, currentSeedMode, currentSeed, i)
       await queuePrompt(wfJson)
     }
   }
 
-  return { handleGenerate }
+  const handleGenerateSets = async () => {
+    if (!workflow) return
+    const checkedSets = sets.filter((s) => s.checked)
+    if (checkedSets.length === 0) return
+
+    for (const setItem of checkedSets) {
+      for (let i = 0; i < setItem.batchSize; i++) {
+        const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
+        injectParams(wfJson, setItem.paramValues, setItem.seedMode, setItem.seed, i)
+        
+        try {
+          const promptId = await queuePrompt(wfJson)
+          if (promptId) {
+            // プロンプトIDとセット名のマッピングを保存
+            const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
+            const mappings = JSON.parse(mappingsJson)
+            mappings[promptId] = setItem.name
+            localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
+            
+            await waitForPrompt(promptId)
+          }
+        } catch (err) {
+          console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
+        }
+      }
+    }
+  }
+
+  return { handleGenerate, handleGenerateSets }
 }

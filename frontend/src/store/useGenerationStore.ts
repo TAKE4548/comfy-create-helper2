@@ -68,6 +68,17 @@ export interface AppliedAsset {
   loraPromptString?: string; // LoRA prompt string `<lora:filename:strength>`
 }
 
+export interface GenerationSet {
+  id: string
+  name: string
+  paramValues: Record<string, string>
+  appliedAssets: Record<string, AppliedAsset[]>
+  batchSize: number
+  seedMode: 'random' | 'fixed'
+  seed: number
+  checked: boolean
+}
+
 export interface ComfyQueueDeletePayload {
   delete: string[]
 }
@@ -105,6 +116,10 @@ export interface GenerationState {
   queueRunning: Array<[number, string, any, { client_id?: string }, any]>
   queuePending: Array<[number, string, any, { client_id?: string }, any]>
 
+  // ─── Multi-Set State (New) ─────────────────────────────────────
+  sets: GenerationSet[]
+  activeSetId: string | null
+
   // ─── Actions ───────────────────────────────────────────────────
   initialize: () => void
   setFilterOwnSession: (filter: boolean) => void
@@ -126,6 +141,16 @@ export interface GenerationState {
   setComfyUrl: (url: string) => void
   cancelJob: (promptId: string) => Promise<void>
   cancelAllJobs: () => Promise<void>
+
+  // ─── Multi-Set Actions (New) ───────────────────────────────────
+  initSets: (workflowId: number) => void
+  setActiveSetId: (id: string) => void
+  addSet: () => void
+  removeSet: (id: string) => void
+  renameSet: (id: string, name: string) => void
+  toggleSetChecked: (id: string) => void
+  setAllSetsChecked: (checked: boolean) => void
+  updateActiveSet: (updates: Partial<Omit<GenerationSet, 'id' | 'name'>>) => void
 }
 
 // ─── Module-level WebSocket singleton ─────────────────────────────
@@ -147,30 +172,61 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     ? Number(localStorage.getItem(LS_KEYS.WORKFLOW_ID))
     : null
 
+  let initialSets: GenerationSet[] = []
+  let initialActiveSetId: string | null = null
   let storedParams: Record<string, string> = {}
-  if (storedWorkflowId !== null) {
-    try {
-      storedParams = JSON.parse(
-        localStorage.getItem(LS_KEYS.PARAMS_PREFIX + storedWorkflowId) || '{}'
-      )
-    } catch {}
-  }
-
   let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
+  let storedBatchSize = 1
+  let storedSeedMode: 'random' | 'fixed' = 'random'
+  let storedSeed = 42
+
   if (storedWorkflowId !== null) {
     try {
-      storedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${storedWorkflowId}`) || '{}')
+      initialSets = JSON.parse(localStorage.getItem(LS_KEYS.SETS_PREFIX + storedWorkflowId) || '[]')
+      initialActiveSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + storedWorkflowId)
     } catch {}
+
+    if (initialSets.length === 0) {
+      try {
+        storedParams = JSON.parse(
+          localStorage.getItem(LS_KEYS.PARAMS_PREFIX + storedWorkflowId) || '{}'
+        )
+      } catch {}
+      try {
+        storedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${storedWorkflowId}`) || '{}')
+      } catch {}
+      storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
+      storedSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
+      storedSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
+
+      const initialSet: GenerationSet = {
+        id: 'set-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        name: 'Set 1',
+        paramValues: storedParams,
+        appliedAssets: storedAppliedAssets,
+        batchSize: storedBatchSize,
+        seedMode: storedSeedMode,
+        seed: storedSeed,
+        checked: true
+      }
+      initialSets = [initialSet]
+      initialActiveSetId = initialSet.id
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + storedWorkflowId, JSON.stringify(initialSets))
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + storedWorkflowId, initialActiveSetId)
+    }
+
+    if (!initialActiveSetId || !initialSets.some(s => s.id === initialActiveSetId)) {
+      initialActiveSetId = initialSets[0].id
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + storedWorkflowId, initialActiveSetId)
+    }
+
+    const activeSet = initialSets.find(s => s.id === initialActiveSetId)!
+    storedParams = activeSet.paramValues
+    storedAppliedAssets = activeSet.appliedAssets
+    storedBatchSize = activeSet.batchSize
+    storedSeedMode = activeSet.seedMode
+    storedSeed = activeSet.seed
   }
-
-  const storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE)
-    ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE))
-    : 1
-
-  const storedSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
-  const storedSeed = localStorage.getItem(LS_KEYS.SEED)
-    ? Number(localStorage.getItem(LS_KEYS.SEED))
-    : 42
 
   let storedBatchImages: string[] = []
   try {
@@ -270,6 +326,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     appliedAssets: storedAppliedAssets,
     queueRunning: [],
     queuePending: [],
+    sets: initialSets,
+    activeSetId: initialActiveSetId,
 
     // ── Actions ──────────────────────────────────────────────
     initialize: () => {
@@ -357,6 +415,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               case 'executed': {
                 const output = data.output as Record<string, unknown> | undefined
                 const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
+                const promptId = data.prompt_id as string
                 if (images && images.length > 0) {
                   const baseUrl = resolveComfyUrl(comfyUrl!)
                   const newUrls = images.map((img) => 
@@ -384,27 +443,38 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   }, 500)
                 }
                 get().fetchQueue()
+                window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'executed', promptId } }))
                 break
               }
 
-              case 'execution_complete':
+              case 'execution_complete': {
+                const promptId = data.prompt_id as string
                 set({ isGenerating: false, progress: { value: 1, max: 1, percentage: 100 }, currentPromptId: null, activeClientId: null })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 setTimeout(() => {
                   get().fetchHistory()
                 }, 500)
                 get().fetchQueue()
+                window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_complete', promptId } }))
                 break
+              }
 
-              case 'execution_error':
+              case 'execution_error': {
+                const promptId = data.prompt_id as string
                 set({ isGenerating: false, progress: null, currentPromptId: null, activeClientId: null })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchQueue()
+                window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_error', promptId } }))
                 break
+              }
             }
           } catch (e) {
             console.error('Failed to parse WebSocket message:', e)
           }
+
+
+
+
         }
       }
 
@@ -432,18 +502,72 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       set({ selectedWorkflowId: id })
       if (id !== null) {
         localStorage.setItem(LS_KEYS.WORKFLOW_ID, String(id))
-        let params: Record<string, string> = {}
-        try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + id) || '{}') } catch {}
         
-        let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
+        let sets: GenerationSet[] = []
         try {
-          loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${id}`) || '{}')
+          sets = JSON.parse(localStorage.getItem(LS_KEYS.SETS_PREFIX + id) || '[]')
         } catch {}
         
-        set({ paramValues: params, appliedAssets: loadedAppliedAssets })
+        let activeSetId: string | null = null
+        try {
+          activeSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + id)
+        } catch {}
+
+        if (sets.length === 0) {
+          let params: Record<string, string> = {}
+          try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + id) || '{}') } catch {}
+          
+          let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
+          try { loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${id}`) || '{}') } catch {}
+          
+          const defaultBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
+          const defaultSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
+          const defaultSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
+
+          const initialSet: GenerationSet = {
+            id: 'set-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+            name: 'Set 1',
+            paramValues: params,
+            appliedAssets: loadedAppliedAssets,
+            batchSize: defaultBatchSize,
+            seedMode: defaultSeedMode,
+            seed: defaultSeed,
+            checked: true
+          }
+          sets = [initialSet]
+          activeSetId = initialSet.id
+          
+          localStorage.setItem(LS_KEYS.SETS_PREFIX + id, JSON.stringify(sets))
+          localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + id, activeSetId)
+        }
+
+        if (!activeSetId || !sets.some(s => s.id === activeSetId)) {
+          activeSetId = sets[0].id
+          localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + id, activeSetId)
+        }
+
+        const activeSet = sets.find(s => s.id === activeSetId)!
+
+        set({
+          sets,
+          activeSetId,
+          paramValues: activeSet.paramValues,
+          appliedAssets: activeSet.appliedAssets,
+          batchSize: activeSet.batchSize,
+          seedMode: activeSet.seedMode,
+          seed: activeSet.seed
+        })
       } else {
         localStorage.removeItem(LS_KEYS.WORKFLOW_ID)
-        set({ paramValues: {}, appliedAssets: {} })
+        set({
+          sets: [],
+          activeSetId: null,
+          paramValues: {},
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42
+        })
       }
     },
 
@@ -452,6 +576,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const activeWfId = get().selectedWorkflowId
       if (activeWfId !== null) {
         localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(values))
+        get().updateActiveSet({ paramValues: values })
       }
     },
 
@@ -474,6 +599,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (activeWfId !== null) {
         localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
         localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
       }
     },
 
@@ -496,6 +622,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (activeWfId !== null) {
         localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
         localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
       }
     },
 
@@ -517,6 +644,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (activeWfId !== null) {
         localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
         localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
+        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
       }
     },
 
@@ -525,12 +653,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const activeWfId = get().selectedWorkflowId
       if (activeWfId !== null) {
         localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(assets))
+        get().updateActiveSet({ appliedAssets: assets })
       }
     },
 
-    setBatchSize: (size) => { set({ batchSize: size }); localStorage.setItem(LS_KEYS.BATCH_SIZE, String(size)) },
-    setSeedMode: (mode) => { set({ seedMode: mode }); localStorage.setItem(LS_KEYS.SEED_MODE, mode) },
-    setSeed: (seed) => { set({ seed }); localStorage.setItem(LS_KEYS.SEED, String(seed)) },
+    setBatchSize: (size) => {
+      set({ batchSize: size })
+      localStorage.setItem(LS_KEYS.BATCH_SIZE, String(size))
+      get().updateActiveSet({ batchSize: size })
+    },
+    setSeedMode: (mode) => {
+      set({ seedMode: mode })
+      localStorage.setItem(LS_KEYS.SEED_MODE, mode)
+      get().updateActiveSet({ seedMode: mode })
+    },
+    setSeed: (seed) => {
+      set({ seed })
+      localStorage.setItem(LS_KEYS.SEED, String(seed))
+      get().updateActiveSet({ seed })
+    },
 
     setSelectedImg: (img) => {
       set({ selectedImg: img })
@@ -717,6 +858,157 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       } catch (e) {
         console.error('Failed to cancel all jobs:', e)
       }
+    },
+
+    initSets: (workflowId) => {
+      let params: Record<string, string> = {}
+      try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflowId) || '{}') } catch {}
+      
+      let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
+      try { loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${workflowId}`) || '{}') } catch {}
+      
+      const defaultBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
+      const defaultSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
+      const defaultSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
+
+      const initialSet: GenerationSet = {
+        id: 'set-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        name: 'Set 1',
+        paramValues: params,
+        appliedAssets: loadedAppliedAssets,
+        batchSize: defaultBatchSize,
+        seedMode: defaultSeedMode,
+        seed: defaultSeed,
+        checked: true
+      }
+      const sets = [initialSet]
+      const activeSetId = initialSet.id
+      
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + workflowId, JSON.stringify(sets))
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + workflowId, activeSetId)
+
+      set({
+        sets,
+        activeSetId,
+        paramValues: params,
+        appliedAssets: loadedAppliedAssets,
+        batchSize: defaultBatchSize,
+        seedMode: defaultSeedMode,
+        seed: defaultSeed
+      })
+    },
+
+    setActiveSetId: (id) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+      
+      const targetSet = get().sets.find(s => s.id === id)
+      if (!targetSet) return
+
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, id)
+      set({
+        activeSetId: id,
+        paramValues: targetSet.paramValues,
+        appliedAssets: targetSet.appliedAssets,
+        batchSize: targetSet.batchSize,
+        seedMode: targetSet.seedMode,
+        seed: targetSet.seed
+      })
+    },
+
+    addSet: () => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+
+      const currentParamValues = { ...get().paramValues }
+      const currentAppliedAssets = { ...get().appliedAssets }
+      const currentBatchSize = get().batchSize
+      const currentSeedMode = get().seedMode
+      const currentSeed = get().seed
+
+      const newSet: GenerationSet = {
+        id: 'set-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        name: `Set ${get().sets.length + 1}`,
+        paramValues: currentParamValues,
+        appliedAssets: currentAppliedAssets,
+        batchSize: currentBatchSize,
+        seedMode: currentSeedMode,
+        seed: currentSeed,
+        checked: true
+      }
+
+      const updatedSets = [...get().sets, newSet]
+      set({ sets: updatedSets, activeSetId: newSet.id })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, newSet.id)
+    },
+
+    removeSet: (id) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+      if (get().sets.length <= 1) return
+
+      const updatedSets = get().sets.filter(s => s.id !== id)
+      let nextActiveId = get().activeSetId
+      if (nextActiveId === id) {
+        nextActiveId = updatedSets[0].id
+      }
+
+      set({ sets: updatedSets, activeSetId: nextActiveId })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, nextActiveId!)
+
+      const nextActiveSet = updatedSets.find(s => s.id === nextActiveId)!
+      set({
+        paramValues: nextActiveSet.paramValues,
+        appliedAssets: nextActiveSet.appliedAssets,
+        batchSize: nextActiveSet.batchSize,
+        seedMode: nextActiveSet.seedMode,
+        seed: nextActiveSet.seed
+      })
+    },
+
+    renameSet: (id, name) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+
+      const updatedSets = get().sets.map(s => s.id === id ? { ...s, name } : s)
+      set({ sets: updatedSets })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
+    },
+
+    toggleSetChecked: (id) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+
+      const updatedSets = get().sets.map(s => s.id === id ? { ...s, checked: !s.checked } : s)
+      set({ sets: updatedSets })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
+    },
+
+    setAllSetsChecked: (checked) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+
+      const updatedSets = get().sets.map(s => ({ ...s, checked }))
+      set({ sets: updatedSets })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
+    },
+
+    updateActiveSet: (updates) => {
+      const activeWfId = get().selectedWorkflowId
+      const activeSetId = get().activeSetId
+      if (activeWfId === null || activeSetId === null) return
+
+      const updatedSets = get().sets.map((s) => {
+        if (s.id === activeSetId) {
+          return { ...s, ...updates }
+        }
+        return s
+      })
+
+      set({ sets: updatedSets })
+      localStorage.setItem(LS_KEYS.SETS_PREFIX + activeWfId, JSON.stringify(updatedSets))
     },
   }
 })

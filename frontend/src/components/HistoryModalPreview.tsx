@@ -68,6 +68,41 @@ export function HistoryModalPreview({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, currentIndex, images.length, onChangeIndex])
 
+  const loraStacks = useMemo(() => {
+    if (!snapshot?.params) return []
+    const roles: string[] = []
+    Object.keys(snapshot.params).forEach((key) => {
+      const match = key.match(/^(.+)_lora_count$/)
+      if (match) {
+        roles.push(match[1])
+      }
+    })
+
+    return roles.map((role) => {
+      const count = parseInt(String(snapshot.params[`${role}_lora_count`]), 10) || 0
+      const items = []
+      for (let i = 1; i <= count; i++) {
+        const filePath = String(snapshot.params[`${role}_lora_name_${i}`] || '')
+        if (!filePath) continue
+        
+        const registered = loras?.find((l) => l.file_path === filePath)
+        const displayName = registered?.description ? registered.description : filePath
+
+        items.push({
+          index: i,
+          displayName,
+          wt: String(snapshot.params[`${role}_lora_wt_${i}`] ?? '0.0'),
+          model_str: String(snapshot.params[`${role}_model_str_${i}`] ?? '1.0'),
+          clip_str: String(snapshot.params[`${role}_clip_str_${i}`] ?? '1.0'),
+        })
+      }
+      return {
+        role,
+        items,
+      }
+    }).filter((stack) => stack.items.length > 0)
+  }, [snapshot?.params, loras])
+
   if (!isOpen || images.length === 0) return null
 
   const activeImage = images[currentIndex]
@@ -113,41 +148,6 @@ export function HistoryModalPreview({
   const cfgScale = getParamValue(['cfg'])
   const steps = getParamValue(['step'])
   const seed = getParamValue(['seed'])
-
-  const loraStacks = useMemo(() => {
-    if (!snapshot?.params) return []
-    const roles: string[] = []
-    Object.keys(snapshot.params).forEach((key) => {
-      const match = key.match(/^(.+)_lora_count$/)
-      if (match) {
-        roles.push(match[1])
-      }
-    })
-
-    return roles.map((role) => {
-      const count = parseInt(String(snapshot.params[`${role}_lora_count`]), 10) || 0
-      const items = []
-      for (let i = 1; i <= count; i++) {
-        const filePath = String(snapshot.params[`${role}_lora_name_${i}`] || '')
-        if (!filePath) continue
-        
-        const registered = loras?.find((l) => l.file_path === filePath)
-        const displayName = registered?.description ? registered.description : filePath
-
-        items.push({
-          index: i,
-          displayName,
-          wt: String(snapshot.params[`${role}_lora_wt_${i}`] ?? '0.0'),
-          model_str: String(snapshot.params[`${role}_model_str_${i}`] ?? '1.0'),
-          clip_str: String(snapshot.params[`${role}_clip_str_${i}`] ?? '1.0'),
-        })
-      }
-      return {
-        role,
-        items,
-      }
-    }).filter((stack) => stack.items.length > 0)
-  }, [snapshot?.params, loras])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col" onClick={onClose}>

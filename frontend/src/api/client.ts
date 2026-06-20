@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate } from './types'
 
 const BASE_URL = '/api'
 
@@ -107,5 +107,17 @@ export const llmPromptsApi = {
 // ─── Config ─────────────────────────────────────────────────────
 export const configApi = {
   get: () => request<{ comfy_url: string }>('/config'),
+}
+
+// ─── Workflow Presets ───────────────────────────────────────────
+export const workflowPresetsApi = {
+  list: (workflow_id?: number) =>
+    request<WorkflowPreset[]>(`/workflow-presets${workflow_id ? `?workflow_id=${workflow_id}` : ''}`),
+  create: (data: WorkflowPresetCreate) =>
+    request<WorkflowPreset>('/workflow-presets', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: WorkflowPresetUpdate) =>
+    request<WorkflowPreset>(`/workflow-presets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) =>
+    request<void>(`/workflow-presets/${id}`, { method: 'DELETE' }),
 }
 

@@ -290,3 +290,36 @@ export interface LlmPrompt {
   description: string | null
   updated_at: string
 }
+
+// ─── Preset ─────────────────────────────────────────────────────
+
+export interface WorkflowPreset {
+  id: number
+  workflow_id: number
+  name: string
+  param_values: Record<string, string>
+  applied_assets: Record<string, any[]>
+  batch_size: number
+  seed_mode: string
+  seed: number
+  created_at: string
+}
+
+export interface WorkflowPresetCreate {
+  workflow_id: number
+  name: string
+  param_values?: Record<string, string>
+  applied_assets?: Record<string, any[]>
+  batch_size: number
+  seed_mode: string
+  seed: number
+}
+
+export interface WorkflowPresetUpdate {
+  name?: string
+  param_values?: Record<string, string>
+  applied_assets?: Record<string, any[]>
+  batch_size?: number
+  seed_mode?: string
+  seed?: number
+}

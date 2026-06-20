@@ -42,6 +42,25 @@ class Workflow(Base):
     snapshots: Mapped[list["Snapshot"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    presets: Mapped[list["WorkflowPreset"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+
+
+class WorkflowPreset(Base):
+    __tablename__ = "workflow_presets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    param_values: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: {role: value}
+    applied_assets: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: {role: asset_ids}
+    batch_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    seed_mode: Mapped[str] = mapped_column(String, nullable=False)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    workflow: Mapped["Workflow"] = relationship(back_populates="presets")
 
 
 class WorkflowMapping(Base):

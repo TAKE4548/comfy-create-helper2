@@ -136,4 +136,126 @@ export const JobManagementModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null  // ← 早期リターンはフックの後
   ...
 }
+
+---
+
+## [NEW] REQ-053: 全画面表示で真っ黒の画面になる問題およびモバイル表示時のオーバーレイ問題
+
+### 1. 現象・症状
+1. 履歴画像などをクリックして全画面表示（拡大プレビュー）にした際、画面が真っ黒になり画像が表示されず、閉じるボタンなどの操作も受け付けないためリロードしないと戻らない。
+2. モバイルなどのレスポンシブ表示でサイドバーが下のメニューバー（ボトムナビゲーション）になった際、メインコンテンツの下部がメニューバーの背後に潜り込み、操作できない領域が発生する。
+
+### 2. 再現手順
+
+#### 不具合1 (全画面表示のクラッシュ)
+1. 生成ページ (`GeneratePage`) または履歴ページ (`HistoryPage`) で、スナップショット画像をクリックして `HistoryModalPreview` モーダル（全画面プレビュー）を開く。
+2. 画面が真っ黒になり、画像が表示されない。右上のクローズボタンや背景クリックによるクローズも反応せず、ブラウザのリロードが必要となる。
+
+#### 不具合2 (レスポンシブ時の下部オーバーレイ)
+1. ブラウザのウィンドウ幅を縮小し、モバイル表示（幅 `1024px` 未満）にする。
+2. サイドバーが消え、下部にボトムナビゲーションバーが表示される。
+3. ページの最下部にあるスクロール領域やボタン等のコンテンツが、ボトムナビゲーションバーの下に重なり、操作できなくなる。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 不具合1の直接原因：`HistoryModalPreview.tsx` での Temporal Dead Zone (TDZ) 参照エラー
+**該当ファイル**: [`frontend/src/components/HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx#L100-L110)
+
+```tsx
+  const getParamValue = (keys: string[], excludeKeys: string[] = []): string => {
+    if (!snapshot?.params) return ''
+    const matchKey = Object.keys(snapshot.params).find((key) => {
+      const k = key.toLowerCase()
+      const matchesInclude = keys.some((target) => k.includes(target.toLowerCase()))
+      const matchesExclude = excludeKeys.some((target) => k.includes(target.toLowerCase()))
+      return matchKey ? String(snapshot.params[matchKey]) : '' // ⚠️ 未初期化の matchKey を find() コールバック内で参照している
+    })
+    return matchKey ? String(snapshot.params[matchKey]) : ''
+  }
 ```
+
+- **エラーのメカニズム**: `const matchKey = Object.keys(...).find(...)` の右辺の評価中に、そのコールバック関数の中で `matchKey` 変数自身を参照しています。JavaScript (TypeScript) の仕様上、`const` で宣言された変数は代入が完了するまで **Temporal Dead Zone (TDZ)** にあるため、未初期化の状態で参照すると `ReferenceError: Cannot access 'matchKey' before initialization` がスローされます。
+- **影響**: この `ReferenceError` は React のレンダリング中に発生するため、React のレンダーツリー全体がクラッシュし、イベントハンドラー（`onClose` など）が一切動作しないフリーズ状態（真っ黒なプレビュー画面が残った状態）になります。
+
+#### 3-2. 不具合2の直接原因：`AppShell.tsx` でのモバイル用ボトムパディングの欠如
+**該当ファイル**: [`frontend/src/components/layout/AppShell.tsx`](../frontend/src/components/layout/AppShell.tsx#L110-L138)
+
+- **レイアウト構造の欠陥**: モバイル用ボトムナビゲーションは `fixed bottom-0 z-50` で画面最下部に固定配置されていますが、メインコンテンツ領域である `main` 要素 (`className="flex-1 flex flex-col min-w-0 overflow-hidden"`) や、各ページコンポーネントに対して、ボトムナビゲーションの高さ（約 `64px` 分）を考慮した下部パディング（例: `pb-16 lg:pb-0` や `pb-[calc(64px+env(safe-area-inset-bottom))]`）が設定されていません。
+- **影響**: このため、メインコンテンツがボトムナビゲーションの裏側に回り込んで表示され、下部にあるボタンやフォームが操作不可になります。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx#L102-L107) L102-L107<br>[`AppShell.tsx`](../frontend/src/components/layout/AppShell.tsx#L110) L110 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **`HistoryModalPreview.tsx`**: `find` コールバック内での `matchKey` の誤った再帰参照を修正し、正しくマッチング条件（boolean）を返すように変更します。
+2. **`AppShell.tsx`**: モバイル表示時にメインコンテンツ領域の下部にナビゲーションバーの高さ分（および `safe-area-inset-bottom`）のパディングを確保します。
+
+```
+
+---
+
+## [NEW] REQ-054: 全画面表示で真っ黒の画面になる問題（再発）
+
+### 1. 現象・症状
+
+履歴画像や生成プレビューをクリックして `HistoryModalPreview` を開くと、画面が真っ黒になり操作不能になる。右上の閉じるボタン（×）および背景クリックも反応しない。ブラウザのリロードが必要。
+
+### 2. 再現手順
+
+1. 生成ページ (`GeneratePage`) または履歴ページ (`HistoryPage`) を開く。
+2. 画像サムネイルをクリックして全画面プレビュー（`HistoryModalPreview`）を開く。
+3. 画面が真っ黒になり、操作が一切受け付けられない。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`useMemo` フックが条件付き早期リターンより後に配置（React Rules of Hooks 違反）
+
+**該当ファイル**: [`frontend/src/components/HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx)
+
+| 行 | 内容 |
+|---|---|
+| **L71** | `if (!isOpen \|\| images.length === 0) return null` ← **早期リターン** |
+| L100–116 | `getParamValue` 関数定義（通常関数。フックではないため問題なし）|
+| **L117** | `const loraStacks = useMemo(...)` ← **フック呼び出し（早期リターンより後）⚠️** |
+
+React の Rules of Hooks により、フックは条件分岐や早期リターンより前に配置しなければならない。
+
+**レンダリングごとのフック数の変動**:
+
+| `isOpen` | `images.length` | 呼ばれるフック数 |
+|---|---|---|
+| `false` | any | 7個（`useMemo` は実行されない）|
+| `true` | `0` | 7個（`useMemo` は実行されない）|
+| `true` | `> 0` | **8個**（`useMemo` が実行される）|
+
+同一インスタンスで `false → true` に遷移した瞬間、React がフック呼び出し順の変動を検出し、レンダーツリー全体がクラッシュ → Error Boundary なし → 真っ黒画面。
+
+#### 3-2. なぜ REQ-053 で解決されなかったか
+
+| PBI | 内容 |
+|---|---|
+| **REQ-052** | LoraStack 対応追加。`useMemo(loraStacks)` を `HistoryModalPreview.tsx` に追加したが、早期リターン（L71）の**後**に配置してしまった |
+| **REQ-053** | TDZ バグ（`matchKey` 自己参照）を修正。`useMemo` の位置問題は検出・修正されなかった |
+| **現在** | `useMemo` の位置違反が残存 → 黒画面が再発 |
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** |
+| **影響ファイル** | [`HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx) L71, L117 |
+| **バグ導入** | REQ-052（`loraStacks` useMemo 追加時） |
+| **未検出原因** | REQ-053 の修正スコープが TDZ バグのみに限定されていた |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+
+`HistoryModalPreview.tsx` の `loraStacks = useMemo(...)` をL71の早期リターンより**前**（既存の `useEffect` などと同列）に移動する。`useMemo` の依存値（`snapshot?.params`, `loras`）はモーダルが閉じていても安全に評価できるため、早期リターン前への移動で副作用はない。
+

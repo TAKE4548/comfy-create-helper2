@@ -14,6 +14,7 @@ from app.seeder import seed_initial_data
 from app.routers import (
     workflows, mapping_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
+    presets,
 )
 
 logging.basicConfig(
@@ -102,6 +103,7 @@ app.include_router(categories.lora_router)
 app.include_router(categories.tagset_router)
 app.include_router(audit.router)
 app.include_router(llm_prompts.router)
+app.include_router(presets.router)
 
 
 app.mount("/api/snapshots/images", StaticFiles(directory=settings.snapshot_path), name="snapshots_images")

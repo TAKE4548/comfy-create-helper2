@@ -5,8 +5,8 @@ import {
   ImageOff, ScanLine, Plus, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi } from '../api/client'
-import type { Workflow, MappingMaster, Lora, TagSet } from '../api/types'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi } from '../api/client'
+import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../api/types'
 import { useGenerationStore } from '../store/useGenerationStore'
 import type { AppliedAsset } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
@@ -478,6 +478,8 @@ export function GeneratePage() {
   const [loraStrength, setLoraStrength] = useState<number>(1.0)
   const [isJobModalOpen, setIsJobModalOpen] = useState(false)
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const [isPresetOpen, setIsPresetOpen] = useState(false)
+  const [newPresetName, setNewPresetName] = useState('')
 
   // ── Store ────────────────────────────────────────────────────
   const {
@@ -491,6 +493,8 @@ export function GeneratePage() {
     addAppliedAsset, removeAppliedAsset, toggleAppliedAsset, setAppliedAssets,
     comfyUrl, setComfyUrl,
     queueRunning, queuePending,
+    sets, activeSetId, addSet, removeSet, renameSet,
+    toggleSetChecked, setAllSetsChecked, setActiveSetId, updateActiveSet,
   } = useGenerationStore()
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
@@ -522,17 +526,34 @@ export function GeneratePage() {
     queryKey: ['tag-sets'],
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
   })
+  const { data: presets } = useQuery({
+    queryKey: ['workflow-presets', selectedWorkflowId],
+    queryFn: () => workflowPresetsApi.list(selectedWorkflowId!) as Promise<WorkflowPreset[]>,
+    enabled: !!selectedWorkflowId,
+  })
 
   // ── Extracted hooks ──────────────────────────────────────────
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
     useWorkflowParams(workflow, selectedWorkflowId)
 
-  const { handleGenerate } = useGenerateAction(workflow)
+  const { handleGenerateSets } = useGenerateAction(workflow)
 
   const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
   const sortedDisplayImages = useMemo(() => {
     return sortOrder === 'desc' ? displayImages : [...displayImages].reverse()
   }, [displayImages, sortOrder])
+  
+  const getSetNameForImage = (imgUrl: string) => {
+    try {
+      const url = new URL(imgUrl)
+      const promptId = url.searchParams.get('t')
+      if (promptId) {
+        const mappings = JSON.parse(localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}')
+        return mappings[promptId] || null
+      }
+    } catch {}
+    return null
+  }
   const sortedSnapshots = useMemo(() => {
     if (!snapshots) return []
     const copy = [...snapshots] as SnapshotSummaryWithParams[]
@@ -567,6 +588,78 @@ export function GeneratePage() {
       setSelectedMasters({})
     },
   })
+
+  const createPresetMutation = useMutation({
+    mutationFn: (name: string) => workflowPresetsApi.create({
+      workflow_id: selectedWorkflowId!,
+      name,
+      param_values: paramValues,
+      applied_assets: appliedAssets,
+      batch_size: batchSize,
+      seed_mode: seedMode,
+      seed: seed,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+      setNewPresetName('')
+    }
+  })
+
+  const updatePresetMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => workflowPresetsApi.update(id, {
+      name,
+      param_values: paramValues,
+      applied_assets: appliedAssets,
+      batch_size: batchSize,
+      seed_mode: seedMode,
+      seed: seed,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    }
+  })
+
+  const deletePresetMutation = useMutation({
+    mutationFn: (id: number) => workflowPresetsApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    }
+  })
+
+  const handleCreatePreset = () => {
+    if (!newPresetName.trim() || !selectedWorkflowId) return
+    createPresetMutation.mutate(newPresetName.trim())
+  }
+
+  const handleUpdatePreset = (id: number, name: string) => {
+    if (!selectedWorkflowId) return
+    if (confirm(`現在の設定でプリセット「${name}」を上書き保存しますか？`)) {
+      updatePresetMutation.mutate({ id, name })
+    }
+  }
+
+  const handleDeletePreset = (id: number) => {
+    if (confirm('このプリセットを削除しますか？')) {
+      deletePresetMutation.mutate(id)
+    }
+  }
+
+  const handleLoadPreset = (preset: WorkflowPreset) => {
+    setParamValues(preset.param_values)
+    setAppliedAssets(preset.applied_assets)
+    setBatchSize(preset.batch_size)
+    setSeedMode(preset.seed_mode as 'random' | 'fixed')
+    setSeed(preset.seed)
+    
+    updateActiveSet({
+      paramValues: preset.param_values,
+      appliedAssets: preset.applied_assets,
+      batchSize: preset.batch_size,
+      seedMode: preset.seed_mode as 'random' | 'fixed',
+      seed: preset.seed
+    })
+    setIsPresetOpen(false)
+  }
 
   // ── Derived state ────────────────────────────────────────────
   const isGeneratingHere = isGenerating && (!filterOwnSession || activeClientId === clientId)
@@ -888,8 +981,13 @@ export function GeneratePage() {
                     {sortedDisplayImages.map((img, i) => (
                       <button key={i} type="button" id={`thumb-mobile-${i}`}
                         onClick={() => { setSelectedImg(img); setModalPreviewIndex(i); setIsModalPreviewOpen(true) }}
-                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all ${selectedImg === img ? 'border-accent-green' : 'border-transparent'}`}>
+                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative ${selectedImg === img ? 'border-accent-green' : 'border-transparent'}`}>
                         <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                        {getSetNameForImage(img) && (
+                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
+                            {getSetNameForImage(img)}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1023,7 +1121,7 @@ export function GeneratePage() {
 
           {/* Mobile Action Bar */}
           <div className="fixed bottom-16 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
-            <button id="generate-btn-mobile" onClick={handleGenerate} disabled={!selectedWorkflowId || !isConnected}
+            <button id="generate-btn-mobile" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
               <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
             </button>
@@ -1171,6 +1269,64 @@ export function GeneratePage() {
               </button>
             </div>
           </div>
+
+          {/* Multi-Set Tab Bar (Desktop only) */}
+          {!isMobile && selectedWorkflowId && (
+            <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
+              <div className="flex items-center gap-2 overflow-x-auto max-w-[70%] py-1 scrollbar-thin">
+                {sets.map((s) => (
+                  <div key={s.id} onClick={() => setActiveSetId(s.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition-all ${activeSetId === s.id ? 'bg-accent-green/10 border-accent-green/45 text-accent-green font-medium shadow-sm' : 'bg-zinc-900/30 border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'}`}>
+                    <input type="checkbox" checked={s.checked} onChange={(e) => { e.stopPropagation(); toggleSetChecked(s.id) }} onClick={(e) => e.stopPropagation()} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />
+                    {activeSetId === s.id ? (
+                      <input type="text" value={s.name} onChange={(e) => renameSet(s.id, e.target.value)} onClick={(e) => e.stopPropagation()} className="bg-transparent border-none focus:outline-none focus:ring-0 text-xs text-accent-green font-medium p-0 w-16" />
+                    ) : (
+                      <span onDoubleClick={() => setActiveSetId(s.id)} className="truncate max-w-[80px]">{s.name}</span>
+                    )}
+                    {sets.length > 1 && (
+                      <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 transition-colors ml-0.5"><X size={10} /></button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5 ml-auto relative">
+                <button type="button" onClick={() => setAllSetsChecked(true)} className="text-[10px] text-zinc-500 hover:text-zinc-350 px-1.5 py-0.5 rounded border border-[rgba(255,255,255,0.06)] hover:bg-white/5 transition-all">全選択</button>
+                <button type="button" onClick={() => setAllSetsChecked(false)} className="text-[10px] text-zinc-500 hover:text-zinc-350 px-1.5 py-0.5 rounded border border-[rgba(255,255,255,0.06)] hover:bg-white/5 transition-all">全解除</button>
+                <button type="button" onClick={addSet} className="flex items-center gap-1 text-[10px] bg-accent-green/10 border border-accent-green/30 text-accent-green px-2 py-0.5 rounded hover:bg-accent-green/20 transition-all font-semibold"><Plus size={10} />新規セット</button>
+                
+                {/* プリセット管理 */}
+                <button type="button" onClick={() => setIsPresetOpen(!isPresetOpen)} className={`flex items-center gap-1 text-[10px] border px-2 py-0.5 rounded transition-all font-semibold ${isPresetOpen ? 'bg-accent-green border-accent-green text-zinc-950 hover:bg-accent-green/90' : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'}`}><Wand2 size={10} />プリセット</button>
+                {isPresetOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl p-3 z-50 space-y-2.5 text-xs text-zinc-350 text-left">
+                    <div className="font-semibold border-b border-zinc-850 pb-1.5 text-zinc-200">構成プリセット</div>
+                    
+                    {/* 保存フォーム */}
+                    <div className="flex gap-1.5">
+                      <input type="text" placeholder="プリセット名を入力..." value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 focus:outline-none focus:border-accent-green/50 text-[11px]" onKeyDown={(e) => { if (e.key === 'Enter') { handleCreatePreset() } }} />
+                      <button onClick={handleCreatePreset} disabled={!newPresetName.trim() || createPresetMutation.isPending} className="bg-accent-green text-zinc-950 font-medium px-2.5 py-1 rounded hover:bg-accent-green-hover disabled:opacity-50 transition-colors text-[11px]">保存</button>
+                    </div>
+                    
+                    {/* リスト */}
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin text-zinc-300">
+                      {presets && presets.length > 0 ? (
+                        presets.map((preset) => (
+                          <div key={preset.id} className="flex items-center justify-between p-1.5 rounded hover:bg-zinc-850 transition-colors group">
+                            <span onClick={() => handleLoadPreset(preset)} className="cursor-pointer font-medium hover:text-accent-green transition-colors truncate flex-1 max-w-[140px] text-[11px] text-left">{preset.name}</span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => handleUpdatePreset(preset.id, preset.name)} title="現在の設定で上書き" className="text-zinc-400 hover:text-accent-green p-0.5"><CheckCircle2 size={11} /></button>
+                              <button onClick={() => handleDeletePreset(preset.id)} title="削除" className="text-zinc-500 hover:text-red-400 p-0.5"><X size={11} /></button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-4 text-zinc-500 text-[10px]">保存されたプリセットはありません</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
             <AuditPanel
@@ -1365,8 +1521,13 @@ export function GeneratePage() {
                   <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
                     {sortedDisplayImages.map((img, i) => (
                       <button key={i} type="button" id={`thumb-${i}`} onClick={() => setSelectedImg(img)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'}`}>
+                        className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all relative ${selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'}`}>
                         <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                        {getSetNameForImage(img) && (
+                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[8px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
+                            {getSetNameForImage(img)}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1391,7 +1552,7 @@ export function GeneratePage() {
 
           {/* Action Bar */}
           <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3 flex items-center gap-3">
-            <button id="generate-btn" onClick={handleGenerate} disabled={!selectedWorkflowId || !isConnected}
+            <button id="generate-btn" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
               <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
             </button>
