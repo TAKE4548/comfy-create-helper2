@@ -14,6 +14,7 @@ class MappingMasterBase(BaseModel):
     input_type: str
     display_name: str
     title_patterns: Optional[list[str]] = None
+    sort_order: int = 0
 
 
 class MappingMasterCreate(MappingMasterBase):
@@ -23,6 +24,10 @@ class MappingMasterCreate(MappingMasterBase):
 class MappingMasterRead(MappingMasterBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+class MappingMasterReorder(BaseModel):
+    ordered_ids: list[int]
 
 
 # ─── WorkflowMapping ─────────────────────────────────────────────

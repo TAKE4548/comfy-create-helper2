@@ -58,6 +58,19 @@ def run_migrations():
                 conn.execute(sa.text("ALTER TABLE tag_sets ADD COLUMN thumbnail_path TEXT"))
                 logger.info("Migrated: Added 'thumbnail_path' column to 'tag_sets' table.")
 
+        # Add sort_order to mapping_master if not exists
+        if "mapping_master" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("mapping_master")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE mapping_master ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                # Initialize existing rows: sort_order = row number based on id order
+                conn.execute(sa.text("""
+                    UPDATE mapping_master SET sort_order = (
+                        SELECT COUNT(*) FROM mapping_master AS m2 WHERE m2.id <= mapping_master.id
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'mapping_master' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

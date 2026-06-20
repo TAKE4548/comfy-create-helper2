@@ -39,6 +39,7 @@ export const mappingMastersApi = {
   update: (id: number, data: unknown) => request(`/mapping-masters/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/mapping-masters/${id}`, { method: 'DELETE' }),
   getUsages: (id: number) => request<MappingMasterUsage[]>(`/mapping-masters/${id}/usages`),
+  reorder: (ordered_ids: number[]) => request('/mapping-masters/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
 // ─── Snapshots ──────────────────────────────────────────────────

@@ -6,7 +6,9 @@
  */
 
 import { useState } from 'react'
-import { X, RefreshCw, AlertTriangle } from 'lucide-react'
+import { X, RefreshCw, AlertTriangle, GripVertical, Edit2, Trash2 } from 'lucide-react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { MappingMaster, MappingMasterCreate } from '../api/types'
 
 const inputCls = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
@@ -180,5 +182,68 @@ export function ConnectionStatus({ label, url }: { label: string; url: string })
         </button>
       </div>
     </div>
+  )
+}
+
+interface SortableMasterRowProps {
+  mm: MappingMaster
+  openEditModal: (mm: MappingMaster) => void
+  openDeleteModal: (mm: MappingMaster) => void
+}
+
+export function SortableMasterRow({ mm, openEditModal, openDeleteModal }: SortableMasterRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: mm.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : 1,
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style} className="hover:bg-white/[0.01] transition-colors">
+      <td className="px-3 py-3 w-8 text-zinc-600">
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={13} />
+        </button>
+      </td>
+      <td className="px-4 py-3 font-mono text-zinc-200">{mm.role}</td>
+      <td className="px-4 py-3">{mm.display_name}</td>
+      <td className="px-4 py-3 font-mono text-zinc-400">{mm.param_name}</td>
+      <td className="px-4 py-3">
+        <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px]">
+          {mm.input_type}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.expected_class_types?.join(', ')}>
+        {mm.expected_class_types?.join(', ') || '-'}
+      </td>
+      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.title_patterns?.join(', ')}>
+        {mm.title_patterns?.join(', ') || '-'}
+      </td>
+      <td className="px-4 py-3 text-right">
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={() => openEditModal(mm)} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
+            <Edit2 size={13} />
+          </button>
+          <button onClick={() => openDeleteModal(mm)} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </td>
+    </tr>
   )
 }

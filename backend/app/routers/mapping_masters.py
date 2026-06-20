@@ -2,6 +2,7 @@
 
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/api/mapping-masters", tags=["mapping-masters"])
 
 @router.get("", response_model=list[schemas.MappingMasterRead])
 def list_masters(db: Session = Depends(get_db)):
-    rows = db.query(models.MappingMaster).order_by(models.MappingMaster.id).all()
+    rows = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
     return [_to_schema(r) for r in rows]
 
 
@@ -26,10 +27,21 @@ def create_master(payload: schemas.MappingMasterCreate, db: Session = Depends(ge
         display_name=payload.display_name,
         title_patterns=json.dumps(payload.title_patterns) if payload.title_patterns else None,
     )
+    max_order = db.query(func.max(models.MappingMaster.sort_order)).scalar() or -1
+    mm.sort_order = max_order + 1
     db.add(mm)
     db.commit()
     db.refresh(mm)
     return _to_schema(mm)
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_masters(payload: schemas.MappingMasterReorder, db: Session = Depends(get_db)):
+    for idx, master_id in enumerate(payload.ordered_ids):
+        db.query(models.MappingMaster).filter(
+            models.MappingMaster.id == master_id
+        ).update({"sort_order": idx})
+    db.commit()
 
 
 @router.put("/{master_id}", response_model=schemas.MappingMasterRead)
@@ -82,4 +94,5 @@ def _to_schema(mm: models.MappingMaster) -> schemas.MappingMasterRead:
         input_type=mm.input_type,
         display_name=mm.display_name,
         title_patterns=json.loads(mm.title_patterns) if mm.title_patterns else None,
+        sort_order=mm.sort_order,
     )

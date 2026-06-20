@@ -1,31 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
-import { X, ScanLine, Loader2, Trash2, Plus, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, ScanLine, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
-import type { ScanResult, ScanMatchedItem, ScanWarningItem, MappingMaster } from '../api/types'
-
-// ─── Internal State Types ────────────────────────────────────────
-
-interface EditableRow {
-  node_id: string
-  node_title: string
-  master_id: number
-  role: string
-  _deleted: boolean
-}
-
-interface ManualRow {
-  master_id: number
-  role: string
-  status: string
-  node_id: string
-  /** warnings が duplicated の場合の候補 node_ids */
-  candidate_node_ids: string[]
-}
+import type { ScanResult, MappingMaster } from '../api/types'
+import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
-
-// ─── Props ───────────────────────────────────────────────────────
 
 interface UploadWorkflowModalProps {
   initialName: string
@@ -33,8 +13,6 @@ interface UploadWorkflowModalProps {
   onClose: () => void
   onSaved: (newWorkflowId: number) => void
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -54,15 +32,12 @@ function statusColor(status: string): string {
   }
 }
 
-// ─── Component ───────────────────────────────────────────────────
-
 export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSaved }: UploadWorkflowModalProps) {
   const [phase, setPhase] = useState<Phase>('scanning')
   const [workflowName, setWorkflowName] = useState(initialName)
   const [scanError, setScanError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [editableRows, setEditableRows] = useState<EditableRow[]>([])
-  const [manualRows, setManualRows] = useState<ManualRow[]>([])
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
 
   // Mapping masters for dropdowns
   const { data: masters = [] } = useQuery<MappingMaster[]>({
@@ -70,29 +45,11 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>,
   })
 
+  const { buildRows, updateNodeId, initFromScan, getMappings } = useMasterMappingRows(masters, scanResult)
+
+  const { mainRows, notFoundRows } = buildRows()
+
   // ── Scan on mount ─────────────────────────────────────────────
-  const buildRows = useCallback((result: ScanResult) => {
-    const matched: EditableRow[] = result.matched.map((item: ScanMatchedItem) => ({
-      node_id: item.node_id,
-      node_title: item.node_title,
-      master_id: item.master_id,
-      role: item.role,
-      _deleted: false,
-    }))
-
-    const warnings: ManualRow[] = result.warnings.map((item: ScanWarningItem) => ({
-      master_id: item.master_id,
-      role: item.role,
-      status: item.status,
-      node_id: item.node_id ?? (item.node_ids?.[0] ?? ''),
-      candidate_node_ids: item.node_ids ?? [],
-    }))
-
-    setEditableRows(matched)
-    setManualRows(warnings)
-    setPhase('editing')
-  }, [])
-
   useEffect(() => {
     let cancelled = false
     setPhase('scanning')
@@ -100,7 +57,12 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
 
     workflowsApi.scan(workflowJson)
       .then((result) => {
-        if (!cancelled) buildRows(result as ScanResult)
+        if (!cancelled) {
+          const res = result as ScanResult
+          setScanResult(res)
+          initFromScan(res)
+          setPhase('editing')
+        }
       })
       .catch((err: Error) => {
         if (!cancelled) {
@@ -110,21 +72,12 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
       })
 
     return () => { cancelled = true }
-  }, [workflowJson, buildRows])
+  }, [workflowJson])
 
   // ── Save mutation ─────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const activeMapped = editableRows
-        .filter((r) => !r._deleted)
-        .map((r) => ({ master_id: r.master_id, node_id: r.node_id }))
-
-      const activeManual = manualRows
-        .filter((r) => r.node_id.trim() !== '')
-        .map((r) => ({ master_id: r.master_id, node_id: r.node_id.trim() }))
-
-      const mappings = [...activeMapped, ...activeManual]
-      
+      const mappings = getMappings(mainRows, notFoundRows)
       const data = {
         name: workflowName.trim(),
         json_body: workflowJson,
@@ -161,43 +114,11 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     saveMutation.mutate()
   }
 
-  // ── Editable row handlers ─────────────────────────────────────
-  const updateRowMaster = (idx: number, masterId: number) => {
-    const master = masters.find((m) => m.id === masterId)
-    setEditableRows((prev) =>
-      prev.map((r, i) =>
-        i === idx ? { ...r, master_id: masterId, role: master?.role ?? r.role } : r
-      )
-    )
-  }
-
-  const deleteRow = (idx: number) => {
-    setEditableRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, _deleted: true } : r))
-    )
-  }
-
-  const restoreRow = (idx: number) => {
-    setEditableRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, _deleted: false } : r))
-    )
-  }
-
-  // ── Manual row handlers ───────────────────────────────────────
-  const updateManualNodeId = (idx: number, nodeId: string) => {
-    setManualRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, node_id: nodeId } : r))
-    )
-  }
-
-  // ── Background click ──────────────────────────────────────────
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget && phase !== 'saving') onClose()
   }
 
-  // ── Render ────────────────────────────────────────────────────
-  const activeCount = editableRows.filter((r) => !r._deleted).length
-  const manualFilledCount = manualRows.filter((r) => r.node_id.trim() !== '').length
+  const activeCount = [...mainRows, ...notFoundRows].filter(r => r.node_id.trim() !== '').length
 
   return (
     <div
@@ -269,144 +190,106 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
           )}
 
           {/* Editing content */}
-          {(phase === 'editing' || phase === 'saving') && !phase.startsWith('scan') && (
+          {(phase === 'editing' || phase === 'saving') && !scanError && scanResult && (
             <>
-              {/* ── Matched Section ─────────────────────────── */}
+              {/* ── Matched/Main Section ─────────────────────── */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={14} className="text-accent-green" />
                   <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                    スキャン結果 — マッチ済み
+                    スキャン結果 — マッチ・競合
                   </h3>
-                  <span className="text-[10px] text-zinc-600 ml-auto">
-                    {activeCount} / {editableRows.length} 件 有効
-                  </span>
                 </div>
 
-                {editableRows.length === 0 && (
-                  <p className="text-xs text-zinc-650 py-2 pl-1">マッチしたノードはありません。</p>
+                {mainRows.length === 0 && (
+                  <p className="text-xs text-zinc-650 py-2 pl-1">マッチした役割はありません。</p>
                 )}
 
                 <div className="space-y-2">
-                  {editableRows.map((row, idx) => (
+                  {mainRows.map((row) => (
                     <div
-                      key={`matched-${idx}`}
-                      className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
-                        row._deleted
-                          ? 'border-[rgba(255,255,255,0.04)] bg-surface-2/30 opacity-40'
-                          : 'border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]'
-                      }`}
+                      key={row.master.id}
+                      className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
                     >
-                      {/* Node info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-[10px] font-mono text-zinc-500">
-                            ID: <span className="text-zinc-300">{row.node_id}</span>
-                          </span>
-                          {row.node_title && (
-                            <span className="text-[10px] text-zinc-600 truncate">
-                              ({row.node_title})
-                            </span>
-                          )}
-                        </div>
-                        {/* Role dropdown */}
-                        <select
-                          id={`upload-role-${idx}`}
-                          value={row.master_id}
-                          onChange={(e) => updateRowMaster(idx, Number(e.target.value))}
-                          disabled={row._deleted || phase === 'saving'}
-                          className="w-full text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {masters.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.display_name} ({m.role})
-                            </option>
-                          ))}
-                        </select>
+                      {/* Role info */}
+                      <div className="w-40 flex-shrink-0">
+                        <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
+                        <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
                       </div>
 
-                      {/* Delete / Restore button */}
-                      {row._deleted ? (
-                        <button
-                          id={`upload-restore-${idx}`}
-                          onClick={() => restoreRow(idx)}
+                      {/* Combobox logic (Input with candidates list) */}
+                      <div className="flex-1 min-w-0">
+                        <input
+                          id={`node-select-${row.master.id}`}
+                          list={`candidates-${row.master.id}`}
+                          value={row.node_id}
+                          onChange={(e) => updateNodeId(row.master.id, e.target.value)}
                           disabled={phase === 'saving'}
-                          title="復元"
-                          className="p-1.5 rounded text-zinc-500 hover:text-accent-green hover:bg-accent-green/10 transition-colors flex-shrink-0 disabled:opacity-40"
-                        >
-                          <Plus size={13} />
-                        </button>
-                      ) : (
-                        <button
-                          id={`upload-delete-${idx}`}
-                          onClick={() => deleteRow(idx)}
-                          disabled={phase === 'saving'}
-                          title="このマッピングを除外"
-                          className="p-1.5 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 disabled:opacity-40"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                          placeholder={row.candidates.length > 0 ? '候補から選択または直接入力…' : 'ノードIDを直接入力…'}
+                          className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                        />
+                        {row.candidates.length > 0 && (
+                          <datalist id={`candidates-${row.master.id}`}>
+                            {row.candidates.map((id) => (
+                              <option key={id} value={id} />
+                            ))}
+                          </datalist>
+                        )}
+                      </div>
+
+                      {/* Status label if not OK */}
+                      {row.status !== 'ok' && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
+                          {statusLabel(row.status)}
+                        </span>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* ── Warnings Section ────────────────────────── */}
-              {manualRows.length > 0 && (
-                <div className="space-y-3">
+              {/* ── Unresolved Section (Not Found) ────────────── */}
+              {notFoundRows.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-[rgba(255,255,255,0.04)]">
                   <div className="flex items-center gap-2">
-                    <AlertTriangle size={14} className="text-amber-400" />
+                    <AlertCircle size={14} className="text-red-400" />
                     <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                      未解決の役割 — 手動指定
+                      未検出の役割
                     </h3>
-                    <span className="text-[10px] text-zinc-600 ml-auto">
-                      {manualFilledCount} / {manualRows.length} 件 入力済み
-                    </span>
+                    <span className="text-[10px] text-zinc-600 ml-auto">{notFoundRows.length} 件</span>
                   </div>
                   <p className="text-[11px] text-zinc-650 leading-relaxed">
-                    スキャンで自動検出できなかった役割です。対応するノード ID を手動で入力してください。空欄のまま確定すると、その役割のマッピングは作成されません。
+                    スキャンで候補が見つからなかった役割です。対応するノードIDを直接入力するか、空欄のまま保存するとこの役割のマッピングは作成されません。
                   </p>
 
                   <div className="space-y-2">
-                    {manualRows.map((row, idx) => (
+                    {notFoundRows.map((row) => (
                       <div
-                        key={`warning-${idx}`}
-                        className="flex items-center gap-2 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
+                        key={row.master.id}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
                       >
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-zinc-300">{row.role}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusColor(row.status)}`}>
-                              {statusLabel(row.status)}
-                            </span>
-                          </div>
-                          {/* node_id input or select for duplicated */}
-                          {row.status === 'duplicated' && row.candidate_node_ids.length > 0 ? (
-                            <select
-                              id={`upload-warning-select-${idx}`}
-                              value={row.node_id}
-                              onChange={(e) => updateManualNodeId(idx, e.target.value)}
-                              disabled={phase === 'saving'}
-                              className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-amber-400/40 disabled:opacity-50"
-                            >
-                              <option value="">使用するノードIDを選択…</option>
-                              {row.candidate_node_ids.map((nid) => (
-                                <option key={nid} value={nid}>{nid}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              id={`upload-warning-input-${idx}`}
-                              type="text"
-                              value={row.node_id}
-                              onChange={(e) => updateManualNodeId(idx, e.target.value)}
-                              disabled={phase === 'saving'}
-                              placeholder="ノード ID を入力（例: 42）"
-                              className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 placeholder-zinc-650 focus:outline-none focus:border-amber-400/40 disabled:opacity-50"
-                            />
-                          )}
+                        {/* Role info */}
+                        <div className="w-40 flex-shrink-0">
+                          <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
+                          <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
                         </div>
+
+                        {/* Combobox logic (Not found generally has no candidates) */}
+                        <div className="flex-1 min-w-0">
+                          <input
+                            id={`node-select-${row.master.id}`}
+                            value={row.node_id}
+                            onChange={(e) => updateNodeId(row.master.id, e.target.value)}
+                            disabled={phase === 'saving'}
+                            placeholder="ノードIDを直接入力…"
+                            className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                          />
+                        </div>
+
+                        {/* Status label (Always not_found here) */}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
+                          {statusLabel(row.status)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -420,7 +303,7 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
         {(phase === 'editing' || phase === 'saving') && (
           <div className="flex items-center justify-between px-5 py-4 border-t border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.01)]">
             <p className="text-[11px] text-zinc-600">
-              有効: <span className="text-zinc-400">{activeCount + manualFilledCount}</span> 件のマッピングを保存します
+              有効: <span className="text-zinc-400">{activeCount}</span> 件のマッピングを保存します
             </p>
             <div className="flex items-center gap-2">
               <button

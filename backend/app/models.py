@@ -20,6 +20,7 @@ class MappingMaster(Base):
     input_type: Mapped[str] = mapped_column(String, nullable=False)  # textarea/int/float/select
     display_name: Mapped[str] = mapped_column(String, nullable=False)
     title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # relationships
     workflow_mappings: Mapped[list["WorkflowMapping"]] = relationship(

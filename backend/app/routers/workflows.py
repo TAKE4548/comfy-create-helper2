@@ -116,6 +116,6 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db)):
 
 @router.post("/scan", response_model=schemas.ScanResult)
 def scan_workflow_json(payload: schemas.WorkflowScanRequest, db: Session = Depends(get_db)):
-    masters = db.query(models.MappingMaster).all()
+    masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
     result = scan_workflow(payload.json_body, masters)
     return result

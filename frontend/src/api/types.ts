@@ -13,6 +13,7 @@ export interface MappingMaster {
   input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler'
   display_name: string
   title_patterns: string[] | null
+  sort_order: number
 }
 
 export interface MappingMasterCreate {

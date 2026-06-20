@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings, Wand2, ChevronDown, Save, RefreshCw, Plus, Edit2, Trash2 } from 'lucide-react'
+import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { llmPromptsApi, configApi, mappingMastersApi } from '../api/client'
 import type { LlmPrompt, MappingMaster } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
@@ -8,6 +10,7 @@ import {
   MappingMasterModal,
   MappingMasterDeleteModal,
   ConnectionStatus,
+  SortableMasterRow,
   emptyMasterForm,
   masterFormToCreate,
   masterToForm,
@@ -31,6 +34,7 @@ export function SettingsPage() {
   const [masterForm, setMasterForm] = useState<MappingMasterFormState>(emptyMasterForm())
   const [comfyUrl, setComfyUrl] = useState('http://localhost:8188')
   const [saved, setSaved] = useState<string | null>(null)
+  const [sortedMasters, setSortedMasters] = useState<MappingMaster[]>([])
 
   useEffect(() => {
     configApi.get()
@@ -43,11 +47,35 @@ export function SettingsPage() {
     queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>,
   })
 
+  useEffect(() => {
+    if (masters) {
+      setSortedMasters(masters)
+    }
+  }, [masters])
+
   const { data: usages, isLoading: isLoadingUsages } = useQuery({
     queryKey: ['mapping-master-usages', selectedMaster?.id],
     queryFn: () => mappingMastersApi.getUsages(selectedMaster!.id),
     enabled: !!selectedMaster && showDeleteModal,
   })
+
+  const reorderMaster = useMutation({
+    mutationFn: (ordered_ids: number[]) => mappingMastersApi.reorder(ordered_ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mapping-masters'] })
+    },
+  })
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      const oldIndex = sortedMasters.findIndex((m) => m.id === active.id)
+      const newIndex = sortedMasters.findIndex((m) => m.id === over.id)
+      const reordered = arrayMove(sortedMasters, oldIndex, newIndex)
+      setSortedMasters(reordered)
+      reorderMaster.mutate(reordered.map((m) => m.id))
+    }
+  }
 
   const createMaster = useMutation({
     mutationFn: (data: Parameters<typeof mappingMastersApi.create>[0]) => mappingMastersApi.create(data),
@@ -161,32 +189,28 @@ export function SettingsPage() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-400 bg-white/[0.01]">
-                    {['Role', 'Display Name', 'Param Name', 'Input Type', 'Expected Class Types', 'Title Patterns', ''].map((h) => (
-                      <th key={h} className={`px-4 py-3 font-medium${h === '' ? ' text-right' : ''}`}>{h}</th>
+                    {['', 'Role', 'Display Name', 'Param Name', 'Input Type', 'Expected Class Types', 'Title Patterns', ''].map((h, i) => (
+                      <th key={i} className={`px-4 py-3 font-medium${h === '' && i === 7 ? ' text-right' : ''}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
-                  {masters?.map((mm) => (
-                    <tr key={mm.id} className="hover:bg-white/[0.01] transition-colors">
-                      <td className="px-4 py-3 font-mono text-zinc-200">{mm.role}</td>
-                      <td className="px-4 py-3">{mm.display_name}</td>
-                      <td className="px-4 py-3 font-mono text-zinc-400">{mm.param_name}</td>
-                      <td className="px-4 py-3"><span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px]">{mm.input_type}</span></td>
-                      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.expected_class_types?.join(', ')}>{mm.expected_class_types?.join(', ') || '-'}</td>
-                      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.title_patterns?.join(', ')}>{mm.title_patterns?.join(', ') || '-'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => openEditModal(mm)} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit"><Edit2 size={13} /></button>
-                          <button onClick={() => openDeleteModal(mm)} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {(!masters || masters.length === 0) && (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-500">No mapping masters found.</td></tr>
-                  )}
-                </tbody>
+                <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={sortedMasters.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                    <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
+                      {sortedMasters.map((mm) => (
+                        <SortableMasterRow
+                          key={mm.id}
+                          mm={mm}
+                          openEditModal={openEditModal}
+                          openDeleteModal={openDeleteModal}
+                        />
+                      ))}
+                      {(!sortedMasters || sortedMasters.length === 0) && (
+                        <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No mapping masters found.</td></tr>
+                      )}
+                    </tbody>
+                  </SortableContext>
+                </DndContext>
               </table>
             </div>
           )}

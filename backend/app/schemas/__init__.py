@@ -8,6 +8,7 @@ from app.schemas.workflow import (
     MappingMasterBase,
     MappingMasterCreate,
     MappingMasterRead,
+    MappingMasterReorder,
     WorkflowMappingRead,
     WorkflowMappingCreate,
     WorkflowCreate,
@@ -71,7 +72,7 @@ from app.schemas.preset import (
 
 __all__ = [
     # Workflow
-    "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead",
+    "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
     "WorkflowMappingRead", "WorkflowMappingCreate",
     "WorkflowCreate", "WorkflowSummary", "WorkflowRead", "WorkflowUpdate",
     "WorkflowScanRequest", "ScanMatchedItem", "ScanWarningItem", "ScanResult",
