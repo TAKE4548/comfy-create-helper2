@@ -259,3 +259,57 @@ React の Rules of Hooks により、フックは条件分岐や早期リター�
 
 `HistoryModalPreview.tsx` の `loraStacks = useMemo(...)` をL71の早期リターンより**前**（既存の `useEffect` などと同列）に移動する。`useMemo` の依存値（`snapshot?.params`, `loras`）はモーダルが閉じていても安全に評価できるため、早期リターン前への移動で副作用はない。
 
+---
+
+## [NEW] REQ-059: 生成完了後に履歴画像からのプレビュー切り替え機能が動作しなくなる問題
+
+### 1. 現象・症状
+
+生成を1枚完了するたびに、プレビューは最新の画像に更新されるが、その後履歴のサムネイルを選択してもメインプレビューが選択した画像に切り替わらなくなる。ページをリロードすると一時的に動作が復元するが、再度生成を行うと再発する。
+
+### 2. 再現手順
+
+1. 生成ページ (`GeneratePage`) を開く。
+2. 画像生成を実行し、完了させる（プレビューが生成画像に更新される）。
+3. 画面下部または履歴一覧から、過去に生成した画像（サムネイル）をクリックして選択する。
+4. メインプレビュー画像が切り替わらず、直前に生成された画像のままになる。
+5. ページをリロードすると、選択していた画像がメインプレビューに正しく表示され、切り替えも可能になるが、再度生成を行うと再び切り替えできなくなる。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`previewImage` と `selectedImg` の状態優先度および `setSelectedImg` 時のクリア漏れ
+
+**該当ファイル**:
+- [`frontend/src/store/useGenerationStore.ts`](../frontend/src/store/useGenerationStore.ts#L676-L683) L676–683 (`setSelectedImg` アクション)
+- [`frontend/src/pages/GeneratePage.tsx`](../frontend/src/pages/GeneratePage.tsx#L962-L964) L962–964, L1472–1474 (メインプレビュー描画部分)
+
+`GeneratePage.tsx` のメインプレビュー描画部分では、表示する画像ソースとして以下のように `previewImage || selectedImg` を指定しています。
+
+```tsx
+// GeneratePage.tsx (L962-L964)
+{(previewImage || selectedImg) ? (
+  <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={handleOpenModalPreview}>
+    <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
+```
+
+- **状態の挙動**:
+  - 画像生成完了時（`useGenerationStore.ts` の `executed` イベントハンドラ内）、`previewImage` に生成された画像のURL (`firstUrl`) が代入されます。
+  - ユーザーが履歴から別の画像を選択すると、`setSelectedImg(img)` が呼び出され、`selectedImg` の状態は選択された画像のURLに更新されます。
+  - しかし、`setSelectedImg` 内では `previewImage` を `null` にクリアする処理が行われていません。
+  - その結果、`previewImage` に値（直前の生成画像URL）が残ったままとなるため、`previewImage || selectedImg` の評価値は常に `previewImage` が優先され、画面上のメインプレビュー画像が切り替わなくなります。
+- **リロードで直る理由**:
+  - ページをリロードすると、React Store の状態が初期化され、`previewImage` は初期値の `null` に戻ります。
+  - 一方、`selectedImg` は `localStorage` から復元されるため、リロード直後は `previewImage (null) || selectedImg` となり、正しく `selectedImg` が表示され、履歴切り替えも機能するようになります。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useGenerationStore.ts`](../frontend/src/store/useGenerationStore.ts) L676-683 |
+| **Next Route** | `/dev-design` (実装設計へ移行) |
+
+### 5. 修正方針（概要）
+
+`useGenerationStore.ts` の `setSelectedImg` アクションにおいて、`selectedImg` を更新すると同時に `previewImage` を `null` にクリアするように修正します。これにより、ユーザーが手動で履歴画像を選択した際にプレビュー用の古い一時状態が破棄され、選択した画像が優先してメインプレビューに表示されるようになります。

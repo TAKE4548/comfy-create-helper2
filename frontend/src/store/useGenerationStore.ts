@@ -267,7 +267,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
                 localStorage.setItem(LS_KEYS.SELECTED_IMG, finalImg)
                 return {
-                  previewImage: finalImg,
+                  previewImage: null,
                   batchImages: nextImages,
                   selectedImg: finalImg,
                   isGenerating: false,
@@ -428,7 +428,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                     localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
                     localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
                     return {
-                      previewImage: firstUrl,
+                      previewImage: null,
                       batchImages: nextImages,
                       comfyHistoryImages: nextHistoryImages,
                       selectedImg: firstUrl,
@@ -674,7 +674,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     setSelectedImg: (img) => {
-      set({ selectedImg: img })
+      set({ selectedImg: img, previewImage: null })
       if (img && !img.startsWith('blob:')) {
         localStorage.setItem(LS_KEYS.SELECTED_IMG, img)
       } else {
