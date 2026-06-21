@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings, Wand2, ChevronDown, Save, RefreshCw, Plus } from 'lucide-react'
-import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
+import { Settings, Wand2, ChevronDown, Save, RefreshCw, Plus, Pencil } from 'lucide-react'
+import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { llmPromptsApi, configApi, mappingMastersApi } from '../api/client'
 import type { LlmPrompt, MappingMaster } from '../api/types'
@@ -16,6 +16,10 @@ import {
   masterToForm,
   type MappingMasterFormState,
 } from '../components/SettingsComponents'
+
+import { useMultiSelect } from '../hooks/useMultiSelect'
+import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
+import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
 const PROMPT_LABELS: Record<string, string> = {
   audit_interference: '干渉タグ診断（SDXL/汎用）',
@@ -35,6 +39,20 @@ export function SettingsPage() {
   const [comfyUrl, setComfyUrl] = useState('http://localhost:8188')
   const [saved, setSaved] = useState<string | null>(null)
   const [sortedMasters, setSortedMasters] = useState<MappingMaster[]>([])
+  
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
+
+  const {
+    isMultiSelectMode,
+    selectedIds,
+    exitMultiSelectMode,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    selectAll,
+    clearSelection,
+  } = useMultiSelect({ items: sortedMasters })
 
   useEffect(() => {
     configApi.get()
@@ -66,9 +84,24 @@ export function SettingsPage() {
     },
   })
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as number)
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
+    setActiveId(null)
+    if (!over || active.id === over.id) return
+
+    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      // グループ移動
+      const selected = sortedMasters.filter((m) => selectedIds.has(m.id))
+      const nonSelected = sortedMasters.filter((m) => !selectedIds.has(m.id))
+      const insertAt = nonSelected.findIndex((m) => m.id === over.id) + 1
+      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
+      setSortedMasters(newOrder)
+      reorderMaster.mutate(newOrder.map((m) => m.id))
+    } else {
       const oldIndex = sortedMasters.findIndex((m) => m.id === active.id)
       const newIndex = sortedMasters.findIndex((m) => m.id === over.id)
       const reordered = arrayMove(sortedMasters, oldIndex, newIndex)
@@ -88,6 +121,41 @@ export function SettingsPage() {
   const deleteMaster = useMutation({
     mutationFn: (id: number) => mappingMastersApi.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mapping-masters'] }); closeDeleteModal() },
+  })
+
+  const mappingBulkEditFields: BulkEditField[] = [
+    {
+      key: 'param_name',
+      label: 'Param Name',
+      type: 'text',
+    },
+    {
+      key: 'input_type',
+      label: 'Input Type',
+      type: 'select',
+      options: [
+        { id: 'textarea', name: 'textarea' },
+        { id: 'int', name: 'int' },
+        { id: 'float', name: 'float' },
+        { id: 'select', name: 'select' },
+        { id: 'lora_stack', name: 'lora_stack' },
+        { id: 'select_sampler', name: 'select_sampler' },
+        { id: 'select_scheduler', name: 'select_scheduler' },
+      ],
+    },
+  ]
+
+  const bulkUpdateMasters = useMutation({
+    mutationFn: async (values: any) => {
+      await Promise.all(
+        [...selectedIds].map(id => mappingMastersApi.update(id, values))
+      )
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mapping-masters'] })
+      exitMultiSelectMode()
+      setShowBulkEdit(false)
+    }
   })
 
   const { data: prompts, isLoading } = useQuery({
@@ -114,8 +182,40 @@ export function SettingsPage() {
 
   const getContent = (p: LlmPrompt) => edits[p.key] ?? p.content
 
+  const renderDragOverlayItem = (id: number) => {
+    const mm = sortedMasters.find(m => m.id === id)
+    if (!mm) return null
+    return (
+      <div className="px-4 py-2 bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] rounded-lg text-xs text-zinc-300 shadow-xl flex items-center gap-3">
+        <span className="font-semibold text-[#3ECF8E]">{mm.role}</span>
+        <span className="text-gray-500">|</span>
+        <span>{mm.param_name}</span>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {isMultiSelectMode && (
+        <MultiSelectToolbar
+          selectedCount={selectedIds.size}
+          totalCount={sortedMasters.length}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
+          onExitMode={exitMultiSelectMode}
+          actions={
+            <button
+              onClick={() => setShowBulkEdit(true)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all disabled:opacity-50"
+            >
+              <Pencil size={12} />
+              一括編集
+            </button>
+          }
+        />
+      )}
+
       <div className="flex items-center gap-3 px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
         <Settings size={17} className="text-zinc-400" />
         <h1 className="text-base font-semibold text-zinc-200">Settings</h1>
@@ -177,10 +277,12 @@ export function SettingsPage() {
               <h2 className="text-sm font-semibold text-zinc-300">Node Mapping Masters</h2>
               <span className="text-xs text-zinc-600">— 編集ノードのマッピングマスタ設定</span>
             </div>
-            <button onClick={openCreateModal}
-              className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all">
-              <Plus size={12} />Add Master
-            </button>
+            {!isMultiSelectMode && (
+              <button onClick={openCreateModal}
+                className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all">
+                <Plus size={12} />Add Master
+              </button>
+            )}
           </div>
           {isLoadingMasters ? (
             <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading mapping masters…</div>
@@ -194,22 +296,52 @@ export function SettingsPage() {
                     ))}
                   </tr>
                 </thead>
-                <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <DndContext collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                   <SortableContext items={sortedMasters.map((m) => m.id)} strategy={verticalListSortingStrategy}>
                     <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
-                      {sortedMasters.map((mm) => (
-                        <SortableMasterRow
-                          key={mm.id}
-                          mm={mm}
-                          openEditModal={openEditModal}
-                          openDeleteModal={openDeleteModal}
-                        />
-                      ))}
+                      {sortedMasters.map((mm) => {
+                        const isSelectedRow = isSelected(mm.id)
+                        const longPressHandlers = getLongPressHandlers(mm.id)
+                        return (
+                          <SortableMasterRow
+                            key={mm.id}
+                            mm={mm}
+                            openEditModal={openEditModal}
+                            openDeleteModal={openDeleteModal}
+                            isMultiSelectMode={isMultiSelectMode}
+                            isSelected={isSelectedRow}
+                            onClick={(e) => {
+                              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                                  e.stopPropagation()
+                                  handleItemClick(mm.id, e)
+                              } else {
+                                openEditModal(mm)
+                              }
+                            }}
+                            longPressHandlers={longPressHandlers}
+                          />
+                        )
+                      })}
                       {(!sortedMasters || sortedMasters.length === 0) && (
                         <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No mapping masters found.</td></tr>
                       )}
                     </tbody>
                   </SortableContext>
+                  <DragOverlay>
+                    {activeId && (
+                      <div className="relative">
+                        <div className="opacity-90 scale-105 ring-2 ring-[#3ECF8E] rounded-lg pointer-events-none">
+                          {renderDragOverlayItem(activeId)}
+                        </div>
+                        {isMultiSelectMode && selectedIds.size > 1 && (
+                          <div className="absolute -bottom-2 -right-2 bg-[#3ECF8E] text-black text-xs font-bold
+                                          rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
+                            +{selectedIds.size - 1}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </DragOverlay>
                 </DndContext>
               </table>
             </div>
@@ -244,6 +376,17 @@ export function SettingsPage() {
           isPending={deleteMaster.isPending}
           onClose={closeDeleteModal} onDelete={() => deleteMaster.mutate(selectedMaster.id)} />
       )}
+      {showBulkEdit && (
+        <BulkEditModal
+          isOpen={showBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
+          fields={mappingBulkEditFields}
+          selectedCount={selectedIds.size}
+          onApply={(values) => bulkUpdateMasters.mutate(values)}
+          isApplying={bulkUpdateMasters.isPending}
+        />
+      )}
     </div>
   )
 }
+

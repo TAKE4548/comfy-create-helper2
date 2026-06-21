@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Camera, Settings,
   Loader2, ChevronRight, ChevronDown, Wand2, AlertCircle, CheckCircle2,
-  ImageOff, ScanLine, Plus, X,
+  ImageOff, ScanLine, Plus, X, CheckSquare, Square,
 } from 'lucide-react'
+import { useMultiSelect } from '../hooks/useMultiSelect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi } from '../api/client'
 import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../api/types'
@@ -527,7 +528,32 @@ export function GeneratePage() {
     queueRunning, queuePending,
     sets, activeSetId, addSet, removeSet, renameSet,
     toggleSetChecked, setAllSetsChecked, setActiveSetId, updateActiveSet,
+    activeBatch,
   } = useGenerationStore()
+
+  const batchProgress = useMemo(() => {
+    if (!activeBatch || activeBatch.length === 0) {
+      return {
+        percentage: progress ? progress.percentage : 0,
+        text: 'Generating...'
+      }
+    }
+    const n = activeBatch.length
+    const finished = activeBatch.filter((j) => j.status === 'completed' || j.status === 'failed').length
+    const hasGenerating = activeBatch.some((j) => j.status === 'generating')
+    
+    const currentFraction = (hasGenerating && progress && progress.max > 0)
+      ? (progress.value / progress.max)
+      : 0
+      
+    const rawPercentage = ((finished + currentFraction) / n) * 100
+    const percentage = Math.min(100, Math.max(0, Math.round(rawPercentage)))
+    
+    return {
+      percentage,
+      text: `Generating (${finished}/${n} Complete)...`
+    }
+  }, [activeBatch, progress])
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
 
@@ -604,6 +630,21 @@ export function GeneratePage() {
       : copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
   }, [snapshots, sortOrder])
   const { handlePrevImg, handleNextImg } = useImageNavigation(sortedDisplayImages)
+
+  const historyItems = useMemo(() => {
+    return sortedDisplayImages.map((url, idx) => ({ id: idx, url }))
+  }, [sortedDisplayImages])
+
+  const {
+    isMultiSelectMode,
+    selectedIds,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    exitMultiSelectMode,
+    selectAll,
+    clearSelection,
+  } = useMultiSelect({ items: historyItems })
 
   const {
     isSaveModalOpen, setIsSaveModalOpen,
@@ -940,7 +981,7 @@ export function GeneratePage() {
           <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
             <div className="flex items-center gap-1.5 min-w-0">
               {isGeneratingHere ? <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />}
-              <span className="truncate">{isGeneratingHere ? 'Generating...' : 'Ready'}</span>
+              <span className="truncate">{isGeneratingHere ? batchProgress.text : 'Ready'}</span>
               <span className="text-zinc-600">|</span>
               <span 
                 onClick={() => setIsJobModalOpen(true)}
@@ -951,9 +992,9 @@ export function GeneratePage() {
             </div>
             <div className="flex items-center gap-2 flex-1 max-w-[150px]">
               <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
-                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere && progress ? progress.percentage : 0}%` }} />
+                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere ? batchProgress.percentage : 0}%` }} />
               </div>
-              <span className="font-mono text-accent-green whitespace-nowrap">{isGeneratingHere && progress ? progress.percentage : 0}%</span>
+              <span className="font-mono text-accent-green whitespace-nowrap">{isGeneratingHere ? batchProgress.percentage : 0}%</span>
             </div>
           </div>
 
@@ -975,9 +1016,9 @@ export function GeneratePage() {
                 <p className="text-xs">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
               </div>
             )}
-            {isGeneratingHere && progress && (
+            {isGeneratingHere && (
               <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-950 overflow-hidden">
-                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${progress.percentage}%` }} />
+                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${batchProgress.percentage}%` }} />
               </div>
             )}
           </div>
@@ -1019,19 +1060,75 @@ export function GeneratePage() {
               </div>
               {thumbnailTab === 'history' ? (
                 sortedDisplayImages.length > 0 ? (
-                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {sortedDisplayImages.map((img, i) => (
-                      <button key={i} type="button" id={`thumb-mobile-${i}`}
-                        onClick={() => { setSelectedImg(img); setModalPreviewIndex(i); setIsModalPreviewOpen(true) }}
-                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative ${selectedImg === img ? 'border-accent-green' : 'border-transparent'}`}>
-                        <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
-                        {getSetNameForImage(img) && (
-                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
-                            {getSetNameForImage(img)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    {isMultiSelectMode && (
+                      <div className="flex flex-col gap-2 p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-300">
+                        <div className="flex items-center justify-between">
+                          <span>{selectedIds.size}枚選択中</span>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={selectAll} className="text-purple-400 underline">すべて選択</button>
+                            <button type="button" onClick={clearSelection} className="text-purple-400 underline">選択解除</button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsSaveModalOpen(true)}
+                            disabled={selectedIds.size === 0}
+                            className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold text-center disabled:opacity-50"
+                          >
+                            選択した {selectedIds.size} 枚を保存
+                          </button>
+                          <button type="button" onClick={exitMultiSelectMode} className="text-zinc-400">
+                            ✕ 閉じる
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                      {sortedDisplayImages.map((img, i) => {
+                        const longPressHandlers = getLongPressHandlers(i)
+                        const isSel = isSelected(i)
+                        return (
+                          <button key={i} type="button" id={`thumb-mobile-${i}`}
+                            onMouseDown={longPressHandlers.onMouseDown}
+                            onMouseUp={longPressHandlers.onMouseUp}
+                            onMouseLeave={longPressHandlers.onMouseLeave}
+                            onTouchStart={longPressHandlers.onTouchStart}
+                            onTouchEnd={longPressHandlers.onTouchEnd}
+                            onClick={(e) => {
+                              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                                handleItemClick(i, e)
+                              } else {
+                                setSelectedImg(img)
+                                setModalPreviewIndex(i)
+                                setIsModalPreviewOpen(true)
+                              }
+                            }}
+                            className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative ${
+                              isMultiSelectMode
+                                ? isSel
+                                  ? 'border-purple-500 ring-2 ring-purple-500/30'
+                                  : 'border-transparent'
+                                : selectedImg === img
+                                  ? 'border-accent-green'
+                                  : 'border-transparent hover:border-zinc-600'
+                            }`}>
+                            <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                            {getSetNameForImage(img) && (
+                              <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
+                                {getSetNameForImage(img)}
+                              </span>
+                            )}
+                            {isMultiSelectMode && (
+                              <div className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-black/60 text-purple-400 border border-[rgba(255,255,255,0.08)]">
+                                {isSel ? <CheckSquare size={10} /> : <Square size={10} />}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 ) : <p className="text-[10px] text-zinc-650 py-1">No history images found for this session.</p>
               ) : (
@@ -1168,7 +1265,7 @@ export function GeneratePage() {
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
               <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
             </button>
-            <button id="save-snapshot-btn-mobile" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg}
+            <button id="save-snapshot-btn-mobile" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg || isMultiSelectMode}
               className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 transition-all">
               <Camera size={15} />
             </button>
@@ -1188,7 +1285,18 @@ export function GeneratePage() {
         <AddSnapshotToAlbumModal
           isOpen={isSaveModalOpen}
           onClose={() => setIsSaveModalOpen(false)}
-          onConfirm={(data) => saveSnapshot.mutate(data)}
+          onConfirm={(data) => {
+            const urls = isMultiSelectMode
+              ? [...selectedIds].map(idx => sortedDisplayImages[idx]).filter(Boolean)
+              : (selectedImg ? [selectedImg] : [])
+            saveSnapshot.mutate({ ...data, imagePaths: urls }, {
+              onSuccess: () => {
+                if (isMultiSelectMode) {
+                  exitMultiSelectMode()
+                }
+              }
+            })
+          }}
           isPending={saveSnapshot.isPending}
           title="スナップショットを保存"
           confirmText="保存"
@@ -1506,12 +1614,12 @@ export function GeneratePage() {
             {/* Status bar */}
             <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-1.5">
               <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere && progress ? progress.percentage : 0}%` }} />
+                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere ? batchProgress.percentage : 0}%` }} />
               </div>
               <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
                 <div className="flex items-center gap-2">
                   {isGeneratingHere ? <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />}
-                  <span className="font-semibold text-zinc-300">{isGeneratingHere ? 'Generating...' : 'Ready'}</span>
+                  <span className="font-semibold text-zinc-300">{isGeneratingHere ? batchProgress.text : 'Ready'}</span>
                   <span className="text-zinc-700">|</span>
                   <span 
                     onClick={() => setIsJobModalOpen(true)}
@@ -1520,7 +1628,7 @@ export function GeneratePage() {
                     Queue: {totalQueueCount}
                   </span>
                 </div>
-                <span className="font-mono text-accent-green font-semibold">{isGeneratingHere && progress ? progress.percentage : 0}%</span>
+                <span className="font-mono text-accent-green font-semibold">{isGeneratingHere ? batchProgress.percentage : 0}%</span>
               </div>
             </div>
           </div>
@@ -1562,18 +1670,71 @@ export function GeneratePage() {
               </div>
               {thumbnailTab === 'history' ? (
                 sortedDisplayImages.length > 0 ? (
-                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {sortedDisplayImages.map((img, i) => (
-                      <button key={i} type="button" id={`thumb-${i}`} onClick={() => setSelectedImg(img)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all relative ${selectedImg === img ? 'border-accent-green' : 'border-transparent hover:border-zinc-600'}`}>
-                        <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
-                        {getSetNameForImage(img) && (
-                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[8px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
-                            {getSetNameForImage(img)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    {isMultiSelectMode && (
+                      <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300">
+                        <div className="flex items-center gap-2">
+                          <span>{selectedIds.size}枚選択中</span>
+                          <button type="button" onClick={selectAll} className="text-purple-400 hover:text-purple-200 font-semibold underline">すべて選択</button>
+                          <button type="button" onClick={clearSelection} className="text-purple-400 hover:text-purple-200 font-semibold underline">選択解除</button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setIsSaveModalOpen(true)}
+                            disabled={selectedIds.size === 0}
+                            className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            選択した {selectedIds.size} 枚を保存
+                          </button>
+                          <button type="button" onClick={exitMultiSelectMode} className="text-zinc-400 hover:text-zinc-200 font-semibold">
+                            ✕ 選択モード終了
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                      {sortedDisplayImages.map((img, i) => {
+                        const longPressHandlers = getLongPressHandlers(i)
+                        const isSel = isSelected(i)
+                        return (
+                          <button key={i} type="button" id={`thumb-${i}`}
+                            onMouseDown={longPressHandlers.onMouseDown}
+                            onMouseUp={longPressHandlers.onMouseUp}
+                            onMouseLeave={longPressHandlers.onMouseLeave}
+                            onTouchStart={longPressHandlers.onTouchStart}
+                            onTouchEnd={longPressHandlers.onTouchEnd}
+                            onClick={(e) => {
+                              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                                handleItemClick(i, e)
+                              } else {
+                                setSelectedImg(img)
+                              }
+                            }}
+                            className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all relative ${
+                              isMultiSelectMode
+                                ? isSel
+                                  ? 'border-purple-500 ring-2 ring-purple-500/30'
+                                  : 'border-transparent'
+                                : selectedImg === img
+                                  ? 'border-accent-green'
+                                  : 'border-transparent hover:border-zinc-600'
+                            }`}>
+                            <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                            {getSetNameForImage(img) && (
+                              <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[8px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
+                                {getSetNameForImage(img)}
+                              </span>
+                            )}
+                            {isMultiSelectMode && (
+                              <div className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-black/60 text-purple-400 border border-[rgba(255,255,255,0.08)]">
+                                {isSel ? <CheckSquare size={12} /> : <Square size={12} />}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 ) : <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
               ) : (
@@ -1600,29 +1761,40 @@ export function GeneratePage() {
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
               <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
             </button>
-            <button id="save-snapshot-btn" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-              <Camera size={15} /><span className="hidden sm:inline">Save Snapshot</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {rescanOpen && workflow && (
-        <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} onClose={() => setRescanOpen(false)}
-          onSaved={() => { qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] }); setRescanOpen(false) }} />
-      )}
-      {uploadModalOpen && uploadedJson && (
-        <UploadWorkflowModal initialName={uploadedFileName} workflowJson={uploadedJson}
-          onClose={() => { setUploadModalOpen(false) }}
-          onSaved={(newWorkflowId) => { qc.invalidateQueries({ queryKey: ['workflows'] }); setSelectedWorkflowId(newWorkflowId) }} />
-      )}
-      <AddSnapshotToAlbumModal
-        isOpen={isSaveModalOpen}
-        onClose={() => setIsSaveModalOpen(false)}
-        onConfirm={(data) => saveSnapshot.mutate(data)}
-        isPending={saveSnapshot.isPending}
-        title="スナップショットを保存"
+             <button id="save-snapshot-btn" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg || isMultiSelectMode}
+               className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+               <Camera size={15} /><span className="hidden sm:inline">Save Snapshot</span>
+             </button>
+           </div>
+         </div>
+       </div>
+ 
+       {rescanOpen && workflow && (
+         <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} onClose={() => setRescanOpen(false)}
+           onSaved={() => { qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] }); setRescanOpen(false) }} />
+       )}
+       {uploadModalOpen && uploadedJson && (
+         <UploadWorkflowModal initialName={uploadedFileName} workflowJson={uploadedJson}
+           onClose={() => { setUploadModalOpen(false) }}
+           onSaved={(newWorkflowId) => { qc.invalidateQueries({ queryKey: ['workflows'] }); setSelectedWorkflowId(newWorkflowId) }} />
+       )}
+       <AddSnapshotToAlbumModal
+         isOpen={isSaveModalOpen}
+         onClose={() => setIsSaveModalOpen(false)}
+         onConfirm={(data) => {
+           const urls = isMultiSelectMode
+             ? [...selectedIds].map(idx => sortedDisplayImages[idx]).filter(Boolean)
+             : (selectedImg ? [selectedImg] : [])
+           saveSnapshot.mutate({ ...data, imagePaths: urls }, {
+             onSuccess: () => {
+               if (isMultiSelectMode) {
+                 exitMultiSelectMode()
+               }
+             }
+           })
+         }}
+         isPending={saveSnapshot.isPending}
+         title="スナップショットを保存"
         confirmText="保存"
         allowNone={true}
       />

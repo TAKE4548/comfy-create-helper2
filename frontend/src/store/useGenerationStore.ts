@@ -21,6 +21,12 @@ export { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
 
 // ─── Type definitions ─────────────────────────────────────────────
 
+export interface BatchJob {
+  promptId: string;
+  setName: string;
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+}
+
 export interface ComfyProgress {
   value: number
   max: number
@@ -119,6 +125,11 @@ export interface GenerationState {
   // ─── Multi-Set State (New) ─────────────────────────────────────
   sets: GenerationSet[]
   activeSetId: string | null
+  
+  // ─── Batch Job State ───────────────────────────────────────────
+  activeBatch: BatchJob[] | null
+  setActiveBatch: (batch: BatchJob[] | null) => void
+  updateBatchJobStatus: (promptId: string, status: BatchJob['status']) => void
 
   // ─── Actions ───────────────────────────────────────────────────
   initialize: () => void
@@ -328,6 +339,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     queuePending: [],
     sets: initialSets,
     activeSetId: initialActiveSetId,
+    activeBatch: null,
 
     // ── Actions ──────────────────────────────────────────────
     initialize: () => {
@@ -402,20 +414,28 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 break
               }
 
-              case 'execution_start':
+              case 'execution_start': {
+                const promptId = data.prompt_id as string
+                if (get().activeBatch) {
+                  get().updateBatchJobStatus(promptId, 'generating')
+                }
                 set({
                   isGenerating: true,
                   progress: null,
-                  currentPromptId: data.prompt_id as string,
+                  currentPromptId: promptId,
                   activeClientId: null,
                 })
                 get().fetchQueue()
                 break
+              }
 
               case 'executed': {
                 const output = data.output as Record<string, unknown> | undefined
                 const images = output?.images as Array<{ filename: string; subfolder: string; type: string }> | undefined
                 const promptId = data.prompt_id as string
+                if (get().activeBatch) {
+                  get().updateBatchJobStatus(promptId, 'completed')
+                }
                 if (images && images.length > 0) {
                   const baseUrl = resolveComfyUrl(comfyUrl!)
                   const newUrls = images.map((img) => 
@@ -427,12 +447,17 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                     const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 50)
                     localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
                     localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
+                    
+                    const isStillGenerating = state.activeBatch
+                      ? !state.activeBatch.every((job) => (job.promptId === promptId ? 'completed' : job.status) === 'completed' || (job.promptId === promptId ? 'completed' : job.status) === 'failed')
+                      : false
+
                     return {
                       previewImage: null,
                       batchImages: nextImages,
                       comfyHistoryImages: nextHistoryImages,
                       selectedImg: firstUrl,
-                      isGenerating: false,
+                      isGenerating: isStillGenerating,
                       currentPromptId: null,
                       activeClientId: null,
                     }
@@ -449,7 +474,19 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
               case 'execution_complete': {
                 const promptId = data.prompt_id as string
-                set({ isGenerating: false, progress: { value: 1, max: 1, percentage: 100 }, currentPromptId: null, activeClientId: null })
+                const activeBatch = get().activeBatch
+                if (activeBatch) {
+                  get().updateBatchJobStatus(promptId, 'completed')
+                }
+                const isStillGenerating = activeBatch
+                  ? !activeBatch.every((job) => job.status === 'completed' || job.status === 'failed')
+                  : false
+                set({
+                  isGenerating: isStillGenerating,
+                  progress: isStillGenerating ? get().progress : { value: 1, max: 1, percentage: 100 },
+                  currentPromptId: null,
+                  activeClientId: null
+                })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 setTimeout(() => {
                   get().fetchHistory()
@@ -461,7 +498,19 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
               case 'execution_error': {
                 const promptId = data.prompt_id as string
-                set({ isGenerating: false, progress: null, currentPromptId: null, activeClientId: null })
+                const activeBatch = get().activeBatch
+                if (activeBatch) {
+                  get().updateBatchJobStatus(promptId, 'failed')
+                }
+                const isStillGenerating = activeBatch
+                  ? !activeBatch.every((job) => job.status === 'completed' || job.status === 'failed')
+                  : false
+                set({
+                  isGenerating: isStillGenerating,
+                  progress: null,
+                  currentPromptId: null,
+                  activeClientId: null
+                })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchQueue()
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_error', promptId } }))
@@ -496,6 +545,20 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     setFilterOwnSession: (filter) => {
       set({ filterOwnSession: filter })
       localStorage.setItem(LS_KEYS.FILTER_OWN, String(filter))
+    },
+
+    setActiveBatch: (batch) => set({ activeBatch: batch }),
+
+    updateBatchJobStatus: (promptId, status) => {
+      const batch = get().activeBatch
+      if (!batch) return
+      const updated = batch.map((job) => job.promptId === promptId ? { ...job, status } : job)
+      set({ activeBatch: updated })
+
+      const allFinished = updated.every((job) => job.status === 'completed' || job.status === 'failed')
+      if (allFinished) {
+        set({ isGenerating: false })
+      }
     },
 
     setSelectedWorkflowId: (id) => {
@@ -758,6 +821,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (res.ok) {
           const data = (await res.json()) as ComfyQueueResponse
           set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
+
+          const activeBatch = get().activeBatch
+          if (activeBatch) {
+            const activeQueueIds = new Set([
+              ...(data.queue_running || []).map((j: any) => j[1]),
+              ...(data.queue_pending || []).map((j: any) => j[1])
+            ])
+            const activeUnfinishedJobs = activeBatch.filter(
+              (job) => job.status === 'pending' || job.status === 'generating'
+            )
+            if (activeUnfinishedJobs.length > 0) {
+              const anyUnfinishedInQueue = activeUnfinishedJobs.some(
+                (job) => activeQueueIds.has(job.promptId)
+              )
+              if (!anyUnfinishedInQueue) {
+                set({ activeBatch: null, isGenerating: false })
+              }
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to fetch comfy queue:', e)
@@ -801,8 +883,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         })
 
         // 4. 自セッションの実行中ジョブであった場合はステートをリセット
-        if (promptId === get().currentPromptId) {
-          set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+        if (promptId === get().currentPromptId || get().activeBatch?.some((job) => job.promptId === promptId)) {
+          set({ activeBatch: null, isGenerating: false, currentPromptId: null, activeClientId: null })
           localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         }
 
@@ -851,7 +933,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
 
         // 4. ステートリセット
-        set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+        set({ activeBatch: null, isGenerating: false, currentPromptId: null, activeClientId: null })
         localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         
         await get().fetchQueue()

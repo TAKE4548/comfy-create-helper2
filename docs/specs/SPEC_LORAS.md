@@ -25,6 +25,7 @@ ComfyUI で使用可能な LoRA モデルのメタ情報・トリガーワード
 | LoRA 削除 | 登録済み LoRA の削除 |
 | トリガーワードセット管理 | 1つの LoRA に複数のトリガーワードセットを登録（例: 素体系・服装A・服装B） |
 | カテゴリフィルタ | カテゴリ別にフィルタリング |
+| LoRA 複数選択 | `Ctrl + クリック` / `Shift + クリック` / 長押しによる複数選択モード、ドラッグ＆ドロップでの一括順序変更 (reorder)、およびカテゴリ・推奨強度の「一括編集」に対応 |
 
 ---
 
@@ -116,6 +117,7 @@ LoRA カテゴリはマスタから選択。設定ページでの追加/削除�
 | LoRA 登録 | `POST /api/loras` |
 | LoRA 更新 | `PATCH /api/loras/{id}` |
 | LoRA 削除 | `DELETE /api/loras/{id}` |
+| LoRA 並び替え | `PUT /api/loras/reorder` |
 | トリガーワードセット一覧 | `GET /api/loras/{id}/trigger-word-sets` |
 | トリガーワードセット登録 | `POST /api/loras/{id}/trigger-word-sets` |
 | トリガーワードセット更新 | `PATCH /api/loras/{id}/trigger-word-sets/{set_id}` |

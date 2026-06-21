@@ -4,6 +4,7 @@
  */
 
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import type { BatchJob } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 
 export function useGenerateAction(workflow: Workflow | undefined) {
@@ -13,7 +14,8 @@ export function useGenerateAction(workflow: Workflow | undefined) {
     seedMode: currentSeedMode,
     seed: currentSeed,
     sets,
-    queuePrompt
+    queuePrompt,
+    setActiveBatch
   } = useGenerationStore()
 
   const injectParams = (
@@ -91,30 +93,6 @@ export function useGenerateAction(workflow: Workflow | undefined) {
     }
   }
 
-  const waitForPrompt = (promptId: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const handleJobEvent = (e: Event) => {
-        const customEvent = e as CustomEvent<{ type: string; promptId: string }>
-        if (customEvent.detail.promptId === promptId) {
-          if (customEvent.detail.type === 'executed' || customEvent.detail.type === 'execution_complete') {
-            window.removeEventListener('comfy-job-event', handleJobEvent)
-            resolve()
-          } else if (customEvent.detail.type === 'execution_error') {
-            window.removeEventListener('comfy-job-event', handleJobEvent)
-            reject(new Error(`Execution error for prompt ${promptId}`))
-          }
-        }
-      }
-      window.addEventListener('comfy-job-event', handleJobEvent)
-      
-      // Timeout 120s
-      setTimeout(() => {
-        window.removeEventListener('comfy-job-event', handleJobEvent)
-        reject(new Error(`Timeout waiting for prompt ${promptId}`))
-      }, 120000)
-    })
-  }
-
   const handleGenerate = async () => {
     if (!workflow) return
     for (let i = 0; i < currentBatchSize; i++) {
@@ -129,6 +107,10 @@ export function useGenerateAction(workflow: Workflow | undefined) {
     const checkedSets = sets.filter((s) => s.checked)
     if (checkedSets.length === 0) return
 
+    const newBatch: BatchJob[] = []
+    const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
+    const mappings = JSON.parse(mappingsJson)
+
     for (const setItem of checkedSets) {
       for (let i = 0; i < setItem.batchSize; i++) {
         const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
@@ -137,18 +119,22 @@ export function useGenerateAction(workflow: Workflow | undefined) {
         try {
           const promptId = await queuePrompt(wfJson)
           if (promptId) {
-            // プロンプトIDとセット名のマッピングを保存
-            const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
-            const mappings = JSON.parse(mappingsJson)
             mappings[promptId] = setItem.name
-            localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
-            
-            await waitForPrompt(promptId)
+            newBatch.push({
+              promptId,
+              setName: setItem.name,
+              status: 'pending'
+            })
           }
         } catch (err) {
           console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
         }
       }
+    }
+
+    localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
+    if (newBatch.length > 0) {
+      setActiveBatch(newBatch)
     }
   }
 

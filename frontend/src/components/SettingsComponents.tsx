@@ -189,9 +189,27 @@ interface SortableMasterRowProps {
   mm: MappingMaster
   openEditModal: (mm: MappingMaster) => void
   openDeleteModal: (mm: MappingMaster) => void
+  isMultiSelectMode: boolean
+  isSelected: boolean
+  onClick: (e: React.MouseEvent) => void
+  longPressHandlers: {
+    onMouseDown: (e: React.MouseEvent) => void;
+    onMouseUp: () => void;
+    onMouseLeave: () => void;
+    onTouchStart: (e: React.TouchEvent) => void;
+    onTouchEnd: () => void;
+  }
 }
 
-export function SortableMasterRow({ mm, openEditModal, openDeleteModal }: SortableMasterRowProps) {
+export function SortableMasterRow({
+  mm,
+  openEditModal,
+  openDeleteModal,
+  isMultiSelectMode,
+  isSelected,
+  onClick,
+  longPressHandlers
+}: SortableMasterRowProps) {
   const {
     attributes,
     listeners,
@@ -199,7 +217,7 @@ export function SortableMasterRow({ mm, openEditModal, openDeleteModal }: Sortab
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: mm.id })
+  } = useSortable({ id: mm.id, disabled: isMultiSelectMode })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -209,16 +227,36 @@ export function SortableMasterRow({ mm, openEditModal, openDeleteModal }: Sortab
   }
 
   return (
-    <tr ref={setNodeRef} style={style} className="hover:bg-white/[0.01] transition-colors">
+    <tr
+      ref={setNodeRef}
+      style={style}
+      onClick={onClick}
+      onMouseDown={longPressHandlers.onMouseDown}
+      onMouseUp={longPressHandlers.onMouseUp}
+      onMouseLeave={longPressHandlers.onMouseLeave}
+      onTouchStart={longPressHandlers.onTouchStart}
+      onTouchEnd={longPressHandlers.onTouchEnd}
+      className={`transition-colors cursor-pointer select-none ${
+        isMultiSelectMode && isSelected
+          ? 'bg-[#3ECF8E]/10 border-l-2 border-[#3ECF8E] hover:bg-[#3ECF8E]/15'
+          : 'hover:bg-white/[0.01]'
+      }`}
+    >
       <td className="px-3 py-3 w-8 text-zinc-600">
-        <button
-          type="button"
-          className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={13} />
-        </button>
+        {!isMultiSelectMode ? (
+          <button
+            type="button"
+            className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={13} />
+          </button>
+        ) : (
+          <div className="w-[13px] h-[13px] border border-[rgba(255,255,255,0.15)] rounded flex items-center justify-center bg-zinc-800">
+            {isSelected && <div className="w-1.5 h-1.5 rounded-sm bg-[#3ECF8E]" />}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 font-mono text-zinc-200">{mm.role}</td>
       <td className="px-4 py-3">{mm.display_name}</td>
@@ -236,14 +274,19 @@ export function SortableMasterRow({ mm, openEditModal, openDeleteModal }: Sortab
       </td>
       <td className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-2">
-          <button onClick={() => openEditModal(mm)} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
-            <Edit2 size={13} />
-          </button>
-          <button onClick={() => openDeleteModal(mm)} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
-            <Trash2 size={13} />
-          </button>
+          {!isMultiSelectMode && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); openEditModal(mm) }} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
+                <Edit2 size={13} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); openDeleteModal(mm) }} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
       </td>
     </tr>
   )
 }
+

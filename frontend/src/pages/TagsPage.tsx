@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Tag, Copy, Trash2, Pencil, Settings2 } from 'lucide-react'
-import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
+import { Plus, Search, Tag, Copy, Trash2, Pencil, Settings2, CheckSquare, Square } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  useSensors,
+  useSensor,
+  MouseSensor,
+  TouchSensor
+} from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -15,6 +25,10 @@ import {
   TagSetDetailModal,
   type TagSetFormState,
 } from '../components/TagSetModals'
+
+import { useMultiSelect } from '../hooks/useMultiSelect'
+import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
+import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
 const EMPTY_FORM: TagSetFormState = { name: '', description: '', category_id: undefined, tags: '' }
 
@@ -34,6 +48,37 @@ function SortableTagSetCard({ id, children, disabled }: { id: number; children: 
 
 export function TagsPage() {
   const qc = useQueryClient()
+
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [items, setItems] = useState<TagSet[]>([])
+
+  const {
+    isMultiSelectMode,
+    selectedIds,
+    exitMultiSelectMode,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    selectAll,
+    clearSelection,
+  } = useMultiSelect({ items })
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: isMultiSelectMode
+        ? { distance: 8 }
+        : {
+            delay: 250,
+            tolerance: 5,
+          },
+    })
+  )
   const [search, setSearch] = useState('')
   const [selectedCat, setSelectedCat] = useState<number | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -44,8 +89,6 @@ export function TagsPage() {
   const [editTagSet, setEditTagSet] = useState<TagSet | null>(null)
   const [form, setForm] = useState<TagSetFormState>(EMPTY_FORM)
   const [editForm, setEditForm] = useState<TagSetFormState>(EMPTY_FORM)
-  
-  const [items, setItems] = useState<TagSet[]>([])
 
   const { data: categories } = useQuery({
     queryKey: ['tagset-categories'],
@@ -93,6 +136,28 @@ export function TagsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tag-sets'] }),
   })
 
+  const tagSetBulkEditFields: BulkEditField[] = [
+    {
+      key: 'category_id',
+      label: 'カテゴリ',
+      type: 'category',
+      options: categories?.map(c => ({ id: c.id, name: c.name })) || [],
+    },
+  ]
+
+  const bulkUpdateTagSets = useMutation({
+    mutationFn: async (values: any) => {
+      await Promise.all(
+        [...selectedIds].map(id => tagSetsApi.update(id, values))
+      )
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tag-sets'] })
+      exitMultiSelectMode()
+      setShowBulkEdit(false)
+    }
+  })
+
   const handleCopy = (id: number, tags: string[]) => {
     navigator.clipboard.writeText(tags.join(', '))
     setCopiedId(id)
@@ -119,9 +184,24 @@ export function TagsPage() {
 
   const isDndActive = !search && selectedCat === null
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as number)
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
+    setActiveId(null)
+    if (!over || active.id === over.id) return
+
+    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      // グループ移動
+      const selected = items.filter(i => selectedIds.has(i.id))
+      const nonSelected = items.filter(i => !selectedIds.has(i.id))
+      const insertAt = nonSelected.findIndex(i => i.id === over.id) + 1
+      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
+      setItems(newOrder)
+      reorderTagSets.mutate(newOrder.map(i => i.id))
+    } else {
       const oldIdx = items.findIndex((x) => x.id === Number(active.id))
       const newIdx = items.findIndex((x) => x.id === Number(over.id))
       const reordered = arrayMove(items, oldIdx, newIdx)
@@ -130,9 +210,49 @@ export function TagsPage() {
     }
   }
 
+  const renderDragOverlayItem = (id: number) => {
+    const ts = items.find((x) => x.id === id)
+    if (!ts) return null
+    return (
+      <div className="rounded-xl border border-[rgba(255,255,255,0.12)] bg-[#1F1F25] overflow-hidden flex flex-col justify-between h-full min-h-[300px] w-[200px]">
+        <div className="relative aspect-square w-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+          {ts.thumbnail_path ? (
+            <img src={ts.thumbnail_path} alt={ts.name} className="w-full h-full object-cover" />
+          ) : (
+            <Tag size={32} />
+          )}
+        </div>
+        <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+          <div className="space-y-1.5 min-w-0">
+            <p className="text-xs font-semibold text-zinc-200 truncate">{ts.name}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
+      {isMultiSelectMode && (
+        <MultiSelectToolbar
+          selectedCount={selectedIds.size}
+          totalCount={items.length}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
+          onExitMode={exitMultiSelectMode}
+          actions={
+            <button
+              onClick={() => setShowBulkEdit(true)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/10 border border-purple-600/30 text-purple-400 text-xs font-medium hover:bg-purple-600/20 transition-all disabled:opacity-50"
+            >
+              <Pencil size={12} />
+              一括編集
+            </button>
+          }
+        />
+      )}
+
       <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
         <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
           <Tag size={17} className="text-accent-purple" />Tag Sets
@@ -153,7 +273,6 @@ export function TagsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -176,19 +295,41 @@ export function TagsPage() {
         </div>
       </div>
 
-      {/* Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <SortableContext items={filtered.map((x) => x.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filtered.map((ts) => {
                 const catName = categories?.find((c) => c.id === ts.category_id)?.name
-
+                const longPressHandlers = getLongPressHandlers(ts.id)
                 return (
                   <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive}>
-                    <div id={`tagset-card-${ts.id}`} onClick={() => setSelectedTagSetForDetail(ts)}
-                      className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px]">
+                    <div id={`tagset-card-${ts.id}`} 
+                      onClick={(e) => {
+                        if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                          e.stopPropagation()
+                          handleItemClick(ts.id, e)
+                        } else {
+                          setSelectedTagSetForDetail(ts)
+                        }
+                      }}
+                      onMouseDown={longPressHandlers.onMouseDown}
+                      onMouseUp={longPressHandlers.onMouseUp}
+                      onMouseLeave={longPressHandlers.onMouseLeave}
+                      onTouchStart={longPressHandlers.onTouchStart}
+                      onTouchEnd={longPressHandlers.onTouchEnd}
+                      className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+                        isMultiSelectMode && isSelected(ts.id)
+                          ? 'border-purple-500/50 ring-1 ring-purple-500/30 bg-surface'
+                          : 'border-[rgba(255,255,255,0.06)] bg-surface'
+                      }`}>
                       
+                      {isMultiSelectMode && (
+                        <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-purple-400 border border-[rgba(255,255,255,0.08)]">
+                          {isSelected(ts.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+                        </div>
+                      )}
+
                       <ImageCarousel
                         thumbnailPath={ts.thumbnail_path}
                         snapshotPaths={ts.snapshot_paths}
@@ -243,6 +384,22 @@ export function TagsPage() {
               })}
             </div>
           </SortableContext>
+
+          <DragOverlay>
+            {activeId && (
+              <div className="relative">
+                <div className="opacity-90 scale-105 ring-2 ring-purple-500 rounded-xl pointer-events-none">
+                  {renderDragOverlayItem(activeId)}
+                </div>
+                {isMultiSelectMode && selectedIds.size > 1 && (
+                  <div className="absolute -bottom-2 -right-2 bg-purple-500 text-black text-xs font-bold
+                                  rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
+                    +{selectedIds.size - 1}
+                  </div>
+                )}
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
         {filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
@@ -251,7 +408,6 @@ export function TagsPage() {
         )}
       </div>
 
-      {/* Modals */}
       {showModal && (
         <TagSetCreateModal form={form} setForm={setForm} categories={categories}
           isPending={createTagSet.isPending}
@@ -275,6 +431,16 @@ export function TagsPage() {
       )}
       {showCatModal && (
         <CategoryManagerModal type="tagset" onClose={() => setShowCatModal(false)} />
+      )}
+      {showBulkEdit && (
+        <BulkEditModal
+          isOpen={showBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
+          fields={tagSetBulkEditFields}
+          selectedCount={selectedIds.size}
+          onApply={(values) => bulkUpdateTagSets.mutate(values)}
+          isApplying={bulkUpdateTagSets.isPending}
+        />
       )}
     </div>
   )

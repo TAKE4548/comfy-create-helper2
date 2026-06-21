@@ -14,8 +14,8 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
 
   const saveSnapshot = useMutation({
-    mutationFn: async ({ albumId, newAlbumName }: { albumId: number | null; newAlbumName?: string }) => {
-      if (!selectedWorkflowId || !selectedImg) return
+    mutationFn: async ({ albumId, newAlbumName, imagePaths }: { albumId: number | null; newAlbumName?: string; imagePaths?: string[] }) => {
+      if (!selectedWorkflowId) return
       const activeLoras: { lora_id: number; strength: number; role: string }[] = []
       const activeTagSets: { tag_set_id: number; role: string }[] = []
 
@@ -35,15 +35,22 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
         })
       })
 
-      await snapshotsApi.create({
-        workflow_id: selectedWorkflowId,
-        image_path: selectedImg,
-        params: paramValues,
-        album_id: albumId ?? undefined,
-        new_album_name: newAlbumName ?? undefined,
-        loras: activeLoras,
-        tag_sets: activeTagSets,
-      })
+      const targetImgs = imagePaths && imagePaths.length > 0 ? imagePaths : (selectedImg ? [selectedImg] : [])
+      if (targetImgs.length === 0) return
+
+      await Promise.all(
+        targetImgs.map((img) =>
+          snapshotsApi.create({
+            workflow_id: selectedWorkflowId,
+            image_path: img,
+            params: paramValues,
+            album_id: albumId ?? undefined,
+            new_album_name: newAlbumName ?? undefined,
+            loras: activeLoras,
+            tag_sets: activeTagSets,
+          })
+        )
+      )
       qc.invalidateQueries({ queryKey: ['snapshots'] })
       qc.invalidateQueries({ queryKey: ['albums'] })
     },

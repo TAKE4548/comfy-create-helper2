@@ -23,6 +23,7 @@
 | マッピングマスタ編集 | role / expected_class_types / param_name / input_type / display_name / title_patterns を編集 |
 | マッピングマスタ登録 | 新規 MappingMaster の追加 |
 | マッピングマスタ削除 | 既存 MappingMaster の削除 |
+| マッピングマスタ複数選択 | `Ctrl + クリック` / `Shift + クリック` / 長押しによる複数選択、ドラッグ＆ドロップでの一括順序変更 (reorder)、および Param Name と Input Type の「一括編集」に対応 |
 | ワークフロー一覧 | 登録済みワークフローを一覧表示 |
 | ワークフロー削除 | 登録済みワークフローの削除 |
 | LLM プロンプト編集 | LLM 監査用システムプロンプト（`llm_prompts` テーブル）の確認・更新 |
@@ -97,6 +98,7 @@ interface MappingMaster {
 | マッピングマスタ登録 | `POST /api/mapping-masters` |
 | マッピングマスタ更新 | `PUT /api/mapping-masters/{id}` |
 | マッピングマスタ削除 | `DELETE /api/mapping-masters/{id}` |
+| マッピングマスタ並び替え | `PUT /api/mapping-masters/reorder` |
 | ワークフロー一覧 | `GET /api/workflows` |
 | ワークフロー削除 | `DELETE /api/workflows/{id}` |
 | LLM プロンプト一覧 | `GET /api/llm-prompts` |

@@ -37,6 +37,7 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
   const [scanError, setScanError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
+  const [customModes, setCustomModes] = useState<Record<number, boolean>>({})
 
   // Mapping masters for dropdowns
   const { data: masters = [] } = useQuery<MappingMaster[]>({
@@ -183,23 +184,62 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
                         <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
                       </div>
 
-                      {/* Combobox logic (Input with candidates list) */}
-                      <div className="flex-1 min-w-0">
-                        <input
-                          id={`node-select-${row.master.id}`}
-                          list={`candidates-${row.master.id}`}
-                          value={row.node_id}
-                          onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                          disabled={phase === 'saving'}
-                          placeholder={row.candidates.length > 0 ? '候補から選択または直接入力…' : 'ノードIDを直接入力…'}
-                          className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                        />
-                        {row.candidates.length > 0 && (
-                          <datalist id={`candidates-${row.master.id}`}>
-                            {row.candidates.map((id) => (
-                              <option key={id} value={id} />
-                            ))}
-                          </datalist>
+                      {/* Combobox logic (Select with candidates + manual input fallback) */}
+                      <div className="flex-1 min-w-0 flex gap-2">
+                        {row.candidates.length > 0 ? (
+                          <>
+                            <select
+                              id={`node-select-${row.master.id}`}
+                              value={
+                                customModes[row.master.id]
+                                  ? 'custom'
+                                  : row.node_id === ''
+                                  ? ''
+                                  : row.candidates.includes(row.node_id)
+                                  ? row.node_id
+                                  : 'custom'
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value
+                                if (val === 'custom') {
+                                  setCustomModes(prev => ({ ...prev, [row.master.id]: true }))
+                                  updateNodeId(row.master.id, '')
+                                } else {
+                                  setCustomModes(prev => ({ ...prev, [row.master.id]: false }))
+                                  updateNodeId(row.master.id, val)
+                                }
+                              }}
+                              disabled={phase === 'saving'}
+                              className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
+                            >
+                              {row.candidates.map((id) => (
+                                <option key={id} value={id}>{id}</option>
+                              ))}
+                              <option value="">未指定</option>
+                              <option value="custom">直接入力...</option>
+                            </select>
+                            {(customModes[row.master.id] || (row.node_id !== '' && !row.candidates.includes(row.node_id))) && (
+                              <input
+                                id={`node-input-custom-${row.master.id}`}
+                                type="text"
+                                value={row.node_id}
+                                onChange={(e) => updateNodeId(row.master.id, e.target.value)}
+                                disabled={phase === 'saving'}
+                                placeholder="直接入力…"
+                                className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                              />
+                            )}
+                          </>
+                        ) : (
+                          <input
+                            id={`node-select-${row.master.id}`}
+                            type="text"
+                            value={row.node_id}
+                            onChange={(e) => updateNodeId(row.master.id, e.target.value)}
+                            disabled={phase === 'saving'}
+                            placeholder="ノードIDを直接入力…"
+                            className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                          />
                         )}
                       </div>
 

@@ -24,6 +24,7 @@ Generate ページのアセットパネルから role 単位で適用できる�
 | タグセット編集 | ライブラリのカードをクリックしてエディタにロード |
 | タグセット削除 | 編集中のタグセットを削除 |
 | カテゴリ管理 | カテゴリの追加/削除（削除時は既存レコードを「未設定」に変更） |
+| タグセット複数選択 | 右カラムのライブラリカードを `Ctrl + クリック` / `Shift + クリック` / 長押しで複数選択し、ドラッグ＆ドロップでの一括順序変更 (reorder)、およびカテゴリの「一括編集」に対応 |
 
 ---
 
@@ -92,6 +93,7 @@ interface TagSet {
 | タグセット登録 | `POST /api/tag-sets` |
 | タグセット更新 | `PATCH /api/tag-sets/{id}` |
 | タグセット削除 | `DELETE /api/tag-sets/{id}` |
+| タグセット並び替え | `PUT /api/tag-sets/reorder` |
 | カテゴリ一覧 | `GET /api/tagset-categories` |
 | カテゴリ登録 | `POST /api/tagset-categories` |
 | カテゴリ削除 | `DELETE /api/tagset-categories/{id}` |

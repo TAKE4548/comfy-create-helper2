@@ -24,52 +24,52 @@ export function useMasterMappingRows(
     const mainRows: MasterMappingRow[] = []
     const notFoundRows: MasterMappingRow[] = []
 
-    for (const master of masters) {  // masters は sort_order 順で渡される
+    for (const master of masters) {
       const matched = matchedMap.get(master.id)
       const warning = warningMap.get(master.id)
 
-      if (matched) {
-        // ok マッチ
-        mainRows.push({
-          master,
-          node_id: rowState[master.id] ?? matched.node_id,
-          candidates: [],
-          status: 'ok',
-          node_title: matched.node_title,
-        })
-      } else if (warning) {
-        if (warning.status === 'not_found') {
-          notFoundRows.push({
-            master,
-            node_id: rowState[master.id] ?? '',
-            candidates: [],
-            status: 'not_found',
-          })
-        } else if (warning.status === 'duplicated') {
-          const candidates = warning.node_ids ?? []
-          mainRows.push({
-            master,
-            node_id: rowState[master.id] ?? candidates[0] ?? '',
-            candidates,
-            status: 'duplicated',
-          })
+      let status: 'ok' | 'duplicated' | 'class_type_mismatch' | 'not_found' = 'not_found'
+      let candidates: string[] = []
+      let node_id = rowState[master.id] ?? ''
+      let node_title: string | undefined = undefined
+
+      if (warning) {
+        // warning が存在する（duplicated, class_type_mismatch, not_found）場合は警告側を優先
+        status = warning.status as any
+        if (warning.status === 'duplicated') {
+          candidates = warning.node_ids ?? []
+          if (rowState[master.id] === undefined && candidates.length > 0) {
+            node_id = candidates[0]
+          }
         } else if (warning.status === 'class_type_mismatch') {
-          const candidates = warning.node_id ? [warning.node_id] : []
-          mainRows.push({
-            master,
-            node_id: rowState[master.id] ?? warning.node_id ?? '',
-            candidates,
-            status: 'class_type_mismatch',
-          })
+          candidates = warning.node_id ? [warning.node_id] : []
+          if (rowState[master.id] === undefined && warning.node_id) {
+            node_id = warning.node_id
+          }
         }
+      } else if (matched) {
+        // 警告がない場合のみ ok マッチ
+        status = 'ok'
+        node_title = matched.node_title
+        if (rowState[master.id] === undefined) {
+          node_id = matched.node_id
+        }
+        // 1:1マッチの場合でも、ドロップダウンから選択可能なように候補に含める
+        candidates = [matched.node_id]
+      }
+
+      const row: MasterMappingRow = {
+        master,
+        node_id,
+        candidates,
+        status,
+        node_title,
+      }
+
+      if (status === 'not_found') {
+        notFoundRows.push(row)
       } else {
-        // マスタにのみ存在、スキャン結果になし → not_found扱い
-        notFoundRows.push({
-          master,
-          node_id: rowState[master.id] ?? '',
-          candidates: [],
-          status: 'not_found',
-        })
+        mainRows.push(row)
       }
     }
 

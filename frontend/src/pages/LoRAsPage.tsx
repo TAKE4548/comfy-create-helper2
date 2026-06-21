@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2 } from 'lucide-react'
-import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
+import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  useSensors,
+  useSensor,
+  MouseSensor,
+  TouchSensor
+} from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -15,6 +25,10 @@ import {
   LoraDetailModal,
   type LoraFormState,
 } from '../components/LoraModals'
+
+import { useMultiSelect } from '../hooks/useMultiSelect'
+import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
+import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
 const EMPTY_FORM: LoraFormState = {
   model_name: '',
@@ -42,6 +56,38 @@ function SortableLoraCard({ id, children, disabled }: { id: number; children: Re
 
 export function LoRAsPage() {
   const qc = useQueryClient()
+  
+  // Use state dynamically inside component to check isMultiSelectMode
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [items, setItems] = useState<Lora[]>([])
+
+  const {
+    isMultiSelectMode,
+    selectedIds,
+    exitMultiSelectMode,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    selectAll,
+    clearSelection,
+  } = useMultiSelect({ items })
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: isMultiSelectMode
+        ? { distance: 8 }
+        : {
+            delay: 250,
+            tolerance: 5,
+          },
+    })
+  )
   const [search, setSearch] = useState('')
   const [selectedCat, setSelectedCat] = useState<number | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -52,8 +98,6 @@ export function LoRAsPage() {
   const [copiedTriggerSetId, setCopiedTriggerSetId] = useState<number | null>(null)
   const [form, setForm] = useState<LoraFormState>(EMPTY_FORM)
   const [editForm, setEditForm] = useState<LoraFormState>(EMPTY_FORM)
-  
-  const [items, setItems] = useState<Lora[]>([])
 
   const { data: categories } = useQuery({
     queryKey: ['lora-categories'],
@@ -71,6 +115,7 @@ export function LoRAsPage() {
   }, [loras])
 
   const createLora = useMutation({
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loras'] }); setShowModal(false); setForm(EMPTY_FORM) },
     mutationFn: () => lorasApi.create({
       ...form,
       trigger_word_sets: form.trigger_word_sets.map((t) => ({
@@ -78,7 +123,6 @@ export function LoRAsPage() {
         words: t.words.split(',').map((w) => w.trim()).filter(Boolean),
       })),
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loras'] }); setShowModal(false); setForm(EMPTY_FORM) },
   })
 
   const deleteLora = useMutation({
@@ -100,6 +144,33 @@ export function LoRAsPage() {
   const reorderLoras = useMutation({
     mutationFn: (ordered_ids: number[]) => lorasApi.reorder(ordered_ids),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loras'] }),
+  })
+
+  const loraBulkEditFields: BulkEditField[] = [
+    {
+      key: 'category_id',
+      label: 'カテゴリ',
+      type: 'category',
+      options: categories?.map(c => ({ id: c.id, name: c.name })) || [],
+    },
+    {
+      key: 'recommended_strength',
+      label: '推奨強度',
+      type: 'strength_range',
+    },
+  ]
+
+  const bulkUpdateLoras = useMutation({
+    mutationFn: async (values: any) => {
+      await Promise.all(
+        [...selectedIds].map(id => lorasApi.update(id, values))
+      )
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['loras'] })
+      exitMultiSelectMode()
+      setShowBulkEdit(false)
+    }
   })
 
   const filteredLoras = items.filter((l) =>
@@ -132,9 +203,24 @@ export function LoRAsPage() {
     setTimeout(() => setCopiedTriggerSetId(null), 2000)
   }
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as number)
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
+    setActiveId(null)
+    if (!over || active.id === over.id) return
+
+    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      // グループ移動
+      const selected = items.filter(i => selectedIds.has(i.id))
+      const nonSelected = items.filter(i => !selectedIds.has(i.id))
+      const insertAt = nonSelected.findIndex(i => i.id === over.id) + 1
+      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
+      setItems(newOrder)
+      reorderLoras.mutate(newOrder.map(i => i.id))
+    } else {
       const oldIdx = items.findIndex((x) => x.id === Number(active.id))
       const newIdx = items.findIndex((x) => x.id === Number(over.id))
       const reordered = arrayMove(items, oldIdx, newIdx)
@@ -143,8 +229,55 @@ export function LoRAsPage() {
     }
   }
 
+  const renderDragOverlayItem = (id: number) => {
+    const lora = items.find((l) => l.id === id)
+    if (!lora) return null
+    const catName = categories?.find((c) => c.id === lora.category_id)?.name
+    return (
+      <div className="rounded-xl border border-[rgba(255,255,255,0.12)] bg-[#1F1F25] overflow-hidden flex flex-col justify-between h-full min-h-[300px] w-[200px]">
+        <div className="relative aspect-square w-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+          {lora.thumbnail_path ? (
+            <img src={lora.thumbnail_path} alt={lora.model_name} className="w-full h-full object-cover" />
+          ) : (
+            <Layers size={32} />
+          )}
+        </div>
+        <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+          <div className="space-y-1.5 min-w-0">
+            <p className="text-xs font-medium text-zinc-200 truncate">
+              {lora.description || lora.model_name.split('/').pop()}
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {catName && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/10 text-accent-green border border-accent-green/20">{catName}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {isMultiSelectMode && (
+        <MultiSelectToolbar
+          selectedCount={selectedIds.size}
+          totalCount={items.length}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
+          onExitMode={exitMultiSelectMode}
+          actions={
+            <button
+              onClick={() => setShowBulkEdit(true)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all disabled:opacity-50"
+            >
+              <Pencil size={12} />
+              一括編集
+            </button>
+          }
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
         <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
@@ -191,15 +324,41 @@ export function LoRAsPage() {
 
       {/* Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <SortableContext items={filteredLoras.map((x) => x.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filteredLoras.map((lora) => {
                 const catName = categories?.find((c) => c.id === lora.category_id)?.name
+                const longPressHandlers = getLongPressHandlers(lora.id)
                 return (
                   <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
-                    <div id={`lora-card-${lora.id}`} onClick={() => setSelectedLoraForDetail(lora)}
-                      className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px]">
+                    <div
+                      id={`lora-card-${lora.id}`}
+                      onClick={(e) => {
+                        if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                          e.stopPropagation()
+                          handleItemClick(lora.id, e)
+                        } else {
+                          setSelectedLoraForDetail(lora)
+                        }
+                      }}
+                      onMouseDown={longPressHandlers.onMouseDown}
+                      onMouseUp={longPressHandlers.onMouseUp}
+                      onMouseLeave={longPressHandlers.onMouseLeave}
+                      onTouchStart={longPressHandlers.onTouchStart}
+                      onTouchEnd={longPressHandlers.onTouchEnd}
+                      className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+                        isMultiSelectMode && isSelected(lora.id)
+                          ? 'border-[#3ECF8E] ring-1 ring-[#3ECF8E]/30 bg-surface'
+                          : 'border-[rgba(255,255,255,0.06)] bg-surface'
+                      }`}
+                    >
+                      {/* Checkbox for multi-select */}
+                      {isMultiSelectMode && (
+                        <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-[#3ECF8E] border border-[rgba(255,255,255,0.08)]">
+                          {isSelected(lora.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+                        </div>
+                      )}
                       
                       <ImageCarousel
                         thumbnailPath={lora.thumbnail_path}
@@ -279,6 +438,23 @@ export function LoRAsPage() {
               })}
             </div>
           </SortableContext>
+
+          {/* Drag Overlay */}
+          <DragOverlay>
+            {activeId && (
+              <div className="relative">
+                <div className="opacity-90 scale-105 ring-2 ring-[#3ECF8E] rounded-xl pointer-events-none">
+                  {renderDragOverlayItem(activeId)}
+                </div>
+                {isMultiSelectMode && selectedIds.size > 1 && (
+                  <div className="absolute -bottom-2 -right-2 bg-[#3ECF8E] text-black text-xs font-bold
+                                  rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
+                    +{selectedIds.size - 1}
+                  </div>
+                )}
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
         {filteredLoras.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
@@ -313,6 +489,17 @@ export function LoRAsPage() {
       {showCatModal && (
         <CategoryManagerModal type="lora" onClose={() => setShowCatModal(false)} />
       )}
+      {showBulkEdit && (
+        <BulkEditModal
+          isOpen={showBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
+          fields={loraBulkEditFields}
+          selectedCount={selectedIds.size}
+          onApply={(values) => bulkUpdateLoras.mutate(values)}
+          isApplying={bulkUpdateLoras.isPending}
+        />
+      )}
     </div>
   )
 }
+

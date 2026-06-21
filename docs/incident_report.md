@@ -313,3 +313,120 @@ React の Rules of Hooks により、フックは条件分岐や早期リター�
 ### 5. 修正方針（概要）
 
 `useGenerationStore.ts` の `setSelectedImg` アクションにおいて、`selectedImg` を更新すると同時に `previewImage` を `null` にクリアするように修正します。これにより、ユーザーが手動で履歴画像を選択した際にプレビュー用の古い一時状態が破棄され、選択した画像が優先してメインプレビューに表示されるようになります。
+
+---
+
+## [NEW] REQ-062 (不具合修正): LoRA管理・タグセット管理でドラッグ＆ドロップの導入によりカードのクリック・タップ操作が機能しなくなる問題
+
+### 1. 現象・症状
+
+LoRA管理画面（`LoRAsPage.tsx`）およびタグセット管理画面（`TagsPage.tsx`）において、ドラッグ＆ドロップ（D&D）によるカード移動を有効化した後、カードのクリックやタップによる詳細表示（`LoraDetailModal` / `TagSetDetailModal`）、および編集・削除ボタンの操作が機能しなくなっている（クリックイベントがD&Dのドラッグ開始イベントに吸い取られてしまう）。
+
+### 2. 再現手順
+
+1. LoRA管理画面またはタグセット管理画面を開く。
+2. 任意のカードをクリックする。
+3. 詳細モーダルが表示されず、編集ボタンや削除ボタンをクリックしても反応しない。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：ドラッグイベントのしきい値（`activationConstraint`）未設定によるイベント排他
+
+**該当ファイル**:
+- [`frontend/src/pages/LoRAsPage.tsx`](../frontend/src/pages/LoRAsPage.tsx)
+- [`frontend/src/pages/TagsPage.tsx`](../frontend/src/pages/TagsPage.tsx)
+
+両画面では `@dnd-kit/core` および `@dnd-kit/sortable` を利用してD&D移動を実装しています。
+しかし、`DndContext` に対して `sensors` の設定（特にマウスやタッチイベントに対するドラッグ開始までの最小移動距離 `distance` や長押し時間 `delay` などのしきい値）が定義されていません。
+
+`@dnd-kit` のデフォルトの挙動では、`listeners` がバインドされた要素を押下した瞬間に即座にドラッグ状態へと移行します。このとき、ドラッグイベントの開始によってクリックイベント（`click`）がキャンセルされ、下位要素の `onClick` やボタンの操作イベントが一切発火しなくなっていました。
+
+（`HistoryPage.tsx` では既に `MouseSensor` の `distance: 8` および `TouchSensor` の `delay: 500, tolerance: 5` が設定されており、クリックとドラッグが適切に判別されています。）
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`LoRAsPage.tsx`](../frontend/src/pages/LoRAsPage.tsx), [`TagsPage.tsx`](../frontend/src/pages/TagsPage.tsx) |
+| **Next Route** | `/dev-design` (実装設計へ移行) |
+
+### 5. 修正方針（概要）
+
+1. `LoRAsPage.tsx` および `TagsPage.tsx` に `@dnd-kit/core` から `useSensors`, `useSensor`, `MouseSensor`, `TouchSensor` をインポートします。
+2. 両コンポーネント内に以下のようなセンサー設定を定義します。
+   ```typescript
+   const sensors = useSensors(
+     useSensor(MouseSensor, {
+       activationConstraint: {
+         distance: 8 // クリックとドラッグを識別するためのしきい値
+       }
+     }),
+     useSensor(TouchSensor, {
+       activationConstraint: {
+         delay: 250, // モバイル環境での誤作動防止とタップ判別のための長押し時間
+   ```
+ 3. 各ページの `<DndContext>` に `sensors={sensors}` を設定します。
+
+---
+
+## [NEW] REQ-060 (不具合修正): マッピング確認UIにおいて検出された候補のドロップダウンが表示されず直接入力しかできない問題
+
+### 1. 現象・症状
+ワークフローのアップロードモーダル（`UploadWorkflowModal`）および再スキャンモーダル（`RescanModal`）において、マッピングマスタの項目毎の入力欄が表示された際、自動検出された候補のドロップダウン（datalist）が表示されず、ノードIDを直接キーボード入力するしかできない状態になっている。
+
+### 2. 再現手順
+1. 新規ワークフロー（複数候補が存在するようなノードを含むJSON）をアップロードする。
+2. もしくは、既存のワークフローに対して「再スキャン」ボタンをクリックして再スキャンモーダルを開く。
+3. 各役割の「候補から選択または直接入力…」というプレースホルダーが表示された入力欄をクリックまたはダブルクリックしても、候補ノードIDのドロップダウンが表示されない。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`useMasterMappingRows.ts` での条件分岐の不備（警告情報の隠蔽）
+**該当ファイル**: [`frontend/src/hooks/useMasterMappingRows.ts`](../frontend/src/hooks/useMasterMappingRows.ts#L31-L40)
+
+`useMasterMappingRows` の `buildRows` 内で、スキャン結果の `matched` （マッチ成功）と `warnings` （複数候補などの警告）のマッピングを行っています：
+
+```typescript
+    const matchedMap = new Map(scanResult.matched.map(m => [m.master_id, m]))
+    const warningMap = new Map(scanResult.warnings.map(w => [w.master_id, w]))
+
+    ...
+
+    for (const master of masters) {
+      const matched = matchedMap.get(master.id)
+      const warning = warningMap.get(master.id)
+
+      if (matched) { // ⚠️ ここが問題
+        // ok マッチ
+        mainRows.push({
+          master,
+          node_id: rowState[master.id] ?? matched.node_id,
+          candidates: [], // ⚠️ 常に空配列がセットされる
+          status: 'ok',
+          node_title: matched.node_title,
+        })
+      } else if (warning) {
+        // ... (warning 側の処理)
+      }
+```
+
+- **挙動の分析**:
+  - バックエンドのスキャンロジック（`workflow_scanner.py`）では、同一の役割に対して複数候補が存在する（`duplicated`）場合、1つ目のノードを `matched` （`status: "ok"`）に追加しつつ、同時に `warnings` にも `status: "duplicated"`、`node_ids`（全候補リスト）を含めて追加します。
+  - しかし、フロントエンドの `useMasterMappingRows.ts` では、`if (matched)` の分岐が優先されているため、`matched` と `warning` の両方が存在する（`duplicated` の）役割において、`if (matched)` ブランチに入って処理されてしまいます。
+  - その結果、`warning`（複数候補）のブランチである `else if (warning)` の処理がスキップされ、`candidates` は空配列 (`[]`)、`status` は `"ok"` としてリストに積まれてしまいます。
+  - これにより、フロントエンドの入力欄 (`input list="..."`) に紐づく `<datalist>` の中身が空になり、ドロップダウンが一切表示されなくなっていました。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useMasterMappingRows.ts`](../frontend/src/hooks/useMasterMappingRows.ts#L31-L64) |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+`useMasterMappingRows.ts` の `buildRows` において、`matched` の有無に関わらず `warning` (特に `duplicated` などの複数候補) が存在する場合は、その警告情報（`node_ids`）を `candidates` として正しく抽出し、表示ステータスも `warning.status`（`duplicated` など）を優先するように条件判定フローを整理します。
+具体的には、`warning`（警告）が存在する場合は先に警告として処理するか、または `matched` 処理の中で `warning` の情報（候補リストなど）をブレンドしてマージするように変更します。また、1:1マッチングの場合でも、ドロップダウンの選択肢にそのノードID自体を候補として含めるようにします。

@@ -246,12 +246,12 @@ mapping.role → paramValues[mapping.role]
 
 ---
 
-## 7. スナップショット保存
+## 7. スナップショット保存（個別保存と一括保存）
 
-```
-「Save Snapshot」クリック
+### 7-1. 個別保存
+- 「Save Snapshot」クリック
   → 保存モーダル表示（アルバム選択 / 新規アルバム名）
-  → POST /api/snapshots
+  → `POST /api/snapshots`
     body: {
       workflow_id: selectedWorkflowId,
       image_path: selectedImg,
@@ -261,7 +261,13 @@ mapping.role → paramValues[mapping.role]
       loras: [{ lora_id, strength }],
       tag_sets: [{ tag_set_id }]
     }
-```
+
+### 7-2. 履歴サムネイルの複数選択・一括保存 (Bulk Save)
+- 「履歴 (History)」タブ内のサムネイル画像において、`Ctrl + クリック` / `Shift + クリック` / 長押しにより、複数選択モードに入ることができます。
+- 複数選択中、サムネイルストリップの上部に「選択した {N} 枚を保存」ボタンが表示されます（通常の「Save Snapshot」ボタンは無効化されます）。
+- モーダルでのアルバム選択（または新規作成）後、`Promise.all` を用いて選択された全画像の `POST /api/snapshots` を並列して送信します（各画像の params、loras、tag_sets は共通の設定が適用され、`image_path` のみ各画像のものに切り替わります）。
+- 一括保存が成功した際、キャッシュクリアと共に複数選択モードが自動的に解除（終了）されます。
+- ※「スナップショット (Snapshots)」タブのサムネイルには複数選択モードは適用されず、通常のクリック動作が維持されます。
 
 ---
 
