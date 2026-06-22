@@ -30,6 +30,7 @@ export function useMultiSelect<T extends { id: number }>({
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const lastSelectedIdRef = useRef<number | null>(null);
+  const isDraggingRef = useRef(false);
 
   const enterMultiSelectMode = useCallback((firstId?: number) => {
     setIsMultiSelectMode(true);
@@ -109,31 +110,99 @@ export function useMultiSelect<T extends { id: number }>({
   const getLongPressHandlers = useCallback(
     (id: number) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let startX: number | null = null;
+      let startY: number | null = null;
+
+      const globalMove = (e: MouseEvent | TouchEvent) => {
+        if (startX === null || startY === null) return;
+
+        let currentX = 0;
+        let currentY = 0;
+        if ('touches' in e) {
+          if (e.touches && e.touches.length > 0) {
+            currentX = e.touches[0].clientX;
+            currentY = e.touches[0].clientY;
+          } else {
+            return;
+          }
+        } else {
+          currentX = e.clientX;
+          currentY = e.clientY;
+        }
+
+        const diffX = currentX - startX;
+        const diffY = currentY - startY;
+        const distance = Math.sqrt(diffX * diffX + diffY * diffY);
+
+        // Cancel long press if moved more than 5px (threshold for drag vs hold)
+        // and transition to active dragging state to block any future triggers.
+        if (distance >= 5) {
+          isDraggingRef.current = true;
+          if (timer) {
+            clearTimeout(timer);
+            timer = null;
+          }
+          startX = null;
+          startY = null;
+          document.removeEventListener('mousemove', globalMove);
+          document.removeEventListener('touchmove', globalMove);
+        }
+      };
+
+      const globalClear = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        startX = null;
+        startY = null;
+        isDraggingRef.current = false;
+
+        document.removeEventListener('mousemove', globalMove);
+        document.removeEventListener('touchmove', globalMove);
+        document.removeEventListener('mouseup', globalClear);
+        document.removeEventListener('touchend', globalClear);
+      };
 
       const start = (e: React.MouseEvent | React.TouchEvent) => {
+        // If already dragging globally, block long press initiation
+        if (isDraggingRef.current) return;
+
         // Prevent trigger on right click
         if ('button' in e && e.button !== 0) return;
+
+        // Record starting position
+        if ('touches' in e) {
+          if (e.touches && e.touches.length > 0) {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+          }
+        } else {
+          startX = e.clientX;
+          startY = e.clientY;
+        }
+
+        // Bind global listeners to document to capture move and end events reliably
+        document.addEventListener('mousemove', globalMove);
+        document.addEventListener('touchmove', globalMove, { passive: true });
+        document.addEventListener('mouseup', globalClear);
+        document.addEventListener('touchend', globalClear);
+
         const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT);
         const parsed = stored !== null ? parseFloat(stored) : NaN;
         const delay = !isNaN(parsed) ? parsed * 1000 : 800;
         timer = setTimeout(() => {
           enterMultiSelectMode(id);
+          globalClear(); // Clean up listeners on successful activation
         }, delay);
-      };
-
-      const clear = () => {
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
       };
 
       return {
         onMouseDown: start,
-        onMouseUp: clear,
-        onMouseLeave: clear,
+        onMouseUp: globalClear,
+        onMouseLeave: globalClear,
         onTouchStart: start,
-        onTouchEnd: clear,
+        onTouchEnd: globalClear,
       };
     },
     [enterMultiSelectMode]

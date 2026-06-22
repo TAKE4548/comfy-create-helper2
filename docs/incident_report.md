@@ -672,3 +672,82 @@ CSSの仕様上、flexコンテナーの子要素（flexアイテム）はデフ
 ### 5. 修正方針（概要）
 1. **画像の長辺基準スケーリング**: `HistoryModalPreview.tsx` 内の画像表示領域コンテナー（L166）のクラスに `min-h-0` を追加します。これにより、コンテナーの高さが画面外にはみ出して拡張されるのを防ぎ、`<img>` の `max-h-full object-contain` が想定通り動作し、長辺基準でのフィット表示が行われます。
 2. **z-indexの修正**: `HistoryModalPreview.tsx` の最外周 `div`（L153）の z-index を `z-50` から `z-[60]` もしくはそれ以上に引き上げ、モバイルナビゲーションバー（`z-50`）よりも前面に描画されるようにします。
+
+---
+
+## [NEW] REQ-071 (不具合修正): アルバム画面等での並び替え操作時に長押し複数選択が誤発火して並び替えができない問題
+
+### 1. 現象・症状
+
+アルバム画面やLoRA、Tagセット画面などの並び替え可能なカード・アイテム一覧において、アイテムをドラッグして並び替えようとした際、ボタンを離す前に長押し判定時間（デフォルト800ms）が経過すると、複数選択モードが誤発火（誤爆）してしまい、並び替え操作が完了できない。
+
+### 2. 再現手順
+
+1. 並び替え可能なアイテム一覧（例：アルバム、LoRA、Tagセット画面など）で、アイテムをドラッグするためにクリック/タップして押下した状態にする（`MouseDown` / `TouchStart`）。
+2. そのままマウスや指を動かしてドラッグ操作を行う。
+3. マウスボタンを離す（`MouseUp`）またはタッチを終了（`TouchEnd`）する前に、押下開始から800ms以上が経過する。
+4. ドラッグ中（移動中）であるにもかかわらず、複数選択モードが発動（チェックボックスが表示され、並び替えモードが阻害）される。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：移動操作（`MouseMove` / `TouchMove`）発生時の長押しタイマーのキャンセル漏れ
+
+**該当ファイル**: [`frontend/src/hooks/useMultiSelect.ts`](../frontend/src/hooks/useMultiSelect.ts#L109-L140) L109–140 (`getLongPressHandlers` 内)
+
+```typescript
+  const getLongPressHandlers = useCallback(
+    (id: number) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const start = (e: React.MouseEvent | React.TouchEvent) => {
+        // Prevent trigger on right click
+        if ('button' in e && e.button !== 0) return;
+        const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT);
+        const parsed = stored !== null ? parseFloat(stored) : NaN;
+        const delay = !isNaN(parsed) ? parsed * 1000 : 800;
+        timer = setTimeout(() => {
+          enterMultiSelectMode(id);
+        }, delay);
+      };
+
+      const clear = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+
+      return {
+        onMouseDown: start,
+        onMouseUp: clear,
+        onMouseLeave: clear,
+        onTouchStart: start,
+        onTouchEnd: clear,
+      };
+    },
+    [enterMultiSelectMode]
+  );
+```
+
+- **挙動の分析**:
+  - `onMouseDown` または `onTouchStart` イベント発生時に長押し判定のタイマー（`delay` ミリ秒）が起動します。
+  - タイマーがクリアされる条件は `onMouseUp`, `onMouseLeave`, `onTouchEnd` のみとなっています。
+  - `onMouseMove` や `onTouchMove` に対するイベントハンドラがバインドされておらず、マウスやタッチの位置が移動（ドラッグ）した際にタイマーをクリアする仕組みがありません。
+  - そのため、ユーザーが並び替えのためにドラッグして移動させている最中でも、ボタンを離すまでの時間が `delay`（800msなど）を超えると、タイマーが発火して `enterMultiSelectMode(id)` が実行されてしまいます。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useMultiSelect.ts`](../frontend/src/hooks/useMultiSelect.ts#L109-L140) L109-140 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+
+1. **移動イベントのハンドリング**: `getLongPressHandlers` 内で、移動操作を検出するための `onMouseMove` および `onTouchMove` イベントをハンドリングします。
+2. **しきい値判定によるタイマー解除**:
+   - `start` (MouseDown/TouchStart) 時に開始座標（`clientX`, `clientY`）を記録します。
+   - 移動イベント発生時に現在の座標と開始座標の距離（ユークリッド距離など）を計算し、軽微な手ブレ防止用しきい値（例: 10px）を超えて移動した場合は、長押しではない（ドラッグ操作である）と判定して `timer` をクリアします。
+   - タッチデバイスでのスクロールやドラッグ操作も同様に、一定以上の移動を検知したらタイマーをクリアします。
