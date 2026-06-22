@@ -306,6 +306,7 @@ export interface WorkflowPreset {
   batch_size: number
   seed_mode: string
   seed: number
+  sort_order: number
   created_at: string
 }
 
@@ -317,6 +318,7 @@ export interface WorkflowPresetCreate {
   batch_size: number
   seed_mode: string
   seed: number
+  sort_order?: number
 }
 
 export interface WorkflowPresetUpdate {
@@ -326,6 +328,15 @@ export interface WorkflowPresetUpdate {
   batch_size?: number
   seed_mode?: string
   seed?: number
+  sort_order?: number
+}
+
+export interface WorkflowCopyRequest {
+  name: string
+}
+
+export interface WorkflowPresetReorder {
+  ordered_ids: number[]
 }
 
 export interface LoraReorder {

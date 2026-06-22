@@ -13,6 +13,7 @@ class WorkflowPresetBase(BaseModel):
     batch_size: int
     seed_mode: str
     seed: int
+    sort_order: int = 0
 
 
 class WorkflowPresetCreate(WorkflowPresetBase):
@@ -32,3 +33,7 @@ class WorkflowPresetRead(WorkflowPresetBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+
+
+class WorkflowPresetReorder(BaseModel):
+    ordered_ids: list[int]

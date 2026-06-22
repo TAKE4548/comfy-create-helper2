@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary } from './types'
 
 const BASE_URL = '/api'
 
@@ -24,11 +24,12 @@ async function request<T>(
 
 // ─── Workflows ──────────────────────────────────────────────────
 export const workflowsApi = {
-  list: () => request('/workflows'),
+  list: () => request<WorkflowSummary[]>('/workflows'),
   get: (id: number) => request(`/workflows/${id}`),
   create: (data: unknown) => request('/workflows', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: unknown) => request(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/workflows/${id}`, { method: 'DELETE' }),
+  copy: (id: number, name: string) => request<WorkflowSummary>(`/workflows/${id}/copy`, { method: 'POST', body: JSON.stringify({ name }) }),
   scan: (json_body: unknown) => request('/workflows/scan', { method: 'POST', body: JSON.stringify({ json_body }) }),
 }
 
@@ -124,5 +125,7 @@ export const workflowPresetsApi = {
     request<WorkflowPreset>(`/workflow-presets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) =>
     request<void>(`/workflow-presets/${id}`, { method: 'DELETE' }),
+  reorder: (ordered_ids: number[]) =>
+    request<void>('/workflow-presets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 

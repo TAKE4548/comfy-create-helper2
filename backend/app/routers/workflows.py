@@ -17,6 +17,35 @@ def list_workflows(db: Session = Depends(get_db)):
     return db.query(models.Workflow).order_by(models.Workflow.created_at.desc()).all()
 
 
+@router.post("/{workflow_id}/copy", response_model=schemas.WorkflowSummary, status_code=status.HTTP_201_CREATED)
+def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Session = Depends(get_db)):
+    src = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    existing = db.query(models.Workflow).filter(models.Workflow.name == payload.name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Workflow name already exists")
+    new_wf = models.Workflow(
+        name=payload.name,
+        json_body=src.json_body,
+        default_applied_assets=src.default_applied_assets,
+    )
+    db.add(new_wf)
+    db.flush()
+    for m in src.mappings:
+        db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id))
+    for p in src.presets:
+        db.add(models.WorkflowPreset(
+            workflow_id=new_wf.id, name=p.name,
+            param_values=p.param_values, applied_assets=p.applied_assets,
+            batch_size=p.batch_size, seed_mode=p.seed_mode, seed=p.seed,
+            sort_order=p.sort_order,
+        ))
+    db.commit()
+    db.refresh(new_wf)
+    return new_wf
+
+
 @router.get("/{workflow_id}", response_model=schemas.WorkflowRead)
 def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
     wf = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()

@@ -80,6 +80,10 @@ class WorkflowUpdate(BaseModel):
     default_applied_assets: Optional[str] = None
 
 
+class WorkflowCopyRequest(BaseModel):
+    name: str
+
+
 # ─── Workflow Scan ────────────────────────────────────────────────
 
 class WorkflowScanRequest(BaseModel):

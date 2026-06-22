@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Zap, Shuffle, Lock, Download, Camera, Settings,
   Loader2, ChevronRight, ChevronDown, Wand2, AlertCircle, CheckCircle2,
-  ImageOff, ScanLine, Plus, X, CheckSquare, Square,
+  ImageOff, ScanLine, Plus, X, CheckSquare, Square, MoreHorizontal
 } from 'lucide-react'
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -12,6 +12,8 @@ import { useGenerationStore } from '../store/useGenerationStore'
 import type { AppliedAsset } from '../store/useGenerationStore'
 import { RescanModal } from '../components/RescanModal'
 import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
+import { WorkflowManageModal } from '../components/WorkflowManageModal'
+import { PresetManagerPanel } from '../components/PresetManagerPanel'
 import { TagChipEditor } from '../components/TagChipEditor'
 import { LoraStackEditor } from '../components/LoraStackEditor'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
@@ -513,6 +515,35 @@ export function GeneratePage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [isPresetOpen, setIsPresetOpen] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
+  const [isPresetManagerOpen, setIsPresetManagerOpen] = useState(false)
+  const [workflowManageMode, setWorkflowManageMode] = useState<'rename' | 'copy' | null>(null)
+  const [isWorkflowMenuOpen, setIsWorkflowMenuOpen] = useState(false)
+
+  // Workflow mutations
+  const renameWorkflowMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => workflowsApi.update(id, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflows'] })
+      qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
+      setWorkflowManageMode(null)
+    },
+  })
+  const copyWorkflowMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => workflowsApi.copy(id, name),
+    onSuccess: (newWf) => {
+      qc.invalidateQueries({ queryKey: ['workflows'] })
+      setSelectedWorkflowId(newWf.id)
+      setWorkflowManageMode(null)
+    },
+  })
+
+  // Close workflow menu on document click
+  useEffect(() => {
+    if (!isWorkflowMenuOpen) return
+    const closeMenu = () => setIsWorkflowMenuOpen(false)
+    document.addEventListener('click', closeMenu)
+    return () => document.removeEventListener('click', closeMenu)
+  }, [isWorkflowMenuOpen])
 
   // ── Store ────────────────────────────────────────────────────
   const {
@@ -704,6 +735,20 @@ export function GeneratePage() {
 
   const deletePresetMutation = useMutation({
     mutationFn: (id: number) => workflowPresetsApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    }
+  })
+
+  const renamePresetMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => workflowPresetsApi.update(id, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    }
+  })
+
+  const reorderPresetsMutation = useMutation({
+    mutationFn: (ordered_ids: number[]) => workflowPresetsApi.reorder(ordered_ids),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     }
@@ -1378,12 +1423,58 @@ export function GeneratePage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <select id="workflow-select" value={selectedWorkflowId ?? ''}
-                onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-                className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate">
-                <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
-                {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
+              <div className="relative flex items-center gap-1">
+                <select id="workflow-select" value={selectedWorkflowId ?? ''}
+                  onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
+                  className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate">
+                  <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
+                  {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+                {selectedWorkflowId && (
+                  <div className="relative flex-shrink-0">
+                    <button
+                      id="workflow-ops-btn"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsWorkflowMenuOpen(!isWorkflowMenuOpen);
+                      }}
+                      className={`p-1.5 rounded-md border transition-all ${
+                        isWorkflowMenuOpen
+                          ? 'border-accent-green bg-accent-green/10 text-accent-green'
+                          : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'
+                      }`}
+                      title="ワークフロー操作"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+                    {isWorkflowMenuOpen && (
+                      <div className="absolute right-0 top-full mt-1.5 w-32 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-lg shadow-xl py-1 z-50 animate-fade-in">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkflowManageMode('rename');
+                            setIsWorkflowMenuOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-zinc-350 hover:bg-white/5 hover:text-zinc-200 transition-colors"
+                        >
+                          名前を変更
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkflowManageMode('copy');
+                            setIsWorkflowMenuOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-zinc-350 hover:bg-white/5 hover:text-zinc-200 transition-colors"
+                        >
+                          コピー
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="relative flex-shrink-0 flex items-center">
                 <button id="settings-toggle-btn" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
                   className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
@@ -1473,6 +1564,20 @@ export function GeneratePage() {
                         <div className="text-center py-4 text-zinc-500 text-[10px]">保存されたプリセットはありません</div>
                       )}
                     </div>
+                    {presets && presets.length > 0 && (
+                      <div className="border-t border-zinc-800 pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPresetManagerOpen(true);
+                            setIsPresetOpen(false);
+                          }}
+                          className="text-[10px] text-accent-green hover:underline cursor-pointer font-medium"
+                        >
+                          プリセットを管理
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1849,6 +1954,50 @@ export function GeneratePage() {
               <button id="confirm-lora-modal-btn" onClick={() => { handleAddLoraAsset(selectedLoraForModal.role, selectedLoraForModal.lora, loraStrength, selectedTriggerSetId); setSelectedLoraForModal(null) }}
                 className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 transition-all glow-green flex items-center gap-2">適用</button>
             </div>
+          </div>
+        </div>
+      )}
+      {workflowManageMode && selectedWorkflowId && (
+        <WorkflowManageModal
+          mode={workflowManageMode}
+          currentName={workflows?.find((w) => w.id === selectedWorkflowId)?.name || ''}
+          onSubmit={async (newName) => {
+            if (workflowManageMode === 'rename') {
+              await renameWorkflowMutation.mutateAsync({ id: selectedWorkflowId, name: newName })
+            } else {
+              await copyWorkflowMutation.mutateAsync({ id: selectedWorkflowId, name: newName })
+            }
+          }}
+          onClose={() => setWorkflowManageMode(null)}
+          isPending={renameWorkflowMutation.isPending || copyWorkflowMutation.isPending}
+        />
+      )}
+      {isPresetManagerOpen && selectedWorkflowId && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsPresetManagerOpen(false)}
+        >
+          <div 
+            className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl relative animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setIsPresetManagerOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-base font-semibold text-zinc-100 mb-4">プリセット管理</h3>
+            <PresetManagerPanel
+              presets={presets || []}
+              onRename={async (id, name) => {
+                await renamePresetMutation.mutateAsync({ id, name })
+              }}
+              onReorder={async (ordered_ids) => {
+                await reorderPresetsMutation.mutateAsync(ordered_ids)
+              }}
+              isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
+            />
           </div>
         </div>
       )}

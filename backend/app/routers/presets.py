@@ -22,6 +22,7 @@ def _preset_to_schema(preset: models.WorkflowPreset) -> schemas.WorkflowPresetRe
         seed_mode=preset.seed_mode,
         seed=preset.seed,
         created_at=preset.created_at,
+        sort_order=preset.sort_order,
     )
 
 
@@ -30,7 +31,7 @@ def list_presets(workflow_id: Optional[int] = None, db: Session = Depends(get_db
     q = db.query(models.WorkflowPreset)
     if workflow_id is not None:
         q = q.filter(models.WorkflowPreset.workflow_id == workflow_id)
-    return [_preset_to_schema(p) for p in q.order_by(models.WorkflowPreset.id.desc()).all()]
+    return [_preset_to_schema(p) for p in q.order_by(models.WorkflowPreset.sort_order.asc()).all()]
 
 
 @router.post("", response_model=schemas.WorkflowPresetRead, status_code=status.HTTP_201_CREATED)
@@ -48,11 +49,19 @@ def create_preset(payload: schemas.WorkflowPresetCreate, db: Session = Depends(g
         batch_size=payload.batch_size,
         seed_mode=payload.seed_mode,
         seed=payload.seed,
+        sort_order=payload.sort_order,
     )
     db.add(preset)
     db.commit()
     db.refresh(preset)
     return _preset_to_schema(preset)
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_presets(payload: schemas.WorkflowPresetReorder, db: Session = Depends(get_db)):
+    for i, pid in enumerate(payload.ordered_ids):
+        db.query(models.WorkflowPreset).filter(models.WorkflowPreset.id == pid).update({"sort_order": i})
+    db.commit()
 
 
 @router.put("/{preset_id}", response_model=schemas.WorkflowPresetRead)

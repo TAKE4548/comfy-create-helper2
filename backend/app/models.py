@@ -60,6 +60,7 @@ class WorkflowPreset(Base):
     seed_mode: Mapped[str] = mapped_column(String, nullable=False)
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="presets")
 
@@ -203,7 +204,7 @@ class LlmPrompt(Base):
 
 class SnapshotLora(Base):
     __tablename__ = "snapshot_loras"
-    __table_args__ = (UniqueConstraint("snapshot_id", "lora_id"),)
+    __table_args__ = (UniqueConstraint("snapshot_id", "lora_id", "role"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
@@ -217,7 +218,7 @@ class SnapshotLora(Base):
 
 class SnapshotTagSet(Base):
     __tablename__ = "snapshot_tag_sets"
-    __table_args__ = (UniqueConstraint("snapshot_id", "tag_set_id"),)
+    __table_args__ = (UniqueConstraint("snapshot_id", "tag_set_id", "role"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
