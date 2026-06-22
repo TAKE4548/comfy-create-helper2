@@ -217,7 +217,7 @@ export function SortableMasterRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: mm.id, disabled: isMultiSelectMode })
+  } = useSortable({ id: mm.id, disabled: false })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -242,21 +242,22 @@ export function SortableMasterRow({
           : 'hover:bg-white/[0.01]'
       }`}
     >
-      <td className="px-3 py-3 w-8 text-zinc-600">
-        {!isMultiSelectMode ? (
+      <td className="px-3 py-3 text-zinc-600">
+        <div className="flex items-center gap-2">
+          {isMultiSelectMode && (
+            <div className="w-[13px] h-[13px] border border-[rgba(255,255,255,0.15)] rounded flex items-center justify-center bg-zinc-800 flex-shrink-0">
+              {isSelected && <div className="w-1.5 h-1.5 rounded-sm bg-[#3ECF8E]" />}
+            </div>
+          )}
           <button
             type="button"
-            className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none"
+            className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none flex-shrink-0"
             {...attributes}
             {...listeners}
           >
             <GripVertical size={13} />
           </button>
-        ) : (
-          <div className="w-[13px] h-[13px] border border-[rgba(255,255,255,0.15)] rounded flex items-center justify-center bg-zinc-800">
-            {isSelected && <div className="w-1.5 h-1.5 rounded-sm bg-[#3ECF8E]" />}
-          </div>
-        )}
+        </div>
       </td>
       <td className="px-4 py-3 font-mono text-zinc-200">{mm.role}</td>
       <td className="px-4 py-3">{mm.display_name}</td>
@@ -289,4 +290,95 @@ export function SortableMasterRow({
     </tr>
   )
 }
+
+// ─── Workflow Delete Confirm Dialog ───────────────────────────────
+export function WorkflowDeleteConfirmDialog({
+  workflowName,
+  isPending,
+  onClose,
+  onConfirm,
+  mappingsCount,
+  presetsCount,
+  snapshotsCount,
+  isLoadingDetails,
+}: {
+  workflowName: string;
+  isPending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  mappingsCount: number;
+  presetsCount: number;
+  snapshotsCount: number;
+  isLoadingDetails: boolean;
+}) {
+  const [understood, setUnderstood] = useState(false);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl space-y-4 relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} disabled={isPending} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300">
+          <X size={16} />
+        </button>
+        <div className="flex items-center gap-2 text-red-400">
+          <AlertTriangle size={18} />
+          <h3 className="text-sm font-semibold text-zinc-200">
+            ワークフロー「{workflowName}」を削除しますか？
+          </h3>
+        </div>
+        
+        {isLoadingDetails ? (
+          <div className="flex items-center gap-2 text-zinc-500 text-xs py-4">
+            <RefreshCw size={12} className="animate-spin" />
+            関連データを確認中...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              以下のデータがすべて削除されます（取り消し不可）:
+            </p>
+            <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3 space-y-1.5 text-xs text-zinc-350 font-mono">
+              <div>・ノードマッピング: {mappingsCount} 件</div>
+              <div>・プロファイル: {presetsCount} 件</div>
+              <div>・生成履歴（スナップショット）: {snapshotsCount} 件</div>
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2">
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-400 select-none">
+            <input
+              type="checkbox"
+              checked={understood}
+              onChange={(e) => setUnderstood(e.target.checked)}
+              disabled={isPending || isLoadingDetails}
+              className="w-4 h-4 text-red-500 accent-red-500 border-zinc-800 rounded focus:ring-red-500/20"
+            />
+            <span>上記の内容を理解しました</span>
+          </label>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button 
+            type="button" 
+            onClick={onClose} 
+            disabled={isPending} 
+            className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+          >
+            キャンセル
+          </button>
+          <button 
+            type="button" 
+            onClick={onConfirm} 
+            disabled={isPending || isLoadingDetails || !understood}
+            className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all shadow-md"
+          >
+            {isPending && <RefreshCw size={12} className="animate-spin" />}
+            削除する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 

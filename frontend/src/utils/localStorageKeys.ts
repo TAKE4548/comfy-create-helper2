@@ -17,6 +17,10 @@ export const LS_KEYS = {
   CURRENT_PROMPT_ID: 'prompt-surgeon-current-prompt-id',
   SIDEBAR_COLLAPSED: 'prompt-surgeon-sidebar-collapsed',
   // New LocalStorage Keys:
+  SET_LONG_PRESS_MULTI_SELECT: 'prompt-surgeon-long-press-multi-select', // seconds
+  SET_LONG_PRESS_CARD_MOVE: 'prompt-surgeon-long-press-card-move', // seconds
+  LONG_PRESS_DELAY_MULTI_SELECT: 'prompt-surgeon-longpress-delay-multiselect', // seconds
+  LONG_PRESS_DELAY_CARD_MOVE: 'prompt-surgeon-longpress-delay-cardmove', // seconds
   SETS_PREFIX: 'prompt-surgeon-sets-wf-', // + workflowId
   ACTIVE_SET_PREFIX: 'prompt-surgeon-active-set-wf-', // + workflowId
 } as const;

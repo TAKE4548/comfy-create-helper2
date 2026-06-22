@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { LS_KEYS } from '../utils/localStorageKeys';
 
 export interface UseMultiSelectOptions<T extends { id: number }> {
   items: T[];
@@ -112,9 +113,12 @@ export function useMultiSelect<T extends { id: number }>({
       const start = (e: React.MouseEvent | React.TouchEvent) => {
         // Prevent trigger on right click
         if ('button' in e && e.button !== 0) return;
+        const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT);
+        const parsed = stored !== null ? parseFloat(stored) : NaN;
+        const delay = !isNaN(parsed) ? parsed * 1000 : 800;
         timer = setTimeout(() => {
           enterMultiSelectMode(id);
-        }, 500);
+        }, delay);
       };
 
       const clear = () => {

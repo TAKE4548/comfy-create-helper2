@@ -225,6 +225,54 @@ class TestSnapshotsAPI(unittest.TestCase):
             self.assertTrue(data["image_path"].startswith("/api/snapshots/images/"))
             self.assertTrue(data["image_path"].endswith(".png"))
 
+    def test_create_snapshot_with_duplicate_lora_different_roles(self):
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test_dup_lora.png",
+            "params": {},
+            "loras": [
+                {"lora_id": self.lora.id, "strength": 0.8, "role": "positive"},
+                {"lora_id": self.lora.id, "strength": -0.5, "role": "negative"}
+            ],
+            "tag_sets": []
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        snapshot_id = data["id"]
+
+        # 中間テーブルに2つのレコードが保存されていることを確認
+        snap_loras = self.db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).all()
+        self.assertEqual(len(snap_loras), 2)
+        roles = {sl.role: sl.strength for sl in snap_loras}
+        self.assertIn("positive", roles)
+        self.assertIn("negative", roles)
+        self.assertAlmostEqual(roles["positive"], 0.8)
+        self.assertAlmostEqual(roles["negative"], -0.5)
+
+    def test_create_snapshot_with_duplicate_tag_set_different_roles(self):
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test_dup_tag.png",
+            "params": {},
+            "loras": [],
+            "tag_sets": [
+                {"tag_set_id": self.tag_set.id, "role": "positive"},
+                {"tag_set_id": self.tag_set.id, "role": "negative"}
+            ]
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        snapshot_id = data["id"]
+
+        # 中間テーブルに2つのレコードが保存されていることを確認
+        snap_tag_sets = self.db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).all()
+        self.assertEqual(len(snap_tag_sets), 2)
+        roles = {st.role for st in snap_tag_sets}
+        self.assertIn("positive", roles)
+        self.assertIn("negative", roles)
+
 
 if __name__ == "__main__":
     unittest.main()

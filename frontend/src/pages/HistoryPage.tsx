@@ -40,6 +40,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { LS_KEYS } from '../utils/localStorageKeys'
 
 // Sortable wrapper component
 function SortableItem({
@@ -150,7 +151,11 @@ export function HistoryPage() {
       activationConstraint: isAnyMultiSelect
         ? { distance: 8 }
         : {
-            delay: 500,
+            delay: (() => {
+              const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE);
+              const parsed = stored !== null ? parseFloat(stored) : NaN;
+              return !isNaN(parsed) ? parsed * 1000 : 500;
+            })(),
             tolerance: 5
           }
     })

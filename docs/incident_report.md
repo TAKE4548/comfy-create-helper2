@@ -430,3 +430,199 @@ LoRA管理画面（`LoRAsPage.tsx`）およびタグセット管理画面（`Tag
 ### 5. 修正方針（概要）
 `useMasterMappingRows.ts` の `buildRows` において、`matched` の有無に関わらず `warning` (特に `duplicated` などの複数候補) が存在する場合は、その警告情報（`node_ids`）を `candidates` として正しく抽出し、表示ステータスも `warning.status`（`duplicated` など）を優先するように条件判定フローを整理します。
 具体的には、`warning`（警告）が存在する場合は先に警告として処理するか、または `matched` 処理の中で `warning` の情報（候補リストなど）をブレンドしてマージするように変更します。また、1:1マッチングの場合でも、ドロップダウンの選択肢にそのノードID自体を候補として含めるようにします。
+
+---
+
+## [NEW] REQ-065: 複数選択後のアクション（並び替え・一括編集・マッピングマスタ並び替え）が機能しない問題
+
+### 1. 現象・症状
+1. **並び替えグループ移動の挙動不審**: LoRAやTagセットページにおいて、複数選択（マルチセレクト）した状態でカードをドラッグ＆ドロップすると、ドロップ先によっては選択中の全カードがリストの最前面（インデックス 0）に勝手に移動してしまったり、挿入位置がずれたりする。
+2. **一括編集が反映されない**: 一括編集モーダルからカテゴリや数値を変更して適用ボタンを押しても、変更内容が保存されず画面に反映されない。
+3. **マッピングマスタの並び替えが不可**: マッピングマスタ管理（SettingsPage）において、複数選択モードに切り替えると、並び替えのドラッグ用グリップアイコンが消えてチェックボックスになり、ドラッグ自体が不可能になる。
+
+### 2. 再現手順
+
+#### 不具合1 (LoRA / Tagセットの並び替えのバグ)
+1. LoRAページまたはTagセットページを開く。
+2. カードを長押し、またはチェックボックスをクリックして複数枚選択する（例: ID 3 と ID 4）。
+3. 選択したカードのいずれか（例: ID 3）をドラッグして、同じく選択中である他のカード（例: ID 4）の上にドロップする。
+4. 選択されたカード群全体がリストの先頭（1番目）に移動してしまう。
+
+#### 不具合2 (一括編集の反映バグ)
+1. 複数選択モードでいくつかのアイテムを選択し、「一括編集」をクリックする。
+2. カテゴリを別のカテゴリに変更し、「適用する」をクリックする。
+3. ローディング表示後、モーダルは閉じるが、アイテムのカテゴリは更新されず元の状態のままになる。
+
+#### 不具合3 (マッピングマスタの並び替え制限バグ)
+1. 設定ページ (`SettingsPage`) を開く。
+2. マッピングマスタの行を長押しまたはCtrlキー等で複数選択モードにする。
+3. ドラッグ用のグリップアイコン (`GripVertical`) がチェックボックスに置き換わり、各行の並び替えアクションが不可能になる。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 不具合1の直接原因：`handleDragEnd` 内のインデックス判定の不備
+**該当ファイル**: 
+- [`LoRAsPage.tsx`](frontend/src/pages/LoRAsPage.tsx#L215-L223)
+- [`TagsPage.tsx`](frontend/src/pages/TagsPage.tsx#L196-L203)
+
+```typescript
+    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      // グループ移動
+      const selected = items.filter(i => selectedIds.has(i.id))
+      const nonSelected = items.filter(i => !selectedIds.has(i.id))
+      const insertAt = nonSelected.findIndex(i => i.id === over.id) + 1  // ⚠️ over.id が選択中の場合 -1 + 1 = 0 になる
+      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
+```
+
+- **エラーのメカニズム**:
+  - ドロップ先 `over.id` が同じく選択中のアイテムである場合、`over.id` は `nonSelected` 配列に含まれていません。
+  - そのため、`nonSelected.findIndex(...)` は `-1` を返し、`insertAt` は `-1 + 1 = 0` となります。結果として、選択されたグループ全体がリストの先頭（インデックス 0）に強制的に移動します。
+  - また、上方向への移動時と下方向への移動時で、挿入位置のオフセット（常に `+ 1`）が統一されているため、移動方向によって直感的ではない位置へ挿入される問題が生じています。
+
+#### 3-2. 不具合2の直接原因：一括編集APIリクエストのスキーマ不一致
+**該当ファイル**:
+- [`LoRAsPage.tsx`](frontend/src/pages/LoRAsPage.tsx#L163-L174)
+- [`TagsPage.tsx`](frontend/src/pages/TagsPage.tsx#L148-L159)
+- [`SettingsPage.tsx`](frontend/src/pages/SettingsPage.tsx#L148-L159)
+- バックエンドAPI: `PUT /api/loras/{lora_id}`, `PUT /api/tag-sets/{tag_set_id}`, `PUT /api/mapping-masters/{master_id}`
+
+- **エラーのメカニズム**:
+  - フロントエンドの一括編集処理は、変更があったプロパティ（例: `{"category_id": 3}`）のみを含む部分的なオブジェクト（`values`）を各 `update` APIに送信しています。
+  - しかし、バックエンドの `PUT` エンドポイントはフル更新用のスキーマ（`schemas.LoraCreate` や `schemas.MappingMasterCreate`）を要求しており、`model_name` や `role` などの必須フィールドがリクエストボディに含まれていないとバリデーションエラー（422 Unprocessable Entity）になります。
+  - 結果として、一括編集のAPIリクエストがエラーになり、データが更新されません。
+
+#### 3-3. 不具合3の直接原因：`isMultiSelectMode` 時のドラッグ機能およびUIの無効化
+**該当ファイル**:
+- [`SettingsComponents.tsx`](frontend/src/components/SettingsComponents.tsx#L220)
+- [`SettingsComponents.tsx`](frontend/src/components/SettingsComponents.tsx#L245-L259)
+
+- **エラーのメカニズム**:
+  - `SortableMasterRow` コンポーネント内の `useSortable` フックにおいて、`disabled: isMultiSelectMode` と指定されているため、複数選択中はドラッグが無効化されます。
+  - さらに、JSXレンダリング部分において、`isMultiSelectMode` の時はドラッグ用グリップボタン (`GripVertical`) を非表示にし、代わりに静的なチェックボックスを表示しています。グリップボタンにドラッグイベントのリスナー (`{...attributes} {...listeners}`) が紐づいているため、このボタンが消えることでドラッグ操作のトリガー自体が存在しなくなっています。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | `frontend/src/pages/LoRAsPage.tsx`<br>`frontend/src/pages/TagsPage.tsx`<br>`frontend/src/pages/SettingsPage.tsx`<br>`frontend/src/components/SettingsComponents.tsx` |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **並び替えロジックの改善**: `handleDragEnd` のグループ移動ロジックにおいて、ドロップ先が選択中のアイテムである場合は移動をスキップするか、直前・直後の非選択アイテムをターゲットにするようにロジックを修正。また、移動方向（上下）を判別して挿入先インデックスを正しく計算します。
+2. **一括更新リクエストの修正**: フロントエンドで既存のアイテム情報を取得し、一括編集の変更対象プロパティとマージした完全なオブジェクトを作成してから更新APIへ送信するように変更します。
+3. **マッピングマスタ並び替えの有効化**: `SortableMasterRow` の `useSortable` で `disabled: false` とし、複数選択モード時でもチェックボックスの横にグリップボタンを並べて配置することで、ドラッグ操作を可能にします。
+
+---
+
+## [NEW] REQ-067 (不具合修正): 同一LoRA/タグセットを複数役割に指定した際のスナップショット保存失敗バグ
+
+### 1. 現象・症状
+
+生成ページにおいて、同一のLoRAやタグセットを複数の役割（例: `positive` と `negative`）に適用して画像を生成し、その状態のスナップショットを保存しようとすると、サーバーエラー（500 Internal Server Error）が発生し、スナップショットの保存に失敗する。
+
+### 2. 再現手順
+
+1. 任意のワークフローを開く。
+2. 同一のLoRA（例: `test_lora.safetensors`）を、`positive` 役割と `negative` 役割の双方に適用し、値を調整する。
+3. 生成を実行する。
+4. 生成結果画面から「スナップショットを保存」モーダルを開き、保存を実行する。
+5. サーバー側で `IntegrityError`（UNIQUE制約違反）が発生し、保存処理全体が失敗する。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：データベースおよびORM定義のユニーク制約の不備
+**該当ファイル**:
+- [`backend/app/models.py`](../backend/app/models.py#L204-L228) L206, L220
+- SQLite テーブル `snapshot_loras`, `snapshot_tag_sets`
+
+`SnapshotLora` および `SnapshotTagSet` の各モデルおよびデータベース構造において、以下のユニーク制約が設定されています。
+
+```python
+# models.py
+class SnapshotLora(Base):
+    __tablename__ = "snapshot_loras"
+    __table_args__ = (UniqueConstraint("snapshot_id", "lora_id"),) # ⚠️ role が考慮されていない
+
+class SnapshotTagSet(Base):
+    __tablename__ = "snapshot_tag_sets"
+    __table_args__ = (UniqueConstraint("snapshot_id", "tag_set_id"),) # ⚠️ role が考慮されていない
+```
+
+- **エラーのメカニズム**:
+  - 先行のアップデートにより、`snapshot_loras` および `snapshot_tag_sets` テーブルには `role` カラム（`positive` / `negative` 等を識別）が追加されました。これにより、同一の LoRA/タグセット を異なる役割で複数適用することが仕様上許容されるようになりました。
+  - しかし、データベースのユニーク制約は `(snapshot_id, lora_id)` のままであるため、1つのスナップショットに対して同一の `lora_id` を持つ複数のレコード（例: `role='positive'` と `role='negative'`）を保存しようとすると、`sqlite3.IntegrityError: UNIQUE constraint failed: snapshot_loras.snapshot_id, snapshot_loras.lora_id` が発生します。
+  - これにより、トランザクション全体がロールバックされ、スナップショットの保存がエラーで失敗します。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`backend/app/models.py`](../backend/app/models.py#L204-L228) L206, L220<br>[`backend/app/main.py`](../backend/app/main.py#L40-L52) (マイグレーション処理) |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+
+1. **ユニーク制約の更新**: `models.py` の `SnapshotLora` および `SnapshotTagSet` における `UniqueConstraint` を、`role` を含めた複合制約に変更します。
+   - `UniqueConstraint("snapshot_id", "lora_id", "role")`
+   - `UniqueConstraint("snapshot_id", "tag_set_id", "role")`
+2. **マイグレーションの実施**: `backend/app/main.py` の `run_migrations` にて、既存の `snapshot_loras` および `snapshot_tag_sets` テーブルの古いユニーク制約を削除（またはテーブルの再作成・データ移行）し、新制約 `(snapshot_id, lora_id, role)` / `(snapshot_id, tag_set_id, role)` を持つテーブル構造へ移行させます。
+
+---
+
+## [NEW] REQ-069: LoraStackの編集がワークフローに反映されない（キャラLoRAが変更されない）不具合
+
+### 1. 現象・症状
+生成ページのパラメータ欄にて、`easy loraStack` などのLoRAスタック（`LoraStack`役割）に含まれるキャラLoRAを別のものに入れ替えたりウェイトを調整したりしても、生成された画像にはワークフローのアップロード時に設定されていた元キャラクターの特徴が強く残り、編集内容が反映されない。
+
+### 2. 再現手順
+1. `easy loraStack` ノードを含むワークフローをアップロードして選択する。
+2. `LoraStack` UI上で、LoRAモデルを別のキャラLoRAに入れ替え、生成ボタン（Generate）をクリックする。
+3. 生成された画像が、編集した新キャラではなく、アップロード当初のワークフローに登録されていたキャラクターのままで生成される。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：ComfyUIの `easy loraStack` ノードとパラメータインジェクションキーの不一致
+**該当ファイル**:
+- [`useWorkflowParams.ts`](../frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts#L18-L47) L18–L47, L148–L166
+- [`useGenerateAction.ts`](../frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts#L38-L56) L38–L56
+
+Zustandの `paramValues` やローカルストレージ内では、動的LoRAスタックのパラメータは以下のキーで管理されています。
+- `[role]_lora_count`
+- `[role]_lora_name_X`
+- `[role]_lora_wt_X`
+- `[role]_model_str_X`
+- `[role]_clip_str_X`
+
+しかし、ComfyUIのカスタムノード `easy loraStack`（および関連スタックノード）が受け取る実際の入力パラメータ名は以下のように定義されています。
+- `num_loras` (数)
+- `lora_X_name` (モデル名、Xは1〜10)
+- `lora_X_strength` (ウェイト)
+- `lora_X_model_strength` (モデル強度)
+- `lora_X_clip_strength` (CLIP強度)
+
+**不整合の挙動**:
+`useGenerateAction.ts` および `useWorkflowParams.ts` では、プロンプト送信時やデフォルト保存時に以下のようにJSONに書き込んでいます。
+```typescript
+inputs['lora_count'] = loraCount
+inputs[`lora_name_${idx}`] = ...
+inputs[`lora_wt_${idx}`] = ...
+inputs[`model_str_${idx}`] = ...
+inputs[`clip_str_${idx}`] = ...
+```
+これらは `easy loraStack` ノードが認識しないフィールド（`lora_count`, `lora_name_X`等）であるため、ComfyUI側で完全に無視されます。結果として、アップロード時のJSONにあらかじめ保存されていた `lora_1_name`, `lora_1_strength`（アップロード時のキャラLoRA設定）がそのまま適用され続けていました。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useWorkflowParams.ts`](../frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts)<br>[`useGenerateAction.ts`](../frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts) |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+`useWorkflowParams.ts` のパラメータ初期化・保存ロジック、および `useGenerateAction.ts` のインジェクションロジックにおいて、マッピング先のノードが `easy loraStack`（または `num_loras` や `lora_1_name` 等のキーを持つノード）である場合、正しいComfyUI側のキー名（`num_loras`, `lora_X_name`, `lora_X_strength`等）に対して値を書き込むように修正します。また、未使用のスロットについては自動的に名前に `'None'` を設定し、強度を `1.0` に初期化することで、不要なLoRAの残存を防ぎます。

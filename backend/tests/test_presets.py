@@ -82,7 +82,8 @@ class TestPresetsAPI(unittest.TestCase):
             applied_assets="{}",
             batch_size=1,
             seed_mode="fixed",
-            seed=123
+            seed=123,
+            sort_order=2,
         )
         p2 = models.WorkflowPreset(
             workflow_id=self.workflow.id,
@@ -91,7 +92,8 @@ class TestPresetsAPI(unittest.TestCase):
             applied_assets="{}",
             batch_size=2,
             seed_mode="random",
-            seed=-1
+            seed=-1,
+            sort_order=1,
         )
         self.db.add_all([p1, p2])
         self.db.commit()
@@ -101,7 +103,7 @@ class TestPresetsAPI(unittest.TestCase):
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2
-        assert data[0]["name"] == "Preset 2"  # ordered by desc id
+        assert data[0]["name"] == "Preset 2"  # ordered by sort_order asc (1 < 2)
         assert data[1]["name"] == "Preset 1"
 
         # List with filter
@@ -168,3 +170,45 @@ class TestPresetsAPI(unittest.TestCase):
         # Test deleting non-existent preset
         response_bad = self.client.delete("/api/workflow-presets/9999")
         assert response_bad.status_code == 404
+
+    def test_reorder_presets(self):
+        p1 = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset 1",
+            param_values="{}",
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="fixed",
+            seed=123,
+            sort_order=10
+        )
+        p2 = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset 2",
+            param_values="{}",
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="fixed",
+            seed=123,
+            sort_order=20
+        )
+        self.db.add_all([p1, p2])
+        self.db.commit()
+        self.db.refresh(p1)
+        self.db.refresh(p2)
+
+        # Reorder them (p2 first, then p1)
+        payload = {"ordered_ids": [p2.id, p1.id]}
+        response = self.client.put("/api/workflow-presets/reorder", json=payload)
+        assert response.status_code == 204
+
+        # List them and verify order
+        response_list = self.client.get(f"/api/workflow-presets?workflow_id={self.workflow.id}")
+        assert response_list.status_code == 200
+        data = response_list.json()
+        assert len(data) == 2
+        assert data[0]["id"] == p2.id
+        assert data[0]["sort_order"] == 0
+        assert data[1]["id"] == p1.id
+        assert data[1]["sort_order"] == 1
+

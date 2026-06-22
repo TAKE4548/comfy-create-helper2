@@ -27,6 +27,7 @@ import {
 } from '../components/LoraModals'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
+import { LS_KEYS } from '../utils/localStorageKeys'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
@@ -83,7 +84,11 @@ export function LoRAsPage() {
       activationConstraint: isMultiSelectMode
         ? { distance: 8 }
         : {
-            delay: 250,
+            delay: (() => {
+              const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE);
+              const parsed = stored !== null ? parseFloat(stored) : NaN;
+              return !isNaN(parsed) ? parsed * 1000 : 500;
+            })(),
             tolerance: 5,
           },
     })
@@ -163,7 +168,25 @@ export function LoRAsPage() {
   const bulkUpdateLoras = useMutation({
     mutationFn: async (values: any) => {
       await Promise.all(
-        [...selectedIds].map(id => lorasApi.update(id, values))
+        [...selectedIds].map(id => {
+          const lora = items.find(i => i.id === id)
+          if (!lora) return Promise.resolve()
+          const updatedLora = {
+            model_name: lora.model_name,
+            description: lora.description,
+            recommended_strength_min: lora.recommended_strength_min,
+            recommended_strength_max: lora.recommended_strength_max,
+            category_id: lora.category_id,
+            file_path: lora.file_path,
+            thumbnail_path: lora.thumbnail_path,
+            ...values,
+            trigger_word_sets: lora.trigger_word_sets.map((tws) => ({
+              name: tws.name,
+              words: tws.words,
+            })),
+          }
+          return lorasApi.update(id, updatedLora)
+        })
       )
     },
     onSuccess: () => {
@@ -213,10 +236,14 @@ export function LoRAsPage() {
     if (!over || active.id === over.id) return
 
     if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      if (selectedIds.has(over.id as number)) return
       // グループ移動
+      const activeIdx = items.findIndex(i => i.id === active.id)
+      const overIdx = items.findIndex(i => i.id === over.id)
       const selected = items.filter(i => selectedIds.has(i.id))
       const nonSelected = items.filter(i => !selectedIds.has(i.id))
-      const insertAt = nonSelected.findIndex(i => i.id === over.id) + 1
+      const overIdxInNonSelected = nonSelected.findIndex(i => i.id === over.id)
+      const insertAt = overIdx > activeIdx ? overIdxInNonSelected + 1 : overIdxInNonSelected
       const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
       setItems(newOrder)
       reorderLoras.mutate(newOrder.map(i => i.id))

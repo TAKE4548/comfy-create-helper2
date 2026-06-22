@@ -15,6 +15,7 @@ from app.schemas.workflow import (
     WorkflowSummary,
     WorkflowRead,
     WorkflowUpdate,
+    WorkflowCopyRequest,
     WorkflowScanRequest,
     ScanMatchedItem,
     ScanWarningItem,
@@ -70,13 +71,14 @@ from app.schemas.preset import (
     WorkflowPresetCreate,
     WorkflowPresetRead,
     WorkflowPresetUpdate,
+    WorkflowPresetReorder,
 )
 
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
     "WorkflowMappingRead", "WorkflowMappingCreate",
-    "WorkflowCreate", "WorkflowSummary", "WorkflowRead", "WorkflowUpdate",
+    "WorkflowCreate", "WorkflowSummary", "WorkflowRead", "WorkflowUpdate", "WorkflowCopyRequest",
     "WorkflowScanRequest", "ScanMatchedItem", "ScanWarningItem", "ScanResult",
     # Snapshot / Album
     "SnapshotLoraCreate", "SnapshotLoraRead",
@@ -94,5 +96,5 @@ __all__ = [
     "AuditRequest", "InterferenceItem", "VocabularyItem", "PhysicalResult", "AuditResult",
     "LlmPromptUpdate", "LlmPromptRead",
     # Preset
-    "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate",
+    "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate", "WorkflowPresetReorder",
 ]

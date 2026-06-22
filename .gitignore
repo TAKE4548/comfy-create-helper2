@@ -135,3 +135,9 @@ yarn-error.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# App databases and snapshots
+db/snapshots/
+*.db.bak
+*.db-journal
+db/prompt_surgeon.db

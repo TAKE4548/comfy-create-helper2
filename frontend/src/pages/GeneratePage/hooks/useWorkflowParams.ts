@@ -19,13 +19,13 @@ function getInitialParams(workflow: Workflow): Record<string, string> {
         const node = m.node_id ? wfJson[m.node_id] : null
         let loraCount = 0
         if (node?.inputs) {
-          const countInput = node.inputs['lora_count']
+          const countInput = node.inputs['num_loras'] !== undefined ? node.inputs['num_loras'] : node.inputs['lora_count']
           if (countInput !== undefined && !Array.isArray(countInput)) {
             loraCount = Number(countInput)
           } else {
-            // Find maximum index i (1 to 10) where inputs[`lora_name_${i}`] is defined
+            // Find maximum index i (1 to 10) where either lora_${i}_name or lora_name_${i} is defined
             for (let i = 1; i <= 10; i++) {
-              if (node.inputs[`lora_name_${i}`] !== undefined) {
+              if (node.inputs[`lora_${i}_name`] !== undefined || node.inputs[`lora_name_${i}`] !== undefined) {
                 loraCount = i
               }
             }
@@ -33,16 +33,16 @@ function getInitialParams(workflow: Workflow): Record<string, string> {
         }
         init[`${m.role}_lora_count`] = String(loraCount)
         for (let i = 1; i <= loraCount; i++) {
-          const nameInput = node?.inputs?.[`lora_name_${i}`]
+          const nameInput = node?.inputs?.[`lora_${i}_name`] !== undefined ? node.inputs[`lora_${i}_name`] : node?.inputs?.[`lora_name_${i}`]
           init[`${m.role}_lora_name_${i}`] = (nameInput !== undefined && !Array.isArray(nameInput)) ? String(nameInput) : ''
 
-          const wtInput = node?.inputs?.[`lora_wt_${i}`]
+          const wtInput = node?.inputs?.[`lora_${i}_strength`] !== undefined ? node.inputs[`lora_${i}_strength`] : node?.inputs?.[`lora_wt_${i}`]
           init[`${m.role}_lora_wt_${i}`] = (wtInput !== undefined && !Array.isArray(wtInput)) ? String(wtInput) : '0.0'
 
-          const modelStrInput = node?.inputs?.[`model_str_${i}`]
+          const modelStrInput = node?.inputs?.[`lora_${i}_model_strength`] !== undefined ? node.inputs[`lora_${i}_model_strength`] : node?.inputs?.[`model_str_${i}`]
           init[`${m.role}_model_str_${i}`] = (modelStrInput !== undefined && !Array.isArray(modelStrInput)) ? String(modelStrInput) : '1.0'
 
-          const clipStrInput = node?.inputs?.[`clip_str_${i}`]
+          const clipStrInput = node?.inputs?.[`lora_${i}_clip_strength`] !== undefined ? node.inputs[`lora_${i}_clip_strength`] : node?.inputs?.[`clip_str_${i}`]
           init[`${m.role}_clip_str_${i}`] = (clipStrInput !== undefined && !Array.isArray(clipStrInput)) ? String(clipStrInput) : '1.0'
         }
       } else {
@@ -147,23 +147,61 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
 
       if (m.input_type === 'lora_stack') {
         const loraCountVal = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
-        node.inputs['lora_count'] = loraCountVal
-        for (let i = 1; i <= loraCountVal; i++) {
-          node.inputs[`lora_name_${i}`] = paramValues[`${m.role}_lora_name_${i}`] || ''
-          node.inputs[`lora_wt_${i}`] = parseFloat(paramValues[`${m.role}_lora_wt_${i}`] || '0.0')
-          node.inputs[`model_str_${i}`] = parseFloat(paramValues[`${m.role}_model_str_${i}`] || '1.0')
-          node.inputs[`clip_str_${i}`] = parseFloat(paramValues[`${m.role}_clip_str_${i}`] || '1.0')
-        }
-        // Remove keys exceeding loraCountVal
-        Object.keys(node.inputs).forEach((k) => {
-          const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
-          if (match) {
-            const idx = parseInt(match[2], 10)
-            if (idx > loraCountVal) {
-              delete node.inputs[k]
+        const isEasyLoraStack =
+          node.inputs['num_loras'] !== undefined ||
+          node.inputs['lora_1_name'] !== undefined ||
+          node.class_type === 'easy loraStack'
+
+        if (isEasyLoraStack) {
+          node.inputs['num_loras'] = loraCountVal
+          for (let i = 1; i <= loraCountVal; i++) {
+            node.inputs[`lora_${i}_name`] = paramValues[`${m.role}_lora_name_${i}`] || 'None'
+            node.inputs[`lora_${i}_strength`] = parseFloat(paramValues[`${m.role}_lora_wt_${i}`] || '0.0')
+            node.inputs[`lora_${i}_model_strength`] = parseFloat(paramValues[`${m.role}_model_str_${i}`] || '1.0')
+            node.inputs[`lora_${i}_clip_strength`] = parseFloat(paramValues[`${m.role}_clip_str_${i}`] || '1.0')
+          }
+          // Reset unused slots
+          for (let i = loraCountVal + 1; i <= 10; i++) {
+            if (node.inputs[`lora_${i}_name`] !== undefined) {
+              node.inputs[`lora_${i}_name`] = 'None'
+              node.inputs[`lora_${i}_strength`] = 1.0
+              node.inputs[`lora_${i}_model_strength`] = 1.0
+              node.inputs[`lora_${i}_clip_strength`] = 1.0
             }
           }
-        })
+          // Clean up standard keys
+          delete node.inputs['lora_count']
+          Object.keys(node.inputs).forEach((k) => {
+            if (k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)) {
+              delete node.inputs[k]
+            }
+          })
+        } else {
+          node.inputs['lora_count'] = loraCountVal
+          for (let i = 1; i <= loraCountVal; i++) {
+            node.inputs[`lora_name_${i}`] = paramValues[`${m.role}_lora_name_${i}`] || ''
+            node.inputs[`lora_wt_${i}`] = parseFloat(paramValues[`${m.role}_lora_wt_${i}`] || '0.0')
+            node.inputs[`model_str_${i}`] = parseFloat(paramValues[`${m.role}_model_str_${i}`] || '1.0')
+            node.inputs[`clip_str_${i}`] = parseFloat(paramValues[`${m.role}_clip_str_${i}`] || '1.0')
+          }
+          // Remove keys exceeding loraCountVal
+          Object.keys(node.inputs).forEach((k) => {
+            const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
+            if (match) {
+              const idx = parseInt(match[2], 10)
+              if (idx > loraCountVal) {
+                delete node.inputs[k]
+              }
+            }
+          })
+          // Clean up easy loraStack keys
+          delete node.inputs['num_loras']
+          Object.keys(node.inputs).forEach((k) => {
+            if (k.match(/^lora_(\d+)_(name|strength|model_strength|clip_strength)$/)) {
+              delete node.inputs[k]
+            }
+          })
+        }
       } else {
         let val: string | number = ''
         if (m.input_type === 'int') {

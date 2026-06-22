@@ -178,4 +178,74 @@ describe('useGenerateAction', () => {
     expect(nodeInputs['lora_name_3']).toBeUndefined();
     expect(nodeInputs['lora_wt_3']).toBeUndefined();
   });
+
+  it('should inject easy lora_stack params and reset unused slots', async () => {
+    const easyLoraStackWorkflow: Workflow = {
+      id: 3,
+      name: 'Easy Lora Stack Workflow',
+      created_at: '',
+      json_body: {
+        '16': {
+          class_type: 'easy loraStack',
+          inputs: {
+            num_loras: 3,
+            lora_1_name: 'test_a.safetensors',
+            lora_1_strength: 0.8,
+            lora_1_model_strength: 1.0,
+            lora_1_clip_strength: 1.0,
+            lora_2_name: 'test_b.safetensors',
+            lora_2_strength: 0.5,
+            lora_2_model_strength: 1.0,
+            lora_2_clip_strength: 1.0,
+            lora_3_name: 'test_c.safetensors',
+            lora_3_strength: 0.9,
+            lora_3_model_strength: 1.0,
+            lora_3_clip_strength: 1.0,
+            // Mixed standard keys to test cleanup
+            lora_count: 3,
+            lora_name_1: 'test_a.safetensors',
+          },
+        },
+      },
+      mappings: [
+        {
+          id: 3,
+          master_id: 3,
+          node_id: '16',
+          role: 'Lora_Stack',
+          param_name: 'lora_stack',
+          input_type: 'lora_stack',
+          display_name: 'LoRA Stack Node',
+        },
+      ],
+    };
+
+    mockStore.paramValues = {
+      'Lora_Stack_lora_count': '2',
+      'Lora_Stack_lora_name_1': 'new_a.safetensors',
+      'Lora_Stack_lora_wt_1': '0.7',
+      'Lora_Stack_model_str_1': '1.0',
+      'Lora_Stack_clip_str_1': '1.0',
+      'Lora_Stack_lora_name_2': 'new_b.safetensors',
+      'Lora_Stack_lora_wt_2': '0.6',
+      'Lora_Stack_model_str_2': '1.0',
+      'Lora_Stack_clip_str_2': '1.0',
+    };
+
+    const { handleGenerate } = useGenerateAction(easyLoraStackWorkflow);
+    await handleGenerate();
+
+    const nodeInputs = mockStore.queuePrompt.mock.calls[0][0]['16'].inputs;
+    expect(nodeInputs['num_loras']).toBe(2);
+    expect(nodeInputs['lora_1_name']).toBe('new_a.safetensors');
+    expect(nodeInputs['lora_1_strength']).toBe(0.7);
+    expect(nodeInputs['lora_2_name']).toBe('new_b.safetensors');
+    expect(nodeInputs['lora_2_strength']).toBe(0.6);
+    // Unused slots reset to None/1.0
+    expect(nodeInputs['lora_3_name']).toBe('None');
+    expect(nodeInputs['lora_3_strength']).toBe(1.0);
+    // Standard keys cleaned up
+    expect(nodeInputs['lora_count']).toBeUndefined();
+    expect(nodeInputs['lora_name_1']).toBeUndefined();
+  });
 });

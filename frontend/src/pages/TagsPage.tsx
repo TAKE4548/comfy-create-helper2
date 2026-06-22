@@ -27,6 +27,7 @@ import {
 } from '../components/TagSetModals'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
+import { LS_KEYS } from '../utils/localStorageKeys'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
@@ -74,7 +75,11 @@ export function TagsPage() {
       activationConstraint: isMultiSelectMode
         ? { distance: 8 }
         : {
-            delay: 250,
+            delay: (() => {
+              const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE);
+              const parsed = stored !== null ? parseFloat(stored) : NaN;
+              return !isNaN(parsed) ? parsed * 1000 : 500;
+            })(),
             tolerance: 5,
           },
     })
@@ -148,7 +153,19 @@ export function TagsPage() {
   const bulkUpdateTagSets = useMutation({
     mutationFn: async (values: any) => {
       await Promise.all(
-        [...selectedIds].map(id => tagSetsApi.update(id, values))
+        [...selectedIds].map(id => {
+          const tagSet = items.find(i => i.id === id)
+          if (!tagSet) return Promise.resolve()
+          const updatedTs = {
+            name: tagSet.name,
+            description: tagSet.description,
+            category_id: tagSet.category_id,
+            tags: tagSet.tags,
+            thumbnail_path: tagSet.thumbnail_path,
+            ...values
+          }
+          return tagSetsApi.update(id, updatedTs)
+        })
       )
     },
     onSuccess: () => {
@@ -194,10 +211,14 @@ export function TagsPage() {
     if (!over || active.id === over.id) return
 
     if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
+      if (selectedIds.has(over.id as number)) return
       // グループ移動
+      const activeIdx = items.findIndex(i => i.id === active.id)
+      const overIdx = items.findIndex(i => i.id === over.id)
       const selected = items.filter(i => selectedIds.has(i.id))
       const nonSelected = items.filter(i => !selectedIds.has(i.id))
-      const insertAt = nonSelected.findIndex(i => i.id === over.id) + 1
+      const overIdxInNonSelected = nonSelected.findIndex(i => i.id === over.id)
+      const insertAt = overIdx > activeIdx ? overIdxInNonSelected + 1 : overIdxInNonSelected
       const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
       setItems(newOrder)
       reorderTagSets.mutate(newOrder.map(i => i.id))

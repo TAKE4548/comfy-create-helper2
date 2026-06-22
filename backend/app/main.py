@@ -50,6 +50,67 @@ def run_migrations():
             if "role" not in columns:
                 conn.execute(sa.text("ALTER TABLE snapshot_tag_sets ADD COLUMN role VARCHAR NOT NULL DEFAULT 'positive'"))
                 logger.info("Migrated: Added 'role' column to 'snapshot_tag_sets' table.")
+
+        # Migrate unique constraint for snapshot_loras if old exists
+        if "snapshot_loras" in inspector.get_table_names():
+            constraints = inspector.get_unique_constraints("snapshot_loras")
+            has_old_constraint = False
+            for c in constraints:
+                cols = c.get("column_names", [])
+                if len(cols) == 2 and "snapshot_id" in cols and "lora_id" in cols:
+                    has_old_constraint = True
+                    break
+            if has_old_constraint:
+                logger.info("Migrating snapshot_loras unique constraint to include role...")
+                conn.execute(sa.text("""
+                    CREATE TABLE snapshot_loras_new (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        snapshot_id INTEGER NOT NULL,
+                        lora_id INTEGER NOT NULL,
+                        strength FLOAT NOT NULL,
+                        role VARCHAR NOT NULL DEFAULT 'positive',
+                        UNIQUE (snapshot_id, lora_id, role),
+                        FOREIGN KEY(snapshot_id) REFERENCES snapshots (id) ON DELETE CASCADE,
+                        FOREIGN KEY(lora_id) REFERENCES loras (id) ON DELETE CASCADE
+                    );
+                """))
+                conn.execute(sa.text("""
+                    INSERT INTO snapshot_loras_new (id, snapshot_id, lora_id, strength, role)
+                    SELECT id, snapshot_id, lora_id, strength, role FROM snapshot_loras;
+                """))
+                conn.execute(sa.text("DROP TABLE snapshot_loras;"))
+                conn.execute(sa.text("ALTER TABLE snapshot_loras_new RENAME TO snapshot_loras;"))
+                logger.info("Migrated snapshot_loras unique constraint.")
+
+        # Migrate unique constraint for snapshot_tag_sets if old exists
+        if "snapshot_tag_sets" in inspector.get_table_names():
+            constraints = inspector.get_unique_constraints("snapshot_tag_sets")
+            has_old_constraint = False
+            for c in constraints:
+                cols = c.get("column_names", [])
+                if len(cols) == 2 and "snapshot_id" in cols and "tag_set_id" in cols:
+                    has_old_constraint = True
+                    break
+            if has_old_constraint:
+                logger.info("Migrating snapshot_tag_sets unique constraint to include role...")
+                conn.execute(sa.text("""
+                    CREATE TABLE snapshot_tag_sets_new (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        snapshot_id INTEGER NOT NULL,
+                        tag_set_id INTEGER NOT NULL,
+                        role VARCHAR NOT NULL DEFAULT 'positive',
+                        UNIQUE (snapshot_id, tag_set_id, role),
+                        FOREIGN KEY(snapshot_id) REFERENCES snapshots (id) ON DELETE CASCADE,
+                        FOREIGN KEY(tag_set_id) REFERENCES tag_sets (id) ON DELETE CASCADE
+                    );
+                """))
+                conn.execute(sa.text("""
+                    INSERT INTO snapshot_tag_sets_new (id, snapshot_id, tag_set_id, role)
+                    SELECT id, snapshot_id, tag_set_id, role FROM snapshot_tag_sets;
+                """))
+                conn.execute(sa.text("DROP TABLE snapshot_tag_sets;"))
+                conn.execute(sa.text("ALTER TABLE snapshot_tag_sets_new RENAME TO snapshot_tag_sets;"))
+                logger.info("Migrated snapshot_tag_sets unique constraint.")
                 
         # Add thumbnail_path to tag_sets if not exists
         if "tag_sets" in inspector.get_table_names():

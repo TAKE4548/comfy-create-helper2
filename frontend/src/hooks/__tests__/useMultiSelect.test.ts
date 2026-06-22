@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMultiSelect } from '../useMultiSelect';
+import { LS_KEYS } from '../../utils/localStorageKeys';
 
 describe('useMultiSelect', () => {
   const items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }];
 
   beforeEach(() => {
     vi.useFakeTimers();
+    localStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    localStorage.clear();
   });
 
   it('should initialize with default values', () => {
@@ -120,7 +123,7 @@ describe('useMultiSelect', () => {
     expect(result.current.selectedIds.size).toBe(0);
   });
 
-  it('should enter multi-select mode on 500ms long press', () => {
+  it('should enter multi-select mode on 800ms long press (default)', () => {
     const { result } = renderHook(() => useMultiSelect({ items }));
     const handlers = result.current.getLongPressHandlers(3);
 
@@ -128,13 +131,13 @@ describe('useMultiSelect', () => {
       handlers.onMouseDown({ button: 0 } as unknown as React.MouseEvent);
     });
 
-    // Advance time by 499ms
+    // Advance time by 799ms — should NOT trigger
     act(() => {
-      vi.advanceTimersByTime(499);
+      vi.advanceTimersByTime(799);
     });
     expect(result.current.isMultiSelectMode).toBe(false);
 
-    // Advance time to 500ms
+    // Advance time to 800ms — should trigger
     act(() => {
       vi.advanceTimersByTime(1);
     });
@@ -156,8 +159,56 @@ describe('useMultiSelect', () => {
     });
 
     act(() => {
-      vi.advanceTimersByTime(300);
+      vi.advanceTimersByTime(600);
     });
     expect(result.current.isMultiSelectMode).toBe(false);
+  });
+
+  it('should use custom long press delay from localStorage', () => {
+    // Set 0.3 seconds (300ms) in localStorage
+    localStorage.setItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT, '0.3');
+
+    const { result } = renderHook(() => useMultiSelect({ items }));
+    const handlers = result.current.getLongPressHandlers(3);
+
+    act(() => {
+      handlers.onMouseDown({ button: 0 } as unknown as React.MouseEvent);
+    });
+
+    // Advance time by 299ms — should NOT trigger
+    act(() => {
+      vi.advanceTimersByTime(299);
+    });
+    expect(result.current.isMultiSelectMode).toBe(false);
+
+    // Advance time to 300ms — should trigger
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.isMultiSelectMode).toBe(true);
+    expect(result.current.isSelected(3)).toBe(true);
+  });
+
+  it('should fall back to 800ms default when localStorage value is invalid', () => {
+    localStorage.setItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT, 'abc');
+
+    const { result } = renderHook(() => useMultiSelect({ items }));
+    const handlers = result.current.getLongPressHandlers(3);
+
+    act(() => {
+      handlers.onMouseDown({ button: 0 } as unknown as React.MouseEvent);
+    });
+
+    // Should not trigger before 800ms
+    act(() => {
+      vi.advanceTimersByTime(799);
+    });
+    expect(result.current.isMultiSelectMode).toBe(false);
+
+    // Should trigger at 800ms
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.isMultiSelectMode).toBe(true);
   });
 });
