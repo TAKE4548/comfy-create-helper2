@@ -150,7 +150,7 @@ export function HistoryModalPreview({
   const seed = getParamValue(['seed'])
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col" onClick={onClose}>
       {/* Header with Close Button */}
       <div className="relative h-12 flex items-center justify-end px-4" onClick={(e) => e.stopPropagation()}>
         <button
@@ -164,7 +164,7 @@ export function HistoryModalPreview({
 
       {/* Image Display Area */}
       <div
-        className={`w-full flex items-center justify-center bg-black/40 relative cursor-pointer ${
+        className={`w-full flex items-center justify-center bg-black/40 relative cursor-pointer min-h-0 ${
           viewMode === 'full' ? 'flex-1' : ''
         }`}
         style={viewMode === 'info' ? { height: '60vh' } : undefined}

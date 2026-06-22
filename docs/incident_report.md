@@ -626,3 +626,49 @@ inputs[`clip_str_${idx}`] = ...
 
 ### 5. 修正方針（概要）
 `useWorkflowParams.ts` のパラメータ初期化・保存ロジック、および `useGenerateAction.ts` のインジェクションロジックにおいて、マッピング先のノードが `easy loraStack`（または `num_loras` や `lora_1_name` 等のキーを持つノード）である場合、正しいComfyUI側のキー名（`num_loras`, `lora_X_name`, `lora_X_strength`等）に対して値を書き込むように修正します。また、未使用のスロットについては自動的に名前に `'None'` を設定し、強度を `1.0` に初期化することで、不要なLoRAの残存を防ぎます。
+
+---
+
+## [NEW] REQ-070: モバイル・タブレットでの全画面プレビュー時の画像縮小およびナビゲーションバーのオーバーレイ問題
+
+### 1. 現象・症状
+1. スマートフォンやタブレット等のモバイル端末において、生成履歴やプレビュー画像を全画面で表示（全画面プレビュー）した際、画像の縦横比を保ったまま画面内に収まる（長辺基準でのスケール調整）ように表示されず、画面幅に合わせて画像が横いっぱいに拡大され、縦長の画像などで上下が見切れて全体が表示されない。
+2. モバイル表示時、画面下部にレスポンシブ配置されるボトムナビゲーションバー（モバイル用サイドバーの代替）が、全画面プレビューモーダルの前面に重なって表示（オーバーレイ）されてしまう。
+
+### 2. 再現手順
+1. スマートフォンまたはタブレット端末（あるいはブラウザのデベロッパーツールでモバイル表示モードにする）でアプリを開く。
+2. 生成履歴などの画像をタップして全画面プレビューを開く。
+3. 縦に長い画像の場合、画像の幅が画面幅に強制的に合わせられ、上下がはみ出して見えなくなる。また、画面下部にボトムナビゲーションバーがプレビューを覆う形で表示されたままになる。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 画像が長辺基準で縮小されない原因（Flexboxのレイアウト挙動）
+**該当ファイル**: [`frontend/src/components/HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx) L166–L179
+
+全画面プレビューの親要素は `fixed inset-0 flex flex-col` であり、ビューポート全体の高さを持ちます。
+その中の画像を表示するコンテナー（L166）は `viewMode === 'full'` の場合に `flex-1` が適用されますが、`min-height`（`min-h-0`）が明示的に設定されていません。
+CSSの仕様上、flexコンテナーの子要素（flexアイテム）はデフォルトで `min-height: auto` が設定されます。このため、子要素である `<img>` の元のサイズやアスペクト比計算に基づいてコンテナー自体の高さがビューポートを突き抜けて自動的に引き伸ばされてしまいます。
+結果として、画像（`<img>`）に設定されている `max-h-full`（親コンテナーの高さに対する最大値）が効かなくなり、画像の幅が優先され、画面外へはみ出します。
+
+#### 3-2. ボトムナビゲーションバーがプレビューにオーバーレイする原因（Z-Indexの競合）
+**該当ファイル**:
+- [`frontend/src/components/layout/AppShell.tsx`](../frontend/src/components/layout/AppShell.tsx) L115
+- [`frontend/src/components/HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx) L153
+
+- モバイル用ボトムナビゲーション (`AppShell.tsx` 内) のクラス指定: `z-50`
+- 全画面プレビューモーダル (`HistoryModalPreview.tsx` 内) のクラス指定: `z-50`
+
+両要素ともに `z-50` が適用されています。HTMLドキュメント構造において、ナビゲーションバーはメインコンテンツ（`Outlet`）の外側に配置され、DOMの後半で描画されるため、同一 z-index の場合はナビゲーションバーがプレビューモーダルの前面にレンダリングされます。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`frontend/src/components/HistoryModalPreview.tsx`](../frontend/src/components/HistoryModalPreview.tsx#L153) L153, L166 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **画像の長辺基準スケーリング**: `HistoryModalPreview.tsx` 内の画像表示領域コンテナー（L166）のクラスに `min-h-0` を追加します。これにより、コンテナーの高さが画面外にはみ出して拡張されるのを防ぎ、`<img>` の `max-h-full object-contain` が想定通り動作し、長辺基準でのフィット表示が行われます。
+2. **z-indexの修正**: `HistoryModalPreview.tsx` の最外周 `div`（L153）の z-index を `z-50` から `z-[60]` もしくはそれ以上に引き上げ、モバイルナビゲーションバー（`z-50`）よりも前面に描画されるようにします。
