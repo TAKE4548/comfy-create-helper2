@@ -751,3 +751,47 @@ CSSの仕様上、flexコンテナーの子要素（flexアイテム）はデフ
    - `start` (MouseDown/TouchStart) 時に開始座標（`clientX`, `clientY`）を記録します。
    - 移動イベント発生時に現在の座標と開始座標の距離（ユークリッド距離など）を計算し、軽微な手ブレ防止用しきい値（例: 10px）を超えて移動した場合は、長押しではない（ドラッグ操作である）と判定して `timer` をクリアします。
    - タッチデバイスでのスクロールやドラッグ操作も同様に、一定以上の移動を検知したらタイマーをクリアします。
+
+---
+
+## [NEW] スナップショット保存時の LoRA・タグセットのメタデータ不整合問題
+
+### 1. 現象・症状
+- Add Asset で LoRA やタグセットを適用して画像生成を行った後、スナップショットとして保存した際、スナップショットに紐づくアセット（LoRA/タグセット）のメタデータが、実際にその画像を生成した時のものではなく、他のアセット（ずれた状態）になってしまう、あるいは登録されない場合がある。
+- 特に、複数のプロファイルやジョブ（Multi-Set 連続生成など）を切り替えて連続生成を行った場合に頻発する。
+
+### 2. 再現手順
+1. 生成画面（`GeneratePage`）で、「Set 1」に LoRA A と タグセット A を適用する。
+2. 「Set 2」に LoRA B と タグセット B を適用する。
+3. 「Set 1」と「Set 2」の両方にチェックを入れて一括生成（`handleGenerateSets`）を行う。
+4. 生成中または生成完了後に、UI 上のチェック状態やアクティブな Set（ストア内の `appliedAssets` や `paramValues`）を変更する（例: Set 2 を選択状態にする）。
+5. 「Set 1」の生成結果のサムネイルを選択し、スナップショットとして保存する。
+6. 保存されたスナップショットのメタデータを確認すると、「Set 1」の LoRA A / タグセット A ではなく、「Set 2」の LoRA B / タグセット B（または現在 UI で選択されているアセット）が紐づいている。
+
+### 3. 原因究明 (Root Cause Isolation)
+- **影響を受けるソースコード**:
+  - [`frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts`](../frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts#L11-L52) L11, L22-52
+  - [`frontend/src/store/useGenerationStore.ts`](../frontend/src/store/useGenerationStore.ts#L442-L465) L442-465, L748-768
+- **根本原因**:
+  - スナップショットを保存する際、`useSnapshotActions.ts` の `saveSnapshot` ミューテーションは、**保存対象の画像が生成された時点のメタデータではなく、Zustand ストアの現在の状態（`appliedAssets`, `paramValues`）を参照している。**
+  - そのため、一括生成時やパラメータ変更後に過去のサムネイルを選択して保存しようとすると、その画像生成時に使われたアセット情報ではなく、**現在 UI でアクティブなアセット情報**が API に送信され、メタデータがずれたり、消えたりする。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useSnapshotActions.ts`](../frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts) L11, L22-L52<br>[`useGenerationStore.ts`](../frontend/src/store/useGenerationStore.ts) L442-L465, L748-L768 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **生成メタデータの保存**:
+   - ComfyUI のジョブキュー送信時（`queuePrompt`）に、その生成ジョブ（`prompt_id`）に適用されていた `paramValues` と `appliedAssets` をキャッシュ（例: `localStorage` 内に `prompt-surgeon-meta-{promptId}` などのキーで保存）します。
+   - 生成結果の画像 URL にクエリパラメータとして `t={promptId}` を埋め込むことで、どの画像がどの `promptId` で生成されたかを一意に特定可能にします（現在 websocket の `executed` イベント時は `t={Date.now()}` となっているため、これを `t={promptId}` に統一します）。
+2. **スナップショット保存時のメタデータ復元**:
+   - `saveSnapshot` ミューテーション実行時、対象画像の URL から `promptId`（クエリパラメータ `t`）を抽出します。
+   - キャッシュが存在する場合はその `promptId` に紐づく `paramValues` と `appliedAssets` を使用して API に送信します。
+   - キャッシュが存在しない場合は、従来通り現在の UI ストア状態をフォールバックとして使用します。
+3. **キャッシュのクリーンアップ**:
+   - `localStorage` が肥大化しないよう、`queuePrompt` 時に古いキャッシュメタデータを自動で削除するプルーニング機構（最大200件など）を実装します。

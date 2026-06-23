@@ -94,3 +94,92 @@ describe('useGenerationStore REQ-061 batch job registration, progress, and cance
     expect(state.isGenerating).toBe(false);
   });
 });
+
+describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('should cache metadata and prune old cache when exceeding 200 items', async () => {
+    // Mock global fetch for ComfyUI prompt API and fetchQueue API
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'mock-prompt-id' }),
+        });
+      }
+      if (url.endsWith('/queue')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    // Call queuePrompt with metadata
+    const promptId = await useGenerationStore.getState().queuePrompt({ nodes: {} }, {
+      paramValues: { test: 'value' },
+      appliedAssets: {
+        role1: [{ id: 'lora-1', type: 'lora', assetId: 1, name: 'Lora1', enabled: true, tags: ['tag1'] }]
+      }
+    });
+
+    expect(promptId).toBe('mock-prompt-id');
+    const cached = localStorage.getItem('prompt-surgeon-meta-mock-prompt-id');
+    expect(cached).toBeDefined();
+    const parsed = JSON.parse(cached || '{}');
+    expect(parsed.paramValues).toEqual({ test: 'value' });
+    expect(parsed.appliedAssets.role1[0].name).toBe('Lora1');
+
+    // Test pruning: insert 205 mock metadata items into localStorage
+    localStorage.clear();
+    for (let i = 1; i <= 205; i++) {
+      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({
+        paramValues: {},
+        appliedAssets: {},
+        timestamp: i // Monotonically increasing timestamps
+      }));
+    }
+
+    // Prepare mock fetch to return prompt_id: id-206
+    const mockFetchPrune = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'id-206' }),
+        });
+      }
+      if (url.endsWith('/queue')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetchPrune;
+
+    // Trigger queuePrompt which will prune the items
+    await useGenerationStore.getState().queuePrompt({ nodes: {} });
+
+    // Check that we have exactly 200 items starting with 'prompt-surgeon-meta-'
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'));
+    expect(keys.length).toBe(200);
+
+    // Oldest items (like id-1, id-2, etc.) should have been removed
+    // Since we had 205, plus the new one 'id-206' makes 206, so we delete 6 oldest items (id-1 to id-6)
+    for (let i = 1; i <= 6; i++) {
+      expect(localStorage.getItem(`prompt-surgeon-meta-id-${i}`)).toBeNull();
+    }
+    // id-7 and onwards should remain
+    expect(localStorage.getItem('prompt-surgeon-meta-id-7')).not.toBeNull();
+    expect(localStorage.getItem('prompt-surgeon-meta-id-206')).not.toBeNull();
+  });
+});

@@ -15,7 +15,8 @@ export function useGenerateAction(workflow: Workflow | undefined) {
     seed: currentSeed,
     sets,
     queuePrompt,
-    setActiveBatch
+    setActiveBatch,
+    appliedAssets
   } = useGenerationStore()
 
   const injectParams = (
@@ -136,7 +137,7 @@ export function useGenerateAction(workflow: Workflow | undefined) {
     for (let i = 0; i < currentBatchSize; i++) {
       const wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
       injectParams(wfJson, currentParamValues, currentSeedMode, currentSeed, i)
-      await queuePrompt(wfJson)
+      await queuePrompt(wfJson, { paramValues: currentParamValues, appliedAssets })
     }
   }
 
@@ -155,7 +156,7 @@ export function useGenerateAction(workflow: Workflow | undefined) {
         injectParams(wfJson, setItem.paramValues, setItem.seedMode, setItem.seed, i)
         
         try {
-          const promptId = await queuePrompt(wfJson)
+          const promptId = await queuePrompt(wfJson, { paramValues: setItem.paramValues, appliedAssets: setItem.appliedAssets })
           if (promptId) {
             mappings[promptId] = setItem.name
             newBatch.push({

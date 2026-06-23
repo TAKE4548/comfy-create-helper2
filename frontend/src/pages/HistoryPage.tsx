@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import JSZip from 'jszip'
 import {
   Clock,
   Trash2,
@@ -86,6 +87,98 @@ function SortableItem({
 export function HistoryPage() {
   const qc = useQueryClient()
   const [view, setView] = useState<'snapshots' | 'albums'>('snapshots')
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleBulkDownload = async (snapshotIds: number[], zipFilename: string, isAlbum = false) => {
+    setIsDownloading(true)
+    try {
+      const zip = new JSZip()
+      const usedNames = new Set<string>()
+
+      const getUniqueFilename = (originalName: string, usedNames: Set<string>) => {
+        if (!usedNames.has(originalName)) {
+          usedNames.add(originalName);
+          return originalName;
+        }
+        const extIndex = originalName.lastIndexOf('.');
+        const base = extIndex !== -1 ? originalName.slice(0, extIndex) : originalName;
+        const ext = extIndex !== -1 ? originalName.slice(extIndex) : '';
+        let counter = 1;
+        let newName = `${base}_${counter}${ext}`;
+        while (usedNames.has(newName)) {
+          counter++;
+          newName = `${base}_${counter}${ext}`;
+        }
+        usedNames.add(newName);
+        return newName;
+      };
+
+      const getFilenameFromPath = (imagePath: string, snapshotId: number) => {
+        const parts = imagePath.split('/');
+        const lastPart = parts[parts.length - 1];
+        if (lastPart === 'image' || !lastPart.includes('.')) {
+          return `snapshot_${snapshotId}.png`;
+        }
+        return lastPart;
+      };
+
+      let orderedIds = [...snapshotIds]
+      if (isAlbum) {
+        // Sort snapshotIds to match their appearance order in sortedAlbumItems
+        const idToIndex = new Map(sortedAlbumItems.map((item, idx) => [item.snapshot_id, idx]))
+        orderedIds.sort((a, b) => (idToIndex.get(a) ?? 0) - (idToIndex.get(b) ?? 0))
+      }
+
+      let fileIndex = 1
+      for (const id of orderedIds) {
+        let imgPath: string | null = null
+        const snap = snapshots?.find(s => s.id === id)
+        if (snap) {
+          imgPath = snap.image_path
+        } else if (currentAlbum) {
+          const albumItem = currentAlbum.items.find(item => item.snapshot_id === id)
+          if (albumItem) {
+            imgPath = albumItem.image_path
+          }
+        }
+
+        if (!imgPath) continue
+
+        try {
+          const response = await fetch(imgPath)
+          if (!response.ok) {
+            console.error(`Failed to fetch image for snapshot ${id}: ${response.statusText}`)
+            continue
+          }
+          const blob = await response.blob()
+          let originalName = getFilenameFromPath(imgPath, id)
+          if (isAlbum) {
+            originalName = `${String(fileIndex).padStart(3, '0')}_${originalName}`
+            fileIndex++
+          }
+          const uniqueName = getUniqueFilename(originalName, usedNames)
+          zip.file(uniqueName, blob)
+        } catch (e) {
+          console.error(`Error downloading snapshot ${id}:`, e)
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = zipFilename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      alert('Failed to create ZIP package: ' + error)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
   const [isAddToAlbumModalOpen, setIsAddToAlbumModalOpen] = useState(false)
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
@@ -394,8 +487,19 @@ export function HistoryPage() {
               actions={
                 <div className="flex gap-2">
                   <button
+                    id="bulk-download-btn"
+                    onClick={() => {
+                      handleBulkDownload([...albumItemMultiSelect.selectedIds], `${currentAlbum?.name || 'album'}.zip`, true)
+                    }}
+                    disabled={albumItemMultiSelect.selectedIds.size === 0 || isDownloading}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface border border-[rgba(255,255,255,0.08)] text-zinc-300 font-medium disabled:opacity-50 transition-all flex items-center gap-1"
+                  >
+                    <Download size={12} />
+                    {isDownloading ? 'ダウンロード中...' : '一括ダウンロード'}
+                  </button>
+                  <button
                     id="bulk-delete-confirm-btn"
-                    disabled={albumItemMultiSelect.selectedIds.size === 0 || deleteAlbumItems.isPending}
+                    disabled={albumItemMultiSelect.selectedIds.size === 0 || deleteAlbumItems.isPending || isDownloading}
                     onClick={() => {
                       if (confirm(`Remove ${albumItemMultiSelect.selectedIds.size} items from this album?`)) {
                         deleteAlbumItems.mutate({
@@ -479,6 +583,17 @@ export function HistoryPage() {
                               <div className="absolute top-2 left-2 p-1.5 rounded-md bg-black/60 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                                 <Move size={12} />
                               </div>
+                            )}
+                            {item.image_path && (
+                              <a
+                                href={item.image_path}
+                                download
+                                id={`item-download-${item.snapshot_id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute top-2 right-9 p-1.5 rounded-md bg-black/60 text-zinc-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                              >
+                                <Download size={12} />
+                              </a>
                             )}
                             <button
                               id={`item-delete-btn-${item.snapshot_id}`}
@@ -596,9 +711,23 @@ export function HistoryPage() {
               actions={
                 <div className="flex gap-2">
                   <button
+                    id="bulk-download-btn"
+                    onClick={() => {
+                      const now = new Date()
+                      const pad = (n: number) => n.toString().padStart(2, '0')
+                      const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+                      handleBulkDownload([...snapshotMultiSelect.selectedIds], `${dateStr}.zip`, false)
+                    }}
+                    disabled={snapshotMultiSelect.selectedIds.size === 0 || isDownloading}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface border border-[rgba(255,255,255,0.08)] text-zinc-300 font-medium disabled:opacity-50 transition-all flex items-center gap-1"
+                  >
+                    <Download size={12} />
+                    {isDownloading ? 'ダウンロード中...' : '一括ダウンロード'}
+                  </button>
+                  <button
                     id="save-album-btn"
                     onClick={() => setIsAddToAlbumModalOpen(true)}
-                    disabled={snapshotMultiSelect.selectedIds.size === 0}
+                    disabled={snapshotMultiSelect.selectedIds.size === 0 || isDownloading}
                     className="text-xs px-3 py-1.5 rounded-lg bg-[#7C6FDD] text-white font-medium disabled:opacity-50 hover:bg-[#6b5ec7] transition-all"
                   >
                     アルバムへ追加

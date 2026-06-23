@@ -144,7 +144,13 @@ export interface GenerationState {
   removeAppliedAsset: (role: string, id: string) => void
   toggleAppliedAsset: (role: string, id: string) => void
   setAppliedAssets: (assets: Record<string, AppliedAsset[]>) => void
-  queuePrompt: (workflow: Record<string, unknown>) => Promise<string | null>
+  queuePrompt: (
+    workflow: Record<string, unknown>,
+    metadata?: {
+      paramValues: Record<string, string>;
+      appliedAssets: Record<string, AppliedAsset[]>;
+    }
+  ) => Promise<string | null>
   cancelGeneration: () => void
   clearPreview: () => void
   fetchHistory: () => Promise<void>
@@ -266,7 +272,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               if (out.images) {
                 out.images.forEach((img) => {
                   imagesList.push(
-                    `${url}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+                    `${url}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${promptId}`
                   )
                 })
               }
@@ -439,7 +445,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 if (images && images.length > 0) {
                   const baseUrl = resolveComfyUrl(comfyUrl!)
                   const newUrls = images.map((img) => 
-                    `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${Date.now()}`
+                    `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${promptId}`
                   )
                   const firstUrl = newUrls[0]
                   set((state) => {
@@ -745,7 +751,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       }
     },
 
-    queuePrompt: async (workflow) => {
+    queuePrompt: async (workflow, metadata) => {
       if (!comfyUrl) return null
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
@@ -758,7 +764,37 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         const data = await res.json()
         const promptId = data.prompt_id ?? null
         set({ isGenerating: true, previewImage: null, progress: null, currentPromptId: promptId, activeClientId: get().clientId })
-        if (promptId) localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+        if (promptId) {
+          localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+          // キャッシュ保存
+          const metaKey = `prompt-surgeon-meta-${promptId}`
+          const promptMetadata = {
+            paramValues: metadata?.paramValues ?? get().paramValues,
+            appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
+            timestamp: Date.now()
+          }
+          localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+
+          // 古いキャッシュの自動削除 (最大200件制限)
+          try {
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
+            if (keys.length > 200) {
+              const items = keys.map(k => {
+                try {
+                  const val = JSON.parse(localStorage.getItem(k) || '{}')
+                  return { key: k, timestamp: val.timestamp || 0 }
+                } catch {
+                  return { key: k, timestamp: 0 }
+                }
+              })
+              items.sort((a, b) => a.timestamp - b.timestamp)
+              const toDelete = items.slice(0, items.length - 200)
+              toDelete.forEach(item => localStorage.removeItem(item.key))
+            }
+          } catch (e) {
+            console.error('Failed to prune prompt metadata:', e)
+          }
+        }
         await get().fetchQueue()
         return promptId
       } catch (e) {
