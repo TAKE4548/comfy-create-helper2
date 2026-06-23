@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, Info, Maximize2 } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
 import type { Snapshot, Lora, TagSet } from '../api/types'
@@ -24,11 +24,11 @@ export function HistoryModalPreview({
   const [viewMode, setViewMode] = useState<'full' | 'info'>('full')
   const touchStartX = useRef<number | null>(null)
 
-  useEffect(() => {
-    if (isOpen) {
-      setViewMode('full')
-    }
-  }, [isOpen])
+  const queryClient = useQueryClient()
+  const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [localLoraIds, setLocalLoraIds] = useState<number[]>([])
+  const [localTagSetIds, setLocalTagSetIds] = useState<number[]>([])
 
   const activeSnapshotId = snapshotIds && currentIndex >= 0 && currentIndex < snapshotIds.length
     ? snapshotIds[currentIndex]
@@ -53,6 +53,40 @@ export function HistoryModalPreview({
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
     enabled: !!activeSnapshotId && isOpen,
   })
+
+  useEffect(() => {
+    if (isOpen) {
+      setViewMode('full')
+      setIsEditing(false)
+    }
+  }, [isOpen])
+
+  // Reset local state when snapshot loads or changes
+  useEffect(() => {
+    if (snapshot) {
+      setLocalLoraIds(snapshot.loras?.map((l) => l.lora_id) || [])
+      setLocalTagSetIds(snapshot.tag_sets?.map((t) => t.tag_set_id) || [])
+      setIsEditing(false)
+    }
+  }, [snapshot])
+
+  const handleSave = async () => {
+    if (!activeSnapshotId) return
+    setIsSaving(true)
+    try {
+      await snapshotsApi.patch(activeSnapshotId, {
+        lora_ids: localLoraIds,
+        tag_set_ids: localTagSetIds,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['snapshot', activeSnapshotId] })
+      await queryClient.invalidateQueries({ queryKey: ['snapshots'] })
+      setIsEditing(false)
+    } catch (e) {
+      alert('Failed to update assets: ' + e)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   // キーボードイベント監視 (ArrowLeft, ArrowRight)
   useEffect(() => {
@@ -314,36 +348,170 @@ export function HistoryModalPreview({
                   </div>
                 ))}
 
-                {/* Loras & Tag Sets */}
-                {((snapshot?.loras && snapshot.loras.length > 0) || (snapshot?.tag_sets && snapshot.tag_sets.length > 0)) && (
-                  <div className="space-y-2.5">
+                {/* Applied Assets */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
                     <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">Applied Assets</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {snapshot?.loras?.map((loraItem, idx) => {
-                        const loraDetail = loras?.find((l) => l.id === loraItem.lora_id)
-                        return (
-                          <div
-                            key={`lora-${idx}`}
-                            className="px-2.5 py-1 rounded bg-accent-green/5 text-accent-green border border-accent-green/10 text-[10px] font-medium"
-                          >
-                            LoRA: {loraDetail?.description || loraDetail?.model_name || `ID ${loraItem.lora_id}`} (Str: {loraItem.strength})
-                          </div>
-                        )
-                      })}
-                      {snapshot?.tag_sets?.map((tagSetItem, idx) => {
-                        const tagSetDetail = tagSets?.find((t) => t.id === tagSetItem.tag_set_id)
-                        return (
-                          <div
-                            key={`tagset-${idx}`}
-                            className="px-2.5 py-1 rounded bg-[#7C6FDD]/5 text-[#a99ef7] border border-[#7C6FDD]/10 text-[10px] font-medium"
-                          >
-                            TagSet: {tagSetDetail?.name || `ID ${tagSetItem.tag_set_id}`}
-                          </div>
-                        )
-                      })}
-                    </div>
+                    {activeSnapshotId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isEditing) {
+                            setLocalLoraIds(snapshot?.loras?.map((l) => l.lora_id) || [])
+                            setLocalTagSetIds(snapshot?.tag_sets?.map((t) => t.tag_set_id) || [])
+                          }
+                          setIsEditing(!isEditing)
+                        }}
+                        className="text-[10px] text-[#7C6FDD] hover:underline font-medium"
+                      >
+                        {isEditing ? 'キャンセル' : '編集'}
+                      </button>
+                    )}
                   </div>
-                )}
+
+                  {!isEditing ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {((snapshot?.loras && snapshot.loras.length > 0) || (snapshot?.tag_sets && snapshot.tag_sets.length > 0)) ? (
+                        <>
+                          {snapshot?.loras?.map((loraItem, idx) => {
+                            const loraDetail = loras?.find((l) => l.id === loraItem.lora_id)
+                            return (
+                              <div
+                                key={`lora-${idx}`}
+                                className="px-2.5 py-1 rounded bg-accent-green/5 text-accent-green border border-accent-green/10 text-[10px] font-medium"
+                              >
+                                LoRA: {loraDetail?.description || loraDetail?.model_name || `ID ${loraItem.lora_id}`} (Str: {loraItem.strength})
+                              </div>
+                            )
+                          })}
+                          {snapshot?.tag_sets?.map((tagSetItem, idx) => {
+                            const tagSetDetail = tagSets?.find((t) => t.id === tagSetItem.tag_set_id)
+                            return (
+                              <div
+                                key={`tagset-${idx}`}
+                                className="px-2.5 py-1 rounded bg-[#7C6FDD]/5 text-[#a99ef7] border border-[#7C6FDD]/10 text-[10px] font-medium"
+                              >
+                                TagSet: {tagSetDetail?.name || `ID ${tagSetItem.tag_set_id}`}
+                              </div>
+                            )
+                          })}
+                        </>
+                      ) : (
+                        <span className="text-zinc-600 italic text-[10px]">紐付け資産なし</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2">
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-medium text-zinc-400">選択中のアセット</div>
+                        <div className="flex flex-wrap gap-1.5 min-h-[24px] items-center">
+                          {localLoraIds.map((lid) => {
+                            const loraDetail = loras?.find((l) => l.id === lid)
+                            return (
+                              <div
+                                key={`edit-lora-${lid}`}
+                                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-accent-green/10 text-accent-green border border-accent-green/20 text-[10px] font-medium"
+                              >
+                                <span>LoRA: {loraDetail?.description || loraDetail?.model_name || `ID ${lid}`}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setLocalLoraIds(localLoraIds.filter((id) => id !== lid))}
+                                  className="text-accent-green/60 hover:text-accent-green font-bold text-xs"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )
+                          })}
+                          {localTagSetIds.map((tid) => {
+                            const tagSetDetail = tagSets?.find((t) => t.id === tid)
+                            return (
+                              <div
+                                key={`edit-tagset-${tid}`}
+                                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#7C6FDD]/10 text-[#a99ef7] border border-[#7C6FDD]/20 text-[10px] font-medium"
+                              >
+                                <span>TagSet: {tagSetDetail?.name || `ID ${tid}`}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setLocalTagSetIds(localTagSetIds.filter((id) => id !== tid))}
+                                  className="text-[#a99ef7]/60 hover:text-[#a99ef7] font-bold text-xs"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )
+                          })}
+                          {localLoraIds.length === 0 && localTagSetIds.length === 0 && (
+                            <span className="text-zinc-600 italic text-[10px]">選択なし</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 border-t border-[rgba(255,255,255,0.06)] pt-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-zinc-500 block font-medium">LoRAを追加</label>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = Number(e.target.value)
+                              if (val && !localLoraIds.includes(val)) {
+                                setLocalLoraIds([...localLoraIds, val])
+                              }
+                            }}
+                            className="w-full text-[11px] bg-surface border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-1 text-zinc-300 focus:outline-none"
+                          >
+                            <option value="">選択してください...</option>
+                            {loras?.map((l) => (
+                              <option key={l.id} value={l.id}>{l.model_name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-zinc-500 block font-medium">TagSetを追加</label>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = Number(e.target.value)
+                              if (val && !localTagSetIds.includes(val)) {
+                                setLocalTagSetIds([...localTagSetIds, val])
+                              }
+                            }}
+                            className="w-full text-[11px] bg-surface border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-1 text-zinc-300 focus:outline-none"
+                          >
+                            <option value="">選択してください...</option>
+                            {tagSets?.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => {
+                            setIsEditing(false)
+                            setLocalLoraIds(snapshot?.loras?.map((l) => l.lora_id) || [])
+                            setLocalTagSetIds(snapshot?.tag_sets?.map((t) => t.tag_set_id) || [])
+                          }}
+                          className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors text-[10px] font-medium"
+                        >
+                          キャンセル
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={handleSave}
+                          className="flex items-center gap-1 px-3 py-1 rounded bg-[#7C6FDD] text-white hover:bg-[#6b5ec7] transition-colors text-[10px] font-medium disabled:opacity-50"
+                        >
+                          {isSaving && <Loader2 size={10} className="animate-spin" />}
+                          保存
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )
           ) : (

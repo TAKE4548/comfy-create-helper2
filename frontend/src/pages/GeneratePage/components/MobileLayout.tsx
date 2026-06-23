@@ -1,0 +1,491 @@
+import {
+  Loader2, ScanLine, Settings, ImageOff, Download, CheckSquare, Square, Plus,
+  ChevronRight, ChevronDown, Zap, Camera
+} from 'lucide-react'
+import type { useGeneratePageState } from '../hooks/useGeneratePageState'
+import { SettingsPopover } from './SettingsPopover'
+import { AssetDropdown } from './AssetDropdown'
+import { AppliedAssetChips } from './AppliedAssetChips'
+import { AuditPanel } from './AuditPanel'
+import { MappingErrorPanel } from './MappingErrorPanel'
+import { ParamPanel } from './ParamPanel'
+import { formatDateTime, getPromptPrefix } from '../../../utils/formatUtils'
+
+type StateProps = ReturnType<typeof useGeneratePageState>
+
+export const MobileLayout = ({
+  state,
+}: {
+  state: StateProps
+}) => {
+  const {
+    isConnected, isGenerating, progress, previewImage, activeClientId,
+    clientId, filterOwnSession, setFilterOwnSession,
+    selectedWorkflowId, setSelectedWorkflowId,
+    paramValues, setParamValues,
+    batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
+    selectedImg, setSelectedImg,
+    appliedAssets,
+    toggleAppliedAsset, removeAppliedAsset,
+    activeBatch,
+    
+    // state properties
+    activePromptTab, setActivePromptTab,
+    setRescanOpen,
+    selectedSnapshotId,
+    selectedMasters, setSelectedMasters,
+    openAddAssetRole, setOpenAddAssetRole,
+    isSettingsOpen, setIsSettingsOpen,
+    localComfyUrl, setLocalComfyUrl,
+    setComfyUrl,
+    thumbnailTab, setThumbnailTab,
+    setModalPreviewIndex,
+    setIsModalPreviewOpen,
+    setLoraStrength,
+    setSelectedTriggerSetId,
+    setSelectedLoraForModal,
+    setIsJobModalOpen,
+    sortOrder, setSortOrder,
+    
+    // queries & derived state
+    workflows,
+    workflow,
+    mappingMasters,
+    loras,
+    tagSets,
+    comfyObjectInfo,
+    sortedDisplayImages,
+    getSetNameForImage,
+    sortedSnapshots,
+    isMultiSelectMode,
+    selectedIds,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    exitMultiSelectMode,
+    selectAll,
+    clearSelection,
+    setIsSaveModalOpen,
+    auditOpen, setAuditOpen,
+    auditIntent, setAuditIntent,
+    auditTypes, setAuditTypes,
+    auditResult, auditStatus, runAudit,
+    dragOver, handleFileSelect, handleDragOver, handleDragLeave, handleDrop,
+    isGeneratingHere, totalQueueCount,
+    showStrip, hasHistory, invalidMappings, textMappings, paramMappings,
+    
+    // handlers
+    handleLoadSnapshot,
+    handleUpdateMapping,
+    handleAddTagSetAsset,
+    handleOpenModalPreview,
+    handleGenerateSets,
+    getIsRoleCollapsed,
+    setRoleCollapsed,
+    handleSaveDefaultParams,
+    handleResetDefaultParams,
+    saveDefaultParamsMutation,
+    updateWorkflowMutation,
+  } = state
+
+  const batchProgress = (() => {
+    if (!activeBatch || activeBatch.length === 0) {
+      return {
+        percentage: progress ? progress.percentage : 0,
+        text: 'Generating...'
+      }
+    }
+    const n = activeBatch.length
+    const finished = activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length
+    const hasGenerating = activeBatch.some((j: any) => j.status === 'generating')
+    
+    const currentFraction = (hasGenerating && progress && progress.max > 0)
+      ? (progress.value / progress.max)
+      : 0
+      
+    const rawPercentage = ((finished + currentFraction) / n) * 100
+    const percentage = Math.min(100, Math.max(0, Math.round(rawPercentage)))
+    
+    return {
+      percentage,
+      text: `Generating (${finished}/${n} Complete)...`
+    }
+  })()
+
+  const renderUploadZone = () => (
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => document.getElementById('workflow-file-input')?.click()}
+      className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all min-h-[300px] ${
+        dragOver
+          ? 'border-accent-green bg-accent-green/5 text-zinc-200'
+          : 'border-[rgba(255,255,255,0.15)] hover:border-accent-green/50 hover:bg-white/5 text-zinc-450'
+      }`}
+    >
+      <input
+        id="workflow-file-input"
+        type="file"
+        accept=".json"
+        onChange={(e) => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]) }}
+        className="hidden"
+      />
+      <Plus size={36} className="text-zinc-500 mb-3 hover:text-accent-green transition-colors" />
+      <p className="text-sm font-medium text-zinc-300 mb-1">ワークフロー JSON ファイルをドラッグ＆ドロップ</p>
+      <p className="text-xs text-zinc-500">またはクリックしてファイルを選択してください (.json)</p>
+    </div>
+  )
+
+  const activePromptTabMapping = textMappings.find((m) => m.role === activePromptTab)
+  const isCollapsed = activePromptTabMapping ? getIsRoleCollapsed(activePromptTabMapping.role!) : true
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto pb-36 bg-surface relative w-full">
+      {/* Header */}
+      <div className="flex flex-col gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold text-zinc-200">Generate</h1>
+            <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
+            {isGenerating && activeClientId !== clientId && (
+              <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
+            )}
+          </div>
+          <button id="rescan-btn-mobile" onClick={() => setRescanOpen(true)} disabled={!selectedWorkflowId} title="マッピングを再スキャン・修正"
+            className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 transition-all flex-shrink-0">
+            <ScanLine size={14} />
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <select id="workflow-select-mobile" value={selectedWorkflowId ?? ''}
+            onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
+            className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[40%] truncate">
+            <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
+            {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          <div className="relative flex-shrink-0 flex items-center">
+            <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
+              <Settings size={14} />
+            </button>
+            {isSettingsOpen && (
+              <SettingsPopover
+                setIsSettingsOpen={setIsSettingsOpen}
+                localComfyUrl={localComfyUrl}
+                setLocalComfyUrl={setLocalComfyUrl}
+                setComfyUrl={setComfyUrl}
+                selectedWorkflowId={selectedWorkflowId}
+                workflow={workflow}
+                handleSaveDefaultParams={handleSaveDefaultParams}
+                isSavePending={saveDefaultParamsMutation.isPending}
+                handleResetDefaultParams={handleResetDefaultParams}
+                mobile
+              />
+            )}
+          </div>
+          <select id="snapshot-history-select-mobile" value={selectedSnapshotId}
+            onChange={(e) => { if (e.target.value) handleLoadSnapshot(Number(e.target.value)) }}
+            disabled={!hasHistory}
+            className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 disabled:opacity-45 max-w-[50%] truncate">
+            {!hasHistory ? <option value="">履歴なし</option> : (
+              <>
+                <option value="">過去スナップショットを選択...</option>
+                {sortedSnapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
+              </>
+            )}
+          </select>
+        </div>
+      </div>
+
+      {/* Progress Line */}
+      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {isGeneratingHere ? <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />}
+          <span className="truncate">{isGeneratingHere ? batchProgress.text : 'Ready'}</span>
+          <span className="text-zinc-600">|</span>
+          <span 
+            onClick={() => setIsJobModalOpen(true)}
+            className="font-semibold text-zinc-300 cursor-pointer hover:text-white transition-colors"
+          >
+            Queue: {totalQueueCount}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+          <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
+            <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere ? batchProgress.percentage : 0}%` }} />
+          </div>
+          <span className="font-mono text-accent-green whitespace-nowrap">{isGeneratingHere ? batchProgress.percentage : 0}%</span>
+        </div>
+      </div>
+
+      {/* Main Preview */}
+      <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
+        {(previewImage || selectedImg) ? (
+          <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={handleOpenModalPreview}>
+            <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
+            {isGeneratingHere && <div className="absolute top-2 right-2 bg-surface-2/80 backdrop-blur p-1.5 rounded-full border border-white/5 shadow-md"><Loader2 size={16} className="animate-spin text-accent-green" /></div>}
+            <a href={previewImage || selectedImg!} download="generated.png" id="download-btn-mobile"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface/80 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-medium hover:bg-surface">
+              <Download size={12} />Download
+            </a>
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
+            {isGeneratingHere ? <Loader2 size={24} className="animate-spin text-accent-green" /> : <ImageOff size={32} strokeWidth={1} />}
+            <p className="text-xs">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
+          </div>
+        )}
+        {isGeneratingHere && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-955 overflow-hidden">
+            <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${batchProgress.percentage}%` }} />
+          </div>
+        )}
+      </div>
+
+      {/* Thumbnail Strip */}
+      {showStrip && (
+        <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-2 space-y-2">
+          <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1 flex-wrap gap-2">
+            <div className="flex gap-3">
+              {(['history', 'snapshots'] as const).map((tab) => (
+                <button key={tab} type="button" onClick={() => setThumbnailTab(tab)}
+                  className={`text-[11px] font-semibold pb-0.5 border-b-2 transition-all ${thumbnailTab === tab ? 'border-accent-green text-zinc-200' : 'border-transparent text-zinc-500'}`}>
+                  {tab === 'history' ? '履歴' : 'スナップショット'}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] bg-zinc-950/20">
+                {(['desc', 'asc'] as const).map((order) => (
+                  <button
+                    key={order}
+                    type="button"
+                    onClick={() => setSortOrder(order)}
+                    className={`px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors ${
+                      sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {order === 'desc' ? '新しい順' : '古い順'}
+                  </button>
+                ))}
+              </div>
+              {thumbnailTab === 'history' && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" id="session-filter-toggle-mobile" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer" />
+                  <span className="text-[10px] text-zinc-500">自セッションのみ</span>
+                </label>
+              )}
+            </div>
+          </div>
+          {thumbnailTab === 'history' ? (
+            sortedDisplayImages.length > 0 ? (
+              <div className="space-y-2">
+                {isMultiSelectMode && (
+                  <div className="flex flex-col gap-2 p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-300">
+                    <div className="flex items-center justify-between">
+                      <span>{selectedIds.size}枚選択中</span>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={selectAll} className="text-purple-400 underline">すべて選択</button>
+                        <button type="button" onClick={clearSelection} className="text-purple-400 underline">選択解除</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsSaveModalOpen(true)}
+                        disabled={selectedIds.size === 0}
+                        className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold text-center disabled:opacity-50"
+                      >
+                        選択した {selectedIds.size} 枚を保存
+                      </button>
+                      <button type="button" onClick={exitMultiSelectMode} className="text-zinc-400">
+                        ✕ 閉じる
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                  {sortedDisplayImages.map((img, i) => {
+                    const longPressHandlers = getLongPressHandlers(i)
+                    const isSel = isSelected(i)
+                    return (
+                      <button key={i} type="button" id={`thumb-mobile-${i}`}
+                        onMouseDown={longPressHandlers.onMouseDown}
+                        onMouseUp={longPressHandlers.onMouseUp}
+                        onMouseLeave={longPressHandlers.onMouseLeave}
+                        onTouchStart={longPressHandlers.onTouchStart}
+                        onTouchEnd={longPressHandlers.onTouchEnd}
+                        onClick={(e) => {
+                          if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                            handleItemClick(i, e)
+                          } else {
+                            setSelectedImg(img)
+                            setModalPreviewIndex(i)
+                            setIsModalPreviewOpen(true)
+                          }
+                        }}
+                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative ${
+                          isMultiSelectMode
+                            ? isSel
+                              ? 'border-purple-500 ring-2 ring-purple-500/30'
+                              : 'border-transparent'
+                            : selectedImg === img
+                              ? 'border-accent-green'
+                              : 'border-transparent hover:border-zinc-600'
+                        }`}>
+                        <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                        {getSetNameForImage(img) && (
+                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
+                            {getSetNameForImage(img)}
+                          </span>
+                        )}
+                        {isMultiSelectMode && (
+                          <div className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-black/60 text-purple-400 border border-[rgba(255,255,255,0.08)]">
+                            {isSel ? <CheckSquare size={10} /> : <Square size={10} />}
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : <p className="text-[10px] text-zinc-500 py-1">No history images found for this session.</p>
+          ) : (
+            sortedSnapshots && sortedSnapshots.length > 0 ? (
+              <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                {sortedSnapshots.map((snap) => (
+                  <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
+                    className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded border border-[rgba(255,255,255,0.06)] bg-surface-2/40 hover:bg-surface-2 transition-all w-20 group">
+                    <div className="w-16 h-16 rounded overflow-hidden bg-black/40">
+                      {snap.image_path ? <img src={snap.image_path} alt="Snapshot" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={14} /></div>}
+                    </div>
+                    <span className="text-[8px] text-zinc-450 text-center truncate w-full font-mono">{getPromptPrefix(snap.params) || `Snap #${snap.id}`}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="text-[10px] text-zinc-500 py-1 italic">No snapshots available.</p>
+          )}
+        </div>
+      )}
+
+      {/* Mobile Prompt Tabs */}
+      {textMappings.length > 0 && (
+        <div className="px-4 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
+          <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-1 no-scrollbar">
+            {textMappings.map((m) => (
+              <button key={m.id} type="button" onClick={() => setActivePromptTab(m.role || '')}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
+                {m.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {textMappings.length === 0 && !selectedWorkflowId && <div className="px-4 py-6">{renderUploadZone()}</div>}
+
+      {/* Active Prompt Textarea (Mobile) */}
+      {textMappings.length > 0 && activePromptTab && activePromptTabMapping && (
+        <div className="px-4 py-3 space-y-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setRoleCollapsed(activePromptTabMapping.role!, !isCollapsed)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+            >
+              {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              <span>{activePromptTabMapping.display_name} Input</span>
+            </button>
+            {!isCollapsed && (
+              <div className="relative">
+                <button type="button" id={`add-asset-btn-mobile-${activePromptTabMapping.role!}`}
+                  onClick={() => setOpenAddAssetRole(openAddAssetRole === activePromptTabMapping.role ? null : activePromptTabMapping.role!)}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
+                  <Plus size={10} />Add Asset
+                </button>
+                {openAddAssetRole === activePromptTabMapping.role && (
+                  <AssetDropdown
+                    role={activePromptTabMapping.role!}
+                    loras={loras}
+                    tagSets={tagSets}
+                    setLoraStrength={setLoraStrength}
+                    setSelectedTriggerSetId={setSelectedTriggerSetId}
+                    setSelectedLoraForModal={setSelectedLoraForModal}
+                    setOpenAddAssetRole={setOpenAddAssetRole}
+                    handleAddTagSetAsset={handleAddTagSetAsset}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          {!isCollapsed && (
+            <>
+              <textarea id={`prompt-mobile-${activePromptTabMapping.role!}`} value={paramValues[activePromptTabMapping.role!] ?? ''}
+                onChange={(e) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: e.target.value })}
+                placeholder={`Enter ${activePromptTabMapping.display_name}…`}
+                className="w-full min-h-[100px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40" />
+              <AppliedAssetChips
+                role={activePromptTabMapping.role!}
+                appliedAssets={appliedAssets}
+                toggleAppliedAsset={toggleAppliedAsset}
+                removeAppliedAsset={removeAppliedAsset}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Mobile Settings & Parameters */}
+      <div className="px-4 py-3 space-y-4">
+        <AuditPanel
+          auditOpen={auditOpen}
+          setAuditOpen={setAuditOpen}
+          auditStatus={auditStatus}
+          auditResult={auditResult}
+          auditTypes={auditTypes}
+          setAuditTypes={setAuditTypes}
+          auditIntent={auditIntent}
+          setAuditIntent={setAuditIntent}
+          runAudit={() => runAudit.mutate()}
+        />
+        <MappingErrorPanel
+          selectedWorkflowId={selectedWorkflowId}
+          invalidMappings={invalidMappings}
+          selectedMasters={selectedMasters}
+          setSelectedMasters={setSelectedMasters}
+          mappingMasters={mappingMasters}
+          handleUpdateMapping={handleUpdateMapping}
+          isUpdatingMapping={updateWorkflowMutation.isPending}
+        />
+        <ParamPanel
+          mobile
+          paramMappings={paramMappings}
+          paramValues={paramValues}
+          setParamValues={setParamValues}
+          loras={loras}
+          batchSize={batchSize}
+          setBatchSize={setBatchSize}
+          seedMode={seedMode}
+          setSeedMode={setSeedMode}
+          seed={seed}
+          setSeed={setSeed}
+          comfyObjectInfo={comfyObjectInfo}
+        />
+      </div>
+
+      {/* Mobile Action Bar */}
+      <div className="fixed bottom-16 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
+        <button id="generate-btn-mobile" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected}
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
+          <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
+        </button>
+        <button id="save-snapshot-btn-mobile" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg || isMultiSelectMode}
+          className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 transition-all">
+          <Camera size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}

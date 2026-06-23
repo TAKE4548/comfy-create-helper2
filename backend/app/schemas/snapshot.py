@@ -56,6 +56,12 @@ class SnapshotRead(BaseModel):
     tag_sets: list[SnapshotTagSetRead] = []
 
 
+class SnapshotUpdate(BaseModel):
+    lora_ids: list[int] = []
+    tag_set_ids: list[int] = []
+
+
+
 class SnapshotSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

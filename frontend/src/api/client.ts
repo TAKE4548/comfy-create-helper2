@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary } from './types'
 
 const BASE_URL = '/api'
 
@@ -45,10 +45,23 @@ export const mappingMastersApi = {
 
 // ─── Snapshots ──────────────────────────────────────────────────
 export const snapshotsApi = {
-  list: (workflow_id?: number) => request(`/snapshots${workflow_id ? `?workflow_id=${workflow_id}` : ''}`),
-  get: (id: number) => request(`/snapshots/${id}`),
-  create: (data: unknown) => request('/snapshots', { method: 'POST', body: JSON.stringify(data) }),
-  delete: (id: number) => request(`/snapshots/${id}`, { method: 'DELETE' }),
+  list: (workflowIdOrParams?: number | { workflow_id?: number; lora_id?: number; tag_set_id?: number }) => {
+    const query = new URLSearchParams()
+    if (typeof workflowIdOrParams === 'number') {
+      query.append('workflow_id', String(workflowIdOrParams))
+    } else if (workflowIdOrParams) {
+      if (workflowIdOrParams.workflow_id) query.append('workflow_id', String(workflowIdOrParams.workflow_id))
+      if (workflowIdOrParams.lora_id) query.append('lora_id', String(workflowIdOrParams.lora_id))
+      if (workflowIdOrParams.tag_set_id) query.append('tag_set_id', String(workflowIdOrParams.tag_set_id))
+    }
+    const queryString = query.toString()
+    return request<SnapshotSummary[]>(`/snapshots${queryString ? `?${queryString}` : ''}`)
+  },
+  get: (id: number) => request<Snapshot>(`/snapshots/${id}`),
+  create: (data: unknown) => request<SnapshotSummary>('/snapshots', { method: 'POST', body: JSON.stringify(data) }),
+  patch: (id: number, data: { lora_ids: number[]; tag_set_ids: number[] }) =>
+    request<Snapshot>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/snapshots/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Albums ─────────────────────────────────────────────────────

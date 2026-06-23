@@ -18,10 +18,21 @@ router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
 
 @router.get("", response_model=list[schemas.SnapshotSummary])
-def list_snapshots(workflow_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_snapshots(
+    workflow_id: Optional[int] = None,
+    lora_id: Optional[int] = None,
+    tag_set_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
     q = db.query(models.Snapshot)
     if workflow_id is not None:
         q = q.filter(models.Snapshot.workflow_id == workflow_id)
+    if lora_id is not None:
+        q = q.join(models.SnapshotLora).filter(models.SnapshotLora.lora_id == lora_id)
+    if tag_set_id is not None:
+        q = q.join(models.SnapshotTagSet).filter(models.SnapshotTagSet.tag_set_id == tag_set_id)
+    if lora_id is not None or tag_set_id is not None:
+        q = q.distinct()
     snapshots = q.order_by(models.Snapshot.created_at.desc()).all()
     return [
         schemas.SnapshotSummary(
@@ -170,3 +181,46 @@ def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Snapshot not found")
     db.delete(s)
     db.commit()
+
+
+@router.patch("/{snapshot_id}", response_model=schemas.SnapshotRead)
+def update_snapshot(snapshot_id: int, payload: schemas.SnapshotUpdate, db: Session = Depends(get_db)):
+    s = db.query(models.Snapshot).filter(models.Snapshot.id == snapshot_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    # Validate that lora_ids and tag_set_ids exist
+    for lora_id in payload.lora_ids:
+        exists = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
+        if not exists:
+            raise HTTPException(status_code=400, detail=f"Lora with ID {lora_id} does not exist")
+
+    for tag_set_id in payload.tag_set_ids:
+        exists = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
+        if not exists:
+            raise HTTPException(status_code=400, detail=f"TagSet with ID {tag_set_id} does not exist")
+
+    # Delete existing lora/tag_set relations
+    db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).delete()
+    db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
+
+    # Create new relations
+    for lora_id in payload.lora_ids:
+        db.add(models.SnapshotLora(
+            snapshot_id=snapshot_id,
+            lora_id=lora_id,
+            strength=1.0,
+            role="positive"
+        ))
+
+    for tag_set_id in payload.tag_set_ids:
+        db.add(models.SnapshotTagSet(
+            snapshot_id=snapshot_id,
+            tag_set_id=tag_set_id,
+            role="positive"
+        ))
+
+    db.commit()
+    db.refresh(s)
+    return get_snapshot(snapshot_id, db)
+

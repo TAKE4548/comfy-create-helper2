@@ -274,5 +274,115 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertIn("negative", roles)
 
 
+    def test_patch_snapshot_assets(self):
+        # 1. 初期状態でLoRAとタグセットを持つスナップショットを作成
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test.png",
+            "params": {"prompt": "1girl"},
+            "loras": [{"lora_id": self.lora.id, "strength": 0.8}],
+            "tag_sets": [{"tag_set_id": self.tag_set.id}]
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        snapshot_id = response.json()["id"]
+
+        # 別のLoRAとタグセットを作成
+        another_lora = models.Lora(model_name="another_lora.safetensors")
+        self.db.add(another_lora)
+        another_tag_set = models.TagSet(name="another_tags", tags='["boy"]')
+        self.db.add(another_tag_set)
+        self.db.commit()
+
+        # 2. PATCH API で更新 (紐付けを変更)
+        patch_payload = {
+            "lora_ids": [another_lora.id],
+            "tag_set_ids": [another_tag_set.id]
+        }
+        patch_response = self.client.patch(f"/api/snapshots/{snapshot_id}", json=patch_payload)
+        self.assertEqual(patch_response.status_code, 200)
+
+        # 3. 更新結果の確認
+        data = patch_response.json()
+        self.assertEqual(len(data["loras"]), 1)
+        self.assertEqual(data["loras"][0]["lora_id"], another_lora.id)
+        self.assertEqual(data["loras"][0]["strength"], 1.0)
+        self.assertEqual(data["loras"][0]["role"], "positive")
+        self.assertEqual(len(data["tag_sets"]), 1)
+        self.assertEqual(data["tag_sets"][0]["tag_set_id"], another_tag_set.id)
+        self.assertEqual(data["tag_sets"][0]["role"], "positive")
+
+        # 旧関係が消え、新関係がデータベースに登録されているか直接確認
+        snap_loras = self.db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).all()
+        self.assertEqual(len(snap_loras), 1)
+        self.assertEqual(snap_loras[0].lora_id, another_lora.id)
+
+        snap_tags = self.db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).all()
+        self.assertEqual(len(snap_tags), 1)
+        self.assertEqual(snap_tags[0].tag_set_id, another_tag_set.id)
+
+    def test_get_snapshots_filter_by_assets(self):
+        # 1. 2つの異なるスナップショットを作成
+        payload_1 = {
+            "workflow_id": self.workflow.id,
+            "params": {},
+            "loras": [{"lora_id": self.lora.id, "strength": 0.8}],
+            "tag_sets": []
+        }
+        payload_2 = {
+            "workflow_id": self.workflow.id,
+            "params": {},
+            "loras": [],
+            "tag_sets": [{"tag_set_id": self.tag_set.id}]
+        }
+        resp1 = self.client.post("/api/snapshots", json=payload_1)
+        resp2 = self.client.post("/api/snapshots", json=payload_2)
+        id1 = resp1.json()["id"]
+        id2 = resp2.json()["id"]
+
+        # 2. フィルタなしで全件取得できるか確認
+        response = self.client.get("/api/snapshots")
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.json()), 2)
+
+        # 3. lora_id でフィルタ
+        response_lora = self.client.get(f"/api/snapshots?lora_id={self.lora.id}")
+        self.assertEqual(response_lora.status_code, 200)
+        lora_snaps = response_lora.json()
+        self.assertTrue(any(s["id"] == id1 for s in lora_snaps))
+        self.assertFalse(any(s["id"] == id2 for s in lora_snaps))
+
+        # 4. tag_set_id でフィルタ
+        response_tag = self.client.get(f"/api/snapshots?tag_set_id={self.tag_set.id}")
+        self.assertEqual(response_tag.status_code, 200)
+        tag_snaps = response_tag.json()
+        self.assertFalse(any(s["id"] == id1 for s in tag_snaps))
+        self.assertTrue(any(s["id"] == id2 for s in tag_snaps))
+
+    def test_patch_snapshot_not_found(self):
+        # 存在しないスナップショットIDに対してPATCHを実行して404が返ることを確認
+        response = self.client.patch("/api/snapshots/99999", json={"lora_ids": [], "tag_set_ids": []})
+        self.assertEqual(response.status_code, 404)
+
+    def test_patch_snapshot_invalid_lora(self):
+        # 初期スナップショットを作成
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test.png",
+            "params": {"prompt": "1girl"},
+            "loras": [],
+            "tag_sets": []
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        snapshot_id = response.json()["id"]
+
+        # 存在しないLora IDを渡した場合、バリデーションエラー(400)になることを確認
+        response_patch = self.client.patch(f"/api/snapshots/{snapshot_id}", json={"lora_ids": [99999], "tag_set_ids": []})
+        self.assertEqual(response_patch.status_code, 400)
+
+
+
 if __name__ == "__main__":
     unittest.main()
+

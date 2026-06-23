@@ -15,8 +15,8 @@ import {
   SlidersHorizontal,
   Check
 } from 'lucide-react'
-import { snapshotsApi, albumsApi, workflowsApi } from '../api/client'
-import type { SnapshotSummary, Album } from '../api/types'
+import { snapshotsApi, albumsApi, workflowsApi, lorasApi, tagSetsApi } from '../api/client'
+import type { SnapshotSummary, Album, Lora, TagSet } from '../api/types'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 
@@ -180,6 +180,8 @@ export function HistoryPage() {
   }
 
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
+  const [selectedLoraId, setSelectedLoraId] = useState<number | null>(null)
+  const [selectedTagSetId, setSelectedTagSetId] = useState<number | null>(null)
   const [isAddToAlbumModalOpen, setIsAddToAlbumModalOpen] = useState(false)
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
@@ -195,9 +197,23 @@ export function HistoryPage() {
     queryFn: () => workflowsApi.list() as Promise<{ id: number; name: string }[]>,
   })
 
+  const { data: loras } = useQuery({
+    queryKey: ['loras'],
+    queryFn: () => lorasApi.list() as Promise<Lora[]>,
+  })
+
+  const { data: tagSets } = useQuery({
+    queryKey: ['tag-sets'],
+    queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
+  })
+
   const { data: snapshots } = useQuery({
-    queryKey: ['snapshots', selectedWorkflowId],
-    queryFn: () => snapshotsApi.list(selectedWorkflowId ?? undefined) as Promise<SnapshotSummary[]>,
+    queryKey: ['snapshots', selectedWorkflowId, selectedLoraId, selectedTagSetId],
+    queryFn: () => snapshotsApi.list({
+      workflow_id: selectedWorkflowId ?? undefined,
+      lora_id: selectedLoraId ?? undefined,
+      tag_set_id: selectedTagSetId ?? undefined,
+    }) as Promise<SnapshotSummary[]>,
   })
 
   const { data: albums } = useQuery({
@@ -748,6 +764,34 @@ export function HistoryPage() {
               >
                 <option value="">All Workflows</option>
                 {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+
+              <select
+                id="history-lora-filter"
+                value={selectedLoraId ?? ''}
+                onChange={(e) => setSelectedLoraId(Number(e.target.value) || null)}
+                className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40"
+              >
+                <option value="">All LoRAs</option>
+                {loras?.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.model_name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                id="history-tagset-filter"
+                value={selectedTagSetId ?? ''}
+                onChange={(e) => setSelectedTagSetId(Number(e.target.value) || null)}
+                className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40"
+              >
+                <option value="">All Tag Sets</option>
+                {tagSets?.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
               </select>
 
               <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
