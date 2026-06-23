@@ -71,43 +71,4 @@ class SnapshotSummary(BaseModel):
     params: Optional[dict[str, Any]] = None
 
 
-# ─── Album ───────────────────────────────────────────────────────
 
-class AlbumCreate(BaseModel):
-    name: str
-    snapshot_ids: list[int] = []
-
-
-class AlbumOrderUpdate(BaseModel):
-    snapshot_ids: list[int]
-
-
-class AlbumItemsDelete(BaseModel):
-    snapshot_ids: list[int]
-
-
-class AlbumItemsAdd(BaseModel):
-    snapshot_ids: list[int]
-
-
-class AlbumItemRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    snapshot_id: int
-    sequence_order: int
-    image_path: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-
-class AlbumRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    created_at: datetime
-    items: list[AlbumItemRead] = []
-
-
-class AlbumSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    created_at: datetime

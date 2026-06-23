@@ -31,6 +31,9 @@ from app.schemas.snapshot import (
     SnapshotRead,
     SnapshotUpdate,
     SnapshotSummary,
+)
+
+from app.schemas.album import (
     AlbumCreate,
     AlbumOrderUpdate,
     AlbumItemRead,
@@ -51,7 +54,7 @@ from app.schemas.lora import (
     LoraReorder,
 )
 
-from app.schemas.tagset import (
+from app.schemas.tag_set import (
     TagSetCreate,
     TagSetRead,
     TagSetReorder,
