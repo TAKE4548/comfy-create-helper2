@@ -1,8 +1,18 @@
-import { useRef, useEffect, useState, useMemo } from 'react'
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, Info, Maximize2 } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
 import type { Snapshot, Lora, TagSet } from '../api/types'
+
+// Fullscreen APIのTypeScript型拡張（Safari/iOS等の互換対応）
+interface DocumentWithFullscreen extends Document {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => void;
+}
+
+interface HTMLElementWithFullscreen extends HTMLDivElement {
+  webkitRequestFullscreen?: () => void;
+}
 
 interface HistoryModalPreviewProps {
   isOpen: boolean
@@ -22,7 +32,111 @@ export function HistoryModalPreview({
   snapshotIds,
 }: HistoryModalPreviewProps) {
   const [viewMode, setViewMode] = useState<'full' | 'info'>('full')
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
+  const [showControls, setShowControls] = useState<boolean>(true)
+  const containerRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number | null>(null)
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const resetControlsTimeout = useCallback(() => {
+    setShowControls(true)
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current)
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false)
+    }, 3000)
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) {
+      resetControlsTimeout()
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current)
+      }
+    }
+  }, [isOpen, resetControlsTimeout])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if ((e.nativeEvent as any).pointerType === 'touch') return
+    resetControlsTimeout()
+  }, [resetControlsTimeout])
+
+  const handleToggleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const element = containerRef.current as HTMLElementWithFullscreen
+    const doc = document as DocumentWithFullscreen
+    if (!element) return
+
+    if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+      if (element.requestFullscreen) {
+        element.requestFullscreen()
+      } else if (element.webkitRequestFullscreen) {
+        element.webkitRequestFullscreen()
+      }
+    } else {
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen()
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen()
+      }
+    }
+  }
+
+  const handleClose = () => {
+    const doc = document as DocumentWithFullscreen
+    if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen()
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen()
+      }
+    } else {
+      onClose()
+    }
+  }
+
+  const handleContainerClick = (e: React.MouseEvent) => {
+    if (!showControls) {
+      e.stopPropagation()
+      resetControlsTimeout()
+      return
+    }
+    if (e.target === e.currentTarget) {
+      handleClose()
+    }
+  }
+
+  const handleImageClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!showControls) {
+      resetControlsTimeout()
+      return
+    }
+    handleToggleFullscreen(e)
+  }
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const doc = document as DocumentWithFullscreen
+      const isCurrentlyFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
+      setIsFullscreen(isCurrentlyFullscreen)
+
+      // Bパターン: 全画面が解除されたことを検知した際、プレビューモーダルが開いている状態 (isOpen) ならば onClose() を呼び出す
+      if (!isCurrentlyFullscreen && isOpen) {
+        onClose()
+      }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [isOpen, onClose])
 
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
@@ -92,15 +206,18 @@ export function HistoryModalPreview({
   useEffect(() => {
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        if (currentIndex > 0) onChangeIndex(currentIndex - 1)
-      } else if (e.key === 'ArrowRight') {
-        if (currentIndex < images.length - 1) onChangeIndex(currentIndex + 1)
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        resetControlsTimeout()
+        if (e.key === 'ArrowLeft') {
+          if (currentIndex > 0) onChangeIndex(currentIndex - 1)
+        } else if (e.key === 'ArrowRight') {
+          if (currentIndex < images.length - 1) onChangeIndex(currentIndex + 1)
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, currentIndex, images.length, onChangeIndex])
+  }, [isOpen, currentIndex, images.length, onChangeIndex, resetControlsTimeout])
 
   const loraStacks = useMemo(() => {
     if (!snapshot?.params) return []
@@ -184,34 +301,39 @@ export function HistoryModalPreview({
   const seed = getParamValue(['seed'])
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col" onClick={onClose}>
+    <div 
+      ref={containerRef} 
+      className="fixed inset-0 z-[100] bg-black/95 flex flex-col" 
+      onClick={handleContainerClick}
+      onMouseMove={handleMouseMove}
+    >
       {/* Header with Close Button */}
-      <div className="relative h-12 flex items-center justify-end px-4" onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
-          aria-label="Close preview"
+      {showControls && (
+        <div 
+          className={`${isFullscreen ? 'absolute top-0 left-0 right-0 z-10' : 'relative'} h-12 flex items-center justify-end px-4`} 
+          onClick={(e) => e.stopPropagation()}
         >
-          <X size={20} />
-        </button>
-      </div>
+          <button
+            onClick={handleClose}
+            className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+            aria-label="Close preview"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
 
       {/* Image Display Area */}
       <div
         className={`w-full flex items-center justify-center bg-black/40 relative cursor-pointer min-h-0 ${
-          viewMode === 'full' ? 'flex-1' : ''
+          isFullscreen ? 'absolute inset-0 z-0 w-full h-full' : (viewMode === 'full' ? 'flex-1' : '')
         }`}
-        style={viewMode === 'info' ? { height: '60vh' } : undefined}
+        style={viewMode === 'info' && !isFullscreen ? { height: '60vh' } : undefined}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        onClick={(e) => {
-          // Only close if clicking the background area of the container, not the image itself
-          if (e.target === e.currentTarget) {
-            onClose()
-          }
-        }}
+        onClick={handleContainerClick}
       >
-        {currentIndex > 0 && (
+        {showControls && currentIndex > 0 && (
           <button
             onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex - 1) }}
             className="absolute left-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
@@ -222,9 +344,12 @@ export function HistoryModalPreview({
         <img
           src={activeImage}
           alt={`Preview ${currentIndex + 1}`}
-          className="max-w-full max-h-full object-contain pointer-events-none select-none"
+          className={`max-w-full max-h-full object-contain select-none ${
+            isFullscreen ? 'cursor-zoom-out w-full h-full' : 'cursor-zoom-in'
+          }`}
+          onClick={handleImageClick}
         />
-        {currentIndex < images.length - 1 && (
+        {showControls && currentIndex < images.length - 1 && (
           <button
             onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex + 1) }}
             className="absolute right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
@@ -234,11 +359,13 @@ export function HistoryModalPreview({
         )}
 
         {/* Carousel indicators */}
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white/80 pointer-events-none">
-          {currentIndex + 1} / {images.length}
-        </div>
+        {showControls && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white/80 pointer-events-none">
+            {currentIndex + 1} / {images.length}
+          </div>
+        )}
 
-        {activeSnapshotId && (
+        {showControls && activeSnapshotId && !isFullscreen && (
           viewMode === 'full' ? (
             <button
               onClick={(e) => { e.stopPropagation(); setViewMode('info') }}
@@ -260,7 +387,7 @@ export function HistoryModalPreview({
       </div>
 
       {/* Metadata Panel */}
-      {viewMode === 'info' && (
+      {viewMode === 'info' && !isFullscreen && (
         <div
           className="flex-1 overflow-y-auto p-5 bg-surface border-t border-[rgba(255,255,255,0.06)]"
           onClick={(e) => e.stopPropagation()}
