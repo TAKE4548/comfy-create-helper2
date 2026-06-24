@@ -4,6 +4,7 @@ import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, wo
 import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
+import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { useWorkflowParams } from './useWorkflowParams'
 import { useGenerateAction } from './useGenerateAction'
 import { useImageNavigation } from './useImageNavigation'
@@ -121,6 +122,7 @@ export function useGeneratePageState() {
     toggleSetChecked,
     setAllSetsChecked,
     setActiveSetId,
+    setSets,
   } = store
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
@@ -283,18 +285,35 @@ export function useGeneratePageState() {
   })
 
   const createPresetMutation = useMutation({
-    mutationFn: (name: string) => workflowPresetsApi.create({
+    mutationFn: ({
+      name,
+      paramValues: pv,
+      appliedAssets: aa,
+      batchSize: bs,
+      seedMode: sm,
+      seed: sd
+    }: {
+      name: string;
+      paramValues?: Record<string, string>;
+      appliedAssets?: Record<string, AppliedAsset[]>;
+      batchSize?: number;
+      seedMode?: 'random' | 'fixed';
+      seed?: number;
+    }) => workflowPresetsApi.create({
       workflow_id: selectedWorkflowId!,
       name,
-      param_values: paramValues,
-      applied_assets: appliedAssets,
-      batch_size: batchSize,
-      seed_mode: seedMode,
-      seed: seed,
+      param_values: pv !== undefined ? pv : paramValues,
+      applied_assets: aa !== undefined ? aa : appliedAssets,
+      batch_size: bs !== undefined ? bs : batchSize,
+      seed_mode: sm !== undefined ? sm : seedMode,
+      seed: sd !== undefined ? sd : seed,
     }),
-    onSuccess: () => {
+    onSuccess: (newPreset) => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
       setNewPresetName('')
+      if (newPreset?.id) {
+        setActiveSetId(newPreset.id)
+      }
     }
   })
 
@@ -333,9 +352,51 @@ export function useGeneratePageState() {
     }
   })
 
-  const handleCreatePreset = () => {
-    if (!newPresetName.trim() || !selectedWorkflowId) return
-    createPresetMutation.mutate(newPresetName.trim())
+  const handleCreatePreset = (name?: string, copySourceId?: string | number) => {
+    const finalName = name ?? newPresetName
+    if (!finalName.trim() || !selectedWorkflowId) return
+    
+    if (copySourceId === undefined) {
+      // Original default behavior: use current state
+      createPresetMutation.mutate({
+        name: finalName.trim(),
+        paramValues,
+        appliedAssets,
+        batchSize,
+        seedMode,
+        seed,
+      })
+    } else if (copySourceId === 'default') {
+      createPresetMutation.mutate({
+        name: finalName.trim(),
+        paramValues: {},
+        appliedAssets: {},
+        batchSize: 1,
+        seedMode: 'random',
+        seed: 42,
+      })
+    } else {
+      const source = presets?.find(p => String(p.id) === String(copySourceId))
+      if (source) {
+        createPresetMutation.mutate({
+          name: finalName.trim(),
+          paramValues: source.param_values,
+          appliedAssets: source.applied_assets,
+          batchSize: source.batch_size,
+          seedMode: source.seed_mode as 'random' | 'fixed',
+          seed: source.seed,
+        })
+      } else {
+        createPresetMutation.mutate({
+          name: finalName.trim(),
+          paramValues,
+          appliedAssets,
+          batchSize,
+          seedMode,
+          seed,
+        })
+      }
+    }
   }
 
   const handleUpdatePreset = (id: number, name: string) => {
@@ -398,6 +459,69 @@ export function useGeneratePageState() {
     const texts = workflow?.mappings.filter((m) => m.role != null && m.input_type === 'textarea') ?? []
     setActivePromptTab(texts.length > 0 ? texts[0].role || '' : '')
   }, [workflow])
+
+  // Synchronize presets query with Zustand store's sets state
+  useEffect(() => {
+    if (!selectedWorkflowId) return
+
+    const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
+    const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
+
+    const mappedSets = (presets || []).map((preset) => {
+      const isChecked = checkedPresets === null ? true : checkedPresets.includes(preset.id)
+      return {
+        id: preset.id,
+        name: preset.name,
+        paramValues: preset.param_values,
+        appliedAssets: preset.applied_assets,
+        batchSize: preset.batch_size,
+        seedMode: preset.seed_mode as 'random' | 'fixed',
+        seed: preset.seed,
+        checked: isChecked,
+      }
+    })
+
+    setSets?.(mappedSets)
+
+    if (mappedSets.length > 0) {
+      const exists = mappedSets.some(s => String(s.id) === String(activeSetId))
+      if (!exists) {
+        const storedActiveSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + selectedWorkflowId)
+        const matched = mappedSets.find(s => String(s.id) === storedActiveSetId)
+        if (matched) {
+          setActiveSetId(matched.id)
+        } else {
+          setActiveSetId(mappedSets[0].id)
+        }
+      }
+    }
+  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId])
+
+  // Autosave when paramValues, appliedAssets, batchSize, seedMode, or seed changes
+  useEffect(() => {
+    if (!selectedWorkflowId || activeSetId === null || typeof activeSetId !== 'number') return
+
+    const activePreset = presets?.find(p => p.id === activeSetId)
+    if (!activePreset) return
+
+    const timer = setTimeout(() => {
+      updatePresetMutation.mutate({
+        id: activePreset.id,
+        name: activePreset.name,
+      })
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [
+    paramValues,
+    appliedAssets,
+    batchSize,
+    seedMode,
+    seed,
+    activeSetId,
+    presets,
+    selectedWorkflowId,
+  ])
 
   // ── Handlers ─────────────────────────────────────────────────
   const handleLoadSnapshot = async (id: number) => {

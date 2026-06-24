@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Loader2, ScanLine, Settings, ImageOff, Download, CheckSquare, Square, Plus,
   ChevronRight, ChevronDown, Zap, Camera
@@ -28,6 +29,8 @@ export const MobileLayout = ({
     appliedAssets,
     toggleAppliedAsset, removeAppliedAsset,
     activeBatch,
+    sets, activeSetId, removeSet, renameSet,
+    toggleSetChecked, setAllSetsChecked, setActiveSetId,
     
     // state properties
     activePromptTab, setActivePromptTab,
@@ -53,6 +56,7 @@ export const MobileLayout = ({
     mappingMasters,
     loras,
     tagSets,
+    presets,
     comfyObjectInfo,
     sortedDisplayImages,
     getSetNameForImage,
@@ -86,7 +90,12 @@ export const MobileLayout = ({
     handleResetDefaultParams,
     saveDefaultParamsMutation,
     updateWorkflowMutation,
+    handleCreatePreset,
   } = state
+
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  const [newSetName, setNewSetName] = useState('')
+  const [copySourceId, setCopySourceId] = useState<string | number>('default')
 
   const batchProgress = (() => {
     if (!activeBatch || activeBatch.length === 0) {
@@ -137,6 +146,7 @@ export const MobileLayout = ({
     </div>
   )
 
+  const activeSet = sets.find((s) => String(s.id) === String(activeSetId))
   const activePromptTabMapping = textMappings.find((m) => m.role === activePromptTab)
   const isCollapsed = activePromptTabMapping ? getIsRoleCollapsed(activePromptTabMapping.role!) : true
 
@@ -243,6 +253,63 @@ export const MobileLayout = ({
           </div>
         )}
       </div>
+
+      {/* Multi-Set Tab Bar (Mobile) */}
+      {selectedWorkflowId && (
+        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-4 py-2.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
+            <div className="flex gap-2.5">
+              <button type="button" onClick={() => {
+                const checked = sets.some((s) => !s.checked)
+                setAllSetsChecked(checked)
+              }} className="text-[10px] text-zinc-500 hover:text-zinc-350 transition-colors">
+                {sets.every((s) => s.checked) ? '全解除' : '全選択'}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
+              {sets.map((s) => (
+                <div key={s.id} onClick={() => setActiveSetId(s.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
+                    String(s.id) === String(activeSetId)
+                      ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
+                      : 'bg-surface-2 border-[rgba(255,255,255,0.04)] text-zinc-400'
+                  }`}>
+                  <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
+                  <span className="truncate max-w-[70px]">{s.name}</span>
+                  {sets.length > 1 && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5">✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button type="button" id="add-set-btn-mobile" onClick={() => {
+              setNewSetName(`Set ${sets.length + 1}`)
+              setCopySourceId('default')
+              setShowCopyModal(true)
+            }}
+              className="flex items-center justify-center p-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 transition-all flex-shrink-0">
+              <Plus size={14} />
+            </button>
+          </div>
+
+          {activeSet && (
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-zinc-500 font-bold">名前編集:</span>
+              <input
+                type="text"
+                id="set-name-input-mobile"
+                value={activeSet.name}
+                onChange={(e) => renameSet(activeSet.id, e.target.value)}
+                className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-accent-green/40 max-w-[150px]"
+                placeholder="プロファイル名..."
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Thumbnail Strip */}
       {showStrip && (
@@ -486,6 +553,65 @@ export const MobileLayout = ({
           <Camera size={15} />
         </button>
       </div>
+      {showCopyModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in px-4">
+          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-5 w-full max-w-sm space-y-4 text-left">
+            <h3 className="text-sm font-bold text-zinc-200">新規プロファイル作成 (Add Set)</h3>
+            <div className="space-y-1.5">
+              <label htmlFor="new-profile-name-mobile" className="text-xs text-zinc-400 font-semibold">プロファイル名</label>
+              <input
+                id="new-profile-name-mobile"
+                type="text"
+                value={newSetName}
+                onChange={(e) => setNewSetName(e.target.value)}
+                placeholder="プロファイル名を入力..."
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="copy-source-select-mobile" className="text-xs text-zinc-400 font-semibold">コピー元 (ベース設定)</label>
+              <select
+                id="copy-source-select-mobile"
+                value={copySourceId}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setCopySourceId(val === 'default' ? 'default' : Number(val))
+                }}
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
+              >
+                <option value="default">ワークフローのデフォルト設定</option>
+                {presets?.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                id="cancel-add-set-btn-mobile"
+                onClick={() => setShowCopyModal(false)}
+                className="px-4 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-350 hover:text-white text-xs font-semibold transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                id="confirm-add-set-btn-mobile"
+                onClick={() => {
+                  if (newSetName.trim()) {
+                    handleCreatePreset(newSetName.trim(), copySourceId)
+                    setShowCopyModal(false)
+                  }
+                }}
+                disabled={!newSetName.trim()}
+                className="px-4 py-1.5 rounded-lg bg-accent-green text-background hover:brightness-110 disabled:opacity-50 text-xs font-bold transition-all"
+              >
+                作成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

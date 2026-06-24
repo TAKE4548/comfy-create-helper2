@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Zap, Settings, ScanLine, MoreHorizontal, Plus, ChevronRight, ChevronDown,
   Download, ImageOff, CheckSquare, Square, Camera, Loader2
@@ -29,7 +30,7 @@ export const DesktopLayout = ({
     appliedAssets,
     toggleAppliedAsset, removeAppliedAsset,
     setComfyUrl,
-    sets, activeSetId, addSet, removeSet, renameSet,
+    sets, activeSetId, removeSet, renameSet,
     toggleSetChecked, setAllSetsChecked, setActiveSetId,
     activeBatch,
     
@@ -100,6 +101,10 @@ export const DesktopLayout = ({
     handleCreatePreset,
     saveDefaultParamsMutation,
   } = state
+
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  const [newSetName, setNewSetName] = useState('')
+  const [copySourceId, setCopySourceId] = useState<string | number>('default')
 
   const batchProgress = (() => {
     if (!activeBatch || activeBatch.length === 0) {
@@ -258,7 +263,7 @@ export const DesktopLayout = ({
         {/* Multi-Set Tab Bar (Desktop only) */}
         {selectedWorkflowId && (
           <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
-            <div className="flex items-center gap-2 overflow-x-auto max-w-[70%] py-1 scrollbar-thin">
+            <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
               {sets.map((s) => (
                 <div key={s.id} onClick={() => setActiveSetId(s.id)}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
@@ -281,7 +286,11 @@ export const DesktopLayout = ({
               }} className="text-[10px] text-zinc-500 hover:text-zinc-350 transition-colors">
                 {sets.every((s) => s.checked) ? '全解除' : '全選択'}
               </button>
-              <button type="button" id="add-set-btn" onClick={() => addSet()}
+              <button type="button" id="add-set-btn" onClick={() => {
+                setNewSetName(`Set ${sets.length + 1}`)
+                setCopySourceId('default')
+                setShowCopyModal(true)
+              }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all">
                 <Plus size={11} />Add Set
               </button>
@@ -367,7 +376,7 @@ export const DesktopLayout = ({
                       />
                       <button
                         type="button"
-                        onClick={handleCreatePreset}
+                        onClick={() => handleCreatePreset()}
                         className="px-2 py-1 rounded bg-[#7C6FDD] text-white text-[10px] font-semibold hover:bg-[#6d62cc]"
                       >
                         Save
@@ -669,6 +678,66 @@ export const DesktopLayout = ({
           </button>
         </div>
       </div>
+
+      {showCopyModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-6 w-96 max-w-[90%] space-y-4 text-left">
+            <h3 className="text-sm font-bold text-zinc-200">新規プロファイル作成 (Add Set)</h3>
+            <div className="space-y-1.5">
+              <label htmlFor="new-profile-name" className="text-xs text-zinc-400 font-semibold">プロファイル名</label>
+              <input
+                id="new-profile-name"
+                type="text"
+                value={newSetName}
+                onChange={(e) => setNewSetName(e.target.value)}
+                placeholder="プロファイル名を入力..."
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="copy-source-select" className="text-xs text-zinc-400 font-semibold">コピー元 (ベース設定)</label>
+              <select
+                id="copy-source-select"
+                value={copySourceId}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setCopySourceId(val === 'default' ? 'default' : Number(val))
+                }}
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
+              >
+                <option value="default">ワークフローのデフォルト設定</option>
+                {presets?.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 pt-2 font-medium">
+              <button
+                type="button"
+                id="cancel-add-set-btn"
+                onClick={() => setShowCopyModal(false)}
+                className="px-4 py-2 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-350 hover:text-white text-xs font-semibold transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                id="confirm-add-set-btn"
+                onClick={() => {
+                  if (newSetName.trim()) {
+                    handleCreatePreset(newSetName.trim(), copySourceId)
+                    setShowCopyModal(false)
+                  }
+                }}
+                disabled={!newSetName.trim()}
+                className="px-4 py-2 rounded-lg bg-accent-green text-background hover:brightness-110 disabled:opacity-50 text-xs font-bold transition-all"
+              >
+                作成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
