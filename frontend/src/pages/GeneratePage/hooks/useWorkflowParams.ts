@@ -10,7 +10,7 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { Workflow } from '../../../api/types'
 
-function getInitialParams(workflow: Workflow): Record<string, string> {
+export function getInitialParams(workflow: Workflow): Record<string, string> {
   const init: Record<string, string> = {}
   const wfJson = (workflow.json_body || {}) as Record<string, any>
   workflow.mappings.forEach((m) => {

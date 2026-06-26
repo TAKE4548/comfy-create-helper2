@@ -5,7 +5,7 @@ import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../.
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
-import { useWorkflowParams } from './useWorkflowParams'
+import { useWorkflowParams, getInitialParams } from './useWorkflowParams'
 import { useGenerateAction } from './useGenerateAction'
 import { useImageNavigation } from './useImageNavigation'
 import { useSnapshotActions } from './useSnapshotActions'
@@ -367,10 +367,22 @@ export function useGeneratePageState() {
         seed,
       })
     } else if (copySourceId === 'default') {
+      let initialParams: Record<string, string> = {}
+      let defaultAssets: Record<string, any> = {}
+      if (workflow) {
+        initialParams = getInitialParams(workflow)
+        if (workflow.default_applied_assets) {
+          try {
+            defaultAssets = JSON.parse(workflow.default_applied_assets)
+          } catch (e) {
+            console.error('Failed to parse default applied assets:', e)
+          }
+        }
+      }
       createPresetMutation.mutate({
         name: finalName.trim(),
-        paramValues: {},
-        appliedAssets: {},
+        paramValues: initialParams,
+        appliedAssets: defaultAssets,
         batchSize: 1,
         seedMode: 'random',
         seed: 42,

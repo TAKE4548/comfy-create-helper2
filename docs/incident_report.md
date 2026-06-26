@@ -795,3 +795,55 @@ CSSの仕様上、flexコンテナーの子要素（flexアイテム）はデフ
    - キャッシュが存在しない場合は、従来通り現在の UI ストア状態をフォールバックとして使用します。
 3. **キャッシュのクリーンアップ**:
    - `localStorage` が肥大化しないよう、`queuePrompt` 時に古いキャッシュメタデータを自動で削除するプルーニング機構（最大200件など）を実装します。
+
+---
+
+## [NEW] REQ-080 (不具合修正): 新規プロファイル作成時にワークフローのデフォルト設定を選択すると全パラメータが空欄になる問題
+
+### 1. 現象・症状
+新規プロファイル作成（Add Set）モーダルにおいて、コピー元（ベース設定）として「ワークフローのデフォルト設定」を選択して作成すると、作成されたプロファイルのパラメータ（`paramValues`）および適用アセット（`appliedAssets`）が全て空欄（空オブジェクト `{}`）で作成され、そのプロファイルを選択すると入力欄が全てクリアされて空になってしまう。
+
+### 2. 再現手順
+1. 生成ページ（`GeneratePage`）で、任意のワークフローを選択する。
+2. プロファイル選択欄の横にある「プロファイルを追加」（または「Setを追加」などのボタン）をクリックして「新規プロファイル作成 (Add Set)」モーダルを開く。
+3. コピー元（ベース設定）で「ワークフローのデフォルト設定」を選択し、任意のプロファイル名を入力して「作成」ボタンをクリックする。
+4. 作成された新規プロファイルを選択すると、全てのパラメータ入力欄および適用アセットの表示が消え、空欄になってしまう。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`useGeneratePageState.ts` 内の `handleCreatePreset` におけるデフォルト値生成ロジックの欠如
+**該当ファイル**:
+- [`useGeneratePageState.ts`](../frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts#L369-L377) L369–L377
+
+`useGeneratePageState.ts` の `handleCreatePreset` 内で、`copySourceId` が `'default'` の場合、以下のようにハードコードされた空のオブジェクトを API に送信してプリセット（プロファイル）を作成しています：
+
+```typescript
+    } else if (copySourceId === 'default') {
+      createPresetMutation.mutate({
+        name: finalName.trim(),
+        paramValues: {}, // ⚠️ 空のオブジェクトになっている
+        appliedAssets: {}, // ⚠️ 空のオブジェクトになっている
+        batchSize: 1,
+        seedMode: 'random',
+        seed: 42,
+      })
+```
+
+- **挙動の分析**:
+  - `useWorkflowParams.ts` 内には、ワークフローの設定（`json_body`）やマッピング定義から初期パラメータを算出する `getInitialParams` という関数が存在します。
+  - しかし、`useGeneratePageState.ts` 側の `handleCreatePreset` ではこの関数（あるいは算出ロジック）が参照されておらず、単純に空の `paramValues: {}` および `appliedAssets: {}` が設定されたプリセットがデータベースに登録されてしまいます。
+  - これをロード（`handleLoadPreset`）した際に、`setParamValues({})` および `setAppliedAssets({})` が呼び出され、フロントエンド上のパラメータが全て消え去り空欄になってしまいます。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`useGeneratePageState.ts`](../frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts) L355-400<br>[`useWorkflowParams.ts`](../frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts) L13-65 (エクスポートの必要性) |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. `useWorkflowParams.ts` で定義されている初期パラメータ算出関数 `getInitialParams` を `export` するように変更します。
+2. `useGeneratePageState.ts` にて `getInitialParams` をインポートし、`handleCreatePreset` 内で `copySourceId === 'default'` の場合に、`getInitialParams(workflow)` を呼び出してワークフローのデフォルトパラメータを取得して設定します。
+3. `appliedAssets` に関しても、`workflow.default_applied_assets` が存在する場合はそれをパースして設定し、存在しない場合のみ空のオブジェクト `{}` を設定するようにします。
