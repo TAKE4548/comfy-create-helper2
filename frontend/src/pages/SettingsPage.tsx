@@ -290,6 +290,7 @@ export function SettingsPage() {
 
   const openCreateModal = () => { setMasterForm(emptyMasterForm()); setShowMasterModal('create') }
   const openEditModal = (mm: MappingMaster) => { setSelectedMaster(mm); setMasterForm(masterToForm(mm)); setShowMasterModal('edit') }
+  const openCopyCreateModal = (mm: MappingMaster) => { setMasterForm(masterToForm(mm)); setShowMasterModal('create') }
   const closeMasterModal = () => { setShowMasterModal(null); setSelectedMaster(null) }
   const openDeleteModal = (mm: MappingMaster) => { setSelectedMaster(mm); setShowDeleteModal(true) }
   const closeDeleteModal = () => { setShowDeleteModal(false); setSelectedMaster(null) }
@@ -441,6 +442,7 @@ export function SettingsPage() {
                             mm={mm}
                             openEditModal={openEditModal}
                             openDeleteModal={openDeleteModal}
+                            openCopyModal={openCopyCreateModal}
                             isMultiSelectMode={isMultiSelectMode}
                             isSelected={isSelectedRow}
                             onClick={(e) => {
@@ -656,7 +658,7 @@ export function SettingsPage() {
       {showMasterModal && (
         <MappingMasterModal mode={showMasterModal} form={masterForm} setForm={setMasterForm}
           isPending={createMaster.isPending || updateMaster.isPending}
-          onClose={closeMasterModal} onSubmit={handleSaveMaster} />
+          onClose={closeMasterModal} onSubmit={handleSaveMaster} masters={masters} />
       )}
       {showDeleteModal && selectedMaster && (
         <MappingMasterDeleteModal master={selectedMaster} usages={usages as any} isLoadingUsages={isLoadingUsages}

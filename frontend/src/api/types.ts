@@ -80,6 +80,7 @@ export interface ScanMatchedItem {
   node_id: string
   node_title: string
   status: string
+  node_ids?: string[]
 }
 
 export interface ScanWarningItem {

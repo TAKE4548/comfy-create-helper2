@@ -36,7 +36,7 @@ export function HistoryModalPreview({
   const [showControls, setShowControls] = useState<boolean>(true)
   const containerRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number | null>(null)
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const controlsTimeoutRef = useRef<any>(null)
 
   const resetControlsTimeout = useCallback(() => {
     setShowControls(true)

@@ -96,6 +96,7 @@ class ScanMatchedItem(BaseModel):
     node_id: str
     node_title: str
     status: str = "ok"
+    node_ids: Optional[list[str]] = None
 
 
 class ScanWarningItem(BaseModel):

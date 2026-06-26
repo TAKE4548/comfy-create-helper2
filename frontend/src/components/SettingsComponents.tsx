@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react'
-import { X, RefreshCw, AlertTriangle, GripVertical, Edit2, Trash2 } from 'lucide-react'
+import { X, RefreshCw, AlertTriangle, GripVertical, Edit2, Trash2, Copy } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { MappingMaster, MappingMasterCreate } from '../api/types'
@@ -51,7 +51,7 @@ export function masterToForm(mm: MappingMaster): MappingMasterFormState {
 
 // ─── Create / Edit Modal ────────────────────────────────────────
 export function MappingMasterModal({
-  mode, form, setForm, isPending, onClose, onSubmit,
+  mode, form, setForm, isPending, onClose, onSubmit, masters,
 }: {
   mode: 'create' | 'edit'
   form: MappingMasterFormState
@@ -59,6 +59,7 @@ export function MappingMasterModal({
   isPending: boolean
   onClose: () => void
   onSubmit: (e: React.FormEvent) => void
+  masters?: MappingMaster[]
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -70,6 +71,30 @@ export function MappingMasterModal({
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={16} /></button>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
+          {mode === 'create' && masters && masters.length > 0 && (
+            <div className="space-y-1.5 bg-white/[0.02] border border-[rgba(255,255,255,0.06)] rounded-xl p-3">
+              <label className="text-[11px] text-zinc-400 font-medium">既存レコードからコピー（コピー元選択）</label>
+              <select
+                onChange={(e) => {
+                  const selectedId = Number(e.target.value)
+                  if (!selectedId) return
+                  const selected = masters.find(m => m.id === selectedId)
+                  if (selected) {
+                    setForm(masterToForm(selected))
+                  }
+                }}
+                className={inputCls}
+                defaultValue=""
+              >
+                <option value="">コピー元を選択してください...</option>
+                {masters.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.role} ({m.display_name})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[11px] text-zinc-400 font-medium">Role (Unique Key)</label>
@@ -189,6 +214,7 @@ interface SortableMasterRowProps {
   mm: MappingMaster
   openEditModal: (mm: MappingMaster) => void
   openDeleteModal: (mm: MappingMaster) => void
+  openCopyModal: (mm: MappingMaster) => void
   isMultiSelectMode: boolean
   isSelected: boolean
   onClick: (e: React.MouseEvent) => void
@@ -205,6 +231,7 @@ export function SortableMasterRow({
   mm,
   openEditModal,
   openDeleteModal,
+  openCopyModal,
   isMultiSelectMode,
   isSelected,
   onClick,
@@ -279,6 +306,9 @@ export function SortableMasterRow({
             <>
               <button onClick={(e) => { e.stopPropagation(); openEditModal(mm) }} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
                 <Edit2 size={13} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); openCopyModal(mm) }} className="p-1 text-zinc-400 hover:text-accent-green transition-colors" title="Copy to New">
+                <Copy size={13} />
               </button>
               <button onClick={(e) => { e.stopPropagation(); openDeleteModal(mm) }} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
                 <Trash2 size={13} />

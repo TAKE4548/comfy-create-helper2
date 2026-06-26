@@ -1,0 +1,21 @@
+# REQ-081: ワークフローアップロード時のノードIDマッピング機能の改善 - Test Plan
+
+## 0. General Rules
+- **String Comparison:** All string comparisons are evaluated after applying `.trim()`, and are case-sensitive unless specified otherwise.
+- **Timeouts:** All asynchronous operations (modal loading, dropdown rendering) must complete within a maximum of 3000ms. If not resolved in 3000ms, the test fails immediately.
+- **Error States:** If any step encounters an unexpected console error or API response status $\ge 400$, the test fails immediately.
+
+## 1. Automated Tests
+- **Execute:** `.venv\Scripts\python -m pytest tests/test_workflow_scanner.py::TestWorkflowScanner -v --tb=short`
+- **Expected Output Pattern:** "PASSED" for all test cases in output stream.
+- **Failure Condition:** Any test case returning "FAILED" or raising uncaught exception.
+
+## 2. Manual Verification Checkpoints
+
+| ID | Scenario | Pre-conditions | Action | Expected Result (Strict Criteria) | Pass/Fail Metric (Enforceable) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **M01** | Master Copy Functionality | 1. Settings screen is open.<br>2. Mapping master list has $\ge$ 1 item. | Click "Copy" button on the target row. | 1. Modal title text is exactly "Create Mapping Master".<br>2. Role input field value is empty string (`""`).<br>3. Other input values match source master's values. | **PASS GATES:** <br>- Gate 1: Modal element with class `.modal-title` contains exact text "Create Mapping Master" within 3000ms. (Y/N) → If N, FAIL.<br>- Gate 2: Input field `.role-field` value is empty string. (Y/N) → If N, FAIL.<br>- Gate 3: Other inputs (display_name, param_name, etc.) match source master values exactly. (Y/N) → If N, FAIL.<br>**FAIL METRICS:** Timeout > 3000ms OR any gate is N. |
+| **M02** | New Creation - Source Selection | 1. Modal is open in create mode (`mode === 'create'`).<br>2. DB has $\ge$ 1 master. | Select a master from the "既存レコードからコピー" dropdown. | Form values are populated with the selected master's values. | **PASS GATES:** <br>- Gate 1: Form fields are populated with selected master's values. (Y/N) → If N, FAIL.<br>- Gate 2: Form fields match source master properties exactly in UI state. (Y/N) → If N, FAIL.<br>**FAIL METRICS:** Timeout > 3000ms OR any gate is N. |
+| **M03** | Comma-Separated Alias Match | 1. A master has param_name="seed, noise_seed" in database.<br>2. Uploaded workflow JSON contains KSampler with inputs.noise_seed. | Upload the workflow JSON. | 1. Dropdown selected value is the node ID.<br>2. No status badge displaying "未検出" or "複数候補" is rendered.<br>3. API call returns status 200 with correct mapping response. | **PASS GATES:** <br>- Gate 1: Dropdown selected value matches target node ID. (Y/N) → If N, FAIL.<br>- Gate 2: Element count of `.status-badge` is exactly 0. (Y/N) → If N, FAIL.<br>- Gate 3: API response for `/api/workflows/scan` contains status "ok" for the role. (Y/N) → If N, FAIL.<br>**FAIL METRICS:** Timeout > 3000ms OR any gate is N. |
+| **M04** | Smart Default Selection Logic | 1. Uploaded workflow contains KSampler nodes (ID 10, 11).<br>2. Node 10 has title "positive", Node 11 has title "negative".<br>3. Master expects "positive". | Upload the workflow JSON. | 1. Selected Node ID is "10".<br>2. No status badge displaying "複数候補" is rendered.<br>3. Dropdown option list contains both "10" and "11".<br>4. API response contains all candidates. | **PASS GATES:** <br>- Gate 1: Dropdown selected value is "10". (Y/N) → If N, FAIL.<br>- Gate 2: Count of warning badges containing text "複数候補" is exactly 0. (Y/N) → If N, FAIL.<br>- Gate 3: Dropdown options count is $\ge$ 2. (Y/N) → If N, FAIL.<br>- Gate 4: API scan response matched list has node_id "10" with status "ok" and node_ids including both "10" and "11". (Y/N) → If N, FAIL.<br>**FAIL METRICS:** Timeout > 3000ms OR any gate is N. |
+| **M05** | Detailed Dropdown Format | 1. Upload workflow modal is open. | Click node candidate dropdown. | Dropdown options display format is `[ID] - [[Title]] (ClassType)`. Example: `10 - [positive] (KSampler)`. | **PASS GATES:** <br>- Gate 1: Every option text matches regex `^\d+ - \[.+?\] \(.+?\)$`. (Y/N) → If N, FAIL.<br>- Gate 2: The options list is not empty. (Y/N) → If N, FAIL.<br>**FAIL METRICS:** Timeout > 3000ms OR any gate is N. |

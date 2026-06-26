@@ -55,7 +55,7 @@ export function useMasterMappingRows(
           node_id = matched.node_id
         }
         // 1:1マッチの場合でも、ドロップダウンから選択可能なように候補に含める
-        candidates = [matched.node_id]
+        candidates = matched.node_ids ?? [matched.node_id]
       }
 
       const row: MasterMappingRow = {
