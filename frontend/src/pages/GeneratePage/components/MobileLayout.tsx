@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Loader2, ScanLine, Settings, ImageOff, Download, CheckSquare, Square, Plus,
   ChevronRight, ChevronDown, Zap, Camera
@@ -93,6 +94,24 @@ export const MobileLayout = ({
   const [newSetName, setNewSetName] = useState('')
   const [copySourceId, setCopySourceId] = useState<string | number>('default')
 
+  const nodeProgress = useGenerationStore((state) => state.nodeProgress)
+  const currentNode = useGenerationStore((state) => state.currentNode)
+  const generationStartTime = useGenerationStore((state) => state.generationStartTime)
+
+  const [elapsedTime, setElapsedTime] = useState(0)
+
+  useEffect(() => {
+    if (!generationStartTime) {
+      setElapsedTime(0)
+      return
+    }
+    setElapsedTime(Math.round((Date.now() - generationStartTime) / 1000))
+    const timer = setInterval(() => {
+      setElapsedTime(Math.round((Date.now() - generationStartTime) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [generationStartTime])
+
   const batchProgress = (() => {
     if (!activeBatch || activeBatch.length === 0) {
       return {
@@ -116,6 +135,11 @@ export const MobileLayout = ({
       text: `Generating (${finished}/${n} Complete)...`
     }
   })()
+
+  const overallPercentage = isGeneratingHere ? batchProgress.percentage : 0
+  const eta = (overallPercentage > 0 && elapsedTime > 0)
+    ? Math.round(elapsedTime * (100 - overallPercentage) / overallPercentage)
+    : null
 
   const renderUploadZone = () => (
     <div
@@ -194,24 +218,72 @@ export const MobileLayout = ({
       </div>
 
       {/* Progress Line */}
-      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-1.5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {isGeneratingHere ? <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />}
-          <span className="truncate">{isGeneratingHere ? batchProgress.text : 'Ready'}</span>
-          <span className="text-zinc-600">|</span>
-          <span 
-            onClick={() => setIsJobModalOpen(true)}
-            className="font-semibold text-zinc-300 cursor-pointer hover:text-white transition-colors"
-          >
-            Queue: {totalQueueCount}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-1 max-w-[150px]">
-          <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
-            <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${isGeneratingHere ? batchProgress.percentage : 0}%` }} />
+      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-2">
+        {isGeneratingHere ? (
+          <>
+            {/* 全体バッチ進捗 */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+                <span>全体進捗: {activeBatch ? activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length : 0}/{activeBatch ? activeBatch.length : 1} 枚目</span>
+                <span>{overallPercentage}%</span>
+              </div>
+              <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+                <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${overallPercentage}%` }} />
+              </div>
+            </div>
+
+            {/* 詳細ノード進捗 */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+                <span>実行中: {currentNode?.name || '準備中...'}</span>
+                <span>{nodeProgress?.percentage || 0}%</span>
+              </div>
+              <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+                <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 0}%` }} />
+              </div>
+            </div>
+
+            {/* 時間情報・Queue情報 */}
+            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium pt-0.5">
+              <div className="flex items-center gap-2">
+                <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
+                <span>経過: {elapsedTime}秒</span>
+                {eta !== null && (
+                  <>
+                    <span className="text-zinc-700">|</span>
+                    <span>残り約: {eta}秒</span>
+                  </>
+                )}
+              </div>
+              <span 
+                onClick={() => setIsJobModalOpen(true)}
+                className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
+              >
+                Queue: {totalQueueCount}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-between text-[10px] text-zinc-400">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />
+              <span className="truncate">Ready</span>
+              <span className="text-zinc-600">|</span>
+              <span 
+                onClick={() => setIsJobModalOpen(true)}
+                className="font-semibold text-zinc-300 cursor-pointer hover:text-white transition-colors"
+              >
+                Queue: {totalQueueCount}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+              <div className="h-1 bg-surface-2 rounded-full border border-white/5 overflow-hidden flex-1">
+                <div className="h-full bg-accent-green transition-all duration-200" style={{ width: '0%' }} />
+              </div>
+              <span className="font-mono text-accent-green whitespace-nowrap">0%</span>
+            </div>
           </div>
-          <span className="font-mono text-accent-green whitespace-nowrap">{isGeneratingHere ? batchProgress.percentage : 0}%</span>
-        </div>
+        )}
       </div>
 
       {/* Main Preview */}

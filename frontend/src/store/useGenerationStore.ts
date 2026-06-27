@@ -33,6 +33,14 @@ export interface ComfyProgress {
   percentage: number
 }
 
+export interface NodeProgress {
+  value: number
+  max: number
+  percentage: number
+  nodeId?: string
+  nodeName?: string
+}
+
 export interface ComfyHistoryOutput {
   images?: Array<{
     filename: string
@@ -103,6 +111,10 @@ export interface GenerationState {
   isConnected: boolean
   isGenerating: boolean
   progress: ComfyProgress | null
+  currentWorkflow: Record<string, any> | null
+  currentNode: { id: string; name: string } | null
+  nodeProgress: NodeProgress | null
+  generationStartTime: number | null
   previewImage: string | null
   currentPromptId: string | null
   activeClientId: string | null
@@ -298,6 +310,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     isConnected: false,
     isGenerating: false,
     progress: null,
+    currentWorkflow: null,
+    currentNode: null,
+    nodeProgress: null,
+    generationStartTime: null,
     previewImage: null,
     currentPromptId: storedCurrentPromptId,
     activeClientId: null,
@@ -384,9 +400,26 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               case 'progress': {
                 const value = data.value as number
                 const max = data.max as number
+                const nodeId = data.node as string | undefined
+                
+                let nodeName = get().currentNode?.name || ''
+                if (nodeId) {
+                  const nodeInfo = get().currentWorkflow?.[nodeId]
+                  if (nodeInfo) {
+                    nodeName = nodeInfo._meta?.title || nodeInfo.class_type || 'Unknown'
+                  }
+                }
+
                 set({
                   isGenerating: true,
                   progress: { value, max, percentage: max > 0 ? Math.round((value / max) * 100) : 0 },
+                  nodeProgress: {
+                    value,
+                    max,
+                    percentage: max > 0 ? Math.round((value / max) * 100) : 0,
+                    nodeId,
+                    nodeName,
+                  },
                 })
                 break
               }
@@ -401,8 +434,38 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   progress: null,
                   currentPromptId: promptId,
                   activeClientId: null,
+                  generationStartTime: Date.now(),
+                  currentNode: null,
+                  nodeProgress: null,
                 })
                 get().fetchQueue()
+                break
+              }
+
+              case 'executing': {
+                const nodeId = data.node as string | null
+                if (nodeId) {
+                  const nodeInfo = get().currentWorkflow?.[nodeId]
+                  const nodeName = nodeInfo
+                    ? (nodeInfo._meta?.title || nodeInfo.class_type || 'Unknown')
+                    : 'Unknown'
+                  
+                  set({
+                    currentNode: { id: nodeId, name: nodeName },
+                    nodeProgress: {
+                      value: 0,
+                      max: 100,
+                      percentage: 0,
+                      nodeId,
+                      nodeName,
+                    },
+                  })
+                } else {
+                  set({
+                    currentNode: null,
+                    nodeProgress: null,
+                  })
+                }
                 break
               }
 
@@ -437,6 +500,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                       isGenerating: isStillGenerating,
                       currentPromptId: null,
                       activeClientId: null,
+                      generationStartTime: isStillGenerating ? state.generationStartTime : null,
+                      currentNode: isStillGenerating ? state.currentNode : null,
+                      nodeProgress: isStillGenerating ? state.nodeProgress : null,
+                      currentWorkflow: isStillGenerating ? state.currentWorkflow : null,
                     }
                   })
                   localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
@@ -462,7 +529,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   isGenerating: isStillGenerating,
                   progress: isStillGenerating ? get().progress : { value: 1, max: 1, percentage: 100 },
                   currentPromptId: null,
-                  activeClientId: null
+                  activeClientId: null,
+                  generationStartTime: isStillGenerating ? get().generationStartTime : null,
+                  currentNode: isStillGenerating ? get().currentNode : null,
+                  nodeProgress: isStillGenerating ? get().nodeProgress : null,
+                  currentWorkflow: isStillGenerating ? get().currentWorkflow : null,
                 })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 setTimeout(() => {
@@ -486,7 +557,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   isGenerating: isStillGenerating,
                   progress: null,
                   currentPromptId: null,
-                  activeClientId: null
+                  activeClientId: null,
+                  generationStartTime: isStillGenerating ? get().generationStartTime : null,
+                  currentNode: isStillGenerating ? get().currentNode : null,
+                  nodeProgress: isStillGenerating ? get().nodeProgress : null,
+                  currentWorkflow: isStillGenerating ? get().currentWorkflow : null,
                 })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchQueue()
@@ -704,7 +779,14 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (!res.ok) throw new Error(`ComfyUI returned ${res.status}`)
         const data = await res.json()
         const promptId = data.prompt_id ?? null
-        set({ isGenerating: true, previewImage: null, progress: null, currentPromptId: promptId, activeClientId: get().clientId })
+        set({
+          isGenerating: true,
+          previewImage: null,
+          progress: null,
+          currentPromptId: promptId,
+          activeClientId: get().clientId,
+          currentWorkflow: workflow,
+        })
         if (promptId) {
           localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
           // キャッシュ保存
@@ -749,7 +831,15 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
         await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
-        set({ isGenerating: false, currentPromptId: null, activeClientId: null })
+        set({
+          isGenerating: false,
+          currentPromptId: null,
+          activeClientId: null,
+          generationStartTime: null,
+          currentNode: null,
+          nodeProgress: null,
+          currentWorkflow: null,
+        })
         localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         await get().fetchQueue()
       } catch (e) {
@@ -861,7 +951,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
         // 4. 自セッションの実行中ジョブであった場合はステートをリセット
         if (promptId === get().currentPromptId || get().activeBatch?.some((job) => job.promptId === promptId)) {
-          set({ activeBatch: null, isGenerating: false, currentPromptId: null, activeClientId: null })
+          set({
+            activeBatch: null,
+            isGenerating: false,
+            currentPromptId: null,
+            activeClientId: null,
+            generationStartTime: null,
+            currentNode: null,
+            nodeProgress: null,
+            currentWorkflow: null,
+          })
           localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         }
 
@@ -910,7 +1009,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
 
         // 4. ステートリセット
-        set({ activeBatch: null, isGenerating: false, currentPromptId: null, activeClientId: null })
+        set({
+          activeBatch: null,
+          isGenerating: false,
+          currentPromptId: null,
+          activeClientId: null,
+          generationStartTime: null,
+          currentNode: null,
+          nodeProgress: null,
+          currentWorkflow: null,
+        })
         localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         
         await get().fetchQueue()
