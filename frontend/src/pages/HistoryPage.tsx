@@ -775,7 +775,7 @@ export function HistoryPage() {
                 <option value="">All LoRAs</option>
                 {loras?.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.model_name}
+                    {l.description || l.model_name}
                   </option>
                 ))}
               </select>

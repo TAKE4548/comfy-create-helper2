@@ -190,6 +190,19 @@ class TagSet(Base):
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")
     snapshots: Mapped[list["SnapshotTagSet"]] = relationship(back_populates="tag_set")
+    subsets: Mapped[list["TagSubset"]] = relationship(back_populates="tag_set", cascade="all, delete-orphan")
+
+
+class TagSubset(Base):
+    __tablename__ = "tag_subsets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tag_set_id: Mapped[int] = mapped_column(ForeignKey("tag_sets.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    tag_set: Mapped["TagSet"] = relationship(back_populates="subsets")
 
 
 class LlmPrompt(Base):

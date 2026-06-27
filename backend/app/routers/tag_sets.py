@@ -23,6 +23,15 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
             .all()
         )
     ]
+    subsets = [
+        schemas.tag_set.TagSubsetRead(
+            id=s.id,
+            tag_set_id=s.tag_set_id,
+            name=s.name,
+            tags=json.loads(s.tags) if s.tags else []
+        )
+        for s in ts.subsets
+    ]
     return schemas.TagSetRead(
         id=ts.id,
         name=ts.name,
@@ -33,6 +42,7 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
         snapshot_paths=snapshot_paths,
         sort_order=ts.sort_order,
         created_at=ts.created_at,
+        subsets=subsets,
     )
 
 
@@ -46,12 +56,22 @@ def list_tag_sets(category_id: Optional[int] = None, db: Session = Depends(get_d
 
 @router.post("", response_model=schemas.TagSetRead, status_code=status.HTTP_201_CREATED)
 def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db)):
+    subsets = []
+    if payload.subsets:
+        for s in payload.subsets:
+            subsets.append(
+                models.TagSubset(
+                    name=s.name,
+                    tags=json.dumps(s.tags)
+                )
+            )
     ts = models.TagSet(
         name=payload.name,
         description=payload.description,
         category_id=payload.category_id,
         tags=json.dumps(payload.tags),
         thumbnail_path=payload.thumbnail_path,
+        subsets=subsets,
     )
     db.add(ts)
     db.commit()
@@ -76,6 +96,16 @@ def update_tag_set(tag_set_id: int, payload: schemas.TagSetCreate, db: Session =
     ts.category_id = payload.category_id
     ts.tags = json.dumps(payload.tags)
     ts.thumbnail_path = payload.thumbnail_path
+    
+    # Replace subsets
+    ts.subsets = [
+        models.TagSubset(
+            name=s.name,
+            tags=json.dumps(s.tags)
+        )
+        for s in payload.subsets
+    ]
+    
     db.commit()
     db.refresh(ts)
     return _tagset_to_schema(ts, db)

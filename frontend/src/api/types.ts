@@ -234,6 +234,18 @@ export interface LoraCreate {
 
 // ─── TagSet ─────────────────────────────────────────────────────
 
+export interface TagSubset {
+  id: number
+  tag_set_id: number
+  name: string
+  tags: string[]
+}
+
+export interface TagSubsetCreate {
+  name: string
+  tags: string[]
+}
+
 export interface TagSet {
   id: number
   name: string
@@ -244,6 +256,7 @@ export interface TagSet {
   snapshot_paths?: string[]
   sort_order: number
   created_at: string
+  subsets?: TagSubset[]
 }
 
 export interface TagSetCreate {
@@ -252,6 +265,7 @@ export interface TagSetCreate {
   category_id?: number
   tags: string[]
   thumbnail_path?: string
+  subsets?: TagSubsetCreate[]
 }
 
 // ─── LLM Audit ──────────────────────────────────────────────────

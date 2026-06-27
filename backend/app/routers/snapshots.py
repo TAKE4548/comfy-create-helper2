@@ -6,7 +6,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -223,4 +223,27 @@ def update_snapshot(snapshot_id: int, payload: schemas.SnapshotUpdate, db: Sessi
     db.commit()
     db.refresh(s)
     return get_snapshot(snapshot_id, db)
+
+
+@router.post("/upload")
+async def upload_snapshot_image(file: UploadFile = File(...)):
+    ext = Path(file.filename).suffix or ".png"
+    if ext.lower() not in [".png", ".jpg", ".jpeg", ".webp"]:
+        ext = ".png"
+    filename = f"upload_{uuid.uuid4().hex}{ext}"
+    
+    target_dir = settings.snapshot_path
+    target_path = target_dir / filename
+    
+    try:
+        content = await file.read()
+        with open(target_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save uploaded file: {str(e)}"
+        )
+        
+    return {"image_path": f"/api/snapshots/images/{filename}"}
 

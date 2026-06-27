@@ -85,7 +85,7 @@ export const ParamPanel = ({
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                 className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
                 <option value="">Select option…</option>
-                {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.model_name}</option>)}
+                {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.description || lora.model_name}</option>)}
               </select>
             ) : (
               <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}

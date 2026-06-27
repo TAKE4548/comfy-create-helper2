@@ -21,10 +21,10 @@ import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
 import {
   LoraRegisterModal,
-  LoraEditModal,
   LoraDetailModal,
   type LoraFormState,
 } from '../components/LoraModals'
+import { ImageCropper } from '../components/ImageCropper'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { LS_KEYS } from '../utils/localStorageKeys'
@@ -98,11 +98,10 @@ export function LoRAsPage() {
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [tooltipLora, setTooltipLora] = useState<number | null>(null)
-  const [editLora, setEditLora] = useState<Lora | null>(null)
   const [selectedLoraForDetail, setSelectedLoraForDetail] = useState<Lora | null>(null)
   const [copiedTriggerSetId, setCopiedTriggerSetId] = useState<number | null>(null)
   const [form, setForm] = useState<LoraFormState>(EMPTY_FORM)
-  const [editForm, setEditForm] = useState<LoraFormState>(EMPTY_FORM)
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
 
   const { data: categories } = useQuery({
     queryKey: ['lora-categories'],
@@ -136,20 +135,49 @@ export function LoRAsPage() {
   })
 
   const updateLora = useMutation({
-    mutationFn: () => lorasApi.update(editLora!.id, {
-      ...editForm,
-      trigger_word_sets: editForm.trigger_word_sets.map((t) => ({
-        name: t.name,
-        words: t.words.split(',').map((w) => w.trim()).filter(Boolean),
-      })),
-    }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loras'] }); setEditLora(null) },
+    mutationFn: ({ id, loraForm }: { id: number; loraForm: LoraFormState }) =>
+      lorasApi.update(id, {
+        ...loraForm,
+        trigger_word_sets: loraForm.trigger_word_sets.map((t) => ({
+          name: t.name,
+          words: t.words.split(',').map((w) => w.trim()).filter(Boolean),
+        })),
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loras'] }) },
   })
 
   const reorderLoras = useMutation({
     mutationFn: (ordered_ids: number[]) => lorasApi.reorder(ordered_ids),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loras'] }),
   })
+
+  const uploadImage = async (blob: Blob): Promise<string> => {
+    const formData = new FormData()
+    formData.append('file', blob, 'cropped.jpg')
+    const res = await fetch('/api/snapshots/upload', {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) {
+      throw new Error('Upload failed')
+    }
+    const data = await res.json()
+    return data.image_path
+  }
+
+  const handleCropComplete = async (blob: Blob) => {
+    try {
+      const imagePath = await uploadImage(blob)
+      setForm((f) => ({ ...f, thumbnail_path: imagePath }))
+    } catch (err) {
+      console.error(err)
+      alert('画像のアップロードに失敗しました')
+    } finally {
+      setCropImageSrc(null)
+    }
+  }
+
+
 
   const loraBulkEditFields: BulkEditField[] = [
     {
@@ -202,23 +230,6 @@ export function LoRAsPage() {
   )
 
   const isDndActive = !search && selectedCat === null
-
-  const openEdit = (lora: Lora) => {
-    setEditLora(lora)
-    setEditForm({
-      model_name: lora.model_name,
-      description: lora.description ?? '',
-      recommended_strength_min: lora.recommended_strength_min ?? undefined,
-      recommended_strength_max: lora.recommended_strength_max ?? undefined,
-      category_id: lora.category_id ?? undefined,
-      file_path: lora.file_path ?? '',
-      trigger_word_sets: lora.trigger_word_sets.map((tws) => ({
-        name: tws.name,
-        words: tws.words.join(', '),
-      })),
-      thumbnail_path: lora.thumbnail_path ?? undefined,
-    })
-  }
 
   const handleCopy = (id: number, words: string) => {
     navigator.clipboard.writeText(words)
@@ -393,7 +404,7 @@ export function LoRAsPage() {
                         alt={lora.model_name}
                         className="aspect-square w-full"
                       >
-                        <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); openEdit(lora) }}
+                        <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
                           className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                           <Pencil size={13} />
                         </button>
@@ -497,21 +508,17 @@ export function LoRAsPage() {
           isPending={createLora.isPending}
           onClose={() => setShowModal(false)}
           onSubmit={() => createLora.mutate()}
-          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })} />
-      )}
-      {editLora && (
-        <LoraEditModal form={editForm} setForm={setEditForm} categories={categories}
-          isPending={updateLora.isPending}
-          onClose={() => setEditLora(null)}
-          onSubmit={() => updateLora.mutate()}
-          snapshotPaths={editLora.snapshot_paths}
-          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })} />
+          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })}
+          onUploadImage={(src) => setCropImageSrc(src)} />
       )}
       {selectedLoraForDetail && (
         <LoraDetailModal lora={selectedLoraForDetail} categories={categories}
           copiedId={copiedTriggerSetId}
           onCopy={handleCopy}
-          onClose={() => setSelectedLoraForDetail(null)} />
+          onClose={() => setSelectedLoraForDetail(null)}
+          onSave={(id, loraForm) => updateLora.mutate({ id, loraForm })}
+          isPending={updateLora.isPending}
+          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })} />
       )}
       {showCatModal && (
         <CategoryManagerModal type="lora" onClose={() => setShowCatModal(false)} />
@@ -524,6 +531,13 @@ export function LoRAsPage() {
           selectedCount={selectedIds.size}
           onApply={(values) => bulkUpdateLoras.mutate(values)}
           isApplying={bulkUpdateLoras.isPending}
+        />
+      )}
+      {cropImageSrc && (
+        <ImageCropper
+          imageSrc={cropImageSrc}
+          onCropComplete={handleCropComplete}
+          onCancel={() => setCropImageSrc(null)}
         />
       )}
     </div>

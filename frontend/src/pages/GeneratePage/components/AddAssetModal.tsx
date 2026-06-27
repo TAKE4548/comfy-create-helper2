@@ -31,7 +31,7 @@ export const AddAssetModal = ({
 
   // 選択されたアセットのステート
   const [selectedLoras, setSelectedLoras] = useState<Map<number, LoraConfig>>(new Map())
-  const [selectedTagSets, setSelectedTagSets] = useState<Set<number>>(new Set())
+  const [selectedTagSets, setSelectedTagSets] = useState<Map<number, { selectedSubsetId: number | 'all' }>>(new Map())
 
   // 詳細設定展開中のLoRA IDリスト
   const [expandedLoras, setExpandedLoras] = useState<Set<number>>(new Set())
@@ -98,12 +98,12 @@ export const AddAssetModal = ({
     setSelectedLoras(next)
   }
 
-  const handleToggleTagSet = (tsId: number) => {
-    const next = new Set(selectedTagSets)
-    if (next.has(tsId)) {
-      next.delete(tsId)
+  const handleToggleTagSet = (ts: any) => {
+    const next = new Map(selectedTagSets)
+    if (next.has(ts.id)) {
+      next.delete(ts.id)
     } else {
-      next.add(tsId)
+      next.set(ts.id, { selectedSubsetId: ts.subsets && ts.subsets.length > 0 ? ts.subsets[0].id : 'all' })
     }
     setSelectedTagSets(next)
   }
@@ -162,15 +162,26 @@ export const AddAssetModal = ({
     })
 
     // TagSetの適用
-    selectedTagSets.forEach((tsId) => {
+    selectedTagSets.forEach((config, tsId) => {
       const ts = tagSets.find((t) => t.id === tsId)
       if (!ts) return
+
+      let tagsToApply = ts.tags || []
+      let appliedName = ts.name
+      
+      if (config.selectedSubsetId !== 'all') {
+        const subset = (ts as any).subsets?.find((s: any) => s.id === config.selectedSubsetId)
+        if (subset) {
+          tagsToApply = subset.tags || []
+          appliedName = `${ts.name} (${subset.name})`
+        }
+      }
 
       addAppliedAsset(role, {
         type: 'tagset',
         assetId: ts.id,
-        name: ts.name,
-        tags: ts.tags || [],
+        name: appliedName,
+        tags: tagsToApply,
       })
     })
 
@@ -389,50 +400,96 @@ export const AddAssetModal = ({
             filteredTagSets.length > 0 ? (
               filteredTagSets.map((ts) => {
                 const isSelected = selectedTagSets.has(ts.id)
+                const config = selectedTagSets.get(ts.id)
+                const hasSubsets = (ts as any).subsets && (ts as any).subsets.length > 0
                 return (
                   <div
                     key={ts.id}
-                    onClick={() => handleToggleTagSet(ts.id)}
-                    className={`flex items-start gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
+                    onClick={() => handleToggleTagSet(ts)}
+                    className={`flex flex-col gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
                       isSelected
                         ? 'border-[#7C6FDD]/40 bg-[#7C6FDD]/5'
                         : 'border-[rgba(255,255,255,0.06)] bg-surface-2/30 hover:bg-surface-2/50'
                     }`}
                   >
-                    <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTagSet(ts.id)}
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
-                          isSelected
-                            ? 'bg-[#7C6FDD] border-[#7C6FDD] text-white'
-                            : 'border-zinc-700 hover:border-zinc-500'
-                        }`}
-                      >
-                        {isSelected && <Check size={14} strokeWidth={3} />}
-                      </button>
+                    <div className="flex items-start gap-3 w-full">
+                      <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleTagSet(ts)}
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                            isSelected
+                              ? 'bg-[#7C6FDD] border-[#7C6FDD] text-white'
+                              : 'border-zinc-700 hover:border-zinc-500'
+                          }`}
+                        >
+                          {isSelected && <Check size={14} strokeWidth={3} />}
+                        </button>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-semibold text-zinc-200 truncate">{ts.name}</h4>
+                        {ts.description && (
+                          <p className="text-[10px] text-zinc-450 mt-1 line-clamp-2">{ts.description}</p>
+                        )}
+                        {ts.tags && ts.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {ts.tags.slice(0, 5).map((tag, idx) => (
+                              <span key={idx} className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                            {ts.tags.length > 5 && (
+                              <span className="text-[9px] text-zinc-555 self-center">
+                                +{ts.tags.length - 5}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-xs font-semibold text-zinc-200 truncate">{ts.name}</h4>
-                      {ts.description && (
-                        <p className="text-[10px] text-zinc-450 mt-1 line-clamp-2">{ts.description}</p>
-                      )}
-                      {ts.tags && ts.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {ts.tags.slice(0, 5).map((tag, idx) => (
-                            <span key={idx} className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
-                              {tag}
-                            </span>
+                    {/* Subsets Selection UI */}
+                    {isSelected && hasSubsets && config && (
+                      <div className="mt-2 pl-8 border-t border-[rgba(255,255,255,0.06)] pt-3 w-full" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[11px] text-zinc-400 block mb-1.5 font-medium">適用するバリエーション</span>
+                        <div className="space-y-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-zinc-300">
+                            <input
+                              type="radio"
+                              name={`subset-${ts.id}`}
+                              checked={config.selectedSubsetId === 'all'}
+                              onChange={() => {
+                                const next = new Map(selectedTagSets)
+                                next.set(ts.id, { selectedSubsetId: 'all' })
+                                setSelectedTagSets(next)
+                              }}
+                              className="accent-[#7C6FDD] cursor-pointer"
+                            />
+                            <span>すべてのタグ ({ts.tags?.join(', ')})</span>
+                          </label>
+
+                          {(ts as any).subsets.map((sub: any) => (
+                            <label key={sub.id} className="flex items-center gap-2 cursor-pointer select-none text-xs text-zinc-300">
+                              <input
+                                type="radio"
+                                name={`subset-${ts.id}`}
+                                checked={config.selectedSubsetId === sub.id}
+                                onChange={() => {
+                                  const next = new Map(selectedTagSets)
+                                  next.set(ts.id, { selectedSubsetId: sub.id })
+                                  setSelectedTagSets(next)
+                                }}
+                                className="accent-[#7C6FDD] cursor-pointer"
+                              />
+                              <span className="truncate">
+                                {sub.name} ({sub.tags?.join(', ')})
+                              </span>
+                            </label>
                           ))}
-                          {ts.tags.length > 5 && (
-                            <span className="text-[9px] text-zinc-555 self-center">
-                              +{ts.tags.length - 5}
-                            </span>
-                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )
               })
