@@ -62,7 +62,6 @@ export function useGeneratePageState() {
 
   const qc = useQueryClient()
   const [rescanOpen, setRescanOpen] = useState(false)
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | ''>('')
   const [selectedMasters, setSelectedMasters] = useState<Record<number, number>>({})
   const [openAddAssetRole, setOpenAddAssetRole] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -465,7 +464,18 @@ export function useGeneratePageState() {
   const paramMappings = validMappings.filter((m) => m.input_type !== 'textarea' && m.role !== 'Sampler_Seed')
 
   // ── Side effects ─────────────────────────────────────────────
-  useEffect(() => { setSelectedSnapshotId('') }, [selectedWorkflowId])
+  useEffect(() => {
+    if (isMultiSelectMode && selectedIds.size > 0) {
+      const idsArray = Array.from(selectedIds);
+      const lastId = idsArray[idsArray.length - 1];
+      if (lastId !== undefined && lastId >= 0 && lastId < sortedDisplayImages.length) {
+        const lastImg = sortedDisplayImages[lastId];
+        if (lastImg !== selectedImg) {
+          setSelectedImg(lastImg);
+        }
+      }
+    }
+  }, [selectedIds, isMultiSelectMode, sortedDisplayImages, selectedImg, setSelectedImg]);
 
   useEffect(() => {
     const texts = workflow?.mappings.filter((m) => m.role != null && m.input_type === 'textarea') ?? []
@@ -592,7 +602,6 @@ export function useGeneratePageState() {
     } catch (e) {
       console.error('Failed to load snapshot details:', e)
     }
-    setSelectedSnapshotId('')
   }
 
   const handleUpdateMapping = async (mappingId: number, newMasterId: number) => {
@@ -650,8 +659,6 @@ export function useGeneratePageState() {
     qc,
     rescanOpen,
     setRescanOpen,
-    selectedSnapshotId,
-    setSelectedSnapshotId,
     selectedMasters,
     setSelectedMasters,
     openAddAssetRole,

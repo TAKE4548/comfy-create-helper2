@@ -320,4 +320,62 @@ describe('useMultiSelect', () => {
     });
     expect(result.current.isMultiSelectMode).toBe(true);
   });
+
+  it('should enter multi-select mode with Ctrl click', () => {
+    const { result } = renderHook(() => useMultiSelect({ items }));
+
+    act(() => {
+      const e = { ctrlKey: true, metaKey: false, shiftKey: false } as unknown as React.MouseEvent;
+      result.current.handleItemClick(2, e);
+    });
+
+    expect(result.current.isMultiSelectMode).toBe(true);
+    expect(result.current.isSelected(2)).toBe(true);
+  });
+
+  it('should enter multi-select mode with Shift click and select range if lastSelectedId is set', () => {
+    const { result } = renderHook(() => useMultiSelect({ items }));
+
+    // 1. Regular click on item 2 to set lastSelectedId
+    act(() => {
+      const e = { ctrlKey: false, metaKey: false, shiftKey: false } as unknown as React.MouseEvent;
+      result.current.handleItemClick(2, e);
+    });
+    expect(result.current.isMultiSelectMode).toBe(false);
+
+    // 2. Shift click on item 4 to enter multi-select mode and select range [2, 3, 4]
+    act(() => {
+      const e = { ctrlKey: false, metaKey: false, shiftKey: true } as unknown as React.MouseEvent;
+      result.current.handleItemClick(4, e);
+    });
+
+    expect(result.current.isMultiSelectMode).toBe(true);
+    expect(result.current.isSelected(2)).toBe(true);
+    expect(result.current.isSelected(3)).toBe(true);
+    expect(result.current.isSelected(4)).toBe(true);
+    expect(result.current.isSelected(1)).toBe(false);
+  });
+
+  it('should update lastSelectedId on normal click and not enter multi-select mode', () => {
+    const { result } = renderHook(() => useMultiSelect({ items }));
+
+    act(() => {
+      const e = { ctrlKey: false, metaKey: false, shiftKey: false } as unknown as React.MouseEvent;
+      result.current.handleItemClick(3, e);
+    });
+
+    expect(result.current.isMultiSelectMode).toBe(false);
+    expect(result.current.selectedIds.size).toBe(0);
+
+    // Click with Shift now should trigger range select from 3
+    act(() => {
+      const e = { ctrlKey: false, metaKey: false, shiftKey: true } as unknown as React.MouseEvent;
+      result.current.handleItemClick(5, e);
+    });
+
+    expect(result.current.isMultiSelectMode).toBe(true);
+    expect(result.current.isSelected(3)).toBe(true);
+    expect(result.current.isSelected(4)).toBe(true);
+    expect(result.current.isSelected(5)).toBe(true);
+  });
 });

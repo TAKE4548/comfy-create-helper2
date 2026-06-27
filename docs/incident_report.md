@@ -847,3 +847,54 @@ CSSの仕様上、flexコンテナーの子要素（flexアイテム）はデフ
 1. `useWorkflowParams.ts` で定義されている初期パラメータ算出関数 `getInitialParams` を `export` するように変更します。
 2. `useGeneratePageState.ts` にて `getInitialParams` をインポートし、`handleCreatePreset` 内で `copySourceId === 'default'` の場合に、`getInitialParams(workflow)` を呼び出してワークフローのデフォルトパラメータを取得して設定します。
 3. `appliedAssets` に関しても、`workflow.default_applied_assets` が存在する場合はそれをパースして設定し、存在しない場合のみ空のオブジェクト `{}` を設定するようにします。
+
+---
+
+## [NEW] ワークフローアップロード時のスマートノードマッピング（一意判定）の漏れ
+
+### 1. 現象・症状
+PBI 081（ワークフローアップロード時のノードIDマッピング機能の改善）で実装された「スマート初期値選択」において、同一タイプのノードが複数存在し、タイトルまで一致するノードが複数存在する場合（競合状態）に、タイトルが一致しない無関係なノード（クラスタイプのみ一致するノード）が初期値として自動選択されてしまう。
+
+### 2. 再現手順
+1. マッピングマスタにおいて、ある役割のタイトルパターン（例: `"MainSampler"`) が定義されている。
+2. 同一の期待されるクラスタイプ（例: `KSampler`）を持つノードが複数含まれるワークフローをアップロードする。
+3. ワークフロー内に、タイトルパターンに一致するノードが2つ以上存在し（例: ノード10, ノード20）、かつタイトルパターンに一致しない同一タイプのノード（例: ノード5）が存在するとき、「複数候補」警告が発生する。
+4. この際、ドロップダウンの初期値として、タイトルが一致しているノード（10 or 20）ではなく、タイトルが一致しないノード（5）が自動選択されてしまう。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：バックエンド `workflow_scanner.py` におけるフォールバック時の選択ロジック of 不備
+**該当ファイル**:
+- [`workflow_scanner.py`](../backend/app/services/workflow_scanner.py#L115-L121) L115–L121
+
+```python
+        is_smart_match = False
+        if len(perfect_matches) == 1:
+            selected_node_id, selected_class_type, selected_node_title = perfect_matches[0]
+            is_smart_match = True
+        else:
+            selected_node_id, selected_class_type, selected_node_title = candidates[0]
+```
+
+- **分析：競合発生時（`len(perfect_matches) >= 2`）のフォールバック対象の誤り**:
+  クラスタイプとタイトルパターンの両方に一致するノード（`perfect_matches`）が複数件ある場合、`len(perfect_matches) == 1` は `False` と評価され、`else` ブロックに入ります。
+  しかし、`else` ブロックではタイトルの一致・不一致にかかわらず、クラスタイプやパラメータ名だけで抽出された全候補リスト `candidates` の先頭要素（`candidates[0]`）を初期値（`selected_node_id`）として設定してしまいます。
+  この結果、タイトルが一致しているノードが複数ある（競合している）にもかかわらず、初期値にはタイトルが一致しない別のノード（IDが若いだけのノードなど）が選ばれてしまう問題が発生します。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`workflow_scanner.py`](../backend/app/services/workflow_scanner.py) L115-L121 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **競合発生時における `perfect_matches` 内でのフォールバック**:
+   クラスタイプとタイトルパターンの両方に一致するノードが複数（2つ以上）ある場合は、`perfect_matches` の中から最初の要素（ID順にソートされた先頭のノードなど）を初期値（`selected_node_id`）として選択するように修正します。これにより、複数候補状態であっても、タイトルが一致しているノードの中から初期値が選択されるようになります。
+   - `perfect_matches` が 1 件以上の場合は、`perfect_matches[0]` を `selected_node_id` に設定。
+   - `perfect_matches` が 0 件の場合のみ、従来の `candidates[0]` へフォールバック。
+2. **`expected_class_types` が空の場合のバグ修正**:
+   `expected_class_types` が空（指定なし）の場合は、クラスタイプチェックを常にパス（`class_type_ok = True`）するように修正し、タイトルパターンのみで一意特定を行おうとするマスタでもスマートマッチや優先選択が正常に動作するようにします。
+

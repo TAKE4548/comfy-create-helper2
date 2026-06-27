@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, ScanLine, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
@@ -38,6 +38,18 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
   const [saveError, setSaveError] = useState<string | null>(null)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [customModes, setCustomModes] = useState<Record<number, boolean>>({})
+  const nodeTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (scanResult) {
+      scanResult.matched.forEach(m => {
+        if (m.node_title) map.set(m.node_id, m.node_title);
+      });
+      scanResult.warnings.forEach(w => {
+        if (w.node_id) map.set(w.node_id, w.node_id);
+      });
+    }
+    return map;
+  }, [scanResult]);
 
   // Mapping masters for dropdowns
   const { data: masters = [] } = useQuery<MappingMaster[]>({
@@ -213,10 +225,12 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
                               className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
                             >
                               {row.candidates.map((id) => (
-                                <option key={id} value={id}>{id}</option>
-                              ))}
-                              <option value="">未指定</option>
-                              <option value="custom">直接入力...</option>
+                                  <option key={id} value={id}>
+                                    {id}{nodeTitleMap.get(id) ? ` - [${nodeTitleMap.get(id)}] (${row.master.role})` : ''}
+                                  </option>
+                                ))}
+                                <option value="">未指定</option>
+                                <option value="custom">直接入力...</option>
                             </select>
                             {(customModes[row.master.id] || (row.node_id !== '' && !row.candidates.includes(row.node_id))) && (
                               <input

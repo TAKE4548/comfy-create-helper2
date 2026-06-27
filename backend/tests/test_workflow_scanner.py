@@ -119,3 +119,58 @@ class TestWorkflowScanner(unittest.TestCase):
         self.assertEqual(len(result["warnings"]), 1)
         self.assertEqual(result["warnings"][0]["status"], "duplicated")
         self.assertEqual(set(result["warnings"][0]["node_ids"]), {"10", "11"})
+
+    def test_conflict_fallback_to_first_perfect_match(self):
+        master = DummyMappingMaster(
+            id=1,
+            role="sampler_role",
+            expected_class_types='["KSampler"]',
+            param_name="seed",
+            title_patterns='["positive"]'
+        )
+        workflow_json = {
+            "10": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 123},
+                "_meta": {"title": "negative"}
+            },
+            "11": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 456},
+                "_meta": {"title": "positive"}
+            },
+            "12": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 789},
+                "_meta": {"title": "positive"}
+            }
+        }
+        result = scan_workflow(workflow_json, [master])
+        self.assertEqual(len(result["matched"]), 1)
+        self.assertEqual(result["matched"][0]["node_id"], "11")
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertEqual(result["warnings"][0]["status"], "duplicated")
+        self.assertEqual(set(result["warnings"][0]["node_ids"]), {"10", "11", "12"})
+
+    def test_empty_expected_class_types_matches_by_title_only(self):
+        master = DummyMappingMaster(
+            id=1,
+            role="custom_role",
+            expected_class_types='[]',
+            param_name="",
+            title_patterns='["my_node_title"]'
+        )
+        workflow_json = {
+            "10": {
+                "class_type": "SomeClass",
+                "_meta": {"title": "other_title"}
+            },
+            "11": {
+                "class_type": "AnotherClass",
+                "_meta": {"title": "my_node_title"}
+            }
+        }
+        result = scan_workflow(workflow_json, [master])
+        self.assertEqual(len(result["matched"]), 1)
+        self.assertEqual(result["matched"][0]["node_id"], "11")
+        self.assertEqual(len(result["warnings"]), 0)

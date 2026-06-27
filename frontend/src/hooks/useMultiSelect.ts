@@ -61,8 +61,21 @@ export function useMultiSelect<T extends { id: number }>({
   const handleItemClick = useCallback(
     (id: number, event: React.MouseEvent) => {
       if (!isMultiSelectMode) {
-        if (event.ctrlKey || event.metaKey) {
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          const prevLastSelected = lastSelectedIdRef.current;
           enterMultiSelectMode(id);
+          if (event.shiftKey && prevLastSelected !== null) {
+            const fromIdx = items.findIndex((i) => i.id === prevLastSelected);
+            const toIdx = items.findIndex((i) => i.id === id);
+            if (fromIdx !== -1 && toIdx !== -1) {
+              const start = Math.min(fromIdx, toIdx);
+              const end = Math.max(fromIdx, toIdx);
+              const rangeIds = items.slice(start, end + 1).map((i) => i.id);
+              setSelectedIds(new Set(rangeIds));
+            }
+          }
+        } else {
+          lastSelectedIdRef.current = id;
         }
         return;
       }

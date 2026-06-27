@@ -5,13 +5,13 @@ import {
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { SettingsPopover } from './SettingsPopover'
-import { AssetDropdown } from './AssetDropdown'
+import { AddAssetModal } from './AddAssetModal'
 import { AppliedAssetChips } from './AppliedAssetChips'
 import { AuditPanel } from './AuditPanel'
 import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
-import { formatDateTime, getPromptPrefix } from '../../../utils/formatUtils'
+import { getPromptPrefix } from '../../../utils/formatUtils'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -28,6 +28,7 @@ export const DesktopLayout = ({
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     selectedImg, setSelectedImg,
     appliedAssets,
+    addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
     setComfyUrl,
     sets, activeSetId, removeSet, renameSet,
@@ -36,15 +37,11 @@ export const DesktopLayout = ({
     
     // state properties
     setRescanOpen,
-    selectedSnapshotId,
     selectedMasters, setSelectedMasters,
     openAddAssetRole, setOpenAddAssetRole,
     isSettingsOpen, setIsSettingsOpen,
     localComfyUrl, setLocalComfyUrl,
     thumbnailTab, setThumbnailTab,
-    setSelectedTriggerSetId,
-    setSelectedLoraForModal,
-    setLoraStrength,
     setIsJobModalOpen,
     sortOrder, setSortOrder,
     isPresetOpen, setIsPresetOpen,
@@ -81,12 +78,11 @@ export const DesktopLayout = ({
     auditResult, auditStatus, runAudit,
     dragOver, handleFileSelect, handleDragOver, handleDragLeave, handleDrop,
     isGeneratingHere, totalQueueCount,
-    showStrip, hasHistory, invalidMappings, textMappings, paramMappings,
+    showStrip, invalidMappings, textMappings, paramMappings,
     
     // handlers
     handleLoadSnapshot,
     handleUpdateMapping,
-    handleAddTagSetAsset,
     handleOpenModalPreview,
     handleGenerateSets,
     getIsRoleCollapsed,
@@ -242,17 +238,6 @@ export const DesktopLayout = ({
                 />
               )}
             </div>
-            <select id="snapshot-history-select" value={selectedSnapshotId}
-              onChange={(e) => { if (e.target.value) handleLoadSnapshot(Number(e.target.value)) }}
-              disabled={!hasHistory}
-              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 disabled:opacity-45 max-w-[140px] truncate">
-              {!hasHistory ? <option value="">履歴なし</option> : (
-                <>
-                  <option value="">過去スナップショットを選択...</option>
-                  {sortedSnapshots?.map((s) => <option key={s.id} value={s.id}>{formatDateTime(s.created_at)} - {getPromptPrefix(s.params)}</option>)}
-                </>
-              )}
-            </select>
             <button id="rescan-btn" onClick={() => setRescanOpen(true)} disabled={!selectedWorkflowId} title="マッピングを再スキャン・修正"
               className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 transition-all flex-shrink-0">
               <ScanLine size={14} />
@@ -436,15 +421,13 @@ export const DesktopLayout = ({
                         <Plus size={10} />Add Asset
                       </button>
                       {openAddAssetRole === m.role && (
-                        <AssetDropdown
+                        <AddAssetModal
                           role={m.role!}
                           loras={loras}
                           tagSets={tagSets}
-                          setLoraStrength={setLoraStrength}
-                          setSelectedTriggerSetId={setSelectedTriggerSetId}
-                          setSelectedLoraForModal={setSelectedLoraForModal}
-                          setOpenAddAssetRole={setOpenAddAssetRole}
-                          handleAddTagSetAsset={handleAddTagSetAsset}
+                          onClose={() => setOpenAddAssetRole(null)}
+                          addAppliedAsset={addAppliedAsset}
+                          setRoleCollapsed={setRoleCollapsed}
                         />
                       )}
                     </div>
@@ -616,9 +599,8 @@ export const DesktopLayout = ({
                           onTouchStart={longPressHandlers.onTouchStart}
                           onTouchEnd={longPressHandlers.onTouchEnd}
                           onClick={(e) => {
-                            if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
-                              handleItemClick(i, e)
-                            } else {
+                            handleItemClick(i, e)
+                            if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                               setSelectedImg(img)
                             }
                           }}
@@ -672,7 +654,7 @@ export const DesktopLayout = ({
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
             <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
           </button>
-          <button id="save-snapshot-btn" onClick={() => setIsSaveModalOpen(true)} disabled={!selectedImg || isMultiSelectMode}
+          <button id="save-snapshot-btn" onClick={() => setIsSaveModalOpen(true)} disabled={isMultiSelectMode ? selectedIds.size === 0 : !selectedImg}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
             <Camera size={15} /><span className="hidden sm:inline">Save Snapshot</span>
           </button>

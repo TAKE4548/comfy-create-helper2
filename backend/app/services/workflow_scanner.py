@@ -107,7 +107,7 @@ def scan_workflow(workflow_json: dict, mapping_masters: list) -> dict:
         # Check if there is exactly one perfect match (class type AND title pattern match)
         perfect_matches = []
         for node_id, node_class_type, node_title in candidates:
-            class_type_ok = any(ct.strip().lower() == node_class_type.strip().lower() for ct in expected_class_types) if expected_class_types else False
+            class_type_ok = any(ct.strip().lower() == node_class_type.strip().lower() for ct in expected_class_types) if expected_class_types else True
             title_ok = any(p.strip().lower() == node_title.strip().lower() for p in title_patterns) if title_patterns else False
             if class_type_ok and title_ok:
                 perfect_matches.append((node_id, node_class_type, node_title))
@@ -116,8 +116,12 @@ def scan_workflow(workflow_json: dict, mapping_masters: list) -> dict:
         if len(perfect_matches) == 1:
             selected_node_id, selected_class_type, selected_node_title = perfect_matches[0]
             is_smart_match = True
+        elif len(perfect_matches) > 1:
+            selected_node_id, selected_class_type, selected_node_title = perfect_matches[0]
+            is_smart_match = False
         else:
             selected_node_id, selected_class_type, selected_node_title = candidates[0]
+            is_smart_match = False
 
         if len(candidates) > 1 and not is_smart_match:
             warnings.append({
