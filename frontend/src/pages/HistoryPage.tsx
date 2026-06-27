@@ -72,7 +72,7 @@ function SortableItem({
     zIndex: isDragging ? 50 : 1,
     opacity: isDragging ? 0.9 : 1,
     boxShadow: isDragging ? '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5)' : undefined,
-    touchAction: 'none'
+    touchAction: isDragging ? 'none' : 'pan-y'
   }
 
   return (

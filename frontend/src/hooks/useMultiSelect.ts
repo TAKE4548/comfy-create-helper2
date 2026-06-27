@@ -175,6 +175,7 @@ export function useMultiSelect<T extends { id: number }>({
         document.removeEventListener('touchmove', globalMove);
         document.removeEventListener('mouseup', globalClear);
         document.removeEventListener('touchend', globalClear);
+        document.removeEventListener('touchcancel', globalClear);
       };
 
       const start = (e: React.MouseEvent | React.TouchEvent) => {
@@ -200,6 +201,7 @@ export function useMultiSelect<T extends { id: number }>({
         document.addEventListener('touchmove', globalMove, { passive: true });
         document.addEventListener('mouseup', globalClear);
         document.addEventListener('touchend', globalClear);
+        document.addEventListener('touchcancel', globalClear);
 
         const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT);
         const parsed = stored !== null ? parseFloat(stored) : NaN;
