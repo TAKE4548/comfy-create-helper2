@@ -381,8 +381,90 @@ class TestSnapshotsAPI(unittest.TestCase):
         response_patch = self.client.patch(f"/api/snapshots/{snapshot_id}", json={"lora_ids": [99999], "tag_set_ids": []})
         self.assertEqual(response_patch.status_code, 400)
 
+    def test_patch_snapshot_invalid_tag_set(self):
+        # 初期スナップショットを作成
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test.png",
+            "params": {"prompt": "1girl"},
+            "loras": [],
+            "tag_sets": []
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        snapshot_id = response.json()["id"]
+
+        # 存在しないTagSet IDを渡した場合、バリデーションエラー(400)になることを確認
+        response_patch = self.client.patch(f"/api/snapshots/{snapshot_id}", json={"lora_ids": [], "tag_set_ids": [99999]})
+        self.assertEqual(response_patch.status_code, 400)
+
+    def test_create_snapshot_db_error_deletes_downloaded_image(self):
+        # 画像ダウンロードを伴う作成処理で、DBの追加/コミット時にエラーを起こさせる
+        from unittest.mock import patch, MagicMock
+        from sqlalchemy.exc import SQLAlchemyError
+        import os
+        from pathlib import Path
+        from app.config import settings
+
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png",
+            "params": {},
+            "loras": [],
+            "tag_sets": []
+        }
+        
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake image content"
+        mock_response.__enter__.return_value = mock_response
+
+        # 保存されるファイルのパスをキャプチャする
+        saved_paths = []
+        original_open = open
+        
+        def mock_open_fn(file, mode):
+            p = Path(file)
+            if p.parent == settings.snapshot_path:
+                saved_paths.append(p)
+            return original_open(file, mode)
+
+        # override_get_db 用のカスタム Session セッションファクトリ
+        def custom_get_db():
+            db = TestingSessionLocal()
+            original_add = db.add
+            
+            def raise_db_err(instance):
+                if isinstance(instance, models.Snapshot):
+                    raise SQLAlchemyError("Fake DB Error")
+                original_add(instance)
+                
+            db.add = raise_db_err
+            try:
+                yield db
+            finally:
+                db.close()
+
+        # テスト用に get_db を一時差し替え
+        app.dependency_overrides[get_db] = custom_get_db
+        
+        try:
+            with patch('urllib.request.urlopen', return_value=mock_response):
+                with patch('builtins.open', mock_open_fn):
+                    try:
+                        self.client.post("/api/snapshots", json=payload)
+                    except SQLAlchemyError:
+                        pass
+                    
+                    # 保存されたはずの画像ファイルパスが存在しない（クリーンアップで削除された）ことを検証
+                    self.assertTrue(len(saved_paths) > 0)
+                    for path in saved_paths:
+                        self.assertFalse(path.exists())
+        finally:
+            # get_db オーバーライドを元に戻す
+            app.dependency_overrides[get_db] = override_get_db
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

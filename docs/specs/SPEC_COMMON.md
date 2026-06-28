@@ -97,7 +97,7 @@ frontend/src/components/TagChipEditor/
 
 ```typescript
 type TagChip = {
-  id: string;          // nanoid で生成したローカルキー
+  id: string;          // 衝突耐性のあるユニークID (idGenerator.ts により生成)
   text: string;        // タグ文字列（trim 済み）
   enabled: boolean;    // false = 無効化（グレーアウト）
   converting?: boolean; // LLM 変換キュー処理中フラグ
@@ -146,7 +146,7 @@ type TagChipEditorProps = {
 // 文字列 → チップ配列
 function parseToChips(text: string): TagChip[] {
   return text.split(",").map(s => s.trim()).filter(Boolean)
-    .map(text => ({ id: nanoid(), text, enabled: true }));
+    .map(text => ({ id: generateChipId(), text, enabled: true }));
 }
 
 // チップ配列 → 文字列（ComfyUI 投入・onChange 用）

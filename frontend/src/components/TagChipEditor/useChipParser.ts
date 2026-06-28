@@ -1,3 +1,5 @@
+import { generateChipId } from './idGenerator';
+
 export type TagChip = {
   id: string;
   text: string;
@@ -15,7 +17,7 @@ export const parseToChips = (text: string): TagChip[] => {
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
     .map((item) => ({
-      id: Math.random().toString(36).substring(2, 9),
+      id: generateChipId(),
       text: item,
       enabled: true,
     }));

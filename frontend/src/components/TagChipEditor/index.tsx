@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { parseToChips, chipsToString, TagChip as TagChipType } from './useChipParser';
 import { useChipHistory } from './useChipHistory';
+import { generateChipId } from './idGenerator';
 import { TagChip } from './TagChip';
 import { TagInput } from './TagInput';
 import { FileText, LayoutGrid } from 'lucide-react';
@@ -116,7 +117,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
       );
       if (!exists) {
         const newChip: TagChipType = {
-          id: Math.random().toString(36).substring(2, 9),
+          id: generateChipId(),
           text: tagToAdd,
           enabled: true,
         };
@@ -211,7 +212,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     if (index === -1) return;
     const chipToDuplicate = state[index];
     const newChip: TagChipType = {
-      id: Math.random().toString(36).substring(2, 9),
+      id: generateChipId(),
       text: chipToDuplicate.text,
       enabled: chipToDuplicate.enabled,
     };
@@ -222,7 +223,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   const handleAddTags = (newTexts: string[]) => {
     const newChips = newTexts.map((txt) => ({
-      id: Math.random().toString(36).substring(2, 9),
+      id: generateChipId(),
       text: txt,
       enabled: true,
     }));

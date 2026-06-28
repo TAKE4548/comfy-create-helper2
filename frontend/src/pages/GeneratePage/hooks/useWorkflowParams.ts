@@ -10,59 +10,73 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { Workflow } from '../../../api/types'
 
+export interface WorkflowNode {
+  inputs?: Record<string, any>
+  class_type?: string
+  [key: string]: any
+}
+
+export function extractGeneralParam(node: WorkflowNode | null | undefined, paramName: string): string {
+  if (node?.inputs) {
+    if (node.inputs[paramName] !== undefined) {
+      return String(node.inputs[paramName])
+    } else if (node.inputs['value'] !== undefined) {
+      return String(node.inputs['value'])
+    }
+  }
+  return ''
+}
+
+export function extractLoraStackParams(node: WorkflowNode | null | undefined, role: string): Record<string, string> {
+  const init: Record<string, string> = {}
+  let loraCount = 0
+  if (node?.inputs) {
+    const countInput = node.inputs['num_loras'] !== undefined ? node.inputs['num_loras'] : node.inputs['lora_count']
+    if (countInput !== undefined && !Array.isArray(countInput)) {
+      loraCount = Number(countInput)
+    } else {
+      // Find maximum index i (1 to 10) where either lora_${i}_name or lora_name_${i} is defined
+      for (let i = 1; i <= 10; i++) {
+        if (node.inputs[`lora_${i}_name`] !== undefined || node.inputs[`lora_name_${i}`] !== undefined) {
+          loraCount = i
+        }
+      }
+    }
+  }
+  init[`${role}_lora_count`] = String(loraCount)
+  for (let i = 1; i <= loraCount; i++) {
+    const nameInput = node?.inputs?.[`lora_${i}_name`] !== undefined ? node.inputs[`lora_${i}_name`] : node?.inputs?.[`lora_name_${i}`]
+    init[`${role}_lora_name_${i}`] = (nameInput !== undefined && !Array.isArray(nameInput)) ? String(nameInput) : ''
+
+    const wtInput = node?.inputs?.[`lora_${i}_strength`] !== undefined ? node.inputs[`lora_${i}_strength`] : node?.inputs?.[`lora_wt_${i}`]
+    init[`${role}_lora_wt_${i}`] = (wtInput !== undefined && !Array.isArray(wtInput)) ? String(wtInput) : '0.0'
+
+    const modelStrInput = node?.inputs?.[`lora_${i}_model_strength`] !== undefined ? node.inputs[`lora_${i}_model_strength`] : node?.inputs?.[`model_str_${i}`]
+    init[`${role}_model_str_${i}`] = (modelStrInput !== undefined && !Array.isArray(modelStrInput)) ? String(modelStrInput) : '1.0'
+
+    const clipStrInput = node?.inputs?.[`lora_${i}_clip_strength`] !== undefined ? node.inputs[`lora_${i}_clip_strength`] : node?.inputs?.[`clip_str_${i}`]
+    init[`${role}_clip_str_${i}`] = (clipStrInput !== undefined && !Array.isArray(clipStrInput)) ? String(clipStrInput) : '1.0'
+  }
+  return init
+}
+
 export function getInitialParams(workflow: Workflow): Record<string, string> {
   const init: Record<string, string> = {}
-  const wfJson = (workflow.json_body || {}) as Record<string, any>
+  const wfJson = (workflow.json_body || {}) as Record<string, WorkflowNode>
   workflow.mappings.forEach((m) => {
     if (m.role) {
       if (m.input_type === 'lora_stack') {
         const node = m.node_id ? wfJson[m.node_id] : null
-        let loraCount = 0
-        if (node?.inputs) {
-          const countInput = node.inputs['num_loras'] !== undefined ? node.inputs['num_loras'] : node.inputs['lora_count']
-          if (countInput !== undefined && !Array.isArray(countInput)) {
-            loraCount = Number(countInput)
-          } else {
-            // Find maximum index i (1 to 10) where either lora_${i}_name or lora_name_${i} is defined
-            for (let i = 1; i <= 10; i++) {
-              if (node.inputs[`lora_${i}_name`] !== undefined || node.inputs[`lora_name_${i}`] !== undefined) {
-                loraCount = i
-              }
-            }
-          }
-        }
-        init[`${m.role}_lora_count`] = String(loraCount)
-        for (let i = 1; i <= loraCount; i++) {
-          const nameInput = node?.inputs?.[`lora_${i}_name`] !== undefined ? node.inputs[`lora_${i}_name`] : node?.inputs?.[`lora_name_${i}`]
-          init[`${m.role}_lora_name_${i}`] = (nameInput !== undefined && !Array.isArray(nameInput)) ? String(nameInput) : ''
-
-          const wtInput = node?.inputs?.[`lora_${i}_strength`] !== undefined ? node.inputs[`lora_${i}_strength`] : node?.inputs?.[`lora_wt_${i}`]
-          init[`${m.role}_lora_wt_${i}`] = (wtInput !== undefined && !Array.isArray(wtInput)) ? String(wtInput) : '0.0'
-
-          const modelStrInput = node?.inputs?.[`lora_${i}_model_strength`] !== undefined ? node.inputs[`lora_${i}_model_strength`] : node?.inputs?.[`model_str_${i}`]
-          init[`${m.role}_model_str_${i}`] = (modelStrInput !== undefined && !Array.isArray(modelStrInput)) ? String(modelStrInput) : '1.0'
-
-          const clipStrInput = node?.inputs?.[`lora_${i}_clip_strength`] !== undefined ? node.inputs[`lora_${i}_clip_strength`] : node?.inputs?.[`clip_str_${i}`]
-          init[`${m.role}_clip_str_${i}`] = (clipStrInput !== undefined && !Array.isArray(clipStrInput)) ? String(clipStrInput) : '1.0'
-        }
+        Object.assign(init, extractLoraStackParams(node, m.role))
       } else {
-        let val = ''
-        if (m.node_id && m.param_name) {
-          const node = wfJson[m.node_id]
-          if (node?.inputs) {
-            if (node.inputs[m.param_name] !== undefined) {
-              val = String(node.inputs[m.param_name])
-            } else if (node.inputs['value'] !== undefined) {
-              val = String(node.inputs['value'])
-            }
-          }
-        }
-        init[m.role] = val
+        const node = m.node_id ? wfJson[m.node_id] : null
+        init[m.role] = m.param_name ? extractGeneralParam(node, m.param_name) : ''
       }
     }
   })
   return init
 }
+
 
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
   const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets } = useGenerationStore()

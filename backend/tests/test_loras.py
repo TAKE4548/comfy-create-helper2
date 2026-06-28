@@ -200,4 +200,65 @@ class TestLorasAPI(unittest.TestCase):
             "path/to/snap_0.png"
         ])
 
+    def test_reorder_loras_empty(self):
+        response = self.client.put("/api/loras/reorder", json={"ordered_ids": []})
+        self.assertEqual(response.status_code, 204)
+
+    def test_reorder_loras_non_existent_id(self):
+        response = self.client.put("/api/loras/reorder", json={"ordered_ids": [9999]})
+        self.assertEqual(response.status_code, 204)
+
+    def test_reorder_loras_duplicate_id(self):
+        lora_id = self.registered_lora.id
+        response = self.client.put("/api/loras/reorder", json={"ordered_ids": [lora_id, lora_id]})
+        self.assertEqual(response.status_code, 204)
+
+    def test_reorder_loras_db_integrity(self):
+        # Create another Lora to test multiple reordering and mix of existent / non-existent
+        another_lora = models.Lora(
+            model_name="another.safetensors",
+            file_path="folder/another.safetensors"
+        )
+        self.db.add(another_lora)
+        self.db.commit()
+
+        # Send mix of valid and invalid
+        response = self.client.put("/api/loras/reorder", json={"ordered_ids": [self.registered_lora.id, 9999, another_lora.id]})
+        self.assertEqual(response.status_code, 204)
+
+        # Refresh from db and assert
+        self.db.refresh(self.registered_lora)
+        self.db.refresh(another_lora)
+        
+        self.assertEqual(self.registered_lora.sort_order, 0)
+        self.assertEqual(another_lora.sort_order, 2)
+        
+        # Verify other fields are not changed
+        self.assertEqual(self.registered_lora.model_name, "registered.safetensors")
+        self.assertEqual(another_lora.model_name, "another.safetensors")
+
+    def test_update_lora_not_found(self):
+        # 存在しない LoRA ID に対する PUT リクエストが 404 Not Found を返すことを検証
+        payload = {
+            "model_name": "non_existent.safetensors",
+            "description": "This lora does not exist",
+            "recommended_strength_min": 0.0,
+            "recommended_strength_max": 1.0,
+            "category_id": None,
+            "thumbnail_path": None,
+            "file_path": None,
+            "trigger_word_sets": []
+        }
+        response = self.client.put("/api/loras/99999", json=payload)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "LoRA not found")
+
+    def test_delete_lora_not_found(self):
+        # 存在しない LoRA ID に対する DELETE リクエストが 404 Not Found を返すことを検証
+        response = self.client.delete("/api/loras/99999")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "LoRA not found")
+
+
+
 
