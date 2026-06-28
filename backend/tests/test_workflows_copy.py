@@ -124,3 +124,60 @@ class TestWorkflowsCopy(unittest.TestCase):
         payload = {"name": "source_wf"}  # Same name
         response = self.client.post(f"/api/workflows/{self.wf.id}/copy", json=payload)
         self.assertEqual(response.status_code, 409)
+
+    def test_copy_empty_workflow(self):
+        empty_wf = models.Workflow(
+            name="empty_wf",
+            json_body='{"nodes": []}',
+            default_applied_assets=None
+        )
+        self.db.add(empty_wf)
+        self.db.commit()
+
+        payload = {"name": "copied_empty_wf"}
+        response = self.client.post(f"/api/workflows/{empty_wf.id}/copy", json=payload)
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        new_id = data["id"]
+        self.assertEqual(data["name"], "copied_empty_wf")
+
+        new_wf = self.db.query(models.Workflow).filter(models.Workflow.id == new_id).first()
+        self.assertIsNotNone(new_wf)
+        self.assertEqual(len(new_wf.mappings), 0)
+        self.assertEqual(len(new_wf.presets), 0)
+
+    def test_update_workflow_name_conflict(self):
+        wf_a = models.Workflow(
+            name="wf_a",
+            json_body='{"nodes": []}',
+            default_applied_assets=None
+        )
+        wf_b = models.Workflow(
+            name="wf_b",
+            json_body='{"nodes": []}',
+            default_applied_assets=None
+        )
+        self.db.add(wf_a)
+        self.db.add(wf_b)
+        self.db.commit()
+
+        payload = {"name": "wf_a"}
+        response = self.client.put(f"/api/workflows/{wf_b.id}", json=payload)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("detail", response.json())
+
+    def test_create_workflow_invalid_json_body(self):
+        payload = {
+            "name": "invalid_json_wf",
+            "json_body": ""
+        }
+        response = self.client.post("/api/workflows", json=payload)
+        self.assertIn(response.status_code, [400, 422])
+
+    def test_update_workflow_invalid_json_body(self):
+        payload = {
+            "json_body": ""
+        }
+        response = self.client.put(f"/api/workflows/{self.wf.id}", json=payload)
+        self.assertEqual(response.status_code, 422)
+
