@@ -25,6 +25,14 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import { WorkflowManageModal } from '../components/WorkflowManageModal'
 import { PresetManagerPanel } from '../components/PresetManagerPanel'
 
+interface ExpandedSectionsState {
+  prompts: boolean;
+  mappingMasters: boolean;
+  longPress: boolean;
+  workflows: boolean;
+  connections: boolean;
+}
+
 const PROMPT_LABELS: Record<string, string> = {
   audit_interference: '干渉タグ診断（SDXL/汎用）',
   audit_interference_anima: '干渉タグ診断（Anima）',
@@ -36,6 +44,25 @@ export function SettingsPage() {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
+
+  const [expandedSections, setExpandedSections] = useState<ExpandedSectionsState>(() => {
+    const stored = localStorage.getItem(LS_KEYS.SETTINGS_SECTIONS_EXPANDED)
+    return stored ? JSON.parse(stored) : {
+      prompts: true,
+      mappingMasters: true,
+      longPress: true,
+      workflows: true,
+      connections: true,
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem(LS_KEYS.SETTINGS_SECTIONS_EXPANDED, JSON.stringify(expandedSections))
+  }, [expandedSections])
+
+  const toggleSection = (key: keyof ExpandedSectionsState) => {
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
+  }
   const [showMasterModal, setShowMasterModal] = useState<'create' | 'edit' | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedMaster, setSelectedMaster] = useState<MappingMaster | null>(null)
@@ -357,300 +384,354 @@ export function SettingsPage() {
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
         {/* LLM System Prompts */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Wand2 size={15} className="text-[#7C6FDD]" />
-            <h2 className="text-sm font-semibold text-zinc-300">LLM System Prompts</h2>
-            <span className="text-xs text-zinc-600">— DBに保存（再起動不要）</span>
-          </div>
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading prompts…</div>
-          ) : (
-            <div className="space-y-3">
-              {prompts?.map((p) => (
-                <div key={p.key} id={`prompt-section-${p.key}`} className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden">
-                  <button id={`prompt-expand-${p.key}`} onClick={() => setExpanded(expanded === p.key ? null : p.key)}
-                    className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-white/5 transition-colors">
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-zinc-200">{PROMPT_LABELS[p.key] ?? p.key}</p>
-                      {p.description && <p className="text-xs text-zinc-500 mt-0.5">{p.description}</p>}
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <button 
+            type="button" 
+            onClick={() => toggleSection('prompts')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans"
+          >
+            <div className="flex items-center gap-2">
+              <Wand2 size={15} className="text-[#7C6FDD]" />
+              <h2 className="text-sm font-semibold text-zinc-300">LLM System Prompts</h2>
+              <span className="text-xs text-zinc-600">— DBに保存（再起動不要）</span>
+            </div>
+            <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.prompts ? 'rotate-180' : ''}`} />
+          </button>
+          {expandedSections.prompts && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
+              {isLoading ? (
+                <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading prompts…</div>
+              ) : (
+                <div className="space-y-3">
+                  {prompts?.map((p) => (
+                    <div key={p.key} id={`prompt-section-${p.key}`} className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden">
+                      <button id={`prompt-expand-${p.key}`} onClick={() => setExpanded(expanded === p.key ? null : p.key)}
+                        className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-white/5 transition-colors">
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-zinc-200">{PROMPT_LABELS[p.key] ?? p.key}</p>
+                          {p.description && <p className="text-xs text-zinc-500 mt-0.5">{p.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                          <span className="text-xs text-zinc-600">{new Date(p.updated_at).toLocaleDateString('ja-JP')}</span>
+                          <ChevronDown size={14} className={`text-zinc-500 transition-transform ${expanded === p.key ? 'rotate-180' : ''}`} />
+                        </div>
+                      </button>
+                      {expanded === p.key && (
+                        <div className="px-4 pb-4 space-y-3 border-t border-[rgba(255,255,255,0.04)] pt-3 animate-fade-in">
+                          <textarea id={`prompt-content-${p.key}`} value={getContent(p)}
+                            onChange={(e) => setEdits((prev) => ({ ...prev, [p.key]: e.target.value }))} rows={16}
+                            className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar" />
+                          <div className="flex items-center justify-between">
+                            <button id={`prompt-reset-${p.key}`}
+                              onClick={() => setEdits((prev) => { const n = { ...prev }; delete n[p.key]; return n })}
+                              disabled={!edits[p.key]} className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors">Reset changes</button>
+                            <button id={`prompt-save-${p.key}`}
+                              onClick={() => updatePrompt.mutate({ key: p.key, content: getContent(p) })} disabled={updatePrompt.isPending}
+                              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${saved === p.key ? 'bg-accent-green/20 text-accent-green border border-accent-green/40' : 'bg-[#7C6FDD] text-white hover:bg-[#6d62cc]'}`}>
+                              <Save size={12} />{saved === p.key ? 'Saved!' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                      <span className="text-xs text-zinc-600">{new Date(p.updated_at).toLocaleDateString('ja-JP')}</span>
-                      <ChevronDown size={14} className={`text-zinc-500 transition-transform ${expanded === p.key ? 'rotate-180' : ''}`} />
-                    </div>
-                  </button>
-                  {expanded === p.key && (
-                    <div className="px-4 pb-4 space-y-3 border-t border-[rgba(255,255,255,0.04)] pt-3 animate-fade-in">
-                      <textarea id={`prompt-content-${p.key}`} value={getContent(p)}
-                        onChange={(e) => setEdits((prev) => ({ ...prev, [p.key]: e.target.value }))} rows={16}
-                        className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar" />
-                      <div className="flex items-center justify-between">
-                        <button id={`prompt-reset-${p.key}`}
-                          onClick={() => setEdits((prev) => { const n = { ...prev }; delete n[p.key]; return n })}
-                          disabled={!edits[p.key]} className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors">Reset changes</button>
-                        <button id={`prompt-save-${p.key}`}
-                          onClick={() => updatePrompt.mutate({ key: p.key, content: getContent(p) })} disabled={updatePrompt.isPending}
-                          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${saved === p.key ? 'bg-accent-green/20 text-accent-green border border-accent-green/40' : 'bg-[#7C6FDD] text-white hover:bg-[#6d62cc]'}`}>
-                          <Save size={12} />{saved === p.key ? 'Saved!' : 'Save'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </section>
 
         {/* Mapping Masters */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <div 
+            onClick={() => toggleSection('mappingMasters')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
+          >
             <div className="flex items-center gap-2">
               <Settings size={15} className="text-[#7C6FDD]" />
               <h2 className="text-sm font-semibold text-zinc-300">Node Mapping Masters</h2>
               <span className="text-xs text-zinc-600">— 編集ノードのマッピングマスタ設定</span>
             </div>
-            {!isMultiSelectMode && (
-              <button onClick={openCreateModal}
-                className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all">
-                <Plus size={12} />Add Master
-              </button>
-            )}
+            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+              {!isMultiSelectMode && (
+                <button 
+                  type="button"
+                  onClick={openCreateModal}
+                  className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all"
+                >
+                  <Plus size={12} />Add Master
+                </button>
+              )}
+              <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.mappingMasters ? 'rotate-180' : ''}`} />
+            </div>
           </div>
-          {isLoadingMasters ? (
-            <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading mapping masters…</div>
-          ) : (
-            <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-400 bg-white/[0.01]">
-                    {['', 'Role', 'Display Name', 'Param Name', 'Input Type', 'Expected Class Types', 'Title Patterns', ''].map((h, i) => (
-                      <th key={i} className={`px-4 py-3 font-medium${h === '' && i === 7 ? ' text-right' : ''}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <DndContext collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                  <SortableContext items={sortedMasters.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-                    <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
-                      {sortedMasters.map((mm) => {
-                        const isSelectedRow = isSelected(mm.id)
-                        const longPressHandlers = getLongPressHandlers(mm.id)
-                        return (
-                          <SortableMasterRow
-                            key={mm.id}
-                            mm={mm}
-                            openEditModal={openEditModal}
-                            openDeleteModal={openDeleteModal}
-                            openCopyModal={openCopyCreateModal}
-                            isMultiSelectMode={isMultiSelectMode}
-                            isSelected={isSelectedRow}
-                            onClick={(e) => {
-                              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
-                                  e.stopPropagation()
-                                  handleItemClick(mm.id, e)
-                              } else {
-                                openEditModal(mm)
-                              }
-                            }}
-                            longPressHandlers={longPressHandlers}
-                          />
-                        )
-                      })}
-                      {(!sortedMasters || sortedMasters.length === 0) && (
-                        <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No mapping masters found.</td></tr>
-                      )}
-                    </tbody>
-                  </SortableContext>
-                  <DragOverlay>
-                    {activeId && (
-                      <div className="relative">
-                        <div className="opacity-90 scale-105 ring-2 ring-[#3ECF8E] rounded-lg pointer-events-none">
-                          {renderDragOverlayItem(activeId)}
-                        </div>
-                        {isMultiSelectMode && selectedIds.size > 1 && (
-                          <div className="absolute -bottom-2 -right-2 bg-[#3ECF8E] text-black text-xs font-bold
-                                          rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
-                            +{selectedIds.size - 1}
+          {expandedSections.mappingMasters && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
+              {isLoadingMasters ? (
+                <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading mapping masters…</div>
+              ) : (
+                <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-400 bg-white/[0.01]">
+                        {['', 'Role', 'Display Name', 'Param Name', 'Input Type', 'Expected Class Types', 'Title Patterns', ''].map((h, i) => (
+                          <th key={i} className={`px-4 py-3 font-medium${h === '' && i === 7 ? ' text-right' : ''}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <DndContext collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                      <SortableContext items={sortedMasters.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                        <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
+                          {sortedMasters.map((mm) => {
+                            const isSelectedRow = isSelected(mm.id)
+                            const longPressHandlers = getLongPressHandlers(mm.id)
+                            return (
+                              <SortableMasterRow
+                                key={mm.id}
+                                mm={mm}
+                                openEditModal={openEditModal}
+                                openDeleteModal={openDeleteModal}
+                                openCopyModal={openCopyCreateModal}
+                                isMultiSelectMode={isMultiSelectMode}
+                                isSelected={isSelectedRow}
+                                onClick={(e) => {
+                                  if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                                      e.stopPropagation()
+                                      handleItemClick(mm.id, e)
+                                  } else {
+                                    openEditModal(mm)
+                                  }
+                                }}
+                                longPressHandlers={longPressHandlers}
+                              />
+                            )
+                          })}
+                          {(!sortedMasters || sortedMasters.length === 0) && (
+                            <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No mapping masters found.</td></tr>
+                          )}
+                        </tbody>
+                      </SortableContext>
+                      <DragOverlay>
+                        {activeId && (
+                          <div className="relative">
+                            <div className="opacity-90 scale-105 ring-2 ring-[#3ECF8E] rounded-lg pointer-events-none">
+                              {renderDragOverlayItem(activeId)}
+                            </div>
+                            {isMultiSelectMode && selectedIds.size > 1 && (
+                              <div className="absolute -bottom-2 -right-2 bg-[#3ECF8E] text-black text-xs font-bold
+                                              rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
+                                +{selectedIds.size - 1}
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </DragOverlay>
-                </DndContext>
-              </table>
+                      </DragOverlay>
+                    </DndContext>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </section>
 
         {/* Long Press Sensitivity */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Sliders size={15} className="text-[#7C6FDD]" />
-            <h2 className="text-sm font-semibold text-zinc-300">長押し感度設定（アプリ全体）</h2>
-            <span className="text-xs text-zinc-600">— ブラウザ（LocalStorage）に保存</span>
-            {saved === 'longpress' && (
-              <span className="text-xs text-accent-green ml-auto">✓ 保存しました</span>
-            )}
-          </div>
-          <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-5">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-zinc-300">履歴の複数選択長押し時間</label>
-                <span className="text-xs font-mono text-[#7C6FDD]">{longPressMultiSelect.toFixed(1)}s</span>
-              </div>
-              <input
-                id="settings-longpress-multiselect"
-                type="range"
-                min="0.1" max="5.0" step="0.1"
-                value={longPressMultiSelect}
-                onChange={(e) => handleLongPressChange('multi-select', parseFloat(e.target.value))}
-                className="w-full accent-[#7C6FDD]"
-              />
-              <div className="flex justify-between text-xs text-zinc-600 mt-1">
-                <span>0.1s（敏感）</span>
-                <span>5.0s（鈍感）</span>
-              </div>
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <div 
+            onClick={() => toggleSection('longPress')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-2">
+              <Sliders size={15} className="text-[#7C6FDD]" />
+              <h2 className="text-sm font-semibold text-zinc-300">長押し感度設定（アプリ全体）</h2>
+              <span className="text-xs text-zinc-600">— ブラウザ（LocalStorage）に保存</span>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-zinc-300">カード移動の長押し時間</label>
-                <span className="text-xs font-mono text-[#7C6FDD]">{longPressCardMove.toFixed(1)}s</span>
-              </div>
-              <input
-                id="settings-longpress-cardmove"
-                type="range"
-                min="0.1" max="5.0" step="0.1"
-                value={longPressCardMove}
-                onChange={(e) => handleLongPressChange('card-move', parseFloat(e.target.value))}
-                className="w-full accent-[#7C6FDD]"
-              />
-              <div className="flex justify-between text-xs text-zinc-600 mt-1">
-                <span>0.1s（敏感）</span>
-                <span>5.0s（鈍感）</span>
-              </div>
+            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+              {saved === 'longpress' && (
+                <span className="text-xs text-accent-green">✓ 保存しました</span>
+              )}
+              <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.longPress ? 'rotate-180' : ''}`} />
             </div>
           </div>
-        </section>
-
-        {/* Workflows Section */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Layers size={15} className="text-zinc-500" />
-            <h2 className="text-sm font-semibold text-zinc-300">ワークフロー管理</h2>
-          </div>
-          {isLoadingWorkflows ? (
-            <div className="flex items-center gap-2 text-zinc-600 text-xs py-4">
-              <RefreshCw size={12} className="animate-spin" />
-              ワークフローを読み込み中...
-            </div>
-          ) : (
-            <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden">
-              <div className="divide-y divide-[rgba(255,255,255,0.04)]">
-                {workflows?.map((wf) => {
-                  const isExpanded = expandedPresetWorkflowId === wf.id;
-                  return (
-                    <div key={wf.id} className="flex flex-col">
-                      <div className="flex items-center justify-between p-4 hover:bg-white/[0.01] transition-colors">
-                        <div className="min-w-0">
-                          <span className="text-xs font-semibold text-zinc-200 block truncate">
-                            {wf.name}
-                          </span>
-                          <span className="text-[10px] text-zinc-500 font-mono mt-0.5 block">
-                            作成日: {new Date(wf.created_at).toLocaleString('ja-JP')}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedWorkflowId(wf.id);
-                              setWorkflowManageMode('rename');
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
-                            title="名前を変更"
-                          >
-                            <Pencil size={11} />
-                            名前変更
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedWorkflowId(wf.id);
-                              setWorkflowManageMode('copy');
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
-                            title="コピーを作成"
-                          >
-                            <Copy size={11} />
-                            コピー
-                          </button>
-                          <button
-                            onClick={() => setExpandedPresetWorkflowId(isExpanded ? null : wf.id)}
-                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-medium transition-all ${
-                              isExpanded
-                                ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-[#7C6FDD]'
-                                : 'border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-                            }`}
-                            title="プリセット管理"
-                          >
-                            <Wand2 size={11} />
-                            プロファイル管理
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedWorkflowId(wf.id);
-                              setShowWorkflowDeleteDialog(true);
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-650 hover:text-white text-red-400 text-[10px] font-medium transition-all"
-                            title="削除"
-                          >
-                            <Trash2 size={11} />
-                            削除
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Inline Preset Manager Panel */}
-                      {isExpanded && (
-                        <div className="px-5 py-4 bg-zinc-950 border-t border-[rgba(255,255,255,0.04)] animate-fade-in">
-                          <PresetManagerPanel
-                            presets={workflowPresets || []}
-                            onRename={async (pid, pName) => {
-                              await renamePresetMutation.mutateAsync({ id: pid, name: pName })
-                            }}
-                            onReorder={async (ordered_ids) => {
-                              await reorderPresetsMutation.mutateAsync(ordered_ids)
-                            }}
-                            isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {(!workflows || workflows.length === 0) && (
-                  <div className="px-4 py-8 text-center text-xs text-zinc-500">
-                    登録されているワークフローはありません。
-                  </div>
-                )}
+          {expandedSections.longPress && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-5">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-zinc-300">履歴の複数選択長押し時間</label>
+                  <span className="text-xs font-mono text-[#7C6FDD]">{longPressMultiSelect.toFixed(1)}s</span>
+                </div>
+                <input
+                  id="settings-longpress-multiselect"
+                  type="range"
+                  min="0.1" max="5.0" step="0.1"
+                  value={longPressMultiSelect}
+                  onChange={(e) => handleLongPressChange('multi-select', parseFloat(e.target.value))}
+                  className="w-full accent-[#7C6FDD]"
+                />
+                <div className="flex justify-between text-xs text-zinc-600 mt-1">
+                  <span>0.1s（敏感）</span>
+                  <span>5.0s（鈍感）</span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-zinc-300">カード移動の長押し時間</label>
+                  <span className="text-xs font-mono text-[#7C6FDD]">{longPressCardMove.toFixed(1)}s</span>
+                </div>
+                <input
+                  id="settings-longpress-cardmove"
+                  type="range"
+                  min="0.1" max="5.0" step="0.1"
+                  value={longPressCardMove}
+                  onChange={(e) => handleLongPressChange('card-move', parseFloat(e.target.value))}
+                  className="w-full accent-[#7C6FDD]"
+                />
+                <div className="flex justify-between text-xs text-zinc-600 mt-1">
+                  <span>0.1s（敏感）</span>
+                  <span>5.0s（鈍感）</span>
+                </div>
               </div>
             </div>
           )}
         </section>
 
+        {/* Workflows Section */}
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <button 
+            type="button"
+            onClick={() => toggleSection('workflows')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans"
+          >
+            <div className="flex items-center gap-2">
+              <Layers size={15} className="text-zinc-500" />
+              <h2 className="text-sm font-semibold text-zinc-300">ワークフロー管理</h2>
+            </div>
+            <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.workflows ? 'rotate-180' : ''}`} />
+          </button>
+          {expandedSections.workflows && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
+              {isLoadingWorkflows ? (
+                <div className="flex items-center gap-2 text-zinc-600 text-xs py-4">
+                  <RefreshCw size={12} className="animate-spin" />
+                  ワークフローを読み込み中...
+                </div>
+              ) : (
+                <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden">
+                  <div className="divide-y divide-[rgba(255,255,255,0.04)]">
+                    {workflows?.map((wf) => {
+                      const isExpanded = expandedPresetWorkflowId === wf.id;
+                      return (
+                        <div key={wf.id} className="flex flex-col">
+                          <div className="flex items-center justify-between p-4 hover:bg-white/[0.01] transition-colors">
+                            <div className="min-w-0">
+                              <span className="text-xs font-semibold text-zinc-200 block truncate">
+                                {wf.name}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-mono mt-0.5 block">
+                                作成日: {new Date(wf.created_at).toLocaleString('ja-JP')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedWorkflowId(wf.id);
+                                  setWorkflowManageMode('rename');
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
+                                title="名前を変更"
+                              >
+                                <Pencil size={11} />
+                                名前変更
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedWorkflowId(wf.id);
+                                  setWorkflowManageMode('copy');
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
+                                title="コピーを作成"
+                              >
+                                <Copy size={11} />
+                                コピー
+                              </button>
+                              <button
+                                onClick={() => setExpandedPresetWorkflowId(isExpanded ? null : wf.id)}
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-medium transition-all ${
+                                  isExpanded
+                                    ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-[#7C6FDD]'
+                                    : 'border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                                }`}
+                                title="プリセット管理"
+                              >
+                                <Wand2 size={11} />
+                                プロファイル管理
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedWorkflowId(wf.id);
+                                  setShowWorkflowDeleteDialog(true);
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-650 hover:text-white text-red-400 text-[10px] font-medium transition-all"
+                                title="削除"
+                              >
+                                <Trash2 size={11} />
+                                削除
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Inline Preset Manager Panel */}
+                          {isExpanded && (
+                            <div className="px-5 py-4 bg-zinc-950 border-t border-[rgba(255,255,255,0.04)] animate-fade-in">
+                              <PresetManagerPanel
+                                presets={workflowPresets || []}
+                                onRename={async (pid, pName) => {
+                                  await renamePresetMutation.mutateAsync({ id: pid, name: pName })
+                                }}
+                                onReorder={async (ordered_ids) => {
+                                  await reorderPresetsMutation.mutateAsync(ordered_ids)
+                                }}
+                                isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {(!workflows || workflows.length === 0) && (
+                      <div className="px-4 py-8 text-center text-xs text-zinc-500">
+                        登録されているワークフローはありません。
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Connections */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Settings size={15} className="text-zinc-500" />
-            <h2 className="text-sm font-semibold text-zinc-300">Connections</h2>
-          </div>
-          <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-3">
-            {[
-              { label: 'FastAPI Backend', url: `${window.location.origin}/health` },
-              { label: 'ComfyUI', url: resolveComfyUrl(comfyUrl) },
-            ].map(({ label, url }) => (
-              <ConnectionStatus key={label} label={label} url={url} />
-            ))}
-          </div>
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <button 
+            type="button"
+            onClick={() => toggleSection('connections')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans"
+          >
+            <div className="flex items-center gap-2">
+              <Settings size={15} className="text-zinc-500" />
+              <h2 className="text-sm font-semibold text-zinc-300">Connections</h2>
+            </div>
+            <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.connections ? 'rotate-180' : ''}`} />
+          </button>
+          {expandedSections.connections && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-3">
+              {[
+                { label: 'FastAPI Backend', url: `${window.location.origin}/health` },
+                { label: 'ComfyUI', url: resolveComfyUrl(comfyUrl) },
+              ].map(({ label, url }) => (
+                <ConnectionStatus key={label} label={label} url={url} />
+              ))}
+            </div>
+          )}
         </section>
       </div>
 

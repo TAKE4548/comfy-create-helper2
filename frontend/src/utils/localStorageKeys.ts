@@ -23,6 +23,9 @@ export const LS_KEYS = {
   LONG_PRESS_DELAY_CARD_MOVE: 'prompt-surgeon-longpress-delay-cardmove', // seconds
   SETS_PREFIX: 'prompt-surgeon-sets-wf-', // + workflowId
   ACTIVE_SET_PREFIX: 'prompt-surgeon-active-set-wf-', // + workflowId
+  LAYOUT_MAIN_SPLIT: 'prompt-surgeon-layout-main-split',
+  LAYOUT_PREVIEW_SPLIT: 'prompt-surgeon-layout-preview-split',
+  SETTINGS_SECTIONS_EXPANDED: 'prompt-surgeon-settings-sections-expanded',
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

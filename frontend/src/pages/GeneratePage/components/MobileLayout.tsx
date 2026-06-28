@@ -566,7 +566,7 @@ export const MobileLayout = ({
           auditStatus={auditStatus}
           auditResult={auditResult}
           auditTypes={auditTypes}
-          setAuditTypes={setAuditTypes}
+          setAuditTypes={setAuditTypes as any}
           auditIntent={auditIntent}
           setAuditIntent={setAuditIntent}
           runAudit={() => runAudit.mutate()}
