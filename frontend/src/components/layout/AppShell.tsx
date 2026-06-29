@@ -107,12 +107,12 @@ export function AppShell() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pb-16 lg:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pb-[calc(var(--mobile-nav-height)+env(safe-area-inset-bottom))] lg:pb-0">
         <Outlet />
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-surface border-t border-[rgba(255,255,255,0.06)] flex items-center justify-around px-2 pb-safe z-50">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-surface border-t border-[rgba(255,255,255,0.06)] flex items-center justify-around px-2 pb-safe z-[var(--z-mobile-nav)]">
         {navItems.map(({ to, icon: Icon, label, id }) => (
           <NavLink
             key={to}

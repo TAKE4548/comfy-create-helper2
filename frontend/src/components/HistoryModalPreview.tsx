@@ -303,7 +303,7 @@ export function HistoryModalPreview({
   return (
     <div 
       ref={containerRef} 
-      className="fixed inset-0 z-[100] bg-black/95 flex flex-col" 
+      className="modal-backdrop flex flex-col" 
       onClick={handleContainerClick}
       onMouseMove={handleMouseMove}
     >

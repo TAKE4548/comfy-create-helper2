@@ -85,9 +85,9 @@ export function BulkEditModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="modal-backdrop">
       <div 
-        className="relative w-full max-w-md overflow-hidden bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl transition-all"
+        className="relative w-full max-w-md overflow-hidden bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl transition-all max-h-full lg:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

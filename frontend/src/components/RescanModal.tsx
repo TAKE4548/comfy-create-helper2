@@ -117,10 +117,10 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="modal-backdrop"
       onClick={handleBackdropClick}
     >
-      <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl border border-[rgba(255,255,255,0.1)] bg-[#141414] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-2xl max-h-full lg:max-h-[85vh] flex flex-col rounded-xl border border-[rgba(255,255,255,0.1)] bg-[#141414] shadow-2xl overflow-hidden">
 
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.07)]">

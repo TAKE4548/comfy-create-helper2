@@ -70,8 +70,8 @@ export function TagSetCreateModal({
   onCategoryCreated: (cat: Category) => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl">
+    <div className="modal-backdrop">
+      <div className="w-full max-w-md bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl max-h-full lg:max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <h2 className="text-sm font-semibold text-zinc-200">New Tag Set</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
@@ -134,8 +134,8 @@ export function TagSetEditModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden">
+    <div className="modal-backdrop">
+      <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-full lg:max-h-[85vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <h2 className="text-sm font-semibold text-zinc-200">Edit Tag Set</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
@@ -330,8 +330,8 @@ export function TagSetDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-full lg:max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex-shrink-0">
           <h2 className="text-sm font-semibold text-zinc-200">{isEditing ? 'Edit Tag Set' : 'Tag Set Details'}</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>

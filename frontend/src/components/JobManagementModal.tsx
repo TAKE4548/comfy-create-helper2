@@ -47,9 +47,9 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="modal-backdrop" onClick={onClose}>
       <div 
-        className="w-full max-w-2xl bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="w-full max-w-2xl bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-full lg:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

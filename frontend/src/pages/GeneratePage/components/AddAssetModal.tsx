@@ -192,8 +192,8 @@ export const AddAssetModal = ({
   const totalSelectedCount = selectedLoras.size + selectedTagSets.size
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-      <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden text-left">
+    <div className="modal-backdrop">
+      <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl w-full max-w-2xl max-h-full lg:max-h-[85vh] flex flex-col overflow-hidden text-left">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <div>

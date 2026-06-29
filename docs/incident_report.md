@@ -898,3 +898,52 @@ PBI 081（ワークフローアップロード時のノードIDマッピング�
 2. **`expected_class_types` が空の場合のバグ修正**:
    `expected_class_types` が空（指定なし）の場合は、クラスタイプチェックを常にパス（`class_type_ok = True`）するように修正し、タイトルパターンのみで一意特定を行おうとするマスタでもスマートマッチや優先選択が正常に動作するようにします。
 
+---
+
+## [NEW] モバイル表示（サイドバー下部配置）時のモーダルおよびページ下部要素の被り問題
+
+### 1. 現象・症状
+モバイル端末や低解像度画面（`lg:hidden`）において、画面下部に固定配置されるメニューバー（ボトムナビゲーションバー）が、全画面表示や縦長になるモーダル（例: `AddAssetModal`）の下部フッター（ボタン領域）と重なり、モーダル下部のボタンがタップ・クリックできなくなる。また、セーフエリア（iPhoneのホームインジケーターなど）が存在する場合、通常のページ下部要素もメニューバーと重なって隠れてしまうリスクがある。
+
+### 2. 再現手順
+1. ブラウザのデベロッパーツール等で画面幅をモバイルサイズ（1024px未満など）にし、下部にボトムナビゲーションバーが表示されている状態にする。
+2. 「Add Asset (アセット追加)」などの縦長のモーダルを開く。
+3. モーダルのフッター（「キャンセル」「追加」ボタンが配置されている領域）が、下部のボトムナビゲーションバーの背後または手前で重なってしまい、ボタンが押せなくなっていることを確認する。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因1：z-index の競合（モーダルとボトムナビゲーション）
+- **影響ファイル**: 
+  - [`frontend/src/components/layout/AppShell.tsx`](file:///frontend/src/components/layout/AppShell.tsx#L115) L115
+  - [`frontend/src/pages/GeneratePage/components/AddAssetModal.tsx`](file:///frontend/src/pages/GeneratePage/components/AddAssetModal.tsx#L195) L195 等のモーダル各種
+- **詳細**:
+  ボトムナビゲーションバーが `z-50` で指定されている一方で、モーダル各種のコンテナー backdrop も `z-50` と同一の z-index を使用している。これにより、DOMの記述順やスタッキングコンテキストの影響でボトムナビがモーダルの上層に描画されてしまい、ボタンへのクリックイベントを遮ってしまう。
+
+#### 3-2. 直接原因2：固定余白設定（メインページ領域）におけるセーフエリアの考慮漏れ
+- **影響ファイル**:
+  - [`frontend/src/components/layout/AppShell.tsx`](file:///frontend/src/components/layout/AppShell.tsx#L110) L110
+- **詳細**:
+  ボトムナビゲーションバーは `pb-safe`（セーフエリアを考慮した下部パディング）を設定しているため、高さが `4rem (64px) + セーフエリアの高さ` になる。しかし、メインコンテンツを囲む `<main>` タグは `pb-16`（64px固定）のパディングしか持たないため、セーフエリアを持つモダン端末においてページ下部のコンテンツがボトムナビゲーションバーに被ってしまう。
+
+#### 3-3. 直接原因3：モーダルの高さ上限とモバイル向け位置調整の欠如
+- **詳細**:
+  モーダルの多くは `max-h-[85vh]` や `max-h-[60vh]` などの高さ制限を持ち、`flex items-center justify-center` で画面中央に配置されている。モバイル表示において、ボトムナビゲーションバーが占有する領域（高さ `4rem + safe-area`）を考慮した下部パディングがモーダルの親コンテナー（backdrop）に設定されていないため、モーダル自体の高さがボトムナビの領域を避けるように縮小されず、位置的にも重なってしまう。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | [`AppShell.tsx`](file:///frontend/src/components/layout/AppShell.tsx), [`AddAssetModal.tsx`](file:///frontend/src/pages/GeneratePage/components/AddAssetModal.tsx) および他各種モーダル |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. **z-index の見直し**:
+   すべてのモーダルの外枠コンテナー（backdrop）の z-index を `z-[100]` （または `z-50` より十分高い値）に変更し、ボトムナビゲーションバー（`z-50`）よりも常に前面に表示されるようにする。
+2. **モーダルのモバイル表示用配置・高さの最適化**:
+   モーダル各種の外枠コンテナー（`fixed inset-0`）において、モバイル表示時は下部にボトムナビゲーションとセーフエリア分のパディング `pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] lg:pb-4` などを適用し、表示可能領域の中央にモーダルを配置・最大高さを自動制限する。
+3. **メインページのボトムパディングの安全化**:
+   `<main>` タグの下部パディングを `pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0` に修正し、セーフエリア搭載端末でもページ最下部コンテンツがボトムナビと重ならないようにする。
+
+
