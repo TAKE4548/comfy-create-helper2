@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi } from '../../../api/client'
 import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
-import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { useWorkflowParams, getInitialParams } from './useWorkflowParams'
 import { useGenerateAction } from './useGenerateAction'
 import { useImageNavigation } from './useImageNavigation'
@@ -122,6 +121,9 @@ export function useGeneratePageState() {
     setAllSetsChecked,
     setActiveSetId,
     setSets,
+    openPresetIds,
+    openPreset,
+    closePreset,
   } = store
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
@@ -424,6 +426,11 @@ export function useGeneratePageState() {
   }
 
   const handleLoadPreset = (preset: WorkflowPreset) => {
+    if (openPresetIds && !openPresetIds.includes(preset.id)) {
+      openPreset?.(preset.id)
+    }
+    setActiveSetId(preset.id)
+
     setParamValues(preset.param_values)
     setAppliedAssets(preset.applied_assets)
     setBatchSize(preset.batch_size)
@@ -482,42 +489,127 @@ export function useGeneratePageState() {
     setActivePromptTab(texts.length > 0 ? texts[0].role || '' : '')
   }, [workflow])
 
+  // ─── Undo/Redo History Stack ────────────────────────────────────
+  interface HistoryState {
+    paramValues: Record<string, string>
+    appliedAssets: Record<string, AppliedAsset[]>
+    batchSize: number
+    seedMode: 'random' | 'fixed'
+    seed: number
+  }
+
+  const [historyVersion, setHistoryVersion] = useState(0)
+  const triggerHistoryChange = () => setHistoryVersion(v => v + 1)
+
+  const lastSavedStateRef = useRef<Record<string | number, HistoryState>>({})
+
+  const getHistory = (id: string | number) => {
+    try {
+      const stored = sessionStorage.getItem(`prompt-surgeon-history-${id}`)
+      if (stored) {
+        return JSON.parse(stored)
+      }
+    } catch {}
+    return { past: [], future: [] }
+  }
+
+  const saveHistory = (id: string | number, hist: { past: HistoryState[]; future: HistoryState[] }) => {
+    try {
+      sessionStorage.setItem(`prompt-surgeon-history-${id}`, JSON.stringify(hist))
+    } catch {}
+    triggerHistoryChange()
+  }
+
+  const canUndo = activeSetId !== null && (getHistory(activeSetId).past.length > 0)
+  const canRedo = activeSetId !== null && (getHistory(activeSetId).future.length > 0)
+
+  const isStateEqual = (a: HistoryState, b: HistoryState) => {
+    return (
+      JSON.stringify(a.paramValues) === JSON.stringify(b.paramValues) &&
+      JSON.stringify(a.appliedAssets) === JSON.stringify(b.appliedAssets) &&
+      a.batchSize === b.batchSize &&
+      a.seedMode === b.seedMode &&
+      a.seed === b.seed
+    )
+  }
+
+  // Keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.getAttribute('contenteditable') === 'true'
+      ) {
+        return
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault()
+          if (activeSetId !== null) {
+            undo(activeSetId)
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault()
+          if (activeSetId !== null) {
+            redo(activeSetId)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activeSetId, historyVersion])
+
   // Synchronize presets query with Zustand store's sets state
   useEffect(() => {
     if (!selectedWorkflowId) return
+    if (!presets) return
 
     const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
-    const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
+    const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : []
 
-    const mappedSets = (presets || []).map((preset) => {
-      const isChecked = checkedPresets === null ? true : checkedPresets.includes(preset.id)
+    const mappedSets = presets.map((p) => {
       return {
-        id: preset.id,
-        name: preset.name,
-        paramValues: preset.param_values,
-        appliedAssets: preset.applied_assets,
-        batchSize: preset.batch_size,
-        seedMode: preset.seed_mode as 'random' | 'fixed',
-        seed: preset.seed,
-        checked: isChecked,
+        id: p.id,
+        name: p.name,
+        paramValues: p.param_values || {},
+        appliedAssets: p.applied_assets || {},
+        batchSize: p.batch_size || 1,
+        seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
+        seed: p.seed !== undefined ? p.seed : 42,
+        checked: checkedPresets.includes(p.id)
       }
     })
 
     setSets?.(mappedSets)
 
-    if (mappedSets.length > 0) {
-      const exists = mappedSets.some(s => String(s.id) === String(activeSetId))
-      if (!exists) {
-        const storedActiveSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + selectedWorkflowId)
-        const matched = mappedSets.find(s => String(s.id) === storedActiveSetId)
-        if (matched) {
-          setActiveSetId(matched.id)
-        } else {
-          setActiveSetId(mappedSets[0].id)
+    if (presets && presets.length > 0) {
+      const safeOpenPresetIds = openPresetIds || []
+      const isInvalidActive = activeSetId === null || !safeOpenPresetIds.includes(activeSetId)
+      if (isInvalidActive) {
+        const nextActiveId = safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
+          ? safeOpenPresetIds[0]
+          : presets[0].id
+        setActiveSetId(nextActiveId)
+        if (!safeOpenPresetIds.includes(nextActiveId)) {
+          openPreset?.(nextActiveId)
+        }
+      } else {
+        if (!safeOpenPresetIds.includes(activeSetId)) {
+          openPreset?.(activeSetId)
         }
       }
+    } else if (presets && presets.length === 0) {
+      if (!createPresetMutation.isPending) {
+        handleCreatePreset('Set 1')
+      }
     }
-  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId])
+  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId, openPresetIds, openPreset])
 
   // Autosave when paramValues, appliedAssets, batchSize, seedMode, or seed changes
   useEffect(() => {
@@ -526,7 +618,28 @@ export function useGeneratePageState() {
     const activePreset = presets?.find(p => p.id === activeSetId)
     if (!activePreset) return
 
+    const currentState: HistoryState = {
+      paramValues,
+      appliedAssets,
+      batchSize,
+      seedMode,
+      seed,
+    }
+
     const timer = setTimeout(() => {
+      const lastSaved = lastSavedStateRef.current[activeSetId]
+      if (lastSaved) {
+        if (!isStateEqual(lastSaved, currentState)) {
+          const hist = getHistory(activeSetId)
+          hist.past.push(lastSaved)
+          hist.future = [] // clear redo stack on new action
+          lastSavedStateRef.current[activeSetId] = currentState
+          saveHistory(activeSetId, hist)
+        }
+      } else {
+        lastSavedStateRef.current[activeSetId] = currentState
+      }
+
       updatePresetMutation.mutate({
         id: activePreset.id,
         name: activePreset.name,
@@ -544,6 +657,72 @@ export function useGeneratePageState() {
     presets,
     selectedWorkflowId,
   ])
+
+  const undo = (presetId: string | number) => {
+    const hist = getHistory(presetId)
+    if (hist.past.length === 0) return
+
+    const currentState: HistoryState = {
+      paramValues,
+      appliedAssets,
+      batchSize,
+      seedMode,
+      seed,
+    }
+    hist.future.push(currentState)
+
+    const prevState = hist.past.pop()!
+    lastSavedStateRef.current[presetId] = prevState
+
+    saveHistory(presetId, hist)
+
+    setParamValues(prevState.paramValues)
+    setAppliedAssets(prevState.appliedAssets)
+    setBatchSize(prevState.batchSize)
+    setSeedMode(prevState.seedMode)
+    setSeed(prevState.seed)
+
+    updateActiveSet({
+      paramValues: prevState.paramValues,
+      appliedAssets: prevState.appliedAssets,
+      batchSize: prevState.batchSize,
+      seedMode: prevState.seedMode,
+      seed: prevState.seed,
+    })
+  }
+
+  const redo = (presetId: string | number) => {
+    const hist = getHistory(presetId)
+    if (hist.future.length === 0) return
+
+    const currentState: HistoryState = {
+      paramValues,
+      appliedAssets,
+      batchSize,
+      seedMode,
+      seed,
+    }
+    hist.past.push(currentState)
+
+    const nextState = hist.future.pop()!
+    lastSavedStateRef.current[presetId] = nextState
+
+    saveHistory(presetId, hist)
+
+    setParamValues(nextState.paramValues)
+    setAppliedAssets(nextState.appliedAssets)
+    setBatchSize(nextState.batchSize)
+    setSeedMode(nextState.seedMode)
+    setSeed(nextState.seed)
+
+    updateActiveSet({
+      paramValues: nextState.paramValues,
+      appliedAssets: nextState.appliedAssets,
+      batchSize: nextState.batchSize,
+      seedMode: nextState.seedMode,
+      seed: nextState.seed,
+    })
+  }
 
   // ── Handlers ─────────────────────────────────────────────────
   const handleLoadSnapshot = async (id: number) => {
@@ -812,5 +991,12 @@ export function useGeneratePageState() {
     toggleSetChecked,
     setAllSetsChecked,
     setActiveSetId,
+    openPresetIds,
+    openPreset,
+    closePreset,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   }
 }

@@ -33,6 +33,7 @@ export const MobileLayout = ({
     activeBatch,
     sets, activeSetId, removeSet, renameSet,
     toggleSetChecked, setAllSetsChecked, setActiveSetId,
+    openPresetIds, undo, redo, canUndo, canRedo,
     
     // state properties
     activePromptTab, setActivePromptTab,
@@ -47,6 +48,11 @@ export const MobileLayout = ({
     setIsModalPreviewOpen,
     setIsJobModalOpen,
     sortOrder, setSortOrder,
+    isPresetOpen, setIsPresetOpen,
+    newPresetName, setNewPresetName,
+    setIsPresetManagerOpen,
+    handleLoadPreset,
+    handleDeletePreset,
     
     // queries & derived state
     workflows,
@@ -316,18 +322,87 @@ export const MobileLayout = ({
         <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-4 py-2.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
-            <div className="flex gap-2.5">
+            <div className="flex items-center gap-2.5">
               <button type="button" onClick={() => {
                 const checked = sets.some((s) => !s.checked)
                 setAllSetsChecked(checked)
               }} className="text-[10px] text-zinc-500 hover:text-zinc-350 transition-colors">
                 {sets.every((s) => s.checked) ? '全解除' : '全選択'}
               </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  id="preset-popover-btn-mobile"
+                  onClick={() => setIsPresetOpen(!isPresetOpen)}
+                  className={`px-2 py-0.5 rounded text-[10px] border font-semibold transition-all ${
+                    isPresetOpen
+                      ? 'border-[#7C6FDD] bg-[rgba(124,111,221,0.1)] text-[#7C6FDD]'
+                      : 'border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5'
+                  }`}
+                >
+                  Presets
+                </button>
+                {isPresetOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-60 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl p-3 z-50 space-y-3">
+                    <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.05)] pb-1.5">
+                      <span className="text-xs font-semibold text-zinc-200">Presets</span>
+                      <button 
+                        onClick={() => { setIsPresetManagerOpen(true); setIsPresetOpen(false); }}
+                        className="text-[10px] text-[#7C6FDD] hover:underline"
+                      >
+                        管理
+                      </button>
+                    </div>
+                    <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
+                      {presets && presets.length > 0 ? presets.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between group/preset p-1 hover:bg-white/5 rounded">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadPreset(p)}
+                            className="flex-1 text-left text-xs text-zinc-300 truncate font-medium hover:text-white"
+                          >
+                            {p.name}
+                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePreset(p.id)}
+                              className="text-[9px] px-1 bg-red-950/40 text-red-400 hover:bg-red-900/60 rounded"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      )) : <p className="text-[10px] text-zinc-555 italic py-1">No presets found</p>}
+                    </div>
+                    <div className="flex gap-1.5 pt-1.5 border-t border-[rgba(255,255,255,0.05)]">
+                      <input
+                        type="text"
+                        placeholder="New preset name..."
+                        value={newPresetName}
+                        onChange={(e) => setNewPresetName(e.target.value)}
+                        className="bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-0.5 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C6FDD]/45 w-full"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newPresetName.trim()) {
+                            handleCreatePreset(newPresetName.trim())
+                          }
+                        }}
+                        className="bg-[#7C6FDD] hover:bg-[#6b5ec2] text-white text-[10px] font-semibold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                      >
+                        新規
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
-              {sets.map((s) => (
+              {sets.filter((s) => (openPresetIds || []).includes(s.id)).map((s) => (
                 <div key={s.id} onClick={() => setActiveSetId(s.id)}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
                     String(s.id) === String(activeSetId)
@@ -336,9 +411,7 @@ export const MobileLayout = ({
                   }`}>
                   <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
                   <span className="truncate max-w-[70px]">{s.name}</span>
-                  {sets.length > 1 && (
-                    <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5">✕</button>
-                  )}
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)">✕</button>
                 </div>
               ))}
             </div>
@@ -353,16 +426,40 @@ export const MobileLayout = ({
           </div>
 
           {activeSet && (
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] text-zinc-500 font-bold">名前編集:</span>
-              <input
-                type="text"
-                id="set-name-input-mobile"
-                value={activeSet.name}
-                onChange={(e) => renameSet(activeSet.id, e.target.value)}
-                className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-accent-green/40 max-w-[150px]"
-                placeholder="プロファイル名..."
-              />
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-zinc-500 font-bold">名前編集:</span>
+                <input
+                  type="text"
+                  id="set-name-input-mobile"
+                  value={activeSet.name}
+                  onChange={(e) => renameSet(activeSet.id, e.target.value)}
+                  className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-accent-green/40 max-w-[150px]"
+                  placeholder="プロファイル名..."
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5 ml-auto">
+                <button
+                  type="button"
+                  id="undo-btn-mobile"
+                  onClick={() => undo?.(activeSet.id)}
+                  disabled={!canUndo}
+                  title="Undo"
+                  className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                >
+                  ↩
+                </button>
+                <button
+                  type="button"
+                  id="redo-btn-mobile"
+                  onClick={() => redo?.(activeSet.id)}
+                  disabled={!canRedo}
+                  title="Redo"
+                  className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                >
+                  ↪
+                </button>
+              </div>
             </div>
           )}
         </div>

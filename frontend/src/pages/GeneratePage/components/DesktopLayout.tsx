@@ -36,6 +36,7 @@ export const DesktopLayout = ({
     setComfyUrl,
     sets, activeSetId, removeSet, renameSet,
     toggleSetChecked, setAllSetsChecked, setActiveSetId,
+    openPresetIds, undo, redo, canUndo, canRedo,
     activeBatch,
     
     // state properties
@@ -273,7 +274,7 @@ export const DesktopLayout = ({
       {selectedWorkflowId && (
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
           <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
-            {sets.map((s) => (
+            {sets.filter((s) => (openPresetIds || []).includes(s.id)).map((s) => (
               <div key={s.id} onClick={() => setActiveSetId(s.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
                   s.id === activeSetId
@@ -282,9 +283,7 @@ export const DesktopLayout = ({
                 }`}>
                 <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />
                 <span className="truncate max-w-[80px]">{s.name}</span>
-                {sets.length > 1 && (
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-1">✕</button>
-                )}
+                <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-1" title="タブを閉じる (DBからは削除されません)">✕</button>
               </div>
             ))}
           </div>
@@ -320,7 +319,29 @@ export const DesktopLayout = ({
               className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-300 font-semibold focus:outline-none focus:border-accent-green/40 max-w-[120px]"
             />
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+              <button
+                type="button"
+                id="undo-btn"
+                onClick={() => undo?.(activeSet.id)}
+                disabled={!canUndo}
+                title="Undo (Ctrl+Z)"
+                className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+              >
+                ↩
+              </button>
+              <button
+                type="button"
+                id="redo-btn"
+                onClick={() => redo?.(activeSet.id)}
+                disabled={!canRedo}
+                title="Redo (Ctrl+Y)"
+                className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+              >
+                ↪
+              </button>
+            </div>
             <div className="relative">
               <button
                 type="button"

@@ -53,6 +53,9 @@ vi.mock('../../../../store/useGenerationStore', () => {
     setSets: vi.fn(),
     queueRunning: [],
     queuePending: [],
+    openPresetIds: [10],
+    openPreset: vi.fn(),
+    closePreset: vi.fn(),
   }
   return {
     useGenerationStore: () => store,
@@ -222,5 +225,19 @@ describe('useGeneratePageState', () => {
       workflow_id: 1,
       name: 'New Preset',
     }))
+  })
+
+  it('should handle undo and redo of parameter states', async () => {
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    await waitFor(() => {
+      expect(workflowsApi.list).toHaveBeenCalled()
+    })
+
+    act(() => {
+      result.current.undo(10)
+      result.current.redo(10)
+    })
   })
 })

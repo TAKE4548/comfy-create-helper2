@@ -137,6 +137,7 @@ export interface GenerationState {
   // ─── Multi-Set State (New) ─────────────────────────────────────
   sets: GenerationSet[]
   activeSetId: string | number | null
+  openPresetIds: (string | number)[]
   
   // ─── Batch Job State ───────────────────────────────────────────
   activeBatch: BatchJob[] | null
@@ -181,6 +182,8 @@ export interface GenerationState {
   setAllSetsChecked: (checked: boolean) => void
   updateActiveSet: (updates: Partial<Omit<GenerationSet, 'id' | 'name'>>) => void
   setSets: (sets: GenerationSet[]) => void
+  openPreset: (id: string | number) => void
+  closePreset: (id: string | number) => void
 }
 
 // ─── Module-level WebSocket singleton ─────────────────────────────
@@ -332,6 +335,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     queuePending: [],
     sets: initialSets,
     activeSetId: initialActiveSetId,
+    openPresetIds: [],
     activeBatch: null,
 
     // ── Actions ──────────────────────────────────────────────
@@ -633,9 +637,18 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         const defaultSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
         const defaultSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
 
+        let openPresetIds: (string | number)[] = []
+        try {
+          const stored = localStorage.getItem(`prompt-surgeon-open-presets-${id}`)
+          if (stored) {
+            openPresetIds = JSON.parse(stored)
+          }
+        } catch {}
+
         set({
           sets: [],
           activeSetId,
+          openPresetIds,
           paramValues: params,
           appliedAssets: loadedAppliedAssets,
           batchSize: defaultBatchSize,
@@ -647,6 +660,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         set({
           sets: [],
           activeSetId: null,
+          openPresetIds: [],
           paramValues: {},
           appliedAssets: {},
           batchSize: 1,
@@ -1051,11 +1065,23 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const sets = [initialSet]
       const activeSetId = initialSet.id
       
+      let openPresetIds: (string | number)[] = []
+      try {
+        const stored = localStorage.getItem(`prompt-surgeon-open-presets-${workflowId}`)
+        if (stored) {
+          openPresetIds = JSON.parse(stored)
+        }
+      } catch {}
+      if (openPresetIds.length === 0) {
+        openPresetIds = [initialSet.id]
+      }
+      localStorage.setItem(`prompt-surgeon-open-presets-${workflowId}`, JSON.stringify(openPresetIds))
       localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + workflowId, String(activeSetId))
 
       set({
         sets,
         activeSetId,
+        openPresetIds,
         paramValues: params,
         appliedAssets: loadedAppliedAssets,
         batchSize: defaultBatchSize,
@@ -1104,32 +1130,42 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       }
 
       const updatedSets = [...get().sets, newSet]
-      set({ sets: updatedSets, activeSetId: newSet.id })
+      const nextOpenPresetIds = [...get().openPresetIds, newSet.id]
+      set({ sets: updatedSets, activeSetId: newSet.id, openPresetIds: nextOpenPresetIds })
       localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(newSet.id))
+      localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
     },
 
     removeSet: (id) => {
       const activeWfId = get().selectedWorkflowId
       if (activeWfId === null) return
-      if (get().sets.length <= 1) return
 
-      const updatedSets = get().sets.filter(s => String(s.id) !== String(id))
+      // closePreset(id) handles removing from openPresetIds and updating localStorage
+      get().closePreset(id)
+
+      const remainingOpenPresetIds = get().openPresetIds.filter(x => String(x) !== String(id))
       let nextActiveId = get().activeSetId
+
       if (String(nextActiveId) === String(id)) {
-        nextActiveId = updatedSets[0].id
+        nextActiveId = remainingOpenPresetIds.length > 0 ? remainingOpenPresetIds[0] : null
+        
+        set({ activeSetId: nextActiveId })
+        if (nextActiveId !== null) {
+          localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(nextActiveId))
+          const nextActiveSet = get().sets.find(s => String(s.id) === String(nextActiveId))
+          if (nextActiveSet) {
+            set({
+              paramValues: nextActiveSet.paramValues,
+              appliedAssets: nextActiveSet.appliedAssets,
+              batchSize: nextActiveSet.batchSize,
+              seedMode: nextActiveSet.seedMode,
+              seed: nextActiveSet.seed
+            })
+          }
+        } else {
+          localStorage.removeItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId)
+        }
       }
-
-      set({ sets: updatedSets, activeSetId: nextActiveId })
-      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(nextActiveId!))
-
-      const nextActiveSet = updatedSets.find(s => String(s.id) === String(nextActiveId))!
-      set({
-        paramValues: nextActiveSet.paramValues,
-        appliedAssets: nextActiveSet.appliedAssets,
-        batchSize: nextActiveSet.batchSize,
-        seedMode: nextActiveSet.seedMode,
-        seed: nextActiveSet.seed
-      })
     },
 
     renameSet: (id, name) => {
@@ -1175,6 +1211,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     setSets: (sets) => {
       set({ sets })
+    },
+
+    openPreset: (id) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+      const openPresetIds = get().openPresetIds
+      if (!openPresetIds.includes(id)) {
+        const next = [...openPresetIds, id]
+        set({ openPresetIds: next })
+        localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(next))
+      }
+    },
+
+    closePreset: (id) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+      const next = get().openPresetIds.filter(x => String(x) !== String(id))
+      set({ openPresetIds: next })
+      localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(next))
     },
   }
 })
