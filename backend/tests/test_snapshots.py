@@ -463,6 +463,20 @@ class TestSnapshotsAPI(unittest.TestCase):
             # get_db オーバーライドを元に戻す
             app.dependency_overrides[get_db] = override_get_db
 
+    def test_snapshot_images_cache_header(self):
+        import os
+        from app.config import settings
+        test_file_path = settings.snapshot_path / "test_cache.png"
+        with open(test_file_path, "w") as f:
+            f.write("dummy content")
+        try:
+            res = self.client.get("/api/snapshots/images/test_cache.png")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.headers.get("cache-control"), "public, max-age=31536000, immutable")
+        finally:
+            if os.path.exists(test_file_path):
+                os.remove(test_file_path)
+
 
 if __name__ == "__main__":
     unittest.main()

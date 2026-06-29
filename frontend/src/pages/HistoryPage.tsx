@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import JSZip from 'jszip'
 import {
@@ -192,6 +192,24 @@ export function HistoryPage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [activeId, setActiveId] = useState<number | null>(null)
 
+  // Infinite scroll / lazy limit states
+  const [snapshotLimit, setSnapshotLimit] = useState(24)
+  const [albumItemLimit, setAlbumItemLimit] = useState(24)
+
+  // Refs for sentinels
+  const snapshotSentinelRef = useRef<HTMLDivElement | null>(null)
+  const albumItemSentinelRef = useRef<HTMLDivElement | null>(null)
+
+  // Reset snapshot limit on filter/sort changes
+  useEffect(() => {
+    setSnapshotLimit(24)
+  }, [selectedWorkflowId, selectedLoraId, selectedTagSetId, sortOrder])
+
+  // Reset album item limit when selected album changes
+  useEffect(() => {
+    setAlbumItemLimit(24)
+  }, [selectedAlbumId])
+
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list() as Promise<{ id: number; name: string }[]>,
@@ -244,6 +262,10 @@ export function HistoryPage() {
         return a.sequence_order - b.sequence_order
       })
     : []
+
+  const visibleAlbumItems = useMemo(() => {
+    return sortedAlbumItems.slice(0, albumItemLimit)
+  }, [sortedAlbumItems, albumItemLimit])
 
   const snapshotMultiSelect = useMultiSelect({ items: snapshots ?? [] })
   const albumItemMultiSelect = useMultiSelect({ items: sortedAlbumItems.map(i => ({ id: i.snapshot_id })) })
@@ -411,6 +433,48 @@ export function HistoryPage() {
       : copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
   }, [snapshots, sortOrder])
 
+  const visibleSnapshots = useMemo(() => {
+    return sortedSnapshots.slice(0, snapshotLimit)
+  }, [sortedSnapshots, snapshotLimit])
+
+  // IntersectionObserver for snapshots infinite scroll
+  useEffect(() => {
+    const sentinel = snapshotSentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setSnapshotLimit((prev) => prev + 24)
+      }
+    }, {
+      rootMargin: '200px',
+    })
+
+    observer.observe(sentinel)
+    return () => {
+      observer.unobserve(sentinel)
+    }
+  }, [snapshots, snapshotLimit])
+
+  // IntersectionObserver for album items infinite scroll
+  useEffect(() => {
+    const sentinel = albumItemSentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setAlbumItemLimit((prev) => prev + 24)
+      }
+    }, {
+      rootMargin: '200px',
+    })
+
+    observer.observe(sentinel)
+    return () => {
+      observer.unobserve(sentinel)
+    }
+  }, [currentAlbum, albumItemLimit])
+
   const lightboxImages = selectedAlbumId !== null
     ? sortedAlbumItems.map(item => item.image_path ?? '')
     : (sortedSnapshots.map((s) => s.image_path ?? '') ?? [])
@@ -547,7 +611,7 @@ export function HistoryPage() {
                 strategy={rectSortingStrategy}
               >
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                  {sortedAlbumItems.map((item) => {
+                  {visibleAlbumItems.map((item) => {
                     const isSelected = albumItemMultiSelect.isSelected(item.snapshot_id)
                     const isDndEnabled = sortBy === 'custom' && !albumItemMultiSelect.isMultiSelectMode && !updateAlbumOrder.isPending
                     const longPressHandlers = albumItemMultiSelect.getLongPressHandlers(item.snapshot_id)
@@ -571,11 +635,12 @@ export function HistoryPage() {
                           <img
                             src={item.image_path}
                             alt=""
+                            loading="lazy"
                             className="max-w-full max-h-full object-contain pointer-events-none"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                            <ImageOff size={20} strokeWidth={1} />
+                             <ImageOff size={20} strokeWidth={1} />
                           </div>
                         )}
 
@@ -643,6 +708,11 @@ export function HistoryPage() {
                       </div>
                     )
                   })}
+                  {visibleAlbumItems.length < sortedAlbumItems.length && (
+                    <div ref={albumItemSentinelRef} className="col-span-full h-8 flex items-center justify-center text-xs text-zinc-500">
+                      Loading more...
+                    </div>
+                  )}
                   {sortedAlbumItems.length === 0 && (
                     <div className="col-span-full flex flex-col items-center py-20 text-zinc-600">
                       <BookOpen size={40} strokeWidth={1} />
@@ -817,7 +887,7 @@ export function HistoryPage() {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
             {view === 'snapshots' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {sortedSnapshots.map((snap) => {
+                {visibleSnapshots.map((snap) => {
                   const isSelected = snapshotMultiSelect.isSelected(snap.id)
                   const longPressHandlers = snapshotMultiSelect.getLongPressHandlers(snap.id)
                   return (
@@ -848,7 +918,7 @@ export function HistoryPage() {
                     >
                       <div className="aspect-square bg-surface-2">
                         {snap.image_path ? (
-                          <img src={snap.image_path} alt={`Snapshot ${snap.id}`} className="w-full h-full object-cover" />
+                          <img src={snap.image_path} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-600">
                             <ImageOff size={20} strokeWidth={1} />
@@ -899,6 +969,11 @@ export function HistoryPage() {
                     </div>
                   )
                 })}
+                {visibleSnapshots.length < sortedSnapshots.length && (
+                  <div ref={snapshotSentinelRef} className="col-span-full h-8 flex items-center justify-center text-xs text-zinc-500">
+                    Loading more...
+                  </div>
+                )}
                 {(sortedSnapshots.length === 0) && (
                   <div className="col-span-full flex flex-col items-center py-20 text-zinc-600">
                     <Clock size={40} strokeWidth={1} />
@@ -920,7 +995,7 @@ export function HistoryPage() {
                       {album.items.slice(0, 3).map((item, i) => (
                         <div key={i} className="bg-surface-2 overflow-hidden">
                           {item.image_path ? (
-                            <img src={item.image_path} alt="" className="w-full h-full object-cover" />
+                            <img src={item.image_path} alt="" loading="lazy" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-zinc-700">
                               <ImageOff size={16} strokeWidth={1} />

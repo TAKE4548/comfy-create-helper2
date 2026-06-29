@@ -3,7 +3,8 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -228,7 +229,20 @@ app.include_router(llm_prompts.router)
 app.include_router(presets.router)
 
 
-app.mount("/api/snapshots/images", StaticFiles(directory=settings.snapshot_path), name="snapshots_images")
+class CachedStaticFiles(StaticFiles):
+    def file_response(
+        self,
+        path: str,
+        stat_result: os.stat_result,
+        scope: dict,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(path, stat_result, scope, status_code)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+app.mount("/api/snapshots/images", CachedStaticFiles(directory=settings.snapshot_path), name="snapshots_images")
 
 
 @app.get("/health")
