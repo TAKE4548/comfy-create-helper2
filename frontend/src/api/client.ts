@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams } from './types'
 
 const BASE_URL = '/api'
 
@@ -121,6 +121,11 @@ export const auditApi = {
 export const llmPromptsApi = {
   list: () => request('/llm-prompts'),
   update: (key: string, data: unknown) => request(`/llm-prompts/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
+  sceneGenerate: (data: SceneGenerateRequest) =>
+    request<SceneDiffParams[]>('/llm-prompts/scene-generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 }
 
 // ─── Config ─────────────────────────────────────────────────────

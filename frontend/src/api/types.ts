@@ -361,3 +361,23 @@ export interface LoraReorder {
 export interface TagSetReorder {
   ordered_ids: number[]
 }
+
+
+// ─── Scene Generator ─────────────────────────────────────────────
+
+export interface SceneItem {
+  id: string        // crypto.randomUUID() で生成
+  summary: string   // ユーザーが入力する日本語の概要
+}
+
+export interface SceneGenerateRequest {
+  target_fields: string[]                 // 選択されたフィールドの role 名リスト
+  base_params: Record<string, string>     // フィールド名 → 現在の値（文脈情報）
+  scenes: { id: string; summary: string }[]
+}
+
+export interface SceneDiffParams {
+  scene_id: string
+  diff_params: Record<string, string>     // フィールド名 → LLMが生成した英語プロンプト
+}
+

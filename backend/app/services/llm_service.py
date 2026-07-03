@@ -70,6 +70,68 @@ async def run_audit(
     return result
 
 
+async def run_scene_generate(
+    target_fields: list[str],
+    base_params: dict[str, str],
+    scenes: list[dict],   # [{"id": str, "summary": str}]
+    system_prompt_override: str | None = None,
+) -> list[dict]:   # [{"scene_id": str, "diff_params": {str: str}}]
+    sp = system_prompt_override or _default_scene_generate_prompt()
+    
+    target_fields_with_values_list = []
+    for f in target_fields:
+        val = base_params.get(f, "")
+        target_fields_with_values_list.append(f"- {f}: {val}")
+    target_fields_with_values = "\n".join(target_fields_with_values_list)
+    
+    import json
+    scenes_json = json.dumps(scenes, ensure_ascii=False, indent=2)
+    
+    user_prompt = (
+        f"Target Fields and Current Values:\n"
+        f"{target_fields_with_values}\n\n"
+        f"Generate diff_params for each scene below:\n"
+        f"{scenes_json}\n\n"
+        f"Return ONLY a JSON array in this format:\n"
+        '[{"scene_id": "...", "diff_params": {"FieldName": "english, tags"}}]'
+    )
+    
+    raw = await call_llm(sp, user_prompt)
+    return _parse_scene_generate(raw)
+
+
+def _parse_scene_generate(raw: str) -> list[dict]:
+    """Extract JSON array from LLM response, stripping markdown fences if present."""
+    import json
+    import re
+    text = raw.strip()
+    # Remove ```json ... ``` fences if present
+    match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, re.DOTALL)
+    if match:
+        text = match.group(1)
+    else:
+        # Find first '[' to last ']'
+        start = text.find('[')
+        end = text.rfind(']')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
+    return json.loads(text)
+
+
+def _default_scene_generate_prompt() -> str:
+    return (
+        "You are a scene description expert for AI image generation.\n"
+        "Given a scene summary in Japanese and a list of candidate fields with their current values,\n"
+        "analyze the scene and generate English prompts ONLY for the fields that are relevant to the scene.\n"
+        "You decide which fields to update based on the scene's natural implication.\n\n"
+        "Rules:\n"
+        "1. Output MUST be a valid JSON array — no markdown, no explanation outside JSON.\n"
+        "2. Only include fields you want to change; omit unchanged fields.\n"
+        "3. Each field value must be comma-separated English prompt tags (no Japanese, no full sentences).\n"
+        "4. Do NOT hallucinate fields that are not listed in target_fields."
+    )
+
+
 # ─── Default system prompts (fallbacks when DB has no entry) ──────
 
 def _default_interference_prompt(model_hint: str) -> str:

@@ -53,6 +53,7 @@ export const DesktopLayout = ({
     setIsPresetManagerOpen,
     setWorkflowManageMode,
     isWorkflowMenuOpen, setIsWorkflowMenuOpen,
+    setIsSceneGeneratorOpen,
     
     // queries & derived state
     workflows,
@@ -301,6 +302,15 @@ export const DesktopLayout = ({
             }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all">
               <Plus size={11} />Add Set
+            </button>
+            <button
+              type="button"
+              id="scene-generator-btn"
+              onClick={() => setIsSceneGeneratorOpen(true)}
+              disabled={!selectedWorkflowId}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all disabled:opacity-30"
+            >
+              🎬 Scene
             </button>
           </div>
         </div>

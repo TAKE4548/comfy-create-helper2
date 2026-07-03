@@ -10,6 +10,7 @@ import { PresetManagerPanel } from '../components/PresetManagerPanel'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { JobManagementModal } from '../components/JobManagementModal'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
+import { SceneGeneratorModal } from '../components/SceneGeneratorModal'
 
 export function GeneratePage() {
   const state = useGeneratePageState()
@@ -28,6 +29,7 @@ export function GeneratePage() {
     isPresetManagerOpen, setIsPresetManagerOpen, presets, renamePresetMutation, reorderPresetsMutation,
     isModalPreviewOpen, setIsModalPreviewOpen, modalPreviewIndex, setModalPreviewIndex, snapshotIdsForDisplay,
     isJobModalOpen, setIsJobModalOpen,
+    isSceneGeneratorOpen, setIsSceneGeneratorOpen, paramValues, textMappings,
   } = state
 
   return (
@@ -169,6 +171,20 @@ export function GeneratePage() {
       <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
         images={sortedDisplayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
       <JobManagementModal isOpen={isJobModalOpen} onClose={() => setIsJobModalOpen(false)} />
+      {isSceneGeneratorOpen && selectedWorkflowId && (
+        <SceneGeneratorModal
+          isOpen={isSceneGeneratorOpen}
+          onClose={() => setIsSceneGeneratorOpen(false)}
+          workflow={workflow}
+          workflowId={selectedWorkflowId}
+          baseParamValues={paramValues}
+          textMappings={textMappings}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+            setIsSceneGeneratorOpen(false)
+          }}
+        />
+      )}
     </>
   )
 }

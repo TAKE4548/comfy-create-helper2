@@ -79,6 +79,7 @@ export function useGeneratePageState() {
   const [isPresetManagerOpen, setIsPresetManagerOpen] = useState(false)
   const [workflowManageMode, setWorkflowManageMode] = useState<'rename' | 'copy' | null>(null)
   const [isWorkflowMenuOpen, setIsWorkflowMenuOpen] = useState(false)
+  const [isSceneGeneratorOpen, setIsSceneGeneratorOpen] = useState(false)
 
   const store = useGenerationStore()
   const {
@@ -1000,5 +1001,7 @@ export function useGeneratePageState() {
     redo,
     canUndo,
     canRedo,
+    isSceneGeneratorOpen,
+    setIsSceneGeneratorOpen,
   }
 }

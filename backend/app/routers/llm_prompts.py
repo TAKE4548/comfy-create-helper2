@@ -27,3 +27,23 @@ def update_llm_prompt(key: str, payload: schemas.LlmPromptUpdate, db: Session = 
     db.commit()
     db.refresh(prompt)
     return prompt
+
+
+@router.post("/scene-generate", response_model=list[schemas.SceneDiffParams])
+async def scene_generate(payload: schemas.SceneGenerateRequest, db: Session = Depends(get_db)):
+    from app.services.llm_service import run_scene_generate
+    prompt_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "scene_generate").first()
+    system_prompt_override = prompt_record.content if prompt_record else None
+    
+    try:
+        scenes_list = [{"id": s.id, "summary": s.summary} for s in payload.scenes]
+        results = await run_scene_generate(
+            target_fields=payload.target_fields,
+            base_params=payload.base_params,
+            scenes=scenes_list,
+            system_prompt_override=system_prompt_override,
+        )
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
