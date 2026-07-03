@@ -478,6 +478,113 @@ class TestSnapshotsAPI(unittest.TestCase):
                 os.remove(test_file_path)
 
 
+    # --- REQ-102: 重複排除テスト ---
+
+    def test_create_snapshot_deduplicates_duplicate_loras(self):
+        """同一(lora_id, role)が複数あっても1件だけDBに登録されること（後勝ち）"""
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test_dedup_lora.png",
+            "params": {},
+            "loras": [
+                {"lora_id": self.lora.id, "strength": 0.5, "role": "positive"},
+                {"lora_id": self.lora.id, "strength": 0.9, "role": "positive"},  # 重複（後勝ち）
+            ],
+            "tag_sets": []
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        snapshot_id = response.json()["id"]
+
+        snap_loras = self.db.query(models.SnapshotLora).filter(
+            models.SnapshotLora.snapshot_id == snapshot_id
+        ).all()
+        # 重複排除により1件のみ
+        self.assertEqual(len(snap_loras), 1)
+        # 後から登録された strength=0.9 が残る（後勝ち）
+        self.assertAlmostEqual(snap_loras[0].strength, 0.9)
+        self.assertEqual(snap_loras[0].role, "positive")
+
+    def test_create_snapshot_deduplicates_duplicate_tag_sets(self):
+        """同一(tag_set_id, role)が複数あっても1件だけDBに登録されること"""
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "test_dedup_tag.png",
+            "params": {},
+            "loras": [],
+            "tag_sets": [
+                {"tag_set_id": self.tag_set.id, "role": "positive"},
+                {"tag_set_id": self.tag_set.id, "role": "positive"},  # 重複
+            ]
+        }
+        response = self.client.post("/api/snapshots", json=payload)
+        self.assertEqual(response.status_code, 201)
+        snapshot_id = response.json()["id"]
+
+        snap_tag_sets = self.db.query(models.SnapshotTagSet).filter(
+            models.SnapshotTagSet.snapshot_id == snapshot_id
+        ).all()
+        # 重複排除により1件のみ
+        self.assertEqual(len(snap_tag_sets), 1)
+        self.assertEqual(snap_tag_sets[0].tag_set_id, self.tag_set.id)
+
+    def test_update_snapshot_deduplicates_duplicate_lora_ids(self):
+        """update_snapshotに重複lora_idsを渡しても1件だけDBに登録されること"""
+        # 初期スナップショット作成
+        init_payload = {
+            "workflow_id": self.workflow.id,
+            "params": {},
+            "loras": [],
+            "tag_sets": []
+        }
+        create_resp = self.client.post("/api/snapshots", json=init_payload)
+        self.assertEqual(create_resp.status_code, 201)
+        snapshot_id = create_resp.json()["id"]
+
+        # 重複 lora_ids で PATCH
+        patch_payload = {
+            "lora_ids": [self.lora.id, self.lora.id, self.lora.id],  # 重複
+            "tag_set_ids": []
+        }
+        patch_resp = self.client.patch(f"/api/snapshots/{snapshot_id}", json=patch_payload)
+        self.assertEqual(patch_resp.status_code, 200)
+
+        snap_loras = self.db.query(models.SnapshotLora).filter(
+            models.SnapshotLora.snapshot_id == snapshot_id
+        ).all()
+        # 重複排除により1件のみ
+        self.assertEqual(len(snap_loras), 1)
+        self.assertEqual(snap_loras[0].lora_id, self.lora.id)
+
+    def test_update_snapshot_deduplicates_duplicate_tag_set_ids(self):
+        """update_snapshotに重複tag_set_idsを渡しても1件だけDBに登録されること"""
+        # 初期スナップショット作成
+        init_payload = {
+            "workflow_id": self.workflow.id,
+            "params": {},
+            "loras": [],
+            "tag_sets": []
+        }
+        create_resp = self.client.post("/api/snapshots", json=init_payload)
+        self.assertEqual(create_resp.status_code, 201)
+        snapshot_id = create_resp.json()["id"]
+
+        # 重複 tag_set_ids で PATCH
+        patch_payload = {
+            "lora_ids": [],
+            "tag_set_ids": [self.tag_set.id, self.tag_set.id]  # 重複
+        }
+        patch_resp = self.client.patch(f"/api/snapshots/{snapshot_id}", json=patch_payload)
+        self.assertEqual(patch_resp.status_code, 200)
+
+        snap_tag_sets = self.db.query(models.SnapshotTagSet).filter(
+            models.SnapshotTagSet.snapshot_id == snapshot_id
+        ).all()
+        # 重複排除により1件のみ
+        self.assertEqual(len(snap_tag_sets), 1)
+        self.assertEqual(snap_tag_sets[0].tag_set_id, self.tag_set.id)
+
+
 if __name__ == "__main__":
     unittest.main()
 

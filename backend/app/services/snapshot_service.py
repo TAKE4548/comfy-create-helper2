@@ -112,7 +112,9 @@ class SnapshotService:
                 db.add(album_item)
 
             if payload.loras:
-                for l in payload.loras:
+                # (lora_id, role) をキーとして重複排除 (後勝ち)
+                deduped_loras = {(l.lora_id, l.role): l for l in payload.loras}
+                for l in deduped_loras.values():
                     db.add(models.SnapshotLora(
                         snapshot_id=s.id,
                         lora_id=l.lora_id,
@@ -121,7 +123,9 @@ class SnapshotService:
                     ))
 
             if payload.tag_sets:
-                for t in payload.tag_sets:
+                # (tag_set_id, role) をキーとして重複排除 (後勝ち)
+                deduped_tag_sets = {(t.tag_set_id, t.role): t for t in payload.tag_sets}
+                for t in deduped_tag_sets.values():
                     db.add(models.SnapshotTagSet(
                         snapshot_id=s.id,
                         tag_set_id=t.tag_set_id,
@@ -162,8 +166,8 @@ class SnapshotService:
             db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).delete()
             db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
 
-            # Create new relations
-            for lora_id in payload.lora_ids:
+            # Create new relations (重複排除してから登録)
+            for lora_id in set(payload.lora_ids):
                 db.add(models.SnapshotLora(
                     snapshot_id=snapshot_id,
                     lora_id=lora_id,
@@ -171,7 +175,7 @@ class SnapshotService:
                     role="positive"
                 ))
 
-            for tag_set_id in payload.tag_set_ids:
+            for tag_set_id in set(payload.tag_set_ids):
                 db.add(models.SnapshotTagSet(
                     snapshot_id=snapshot_id,
                     tag_set_id=tag_set_id,

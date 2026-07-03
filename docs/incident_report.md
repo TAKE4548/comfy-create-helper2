@@ -946,4 +946,43 @@ PBI 081（ワークフローアップロード時のノードIDマッピング�
 3. **メインページのボトムパディングの安全化**:
    `<main>` タグの下部パディングを `pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0` に修正し、セーフエリア搭載端末でもページ最下部コンテンツがボトムナビと重ならないようにする。
 
+---
+
+## [NEW] スナップショット保存時の重複LoRAによるユニーク制約エラー (500 Internal Server Error)
+
+### 1. 現象・症状
+スナップショットを保存しようとすると、APIリクエスト `POST /api/snapshots` がステータスコード `500 Internal Server Error` で失敗し、スナップショットを保存できない。
+バックエンドのログには以下の例外が出力される：
+`sqlite3.IntegrityError: UNIQUE constraint failed: snapshot_loras.snapshot_id, snapshot_loras.lora_id, snapshot_loras.role`
+
+### 2. 再現手順
+1. アセット（LoRA）として、同一のLoRA（同じ `lora_id`）を同じ役割（例: `Prompt_Char_Lora_Other`）で複数適用した状態にする（または、ストアの `appliedAssets` 内に同一の `lora_id` と役割を持つLoRA情報が複数重複して存在している状態にする）。
+2. 画像を生成する。
+3. 生成された画像のスナップショットを保存ボタンから保存しようとする。
+4. APIが `500 Internal Server Error` を返し、保存に失敗する。
+
+### 3. 原因究明 (Root Cause Isolation)
+- **影響を受けるソースコード**:
+  - `backend/app/services/snapshot_service.py` L114–122
+  - `frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts` L46-63
+- **詳細**:
+  - フロントエンドで適用されているアセットの中に、同一の `lora_id` と `role` を持つLoRAが複数含まれている場合、フロントエンドはそれらをすべて `loras` リストに追加して `POST /api/snapshots` に送信します。
+  - バックエンドの `SnapshotService.create_snapshot` では、受け取った `payload.loras` の各項目をループでそのまま `models.SnapshotLora` としてデータベースセッションに追加（`db.add`）します。
+  - しかし、データベース（`snapshot_loras` テーブル）には `UNIQUE(snapshot_id, lora_id, role)` というユニーク制更新が設定されています。そのため、同一スナップショットIDに対して同一の `lora_id` および `role` の組み合わせを持つレコードが複数挿入されようとすると、`sqlite3.IntegrityError`（一意制約違反）が発生し、トランザクションがロールバックされて 500 エラーとなります。
+  - これは `snapshot_tag_sets` テーブルの `UNIQUE(snapshot_id, tag_set_id, role)` においても同様に発生し得る問題です。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | `backend/app/services/snapshot_service.py` L114-122<br>`frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts` L46-63 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+- バックエンドの `SnapshotService.create_snapshot` において、`payload.loras` および `payload.tag_sets` の登録処理を行う前に、`lora_id` と `role`（および `tag_set_id` と `role`）の重複を排除（デデュープ）してデータベースに登録するように修正します。
+- または、フロントエンド側でスナップショットの登録用ペイロードを作成する段階（`useSnapshotActions.ts`）において、同一アセットIDかつ同一役割の重複を除外して送信するようにします。
+
+
 
