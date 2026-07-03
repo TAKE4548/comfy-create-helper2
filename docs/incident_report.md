@@ -986,3 +986,58 @@ PBI 081（ワークフローアップロード時のノードIDマッピング�
 
 
 
+---
+
+## [NEW] モバイルレイアウトでの Scheduler/Sampler 選択肢の欠落問題（ローカルループバック接続の解決漏れ）
+
+### 1. 現象・症状
+モバイル端末（またはモバイルレイアウト表示中に PC の IP アドレスなどを介して別デバイスからアクセスした場合）において、生成画面のパラメータパネル（`ParamPanel`）の Scheduler または Sampler のドロップダウンを開いた際、`beta` などの選択肢が表示されず、PCレイアウトで表示される選択肢よりも極端に少なくなる。
+
+### 2. 再現手順
+1. ComfyUI を起動しておく。
+2. モバイル端末（または PC 以外のデバイス）から、サーバーの外部IPアドレス（例: `http://192.168.x.x:5173/`）を使用してアプリケーションにアクセスする。
+3. パラメータ設定領域内の `Scheduler` ドロップダウンを開く。
+4. `beta` などの選択肢が存在せず、デフォルトの限定的な選択肢のみが表示される。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`useGeneratePageState.ts` における `comfyUrl` の解決漏れ
+- **影響ファイル**: [`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts`](file:///frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts#L163-L172)
+- **詳細**:
+  `comfyObjectInfo` を取得する React Query フック（L163）において、ストアから取得した `comfyUrl` をそのまま使用して `fetch(comfyUrl + '/object_info')` を呼び出している。
+  
+  ```typescript
+  const { data: comfyObjectInfo } = useQuery({
+    queryKey: ['comfy-object-info', comfyUrl],
+    queryFn: async () => {
+      const res = await fetch(comfyUrl + '/object_info', { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) throw new Error('Failed to fetch object info')
+      return res.json()
+    },
+    enabled: !!comfyUrl,
+    retry: false,
+  })
+  ```
+
+  PC からのアクセス（または localhost）では、`comfyUrl` のデフォルト値 `http://localhost:8188` に直接アクセスできるため成功する。
+  しかし、モバイルデバイスなど外部の端末からアクセスした場合、モバイルデバイスにとっての `localhost` は自分自身を指すため、ComfyUI への接続が失敗（タイムアウト）する。
+  
+  本来、このようなループバック接続を回避するために Vite プロキシ（`/comfy`）を経由させるヘルパー関数 `resolveComfyUrl` が定義されているが、`useGeneratePageState.ts` 内ではこれを使用し忘れている。
+
+#### 3-2. フォールバック時の選択肢不足
+- **影響ファイル**: [`frontend/src/pages/GeneratePage/components/ParamPanel.tsx`](file:///frontend/src/pages/GeneratePage/components/ParamPanel.tsx#L12-L14)
+- **詳細**:
+  `comfyObjectInfo` の取得に失敗すると、`ParamPanel.tsx` はデフォルトのフォールバック値である `DEFAULT_SCHEDULERS` を使用する。しかし、この `DEFAULT_SCHEDULERS` 配列には `beta` やその他の新しい ComfyUI スケジューラーが含まれていない。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` L163-L172 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+1. `useGeneratePageState.ts` の `comfyObjectInfo` 取得処理において、`comfyUrl` を `resolveComfyUrl(comfyUrl)` で解決した上で `fetch` を行うように修正する。
+2. `ParamPanel.tsx` の `DEFAULT_SCHEDULERS` および `DEFAULT_SAMPLERS` 配列について、ComfyUI でよく使われる主要なスケジューラー/サンプラー（`beta`等）をデフォルト値として追加し、仮に接続が切れてフォールバックした場合でも選択できるようにする。

@@ -10,7 +10,7 @@ const DEFAULT_SAMPLERS = [
 ]
 
 const DEFAULT_SCHEDULERS = [
-  'normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform'
+  'normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta'
 ]
 
 export interface ParamPanelProps {

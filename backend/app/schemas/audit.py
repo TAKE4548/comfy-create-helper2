@@ -51,3 +51,22 @@ class LlmPromptRead(BaseModel):
     content: str
     description: Optional[str] = None
     updated_at: datetime
+
+
+# ─── Scene Generator ─────────────────────────────────────────────
+
+class SceneItem(BaseModel):
+    id: str
+    summary: str
+
+
+class SceneGenerateRequest(BaseModel):
+    target_fields: list[str]
+    base_params: dict[str, str]   # role名 → 現在値（LLMへの文脈情報）
+    scenes: list[SceneItem]
+
+
+class SceneDiffParams(BaseModel):
+    scene_id: str
+    diff_params: dict[str, str]
+

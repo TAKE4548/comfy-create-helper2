@@ -68,6 +68,9 @@ from app.schemas.audit import (
     AuditResult,
     LlmPromptUpdate,
     LlmPromptRead,
+    SceneItem,
+    SceneGenerateRequest,
+    SceneDiffParams,
 )
 
 from app.schemas.preset import (
@@ -99,6 +102,7 @@ __all__ = [
     # Audit
     "AuditRequest", "InterferenceItem", "VocabularyItem", "PhysicalResult", "AuditResult",
     "LlmPromptUpdate", "LlmPromptRead",
+    "SceneItem", "SceneGenerateRequest", "SceneDiffParams",
     # Preset
     "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate", "WorkflowPresetReorder",
 ]

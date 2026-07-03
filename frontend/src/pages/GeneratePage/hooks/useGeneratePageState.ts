@@ -11,6 +11,7 @@ import { useSnapshotActions } from './useSnapshotActions'
 import { useAuditAction } from './useAuditAction'
 import { useWorkflowUpload } from './useWorkflowUpload'
 import { useMultiSelect } from '../../../hooks/useMultiSelect'
+import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 
 export interface SnapshotSummaryWithParams {
   id: number
@@ -163,7 +164,8 @@ export function useGeneratePageState() {
   const { data: comfyObjectInfo } = useQuery({
     queryKey: ['comfy-object-info', comfyUrl],
     queryFn: async () => {
-      const res = await fetch(comfyUrl + '/object_info', { signal: AbortSignal.timeout(3000) })
+      const resolvedUrl = resolveComfyUrl(comfyUrl)
+      const res = await fetch(resolvedUrl + '/object_info', { signal: AbortSignal.timeout(3000) })
       if (!res.ok) throw new Error('Failed to fetch object info')
       return res.json()
     },
