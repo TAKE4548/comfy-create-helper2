@@ -11,6 +11,19 @@ from app.services.llm_parser import parse_interference, parse_vocabulary, parse_
 logger = logging.getLogger(__name__)
 
 
+def _get_current_model() -> str | None:
+    from app.database import SessionLocal
+    from app.models import LlmPrompt
+    try:
+        with SessionLocal() as db:
+            record = db.query(LlmPrompt).filter(LlmPrompt.key == "llm_model").first()
+            if record and record.content:
+                return record.content
+    except Exception as e:
+        logger.error(f"Failed to fetch llm_model from DB: {e}")
+    return None
+
+
 async def run_audit(
     audit_types: list[str],
     positive: str,
@@ -21,6 +34,7 @@ async def run_audit(
 ) -> dict:
     """Run requested audit types and return structured results."""
     result: dict = {}
+    model = _get_current_model()
 
     if "interference" in audit_types:
         sp = system_prompts.get("audit_interference", _default_interference_prompt(model_hint))
@@ -34,7 +48,7 @@ async def run_audit(
             "Please analyze the <input> based on the <criteria> and output your diagnosis strictly following the <output_format>."
         )
         try:
-            raw = await call_llm(sp, user_prompt)
+            raw = await call_llm(sp, user_prompt, model=model)
             result["interference"] = parse_interference(raw)
         except Exception as e:
             logger.error(f"Interference audit failed: {e}")
@@ -48,7 +62,7 @@ async def run_audit(
             "Suggest 3-5 tags or expressions that help achieve this intent, with short descriptions."
         )
         try:
-            raw = await call_llm(sp, user_prompt)
+            raw = await call_llm(sp, user_prompt, model=model)
             result["vocabulary"] = parse_vocabulary(raw)
         except Exception as e:
             logger.error(f"Vocabulary audit failed: {e}")
@@ -61,7 +75,7 @@ async def run_audit(
             "Please check if there are physical or compositional conflicts in this prompt."
         )
         try:
-            raw = await call_llm(sp, user_prompt)
+            raw = await call_llm(sp, user_prompt, model=model)
             result["physical"] = parse_physical(raw)
         except Exception as e:
             logger.error(f"Physical audit failed: {e}")
@@ -77,6 +91,7 @@ async def run_scene_generate(
     system_prompt_override: str | None = None,
 ) -> list[dict]:   # [{"scene_id": str, "diff_params": {str: str}}]
     sp = system_prompt_override or _default_scene_generate_prompt()
+    model = _get_current_model()
     
     target_fields_with_values_list = []
     for f in target_fields:
@@ -96,7 +111,7 @@ async def run_scene_generate(
         '[{"scene_id": "...", "diff_params": {"FieldName": "english, tags"}}]'
     )
     
-    raw = await call_llm(sp, user_prompt)
+    raw = await call_llm(sp, user_prompt, model=model)
     return _parse_scene_generate(raw)
 
 

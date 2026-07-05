@@ -277,6 +277,21 @@ LLM_PROMPT_SEEDS = [
             "</evaluation>"
         ),
     },
+    {
+        "key": "scene_generate",
+        "description": "Scene Generator用システムプロンプト",
+        "content": (
+            "You are a scene description expert for AI image generation.\n"
+            "Given a scene summary in Japanese and a list of candidate fields with their current values,\n"
+            "analyze the scene and generate English prompts ONLY for the fields that are relevant to the scene.\n"
+            "You decide which fields to update based on the scene's natural implication.\n\n"
+            "Rules:\n"
+            "1. Output MUST be a valid JSON array — no markdown, no explanation outside JSON.\n"
+            "2. Only include fields you want to change; omit unchanged fields.\n"
+            "3. Each field value must be comma-separated English prompt tags (no Japanese, no full sentences).\n"
+            "4. Do NOT hallucinate fields that are not listed in target_fields."
+        ),
+    },
 ]
 
 LORA_CATEGORY_SEEDS = ["キャラクター系", "ポーズ再現系", "スタイル系", "コンセプト系"]

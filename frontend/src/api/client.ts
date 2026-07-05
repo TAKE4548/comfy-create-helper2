@@ -2,9 +2,10 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt } from './types'
 
 const BASE_URL = '/api'
+
 
 async function request<T>(
   path: string,
@@ -119,12 +120,19 @@ export const auditApi = {
 
 // ─── LLM Prompts ────────────────────────────────────────────────
 export const llmPromptsApi = {
-  list: () => request('/llm-prompts'),
-  update: (key: string, data: unknown) => request(`/llm-prompts/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
+  list: () => request<LlmPrompt[]>('/llm-prompts'),
+  update: (key: string, data: unknown) => request<LlmPrompt>(`/llm-prompts/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
   sceneGenerate: (data: SceneGenerateRequest) =>
     request<SceneDiffParams[]>('/llm-prompts/scene-generate', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  getModels: () => request<string[]>('/llm-prompts/models'),
+  getCurrentModel: () => request<LlmPrompt>('/llm-prompts/current-model'),
+  updateCurrentModel: (model: string) =>
+    request<LlmPrompt>('/llm-prompts/current-model', {
+      method: 'PUT',
+      body: JSON.stringify({ model }),
     }),
 }
 

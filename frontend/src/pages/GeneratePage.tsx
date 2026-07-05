@@ -179,6 +179,7 @@ export function GeneratePage() {
           workflowId={selectedWorkflowId}
           baseParamValues={paramValues}
           textMappings={textMappings}
+          presets={presets || []}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
             setIsSceneGeneratorOpen(false)

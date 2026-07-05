@@ -45,16 +45,16 @@ def _seed_mapping_masters(db) -> None:
 
 
 def _seed_llm_prompts(db) -> None:
-    if db.query(models.LlmPrompt).count() != 0:
-        return
     for seed in LLM_PROMPT_SEEDS:
-        db.add(models.LlmPrompt(
-            key=seed["key"],
-            content=seed["content"],
-            description=seed["description"],
-            updated_at=datetime.utcnow(),
-        ))
-    logger.info("Seeded llm_prompts table.")
+        existing = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == seed["key"]).first()
+        if not existing:
+            db.add(models.LlmPrompt(
+                key=seed["key"],
+                content=seed["content"],
+                description=seed["description"],
+                updated_at=datetime.utcnow(),
+            ))
+            logger.info(f"Seeded LLM prompt: {seed['key']}")
 
 
 def _seed_categories(db) -> None:

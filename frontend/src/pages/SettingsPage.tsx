@@ -31,6 +31,7 @@ interface ExpandedSectionsState {
   longPress: boolean;
   workflows: boolean;
   connections: boolean;
+  llmModel: boolean;
 }
 
 const PROMPT_LABELS: Record<string, string> = {
@@ -38,6 +39,7 @@ const PROMPT_LABELS: Record<string, string> = {
   audit_interference_anima: '干渉タグ診断（Anima）',
   audit_vocabulary: '語彙サジェスト（SDXL/汎用）',
   audit_physical: '物理・構図整合性チェック',
+  scene_generate: 'Scene Generator プロンプト',
 }
 
 export function SettingsPage() {
@@ -53,6 +55,7 @@ export function SettingsPage() {
       longPress: true,
       workflows: true,
       connections: true,
+      llmModel: true,
     }
   })
 
@@ -315,6 +318,25 @@ export function SettingsPage() {
     onSuccess: (_, { key }) => { qc.invalidateQueries({ queryKey: ['llm-prompts'] }); setSaved(key); setTimeout(() => setSaved(null), 2000) },
   })
 
+  const { data: modelsList, refetch: refetchModels, isFetching: isFetchingModels } = useQuery({
+    queryKey: ['llm-models'],
+    queryFn: () => llmPromptsApi.getModels() as Promise<string[]>,
+  })
+
+  const { data: currentModelData, refetch: refetchCurrentModel } = useQuery({
+    queryKey: ['llm-current-model'],
+    queryFn: () => llmPromptsApi.getCurrentModel() as Promise<LlmPrompt>,
+  })
+
+  const updateModelMutation = useMutation({
+    mutationFn: (model: string) => llmPromptsApi.updateCurrentModel(model),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['llm-current-model'] })
+      setSaved('model')
+      setTimeout(() => setSaved(null), 2000)
+    }
+  })
+
   const openCreateModal = () => { setMasterForm(emptyMasterForm()); setShowMasterModal('create') }
   const openEditModal = (mm: MappingMaster) => { setSelectedMaster(mm); setMasterForm(masterToForm(mm)); setShowMasterModal('edit') }
   const openCopyCreateModal = (mm: MappingMaster) => { setMasterForm(masterToForm(mm)); setShowMasterModal('create') }
@@ -383,6 +405,69 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
+        {/* LLM Model Settings */}
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <div 
+            onClick={() => toggleSection('llmModel')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-2">
+              <Wand2 size={15} className="text-[#7C6FDD]" />
+              <h2 className="text-sm font-semibold text-zinc-300">LLM Model Settings</h2>
+              <span className="text-xs text-zinc-600">— 使用するLLMモデルの選択</span>
+            </div>
+            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+              {saved === 'model' && (
+                <span className="text-xs text-accent-green">✓ 保存しました</span>
+              )}
+              <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.llmModel ? 'rotate-180' : ''}`} />
+            </div>
+          </div>
+          {expandedSections.llmModel && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-zinc-400 mb-1">現在のモデル</label>
+                  <select
+                    id="settings-llm-model-select"
+                    value={currentModelData?.content || ''}
+                    onChange={(e) => updateModelMutation.mutate(e.target.value)}
+                    disabled={updateModelMutation.isPending}
+                    className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
+                  >
+                    <option value="" disabled>モデルを選択してください</option>
+                    {modelsList?.map((modelName) => (
+                      <option key={modelName} value={modelName}>
+                        {modelName}
+                      </option>
+                    ))}
+                    {currentModelData?.content && !modelsList?.includes(currentModelData.content) && (
+                      <option value={currentModelData.content}>
+                        {currentModelData.content} (現在設定中)
+                      </option>
+                    )}
+                  </select>
+                </div>
+                <div className="flex items-end self-end">
+                  <button
+                    id="settings-llm-model-refresh"
+                    type="button"
+                    onClick={() => {
+                      refetchModels()
+                      refetchCurrentModel()
+                    }}
+                    disabled={isFetchingModels}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-800 border border-[rgba(255,255,255,0.08)] hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={isFetchingModels ? 'animate-spin' : ''} />
+                    モデル一覧を取得
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
         {/* LLM System Prompts */}
         <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
           <button 

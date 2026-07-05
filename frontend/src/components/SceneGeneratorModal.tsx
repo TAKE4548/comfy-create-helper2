@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { X, Sparkles, Plus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Loader2, Check } from 'lucide-react'
-import type { Workflow, WorkflowMapping, SceneItem, SceneDiffParams } from '../api/types'
+import type { Workflow, WorkflowMapping, SceneItem, SceneDiffParams, WorkflowPreset } from '../api/types'
 import { useSceneGenerator } from '../pages/GeneratePage/hooks/useSceneGenerator'
 
 interface SceneGeneratorModalProps {
@@ -10,6 +10,7 @@ interface SceneGeneratorModalProps {
   workflowId: number
   baseParamValues: Record<string, string>
   textMappings: WorkflowMapping[]
+  presets: WorkflowPreset[]
   onSaved: () => void
 }
 
@@ -20,9 +21,23 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
   workflowId,
   baseParamValues,
   textMappings,
+  presets,
   onSaved,
 }) => {
-  const { generateDrafts, saveAsProfiles } = useSceneGenerator({ workflowId, baseParamValues })
+  const [selectedBasePresetId, setSelectedBasePresetId] = useState<string | number>('current')
+
+  const effectiveBaseParamValues = useMemo(() => {
+    if (selectedBasePresetId === 'current') {
+      return baseParamValues
+    }
+    const preset = presets.find(p => p.id === Number(selectedBasePresetId))
+    return preset ? preset.param_values : baseParamValues
+  }, [selectedBasePresetId, baseParamValues, presets])
+
+  const { generateDrafts, saveAsProfiles } = useSceneGenerator({
+    workflowId,
+    baseParamValues: effectiveBaseParamValues,
+  })
 
   // Phase management
   const [phase, setPhase] = useState<'input' | 'draft'>('input')
@@ -81,7 +96,7 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
     setIsDrafting(true)
     try {
       const activeScenes = scenes.filter(s => s.summary.trim() !== '')
-      const result = await generateDrafts(selectedFields, activeScenes)
+      const result = await generateDrafts(selectedFields, activeScenes, effectiveBaseParamValues)
       setEditedDrafts(JSON.parse(JSON.stringify(result)))
       setPhase('draft')
     } catch (e: any) {
@@ -113,7 +128,7 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
     setIsSaving(true)
     try {
       const activeScenes = scenes.filter(s => s.summary.trim() !== '')
-      await saveAsProfiles(activeScenes, editedDrafts)
+      await saveAsProfiles(activeScenes, editedDrafts, effectiveBaseParamValues)
       onSaved()
     } catch (e: any) {
       setError(e.message || '保存中にエラーが発生しました')
@@ -201,11 +216,33 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
                 )}
               </div>
 
+              {/* Base Profile Selection */}
+              <div>
+                <h3 className="text-xs font-semibold text-zinc-350 mb-2">
+                  2. 基準となるパラメータセット (Base Profile) の選択
+                </h3>
+                <div className="max-w-xs">
+                  <select
+                    id="scene-gen-base-profile-select"
+                    value={selectedBasePresetId}
+                    onChange={e => setSelectedBasePresetId(e.target.value)}
+                    className="w-full bg-zinc-900 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
+                  >
+                    <option value="current">現在のパラメータ値 (Current)</option>
+                    {presets.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {/* Scenes Input */}
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-semibold text-zinc-350">
-                    2. シーン概要の入力 (日本語)
+                    3. シーン概要の入力 (日本語)
                   </h3>
                   <button
                     type="button"
@@ -270,7 +307,7 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
             /* Draft Phase */
             <div>
               <h3 className="text-xs font-semibold text-zinc-350 mb-4">
-                3. 生成されたドラフトプロンプト (手動で微調整が可能です)
+                4. 生成されたドラフトプロンプト (手動で微調整が可能です)
               </h3>
               <div className="space-y-4">
                 {editedDrafts.map((draft, idx) => {

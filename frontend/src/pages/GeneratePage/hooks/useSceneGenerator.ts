@@ -11,9 +11,11 @@ export function useSceneGenerator({ workflowId, baseParamValues }: UseSceneGener
   const generateDrafts = async (
     targetFields: string[],
     scenes: SceneItem[],
+    overrideBaseParams?: Record<string, string>,
   ): Promise<SceneDiffParams[]> => {
+    const activeBase = overrideBaseParams || baseParamValues
     const baseParams: Record<string, string> = {}
-    targetFields.forEach(f => { baseParams[f] = baseParamValues[f] ?? '' })
+    targetFields.forEach(f => { baseParams[f] = activeBase[f] ?? '' })
 
     return await llmPromptsApi.sceneGenerate({
       target_fields: targetFields,
@@ -25,11 +27,13 @@ export function useSceneGenerator({ workflowId, baseParamValues }: UseSceneGener
   const saveAsProfiles = async (
     scenes: SceneItem[],
     drafts: SceneDiffParams[],
+    overrideBaseParams?: Record<string, string>,
   ): Promise<void> => {
+    const activeBase = overrideBaseParams || baseParamValues
     for (const draft of drafts) {
       const scene = scenes.find(s => s.id === draft.scene_id)
       const profileName = scene?.summary ?? `Scene ${draft.scene_id}`
-      const finalParams = { ...baseParamValues, ...draft.diff_params }
+      const finalParams = { ...activeBase, ...draft.diff_params }
 
       await workflowPresetsApi.create({
         workflow_id: workflowId,
