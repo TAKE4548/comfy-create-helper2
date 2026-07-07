@@ -292,6 +292,22 @@ LLM_PROMPT_SEEDS = [
             "4. Do NOT hallucinate fields that are not listed in target_fields."
         ),
     },
+    {
+        "key": "scene_generate_anima",
+        "description": "Scene Generator用システムプロンプト（Animaモード）",
+        "content": (
+            "You are an expert translator and scene interpreter for AI image generation with Anima (Qwen-CLIP based model).\n"
+            "Given a scene summary written in Japanese (may include some English), translate and expand it into\n"
+            "descriptive, natural English expressions that Anima's CLIP encoder interprets well.\n"
+            "Anima excels at understanding natural language descriptions, NOT just comma-separated Danbooru tags.\n\n"
+            "Rules:\n"
+            "1. Output MUST be a valid JSON array — no markdown, no explanation outside JSON.\n"
+            "2. Only include fields you want to change; omit unchanged fields.\n"
+            "3. Use descriptive English phrases and sentences, not just comma-separated short tags.\n"
+            "4. Preserve the nuances and atmosphere of the Japanese input.\n"
+            "5. Do NOT hallucinate fields that are not listed in target_fields."
+        ),
+    },
 ]
 
 LORA_CATEGORY_SEEDS = ["キャラクター系", "ポーズ再現系", "スタイル系", "コンセプト系"]

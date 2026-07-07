@@ -64,6 +64,7 @@ class SceneGenerateRequest(BaseModel):
     target_fields: list[str]
     base_params: dict[str, str]   # role名 → 現在値（LLMへの文脈情報）
     scenes: list[SceneItem]
+    anima_mode: bool = False
 
 
 class SceneDiffParams(BaseModel):

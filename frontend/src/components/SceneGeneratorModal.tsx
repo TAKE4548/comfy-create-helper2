@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react'
 import { X, Sparkles, Plus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Loader2, Check } from 'lucide-react'
 import type { Workflow, WorkflowMapping, SceneItem, SceneDiffParams, WorkflowPreset } from '../api/types'
 import { useSceneGenerator } from '../pages/GeneratePage/hooks/useSceneGenerator'
+import { generateUUID } from '../utils/uuid'
+
 
 interface SceneGeneratorModalProps {
   isOpen: boolean
@@ -44,13 +46,18 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
 
   // Input state
   const [selectedFields, setSelectedFields] = useState<string[]>([])
-  const [scenes, setScenes] = useState<SceneItem[]>([{ id: crypto.randomUUID(), summary: '' }])
+  const [scenes, setScenes] = useState<SceneItem[]>([{ id: generateUUID(), summary: '', name: '' }])
+  const [animaMode, setAnimaMode] = useState(false)
 
   // Draft state
   const [editedDrafts, setEditedDrafts] = useState<SceneDiffParams[]>([])
   const [isDrafting, setIsDrafting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleUpdateSceneName = (id: string, name: string) => {
+    setScenes(prev => prev.map(s => (s.id === id ? { ...s, name } : s)))
+  }
 
   if (!isOpen) return null
 
@@ -64,12 +71,12 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
   }
 
   const handleAddScene = () => {
-    setScenes(prev => [...prev, { id: crypto.randomUUID(), summary: '' }])
+    setScenes(prev => [...prev, { id: generateUUID(), summary: '', name: '' }])
   }
 
   const handleRemoveScene = (id: string) => {
     if (scenes.length <= 1) {
-      setScenes([{ id: crypto.randomUUID(), summary: '' }])
+      setScenes([{ id: generateUUID(), summary: '', name: '' }])
       return
     }
     setScenes(prev => prev.filter(s => s.id !== id))
@@ -96,7 +103,7 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
     setIsDrafting(true)
     try {
       const activeScenes = scenes.filter(s => s.summary.trim() !== '')
-      const result = await generateDrafts(selectedFields, activeScenes, effectiveBaseParamValues)
+      const result = await generateDrafts(selectedFields, activeScenes, effectiveBaseParamValues, animaMode)
       setEditedDrafts(JSON.parse(JSON.stringify(result)))
       setPhase('draft')
     } catch (e: any) {
@@ -238,6 +245,23 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
                 </div>
               </div>
 
+              {/* Anima Mode Toggle */}
+              <div>
+                <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    id="anima-mode-toggle"
+                    checked={animaMode}
+                    onChange={e => setAnimaMode(e.target.checked)}
+                    className="rounded border-zinc-700 bg-zinc-900 text-[#7C6FDD] focus:ring-[#7C6FDD]/40"
+                  />
+                  <span className="text-xs font-semibold text-zinc-300">Animaモード</span>
+                  <span className="text-[10px] text-zinc-500">
+                    (Qwen-CLIP向けに自然言語で英訳します)
+                  </span>
+                </label>
+              </div>
+
               {/* Scenes Input */}
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -278,16 +302,20 @@ export const SceneGeneratorModal: React.FC<SceneGeneratorModalProps> = ({
                         </button>
                       </div>
 
-                      <div className="flex-1 space-y-1">
-                        <div className="text-[10px] text-zinc-500 font-semibold">
-                          Scene {index + 1}
-                        </div>
+                      <div className="flex-1 space-y-1.5">
+                        <input
+                          type="text"
+                          value={scene.name ?? ''}
+                          onChange={e => handleUpdateSceneName(scene.id, e.target.value)}
+                          placeholder={`シーン名 (Scene ${index + 1})`}
+                          className="w-full bg-zinc-900/60 border border-[rgba(255,255,255,0.06)] rounded-md px-3 py-1.5 text-[11px] text-zinc-200 placeholder-zinc-600 focus:border-[#7C6FDD]/45 focus:outline-none transition-all"
+                        />
                         <textarea
                           value={scene.summary}
                           onChange={e => handleUpdateSceneText(scene.id, e.target.value)}
                           placeholder="例: 夕暮れ時のカフェ、窓際に座る少女、窓の外は雨模様..."
                           rows={2}
-                          className="w-full bg-zinc-900/60 border border-[rgba(255,255,255,0.06)] rounded-md px-3 py-2 text-xs text-zinc-100 placeholder-zinc-650 focus:border-[#7C6FDD]/45 focus:outline-none transition-all resize-none"
+                          className="w-full bg-zinc-900/60 border border-[rgba(255,255,255,0.06)] rounded-md px-3 py-2 text-xs text-zinc-100 placeholder-zinc-655 focus:border-[#7C6FDD]/45 focus:outline-none transition-all resize-none"
                         />
                       </div>
 

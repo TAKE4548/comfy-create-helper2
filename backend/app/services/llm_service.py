@@ -89,8 +89,12 @@ async def run_scene_generate(
     base_params: dict[str, str],
     scenes: list[dict],   # [{"id": str, "summary": str}]
     system_prompt_override: str | None = None,
+    anima_mode: bool = False,
 ) -> list[dict]:   # [{"scene_id": str, "diff_params": {str: str}}]
-    sp = system_prompt_override or _default_scene_generate_prompt()
+    if anima_mode:
+        sp = system_prompt_override or _default_scene_generate_anima_prompt()
+    else:
+        sp = system_prompt_override or _default_scene_generate_prompt()
     model = _get_current_model()
     
     target_fields_with_values_list = []
@@ -144,6 +148,21 @@ def _default_scene_generate_prompt() -> str:
         "2. Only include fields you want to change; omit unchanged fields.\n"
         "3. Each field value must be comma-separated English prompt tags (no Japanese, no full sentences).\n"
         "4. Do NOT hallucinate fields that are not listed in target_fields."
+    )
+
+
+def _default_scene_generate_anima_prompt() -> str:
+    return (
+        "You are an expert translator and scene interpreter for AI image generation with Anima (Qwen-CLIP based model).\n"
+        "Given a scene summary written in Japanese (may include some English), translate and expand it into\n"
+        "descriptive, natural English expressions that Anima's CLIP encoder interprets well.\n"
+        "Anima excels at understanding natural language descriptions, NOT just comma-separated Danbooru tags.\n\n"
+        "Rules:\n"
+        "1. Output MUST be a valid JSON array — no markdown, no explanation outside JSON.\n"
+        "2. Only include fields you want to change; omit unchanged fields.\n"
+        "3. Use descriptive English phrases and sentences, not just comma-separated short tags.\n"
+        "4. Preserve the nuances and atmosphere of the Japanese input.\n"
+        "5. Do NOT hallucinate fields that are not listed in target_fields."
     )
 
 

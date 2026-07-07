@@ -12,6 +12,7 @@ export function useSceneGenerator({ workflowId, baseParamValues }: UseSceneGener
     targetFields: string[],
     scenes: SceneItem[],
     overrideBaseParams?: Record<string, string>,
+    animaMode?: boolean,
   ): Promise<SceneDiffParams[]> => {
     const activeBase = overrideBaseParams || baseParamValues
     const baseParams: Record<string, string> = {}
@@ -21,6 +22,7 @@ export function useSceneGenerator({ workflowId, baseParamValues }: UseSceneGener
       target_fields: targetFields,
       base_params: baseParams,
       scenes: scenes.map(s => ({ id: s.id, summary: s.summary })),
+      anima_mode: animaMode ?? false,
     })
   }
 
@@ -32,7 +34,9 @@ export function useSceneGenerator({ workflowId, baseParamValues }: UseSceneGener
     const activeBase = overrideBaseParams || baseParamValues
     for (const draft of drafts) {
       const scene = scenes.find(s => s.id === draft.scene_id)
-      const profileName = scene?.summary ?? `Scene ${draft.scene_id}`
+      const profileName = scene?.name?.trim()
+        || scene?.summary.slice(0, 40).trim()
+        || `Scene ${draft.scene_id}`
       const finalParams = { ...activeBase, ...draft.diff_params }
 
       await workflowPresetsApi.create({

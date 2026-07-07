@@ -1098,3 +1098,56 @@ PBI 081（ワークフローアップロード時のノードIDマッピング�
 ### 5. 修正方針（概要）
 - `.modal-backdrop` 要素がフルスクリーン状態になった時（CSSの `:fullscreen` または `-webkit-full-screen` などの疑似クラス、あるいは JS で管理している `isFullscreen` 状態によるクラス付与など）、すべての `padding` （特に下部の `padding-bottom`）を `0` にリセットするように CSS もしくはコンポーネントクラスを修正する。
 
+---
+
+## [NEW] REQ-XXX: タブレットやスマホから Scene Generator を開くと画面が真っ黒になる問題
+
+### 1. 現象・症状
+
+タブレットやスマートフォン（実機）から本アプリにアクセスした際、Scene Generator を開こうとすると画面が真っ黒（空白）になり、機能が利用できなくなる。
+PC ブラウザの開発者ツールでモバイルエミュレーション（モバイルモード）を使用している場合は正常に動作するが、実機端末から HTTP 経由でアクセスした際（例: `http://192.168.x.x:5173/`）にのみ発生する。
+
+### 2. 再現手順
+
+1. 開発PCで Vite 開発サーバーを起動する。
+2. 同一 LAN 内のスマートフォンまたはタブレット等の実機から、IPアドレス指定（例: `http://192.168.x.x:5173/`）でアプリを開く。
+3. Scene Generator モーダルを開く。
+4. 画面全体が真っ黒にクラッシュする。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：非セキュアコンテキスト (HTTP) での `crypto.randomUUID()` 呼び出しによる例外
+
+**該当ファイル**: [`frontend/src/components/SceneGeneratorModal.tsx`](../frontend/src/components/SceneGeneratorModal.tsx) L47, L72, L77
+
+`SceneGeneratorModal.tsx` では、シーンのID（`id`）生成のために `crypto.randomUUID()` が使用されています。
+
+```tsx
+const [scenes, setScenes] = useState<SceneItem[]>([{ id: crypto.randomUUID(), summary: '', name: '' }])
+```
+
+Web ブラウザの仕様（Security Context）により、`crypto.randomUUID()` は**セキュアコンテキスト**（`https://` または `http://localhost` / `http://127.0.0.1`）でのみ利用可能と定義されています。
+そのため、実機スマホやタブレットからローカルネットワークのIPアドレス（例: `http://192.168.x.x:5173`）を通じてアクセスした場合、非セキュアコンテキスト（HTTP）となり、`window.crypto.randomUUID` が `undefined` になります。
+
+これにより、コンポーネントの初期化フェーズで以下の `TypeError` がスローされ、React レンダーツリーがクラッシュし、画面が真っ黒になります。
+
+```
+TypeError: Cannot read properties of undefined (reading 'randomUUID')
+```
+
+- PC上の開発環境: `http://localhost:5173` のためセキュアコンテキストとみなされ動作する（モバイルエミュレーションを行っても localhost のため動く）。
+- 実機タブレット/スマホ: `http://192.168.x.x:5173` のため非セキュアコンテキストとなりクラッシュする。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | `frontend/src/components/SceneGeneratorModal.tsx` L47, L72, L77 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+- `crypto.randomUUID` が利用可能かチェックし、存在しない（非セキュアコンテキスト環境）場合はフォールバックとして簡易的な UUID / ランダム文字列生成関数（例: `self.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 15)`）を利用するように修正する。
+
+

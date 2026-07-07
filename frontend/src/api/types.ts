@@ -368,12 +368,14 @@ export interface TagSetReorder {
 export interface SceneItem {
   id: string        // crypto.randomUUID() で生成
   summary: string   // ユーザーが入力する日本語の概要
+  name?: string
 }
 
 export interface SceneGenerateRequest {
   target_fields: string[]                 // 選択されたフィールドの role 名リスト
   base_params: Record<string, string>     // フィールド名 → 現在の値（文脈情報）
   scenes: { id: string; summary: string }[]
+  anima_mode?: boolean
 }
 
 export interface SceneDiffParams {

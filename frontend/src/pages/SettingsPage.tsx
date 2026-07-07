@@ -40,6 +40,7 @@ const PROMPT_LABELS: Record<string, string> = {
   audit_vocabulary: '語彙サジェスト（SDXL/汎用）',
   audit_physical: '物理・構図整合性チェック',
   scene_generate: 'Scene Generator プロンプト',
+  scene_generate_anima: 'Scene Generator プロンプト（Animaモード）',
 }
 
 export function SettingsPage() {
