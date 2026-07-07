@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand'
-import { configApi } from '../api/client'
+import { configApi, bypassProfilesApi } from '../api/client'
+import type { BypassProfile } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
@@ -134,6 +135,10 @@ export interface GenerationState {
   queueRunning: Array<[number, string, any, { client_id?: string }, any]>
   queuePending: Array<[number, string, any, { client_id?: string }, any]>
 
+  // ─── Bypass Profiles State ─────────────────────────────────────
+  bypassProfiles: BypassProfile[]
+  errorToast: { message: string; type: 'error' | 'success' } | null
+
   // ─── Multi-Set State (New) ─────────────────────────────────────
   sets: GenerationSet[]
   activeSetId: string | number | null
@@ -171,6 +176,12 @@ export interface GenerationState {
   setComfyUrl: (url: string) => void
   cancelJob: (promptId: string) => Promise<void>
   cancelAllJobs: () => Promise<void>
+
+  setErrorToast: (toast: { message: string; type: 'error' | 'success' } | null) => void
+  fetchBypassProfiles: (workflowId: number) => Promise<void>
+  createBypassProfile: (workflowId: number, name: string, nodeIds: string[]) => Promise<void>
+  updateBypassProfile: (profileId: number, data: { name?: string; bypassed_node_ids?: string[]; is_enabled?: boolean }) => Promise<void>
+  deleteBypassProfile: (profileId: number) => Promise<void>
 
   // ─── Multi-Set Actions (New) ───────────────────────────────────
   initSets: (workflowId: number) => void
@@ -333,12 +344,56 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     appliedAssets: storedAppliedAssets,
     queueRunning: [],
     queuePending: [],
+    bypassProfiles: [],
+    errorToast: null,
     sets: initialSets,
     activeSetId: initialActiveSetId,
     openPresetIds: [],
     activeBatch: null,
 
     // ── Actions ──────────────────────────────────────────────
+    setErrorToast: (toast) => set({ errorToast: toast }),
+
+    fetchBypassProfiles: async (workflowId) => {
+      try {
+        const profiles = await bypassProfilesApi.list(workflowId)
+        set({ bypassProfiles: profiles })
+      } catch (e) {
+        console.error('Failed to fetch bypass profiles:', e)
+      }
+    },
+
+    createBypassProfile: async (workflowId, name, nodeIds) => {
+      try {
+        const newProfile = await bypassProfilesApi.create(workflowId, { name, bypassed_node_ids: nodeIds })
+        set((state) => ({ bypassProfiles: [...state.bypassProfiles, newProfile] }))
+      } catch (e) {
+        console.error('Failed to create bypass profile:', e)
+      }
+    },
+
+    updateBypassProfile: async (profileId, data) => {
+      try {
+        const updated = await bypassProfilesApi.update(profileId, data)
+        set((state) => ({
+          bypassProfiles: state.bypassProfiles.map((p) => (p.id === profileId ? updated : p)),
+        }))
+      } catch (e) {
+        console.error('Failed to update bypass profile:', e)
+      }
+    },
+
+    deleteBypassProfile: async (profileId) => {
+      try {
+        await bypassProfilesApi.delete(profileId)
+        set((state) => ({
+          bypassProfiles: state.bypassProfiles.filter((p) => p.id !== profileId),
+        }))
+      } catch (e) {
+        console.error('Failed to delete bypass profile:', e)
+      }
+    },
+
     initialize: () => {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
@@ -790,7 +845,21 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: workflow, client_id: get().clientId }),
         })
-        if (!res.ok) throw new Error(`ComfyUI returned ${res.status}`)
+        if (!res.ok) {
+          let errorMsg = `ComfyUI returned ${res.status}`;
+          try {
+            const errData = await res.json();
+            if (errData && errData.error) {
+              if (typeof errData.error === 'object') {
+                errorMsg = errData.error.message || errData.error.details || JSON.stringify(errData.error);
+              } else {
+                errorMsg = String(errData.error);
+              }
+            }
+          } catch {}
+          get().setErrorToast({ message: errorMsg, type: 'error' });
+          throw new Error(errorMsg);
+        }
         const data = await res.json()
         const promptId = data.prompt_id ?? null
         set({
@@ -834,8 +903,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
         await get().fetchQueue()
         return promptId
-      } catch (e) {
+      } catch (e: any) {
         console.error('Failed to queue prompt:', e)
+        get().setErrorToast({ message: e.message || 'Failed to queue prompt', type: 'error' });
         return null
       }
     },

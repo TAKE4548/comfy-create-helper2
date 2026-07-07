@@ -381,3 +381,25 @@ export interface SceneDiffParams {
   diff_params: Record<string, string>     // フィールド名 → LLMが生成した英語プロンプト
 }
 
+// ─── BypassProfile ───────────────────────────────────────────────
+
+export interface BypassProfile {
+  id: number
+  workflow_id: number
+  name: string
+  bypassed_node_ids: string[]
+  is_enabled: boolean
+  created_at: string
+}
+
+export interface BypassProfileCreate {
+  name: string
+  bypassed_node_ids: string[]
+}
+
+export interface BypassProfileUpdate {
+  name?: string
+  bypassed_node_ids?: string[]
+  is_enabled?: boolean
+}
+

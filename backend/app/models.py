@@ -46,6 +46,22 @@ class Workflow(Base):
     presets: Mapped[list["WorkflowPreset"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    bypass_profiles: Mapped[list["BypassProfile"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+
+
+class BypassProfile(Base):
+    __tablename__ = "bypass_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    bypassed_node_ids: Mapped[str] = mapped_column(Text, nullable=False)  # JSON string
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    workflow: Mapped["Workflow"] = relationship(back_populates="bypass_profiles")
 
 
 class WorkflowPreset(Base):

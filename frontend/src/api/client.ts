@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate } from './types'
 
 const BASE_URL = '/api'
 
@@ -153,5 +153,17 @@ export const workflowPresetsApi = {
     request<void>(`/workflow-presets/${id}`, { method: 'DELETE' }),
   reorder: (ordered_ids: number[]) =>
     request<void>('/workflow-presets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
+}
+
+// ─── Bypass Profiles ───────────────────────────────────────────
+export const bypassProfilesApi = {
+  list: (workflow_id: number) =>
+    request<BypassProfile[]>(`/workflows/${workflow_id}/bypass-profiles`),
+  create: (workflow_id: number, data: BypassProfileCreate) =>
+    request<BypassProfile>(`/workflows/${workflow_id}/bypass-profiles`, { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: BypassProfileUpdate) =>
+    request<BypassProfile>(`/bypass-profiles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) =>
+    request<void>(`/bypass-profiles/${id}`, { method: 'DELETE' }),
 }
 

@@ -178,7 +178,7 @@ export function useGeneratePageState() {
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
     useWorkflowParams(workflow, selectedWorkflowId)
 
-  const { handleGenerateSets } = useGenerateAction(workflow)
+  const { handleGenerateSets } = useGenerateAction(workflow, comfyObjectInfo)
 
   const displayImages = store.filterOwnSession ? batchImages : comfyHistoryImages
   const sortedDisplayImages = useMemo(() => {

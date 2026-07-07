@@ -81,6 +81,12 @@ from app.schemas.preset import (
     WorkflowPresetReorder,
 )
 
+from app.schemas.bypass_profile import (
+    BypassProfileCreate,
+    BypassProfileUpdate,
+    BypassProfileRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -105,4 +111,6 @@ __all__ = [
     "SceneItem", "SceneGenerateRequest", "SceneDiffParams",
     # Preset
     "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate", "WorkflowPresetReorder",
+    # BypassProfile
+    "BypassProfileCreate", "BypassProfileUpdate", "BypassProfileRead",
 ]

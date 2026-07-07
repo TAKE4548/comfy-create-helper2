@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Loader2, ScanLine, Settings, ImageOff, Download, CheckSquare, Square, Plus,
-  ChevronRight, ChevronDown, Zap, Camera
+  ChevronRight, ChevronDown, Zap, Camera, X
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { SettingsPopover } from './SettingsPopover'
@@ -12,6 +12,7 @@ import { AuditPanel } from './AuditPanel'
 import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { getPromptPrefix } from '../../../utils/formatUtils'
+import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -103,8 +104,29 @@ export const MobileLayout = ({
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
   const currentNode = useGenerationStore((state) => state.currentNode)
   const generationStartTime = useGenerationStore((state) => state.generationStartTime)
+  const bypassProfiles = useGenerationStore((state) => state.bypassProfiles)
+  const updateBypassProfile = useGenerationStore((state) => state.updateBypassProfile)
+  const fetchBypassProfiles = useGenerationStore((state) => state.fetchBypassProfiles)
+  const errorToast = useGenerationStore((state) => state.errorToast)
+  const setErrorToast = useGenerationStore((state) => state.setErrorToast)
 
+  const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+
+  useEffect(() => {
+    if (selectedWorkflowId !== null && typeof fetchBypassProfiles === 'function') {
+      fetchBypassProfiles(selectedWorkflowId)
+    }
+  }, [selectedWorkflowId, fetchBypassProfiles])
+
+  useEffect(() => {
+    if (errorToast && typeof setErrorToast === 'function') {
+      const timer = setTimeout(() => {
+        setErrorToast(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [errorToast, setErrorToast])
 
   useEffect(() => {
     if (!generationStartTime) {
@@ -690,6 +712,9 @@ export const MobileLayout = ({
           seed={seed}
           setSeed={setSeed}
           comfyObjectInfo={comfyObjectInfo}
+          bypassProfiles={bypassProfiles}
+          onToggleBypass={(profileId, isEnabled) => updateBypassProfile(profileId, { is_enabled: isEnabled })}
+          onOpenBypassSettings={() => setIsBypassSettingsOpen(true)}
         />
       </div>
 
@@ -761,6 +786,25 @@ export const MobileLayout = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isBypassSettingsOpen && (
+        <BypassSettingsModal 
+          onClose={() => setIsBypassSettingsOpen(false)} 
+          workflowJson={workflow?.json_body}
+        />
+      )}
+
+      {errorToast && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900 border border-red-800 text-red-100 px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-fade-in">
+          <span className="text-sm font-medium">{errorToast.message}</span>
+          <button
+            onClick={() => setErrorToast(null)}
+            className="p-1 hover:bg-white/10 rounded text-red-300 hover:text-red-100 transition-all"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
     </div>

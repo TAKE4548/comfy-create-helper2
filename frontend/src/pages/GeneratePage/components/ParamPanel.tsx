@@ -1,4 +1,4 @@
-import { Shuffle, Lock } from 'lucide-react'
+import { Shuffle, Lock, Settings } from 'lucide-react'
 import type { Lora } from '../../../api/types'
 import { LoraStackEditor } from '../../../components/LoraStackEditor'
 
@@ -26,6 +26,9 @@ export interface ParamPanelProps {
   setSeed: (seed: number) => void
   mobile?: boolean
   comfyObjectInfo?: any
+  bypassProfiles?: any[]
+  onToggleBypass?: (profileId: number, isEnabled: boolean) => void
+  onOpenBypassSettings?: () => void
 }
 
 export const ParamPanel = ({
@@ -41,6 +44,9 @@ export const ParamPanel = ({
   setSeed,
   mobile = false,
   comfyObjectInfo,
+  bypassProfiles = [],
+  onToggleBypass,
+  onOpenBypassSettings,
 }: ParamPanelProps) => {
   if (paramMappings.length === 0) return null
   return (
@@ -132,6 +138,49 @@ export const ParamPanel = ({
             onChange={(e) => setSeed(Number(e.target.value))} disabled={seedMode === 'random'}
             className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40`} />
         </div>
+      </div>
+
+      {/* Bypass Section */}
+      <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 mt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Bypasses</p>
+          <button
+            id={`bypass-settings-btn${mobile ? '-mobile' : ''}`}
+            type="button"
+            onClick={onOpenBypassSettings}
+            className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-1"
+            title="Bypass Settings"
+          >
+            <Settings size={12} />
+            <span className="text-[10px] text-zinc-400 hover:underline">Settings</span>
+          </button>
+        </div>
+
+        {bypassProfiles && bypassProfiles.length > 0 ? (
+          <div className="space-y-1.5">
+            {bypassProfiles.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-4">
+                <span className="text-xs text-zinc-400 truncate max-w-[150px]">{p.name}</span>
+                <button
+                  id={`bypass-toggle-${p.id}${mobile ? '-mobile' : ''}`}
+                  type="button"
+                  onClick={() => onToggleBypass?.(p.id, !p.is_enabled)}
+                  className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    p.is_enabled ? 'bg-red-500' : 'bg-zinc-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      p.is_enabled ? 'translate-x-3' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-zinc-500 italic">No profiles. Open Settings to add.</p>
+        )}
       </div>
     </div>
   )
