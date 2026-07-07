@@ -119,6 +119,40 @@ describe('useGenerateAction', () => {
     expect(s2).not.toBe(s3);
   });
 
+  it('should inject boolean params correctly as true/false booleans', async () => {
+    const booleanWorkflow: Workflow = {
+      ...baseWorkflow,
+      json_body: {
+        '3': {
+          inputs: {
+            active: false,
+          },
+        },
+      },
+      mappings: [
+        {
+          id: 1,
+          master_id: 1,
+          node_id: '3',
+          role: 'Detailer_Enable',
+          param_name: 'active',
+          input_type: 'boolean',
+          display_name: 'Detailer Active',
+        },
+      ],
+    };
+
+    mockStore.paramValues = {
+      'Detailer_Enable': 'true',
+    };
+
+    const { handleGenerate } = useGenerateAction(booleanWorkflow);
+    await handleGenerate();
+
+    expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+    expect(mockStore.queuePrompt.mock.calls[0][0]['3'].inputs['active']).toBe(true);
+  });
+
   it('should inject lora_stack params and delete exceeding node keys', async () => {
     const loraStackWorkflow: Workflow = {
       id: 2,

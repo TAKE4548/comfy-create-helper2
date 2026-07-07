@@ -18,7 +18,7 @@ export interface MappingMasterFormState {
   role: string
   displayName: string
   paramName: string
-  inputType: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler'
+  inputType: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean'
   expectedClassTypes: string
   titlePatterns: string
 }
@@ -113,7 +113,7 @@ export function MappingMasterModal({
             <div className="space-y-1.5">
               <label className="text-[11px] text-zinc-400 font-medium">Input Type</label>
               <select value={form.inputType} onChange={(e) => setForm((f) => ({ ...f, inputType: e.target.value as MappingMasterFormState['inputType'] }))} className={inputCls}>
-                {(['textarea', 'int', 'float', 'select', 'lora_stack', 'select_sampler', 'select_scheduler'] as const).map((t) => <option key={t} value={t}>{t}</option>)}
+                {(['textarea', 'int', 'float', 'select', 'lora_stack', 'select_sampler', 'select_scheduler', 'boolean'] as const).map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
           </div>

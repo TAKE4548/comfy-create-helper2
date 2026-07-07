@@ -1041,3 +1041,60 @@ PBI 081（ワークフローアップロード時のノードIDマッピング�
 ### 5. 修正方針（概要）
 1. `useGeneratePageState.ts` の `comfyObjectInfo` 取得処理において、`comfyUrl` を `resolveComfyUrl(comfyUrl)` で解決した上で `fetch` を行うように修正する。
 2. `ParamPanel.tsx` の `DEFAULT_SCHEDULERS` および `DEFAULT_SAMPLERS` 配列について、ComfyUI でよく使われる主要なスケジューラー/サンプラー（`beta`等）をデフォルト値として追加し、仮に接続が切れてフォールバックした場合でも選択できるようにする。
+
+---
+
+## [NEW] タブレット等のフルスクリーン表示時、下部メニューGAPが適用されて最大化されない問題
+
+### 1. 現象・症状
+タブレットやモバイル端末（画面幅1024px未満）において、画像履歴プレビューなどのモーダル（`HistoryModalPreview`）でフルスクリーン表示を行った際、画面下部にボトムナビゲーションバー（約4rem分）の余白（GAP）が考慮されたままとなり、画像表示エリアが最大化されず縮小して表示される。
+
+### 2. 再現手順
+1. タブレット端末またはブラウザのデベロッパーツールで画面幅を1024px未満（例: 768px または 820px）にする。
+2. 履歴画面などから画像プレビューモーダル（`HistoryModalPreview`）を開く。
+3. 画像をクリックまたはフルスクリーンボタンを押してフルスクリーン表示にする。
+4. 下部ナビゲーションメニューが非表示になるにもかかわらず、下部にメニューの高さ分の余白（GAP）が残り、画像が画面いっぱいに表示されない。
+
+### 3. 原因究明 (Root Cause Isolation)
+
+#### 3-1. 直接原因：`index.css` における `.modal-backdrop` の `padding-bottom` 指定
+- **影響ファイル**: [`frontend/src/index.css`](../frontend/src/index.css#L138-L156)
+- **詳細**:
+  `index.css` の `.modal-backdrop` では、モバイル・タブレット向け（幅1024px未満）に下部ナビゲーションメニューを避けるためのパディングが常時設定されている。
+
+  ```css
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+    padding: 1rem;
+    padding-bottom: calc(var(--mobile-nav-height) + 1rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 1024px) {
+    .modal-backdrop {
+      padding-bottom: 1rem;
+    }
+  }
+  ```
+
+  この `modal-backdrop` クラスを持つコンテナー（`HistoryModalPreview.tsx` のルート要素）が HTML5 Fullscreen API を介してフルスクリーン化された際、`:fullscreen` 状態になってもこの `padding-bottom` がクリアされないため、下部にGAP（余白）が生じ、内側の画像表示領域が最大化されない。
+
+### 4. 診断チェック (Diagnostic Check)
+
+| 項目 | 値 |
+|---|---|
+| **Root Cause Isolated** | Yes |
+| **Classification** | **Type A: Implementation Bug** (実装バグ) |
+| **影響ファイル** | `frontend/src/index.css` L138-156 |
+| **Next Route** | `/dev-design` |
+
+### 5. 修正方針（概要）
+- `.modal-backdrop` 要素がフルスクリーン状態になった時（CSSの `:fullscreen` または `-webkit-full-screen` などの疑似クラス、あるいは JS で管理している `isFullscreen` 状態によるクラス付与など）、すべての `padding` （特に下部の `padding-bottom`）を `0` にリセットするように CSS もしくはコンポーネントクラスを修正する。
+

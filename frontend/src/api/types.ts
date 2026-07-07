@@ -10,7 +10,7 @@ export interface MappingMaster {
   role: string
   expected_class_types: string[] | null
   param_name: string
-  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler'
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean'
   display_name: string
   title_patterns: string[] | null
   sort_order: number

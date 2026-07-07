@@ -94,11 +94,13 @@ export function useGenerateAction(workflow: Workflow | undefined) {
           })
         }
       } else {
-        let val: string | number = ''
+        let val: string | number | boolean = ''
         if (m.input_type === 'int') {
           val = parseInt(paramValues[m.role] || '0')
         } else if (m.input_type === 'float') {
           val = parseFloat(paramValues[m.role] || '0.0')
+        } else if (m.input_type === 'boolean') {
+          val = paramValues[m.role] === 'true'
         } else {
           val = paramValues[m.role] || ''
         }

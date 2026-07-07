@@ -149,6 +149,14 @@
   padding-bottom: calc(var(--mobile-nav-height) + 1rem + env(safe-area-inset-bottom));
 }
 
+.modal-backdrop:fullscreen {
+  padding: 0 !important;
+}
+
+.modal-backdrop:-webkit-full-screen {
+  padding: 0 !important;
+}
+
 @media (min-width: 1024px) {
   .modal-backdrop {
     padding-bottom: 1rem;

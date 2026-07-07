@@ -111,6 +111,11 @@ describe('getInitialParams (Integration)', () => {
           lora_1_strength: 0.5,
         },
       },
+      '6': {
+        inputs: {
+          active: true,
+        },
+      },
     },
     mappings: [
       {
@@ -140,6 +145,15 @@ describe('getInitialParams (Integration)', () => {
         input_type: 'lora_stack',
         display_name: 'LoRA Stack',
       },
+      {
+        id: 4,
+        master_id: 4,
+        node_id: '6',
+        role: 'Detailer_Enable',
+        param_name: 'active',
+        input_type: 'boolean',
+        display_name: 'Detailer Active',
+      },
     ],
   };
 
@@ -153,6 +167,7 @@ describe('getInitialParams (Integration)', () => {
       MyLoraStack_lora_wt_1: '0.5',
       MyLoraStack_model_str_1: '1.0',
       MyLoraStack_clip_str_1: '1.0',
+      Detailer_Enable: 'true',
     });
   });
 });

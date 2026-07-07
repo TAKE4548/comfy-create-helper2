@@ -279,6 +279,7 @@ export function SettingsPage() {
         { id: 'lora_stack', name: 'lora_stack' },
         { id: 'select_sampler', name: 'select_sampler' },
         { id: 'select_scheduler', name: 'select_scheduler' },
+        { id: 'boolean', name: 'boolean' },
       ],
     },
   ]
