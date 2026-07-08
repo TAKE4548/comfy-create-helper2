@@ -15,8 +15,8 @@ import {
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-import { tagSetsApi, tagsetCategoriesApi } from '../api/client'
-import type { TagSet, Category } from '../api/types'
+import { tagSetsApi, tagsetCategoriesApi, baseModelsApi } from '../api/client'
+import type { TagSet, Category, BaseModel } from '../api/types'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
 import {
@@ -38,9 +38,10 @@ interface TagSetFormState {
   tags: string
   thumbnail_path?: string
   subsets: { name: string; tags: string }[]
+  target_base_model_ids?: number[]
 }
 
-const EMPTY_FORM: TagSetFormState = { name: '', description: '', category_id: undefined, tags: '', subsets: [] }
+const EMPTY_FORM: TagSetFormState = { name: '', description: '', category_id: undefined, tags: '', subsets: [], target_base_model_ids: [] }
 
 function SortableTagSetCard({ id, children, disabled }: { id: number; children: React.ReactNode; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
@@ -95,6 +96,7 @@ export function TagsPage() {
   )
   const [search, setSearch] = useState('')
   const [selectedCat, setSelectedCat] = useState<number | null>(null)
+  const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
@@ -110,9 +112,16 @@ export function TagsPage() {
     queryKey: ['tagset-categories'],
     queryFn: () => tagsetCategoriesApi.list() as Promise<Category[]>,
   })
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
+  })
   const { data: tagSets } = useQuery({
-    queryKey: ['tag-sets', selectedCat],
-    queryFn: () => tagSetsApi.list(selectedCat ?? undefined) as Promise<TagSet[]>,
+    queryKey: ['tag-sets', selectedCat, selectedBaseModelIds],
+    queryFn: () => tagSetsApi.list(
+      selectedCat ?? undefined,
+      selectedBaseModelIds.length > 0 ? selectedBaseModelIds.join(',') : undefined
+    ) as Promise<TagSet[]>,
   })
 
   useEffect(() => {
@@ -130,7 +139,8 @@ export function TagsPage() {
       subsets: form.subsets ? form.subsets.map((s) => ({
         name: s.name,
         tags: s.tags.split(',').map((t) => t.trim()).filter(Boolean)
-      })) : []
+      })) : [],
+      target_base_model_ids: form.target_base_model_ids
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tag-sets'] }); setShowModal(false); setForm(EMPTY_FORM) },
   })
@@ -146,7 +156,8 @@ export function TagsPage() {
         subsets: tagForm.subsets ? tagForm.subsets.map((s) => ({
           name: s.name,
           tags: s.tags.split(',').map((t) => t.trim()).filter(Boolean)
-        })) : []
+        })) : [],
+        target_base_model_ids: tagForm.target_base_model_ids
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tag-sets'] }) },
   })
@@ -259,7 +270,7 @@ export function TagsPage() {
       ts.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
   )
 
-  const isDndActive = !search && selectedCat === null
+  const isDndActive = !search && selectedCat === null && selectedBaseModelIds.length === 0
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as number)
@@ -373,6 +384,34 @@ export function TagsPage() {
               {cat.name}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Base Model Filters */}
+      <div className="flex items-center gap-4 px-5 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
+        <span className="text-xs font-semibold text-zinc-400">Base Models:</span>
+        <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar">
+          {baseModels?.map((bm) => {
+            const isChecked = selectedBaseModelIds.includes(bm.id)
+            return (
+              <label key={bm.id} className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id={`base-model-filter-${bm.name}`}
+                  checked={isChecked}
+                  onChange={() => {
+                    if (isChecked) {
+                      setSelectedBaseModelIds(selectedBaseModelIds.filter(id => id !== bm.id))
+                    } else {
+                      setSelectedBaseModelIds([...selectedBaseModelIds, bm.id])
+                    }
+                  }}
+                  className="rounded border-[rgba(255,255,255,0.08)] bg-surface-2 text-[#7C6FDD] focus:ring-0 focus:ring-offset-0"
+                />
+                <span>{bm.name}</span>
+              </label>
+            )
+          })}
         </div>
       </div>
 
@@ -557,6 +596,11 @@ function LocalTagSetFormFields({
   onCategoryCreated: (cat: Category) => void
   onUploadImage: (src: string) => void
 }) {
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
+  })
+
   return (
     <div className="space-y-3">
       <div>
@@ -578,6 +622,34 @@ function LocalTagSetFormFields({
           apiCreateFn={tagsetCategoriesApi.create}
           accentClass="[#7C6FDD]"
         />
+      </div>
+      <div>
+        <label className="text-xs text-zinc-400 mb-1.5 block">Target Base Models</label>
+        <div className="flex flex-wrap gap-3 p-3 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg">
+          {baseModels?.map((bm) => {
+            const checked = (form.target_base_model_ids || []).includes(bm.id)
+            return (
+              <label key={bm.id} className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const ids = form.target_base_model_ids || []
+                    const nextIds = e.target.checked
+                      ? [...ids, bm.id]
+                      : ids.filter((id) => id !== bm.id)
+                    setForm((f) => ({ ...f, target_base_model_ids: nextIds }))
+                  }}
+                  className="rounded border-[rgba(255,255,255,0.2)] bg-surface text-[#7C6FDD] focus:ring-0 focus:ring-offset-0 focus:outline-none accent-[#7C6FDD]"
+                />
+                <span>{bm.name}</span>
+              </label>
+            )
+          })}
+          {(!baseModels || baseModels.length === 0) && (
+            <span className="text-xs text-zinc-500 italic">No base models configured.</span>
+          )}
+        </div>
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Tags (comma-separated) *</label>

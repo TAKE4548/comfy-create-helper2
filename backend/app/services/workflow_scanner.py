@@ -3,6 +3,8 @@
 import json
 import logging
 
+from typing import Optional
+
 logger = logging.getLogger(__name__)
 
 
@@ -150,3 +152,88 @@ def scan_workflow(workflow_json: dict, mapping_masters: list) -> dict:
         })
 
     return {"matched": matched, "warnings": warnings}
+
+
+def detect_checkpoint_names(workflow_json: dict) -> list[str]:
+    """Detect checkpoint names from workflow JSON."""
+    checkpoint_names = []
+    if not isinstance(workflow_json, dict):
+        return []
+    for node_id, node_data in workflow_json.items():
+        if not isinstance(node_data, dict):
+            continue
+        class_type = node_data.get("class_type")
+        inputs = node_data.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+
+        is_checkpoint_node = False
+        if class_type in ("CheckpointLoaderSimple", "CheckpointLoader"):
+            is_checkpoint_node = True
+        elif "ckpt_name" in inputs:
+            is_checkpoint_node = True
+
+        if is_checkpoint_node:
+            ckpt_name = inputs.get("ckpt_name")
+            if isinstance(ckpt_name, str) and ckpt_name:
+                cleaned = ckpt_name.strip()
+                if cleaned and cleaned not in checkpoint_names:
+                    checkpoint_names.append(cleaned)
+    return checkpoint_names
+
+
+def estimate_base_model_from_checkpoints(checkpoint_names: list[str], mappings: list) -> Optional[int]:
+    """
+    Estimate base model ID from detected checkpoint names based on mappings.
+    mappings is a list of CheckpointMapping objects with checkpoint_name and base_model_id.
+    """
+    if not checkpoint_names or not mappings:
+        return None
+
+    # 1. Exact Match (case-insensitive) of full checkpoint name
+    for ckpt in checkpoint_names:
+        ckpt_lower = ckpt.lower()
+        for m in mappings:
+            if m.checkpoint_name.lower() == ckpt_lower:
+                return m.base_model_id
+
+    # 2. Exact Match (case-insensitive) of base filename
+    for ckpt in checkpoint_names:
+        normalized = ckpt.replace("\\", "/")
+        filename = normalized.split("/")[-1]
+        filename_lower = filename.lower()
+        for m in mappings:
+            m_normalized = m.checkpoint_name.replace("\\", "/").split("/")[-1]
+            if m_normalized.lower() == filename_lower:
+                return m.base_model_id
+
+    # 3. Partial Match: mapping checkpoint_name is substring of filename
+    sorted_mappings = sorted(mappings, key=lambda x: len(x.checkpoint_name), reverse=True)
+    for ckpt in checkpoint_names:
+        normalized = ckpt.replace("\\", "/")
+        filename = normalized.split("/")[-1]
+        filename_lower = filename.lower()
+        for m in sorted_mappings:
+            m_lower = m.checkpoint_name.lower()
+            if m_lower in filename_lower:
+                return m.base_model_id
+
+    # 4. Partial Match: filename is substring of mapping checkpoint_name
+    for ckpt in checkpoint_names:
+        normalized = ckpt.replace("\\", "/")
+        filename = normalized.split("/")[-1]
+        filename_lower = filename.lower()
+        if filename_lower.endswith(".safetensors"):
+            filename_no_ext = filename_lower[:-12]
+        elif filename_lower.endswith(".ckpt"):
+            filename_no_ext = filename_lower[:-5]
+        else:
+            filename_no_ext = filename_lower
+
+        if filename_no_ext:
+            for m in sorted_mappings:
+                m_lower = m.checkpoint_name.lower()
+                if filename_no_ext in m_lower or m_lower in filename_lower:
+                    return m.base_model_id
+
+    return None

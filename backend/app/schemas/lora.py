@@ -43,6 +43,7 @@ class LoraCreate(BaseModel):
     thumbnail_path: Optional[str] = None
     file_path: Optional[str] = None
     trigger_word_sets: list[TriggerWordSetCreate] = []
+    target_base_model_ids: list[int] = []
 
 
 class LoraRead(BaseModel):
@@ -57,6 +58,7 @@ class LoraRead(BaseModel):
     file_path: Optional[str] = None
     trigger_word_sets: list[TriggerWordSetRead] = []
     snapshot_paths: list[str] = []
+    target_base_model_ids: list[int] = []
     sort_order: int = 0
     created_at: datetime
 

@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
     Integer, String, Text, Float, Boolean,
-    ForeignKey, DateTime, UniqueConstraint, Index
+    ForeignKey, DateTime, UniqueConstraint, Index,
+    Table, Column
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -28,6 +29,47 @@ class MappingMaster(Base):
     )
 
 
+lora_base_models = Table(
+    "lora_base_models",
+    Base.metadata,
+    Column("lora_id", ForeignKey("loras.id", ondelete="CASCADE"), primary_key=True),
+    Column("base_model_id", ForeignKey("base_models.id", ondelete="CASCADE"), primary_key=True)
+)
+
+tagset_base_models = Table(
+    "tagset_base_models",
+    Base.metadata,
+    Column("tag_set_id", ForeignKey("tag_sets.id", ondelete="CASCADE"), primary_key=True),
+    Column("base_model_id", ForeignKey("base_models.id", ondelete="CASCADE"), primary_key=True)
+)
+
+class BaseModel(Base):
+    __tablename__ = "base_models"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    loras: Mapped[list["Lora"]] = relationship(
+        secondary=lora_base_models,
+        back_populates="base_models"
+    )
+    tag_sets: Mapped[list["TagSet"]] = relationship(
+        secondary=tagset_base_models,
+        back_populates="base_models"
+    )
+
+class CheckpointMapping(Base):
+    __tablename__ = "checkpoint_mappings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    checkpoint_name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    base_model_id: Mapped[int] = mapped_column(ForeignKey("base_models.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    base_model: Mapped["BaseModel"] = relationship()
+
+
+
 class Workflow(Base):
     __tablename__ = "workflows"
 
@@ -35,8 +77,10 @@ class Workflow(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     default_applied_assets: Mapped[Optional[str]] = mapped_column(Text)
+    target_base_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("base_models.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    target_base_model: Mapped[Optional["BaseModel"]] = relationship()
     mappings: Mapped[list["WorkflowMapping"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
@@ -165,6 +209,10 @@ class Lora(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["LoraCategory"]] = relationship(back_populates="loras")
+    base_models: Mapped[list["BaseModel"]] = relationship(
+        secondary=lora_base_models,
+        back_populates="loras"
+    )
     trigger_word_sets: Mapped[list["LoraTriggerWordSet"]] = relationship(
         back_populates="lora", cascade="all, delete-orphan"
     )
@@ -205,6 +253,10 @@ class TagSet(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")
+    base_models: Mapped[list["BaseModel"]] = relationship(
+        secondary=tagset_base_models,
+        back_populates="tag_sets"
+    )
     snapshots: Mapped[list["SnapshotTagSet"]] = relationship(back_populates="tag_set")
     subsets: Mapped[list["TagSubset"]] = relationship(back_populates="tag_set", cascade="all, delete-orphan")
 

@@ -55,6 +55,7 @@ export interface Workflow {
   json_body: Record<string, unknown>
   mappings: WorkflowMapping[]
   default_applied_assets?: string | null
+  target_base_model_id?: number | null
   created_at: string
 }
 
@@ -62,6 +63,7 @@ export interface WorkflowCreate {
   name: string
   json_body: Record<string, unknown>
   mappings: { master_id: number; node_id: string }[]
+  target_base_model_id?: number | null
 }
 
 export interface WorkflowUpdate {
@@ -69,6 +71,7 @@ export interface WorkflowUpdate {
   json_body?: Record<string, unknown>
   default_applied_assets?: string | null
   mappings?: { master_id: number; node_id: string }[]
+  target_base_model_id?: number | null
 }
 
 
@@ -209,6 +212,7 @@ export interface Lora {
   file_path: string | null
   trigger_word_sets: TriggerWordSet[]
   snapshot_paths?: string[]
+  target_base_model_ids?: number[]
   sort_order: number
   created_at: string
 }
@@ -230,6 +234,7 @@ export interface LoraCreate {
   thumbnail_path?: string
   file_path?: string
   trigger_word_sets: { name: string; words: string[] }[]
+  target_base_model_ids?: number[]
 }
 
 // ─── TagSet ─────────────────────────────────────────────────────
@@ -254,6 +259,7 @@ export interface TagSet {
   tags: string[]
   thumbnail_path: string | null
   snapshot_paths?: string[]
+  target_base_model_ids?: number[]
   sort_order: number
   created_at: string
   subsets?: TagSubset[]
@@ -266,6 +272,7 @@ export interface TagSetCreate {
   tags: string[]
   thumbnail_path?: string
   subsets?: TagSubsetCreate[]
+  target_base_model_ids?: number[]
 }
 
 // ─── LLM Audit ──────────────────────────────────────────────────
@@ -403,5 +410,33 @@ export interface BypassProfileUpdate {
   name?: string
   bypassed_node_ids?: string[]
   is_enabled?: boolean
+}
+
+
+// ─── BaseModel & CheckpointMapping ──────────────────────────────
+
+export interface BaseModel {
+  id: number
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export interface BaseModelCreate {
+  name: string
+  description?: string
+}
+
+export interface CheckpointMapping {
+  id: number
+  checkpoint_name: string
+  base_model_id: number
+  created_at: string
+  base_model?: BaseModel | null
+}
+
+export interface CheckpointMappingCreate {
+  checkpoint_name: string
+  base_model_id: number
 }
 

@@ -21,6 +21,8 @@ def seed_initial_data(db) -> None:
     _seed_mapping_masters(db)
     _seed_llm_prompts(db)
     _seed_categories(db)
+    _seed_base_models(db)
+    _migrate_existing_loras(db)
     _apply_workflow_1_corrections(db)
     db.commit()
 
@@ -95,3 +97,30 @@ def _apply_workflow_1_corrections(db) -> None:
                 node_id=node_id,
             ))
             logger.info(f"Created mapping for node {node_id} to {role} (master_id: {master.id})")
+
+
+def _seed_base_models(db) -> None:
+    if db.query(models.BaseModel).count() == 0:
+        default_models = ["Illus", "Noob", "Anima"]
+        for name in default_models:
+            db.add(models.BaseModel(name=name))
+        db.commit()
+        logger.info("Seeded default base models: Illus, Noob, Anima")
+
+
+def _migrate_existing_loras(db) -> None:
+    illus_model = db.query(models.BaseModel).filter(models.BaseModel.name == "Illus").first()
+    if not illus_model:
+        return
+        
+    loras = db.query(models.Lora).all()
+    migrated_count = 0
+    for lora in loras:
+        if not lora.base_models:
+            lora.base_models.append(illus_model)
+            migrated_count += 1
+            
+    if migrated_count > 0:
+        db.commit()
+        logger.info(f"Migrated {migrated_count} existing loras to 'Illus' base model.")
+

@@ -43,14 +43,26 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
         sort_order=ts.sort_order,
         created_at=ts.created_at,
         subsets=subsets,
+        target_base_model_ids=[bm.id for bm in ts.base_models],
     )
 
 
 @router.get("", response_model=list[schemas.TagSetRead])
-def list_tag_sets(category_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_tag_sets(category_id: Optional[int] = None, base_model_ids: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(models.TagSet)
     if category_id is not None:
         q = q.filter(models.TagSet.category_id == category_id)
+        
+    ids = []
+    if base_model_ids:
+        try:
+            ids = [int(x) for x in base_model_ids.split(",") if x.strip()]
+        except ValueError:
+            pass
+            
+    if ids:
+        q = q.join(models.TagSet.base_models).filter(models.BaseModel.id.in_(ids)).distinct()
+        
     return [_tagset_to_schema(ts, db) for ts in q.order_by(models.TagSet.sort_order, models.TagSet.id).all()]
 
 
@@ -73,6 +85,10 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
         thumbnail_path=payload.thumbnail_path,
         subsets=subsets,
     )
+    if payload.target_base_model_ids:
+        base_models = db.query(models.BaseModel).filter(models.BaseModel.id.in_(payload.target_base_model_ids)).all()
+        ts.base_models = base_models
+        
     db.add(ts)
     db.commit()
     db.refresh(ts)
@@ -106,6 +122,10 @@ def update_tag_set(tag_set_id: int, payload: schemas.TagSetCreate, db: Session =
         for s in payload.subsets
     ]
     
+    if payload.target_base_model_ids is not None:
+        base_models = db.query(models.BaseModel).filter(models.BaseModel.id.in_(payload.target_base_model_ids)).all()
+        ts.base_models = base_models
+        
     db.commit()
     db.refresh(ts)
     return _tagset_to_schema(ts, db)

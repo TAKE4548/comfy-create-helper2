@@ -15,8 +15,8 @@ import {
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-import { lorasApi, loraCategoriesApi } from '../api/client'
-import type { Lora, Category } from '../api/types'
+import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
+import type { Lora, Category, BaseModel } from '../api/types'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
 import {
@@ -39,6 +39,7 @@ const EMPTY_FORM: LoraFormState = {
   category_id: undefined,
   file_path: '',
   trigger_word_sets: [],
+  target_base_model_ids: [],
 }
 
 function SortableLoraCard({ id, children, disabled }: { id: number; children: React.ReactNode; disabled: boolean }) {
@@ -95,6 +96,7 @@ export function LoRAsPage() {
   )
   const [search, setSearch] = useState('')
   const [selectedCat, setSelectedCat] = useState<number | null>(null)
+  const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [tooltipLora, setTooltipLora] = useState<number | null>(null)
@@ -107,9 +109,16 @@ export function LoRAsPage() {
     queryKey: ['lora-categories'],
     queryFn: () => loraCategoriesApi.list() as Promise<Category[]>,
   })
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
+  })
   const { data: loras } = useQuery({
-    queryKey: ['loras', selectedCat],
-    queryFn: () => lorasApi.list(selectedCat ?? undefined) as Promise<Lora[]>,
+    queryKey: ['loras', selectedCat, selectedBaseModelIds],
+    queryFn: () => lorasApi.list(
+      selectedCat ?? undefined,
+      selectedBaseModelIds.length > 0 ? selectedBaseModelIds.join(',') : undefined
+    ) as Promise<Lora[]>,
   })
 
   useEffect(() => {
@@ -229,7 +238,7 @@ export function LoRAsPage() {
     (l.description ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
-  const isDndActive = !search && selectedCat === null
+  const isDndActive = !search && selectedCat === null && selectedBaseModelIds.length === 0
 
   const handleCopy = (id: number, words: string) => {
     navigator.clipboard.writeText(words)
@@ -357,6 +366,34 @@ export function LoRAsPage() {
               {cat.name}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Base Model Filters */}
+      <div className="flex items-center gap-4 px-5 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
+        <span className="text-xs font-semibold text-zinc-400">Base Models:</span>
+        <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar">
+          {baseModels?.map((bm) => {
+            const isChecked = selectedBaseModelIds.includes(bm.id)
+            return (
+              <label key={bm.id} className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id={`base-model-filter-${bm.name}`}
+                  checked={isChecked}
+                  onChange={() => {
+                    if (isChecked) {
+                      setSelectedBaseModelIds(selectedBaseModelIds.filter(id => id !== bm.id))
+                    } else {
+                      setSelectedBaseModelIds([...selectedBaseModelIds, bm.id])
+                    }
+                  }}
+                  className="rounded border-[rgba(255,255,255,0.08)] bg-surface-2 text-accent-green focus:ring-0 focus:ring-offset-0"
+                />
+                <span>{bm.name}</span>
+              </label>
+            )
+          })}
         </div>
       </div>
 

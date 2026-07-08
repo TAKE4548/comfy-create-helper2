@@ -48,14 +48,26 @@ def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
             for tws in lora.trigger_word_sets
         ],
         snapshot_paths=snapshot_paths,
+        target_base_model_ids=[bm.id for bm in lora.base_models],
     )
 
 
 @router.get("", response_model=list[schemas.LoraRead])
-def list_loras(category_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_loras(category_id: Optional[int] = None, base_model_ids: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(models.Lora)
     if category_id is not None:
         q = q.filter(models.Lora.category_id == category_id)
+        
+    ids = []
+    if base_model_ids:
+        try:
+            ids = [int(x) for x in base_model_ids.split(",") if x.strip()]
+        except ValueError:
+            pass
+            
+    if ids:
+        q = q.join(models.Lora.base_models).filter(models.BaseModel.id.in_(ids)).distinct()
+        
     return [_lora_to_schema(l, db) for l in q.order_by(models.Lora.sort_order, models.Lora.model_name).all()]
 
 
@@ -70,6 +82,10 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
         thumbnail_path=payload.thumbnail_path,
         file_path=payload.file_path,
     )
+    if payload.target_base_model_ids:
+        base_models = db.query(models.BaseModel).filter(models.BaseModel.id.in_(payload.target_base_model_ids)).all()
+        lora.base_models = base_models
+        
     db.add(lora)
     db.flush()
     for tws in payload.trigger_word_sets:
@@ -102,6 +118,11 @@ def update_lora(lora_id: int, payload: schemas.LoraCreate, db: Session = Depends
     lora.category_id = payload.category_id
     lora.thumbnail_path = payload.thumbnail_path
     lora.file_path = payload.file_path
+    
+    if payload.target_base_model_ids is not None:
+        base_models = db.query(models.BaseModel).filter(models.BaseModel.id.in_(payload.target_base_model_ids)).all()
+        lora.base_models = base_models
+        
     # Replace trigger word sets
     for tws in lora.trigger_word_sets:
         db.delete(tws)

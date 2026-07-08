@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi } from '../../../api/client'
-import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset } from '../../../api/types'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi } from '../../../api/client'
+import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { useWorkflowParams, getInitialParams } from './useWorkflowParams'
@@ -153,6 +153,10 @@ export function useGeneratePageState() {
     queryKey: ['loras'],
     queryFn: () => lorasApi.list() as Promise<Lora[]>,
   })
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
+  })
   const { data: tagSets } = useQuery({
     queryKey: ['tag-sets'],
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
@@ -288,6 +292,15 @@ export function useGeneratePageState() {
     },
   })
 
+  const updateWorkflowBaseModelMutation = useMutation({
+    mutationFn: ({ id, target_base_model_id }: { id: number; target_base_model_id: number | null }) =>
+      workflowsApi.update(id, { target_base_model_id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
+      qc.invalidateQueries({ queryKey: ['workflows'] })
+    }
+  })
+
   const createPresetMutation = useMutation({
     mutationFn: ({
       name,
@@ -317,6 +330,7 @@ export function useGeneratePageState() {
       setNewPresetName('')
       if (newPreset?.id) {
         setActiveSetId(newPreset.id)
+        openPreset?.(newPreset.id)
       }
     }
   })
@@ -593,7 +607,7 @@ export function useGeneratePageState() {
 
     if (presets && presets.length > 0) {
       const safeOpenPresetIds = openPresetIds || []
-      const isInvalidActive = activeSetId === null || !safeOpenPresetIds.includes(activeSetId)
+      const isInvalidActive = activeSetId === null || !safeOpenPresetIds.map(String).includes(String(activeSetId))
       if (isInvalidActive) {
         const nextActiveId = safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
           ? safeOpenPresetIds[0]
@@ -618,7 +632,7 @@ export function useGeneratePageState() {
   useEffect(() => {
     if (!selectedWorkflowId || activeSetId === null || typeof activeSetId !== 'number') return
 
-    const activePreset = presets?.find(p => p.id === activeSetId)
+    const activePreset = presets?.find(p => String(p.id) === String(activeSetId))
     if (!activePreset) return
 
     const currentState: HistoryState = {
@@ -1003,5 +1017,7 @@ export function useGeneratePageState() {
     canRedo,
     isSceneGeneratorOpen,
     setIsSceneGeneratorOpen,
+    baseModels,
+    updateWorkflowBaseModelMutation,
   }
 }

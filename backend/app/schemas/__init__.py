@@ -87,6 +87,13 @@ from app.schemas.bypass_profile import (
     BypassProfileRead,
 )
 
+from app.schemas.base_model import (
+    BaseModelCreate,
+    BaseModelRead,
+    CheckpointMappingCreate,
+    CheckpointMappingRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -113,4 +120,6 @@ __all__ = [
     "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate", "WorkflowPresetReorder",
     # BypassProfile
     "BypassProfileCreate", "BypassProfileUpdate", "BypassProfileRead",
+    # BaseModel / CheckpointMapping
+    "BaseModelCreate", "BaseModelRead", "CheckpointMappingCreate", "CheckpointMappingRead",
 ]

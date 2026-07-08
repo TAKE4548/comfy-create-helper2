@@ -58,6 +58,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
         json_body=json.loads(wf.json_body),
         created_at=wf.created_at,
         default_applied_assets=wf.default_applied_assets,
+        target_base_model_id=wf.target_base_model_id,
         mappings=[
             schemas.WorkflowMappingRead(
                 id=m.id,
@@ -91,6 +92,14 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
 
     if payload.json_body is not None:
         wf.json_body = json.dumps(payload.json_body)
+        if "target_base_model_id" not in payload.model_fields_set:
+            from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
+            ckpt_names = detect_checkpoint_names(payload.json_body)
+            mappings = db.query(models.CheckpointMapping).all()
+            wf.target_base_model_id = estimate_base_model_from_checkpoints(ckpt_names, mappings)
+
+    if "target_base_model_id" in payload.model_fields_set:
+        wf.target_base_model_id = payload.target_base_model_id
 
     if payload.default_applied_assets is not None:
         wf.default_applied_assets = payload.default_applied_assets
@@ -117,9 +126,18 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
     existing = db.query(models.Workflow).filter(models.Workflow.name == payload.name).first()
     if existing:
         raise HTTPException(status_code=409, detail="Workflow name already exists")
+
+    target_base_model_id = payload.target_base_model_id
+    if "target_base_model_id" not in payload.model_fields_set:
+        from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
+        ckpt_names = detect_checkpoint_names(payload.json_body)
+        mappings = db.query(models.CheckpointMapping).all()
+        target_base_model_id = estimate_base_model_from_checkpoints(ckpt_names, mappings)
+
     wf = models.Workflow(
         name=payload.name,
         json_body=json.dumps(payload.json_body),
+        target_base_model_id=target_base_model_id,
     )
     db.add(wf)
     db.flush()
@@ -147,4 +165,16 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db)):
 def scan_workflow_json(payload: schemas.WorkflowScanRequest, db: Session = Depends(get_db)):
     masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
     result = scan_workflow(payload.json_body, masters)
+
+    from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
+    ckpt_names = detect_checkpoint_names(payload.json_body)
+    mappings = db.query(models.CheckpointMapping).all()
+    est_id = estimate_base_model_from_checkpoints(ckpt_names, mappings)
+    
+    result["estimated_base_model_id"] = est_id
+    if est_id is None and ckpt_names:
+        result["unknown_checkpoint_name"] = ckpt_names[0]
+    else:
+        result["unknown_checkpoint_name"] = None
+
     return result

@@ -174,3 +174,56 @@ class TestWorkflowScanner(unittest.TestCase):
         self.assertEqual(len(result["matched"]), 1)
         self.assertEqual(result["matched"][0]["node_id"], "11")
         self.assertEqual(len(result["warnings"]), 0)
+
+    def test_detect_checkpoint_names(self):
+        from app.services.workflow_scanner import detect_checkpoint_names
+        workflow_json = {
+            "4": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {
+                    "ckpt_name": "anime_style_v3.safetensors"
+                }
+            },
+            "5": {
+                "class_type": "SomeOtherNode",
+                "inputs": {
+                    "ckpt_name": "ignore_me.safetensors"
+                }
+            }
+        }
+        names = detect_checkpoint_names(workflow_json)
+        self.assertIn("anime_style_v3.safetensors", names)
+        self.assertIn("ignore_me.safetensors", names)
+
+    def test_estimate_base_model_from_checkpoints(self):
+        from app.services.workflow_scanner import estimate_base_model_from_checkpoints
+        
+        class DummyMapping:
+            def __init__(self, checkpoint_name, base_model_id):
+                self.checkpoint_name = checkpoint_name
+                self.base_model_id = base_model_id
+
+        mappings = [
+            DummyMapping("anime_style_v3.safetensors", 1),
+            DummyMapping("noob_v1", 2),
+        ]
+
+        # 1. Exact match
+        res = estimate_base_model_from_checkpoints(["anime_style_v3.safetensors"], mappings)
+        self.assertEqual(res, 1)
+
+        # 2. Path exact match (base filename)
+        res = estimate_base_model_from_checkpoints(["path\\to\\anime_style_v3.safetensors"], mappings)
+        self.assertEqual(res, 1)
+
+        # 3. Partial match (mapping name is substring of filename)
+        res = estimate_base_model_from_checkpoints(["noob_v1_alpha.safetensors"], mappings)
+        self.assertEqual(res, 2)
+
+        # 4. Partial match (filename substring of mapping)
+        res = estimate_base_model_from_checkpoints(["noob"], mappings)
+        self.assertEqual(res, 2)
+
+        # 5. Unknown
+        res = estimate_base_model_from_checkpoints(["unknown_model_xyz.safetensors"], mappings)
+        self.assertEqual(res, None)

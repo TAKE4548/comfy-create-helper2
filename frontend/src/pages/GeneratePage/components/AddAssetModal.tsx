@@ -10,6 +10,7 @@ export interface AddAssetModalProps {
   onClose: () => void
   addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => void
   setRoleCollapsed: (role: string, collapsed: boolean) => void
+  activeBaseModelId?: number | null
 }
 
 interface LoraConfig {
@@ -25,6 +26,7 @@ export const AddAssetModal = ({
   onClose,
   addAppliedAsset,
   setRoleCollapsed,
+  activeBaseModelId,
 }: AddAssetModalProps) => {
   const [activeTab, setActiveTab] = useState<'lora' | 'tagset'>('lora')
   const [searchQuery, setSearchQuery] = useState('')
@@ -58,8 +60,12 @@ export const AddAssetModal = ({
   const query = searchQuery.toLowerCase().trim()
 
   const filteredLoras = useMemo(() => {
-    if (!query) return loras
-    return loras.filter((lora) => {
+    let result = loras
+    if (activeBaseModelId) {
+      result = loras.filter(l => !l.target_base_model_ids || l.target_base_model_ids.length === 0 || l.target_base_model_ids.includes(activeBaseModelId))
+    }
+    if (!query) return result
+    return result.filter((lora) => {
       const nameMatch = lora.model_name.toLowerCase().includes(query)
       const descMatch = lora.description?.toLowerCase().includes(query) ?? false
       const tagsMatch = lora.trigger_word_sets?.some((set) =>
@@ -67,17 +73,21 @@ export const AddAssetModal = ({
       ) ?? false
       return nameMatch || descMatch || tagsMatch
     })
-  }, [loras, query])
+  }, [loras, query, activeBaseModelId])
 
   const filteredTagSets = useMemo(() => {
-    if (!query) return tagSets
-    return tagSets.filter((ts) => {
+    let result = tagSets
+    if (activeBaseModelId) {
+      result = tagSets.filter(ts => !ts.target_base_model_ids || ts.target_base_model_ids.length === 0 || ts.target_base_model_ids.includes(activeBaseModelId))
+    }
+    if (!query) return result
+    return result.filter((ts) => {
       const nameMatch = ts.name.toLowerCase().includes(query)
       const descMatch = ts.description?.toLowerCase().includes(query) ?? false
       const tagsMatch = ts.tags?.some((tag) => tag.toLowerCase().includes(query)) ?? false
       return nameMatch || descMatch || tagsMatch
     })
-  }, [tagSets, query])
+  }, [tagSets, query, activeBaseModelId])
 
   // 選択トグル
   const handleToggleLora = (lora: Lora) => {

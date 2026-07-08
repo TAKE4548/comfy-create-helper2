@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { X, Check, Copy, Trash2, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react'
 import type { Category, Lora, LoraCreate, ComfyLoraModel } from '../api/types'
 import { useQuery } from '@tanstack/react-query'
-import { lorasApi, loraCategoriesApi } from '../api/client'
+import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
 import { InlineCategorySelect } from './InlineCategorySelect'
 import TagChipEditor from './TagChipEditor'
 import { ImageCropper } from './ImageCropper'
@@ -40,6 +40,11 @@ function LoraFormFields({
   const { data: comfyModels } = useQuery({
     queryKey: ['comfy-lora-models'],
     queryFn: lorasApi.getComfyModels,
+  })
+
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: baseModelsApi.list,
   })
 
   const handleAddTriggerSet = () => {
@@ -195,6 +200,34 @@ function LoraFormFields({
         />
       </div>
       <div>
+        <label className="text-xs text-zinc-400 mb-1.5 block">Target Base Models</label>
+        <div className="flex flex-wrap gap-3 p-3 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg">
+          {baseModels?.map((bm) => {
+            const checked = (form.target_base_model_ids || []).includes(bm.id)
+            return (
+              <label key={bm.id} className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const ids = form.target_base_model_ids || []
+                    const nextIds = e.target.checked
+                      ? [...ids, bm.id]
+                      : ids.filter((id) => id !== bm.id)
+                    setForm((f) => ({ ...f, target_base_model_ids: nextIds }))
+                  }}
+                  className="rounded border-[rgba(255,255,255,0.2)] bg-surface text-accent-green focus:ring-0 focus:ring-offset-0 focus:outline-none accent-accent-green"
+                />
+                <span>{bm.name}</span>
+              </label>
+            )
+          })}
+          {(!baseModels || baseModels.length === 0) && (
+            <span className="text-xs text-zinc-500 italic">No base models configured.</span>
+          )}
+        </div>
+      </div>
+      <div>
         <label className="text-xs text-zinc-400 mb-1 block">Cover Thumbnail Image</label>
         <div className="flex items-center gap-3">
           {form.thumbnail_path ? (
@@ -332,7 +365,13 @@ export function LoraDetailModal({
     category_id: undefined,
     file_path: '',
     trigger_word_sets: [],
-    thumbnail_path: undefined
+    thumbnail_path: undefined,
+    target_base_model_ids: []
+  })
+  
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: baseModelsApi.list,
   })
   
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
@@ -386,6 +425,7 @@ export function LoraDetailModal({
         words: tws.words.join(', '),
       })),
       thumbnail_path: lora.thumbnail_path ?? undefined,
+      target_base_model_ids: lora.target_base_model_ids ?? [],
     })
     setIsEditing(true)
   }
@@ -571,6 +611,20 @@ export function LoraDetailModal({
                   <div className="grid grid-cols-2 gap-4 border-t border-[rgba(255,255,255,0.06)] pt-4">
                     <div><span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Category</span><span className="text-xs text-zinc-300">{catName}</span></div>
                     <div><span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Recommended Strength</span><span className="text-xs text-zinc-300">{strengthStr}</span></div>
+                  </div>
+                  <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Target Base Models</span>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {lora.target_base_model_ids && lora.target_base_model_ids.length > 0 ? (
+                        baseModels?.filter(bm => lora.target_base_model_ids?.includes(bm.id)).map(bm => (
+                          <span key={bm.id} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#7C6FDD]/15 text-[#7C6FDD] border border-[#7C6FDD]/30">
+                            {bm.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-zinc-500 italic">None</span>
+                      )}
+                    </div>
                   </div>
                   <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-1">
                     <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Description</span>

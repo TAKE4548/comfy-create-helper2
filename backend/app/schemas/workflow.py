@@ -54,12 +54,14 @@ class WorkflowCreate(BaseModel):
     name: str
     json_body: dict[str, Any]
     mappings: list[WorkflowMappingCreate] = []
+    target_base_model_id: Optional[int] = None
 
 
 class WorkflowSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    target_base_model_id: Optional[int] = None
     created_at: datetime
 
 
@@ -70,6 +72,7 @@ class WorkflowRead(BaseModel):
     json_body: dict[str, Any]
     mappings: list[WorkflowMappingRead] = []
     default_applied_assets: Optional[str] = None
+    target_base_model_id: Optional[int] = None
     created_at: datetime
 
 
@@ -78,6 +81,7 @@ class WorkflowUpdate(BaseModel):
     json_body: Optional[dict[str, Any]] = None
     mappings: Optional[list[WorkflowMappingCreate]] = None
     default_applied_assets: Optional[str] = None
+    target_base_model_id: Optional[int] = None
 
 
 class WorkflowCopyRequest(BaseModel):
@@ -111,3 +115,5 @@ class ScanWarningItem(BaseModel):
 class ScanResult(BaseModel):
     matched: list[ScanMatchedItem]
     warnings: list[ScanWarningItem]
+    estimated_base_model_id: Optional[int] = None
+    unknown_checkpoint_name: Optional[str] = None

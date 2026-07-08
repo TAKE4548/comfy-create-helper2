@@ -55,6 +55,8 @@ export const DesktopLayout = ({
     setWorkflowManageMode,
     isWorkflowMenuOpen, setIsWorkflowMenuOpen,
     setIsSceneGeneratorOpen,
+    baseModels,
+    updateWorkflowBaseModelMutation,
     
     // queries & derived state
     workflows,
@@ -201,7 +203,7 @@ export const DesktopLayout = ({
     </div>
   )
 
-  const activeSet = sets.find((s) => s.id === activeSetId)
+  const activeSet = sets.find((s) => String(s.id) === String(activeSetId))
 
   const leftPane = (
     <div className="w-full h-full flex flex-col overflow-hidden bg-surface-2/10">
@@ -222,6 +224,22 @@ export const DesktopLayout = ({
               <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
               {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
+            {selectedWorkflowId && workflow && (
+              <select
+                id="workflow-base-model-select"
+                value={workflow.target_base_model_id ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? Number(e.target.value) : null
+                  updateWorkflowBaseModelMutation.mutate({ id: workflow.id, target_base_model_id: val })
+                }}
+                className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate cursor-pointer"
+              >
+                <option value="">Base Model: Auto</option>
+                {baseModels?.map((bm) => (
+                  <option key={bm.id} value={bm.id}>{bm.name}</option>
+                ))}
+              </select>
+            )}
             {selectedWorkflowId && (
               <div className="relative flex-shrink-0">
                 <button
@@ -297,10 +315,10 @@ export const DesktopLayout = ({
       {selectedWorkflowId && (
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
           <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
-            {sets.filter((s) => (openPresetIds || []).includes(s.id)).map((s) => (
+            {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
               <div key={s.id} onClick={() => setActiveSetId(s.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
-                  s.id === activeSetId
+                  String(s.id) === String(activeSetId)
                     ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
                     : 'bg-surface-2 border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-400'
                 }`}>
@@ -505,6 +523,7 @@ export const DesktopLayout = ({
                         onClose={() => setOpenAddAssetRole(null)}
                         addAppliedAsset={addAppliedAsset}
                         setRoleCollapsed={setRoleCollapsed}
+                        activeBaseModelId={workflow?.target_base_model_id}
                       />
                     )}
                   </div>

@@ -54,6 +54,8 @@ export const MobileLayout = ({
     setIsPresetManagerOpen,
     handleLoadPreset,
     handleDeletePreset,
+    baseModels,
+    updateWorkflowBaseModelMutation,
     
     // queries & derived state
     workflows,
@@ -222,6 +224,22 @@ export const MobileLayout = ({
             <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
             {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
+          {selectedWorkflowId && workflow && (
+            <select
+              id="workflow-base-model-select-mobile"
+              value={workflow.target_base_model_id ?? ''}
+              onChange={(e) => {
+                const val = e.target.value ? Number(e.target.value) : null
+                updateWorkflowBaseModelMutation.mutate({ id: workflow.id, target_base_model_id: val })
+              }}
+              className="text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[30%] truncate cursor-pointer"
+            >
+              <option value="">Base: Auto</option>
+              {baseModels?.map((bm) => (
+                <option key={bm.id} value={bm.id}>{bm.name}</option>
+              ))}
+            </select>
+          )}
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
@@ -655,6 +673,7 @@ export const MobileLayout = ({
                     onClose={() => setOpenAddAssetRole(null)}
                     addAppliedAsset={addAppliedAsset}
                     setRoleCollapsed={setRoleCollapsed}
+                    activeBaseModelId={workflow?.target_base_model_id}
                   />
                 )}
               </div>

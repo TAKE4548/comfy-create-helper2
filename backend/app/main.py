@@ -15,7 +15,7 @@ from app.seeder import seed_initial_data
 from app.routers import (
     workflows, mapping_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
-    presets, bypass_profiles,
+    presets, bypass_profiles, base_models,
 )
 
 logging.basicConfig(
@@ -37,6 +37,13 @@ def run_migrations():
             if "default_applied_assets" not in columns:
                 conn.execute(sa.text("ALTER TABLE workflows ADD COLUMN default_applied_assets TEXT"))
                 logger.info("Migrated: Added 'default_applied_assets' column to 'workflows' table.")
+                
+        # Add target_base_model_id to workflows if not exists
+        if "workflows" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("workflows")]
+            if "target_base_model_id" not in columns:
+                conn.execute(sa.text("ALTER TABLE workflows ADD COLUMN target_base_model_id INTEGER REFERENCES base_models(id) ON DELETE SET NULL"))
+                logger.info("Migrated: Added 'target_base_model_id' column to 'workflows' table.")
                 
         # Add role to snapshot_loras if not exists
         if "snapshot_loras" in inspector.get_table_names():
@@ -228,6 +235,7 @@ app.include_router(audit.router)
 app.include_router(llm_prompts.router)
 app.include_router(presets.router)
 app.include_router(bypass_profiles.router)
+app.include_router(base_models.router)
 
 
 class CachedStaticFiles(StaticFiles):

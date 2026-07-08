@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { X, Check, Copy, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react'
 import type { Category, TagSet } from '../api/types'
 import { InlineCategorySelect } from './InlineCategorySelect'
-import { tagsetCategoriesApi } from '../api/client'
+import { tagsetCategoriesApi, baseModelsApi } from '../api/client'
 import { ImageCropper } from './ImageCropper'
+import { useQuery } from '@tanstack/react-query'
 
 export interface TagSetFormState {
   name: string
@@ -12,6 +13,7 @@ export interface TagSetFormState {
   tags: string
   thumbnail_path?: string
   subsets?: { name: string; tags: string }[]
+  target_base_model_ids?: number[]
 }
 
 const PURPLE_INPUT = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
@@ -25,6 +27,11 @@ function TagSetFormFields({
   categories?: Category[]
   onCategoryCreated: (cat: Category) => void
 }) {
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: baseModelsApi.list,
+  })
+
   return (
     <div className="space-y-3">
       <div>
@@ -46,6 +53,34 @@ function TagSetFormFields({
           apiCreateFn={tagsetCategoriesApi.create}
           accentClass="[#7C6FDD]"
         />
+      </div>
+      <div>
+        <label className="text-xs text-zinc-400 mb-1.5 block">Target Base Models</label>
+        <div className="flex flex-wrap gap-3 p-3 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg">
+          {baseModels?.map((bm) => {
+            const checked = (form.target_base_model_ids || []).includes(bm.id)
+            return (
+              <label key={bm.id} className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const ids = form.target_base_model_ids || []
+                    const nextIds = e.target.checked
+                      ? [...ids, bm.id]
+                      : ids.filter((id) => id !== bm.id)
+                    setForm((f) => ({ ...f, target_base_model_ids: nextIds }))
+                  }}
+                  className="rounded border-[rgba(255,255,255,0.2)] bg-surface text-[#7C6FDD] focus:ring-0 focus:ring-offset-0 focus:outline-none accent-[#7C6FDD]"
+                />
+                <span>{bm.name}</span>
+              </label>
+            )
+          })}
+          {(!baseModels || baseModels.length === 0) && (
+            <span className="text-xs text-zinc-500 italic">No base models configured.</span>
+          )}
+        </div>
       </div>
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Tags (comma-separated) *</label>
@@ -269,6 +304,12 @@ export function TagSetDetailModal({
     category_id: undefined,
     tags: '',
     thumbnail_path: undefined,
+    target_base_model_ids: []
+  })
+
+  const { data: baseModels } = useQuery({
+    queryKey: ['base-models'],
+    queryFn: baseModelsApi.list,
   })
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
 
@@ -304,6 +345,7 @@ export function TagSetDetailModal({
       category_id: tagSet.category_id ?? undefined,
       tags: tagSet.tags.join(', '),
       thumbnail_path: tagSet.thumbnail_path ?? undefined,
+      target_base_model_ids: tagSet.target_base_model_ids ?? [],
     })
     setIsEditing(true)
   }
@@ -484,6 +526,20 @@ export function TagSetDetailModal({
                   <div className="grid grid-cols-2 gap-4 border-t border-[rgba(255,255,255,0.06)] pt-4">
                     <div><span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Category</span><span className="text-xs text-zinc-300">{catName}</span></div>
                     <div><span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Tags Count</span><span className="text-xs text-zinc-300">{tagSet.tags.length} tags</span></div>
+                  </div>
+                  <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Target Base Models</span>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {tagSet.target_base_model_ids && tagSet.target_base_model_ids.length > 0 ? (
+                        baseModels?.filter(bm => tagSet.target_base_model_ids?.includes(bm.id)).map(bm => (
+                          <span key={bm.id} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#7C6FDD]/15 text-[#7C6FDD] border border-[#7C6FDD]/30">
+                            {bm.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-zinc-500 italic">None</span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2 border-t border-[rgba(255,255,255,0.06)] pt-4">
                     <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Tags</span>

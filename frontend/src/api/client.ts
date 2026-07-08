@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet } from './types'
 
 const BASE_URL = '/api'
 
@@ -81,21 +81,33 @@ export const albumsApi = {
 
 // ─── LoRAs ──────────────────────────────────────────────────────
 export const lorasApi = {
-  list: (category_id?: number) => request(`/loras${category_id ? `?category_id=${category_id}` : ''}`),
-  create: (data: unknown) => request('/loras', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: number, data: unknown) => request(`/loras/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  delete: (id: number) => request(`/loras/${id}`, { method: 'DELETE' }),
+  list: (category_id?: number, base_model_ids?: string) => {
+    const params = new URLSearchParams()
+    if (category_id !== undefined) params.append('category_id', String(category_id))
+    if (base_model_ids !== undefined) params.append('base_model_ids', base_model_ids)
+    const qs = params.toString()
+    return request<Lora[]>(`/loras${qs ? `?${qs}` : ''}`)
+  },
+  create: (data: unknown) => request<Lora>('/loras', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: unknown) => request<Lora>(`/loras/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/loras/${id}`, { method: 'DELETE' }),
   getComfyModels: () => request<ComfyLoraModel[]>('/loras/comfy-models'),
-  reorder: (ordered_ids: number[]) => request('/loras/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
+  reorder: (ordered_ids: number[]) => request<void>('/loras/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
 // ─── Tag Sets ───────────────────────────────────────────────────
 export const tagSetsApi = {
-  list: (category_id?: number) => request(`/tag-sets${category_id ? `?category_id=${category_id}` : ''}`),
-  create: (data: unknown) => request('/tag-sets', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: number, data: unknown) => request(`/tag-sets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  delete: (id: number) => request(`/tag-sets/${id}`, { method: 'DELETE' }),
-  reorder: (ordered_ids: number[]) => request('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
+  list: (category_id?: number, base_model_ids?: string) => {
+    const params = new URLSearchParams()
+    if (category_id !== undefined) params.append('category_id', String(category_id))
+    if (base_model_ids !== undefined) params.append('base_model_ids', base_model_ids)
+    const qs = params.toString()
+    return request<TagSet[]>(`/tag-sets${qs ? `?${qs}` : ''}`)
+  },
+  create: (data: unknown) => request<TagSet>('/tag-sets', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: unknown) => request<TagSet>(`/tag-sets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/tag-sets/${id}`, { method: 'DELETE' }),
+  reorder: (ordered_ids: number[]) => request<void>('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
 // ─── Categories ─────────────────────────────────────────────────
@@ -165,5 +177,21 @@ export const bypassProfilesApi = {
     request<BypassProfile>(`/bypass-profiles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) =>
     request<void>(`/bypass-profiles/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Base Models ───────────────────────────────────────────────
+export const baseModelsApi = {
+  list: () => request<BaseModel[]>('/base-models'),
+  create: (data: BaseModelCreate) => request<BaseModel>('/base-models', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: BaseModelCreate) => request<BaseModel>(`/base-models/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/base-models/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Checkpoint Mappings ───────────────────────────────────────
+export const checkpointMappingsApi = {
+  list: () => request<CheckpointMapping[]>('/checkpoint-mappings'),
+  create: (data: CheckpointMappingCreate) => request<CheckpointMapping>('/checkpoint-mappings', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/checkpoint-mappings/${id}`, { method: 'DELETE' }),
+  getComfyCheckpoints: () => request<string[]>('/comfy/checkpoints'),
 }
 

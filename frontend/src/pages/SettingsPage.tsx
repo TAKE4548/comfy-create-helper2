@@ -24,6 +24,7 @@ import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 import { LS_KEYS } from '../utils/localStorageKeys'
 import { WorkflowManageModal } from '../components/WorkflowManageModal'
 import { PresetManagerPanel } from '../components/PresetManagerPanel'
+import { BaseModelSection } from './SettingsPage/components/BaseModelSection'
 
 interface ExpandedSectionsState {
   prompts: boolean;
@@ -32,6 +33,7 @@ interface ExpandedSectionsState {
   workflows: boolean;
   connections: boolean;
   llmModel: boolean;
+  baseModels: boolean;
 }
 
 const PROMPT_LABELS: Record<string, string> = {
@@ -57,6 +59,7 @@ export function SettingsPage() {
       workflows: true,
       connections: true,
       llmModel: true,
+      baseModels: true,
     }
   })
 
@@ -617,6 +620,27 @@ export function SettingsPage() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+
+        {/* Base Model Settings */}
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <button 
+            type="button" 
+            onClick={() => toggleSection('baseModels')}
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-2">
+              <Layers size={15} className="text-[#7C6FDD]" />
+              <h2 className="text-sm font-semibold text-zinc-300">Base Model Settings</h2>
+              <span className="text-xs text-zinc-600">— ベースモデルとチェックポイントの関連付け管理</span>
+            </div>
+            <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.baseModels ? 'rotate-180' : ''}`} />
+          </button>
+          {expandedSections.baseModels && (
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
+              <BaseModelSection />
             </div>
           )}
         </section>

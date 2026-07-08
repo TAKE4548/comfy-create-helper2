@@ -128,7 +128,19 @@ describe('useGeneratePageState', () => {
     ])
     vi.mocked(mappingMastersApi.list).mockResolvedValue([])
     vi.mocked(lorasApi.list).mockResolvedValue([
-      { id: 50, model_name: 'test_lora.safetensors', file_path: 'loras/test_lora.safetensors', description: 'Test LoRA', trigger_word_sets: [], sort_order: 1, created_at: '' }
+      {
+        id: 50,
+        model_name: 'test_lora.safetensors',
+        file_path: 'loras/test_lora.safetensors',
+        description: 'Test LoRA',
+        trigger_word_sets: [],
+        sort_order: 1,
+        created_at: '',
+        recommended_strength_min: null,
+        recommended_strength_max: null,
+        category_id: null,
+        thumbnail_path: null,
+      }
     ])
     vi.mocked(tagSetsApi.list).mockResolvedValue([
       { id: 60, name: 'Test TagSet', description: '', category_id: null, tags: ['tag1', 'tag2'], thumbnail_path: null, sort_order: 1, created_at: '' }
