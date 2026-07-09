@@ -30,6 +30,8 @@ export function GeneratePage() {
     isModalPreviewOpen, setIsModalPreviewOpen, modalPreviewIndex, setModalPreviewIndex, snapshotIdsForDisplay,
     isJobModalOpen, setIsJobModalOpen,
     isSceneGeneratorOpen, setIsSceneGeneratorOpen, paramValues, textMappings,
+    sets, toggleSetChecked, handleDeletePreset, handleUpdatePreset, handleCreatePreset, activeSetId,
+    openPreset, setActiveSetId, handleLoadPreset,
   } = state
 
   return (
@@ -164,6 +166,26 @@ export function GeneratePage() {
                 await reorderPresetsMutation.mutateAsync(ordered_ids)
               }}
               isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
+              sets={sets}
+              activeSetId={activeSetId}
+              onToggleCheck={(id) => toggleSetChecked(id)}
+              onDelete={(id) => handleDeletePreset(id)}
+              onOpenAsTab={(id) => {
+                const targetPreset = presets?.find((p) => String(p.id) === String(id));
+                if (targetPreset) {
+                  handleLoadPreset(targetPreset);
+                } else {
+                  openPreset(id);
+                  setActiveSetId(id);
+                }
+                setIsPresetManagerOpen(false);
+              }}
+              onSaveOverwrite={(id, name) => handleUpdatePreset(id, name)}
+              onSaveAsNew={(name) => handleCreatePreset(name)}
+              onOpenSceneGenerator={() => {
+                setIsPresetManagerOpen(false)
+                setIsSceneGeneratorOpen(true)
+              }}
             />
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
-  Zap, Settings, ScanLine, MoreHorizontal, Plus, ChevronRight, ChevronDown,
+  Zap, Settings, Plus, ChevronRight, ChevronDown,
   Download, ImageOff, CheckSquare, Square, Camera, Loader2, X
 } from 'lucide-react'
 import { ResizableSplitLayout } from '../../../components/layout/ResizableSplitLayout'
@@ -49,11 +49,8 @@ export const DesktopLayout = ({
     thumbnailTab, setThumbnailTab,
     setIsJobModalOpen,
     sortOrder, setSortOrder,
-    isPresetOpen, setIsPresetOpen,
-    newPresetName, setNewPresetName,
     setIsPresetManagerOpen,
     setWorkflowManageMode,
-    isWorkflowMenuOpen, setIsWorkflowMenuOpen,
     setIsSceneGeneratorOpen,
     baseModels,
     updateWorkflowBaseModelMutation,
@@ -224,66 +221,6 @@ export const DesktopLayout = ({
               <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
               {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
-            {selectedWorkflowId && workflow && (
-              <select
-                id="workflow-base-model-select"
-                value={workflow.target_base_model_id ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value ? Number(e.target.value) : null
-                  updateWorkflowBaseModelMutation.mutate({ id: workflow.id, target_base_model_id: val })
-                }}
-                className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate cursor-pointer"
-              >
-                <option value="">Base Model: Auto</option>
-                {baseModels?.map((bm) => (
-                  <option key={bm.id} value={bm.id}>{bm.name}</option>
-                ))}
-              </select>
-            )}
-            {selectedWorkflowId && (
-              <div className="relative flex-shrink-0">
-                <button
-                  id="workflow-ops-btn"
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsWorkflowMenuOpen(!isWorkflowMenuOpen);
-                  }}
-                  className={`p-1.5 rounded-md border transition-all ${
-                    isWorkflowMenuOpen
-                      ? 'border-accent-green bg-accent-green/10 text-accent-green'
-                      : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'
-                  }`}
-                  title="ワークフロー操作"
-                >
-                  <MoreHorizontal size={14} />
-                </button>
-                {isWorkflowMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-32 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-lg shadow-xl py-1 z-50 animate-fade-in">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWorkflowManageMode('rename');
-                        setIsWorkflowMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5 hover:text-zinc-200 transition-colors"
-                    >
-                      名前を変更
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWorkflowManageMode('copy');
-                        setIsWorkflowMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5 hover:text-zinc-200 transition-colors"
-                    >
-                      コピー
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -301,13 +238,13 @@ export const DesktopLayout = ({
                 handleSaveDefaultParams={handleSaveDefaultParams}
                 isSavePending={saveDefaultParamsMutation.isPending}
                 handleResetDefaultParams={handleResetDefaultParams}
+                baseModels={baseModels}
+                updateWorkflowBaseModelMutation={updateWorkflowBaseModelMutation}
+                setWorkflowManageMode={setWorkflowManageMode}
+                setRescanOpen={setRescanOpen}
               />
             )}
           </div>
-          <button id="rescan-btn" onClick={() => setRescanOpen(true)} disabled={!selectedWorkflowId} title="マッピングを再スキャン・修正"
-            className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 transition-all flex-shrink-0">
-            <ScanLine size={14} />
-          </button>
         </div>
       </div>
 
@@ -316,7 +253,11 @@ export const DesktopLayout = ({
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
           <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
             {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-              <div key={s.id} onClick={() => setActiveSetId(s.id)}
+              <div key={s.id} onClick={() => {
+                const targetPreset = presets?.find(p => String(p.id) === String(s.id))
+                if (targetPreset) handleLoadPreset(targetPreset)
+                else setActiveSetId(s.id)
+              }}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
                   String(s.id) === String(activeSetId)
                     ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
@@ -329,12 +270,6 @@ export const DesktopLayout = ({
             ))}
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => {
-              const checked = sets.some((s) => !s.checked)
-              setAllSetsChecked(checked)
-            }} className="text-[10px] text-zinc-500 hover:text-zinc-350 transition-colors">
-              {sets.every((s) => s.checked) ? '全解除' : '全選択'}
-            </button>
             <button type="button" id="add-set-btn" onClick={() => {
               setNewSetName(`Set ${sets.length + 1}`)
               setCopySourceId('default')
@@ -345,12 +280,11 @@ export const DesktopLayout = ({
             </button>
             <button
               type="button"
-              id="scene-generator-btn"
-              onClick={() => setIsSceneGeneratorOpen(true)}
-              disabled={!selectedWorkflowId}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all disabled:opacity-30"
+              id="manage-presets-btn"
+              onClick={() => setIsPresetManagerOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all"
             >
-              🎬 Scene
+              📑 管理
             </button>
           </div>
         </div>
@@ -358,113 +292,33 @@ export const DesktopLayout = ({
 
       {/* Set Specific Settings / Param Sync (Desktop only) */}
       {selectedWorkflowId && activeSet && (
-        <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/20 px-5 py-3.5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Set Settings</span>
-            <input
-              type="text"
-              id="set-name-input"
-              value={activeSet.name}
-              onChange={(e) => renameSet(activeSet.id, e.target.value)}
-              className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-300 font-semibold focus:outline-none focus:border-accent-green/40 max-w-[120px]"
-            />
-          </div>
-          <div className="flex gap-3 items-center">
-            <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
-              <button
-                type="button"
-                id="undo-btn"
-                onClick={() => undo?.(activeSet.id)}
-                disabled={!canUndo}
-                title="Undo (Ctrl+Z)"
-                className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-              >
-                ↩
-              </button>
-              <button
-                type="button"
-                id="redo-btn"
-                onClick={() => redo?.(activeSet.id)}
-                disabled={!canRedo}
-                title="Redo (Ctrl+Y)"
-                className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-              >
-                ↪
-              </button>
-            </div>
-            <div className="relative">
-              <button
-                type="button"
-                id="preset-popover-btn"
-                onClick={() => setIsPresetOpen(!isPresetOpen)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                  isPresetOpen
-                    ? 'border-[#7C6FDD] bg-[rgba(124,111,221,0.1)] text-[#7C6FDD]'
-                    : 'border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5'
-                }`}
-              >
-                Presets
-              </button>
-              {isPresetOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-64 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl p-3 z-50 space-y-3 animate-fade-in">
-                  <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.05)] pb-1.5">
-                    <span className="text-xs font-semibold text-zinc-200">Presets</span>
-                    <button 
-                      onClick={() => setIsPresetManagerOpen(true)}
-                      className="text-[10px] text-[#7C6FDD] hover:underline"
-                    >
-                      管理
-                    </button>
-                  </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                    {presets && presets.length > 0 ? presets.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between group/preset p-1 hover:bg-white/5 rounded">
-                        <button
-                          type="button"
-                          onClick={() => handleLoadPreset(p)}
-                          className="flex-1 text-left text-xs text-zinc-300 truncate font-medium hover:text-white"
-                        >
-                          {p.name}
-                        </button>
-                        <div className="flex gap-1 opacity-0 group-hover/preset:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdatePreset(p.id, p.name)}
-                            className="text-[9px] px-1 bg-zinc-800 text-zinc-400 hover:text-white rounded"
-                            title="現在設定で上書き"
-                          >
-                            上書き
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePreset(p.id)}
-                            className="text-[9px] px-1 bg-red-950/40 text-red-400 hover:bg-red-900/60 rounded"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    )) : <p className="text-[10px] text-zinc-555 italic py-1">No presets found</p>}
-                  </div>
-                  <div className="flex gap-1.5 pt-1.5 border-t border-[rgba(255,255,255,0.05)]">
-                    <input
-                      type="text"
-                      placeholder="New preset name..."
-                      value={newPresetName}
-                      onChange={(e) => setNewPresetName(e.target.value)}
-                      className="flex-1 bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-[10px] text-zinc-300 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCreatePreset()}
-                      className="px-2 py-1 rounded bg-[#7C6FDD] text-white text-[10px] font-semibold hover:bg-[#6d62cc]"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+        <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/20 px-5 py-3.5 flex items-center gap-3">
+          {activeSet && (
+            <span className="text-[10px] text-zinc-500 px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded font-medium truncate max-w-[120px]">
+              {activeSet.name}
+            </span>
+          )}
+          <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+            <button
+              type="button"
+              id="undo-btn"
+              onClick={() => undo?.(activeSet.id)}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+              className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+            >
+              ↩
+            </button>
+            <button
+              type="button"
+              id="redo-btn"
+              onClick={() => redo?.(activeSet.id)}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y)"
+              className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+            >
+              ↪
+            </button>
           </div>
         </div>
       )}

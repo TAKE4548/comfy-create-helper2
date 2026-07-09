@@ -56,6 +56,7 @@ export const MobileLayout = ({
     handleDeletePreset,
     baseModels,
     updateWorkflowBaseModelMutation,
+    setWorkflowManageMode,
     
     // queries & derived state
     workflows,
@@ -212,34 +213,14 @@ export const MobileLayout = ({
               <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
             )}
           </div>
-          <button id="rescan-btn-mobile" onClick={() => setRescanOpen(true)} disabled={!selectedWorkflowId} title="マッピングを再スキャン・修正"
-            className="p-1.5 rounded-md border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5 disabled:opacity-30 transition-all flex-shrink-0">
-            <ScanLine size={14} />
-          </button>
         </div>
         <div className="flex gap-2">
           <select id="workflow-select-mobile" value={selectedWorkflowId ?? ''}
             onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-            className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[40%] truncate">
+            className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 truncate">
             <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
             {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
-          {selectedWorkflowId && workflow && (
-            <select
-              id="workflow-base-model-select-mobile"
-              value={workflow.target_base_model_id ?? ''}
-              onChange={(e) => {
-                const val = e.target.value ? Number(e.target.value) : null
-                updateWorkflowBaseModelMutation.mutate({ id: workflow.id, target_base_model_id: val })
-              }}
-              className="text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[30%] truncate cursor-pointer"
-            >
-              <option value="">Base: Auto</option>
-              {baseModels?.map((bm) => (
-                <option key={bm.id} value={bm.id}>{bm.name}</option>
-              ))}
-            </select>
-          )}
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
@@ -257,6 +238,10 @@ export const MobileLayout = ({
                 isSavePending={saveDefaultParamsMutation.isPending}
                 handleResetDefaultParams={handleResetDefaultParams}
                 mobile
+                baseModels={baseModels}
+                updateWorkflowBaseModelMutation={updateWorkflowBaseModelMutation}
+                setWorkflowManageMode={setWorkflowManageMode}
+                setRescanOpen={setRescanOpen}
               />
             )}
           </div>
@@ -363,87 +348,24 @@ export const MobileLayout = ({
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
             <div className="flex items-center gap-2.5">
-              <button type="button" onClick={() => {
-                const checked = sets.some((s) => !s.checked)
-                setAllSetsChecked(checked)
-              }} className="text-[10px] text-zinc-500 hover:text-zinc-350 transition-colors">
-                {sets.every((s) => s.checked) ? '全解除' : '全選択'}
+              <button
+                type="button"
+                id="manage-presets-btn-mobile"
+                onClick={() => setIsPresetManagerOpen(true)}
+                className="px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
+              >
+                📑 管理
               </button>
-              <div className="relative">
-                <button
-                  type="button"
-                  id="preset-popover-btn-mobile"
-                  onClick={() => setIsPresetOpen(!isPresetOpen)}
-                  className={`px-2 py-0.5 rounded text-[10px] border font-semibold transition-all ${
-                    isPresetOpen
-                      ? 'border-[#7C6FDD] bg-[rgba(124,111,221,0.1)] text-[#7C6FDD]'
-                      : 'border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5'
-                  }`}
-                >
-                  Presets
-                </button>
-                {isPresetOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-60 bg-surface border border-[rgba(255,255,255,0.1)] rounded-lg shadow-2xl p-3 z-50 space-y-3">
-                    <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.05)] pb-1.5">
-                      <span className="text-xs font-semibold text-zinc-200">Presets</span>
-                      <button 
-                        onClick={() => { setIsPresetManagerOpen(true); setIsPresetOpen(false); }}
-                        className="text-[10px] text-[#7C6FDD] hover:underline"
-                      >
-                        管理
-                      </button>
-                    </div>
-                    <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-                      {presets && presets.length > 0 ? presets.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between group/preset p-1 hover:bg-white/5 rounded">
-                          <button
-                            type="button"
-                            onClick={() => handleLoadPreset(p)}
-                            className="flex-1 text-left text-xs text-zinc-300 truncate font-medium hover:text-white"
-                          >
-                            {p.name}
-                          </button>
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePreset(p.id)}
-                              className="text-[9px] px-1 bg-red-950/40 text-red-400 hover:bg-red-900/60 rounded"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      )) : <p className="text-[10px] text-zinc-555 italic py-1">No presets found</p>}
-                    </div>
-                    <div className="flex gap-1.5 pt-1.5 border-t border-[rgba(255,255,255,0.05)]">
-                      <input
-                        type="text"
-                        placeholder="New preset name..."
-                        value={newPresetName}
-                        onChange={(e) => setNewPresetName(e.target.value)}
-                        className="bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-0.5 text-[10px] text-zinc-300 focus:outline-none focus:border-[#7C6FDD]/45 w-full"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newPresetName.trim()) {
-                            handleCreatePreset(newPresetName.trim())
-                          }
-                        }}
-                        className="bg-[#7C6FDD] hover:bg-[#6b5ec2] text-white text-[10px] font-semibold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                      >
-                        新規
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
-              {sets.filter((s) => (openPresetIds || []).includes(s.id)).map((s) => (
-                <div key={s.id} onClick={() => setActiveSetId(s.id)}
+              {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
+                <div key={s.id} onClick={() => {
+                  const targetPreset = presets?.find(p => String(p.id) === String(s.id))
+                  if (targetPreset) handleLoadPreset(targetPreset)
+                  else setActiveSetId(s.id)
+                }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
                     String(s.id) === String(activeSetId)
                       ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
@@ -466,18 +388,7 @@ export const MobileLayout = ({
           </div>
 
           {activeSet && (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] text-zinc-500 font-bold">名前編集:</span>
-                <input
-                  type="text"
-                  id="set-name-input-mobile"
-                  value={activeSet.name}
-                  onChange={(e) => renameSet(activeSet.id, e.target.value)}
-                  className="bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-[11px] text-zinc-300 focus:outline-none focus:border-accent-green/40 max-w-[150px]"
-                  placeholder="プロファイル名..."
-                />
-              </div>
+            <div className="flex items-center justify-end gap-3 flex-wrap">
               <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5 ml-auto">
                 <button
                   type="button"

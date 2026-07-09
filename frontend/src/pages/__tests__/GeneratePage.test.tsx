@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GeneratePage } from '../GeneratePage';
 
@@ -100,6 +100,7 @@ describe('GeneratePage Component Regression Tests', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -160,5 +161,35 @@ describe('GeneratePage Component Regression Tests', () => {
     // Verify mobile layout elements (e.g. settings-toggle-btn-mobile or similar)
     const mobileSettingsBtn = screen.getByTitle('ComfyUI設定');
     expect(mobileSettingsBtn).toBeInTheDocument();
+  });
+
+  it('REQ-112: header does not contain removed UI elements', async () => {
+    const { container } = renderPage();
+    await waitFor(() => {
+      expect(container.querySelector('#workflow-base-model-select')).not.toBeInTheDocument();
+    });
+    expect(container.querySelector('#workflow-ops-btn')).not.toBeInTheDocument();
+    expect(container.querySelector('#rescan-btn')).not.toBeInTheDocument();
+    expect(container.querySelector('#scene-generator-btn')).not.toBeInTheDocument();
+    expect(container.querySelector('#set-name-input')).not.toBeInTheDocument();
+  });
+
+  it('REQ-112: manage-presets-btn opens preset manager modal', async () => {
+    const { container } = renderPage();
+    await waitFor(() => {
+      const manageBtn = container.querySelector('#manage-presets-btn');
+      expect(manageBtn).toBeInTheDocument();
+    });
+  });
+
+  it('REQ-112: settings popover contains workflow management items', async () => {
+    const { container } = renderPage();
+    const settingsBtn = screen.getByTitle('ComfyUI設定');
+    fireEvent.click(settingsBtn);
+    await waitFor(() => {
+      expect(container.querySelector('#popover-rename-btn')).toBeInTheDocument();
+      expect(container.querySelector('#popover-copy-btn')).toBeInTheDocument();
+      expect(container.querySelector('#popover-rescan-btn')).toBeInTheDocument();
+    });
   });
 });
