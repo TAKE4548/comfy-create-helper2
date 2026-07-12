@@ -59,6 +59,13 @@ def run_migrations():
                 conn.execute(sa.text("ALTER TABLE snapshot_tag_sets ADD COLUMN role VARCHAR NOT NULL DEFAULT 'positive'"))
                 logger.info("Migrated: Added 'role' column to 'snapshot_tag_sets' table.")
 
+        # Add source_snapshot_id to snapshots if not exists
+        if "snapshots" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("snapshots")]
+            if "source_snapshot_id" not in columns:
+                conn.execute(sa.text("ALTER TABLE snapshots ADD COLUMN source_snapshot_id INTEGER REFERENCES snapshots(id) ON DELETE SET NULL"))
+                logger.info("Migrated: Added 'source_snapshot_id' column to 'snapshots' table.")
+
         # Migrate unique constraint for snapshot_loras if old exists
         if "snapshot_loras" in inspector.get_table_names():
             constraints = inspector.get_unique_constraints("snapshot_loras")

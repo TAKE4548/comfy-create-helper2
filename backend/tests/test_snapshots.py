@@ -584,6 +584,166 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertEqual(len(snap_tag_sets), 1)
         self.assertEqual(snap_tag_sets[0].tag_set_id, self.tag_set.id)
 
+    def test_create_snapshot_with_source_snapshot_id(self):
+        # 1. 最初のスナップショットを作成
+        payload_1 = {
+            "workflow_id": self.workflow.id,
+            "image_path": "parent.png",
+            "params": {"prompt": "1girl"}
+        }
+        res1 = self.client.post("/api/snapshots", json=payload_1)
+        self.assertEqual(res1.status_code, 201)
+        parent_id = res1.json()["id"]
+
+        # 2. source_snapshot_idを指定して2つ目のスナップショットを作成
+        payload_2 = {
+            "workflow_id": self.workflow.id,
+            "image_path": "child.png",
+            "params": {"prompt": "1girl, speech bubble"},
+            "source_snapshot_id": parent_id
+        }
+        res2 = self.client.post("/api/snapshots", json=payload_2)
+        self.assertEqual(res2.status_code, 201)
+        data = res2.json()
+        self.assertEqual(data["source_snapshot_id"], parent_id)
+
+        # 3. GET API で取得時にも source_snapshot_id が返却されるか検証
+        get_res = self.client.get(f"/api/snapshots/{data['id']}")
+        self.assertEqual(get_res.status_code, 200)
+        self.assertEqual(get_res.json()["source_snapshot_id"], parent_id)
+
+        # 4. list_snapshots でも source_snapshot_id が返却されるか検証
+        list_res = self.client.get(f"/api/snapshots?workflow_id={self.workflow.id}")
+        self.assertEqual(list_res.status_code, 200)
+        target = next(s for s in list_res.json() if s["id"] == data["id"])
+        self.assertEqual(target["source_snapshot_id"], parent_id)
+
+    def test_detect_bubble_endpoints(self):
+        import cv2
+        import numpy as np
+        import os
+        from app.config import settings
+
+        # 1. 200x200の黒い画像を作成し、中央に100x100の白い正方形（吹き出しのダミー）を描画
+        img = np.zeros((200, 200, 3), dtype=np.uint8)
+        cv2.rectangle(img, (50, 50), (150, 150), (255, 255, 255), -1)
+
+        filename = "test_bubble_detect.png"
+        image_path = settings.snapshot_path / filename
+        cv2.imwrite(str(image_path), img)
+
+        try:
+            # 2. スナップショットを作成
+            payload = {
+                "workflow_id": self.workflow.id,
+                "image_path": f"/api/snapshots/images/{filename}",
+                "params": {}
+            }
+            res = self.client.post("/api/snapshots", json=payload)
+            self.assertEqual(res.status_code, 201)
+            snapshot_id = res.json()["id"]
+
+            # 3. detect-bubble エンドポイントを呼び出し
+            detect_res = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble")
+            self.assertEqual(detect_res.status_code, 200)
+            data = detect_res.json()
+            self.assertIsNotNone(data["bounding_box"])
+            self.assertTrue(98 <= data["bounding_box"]["w"] <= 102)
+            self.assertTrue(98 <= data["bounding_box"]["h"] <= 102)
+
+            # 4. ROI指定で呼び出し
+            roi_payload = {
+                "roi": {"x": 40, "y": 40, "w": 120, "h": 120}
+            }
+            roi_res = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble-roi", json=roi_payload)
+            self.assertEqual(roi_res.status_code, 200)
+            roi_data = roi_res.json()
+            self.assertIsNotNone(roi_data["bounding_box"])
+            self.assertTrue(98 <= roi_data["bounding_box"]["w"] <= 102)
+            self.assertTrue(98 <= roi_data["bounding_box"]["h"] <= 102)
+
+            # 4-1. ROIを小さく指定（例: 50x50px）、中心点(100, 100)を含む範囲
+            roi_payload_small = {
+                "roi": {"x": 75, "y": 75, "w": 50, "h": 50}
+            }
+            roi_res_small = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble-roi", json=roi_payload_small)
+            self.assertEqual(roi_res_small.status_code, 200)
+            roi_data_small = roi_res_small.json()
+            self.assertIsNotNone(roi_data_small["bounding_box"])
+            self.assertTrue(98 <= roi_data_small["bounding_box"]["w"] <= 102)
+            self.assertTrue(98 <= roi_data_small["bounding_box"]["h"] <= 102)
+
+            # 4-2. ROIの境界が吹き出しを一部カットする状態で、中心点(100, 100)を含む
+            roi_payload_cut = {
+                "roi": {"x": 80, "y": 80, "w": 40, "h": 40}
+            }
+            roi_res_cut = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble-roi", json=roi_payload_cut)
+            self.assertEqual(roi_res_cut.status_code, 200)
+            roi_data_cut = roi_res_cut.json()
+            self.assertIsNotNone(roi_data_cut["bounding_box"])
+            self.assertTrue(98 <= roi_data_cut["bounding_box"]["w"] <= 102)
+            self.assertTrue(98 <= roi_data_cut["bounding_box"]["h"] <= 102)
+
+            # 4-3. ROIが吹き出し領域から完全に外れている場合（結果は None になるべき）
+            roi_payload_out = {
+                "roi": {"x": 0, "y": 0, "w": 30, "h": 30}
+            }
+            roi_res_out = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble-roi", json=roi_payload_out)
+            self.assertEqual(roi_res_out.status_code, 200)
+            roi_data_out = roi_res_out.json()
+            self.assertIsNone(roi_data_out["bounding_box"])
+
+            # 5. パラメータの動的変更を適用して検出動作の閾値変更を検証
+            from app.models import LlmPrompt
+            
+            param_record = self.db.query(LlmPrompt).filter(LlmPrompt.key == "bubble_detection_params").first()
+            if not param_record:
+                param_record = LlmPrompt(
+                    key="bubble_detection_params",
+                    description="吹き出し自動検出用画像処理パラメータ",
+                    content='{"min_area": 1000, "min_brightness": 150}'
+                )
+                self.db.add(param_record)
+                self.db.commit()
+
+            original_content = param_record.content
+            
+            try:
+                # 吹き出し(100x100px = 10000画素)に対して、閾値を 15000画素 にして検出されないことを検証
+                param_record.content = '{"min_area": 15000, "min_brightness": 150}'
+                self.db.commit()
+                
+                res_fail = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble")
+                self.assertEqual(res_fail.status_code, 200)
+                self.assertIsNone(res_fail.json()["bounding_box"])
+                
+            finally:
+                # 元に戻す
+                param_record.content = original_content
+                self.db.commit()
+
+            # 6. detect-bubble-debug エンドポイントの検証
+            debug_res = self.client.post(f"/api/snapshots/{snapshot_id}/detect-bubble-debug", json={})
+            self.assertEqual(debug_res.status_code, 200)
+            candidates = debug_res.json()["candidates"]
+            self.assertGreater(len(candidates), 0)
+            
+            pass_candidates = [c for c in candidates if c["status"] == "PASS"]
+            self.assertGreater(len(pass_candidates), 0)
+            
+            # ROI指定ありでのデバッグ
+            debug_roi_res = self.client.post(
+                f"/api/snapshots/{snapshot_id}/detect-bubble-debug",
+                json={"roi": {"x": 40, "y": 40, "w": 120, "h": 120}}
+            )
+            self.assertEqual(debug_roi_res.status_code, 200)
+            roi_candidates = debug_roi_res.json()["candidates"]
+            self.assertGreater(len(roi_candidates), 0)
+
+        finally:
+            if image_path.exists():
+                os.remove(image_path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 """LLM system prompts management router."""
 
 from datetime import datetime
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -99,4 +100,78 @@ async def scene_generate(payload: schemas.SceneGenerateRequest, db: Session = De
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class TranslateRequest(BaseModel):
+    text: str
+    direction: Literal["ja_to_en", "en_to_ja"]
+
+
+@router.post("/translate", response_model=str)
+async def translate(payload: TranslateRequest, db: Session = Depends(get_db)):
+    from app.services.llm_request import call_llm
+    
+    key = f"translation_{payload.direction}"
+    record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == key).first()
+    
+    if record and record.content and record.content.strip():
+        system_prompt = record.content
+    else:
+        if payload.direction == "ja_to_en":
+            system_prompt = (
+                "You are a professional prompt translator for AI image generation. "
+                "Translate the following Japanese text into natural, descriptive English prompt. "
+                "Output ONLY the translated English prompt. Do not output any chat dialog or explanations."
+            )
+        else:
+            system_prompt = (
+                "あなたはAI画像生成プロンプトの専門翻訳者です。与えられた英語のプロンプトを、自然な日本語に翻訳してください。翻訳結果のみを出力し、挨拶や余計な解説は一切含めないでください。"
+            )
+            
+    model_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "translation_model").first()
+    if model_record and model_record.content and model_record.content.strip():
+        model = model_record.content
+    else:
+        model = None
+
+    params_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "llm_params_translation").first()
+    llm_params = None
+    if params_record and params_record.content:
+        import json
+        try:
+            llm_params = json.loads(params_record.content)
+        except Exception as e:
+            pass
+        
+    try:
+        translated_text = await call_llm(
+            system_prompt=system_prompt,
+            user_prompt=payload.text,
+            model=model,
+            timeout=30.0,
+            llm_params=llm_params
+        )
+        return translated_text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SpeechDraftRequest(BaseModel):
+    snapshot_id: int
+
+
+@router.post("/speech-draft", response_model=dict)
+async def speech_draft(payload: SpeechDraftRequest, db: Session = Depends(get_db)):
+    from app.services.snapshot_service import SnapshotService
+    from app.services.speech_draft_service import generate_speech_draft
+    s = SnapshotService.get_snapshot(db, payload.snapshot_id)
+    if not s or not s.image_path:
+        raise HTTPException(status_code=404, detail="Snapshot or image not found")
+    try:
+        draft = await generate_speech_draft(s, db)
+        return {"draft": draft}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 

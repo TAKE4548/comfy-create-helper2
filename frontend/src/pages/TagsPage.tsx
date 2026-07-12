@@ -159,7 +159,14 @@ export function TagsPage() {
         })) : [],
         target_base_model_ids: tagForm.target_base_model_ids
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tag-sets'] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tag-sets'] })
+      setEditTagSet(null)
+      setSelectedTagSetForDetail(null)
+    },
+    onError: () => {
+      alert('タグセットの保存に失敗しました。')
+    }
   })
 
   const deleteTagSet = useMutation({
@@ -259,7 +266,8 @@ export function TagsPage() {
       subsets: ts.subsets ? ts.subsets.map((s: any) => ({
         name: s.name,
         tags: s.tags.join(', ')
-      })) : []
+      })) : [],
+      target_base_model_ids: ts.target_base_model_ids ?? []
     })
   }
 

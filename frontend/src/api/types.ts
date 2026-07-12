@@ -133,6 +133,7 @@ export interface SnapshotSummary {
   workflow_id: number
   image_path: string | null
   created_at: string
+  source_snapshot_id?: number
 }
 
 export interface Snapshot {
@@ -141,6 +142,7 @@ export interface Snapshot {
   params: Record<string, unknown>
   image_path: string | null
   created_at: string
+  source_snapshot_id?: number
   loras?: SnapshotLoraRead[]
   tag_sets?: SnapshotTagSetRead[]
 }
@@ -151,9 +153,32 @@ export interface SnapshotCreate {
   params: Record<string, unknown>
   album_id?: number
   new_album_name?: string
+  source_snapshot_id?: number
   loras?: SnapshotLoraCreate[]
   tag_sets?: SnapshotTagSetCreate[]
 }
+
+export interface BubbleDetectResponse {
+  bounding_box: { x: number; y: number; w: number; h: number } | null
+  confidence: number
+}
+
+export interface BubbleCandidate {
+  id: number
+  x: number
+  y: number
+  w: number
+  h: number
+  area: number
+  aspect_ratio: number
+  mean_brightness: number
+  status: 'PASS' | 'FAIL_AREA' | 'FAIL_ROI' | 'FAIL_ASPECT' | 'FAIL_BRIGHTNESS'
+}
+
+export interface SpeechDraftResponse {
+  draft: string
+}
+
 
 // ─── Album ──────────────────────────────────────────────────────
 

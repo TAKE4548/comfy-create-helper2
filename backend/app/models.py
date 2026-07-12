@@ -145,6 +145,7 @@ class Snapshot(Base):
     params: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: {role: value}
     image_path: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    source_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id", ondelete="SET NULL"), nullable=True)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="snapshots")
     album_items: Mapped[list["AlbumItem"]] = relationship(

@@ -7,7 +7,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 180.0, model: str = None) -> str:
+async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 180.0, model: str = None, llm_params: dict = None) -> str:
     """Call the LLM server (OpenAI-compatible API) asynchronously."""
     prompt_tokens = (len(system_prompt or "") + len(user_prompt or "")) / 3
     num_ctx = int(prompt_tokens) + 8192
@@ -36,6 +36,12 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 180.0,
         "stream": False,
         "temperature": 0.2,
     }
+
+    if llm_params:
+        valid_keys = {"temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty"}
+        for k, v in llm_params.items():
+            if k in valid_keys and v is not None:
+                payload[k] = v
 
     url = f"{settings.llm_base_url}/chat/completions"
     async with httpx.AsyncClient(timeout=timeout) as client:

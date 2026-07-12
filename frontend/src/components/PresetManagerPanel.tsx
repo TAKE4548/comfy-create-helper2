@@ -5,21 +5,21 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import type { WorkflowPreset } from '../api/types';
 
-type SetCheckState = { id: number; checked: boolean };
+type SetCheckState = { id: string | number; checked: boolean };
 
 export type PresetManagerPanelProps = {
   presets: WorkflowPreset[];
   onRename: (id: number, newName: string) => Promise<void>;
   onReorder: (ordered_ids: number[]) => Promise<void>;
   isPending?: boolean;
-  sets: SetCheckState[];
-  activeSetId: number | null;
-  onToggleCheck: (id: number) => void;
-  onDelete: (id: number) => void;
-  onSaveOverwrite: (id: number, name: string) => void;
-  onSaveAsNew: (name: string) => void;
-  onOpenAsTab: (id: number) => void;
-  onOpenSceneGenerator: () => void;
+  sets?: SetCheckState[];
+  activeSetId?: string | number | null;
+  onToggleCheck?: (id: string | number) => void;
+  onDelete?: (id: number) => void;
+  onSaveOverwrite?: (id: number, name: string) => void;
+  onSaveAsNew?: (name: string) => void;
+  onOpenAsTab?: (id: string | number) => void;
+  onOpenSceneGenerator?: () => void;
 };
 
 export function PresetManagerPanel({
@@ -133,11 +133,11 @@ export function PresetManagerPanel({
                   onStartEdit={() => startEdit(preset)}
                   onSaveEdit={() => saveEdit(preset.id)}
                   onCancelEdit={cancelEdit}
-                  isChecked={sets.find((x) => String(x.id) === String(preset.id))?.checked ?? false}
-                  isActive={activeSetId === preset.id}
-                  onToggleCheck={() => onToggleCheck(preset.id)}
-                  onDelete={() => onDelete(preset.id)}
-                  onOpenAsTab={() => onOpenAsTab(preset.id)}
+                  isChecked={sets ? (sets.find((x) => String(x.id) === String(preset.id))?.checked ?? false) : false}
+                  isActive={activeSetId !== undefined && activeSetId !== null ? String(activeSetId) === String(preset.id) : false}
+                  onToggleCheck={onToggleCheck ? () => onToggleCheck(preset.id) : undefined}
+                  onDelete={onDelete ? () => onDelete(preset.id) : undefined}
+                  onOpenAsTab={onOpenAsTab ? () => onOpenAsTab(preset.id) : undefined}
                 />
               ))}
             </div>
@@ -147,7 +147,7 @@ export function PresetManagerPanel({
 
       {/* Bottom Actions */}
       <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 space-y-3">
-        {activeSetId !== null && (
+        {activeSetId !== undefined && activeSetId !== null && onSaveOverwrite && onSaveAsNew && (
           <div className="space-y-1.5">
             <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">現在の設定</span>
             <div className="flex gap-2">
@@ -155,7 +155,7 @@ export function PresetManagerPanel({
                 type="button"
                 id="preset-overwrite-btn"
                 onClick={() => {
-                  const p = presets.find((x) => x.id === activeSetId);
+                  const p = presets.find((x) => String(x.id) === String(activeSetId));
                   if (p) onSaveOverwrite(p.id, p.name);
                 }}
                 className="flex-1 py-1.5 rounded-lg bg-surface border border-[rgba(255,255,255,0.08)] text-zinc-300 text-[10px] font-semibold hover:bg-white/5 transition-all"
@@ -174,7 +174,7 @@ export function PresetManagerPanel({
           </div>
         )}
 
-        {showSaveAs && (
+        {showSaveAs && onSaveAsNew && (
           <div className="flex gap-1.5">
             <input
               id="preset-new-name-input"
@@ -208,46 +208,50 @@ export function PresetManagerPanel({
           </div>
         )}
 
-        <div className="flex justify-between items-center">
-          <button
-            type="button"
-            id="preset-check-all-btn"
-            onClick={() =>
-              presets.forEach((p) => {
-                const s = sets.find((x) => String(x.id) === String(p.id));
-                if (!s?.checked) onToggleCheck(p.id);
-              })
-            }
-            className="text-[10px] text-zinc-500 hover:text-zinc-355 transition-colors"
-          >
-            全選択
-          </button>
-          <button
-            type="button"
-            id="preset-uncheck-all-btn"
-            onClick={() =>
-              presets.forEach((p) => {
-                const s = sets.find((x) => String(x.id) === String(p.id));
-                if (s?.checked) onToggleCheck(p.id);
-              })
-            }
-            className="text-[10px] text-zinc-500 hover:text-zinc-355 transition-colors"
-          >
-            全解除
-          </button>
-        </div>
+        {sets && onToggleCheck && (
+          <div className="flex justify-between items-center">
+            <button
+              type="button"
+              id="preset-check-all-btn"
+              onClick={() =>
+                presets.forEach((p) => {
+                  const s = sets.find((x) => String(x.id) === String(p.id));
+                  if (!s?.checked) onToggleCheck(p.id);
+                })
+              }
+              className="text-[10px] text-zinc-500 hover:text-zinc-355 transition-colors"
+            >
+              全選択
+            </button>
+            <button
+              type="button"
+              id="preset-uncheck-all-btn"
+              onClick={() =>
+                presets.forEach((p) => {
+                  const s = sets.find((x) => String(x.id) === String(p.id));
+                  if (s?.checked) onToggleCheck(p.id);
+                })
+              }
+              className="text-[10px] text-zinc-500 hover:text-zinc-355 transition-colors"
+            >
+              全解除
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-[rgba(255,255,255,0.06)] pt-3">
-        <button
-          id="scene-generator-from-preset-btn"
-          type="button"
-          onClick={onOpenSceneGenerator}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[rgba(124,111,221,0.08)] border border-[#7C6FDD]/30 text-[#7C6FDD] text-xs font-semibold hover:bg-[rgba(124,111,221,0.15)] transition-all"
-        >
-          🎬 Scene Generator で複数プリセットを自動生成
-        </button>
-      </div>
+      {onOpenSceneGenerator && (
+        <div className="border-t border-[rgba(255,255,255,0.06)] pt-3">
+          <button
+            id="scene-generator-from-preset-btn"
+            type="button"
+            onClick={onOpenSceneGenerator}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[rgba(124,111,221,0.08)] border border-[#7C6FDD]/30 text-[#7C6FDD] text-xs font-semibold hover:bg-[rgba(124,111,221,0.15)] transition-all"
+          >
+            🎬 Scene Generator で複数プリセットを自動生成
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -275,11 +279,11 @@ function SortablePresetRow({
   onStartEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
-  isChecked: boolean;
-  isActive: boolean;
-  onToggleCheck: () => void;
-  onDelete: () => void;
-  onOpenAsTab: () => void;
+  isChecked?: boolean;
+  isActive?: boolean;
+  onToggleCheck?: () => void;
+  onDelete?: () => void;
+  onOpenAsTab?: () => void;
 }) {
   const {
     attributes,
@@ -301,7 +305,7 @@ function SortablePresetRow({
     <div
       ref={setNodeRef}
       style={style}
-      onClick={() => { if (!isEditing) onOpenAsTab() }}
+      onClick={() => { if (!isEditing && onOpenAsTab) onOpenAsTab() }}
       className={`flex items-center gap-3 px-3 py-2 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg transition-all cursor-pointer ${
         isDragging ? 'border-accent-green/40 shadow-xl' : 'hover:bg-white/[0.01]'
       }`}
@@ -309,7 +313,7 @@ function SortablePresetRow({
       {/* Drag Handle */}
       <button
         type="button"
-        className="text-zinc-500 hover:text-zinc-350 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
+        className="text-zinc-500 hover:text-zinc-355 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
         {...attributes}
         {...listeners}
       >
@@ -317,14 +321,16 @@ function SortablePresetRow({
       </button>
 
       {/* Checkbox */}
-      <input
-        type="checkbox"
-        id={`preset-check-${preset.id}`}
-        checked={isChecked}
-        onChange={onToggleCheck}
-        onClick={(e) => e.stopPropagation()}
-        className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer flex-shrink-0"
-      />
+      {onToggleCheck && (
+        <input
+          type="checkbox"
+          id={`preset-check-${preset.id}`}
+          checked={isChecked ?? false}
+          onChange={onToggleCheck}
+          onClick={(e) => e.stopPropagation()}
+          className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer flex-shrink-0"
+        />
+      )}
 
       {/* Preset Name */}
       <div className="flex-1 min-w-0" onDoubleClick={onStartEdit}>
@@ -367,15 +373,17 @@ function SortablePresetRow({
             >
               <Pencil size={13} />
             </button>
-            <button
-              type="button"
-              id={`preset-delete-btn-${preset.id}`}
-              onClick={(e) => { e.stopPropagation(); onDelete() }}
-              className="p-1 text-zinc-500 hover:text-red-400 rounded hover:bg-red-500/10 transition-all"
-              title="削除"
-            >
-              <Trash2 size={13} />
-            </button>
+            {onDelete && (
+              <button
+                type="button"
+                id={`preset-delete-btn-${preset.id}`}
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="p-1 text-zinc-500 hover:text-red-400 rounded hover:bg-red-500/10 transition-all"
+                title="削除"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </>
         )}
       </div>

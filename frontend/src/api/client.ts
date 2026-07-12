@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate } from './types'
 
 const BASE_URL = '/api'
 
@@ -11,9 +11,13 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const headers: Record<string, string> = { ...options.headers as Record<string, string> }
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+  }
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers,
   })
   if (!res.ok) {
     const text = await res.text()
@@ -63,6 +67,26 @@ export const snapshotsApi = {
   patch: (id: number, data: { lora_ids: number[]; tag_set_ids: number[] }) =>
     request<Snapshot>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/snapshots/${id}`, { method: 'DELETE' }),
+  detectBubble: (id: number) =>
+    request<BubbleDetectResponse>(`/snapshots/${id}/detect-bubble`, { method: 'POST' }),
+  detectBubbleROI: (id: number, roi: { x: number; y: number; w: number; h: number }) =>
+    request<BubbleDetectResponse>(`/snapshots/${id}/detect-bubble-roi`, {
+      method: 'POST',
+      body: JSON.stringify({ roi }),
+    }),
+  detectBubbleDebug: (id: number, roi?: { x: number; y: number; w: number; h: number } | null) =>
+    request<{ candidates: BubbleCandidate[] }>(`/snapshots/${id}/detect-bubble-debug`, {
+      method: 'POST',
+      body: JSON.stringify({ roi }),
+    }),
+  upload: (blob: Blob) => {
+    const formData = new FormData()
+    formData.append('file', blob, 'snapshot.png')
+    return request<{ image_path: string }>('/snapshots/upload', {
+      method: 'POST',
+      body: formData,
+    })
+  },
 }
 
 // ─── Albums ─────────────────────────────────────────────────────
@@ -145,6 +169,16 @@ export const llmPromptsApi = {
     request<LlmPrompt>('/llm-prompts/current-model', {
       method: 'PUT',
       body: JSON.stringify({ model }),
+    }),
+  translate: (data: { text: string; direction: 'ja_to_en' | 'en_to_ja' }) =>
+    request<string>('/llm-prompts/translate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  speechDraft: (snapshot_id: number) =>
+    request<SpeechDraftResponse>('/llm-prompts/speech-draft', {
+      method: 'POST',
+      body: JSON.stringify({ snapshot_id }),
     }),
 }
 

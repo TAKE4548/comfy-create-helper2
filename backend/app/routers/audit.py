@@ -16,6 +16,16 @@ async def run_audit(payload: schemas.AuditRequest, db: Session = Depends(get_db)
     prompt_rows = db.query(models.LlmPrompt).all()
     system_prompts = {row.key: row.content for row in prompt_rows}
 
+    # Load and parse llm_params_audit
+    params_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "llm_params_audit").first()
+    llm_params = None
+    if params_record and params_record.content:
+        import json
+        try:
+            llm_params = json.loads(params_record.content)
+        except Exception:
+            pass
+
     raw_result = await llm_service.run_audit(
         audit_types=payload.audit_types,
         positive=payload.positive,

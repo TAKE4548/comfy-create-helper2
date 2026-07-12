@@ -29,6 +29,7 @@ interface TagChipEditorProps {
   onChange: (val: string) => void;
   placeholder?: string;
   variant?: string;
+  defaultTextMode?: boolean;
 }
 
 export const TagChipEditor: React.FC<TagChipEditorProps> = ({
@@ -36,9 +37,10 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   value,
   onChange,
   placeholder = 'Add tag...',
+  defaultTextMode = false,
 }) => {
   const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(parseToChips(value));
-  const [isTextMode, setIsTextMode] = useState(false);
+  const [isTextMode, setIsTextMode] = useState(defaultTextMode);
   const [textValue, setTextValue] = useState('');
   const [inputValue, setInputValue] = useState('');
 
@@ -74,6 +76,14 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
       }
     }
   }, [value, setChips, isTextMode]);
+
+  // 外部から defaultTextMode プロップスが更新されたら同期する
+  useEffect(() => {
+    setIsTextMode(defaultTextMode);
+    if (defaultTextMode) {
+      setTextValue(value);
+    }
+  }, [defaultTextMode]);
 
   // 内部のチップステートが変わったら外部へ通知
   useEffect(() => {

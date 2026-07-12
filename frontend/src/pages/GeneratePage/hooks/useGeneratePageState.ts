@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi } from '../../../api/client'
-import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel } from '../../../api/types'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi, llmPromptsApi } from '../../../api/client'
+import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel, LlmPrompt } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { useWorkflowParams, getInitialParams } from './useWorkflowParams'
@@ -177,6 +177,155 @@ export function useGeneratePageState() {
     enabled: !!comfyUrl,
     retry: false,
   })
+
+  const [isAnimaMode, setIsAnimaMode] = useState(false)
+  const [isTranslationOpen, setIsTranslationOpen] = useState(false)
+  const [translationTargetRole, setTranslationTargetRole] = useState<string | null>(null)
+  const [translationJa, setTranslationJa] = useState('')
+  const [translationEn, setTranslationEn] = useState('')
+  const [isTranslating, setIsTranslating] = useState(false)
+
+  const { data: prompts } = useQuery({
+    queryKey: ['llm-prompts'],
+    queryFn: () => llmPromptsApi.list() as Promise<LlmPrompt[]>,
+  })
+
+  // 自動連動ロジック
+  useEffect(() => {
+    if (workflow && baseModels) {
+      const selectedModel = baseModels.find((m) => m.id === workflow.target_base_model_id)
+      if (selectedModel && selectedModel.name === 'Anima') {
+        setIsAnimaMode(true)
+      } else {
+        setIsAnimaMode(false)
+      }
+    }
+  }, [workflow, baseModels])
+
+  const translationDebounce = useMemo(() => {
+    const record = prompts?.find((p) => p.key === 'translation_debounce')
+    if (record && record.content) {
+      const val = parseInt(record.content, 10)
+      if (!isNaN(val)) return val
+    }
+    return 500
+  }, [prompts])
+
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const debounceTimerRef = useRef<any>(null)
+
+  const triggerTranslationJaToEn = (text: string) => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+
+    if (!text.trim()) {
+      setTranslationEn('')
+      return
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      setIsTranslating(true)
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      try {
+        const result = await llmPromptsApi.translate({
+          text,
+          direction: 'ja_to_en'
+        })
+        if (!controller.signal.aborted) {
+          setTranslationEn(result)
+        }
+      } catch (err) {
+        console.error('Translation error:', err)
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsTranslating(false)
+        }
+      }
+    }, translationDebounce)
+  }
+
+  const triggerTranslationEnToJa = (text: string) => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    if (abortControllerRef.current) abortControllerRef.current.abort()
+
+    if (!text.trim()) {
+      setTranslationJa('')
+      if (translationTargetRole) {
+        setParamValues({
+          ...paramValues,
+          [translationTargetRole]: ''
+        })
+      }
+      return
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      setIsTranslating(true)
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      try {
+        const result = await llmPromptsApi.translate({
+          text,
+          direction: 'en_to_ja'
+        })
+        if (!controller.signal.aborted) {
+          setTranslationJa(result)
+          if (translationTargetRole) {
+            setParamValues({
+              ...paramValues,
+              [translationTargetRole]: result
+            })
+          }
+        }
+      } catch (err) {
+        console.error('Translation error:', err)
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsTranslating(false)
+        }
+      }
+    }, translationDebounce)
+  }
+
+  const targetPromptValue = translationTargetRole ? (paramValues[translationTargetRole] || '') : ''
+  useEffect(() => {
+    if (targetPromptValue !== translationJa) {
+      setTranslationJa(targetPromptValue)
+      if (isTranslationOpen) {
+        triggerTranslationJaToEn(targetPromptValue)
+      }
+    }
+  }, [targetPromptValue])
+
+  const handleTranslationJaChange = (val: string) => {
+    setTranslationJa(val)
+    if (translationTargetRole) {
+      setParamValues({
+        ...paramValues,
+        [translationTargetRole]: val
+      })
+    }
+    triggerTranslationJaToEn(val)
+  }
+
+  const handleTranslationEnChange = (val: string) => {
+    setTranslationEn(val)
+    triggerTranslationEnToJa(val)
+  }
+
+  const toggleTranslationWindow = (role: string) => {
+    if (isTranslationOpen && translationTargetRole === role) {
+      setIsTranslationOpen(false)
+      setTranslationTargetRole(null)
+    } else {
+      setTranslationTargetRole(role)
+      const currentPrompt = paramValues[role] || ''
+      setTranslationJa(currentPrompt)
+      setIsTranslationOpen(true)
+      triggerTranslationJaToEn(currentPrompt)
+    }
+  }
 
   // ── Extracted hooks ──────────────────────────────────────────
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
@@ -1019,5 +1168,17 @@ export function useGeneratePageState() {
     setIsSceneGeneratorOpen,
     baseModels,
     updateWorkflowBaseModelMutation,
+
+    // 翻訳とAnima特化モード
+    isAnimaMode,
+    setIsAnimaMode,
+    isTranslationOpen,
+    translationTargetRole,
+    toggleTranslationWindow,
+    translationJa,
+    handleTranslationJaChange,
+    translationEn,
+    handleTranslationEnChange,
+    isTranslating,
   }
 }

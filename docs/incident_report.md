@@ -1,8 +1,8 @@
 # インシデントレポート
 
-**報告日**: 2026-07-09  
-**報告者**: Incident Analyst (自動生成)  
-**関連PBI**: REQ-112 (アーカイブ)
+**報告日**: 2026-07-12  
+**報告者**: Incident Analyst  
+**対象事象**: ROI（関心領域）範囲指定時の吹き出し検出失敗  
 
 ---
 
@@ -10,62 +10,56 @@
 
 | 項目 | 内容 |
 |---|---|
-| 報告内容 | プリセット管理モーダル内でプリセットを選択してもタブとして開けない |
-| 期待動作 | プリセット管理モーダル内の任意プリセットをクリック/選択するとタブバーにタブとして追加され、アクティブになること |
-| 実際の動作 | タブが一切開かれない。行クリックの操作自体が未実装 |
-| 影響範囲 | GeneratePage — プリセット管理モーダル (`isPresetManagerOpen=true` 時) |
+| 報告内容 | フロントエンドの吹き出し編集ダイアログでROI範囲を指定（ドラッグ）しても、吹き出しの検出ができず、「ROI指定範囲内に吹き出しを検出できませんでした。」というアラートが表示される。 |
+| 期待動作 | 指定したROI領域に含まれる吹き出しが正常に検出され、バウンディングボックスが描画されること。 |
+| 実際の動作 | バックエンドでの検出結果が `None`（検出なし）として返却される。 |
+| 影響範囲 | ROI指定による吹き出し自動検出機能全般 |
 
 ---
 
 ## 2. 再現手順 (Reproduction Steps)
 
-1. GeneratePage を開く
-2. ワークフローを選択する
-3. タブバー右端の「📑 管理」ボタンをクリックしてプリセット管理モーダルを開く
-4. プリセット一覧内の任意のプリセット行をクリックする
-5. **結果**: タブバーに変化なし。タブが開かれない
+1. フロントエンドでスナップショットの「吹き出し編集」モーダル（[SpeechBubbleEditorModal.tsx](../frontend/src/components/SpeechBubbleEditorModal.tsx)）を開く。
+2. 吹き出しが存在する領域の周囲をドラッグしてROI（関心領域）を指定する。
+3. ドラッグが終了すると、[snapshotsApi.detectBubbleROI](../frontend/src/api/client.ts) が実行され、バックエンドの `/api/snapshots/{snapshot_id}/detect-bubble-roi` にROI座標が送信される。
+4. **結果**: 検出失敗のアラートが表示される。
 
 ---
 
 ## 3. 根本原因分析 (Root Cause Analysis)
 
-### 分類: **Type A — 実装バグ（配線漏れ）**
+<root_cause_analysis>
+### 分類: **Type A — 実装上のバグ（画像処理ロジックの不備）**
 
-Store インフラは完成しているが、UI コンポーネントへの配線が3箇所で欠落している。
+バックエンドの吹き出し検出モジュール（[bubble_detector.py](../backend/app/services/bubble_detector.py) の `detect_bubble` 関数）における画像切り出し（クロップ）処理の順序とフィルタリング判定基準に起因しています。
 
-| # | 欠落箇所 | ファイル | 証拠 |
-|---|---|---|---|
-| 1 | `PresetManagerPanelProps` に `onOpenAsTab` コールバックが未定義 | `PresetManagerPanel.tsx:10-22` | 型定義に該当 prop なし |
-| 2 | `SortablePresetRow` にタブを開く UI 要素（ボタン / クリックハンドラ）がない | `PresetManagerPanel.tsx:295-377` | onClick 実装なし |
-| 3 | `GeneratePage.tsx` のモーダル部でストアの `openPreset` を destructure せず、パネルに渡していない | `GeneratePage.tsx:29,159-178` | `openPreset` の配線なし |
+#### 原因1: 面積ノイズ除去しきい値 (`area < 1000`) の誤適用
+- 現在の実装では、ROIが指定されると、検出処理の前に画像をその範囲で切り出しています (`img = img[y:y+h, x:x+w]`)。
+- 切り出した部分画像に対して `cv2.findContours` で輪郭を検出しますが、ROIで狭い範囲を指定した場合、抽出される吹き出しの面積自体も小さくなります。
+- ロジック内で `if area < 1000: continue` というノイズ除去判定を行っているため、小さなROI領域で検出された吹き出しは、すべて「ノイズ」として除外されてしまい、検出結果が `None` となっていました。
 
-### 既存インフラ（問題なし）
-
-| 機能 | ファイル・行 | 状態 |
-|---|---|---|
-| `openPreset(id)` ストアアクション | `useGenerationStore.ts:1286-1292` | ✅ 実装済み |
-| `openPreset` フック公開 | `useGeneratePageState.ts:126-127` | ✅ 公開済み |
-| タブバーの `openPresetIds` フィルタリング | `DesktopLayout.tsx:255` | ✅ 動作中 |
+#### 原因2: ROI境界部分でのエッジの途切れ（未閉合）
+- 画像を事前にクロップすると、吹き出しの輪郭がクロップされた画像の境界（端）と接したり、わずかに重なったりすることがあります。
+- この状態で `cv2.Canny` によるエッジ検出を行うと、画像の端でエッジが途切れて（閉じなくなって）しまいます。
+- `cv2.RETR_EXTERNAL` を使った `cv2.findContours` は閉じた外輪郭のみを検出するため、エッジが閉じなかった輪郭は抽出から漏れることになり、検出に失敗します。
+</root_cause_analysis>
 
 ---
 
 ## 4. 修正方針 (Recommended Fix Scope)
 
-> ⚠️ 以下は **提案のみ**。実装は `/dev-design` または `/dev-task` ワークフローで行うこと。
+> [!IMPORTANT]
+> 以下は調査に基づく修正方針の整理です。実際のコード修正は、本レポートについてユーザーの合意を得た後、`/dev-design` および `/dev-task` ワークフローにて実行します。
 
-修正対象は以下 3 ファイル:
-
-1. **`PresetManagerPanel.tsx`**
-   - `PresetManagerPanelProps` に `onOpenAsTab?: (id: number) => void` を追加
-   - `SortablePresetRow` の props/UI にタブ開く操作を追加（例: 行クリックで `onOpenAsTab` を呼ぶ）
-
-2. **`GeneratePage.tsx`**
-   - `state` から `openPreset` を destructure
-   - `<PresetManagerPanel>` に `onOpenAsTab={(id) => { openPreset(id); setActiveSetId(id); setIsPresetManagerOpen(false) }}` を渡す
+1. **画像全体の処理化**:
+   - `detect_bubble` 内で、画像のクロップ処理を最初に行うのをやめます。
+   - グレースケール化、ぼかし、Cannyエッジ検出、輪郭抽出（`cv2.findContours` および `area < 1000` のノイズ除去判定）は**画像全体**に対して実行します。これによって、エッジが閉じない問題や面積しきい値による誤除外を回避します。
+2. **ROI範囲による判定の適用**:
+   - 抽出された輪郭候補のバウンディングボックス（`x2, y2, w2, h2`）が、指定された `roi` 範囲に含まれるか（あるいは一定以上の面積比で重なっているか）を検証し、条件を満たした輪郭のみを候補とします。
+   - これにより、ROIの指定範囲内にある吹き出しだけを適切にフィルタリングできます。
 
 ---
 
-## 5. 次アクション
+## 5. 次のアクション
 
-- `/dev-design` ワークフローで実装計画を策定
-- 上記 2 ファイルのみの変更で完結する見込み（影響範囲は小さい）
+この調査内容と修正方針（Type A インシデント）について問題ない場合、ユーザーの承認（YES / NO）を得て、タスク登録および `/dev-design` へ移行します。

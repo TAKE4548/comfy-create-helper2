@@ -35,8 +35,8 @@ export const DesktopLayout = ({
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
     setComfyUrl,
-    sets, activeSetId, removeSet, renameSet,
-    toggleSetChecked, setAllSetsChecked, setActiveSetId,
+    sets, activeSetId, removeSet,
+    toggleSetChecked, setActiveSetId,
     openPresetIds, undo, redo, canUndo, canRedo,
     activeBatch,
     
@@ -51,7 +51,6 @@ export const DesktopLayout = ({
     sortOrder, setSortOrder,
     setIsPresetManagerOpen,
     setWorkflowManageMode,
-    setIsSceneGeneratorOpen,
     baseModels,
     updateWorkflowBaseModelMutation,
     
@@ -97,10 +96,18 @@ export const DesktopLayout = ({
     setIsSaveModalOpen,
     updateWorkflowMutation,
     handleLoadPreset,
-    handleUpdatePreset,
-    handleDeletePreset,
     handleCreatePreset,
     saveDefaultParamsMutation,
+    isAnimaMode,
+    setIsAnimaMode,
+    isTranslationOpen,
+    translationTargetRole,
+    toggleTranslationWindow,
+    translationJa,
+    handleTranslationJaChange,
+    translationEn,
+    handleTranslationEnChange,
+    isTranslating,
   } = state
 
   const [showCopyModal, setShowCopyModal] = useState(false)
@@ -118,6 +125,46 @@ export const DesktopLayout = ({
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+
+  // 翻訳ウィンドウのドラッグ状態
+  const [translationPosition, setTranslationPosition] = useState({ x: 450, y: 120 })
+  const [isDraggingTranslation, setIsDraggingTranslation] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.drag-handle')) {
+      setIsDraggingTranslation(true)
+      setDragOffset({
+        x: e.clientX - translationPosition.x,
+        y: e.clientY - translationPosition.y
+      })
+    }
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingTranslation) {
+        setTranslationPosition({
+          x: e.clientX - dragOffset.x,
+          y: e.clientY - dragOffset.y
+        })
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsDraggingTranslation(false)
+    }
+
+    if (isDraggingTranslation) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDraggingTranslation, dragOffset])
 
   useEffect(() => {
     if (selectedWorkflowId !== null && typeof fetchBypassProfiles === 'function') {
@@ -222,6 +269,18 @@ export const DesktopLayout = ({
               {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
+          {selectedWorkflowId && (
+            <label className="flex items-center gap-1.5 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface-2/60 border border-[rgba(255,255,255,0.06)] rounded-md px-2 py-1 hover:bg-surface-2 transition-colors">
+              <input
+                id="anima-mode-toggle"
+                type="checkbox"
+                checked={isAnimaMode}
+                onChange={(e) => setIsAnimaMode(e.target.checked)}
+                className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
+              />
+              <span>Anima特化</span>
+            </label>
+          )}
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
@@ -363,7 +422,18 @@ export const DesktopLayout = ({
                   <span>{m.display_name}</span>
                 </button>
                 {!isCollapsed && (
-                  <div className="relative">
+                  <div className="relative flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleTranslationWindow(m.role!)}
+                      className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
+                        isTranslationOpen && translationTargetRole === m.role
+                          ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
+                          : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
+                      }`}
+                    >
+                      <span>翻訳</span>
+                    </button>
                     <button type="button" id={`add-asset-btn-${m.role!}`}
                       onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
                       className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
@@ -388,7 +458,8 @@ export const DesktopLayout = ({
                   <TagChipEditor id={`prompt-${m.role!}`} value={paramValues[m.role!] ?? ''}
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
-                    variant={isNegative ? 'negative' : 'positive'} />
+                    variant={isNegative ? 'negative' : 'positive'}
+                    defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined} />
                   <AppliedAssetChips
                     role={m.role!}
                     appliedAssets={appliedAssets}
@@ -878,6 +949,65 @@ export const DesktopLayout = ({
           >
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {isTranslationOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            left: `${translationPosition.x}px`,
+            top: `${translationPosition.y}px`,
+            zIndex: 9999,
+          }}
+          className="w-80 bg-surface border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+          onMouseDown={handleMouseDown}
+        >
+          {/* Drag Handle & Header */}
+          <div className="drag-handle cursor-move flex items-center justify-between px-3 py-2 bg-surface-2 border-b border-[rgba(255,255,255,0.06)] select-none">
+            <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 animate-fade-in">
+              翻訳: {textMappings.find((m) => m.role === translationTargetRole)?.display_name || 'プロンプト'}
+              {isTranslating && (
+                <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-[#7C6FDD]" />
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (translationTargetRole) {
+                  toggleTranslationWindow(translationTargetRole)
+                }
+              }}
+              className="text-zinc-500 hover:text-zinc-300 p-0.5 rounded transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          {/* Content */}
+          <div className="p-3 space-y-3" onMouseDown={(e) => e.stopPropagation()}>
+            <div>
+              <label className="block text-[10px] text-zinc-500 mb-1">日本語</label>
+              <textarea
+                value={translationJa}
+                onChange={(e) => handleTranslationJaChange(e.target.value)}
+                placeholder="日本語のプロンプトを入力..."
+                rows={4}
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-zinc-500 mb-1">
+                英語 ({textMappings.find((m) => m.role === translationTargetRole)?.display_name || '入力欄'} に連動)
+              </label>
+              <textarea
+                value={translationEn}
+                onChange={(e) => handleTranslationEnChange(e.target.value)}
+                placeholder="English prompt will appear here..."
+                rows={4}
+                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar resize-none"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -346,6 +346,7 @@ export function TagSetDetailModal({
       tags: tagSet.tags.join(', '),
       thumbnail_path: tagSet.thumbnail_path ?? undefined,
       target_base_model_ids: tagSet.target_base_model_ids ?? [],
+      subsets: tagSet.subsets ? tagSet.subsets.map((s: any) => ({ name: s.name, tags: s.tags.join(', ') })) : [],
     })
     setIsEditing(true)
   }

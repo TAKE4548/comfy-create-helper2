@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
-  Loader2, ScanLine, Settings, ImageOff, Download, CheckSquare, Square, Plus,
+  Loader2, Settings, ImageOff, Download, CheckSquare, Square, Plus,
   ChevronRight, ChevronDown, Zap, Camera, X
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
@@ -32,8 +32,8 @@ export const MobileLayout = ({
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
     activeBatch,
-    sets, activeSetId, removeSet, renameSet,
-    toggleSetChecked, setAllSetsChecked, setActiveSetId,
+    sets, activeSetId, removeSet,
+    toggleSetChecked, setActiveSetId,
     openPresetIds, undo, redo, canUndo, canRedo,
     
     // state properties
@@ -49,11 +49,8 @@ export const MobileLayout = ({
     setIsModalPreviewOpen,
     setIsJobModalOpen,
     sortOrder, setSortOrder,
-    isPresetOpen, setIsPresetOpen,
-    newPresetName, setNewPresetName,
     setIsPresetManagerOpen,
     handleLoadPreset,
-    handleDeletePreset,
     baseModels,
     updateWorkflowBaseModelMutation,
     setWorkflowManageMode,
@@ -98,6 +95,8 @@ export const MobileLayout = ({
     saveDefaultParamsMutation,
     updateWorkflowMutation,
     handleCreatePreset,
+    isAnimaMode,
+    setIsAnimaMode,
   } = state
 
   const [showCopyModal, setShowCopyModal] = useState(false)
@@ -221,6 +220,18 @@ export const MobileLayout = ({
             <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
             {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
+          {selectedWorkflowId && (
+            <label className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 hover:bg-surface-2 transition-colors">
+              <input
+                id="anima-mode-toggle-mobile"
+                type="checkbox"
+                checked={isAnimaMode}
+                onChange={(e) => setIsAnimaMode(e.target.checked)}
+                className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
+              />
+              <span>Anima特化</span>
+            </label>
+          )}
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">

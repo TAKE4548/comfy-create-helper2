@@ -43,6 +43,7 @@ class SnapshotCreate(BaseModel):
     new_album_name: Optional[str] = None
     loras: list[SnapshotLoraCreate] = []
     tag_sets: list[SnapshotTagSetCreate] = []
+    source_snapshot_id: Optional[int] = None
 
 
 class SnapshotRead(BaseModel):
@@ -54,6 +55,7 @@ class SnapshotRead(BaseModel):
     created_at: datetime
     loras: list[SnapshotLoraRead] = []
     tag_sets: list[SnapshotTagSetRead] = []
+    source_snapshot_id: Optional[int] = None
 
 
 class SnapshotUpdate(BaseModel):
@@ -69,6 +71,7 @@ class SnapshotSummary(BaseModel):
     image_path: Optional[str] = None
     created_at: datetime
     params: Optional[dict[str, Any]] = None
+    source_snapshot_id: Optional[int] = None
 
 
 

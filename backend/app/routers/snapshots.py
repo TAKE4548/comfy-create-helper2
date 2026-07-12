@@ -2,6 +2,8 @@
 
 import json
 from typing import Optional
+from pathlib import Path
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,8 @@ def list_snapshots(
             workflow_id=s.workflow_id,
             image_path=s.image_path,
             created_at=s.created_at,
-            params=json.loads(s.params) if s.params else None
+            params=json.loads(s.params) if s.params else None,
+            source_snapshot_id=s.source_snapshot_id
         ) for s in snapshots
     ]
 
@@ -42,6 +45,7 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
         params=json.loads(s.params),
         image_path=s.image_path,
         created_at=s.created_at,
+        source_snapshot_id=s.source_snapshot_id,
         loras=[
             schemas.SnapshotLoraRead(
                 id=l.id,
@@ -65,12 +69,17 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.SnapshotSummary, status_code=status.HTTP_201_CREATED)
 def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_db)):
     s = SnapshotService.create_snapshot(db, payload)
+    if payload.source_snapshot_id is not None:
+        s.source_snapshot_id = payload.source_snapshot_id
+        db.commit()
+        db.refresh(s)
     return schemas.SnapshotSummary(
         id=s.id,
         workflow_id=s.workflow_id,
         image_path=s.image_path,
         created_at=s.created_at,
-        params=json.loads(s.params) if s.params else None
+        params=json.loads(s.params) if s.params else None,
+        source_snapshot_id=s.source_snapshot_id
     )
 
 
@@ -89,5 +98,96 @@ def update_snapshot(snapshot_id: int, payload: schemas.SnapshotUpdate, db: Sessi
 async def upload_snapshot_image(file: UploadFile = File(...)):
     image_path = await SnapshotService.save_uploaded_image(file)
     return {"image_path": image_path}
+
+
+class ROIRequest(BaseModel):
+    roi: dict  # {x, y, w, h}
+
+
+@router.post("/{snapshot_id}/detect-bubble")
+def detect_bubble_endpoint(snapshot_id: int, db: Session = Depends(get_db)):
+    s = SnapshotService.get_snapshot(db, snapshot_id)
+    if not s or not s.image_path:
+        raise HTTPException(status_code=404, detail="Snapshot or image not found")
+    from app.services.bubble_detector import detect_bubble
+    from app.config import settings
+    from app import models
+    filename = s.image_path.split("/")[-1]
+    full_path = Path(settings.snapshot_path) / filename
+
+    min_area = 1000
+    min_brightness = 150
+    setting = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "bubble_detection_params").first()
+    if setting and setting.content:
+        try:
+            params = json.loads(setting.content)
+            min_area = params.get("min_area", 1000)
+            min_brightness = params.get("min_brightness", 150)
+        except Exception:
+            pass
+
+    result = detect_bubble(str(full_path), min_area=min_area, min_brightness=min_brightness)
+    return {"bounding_box": result, "confidence": result["confidence"] if result else 0.0}
+
+
+@router.post("/{snapshot_id}/detect-bubble-roi")
+def detect_bubble_roi_endpoint(snapshot_id: int, payload: ROIRequest, db: Session = Depends(get_db)):
+    s = SnapshotService.get_snapshot(db, snapshot_id)
+    if not s or not s.image_path:
+        raise HTTPException(status_code=404, detail="Snapshot or image not found")
+    from app.services.bubble_detector import detect_bubble
+    from app.config import settings
+    from app import models
+    filename = s.image_path.split("/")[-1]
+    full_path = Path(settings.snapshot_path) / filename
+
+    min_area = 1000
+    min_brightness = 150
+    setting = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "bubble_detection_params").first()
+    if setting and setting.content:
+        try:
+            params = json.loads(setting.content)
+            min_area = params.get("min_area", 1000)
+            min_brightness = params.get("min_brightness", 150)
+        except Exception:
+            pass
+
+    result = detect_bubble(str(full_path), roi=payload.roi, min_area=min_area, min_brightness=min_brightness)
+    return {"bounding_box": result, "confidence": result["confidence"] if result else 0.0}
+
+
+class BubbleDebugRequest(BaseModel):
+    roi: Optional[dict] = None
+
+
+@router.post("/{snapshot_id}/detect-bubble-debug")
+def detect_bubble_debug_endpoint(snapshot_id: int, payload: BubbleDebugRequest, db: Session = Depends(get_db)):
+    s = SnapshotService.get_snapshot(db, snapshot_id)
+    if not s or not s.image_path:
+        raise HTTPException(status_code=404, detail="Snapshot or image not found")
+    from app.services.bubble_detector import detect_bubble_candidates
+    from app.config import settings
+    from app import models
+    filename = s.image_path.split("/")[-1]
+    full_path = Path(settings.snapshot_path) / filename
+
+    min_area = 1000
+    min_brightness = 150
+    setting = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "bubble_detection_params").first()
+    if setting and setting.content:
+        try:
+            params = json.loads(setting.content)
+            min_area = params.get("min_area", 1000)
+            min_brightness = params.get("min_brightness", 150)
+        except Exception:
+            pass
+
+    candidates = detect_bubble_candidates(
+        str(full_path),
+        roi=payload.roi,
+        min_area=min_area,
+        min_brightness=min_brightness
+    )
+    return {"candidates": candidates}
 
 

@@ -13,12 +13,14 @@ import {
   SortAsc,
   SortDesc,
   SlidersHorizontal,
-  Check
+  Check,
+  MessageSquarePlus
 } from 'lucide-react'
 import { snapshotsApi, albumsApi, workflowsApi, lorasApi, tagSetsApi } from '../api/client'
 import type { SnapshotSummary, Album, Lora, TagSet } from '../api/types'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
+import { SpeechBubbleEditorModal } from '../components/SpeechBubbleEditorModal'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
@@ -185,6 +187,7 @@ export function HistoryPage() {
   const [isAddToAlbumModalOpen, setIsAddToAlbumModalOpen] = useState(false)
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
+  const [selectedForSpeech, setSelectedForSpeech] = useState<SnapshotSummary | null>(null)
 
   // Album Detail specific states
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null)
@@ -951,6 +954,19 @@ export function HistoryPage() {
                             <Download size={12} />
                           </a>
                         )}
+                        {snap.image_path && !snapshotMultiSelect.isMultiSelectMode && (
+                          <button
+                            id={`snap-speech-edit-${snap.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedForSpeech(snap)
+                            }}
+                            title="セリフ編集・吹き出し追加"
+                            className="p-1.5 rounded-md bg-surface/80 text-zinc-400 hover:text-accent-green"
+                          >
+                            <MessageSquarePlus size={12} />
+                          </button>
+                        )}
                         {!snapshotMultiSelect.isMultiSelectMode && (
                           <button
                             id={`snap-delete-${snap.id}`}
@@ -1050,6 +1066,15 @@ export function HistoryPage() {
         confirmText="追加"
         allowNone={false}
       />
+      {selectedForSpeech && (
+        <SpeechBubbleEditorModal
+          snapshot={selectedForSpeech}
+          onClose={() => setSelectedForSpeech(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['snapshots'] })
+          }}
+        />
+      )}
     </div>
   )
 }

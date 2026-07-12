@@ -308,6 +308,72 @@ LLM_PROMPT_SEEDS = [
             "5. Do NOT hallucinate fields that are not listed in target_fields."
         ),
     },
+    {
+        "key": "translation_ja_to_en",
+        "description": "翻訳システムプロンプト (日 -> 英)",
+        "content": (
+            "You are a professional prompt translator for AI image generation. "
+            "Translate the following Japanese text into natural, descriptive English prompt. "
+            "Output ONLY the translated English prompt. Do not output any chat dialog or explanations."
+        )
+    },
+    {
+        "key": "translation_en_to_ja",
+        "description": "翻訳システムプロンプト (英 -> 日)",
+        "content": (
+            "あなたはAI画像生成プロンプトの専門翻訳者です。与えられた英語のプロンプトを、自然な日本語に翻訳してください。翻訳結果のみを出力し、挨拶や余計な解説は一切含めないでください。"
+        )
+    },
+    {
+        "key": "translation_model",
+        "description": "翻訳用LLMモデル名（空の場合はメインモデルを使用）",
+        "content": ""
+    },
+    {
+        "key": "translation_debounce",
+        "description": "翻訳のデバウンス間隔（ミリ秒）",
+        "content": "500"
+    },
+    {
+        "key": "llm_params_translation",
+        "description": "翻訳用LLM詳細パラメータ",
+        "content": '{"temperature": 0.2, "top_p": 1.0, "max_tokens": 1000, "presence_penalty": 0.0, "frequency_penalty": 0.0}'
+    },
+    {
+        "key": "llm_params_scene_generate",
+        "description": "Scene Generator用LLM詳細パラメータ",
+        "content": '{"temperature": 0.2, "top_p": 1.0, "max_tokens": 1000, "presence_penalty": 0.0, "frequency_penalty": 0.0}'
+    },
+    {
+        "key": "llm_params_audit",
+        "description": "プロンプト診断用LLM詳細パラメータ",
+        "content": '{"temperature": 0.2, "top_p": 1.0, "max_tokens": 1000, "presence_penalty": 0.0, "frequency_penalty": 0.0}'
+    },
+    {
+        "key": "speech_draft_vlm_model",
+        "description": "セリフ下書き VLM モデル名",
+        "content": ""
+    },
+    {
+        "key": "speech_draft_vlm_prompt",
+        "description": "セリフ下書き VLM システムプロンプト",
+        "content": "この画像のキャラクターや状況を簡潔に日本語で説明してください。"
+    },
+    {
+        "key": "speech_draft_llm_model",
+        "description": "セリフ下書き LLM モデル名",
+        "content": ""
+    },
+    {
+        "key": "speech_draft_llm_prompt",
+        "description": "セリフ下書き LLM システムプロンプト",
+        "content": "あなたはマンガのセリフ作家です。以下の画像の説明と生成プロンプトを元に、キャラクターが話しそうな自然なセリフを1~2文で生成してください。セリフのみを出力してください。"
+    },
+    {
+        "key": "bubble_detection_params",
+        "description": "吹き出し自動検出用画像処理パラメータ",
+        "content": '{"min_area": 1000, "min_brightness": 150}'
+    }
 ]
 
 LORA_CATEGORY_SEEDS = ["キャラクター系", "ポーズ再現系", "スタイル系", "コンセプト系"]
