@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { lorasApi } from '../api/client'
 import type { Lora } from '../api/types'
 import { Plus, Trash2 } from 'lucide-react'
+import { SearchableLoraSelect } from './SearchableLoraSelect'
 
 interface LoraStackEditorProps {
   role: string
@@ -9,9 +10,10 @@ interface LoraStackEditorProps {
   setParamValues: (values: Record<string, string>) => void
   loras: Lora[] | undefined
   title?: string
+  activeBaseModelId?: number | null
 }
 
-export function LoraStackEditor({ role, paramValues, setParamValues, loras, title }: LoraStackEditorProps) {
+export function LoraStackEditor({ role, paramValues, setParamValues, loras, title, activeBaseModelId }: LoraStackEditorProps) {
   const { data: comfyModels } = useQuery({
     queryKey: ['comfy-lora-models'],
     queryFn: lorasApi.getComfyModels,
@@ -89,22 +91,14 @@ export function LoraStackEditor({ role, paramValues, setParamValues, loras, titl
             return (
               <div key={idx} className="bg-surface p-2 rounded border border-[rgba(255,255,255,0.04)] space-y-2">
                 <div className="flex items-center gap-2">
-                  <select
+                  <SearchableLoraSelect
                     value={currentName}
-                    onChange={(e) => handleValueChange(`${role}_lora_name_${idx}`, e.target.value)}
-                    className="flex-1 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 min-w-0"
-                  >
-                    <option value="">Select LoRA…</option>
-                    {comfyModels?.map((model) => {
-                      const registered = loras?.find((l) => l.id === model.lora_id)
-                      const displayName = registered?.description ? registered.description : model.file_path
-                      return (
-                        <option key={model.file_path} value={model.file_path}>
-                          {displayName}
-                        </option>
-                      )
-                    })}
-                  </select>
+                    onChange={(val) => handleValueChange(`${role}_lora_name_${idx}`, val)}
+                    comfyModels={comfyModels}
+                    loras={loras}
+                    activeBaseModelId={activeBaseModelId}
+                    className="flex-1 min-w-0"
+                  />
                   <button
                     type="button"
                     onClick={() => handleRemoveSlot(idx)}

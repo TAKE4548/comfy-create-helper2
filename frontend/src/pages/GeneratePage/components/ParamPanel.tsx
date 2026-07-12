@@ -1,6 +1,7 @@
 import { Shuffle, Lock, Settings } from 'lucide-react'
 import type { Lora } from '../../../api/types'
 import { LoraStackEditor } from '../../../components/LoraStackEditor'
+import { SearchableLoraSelect } from '../../../components/SearchableLoraSelect'
 
 const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
@@ -29,6 +30,7 @@ export interface ParamPanelProps {
   bypassProfiles?: any[]
   onToggleBypass?: (profileId: number, isEnabled: boolean) => void
   onOpenBypassSettings?: () => void
+  activeBaseModelId?: number | null
 }
 
 export const ParamPanel = ({
@@ -47,6 +49,7 @@ export const ParamPanel = ({
   bypassProfiles = [],
   onToggleBypass,
   onOpenBypassSettings,
+  activeBaseModelId,
 }: ParamPanelProps) => {
   if (paramMappings.length === 0) return null
   return (
@@ -62,6 +65,7 @@ export const ParamPanel = ({
               setParamValues={setParamValues}
               loras={loras}
               title={m.display_name || undefined}
+              activeBaseModelId={activeBaseModelId}
             />
           )
         }
@@ -87,12 +91,14 @@ export const ParamPanel = ({
                 ))}
               </select>
             ) : m.input_type === 'select' ? (
-              <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
-                <option value="">Select option…</option>
-                {loras?.map((lora) => <option key={lora.id} value={lora.model_name}>{lora.description || lora.model_name}</option>)}
-              </select>
+              <SearchableLoraSelect
+                value={paramValues[m.role!] ?? ''}
+                onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                loras={loras}
+                activeBaseModelId={activeBaseModelId}
+                className={`${mobile ? 'w-36' : 'w-48'}`}
+                placeholder="Select option…"
+              />
             ) : m.input_type === 'boolean' ? (
               <button
                 id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
