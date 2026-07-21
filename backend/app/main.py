@@ -15,7 +15,7 @@ from app.seeder import seed_initial_data
 from app.routers import (
     workflows, mapping_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
-    presets, bypass_profiles, base_models,
+    presets, bypass_profiles, base_models, fonts,
 )
 
 logging.basicConfig(
@@ -243,6 +243,7 @@ app.include_router(llm_prompts.router)
 app.include_router(presets.router)
 app.include_router(bypass_profiles.router)
 app.include_router(base_models.router)
+app.include_router(fonts.router)
 
 
 class CachedStaticFiles(StaticFiles):

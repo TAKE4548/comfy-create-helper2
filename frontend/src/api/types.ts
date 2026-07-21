@@ -465,3 +465,11 @@ export interface CheckpointMappingCreate {
   base_model_id: number
 }
 
+// ─── ServerFont ─────────────────────────────────────────────────
+
+export interface ServerFont {
+  name: string
+  file_name: string
+}
+
+

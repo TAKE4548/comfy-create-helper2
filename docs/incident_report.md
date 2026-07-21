@@ -1,8 +1,8 @@
 # インシデントレポート
 
-**報告日**: 2026-07-12  
+**報告日**: 2026-07-21  
 **報告者**: Incident Analyst  
-**対象事象**: ROI（関心領域）範囲指定時の吹き出し検出失敗  
+**対象事象**: 生成画面のプロファイル/プリセットタブおよびプロンプトアコーディオンの展開状態がリロード時に保持されない事象  
 
 ---
 
@@ -10,38 +10,41 @@
 
 | 項目 | 内容 |
 |---|---|
-| 報告内容 | フロントエンドの吹き出し編集ダイアログでROI範囲を指定（ドラッグ）しても、吹き出しの検出ができず、「ROI指定範囲内に吹き出しを検出できませんでした。」というアラートが表示される。 |
-| 期待動作 | 指定したROI領域に含まれる吹き出しが正常に検出され、バウンディングボックスが描画されること。 |
-| 実際の動作 | バックエンドでの検出結果が `None`（検出なし）として返却される。 |
-| 影響範囲 | ROI指定による吹き出し自動検出機能全般 |
+| 報告内容 | 生成画面において、プロファイルタブ（Multi-Set / プリセットタブ）の選択状態（Currentなど）およびプロンプトカードの展開（アコーディオン）状態がリロード時に保持されない。 |
+| 期待動作 | ページをリロードしても、直前まで選択していたCurrent/プロファイルタブがアクティブとして維持され、各プロンプトカードの展開・折りたたみ状態もそのまま維持されること。 |
+| 実際の動作 | ページリロード時にプロファイルタブが先頭のタブにリセットされ、プロンプトカードの選択状態やアコーディオン展開状態も初期化・リセットされる。 |
+| 影響範囲 | 生成画面（[DesktopLayout.tsx](../frontend/src/pages/GeneratePage/components/DesktopLayout.tsx), [MobileLayout.tsx](../frontend/src/pages/GeneratePage/components/MobileLayout.tsx)）のPC・モバイル両環境 |
 
 ---
 
 ## 2. 再現手順 (Reproduction Steps)
 
-1. フロントエンドでスナップショットの「吹き出し編集」モーダル（[SpeechBubbleEditorModal.tsx](../frontend/src/components/SpeechBubbleEditorModal.tsx)）を開く。
-2. 吹き出しが存在する領域の周囲をドラッグしてROI（関心領域）を指定する。
-3. ドラッグが終了すると、[snapshotsApi.detectBubbleROI](../frontend/src/api/client.ts) が実行され、バックエンドの `/api/snapshots/{snapshot_id}/detect-bubble-roi` にROI座標が送信される。
-4. **結果**: 検出失敗のアラートが表示される。
+1. PCまたはモバイル環境で生成画面（`/generate` または `/mobile/generate`）を開く。
+2. Multi-Set / プリセットタブで「Current」以外のプロファイルタブ（例: 「Set 2」など）を選択する。
+3. モバイルの場合、アクティブなプロンプトタブ（例: Positive / Negative / キャラクター等）を切り替える。またはPC/モバイルでアコーディオンを折りたたみ/展開する。
+4. ブラウザの更新ボタンでページをリロードする。
+5. **結果**:
+   - 選択していたプロファイルタブが維持されず、先頭のプロファイル（Set 1 / デフォルト）に戻る。
+   - モバイルのアクティブプロンプトタブやPC/モバイルのアコーディオン展開状態が初期状態にリセットされる。
 
 ---
 
 ## 3. 根本原因分析 (Root Cause Analysis)
 
 <root_cause_analysis>
-### 分類: **Type A — 実装上のバグ（画像処理ロジックの不備）**
+### 分類: **Type A — 実装上のバグ（フロントエンド状態保持ロジックの不備）**
 
-バックエンドの吹き出し検出モジュール（[bubble_detector.py](../backend/app/services/bubble_detector.py) の `detect_bubble` 関数）における画像切り出し（クロップ）処理の順序とフィルタリング判定基準に起因しています。
+本不具合は、[useGeneratePageState.ts](../frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts) および [useGenerationStore.ts](../frontend/src/store/useGenerationStore.ts) における `activeSetId`（アクティブなプロファイルタブ）および `activePromptTab`（モバイルアクティブタブ）/ `collapsedRoles`（アコーディオン展開状態）の永続化・復元処理の不備に起因しています。
 
-#### 原因1: 面積ノイズ除去しきい値 (`area < 1000`) の誤適用
-- 現在の実装では、ROIが指定されると、検出処理の前に画像をその範囲で切り出しています (`img = img[y:y+h, x:x+w]`)。
-- 切り出した部分画像に対して `cv2.findContours` で輪郭を検出しますが、ROIで狭い範囲を指定した場合、抽出される吹き出しの面積自体も小さくなります。
-- ロジック内で `if area < 1000: continue` というノイズ除去判定を行っているため、小さなROI領域で検出された吹き出しは、すべて「ノイズ」として除外されてしまい、検出結果が `None` となっていました。
+#### 原因1: プリセット取得時の `activeSetId` 自動リセット処理
+- `useGeneratePageState.ts` の `useEffect`（`presets` 変更検知時）において、APIから `presets` が取得された際、`activeSetId` のバリデーション判定 (`isInvalidActive`) が行われます。
+- 型の一致判定（文字列 `string` と数値 `number` の相互変換のズレなど）や `safeOpenPresetIds` との検証ロジックにより、`localStorage` から復元された直後の `activeSetId` が無効とみなされ、強制的に `safeOpenPresetIds[0]` または `presets[0].id` に上書き・リセットされていました。
 
-#### 原因2: ROI境界部分でのエッジの途切れ（未閉合）
-- 画像を事前にクロップすると、吹き出しの輪郭がクロップされた画像の境界（端）と接したり、わずかに重なったりすることがあります。
-- この状態で `cv2.Canny` によるエッジ検出を行うと、画像の端でエッジが途切れて（閉じなくなって）しまいます。
-- `cv2.RETR_EXTERNAL` を使った `cv2.findContours` は閉じた外輪郭のみを検出するため、エッジが閉じなかった輪郭は抽出から漏れることになり、検出に失敗します。
+#### 原因2: モバイルアクティブプロンプトタブ (`activePromptTab`) の強制初期化
+- `useGeneratePageState.ts` 内の `useEffect` にて `workflow` 読み込み時に `setActivePromptTab(texts[0].role || '')` が常に実行されており、`localStorage` への保存およびリロード時の読み込みロジックが存在していませんでした。
+
+#### 原因3: アコーディオン折りたたみ状態 (`collapsedRoles`) の初期ロード時の非同期同期漏れ
+- `getIsRoleCollapsed` は `localStorage` を参照しますが、`useGeneratePageState.ts` の初期状態 (`collapsedRoles = {}`) でコンポーネントが初期化された際、`workflow` 取得後のレンダリングタイミングで `localStorage` の値とローカルステートの同期が完全に行われておらず、一部の操作で展開状態が意図せずデフォルトに戻ってしまう挙動が発生していました。
 </root_cause_analysis>
 
 ---
@@ -51,12 +54,13 @@
 > [!IMPORTANT]
 > 以下は調査に基づく修正方針の整理です。実際のコード修正は、本レポートについてユーザーの合意を得た後、`/dev-design` および `/dev-task` ワークフローにて実行します。
 
-1. **画像全体の処理化**:
-   - `detect_bubble` 内で、画像のクロップ処理を最初に行うのをやめます。
-   - グレースケール化、ぼかし、Cannyエッジ検出、輪郭抽出（`cv2.findContours` および `area < 1000` のノイズ除去判定）は**画像全体**に対して実行します。これによって、エッジが閉じない問題や面積しきい値による誤除外を回避します。
-2. **ROI範囲による判定の適用**:
-   - 抽出された輪郭候補のバウンディングボックス（`x2, y2, w2, h2`）が、指定された `roi` 範囲に含まれるか（あるいは一定以上の面積比で重なっているか）を検証し、条件を満たした輪郭のみを候補とします。
-   - これにより、ROIの指定範囲内にある吹き出しだけを適切にフィルタリングできます。
+1. **`activeSetId` (プロファイルタブ) の永続化と型安全な復元**:
+   - `useGenerationStore.ts` および `useGeneratePageState.ts` において、`localStorage` に保存された `activeSetId` を読み込む際、IDの型（数値/文字列）を統一して厳密に比較する。
+   - `presets` 読み込み時に保存された `activeSetId` が存在していればそれを優先し、無意味な初期タブへのリセットを行わないように修正する。
+2. **`activePromptTab` (モバイルプロンプトタブ) の `localStorage` 永続化**:
+   - `activePromptTab` の変更時に `localStorage`（例: `prompt-surgeon-active-prompt-tab-${workflowId}`）へ保存し、`workflow` 読み込み時は `localStorage` に保存された値があればそれを復元し、無ければデフォルト `texts[0].role` を使用する。
+3. **アコーディオン展開状態 (`collapsedRoles`) の確実な初期化と永続化**:
+   - 各ロールごとの折りたたみ状態の保存・取得処理を整備し、リロード時にも `localStorage` から正確に展開状態を初期ロードする。
 
 ---
 

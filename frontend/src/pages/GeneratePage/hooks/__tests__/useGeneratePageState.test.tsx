@@ -252,4 +252,36 @@ describe('useGeneratePageState', () => {
       result.current.redo(10)
     })
   })
+
+  it('should persist and restore activePromptTab to/from localStorage', async () => {
+    localStorage.setItem('prompt-surgeon-active-prompt-tab-1', 'negative')
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.activePromptTab).toBe('negative')
+    })
+
+    act(() => {
+      result.current.setActivePromptTab('positive')
+    })
+
+    expect(result.current.activePromptTab).toBe('positive')
+    expect(localStorage.getItem('prompt-surgeon-active-prompt-tab-1')).toBe('positive')
+  })
+
+  it('should persist and restore collapsed roles to/from localStorage', () => {
+    localStorage.setItem('prompt-surgeon-collapsed-positive', 'true')
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    expect(result.current.getIsRoleCollapsed('positive')).toBe(true)
+
+    act(() => {
+      result.current.setRoleCollapsed('positive', false)
+    })
+
+    expect(result.current.getIsRoleCollapsed('positive')).toBe(false)
+    expect(localStorage.getItem('prompt-surgeon-collapsed-positive')).toBe('false')
+  })
 })

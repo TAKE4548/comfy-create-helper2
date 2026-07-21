@@ -12,6 +12,7 @@ import { useAuditAction } from './useAuditAction'
 import { useWorkflowUpload } from './useWorkflowUpload'
 import { useMultiSelect } from '../../../hooks/useMultiSelect'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
+import { LS_KEYS } from '../../../utils/localStorageKeys'
 
 export interface SnapshotSummaryWithParams {
   id: number
@@ -32,7 +33,14 @@ export function useGeneratePageState() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  const [activePromptTab, setActivePromptTab] = useState<string>('')
+  const [activePromptTab, setActivePromptTabState] = useState<string>('')
+
+  const setActivePromptTab = (tab: string) => {
+    setActivePromptTabState(tab)
+    if (selectedWorkflowId && tab) {
+      localStorage.setItem(`${LS_KEYS.ACTIVE_PROMPT_TAB_PREFIX}${selectedWorkflowId}`, tab)
+    }
+  }
   const [collapsedRoles, setCollapsedRoles] = useState<Record<string, boolean>>({})
 
   const getIsRoleCollapsed = (role: string) => {
@@ -652,8 +660,13 @@ export function useGeneratePageState() {
 
   useEffect(() => {
     const texts = workflow?.mappings.filter((m) => m.role != null && m.input_type === 'textarea') ?? []
-    setActivePromptTab(texts.length > 0 ? texts[0].role || '' : '')
-  }, [workflow])
+    const savedTab = selectedWorkflowId ? localStorage.getItem(`${LS_KEYS.ACTIVE_PROMPT_TAB_PREFIX}${selectedWorkflowId}`) : null
+    if (savedTab && texts.some(t => t.role === savedTab)) {
+      setActivePromptTabState(savedTab)
+    } else {
+      setActivePromptTabState(texts.length > 0 ? texts[0].role || '' : '')
+    }
+  }, [workflow, selectedWorkflowId])
 
   // ─── Undo/Redo History Stack ────────────────────────────────────
   interface HistoryState {
@@ -756,17 +769,19 @@ export function useGeneratePageState() {
 
     if (presets && presets.length > 0) {
       const safeOpenPresetIds = openPresetIds || []
+      const storedActiveStr = selectedWorkflowId ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`) : null
+      const matchedPreset = presets.find(p => String(p.id) === String(storedActiveStr) || String(p.id) === String(activeSetId))
+
+      const targetActiveId = matchedPreset ? matchedPreset.id : (safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0])) ? safeOpenPresetIds[0] : presets[0].id)
       const isInvalidActive = activeSetId === null || !safeOpenPresetIds.map(String).includes(String(activeSetId))
-      if (isInvalidActive) {
-        const nextActiveId = safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
-          ? safeOpenPresetIds[0]
-          : presets[0].id
-        setActiveSetId(nextActiveId)
-        if (!safeOpenPresetIds.includes(nextActiveId)) {
-          openPreset?.(nextActiveId)
+
+      if (isInvalidActive || String(activeSetId) !== String(targetActiveId)) {
+        setActiveSetId(targetActiveId)
+        if (!safeOpenPresetIds.map(String).includes(String(targetActiveId))) {
+          openPreset?.(targetActiveId)
         }
       } else {
-        if (!safeOpenPresetIds.includes(activeSetId)) {
+        if (!safeOpenPresetIds.map(String).includes(String(activeSetId))) {
           openPreset?.(activeSetId)
         }
       }

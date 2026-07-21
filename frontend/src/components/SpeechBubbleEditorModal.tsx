@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Sparkles, Loader2, Save } from 'lucide-react'
-import { snapshotsApi, llmPromptsApi } from '../api/client'
-import type { SnapshotSummary, BubbleCandidate } from '../api/types'
+import { snapshotsApi, llmPromptsApi, fontsApi } from '../api/client'
+import type { SnapshotSummary, BubbleCandidate, ServerFont } from '../api/types'
 
 interface SpeechBubbleEditorModalProps {
   snapshot: SnapshotSummary
@@ -16,7 +16,10 @@ export function SpeechBubbleEditorModal({
 }: SpeechBubbleEditorModalProps) {
   const [boundingBox, setBoundingBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [speechText, setSpeechText] = useState('')
-  const [fontSize, setFontSize] = useState(18)
+  const [fontList, setFontList] = useState<ServerFont[]>([])
+  const [selectedFont, setSelectedFont] = useState<string>('')
+  const [activeFontFamily, setActiveFontFamily] = useState<string>('sans-serif')
+  const [isFontLoading, setIsFontLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDrafting, setIsDrafting] = useState(false)
 
@@ -76,6 +79,57 @@ export function SpeechBubbleEditorModal({
     }
   }, [snapshot.image_path])
 
+  // Load font list on mount
+  useEffect(() => {
+    const fetchFonts = async () => {
+      try {
+        const list = await fontsApi.list()
+        setFontList(list)
+        if (list.length > 0) {
+          const msgothic = list.find((f) => f.file_name.toLowerCase() === 'msgothic.ttc')
+          if (msgothic) {
+            setSelectedFont(msgothic.file_name)
+          } else {
+            setSelectedFont(list[0].file_name)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch font list:', err)
+      }
+    }
+    fetchFonts()
+  }, [])
+
+  // Load selected font dynamically
+  useEffect(() => {
+    if (!selectedFont) return
+    const fontFamilyName = `server-font-${selectedFont.replace(/\./g, '-')}`
+    
+    let isAlreadyLoaded = false
+    document.fonts.forEach((font) => {
+      if (font.family === fontFamilyName) {
+        isAlreadyLoaded = true
+      }
+    })
+    
+    if (isAlreadyLoaded) {
+      setActiveFontFamily(fontFamilyName)
+      return
+    }
+
+    setIsFontLoading(true)
+    const fontUrl = `/api/fonts/${encodeURIComponent(selectedFont)}`
+    const fontFace = new FontFace(fontFamilyName, `url(${fontUrl})`)
+    fontFace.load().then((loadedFace) => {
+      document.fonts.add(loadedFace)
+      setActiveFontFamily(fontFamilyName)
+      setIsFontLoading(false)
+    }).catch((err) => {
+      console.error('Failed to load font:', err)
+      setIsFontLoading(false)
+    })
+  }, [selectedFont])
+
   // Run bubble detection on open
   useEffect(() => {
     let active = true
@@ -113,24 +167,61 @@ export function SpeechBubbleEditorModal({
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height)
 
-    // Helper to wrap text
-    const wrapText = (c: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
-      const lines: string[] = []
-      let currentLine = ''
-      for (const char of text) {
-        const testLine = currentLine + char
-        const metrics = c.measureText(testLine)
-        if (metrics.width > maxWidth && currentLine.length > 0) {
-          lines.push(currentLine)
-          currentLine = char
-        } else {
-          currentLine = testLine
+    // Helper to layout vertical text
+    const verticalCharMap: Record<string, string> = {
+      'ー': '｜',
+      '―': '｜',
+      '–': '｜',
+      '-': '｜',
+      '~': '｜',
+      '～': '｜',
+      '「': '﹁',
+      '」': '﹂',
+      '『': '﹃',
+      '』': '﹄',
+      '（': '︵',
+      '）': '︶',
+      '(': '︵',
+      ')': '︶',
+      '【': '︻',
+      '】': '︼',
+      '〔': '︹',
+      '〕': '︺',
+      '［': '﹇',
+      '］': '﹈',
+      '{': '︷',
+      '}': '︸',
+      '｛': '︷',
+      '｝': '︸',
+      '…': '⋮',
+      '..': '︰',
+      '：': '︓',
+      '；': '︔',
+      '、': '︑',
+      '。': '︒',
+      '.': '︒',
+      ',': '︑',
+    }
+
+    const layoutVerticalText = (text: string, fontSize: number, maxHeight: number): string[] => {
+      const columns: string[] = []
+      const paragraphs = text.split('\n')
+      for (const para of paragraphs) {
+        let currentColumn = ''
+        for (const char of para) {
+          const mappedChar = verticalCharMap[char] || char
+          if ((currentColumn.length + 1) * fontSize > maxHeight) {
+            columns.push(currentColumn)
+            currentColumn = mappedChar
+          } else {
+            currentColumn += mappedChar
+          }
+        }
+        if (currentColumn || para === '') {
+          columns.push(currentColumn)
         }
       }
-      if (currentLine) {
-        lines.push(currentLine)
-      }
-      return lines
+      return columns
     }
 
     // Draw bounding box and text
@@ -155,26 +246,59 @@ export function SpeechBubbleEditorModal({
           boundingBox.h * scaleY - 2
         )
 
-        ctx.font = `bold ${fontSize}px sans-serif`
-        ctx.fillStyle = '#000000'
-        ctx.textBaseline = 'top'
-        ctx.textAlign = 'center'
+        if (isFontLoading) {
+          ctx.fillStyle = '#999999'
+          ctx.font = '14px sans-serif'
+          ctx.textBaseline = 'middle'
+          ctx.textAlign = 'center'
+          ctx.fillText(
+            'フォント読み込み中...',
+            (boundingBox.x + boundingBox.w / 2) * scaleX,
+            (boundingBox.y + boundingBox.h / 2) * scaleY
+          )
+        } else {
+          const padding = 16
+          const maxWidth = boundingBox.w * scaleX - padding
+          const maxHeight = boundingBox.h * scaleY - padding
 
-        const padding = 8
-        const lines = wrapText(
-          ctx,
-          speechText,
-          boundingBox.w * scaleX - padding * 2
-        )
+          // Step-down search for font size
+          let computedFontSize = 36
+          const minFontSize = 8
+          for (let size = 36; size >= minFontSize; size--) {
+            const cols = layoutVerticalText(speechText, size, maxHeight)
+            const totalWidth = cols.length * size * 1.3
+            if (totalWidth <= maxWidth) {
+              computedFontSize = size
+              break
+            }
+            if (size === minFontSize) {
+              computedFontSize = minFontSize
+            }
+          }
 
-        const boxCenter = (boundingBox.x + boundingBox.w / 2) * scaleX
-        const boxTop = boundingBox.y * scaleY
-        const totalTextHeight = lines.length * (fontSize * 1.25)
-        const startY = boxTop + (boundingBox.h * scaleY - totalTextHeight) / 2
+          ctx.font = `bold ${computedFontSize}px ${activeFontFamily}`
+          ctx.fillStyle = '#000000'
+          ctx.textBaseline = 'middle'
+          ctx.textAlign = 'center'
 
-        lines.forEach((line, index) => {
-          ctx.fillText(line, boxCenter, startY + index * (fontSize * 1.25))
-        })
+          const cols = layoutVerticalText(speechText, computedFontSize, maxHeight)
+          const totalWidth = cols.length * computedFontSize * 1.3
+          const boxCenter = (boundingBox.x + boundingBox.w / 2) * scaleX
+          const startX = boxCenter + (totalWidth - computedFontSize * 1.3) / 2
+
+          cols.forEach((col, colIndex) => {
+            const colX = startX - colIndex * (computedFontSize * 1.3)
+            const colHeight = col.length * computedFontSize
+            const boxMiddle = (boundingBox.y + boundingBox.h / 2) * scaleY
+            const colTop = boxMiddle - colHeight / 2
+
+            for (let i = 0; i < col.length; i++) {
+              const char = col[i]
+              const charY = colTop + i * computedFontSize + computedFontSize / 2
+              ctx.fillText(char, colX, charY)
+            }
+          })
+        }
       }
     }
 
@@ -231,7 +355,7 @@ export function SpeechBubbleEditorModal({
       ctx.fillRect(currentROI.x, currentROI.y, currentROI.w, currentROI.h)
       ctx.setLineDash([])
     }
-  }, [imageObj, boundingBox, speechText, fontSize, isDrawingROI, dragStart, currentROI, scaleX, scaleY, showDebugPanel, candidates, hoveredCandidate])
+  }, [imageObj, boundingBox, speechText, activeFontFamily, isFontLoading, isDrawingROI, dragStart, currentROI, scaleX, scaleY, showDebugPanel, candidates, hoveredCandidate])
 
   // Canvas Mouse handlers for ROI selection
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -456,18 +580,28 @@ export function SpeechBubbleEditorModal({
               />
 
               <div className="space-y-2">
-                <div className="flex justify-between text-xs text-zinc-400">
-                  <span>フォントサイズ</span>
-                  <span>{fontSize}px</span>
-                </div>
-                <input
-                  type="range"
-                  min="12"
-                  max="36"
-                  value={fontSize}
-                  onChange={(e) => setFontSize(Number(e.target.value))}
-                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-accent-green"
-                />
+                <label className="text-xs font-semibold text-zinc-300">描画フォント</label>
+                <select
+                  value={selectedFont}
+                  onChange={(e) => setSelectedFont(e.target.value)}
+                  className="w-full bg-zinc-900 border border-[rgba(255,255,255,0.08)] focus:border-accent-green/50 text-white rounded px-3 py-2 text-sm focus:outline-none"
+                >
+                  {fontList.length === 0 ? (
+                    <option value="">フォントが見つかりません</option>
+                  ) : (
+                    fontList.map((f) => (
+                      <option key={f.file_name} value={f.file_name}>
+                        {f.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                {isFontLoading && (
+                  <span className="text-[10px] text-zinc-400 block mt-1 flex items-center gap-1">
+                    <Loader2 className="animate-spin" size={10} />
+                    フォントを読み込み中...
+                  </span>
+                )}
               </div>
 
               {boundingBox ? (
