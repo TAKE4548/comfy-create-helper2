@@ -483,12 +483,15 @@ export function useGeneratePageState() {
       seed: sd !== undefined ? sd : seed,
     }),
     onSuccess: (newPreset) => {
-      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
-      setNewPresetName('')
-      if (newPreset?.id) {
-        setActiveSetId(newPreset.id)
+      if (newPreset?.id && selectedWorkflowId) {
+        localStorage.setItem(
+          `${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`,
+          String(newPreset.id)
+        )
         openPreset?.(newPreset.id)
       }
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+      setNewPresetName('')
     }
   })
 
@@ -513,6 +516,13 @@ export function useGeneratePageState() {
     }
   })
 
+  const bulkDeletePresetsMutation = useMutation({
+    mutationFn: (ids: number[]) => workflowPresetsApi.bulkDelete(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    }
+  })
+
   const renamePresetMutation = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) => workflowPresetsApi.update(id, { name }),
     onSuccess: () => {
@@ -526,6 +536,125 @@ export function useGeneratePageState() {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     }
   })
+
+  // ── Bulk Operation State ──
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false)
+  const [bulkTargetIds, setBulkTargetIds] = useState<number[]>([])
+  const [isBulkApplying, setIsBulkApplying] = useState(false)
+
+  const handleBulkDeleteRequest = (ids: number[]) => {
+    setBulkTargetIds(ids)
+    setIsBulkDeleteConfirmOpen(true)
+  }
+
+  const handleBulkDeleteConfirm = () => {
+    bulkDeletePresetsMutation.mutate(bulkTargetIds, {
+      onSuccess: () => {
+        setIsBulkDeleteConfirmOpen(false)
+        setBulkTargetIds([])
+      }
+    })
+  }
+
+  const handleBulkEditRequest = (ids: number[]) => {
+    setBulkTargetIds(ids)
+    setIsBulkEditOpen(true)
+  }
+
+  const handleBulkEditApply = async (payload: import('../../../components/ProfileBulkEditModal').BulkEditPayload) => {
+    if (!presets || bulkTargetIds.length === 0) return
+    setIsBulkApplying(true)
+    try {
+      const selectedPresets = presets.filter(p => bulkTargetIds.includes(p.id))
+      await Promise.all(selectedPresets.map(async preset => {
+        let newParamValues = { ...preset.param_values }
+        let newAppliedAssets = { ...preset.applied_assets }
+        let newBatchSize = preset.batch_size
+
+        // Apply prompt operations
+        if (payload.promptOps) {
+          for (const op of payload.promptOps) {
+            const targetFields = op.fields ?? Object.keys(newParamValues)
+            for (const field of targetFields) {
+              if (!(field in newParamValues)) continue
+              const current = newParamValues[field]
+              if (op.op === 'search_replace') {
+                newParamValues[field] = current.split(op.find!).join(op.replace ?? '')
+              } else if (op.op === 'overwrite') {
+                newParamValues[field] = op.value!
+              } else if (op.op === 'prefix') {
+                newParamValues[field] = op.value! + current
+              } else if (op.op === 'suffix') {
+                newParamValues[field] = current + op.value!
+              }
+            }
+          }
+        }
+
+        // Apply param patch (merge)
+        if (payload.paramPatch) {
+          // Clean up old LoRA stack slots if _lora_count is updated in patch
+          Object.keys(payload.paramPatch).forEach(key => {
+            if (key.endsWith('_lora_count')) {
+              const role = key.replace('_lora_count', '')
+              const oldCount = parseInt(newParamValues[`${role}_lora_count`] || '0', 10)
+              delete newParamValues[`${role}_lora_count`]
+              for (let i = 1; i <= oldCount; i++) {
+                delete newParamValues[`${role}_lora_name_${i}`]
+                delete newParamValues[`${role}_lora_wt_${i}`]
+                delete newParamValues[`${role}_model_str_${i}`]
+                delete newParamValues[`${role}_clip_str_${i}`]
+              }
+            }
+          })
+          newParamValues = { ...newParamValues, ...payload.paramPatch }
+        }
+
+        // Apply batch size
+        if (payload.batchSize !== undefined) {
+          newBatchSize = payload.batchSize
+        }
+
+        // Apply LoRA ops
+        if (payload.loraOps) {
+          for (const loraOp of payload.loraOps) {
+            const existing = newAppliedAssets[loraOp.role] ?? []
+            if (loraOp.mode === 'replace') {
+              newAppliedAssets[loraOp.role] = [loraOp.asset]
+            } else {
+              newAppliedAssets[loraOp.role] = [...existing, loraOp.asset]
+            }
+          }
+        }
+
+        await workflowPresetsApi.update(preset.id, {
+          param_values: newParamValues,
+          applied_assets: newAppliedAssets,
+          batch_size: newBatchSize,
+        })
+
+        // If the updated preset is currently active, sync local state immediately
+        if (String(preset.id) === String(activeSetId)) {
+          setParamValues(newParamValues)
+          setAppliedAssets(newAppliedAssets)
+          if (newBatchSize !== undefined) {
+            setBatchSize(newBatchSize)
+          }
+          updateActiveSet({
+            paramValues: newParamValues,
+            appliedAssets: newAppliedAssets,
+            batchSize: newBatchSize,
+          })
+        }
+      }))
+      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+      setIsBulkEditOpen(false)
+      setBulkTargetIds([])
+    } finally {
+      setIsBulkApplying(false)
+    }
+  }
 
   const handleCreatePreset = (name?: string, copySourceId?: string | number) => {
     const finalName = name ?? newPresetName
@@ -563,17 +692,8 @@ export function useGeneratePageState() {
         seed: 42,
       })
     } else {
-      const source = presets?.find(p => String(p.id) === String(copySourceId))
-      if (source) {
-        createPresetMutation.mutate({
-          name: finalName.trim(),
-          paramValues: source.param_values,
-          appliedAssets: source.applied_assets,
-          batchSize: source.batch_size,
-          seedMode: source.seed_mode as 'random' | 'fixed',
-          seed: source.seed,
-        })
-      } else {
+      // コピー元がアクティブプリセット自身の場合: キャッシュではなく Zustand 現在値を使用
+      if (String(copySourceId) === String(activeSetId)) {
         createPresetMutation.mutate({
           name: finalName.trim(),
           paramValues,
@@ -582,6 +702,27 @@ export function useGeneratePageState() {
           seedMode,
           seed,
         })
+      } else {
+        const source = presets?.find(p => String(p.id) === String(copySourceId))
+        if (source) {
+          createPresetMutation.mutate({
+            name: finalName.trim(),
+            paramValues: source.param_values,
+            appliedAssets: source.applied_assets,
+            batchSize: source.batch_size,
+            seedMode: source.seed_mode as 'random' | 'fixed',
+            seed: source.seed,
+          })
+        } else {
+          createPresetMutation.mutate({
+            name: finalName.trim(),
+            paramValues,
+            appliedAssets,
+            batchSize,
+            seedMode,
+            seed,
+          })
+        }
       }
     }
   }
@@ -681,6 +822,8 @@ export function useGeneratePageState() {
   const triggerHistoryChange = () => setHistoryVersion(v => v + 1)
 
   const lastSavedStateRef = useRef<Record<string | number, HistoryState>>({})
+  const isInitialSyncRef = useRef(false)
+  const prevWorkflowIdRef = useRef<number | null>(null)
 
   const getHistory = (id: string | number) => {
     try {
@@ -749,33 +892,80 @@ export function useGeneratePageState() {
     if (!selectedWorkflowId) return
     if (!presets) return
 
-    const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
+    // ── ワークフロー変化検出: フラグをリセット ─────────────────────
+    if (prevWorkflowIdRef.current !== selectedWorkflowId) {
+      prevWorkflowIdRef.current = selectedWorkflowId
+      isInitialSyncRef.current = false
+    }
+
+    const checkedPresetsRaw = localStorage.getItem(
+      `prompt-surgeon-checked-presets-${selectedWorkflowId}`
+    )
     const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : []
 
-    const mappedSets = presets.map((p) => {
-      return {
-        id: p.id,
-        name: p.name,
-        paramValues: p.param_values || {},
-        appliedAssets: p.applied_assets || {},
-        batchSize: p.batch_size || 1,
-        seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
-        seed: p.seed !== undefined ? p.seed : 42,
-        checked: checkedPresets.includes(p.id)
-      }
-    })
+    // バックエンドの生データをマップ
+    const rawMappedSets = presets.map((p) => ({
+      id: p.id,
+      name: p.name,
+      paramValues: p.param_values || {},
+      appliedAssets: p.applied_assets || {},
+      batchSize: p.batch_size || 1,
+      seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
+      seed: p.seed !== undefined ? p.seed : 42,
+      checked: checkedPresets.includes(p.id)
+    }))
+
+    const isFirstSync = !isInitialSyncRef.current
+
+    // ── 初回 vs 通常ロードで sets 構築を切り替える ──────────────────
+    // 注意: paramValues 等はクロージャーキャプチャで参照（意図的・deps には含めない）
+    let mappedSets = rawMappedSets
+    if (!isFirstSync && typeof activeSetId === 'number') {
+      // 通常ロード: アクティブプリセットの未保存編集内容を sets に注入して保護する
+      mappedSets = rawMappedSets.map(s =>
+        s.id === activeSetId
+          ? { ...s, paramValues, appliedAssets, batchSize, seedMode, seed }
+          : s
+      )
+    }
 
     setSets?.(mappedSets)
 
     if (presets && presets.length > 0) {
       const safeOpenPresetIds = openPresetIds || []
-      const storedActiveStr = selectedWorkflowId ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`) : null
-      const matchedPreset = presets.find(p => String(p.id) === String(storedActiveStr) || String(p.id) === String(activeSetId))
+      const storedActiveStr = selectedWorkflowId
+        ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`)
+        : null
+      const matchedPreset = presets.find(
+        p => String(p.id) === String(storedActiveStr) || String(p.id) === String(activeSetId)
+      )
+      const targetActiveId = matchedPreset
+        ? matchedPreset.id
+        : safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
+          ? safeOpenPresetIds[0]
+          : presets[0].id
+      const isInvalidActive =
+        activeSetId === null || !safeOpenPresetIds.map(String).includes(String(activeSetId))
 
-      const targetActiveId = matchedPreset ? matchedPreset.id : (safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0])) ? safeOpenPresetIds[0] : presets[0].id)
-      const isInvalidActive = activeSetId === null || !safeOpenPresetIds.map(String).includes(String(activeSetId))
-
-      if (isInvalidActive || String(activeSetId) !== String(targetActiveId)) {
+      if (isFirstSync) {
+        // ── 初回ロード: バックエンドを正として強制同期（クロスデバイス修正）──
+        isInitialSyncRef.current = true
+        setActiveSetId(targetActiveId)
+        if (!safeOpenPresetIds.map(String).includes(String(targetActiveId))) {
+          openPreset?.(targetActiveId)
+        }
+        // lastSavedStateRef をバックエンド値で初期化してオートセーブの誤発火を防ぐ
+        const activePresetData = rawMappedSets.find(s => String(s.id) === String(targetActiveId))
+        if (activePresetData) {
+          lastSavedStateRef.current[targetActiveId] = {
+            paramValues: activePresetData.paramValues,
+            appliedAssets: activePresetData.appliedAssets,
+            batchSize: activePresetData.batchSize,
+            seedMode: activePresetData.seedMode,
+            seed: activePresetData.seed,
+          }
+        }
+      } else if (isInvalidActive || String(activeSetId) !== String(targetActiveId)) {
         setActiveSetId(targetActiveId)
         if (!safeOpenPresetIds.map(String).includes(String(targetActiveId))) {
           openPreset?.(targetActiveId)
@@ -1195,5 +1385,18 @@ export function useGeneratePageState() {
     translationEn,
     handleTranslationEnChange,
     isTranslating,
+
+    // 一括操作
+    isBulkDeleteConfirmOpen,
+    setIsBulkDeleteConfirmOpen,
+    isBulkEditOpen,
+    setIsBulkEditOpen,
+    bulkTargetIds,
+    isBulkApplying,
+    handleBulkDeleteRequest,
+    handleBulkDeleteConfirm,
+    handleBulkEditRequest,
+    handleBulkEditApply,
+    bulkDeletePresetsMutation,
   }
 }

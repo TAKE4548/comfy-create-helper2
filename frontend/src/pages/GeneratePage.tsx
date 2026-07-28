@@ -1,7 +1,8 @@
-import { X } from 'lucide-react'
+import { X, AlertTriangle, Loader2 } from 'lucide-react'
 import { useGeneratePageState } from './GeneratePage/hooks/useGeneratePageState'
 import { DesktopLayout } from './GeneratePage/components/DesktopLayout'
 import { MobileLayout } from './GeneratePage/components/MobileLayout'
+import { ProfileBulkEditModal } from '../components/ProfileBulkEditModal'
 
 import { RescanModal } from '../components/RescanModal'
 import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
@@ -32,6 +33,13 @@ export function GeneratePage() {
     isSceneGeneratorOpen, setIsSceneGeneratorOpen, paramValues, textMappings,
     sets, toggleSetChecked, handleDeletePreset, handleUpdatePreset, handleCreatePreset, activeSetId,
     openPreset, setActiveSetId, handleLoadPreset,
+    isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen,
+    isBulkEditOpen, setIsBulkEditOpen,
+    bulkTargetIds, isBulkApplying,
+    handleBulkDeleteRequest, handleBulkDeleteConfirm,
+    handleBulkEditRequest, handleBulkEditApply,
+    bulkDeletePresetsMutation,
+    loras,
   } = state
 
   return (
@@ -186,6 +194,12 @@ export function GeneratePage() {
                 setIsPresetManagerOpen(false)
                 setIsSceneGeneratorOpen(true)
               }}
+              onBulkDelete={(selectedIds) => {
+                handleBulkDeleteRequest(selectedIds)
+              }}
+              onBulkEdit={(selectedIds) => {
+                handleBulkEditRequest(selectedIds)
+              }}
             />
           </div>
         </div>
@@ -208,6 +222,59 @@ export function GeneratePage() {
           }}
         />
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      {isBulkDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-sm bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl p-6 space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3">
+              <AlertTriangle size={20} className="text-red-400 flex-shrink-0" />
+              <h3 className="text-base font-semibold text-white">一括削除の確認</h3>
+            </div>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              選択した <span className="text-white font-semibold">{bulkTargetIds.length} 件</span>
+              のプリセットを削除します。<br />
+              <span className="text-red-400 font-medium">この操作は取り消せません。</span>
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setIsBulkDeleteConfirmOpen(false)}
+                className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-white/5 transition-all"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleBulkDeleteConfirm}
+                disabled={bulkDeletePresetsMutation.isPending}
+                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition-all disabled:opacity-50"
+              >
+                {bulkDeletePresetsMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Edit Modal */}
+      <ProfileBulkEditModal
+        isOpen={isBulkEditOpen}
+        onClose={() => setIsBulkEditOpen(false)}
+        selectedPresets={(presets ?? []).filter(p => bulkTargetIds.includes(p.id))}
+        mappingMasters={workflow?.mappings?.map(m => ({
+          id: m.master_id ?? 0,
+          role: m.role ?? '',
+          expected_class_types: null,
+          param_name: m.param_name ?? '',
+          input_type: (m.input_type ?? 'textarea') as any,
+          display_name: m.display_name ?? m.role ?? '',
+          title_patterns: null,
+          sort_order: 0,
+        })) ?? []}
+        loras={loras ?? []}
+        onApply={handleBulkEditApply}
+        isApplying={isBulkApplying}
+      />
     </>
   )
 }

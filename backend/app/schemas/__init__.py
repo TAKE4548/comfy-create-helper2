@@ -79,6 +79,7 @@ from app.schemas.preset import (
     WorkflowPresetRead,
     WorkflowPresetUpdate,
     WorkflowPresetReorder,
+    WorkflowPresetBulkDelete,
 )
 
 from app.schemas.bypass_profile import (
@@ -117,7 +118,8 @@ __all__ = [
     "LlmPromptUpdate", "LlmPromptRead",
     "SceneItem", "SceneGenerateRequest", "SceneDiffParams",
     # Preset
-    "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate", "WorkflowPresetReorder",
+    "WorkflowPresetBase", "WorkflowPresetCreate", "WorkflowPresetRead", "WorkflowPresetUpdate",
+    "WorkflowPresetReorder", "WorkflowPresetBulkDelete",
     # BypassProfile
     "BypassProfileCreate", "BypassProfileUpdate", "BypassProfileRead",
     # BaseModel / CheckpointMapping

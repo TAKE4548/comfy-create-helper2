@@ -37,3 +37,7 @@ class WorkflowPresetRead(WorkflowPresetBase):
 
 class WorkflowPresetReorder(BaseModel):
     ordered_ids: list[int]
+
+
+class WorkflowPresetBulkDelete(BaseModel):
+    ids: list[int]

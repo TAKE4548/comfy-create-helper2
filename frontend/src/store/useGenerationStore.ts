@@ -218,6 +218,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
   let initialSets: GenerationSet[] = []
   let initialActiveSetId: string | number | null = null
+  let initialOpenPresetIds: (string | number)[] = []
   let storedParams: Record<string, string> = {}
   let storedAppliedAssets: Record<string, AppliedAsset[]> = {}
   let storedBatchSize = 1
@@ -240,6 +241,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
     storedSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
     storedSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
+
+    try {
+      const stored = localStorage.getItem(`prompt-surgeon-open-presets-${storedWorkflowId}`)
+      if (stored) {
+        initialOpenPresetIds = JSON.parse(stored)
+      }
+    } catch {}
   }
 
   let storedBatchImages: string[] = []
@@ -348,7 +356,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     errorToast: null,
     sets: initialSets,
     activeSetId: initialActiveSetId,
-    openPresetIds: [],
+    openPresetIds: initialOpenPresetIds,
     activeBatch: null,
 
     // ── Actions ──────────────────────────────────────────────

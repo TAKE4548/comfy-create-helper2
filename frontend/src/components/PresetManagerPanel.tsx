@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { GripVertical, Pencil, Loader2, Trash2 } from 'lucide-react';
+import { GripVertical, Pencil, Loader2, Trash2, ListChecks } from 'lucide-react';
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { WorkflowPreset } from '../api/types';
+import { MultiSelectToolbar } from './MultiSelectToolbar';
 
 type SetCheckState = { id: string | number; checked: boolean };
 
@@ -20,6 +21,8 @@ export type PresetManagerPanelProps = {
   onSaveAsNew?: (name: string) => void;
   onOpenAsTab?: (id: string | number) => void;
   onOpenSceneGenerator?: () => void;
+  onBulkDelete?: (selectedIds: number[]) => void;
+  onBulkEdit?: (selectedIds: number[]) => void;
 };
 
 export function PresetManagerPanel({
@@ -35,12 +38,34 @@ export function PresetManagerPanel({
   onSaveAsNew,
   onOpenAsTab,
   onOpenSceneGenerator,
+  onBulkDelete,
+  onBulkEdit,
 }: PresetManagerPanelProps) {
   const [localPresets, setLocalPresets] = useState<WorkflowPreset[]>(presets);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [newName, setNewName] = useState('');
+
+  // Bulk operation state (separate from generation "checked" state)
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleBulkMode = () => {
+    setBulkMode(prev => !prev);
+    setBulkSelectedIds(new Set());
+  };
+
+  const toggleBulkSelect = (id: number) => {
+    setBulkSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setBulkSelectedIds(new Set(localPresets.map(p => p.id)));
+  const clearSelection = () => setBulkSelectedIds(new Set());
 
   // Sync with presets prop
   useEffect(() => {
@@ -107,13 +132,64 @@ export function PresetManagerPanel({
         <span className="text-xs font-semibold text-zinc-450 uppercase tracking-wider">
           プリセット一覧
         </span>
-        {isPending && (
-          <div className="flex items-center gap-1 text-[10px] text-accent-green">
-            <Loader2 size={12} className="animate-spin" />
-            更新中...
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {isPending && (
+            <div className="flex items-center gap-1 text-[10px] text-accent-green">
+              <Loader2 size={12} className="animate-spin" />
+              更新中...
+            </div>
+          )}
+          {(onBulkDelete || onBulkEdit) && (
+            <button
+              type="button"
+              onClick={toggleBulkMode}
+              title={bulkMode ? '通常モードに戻る' : '一括操作モード'}
+              className={`p-1 rounded transition-colors ${
+                bulkMode
+                  ? 'text-[#3ECF8E] bg-[#3ECF8E]/10'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <ListChecks size={14} />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Bulk mode toolbar */}
+      {bulkMode && (
+        <MultiSelectToolbar
+          selectedCount={bulkSelectedIds.size}
+          totalCount={localPresets.length}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
+          onExitMode={toggleBulkMode}
+          actions={
+            <>
+              {onBulkEdit && (
+                <button
+                  type="button"
+                  disabled={bulkSelectedIds.size === 0}
+                  onClick={() => onBulkEdit(Array.from(bulkSelectedIds))}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:text-white bg-[#3ECF8E]/10 border border-[#3ECF8E]/30 rounded-md hover:bg-[#3ECF8E]/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  一括編集
+                </button>
+              )}
+              {onBulkDelete && (
+                <button
+                  type="button"
+                  disabled={bulkSelectedIds.size === 0}
+                  onClick={() => onBulkDelete(Array.from(bulkSelectedIds))}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-400 hover:text-red-300 bg-red-500/10 border border-red-500/30 rounded-md hover:bg-red-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  一括削除
+                </button>
+              )}
+            </>
+          }
+        />
+      )}
 
       {localPresets.length === 0 ? (
         <div className="text-center py-6 text-xs text-zinc-550 border border-[rgba(255,255,255,0.04)] rounded-lg bg-surface/30">
@@ -138,6 +214,9 @@ export function PresetManagerPanel({
                   onToggleCheck={onToggleCheck ? () => onToggleCheck(preset.id) : undefined}
                   onDelete={onDelete ? () => onDelete(preset.id) : undefined}
                   onOpenAsTab={onOpenAsTab ? () => onOpenAsTab(preset.id) : undefined}
+                  bulkMode={bulkMode}
+                  isBulkSelected={bulkSelectedIds.has(preset.id)}
+                  onToggleBulkSelect={() => toggleBulkSelect(preset.id)}
                 />
               ))}
             </div>
@@ -271,6 +350,9 @@ function SortablePresetRow({
   onToggleCheck,
   onDelete,
   onOpenAsTab,
+  bulkMode = false,
+  isBulkSelected = false,
+  onToggleBulkSelect,
 }: {
   preset: WorkflowPreset;
   isEditing: boolean;
@@ -284,6 +366,9 @@ function SortablePresetRow({
   onToggleCheck?: () => void;
   onDelete?: () => void;
   onOpenAsTab?: () => void;
+  bulkMode?: boolean;
+  isBulkSelected?: boolean;
+  onToggleBulkSelect?: () => void;
 }) {
   const {
     attributes,
@@ -305,20 +390,29 @@ function SortablePresetRow({
     <div
       ref={setNodeRef}
       style={style}
-      onClick={() => { if (!isEditing && onOpenAsTab) onOpenAsTab() }}
-      className={`flex items-center gap-3 px-3 py-2 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg transition-all cursor-pointer ${
-        isDragging ? 'border-accent-green/40 shadow-xl' : 'hover:bg-white/[0.01]'
+      onClick={() => {
+        if (bulkMode && onToggleBulkSelect) { onToggleBulkSelect(); return; }
+        if (!isEditing && onOpenAsTab) onOpenAsTab();
+      }}
+      className={`flex items-center gap-3 px-3 py-2 bg-surface-2 border rounded-lg transition-all cursor-pointer ${
+        bulkMode && isBulkSelected
+          ? 'border-[#3ECF8E]/50 bg-[#3ECF8E]/5'
+          : isDragging
+          ? 'border-accent-green/40 shadow-xl'
+          : 'border-[rgba(255,255,255,0.06)] hover:bg-white/[0.01]'
       }`}
     >
-      {/* Drag Handle */}
-      <button
-        type="button"
-        className="text-zinc-500 hover:text-zinc-355 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical size={16} />
-      </button>
+      {/* Drag Handle - hidden in bulk mode */}
+      {!bulkMode && (
+        <button
+          type="button"
+          className="text-zinc-500 hover:text-zinc-355 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={16} />
+        </button>
+      )}
 
       {/* Checkbox */}
       {onToggleCheck && (
@@ -361,30 +455,41 @@ function SortablePresetRow({
         )}
       </div>
 
-      {/* Edit Pencil and Delete Icon */}
+      {/* Edit / Delete buttons (normal mode) or Bulk checkbox (bulk mode) */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        {!isEditing && (
-          <>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-              className="p-1 text-zinc-500 hover:text-zinc-300 rounded hover:bg-white/5 transition-all"
-              title="名前を変更"
-            >
-              <Pencil size={13} />
-            </button>
-            {onDelete && (
+        {bulkMode ? (
+          <input
+            type="checkbox"
+            id={`preset-bulk-check-${preset.id}`}
+            checked={isBulkSelected}
+            onChange={e => { e.stopPropagation(); if (onToggleBulkSelect) onToggleBulkSelect(); }}
+            onClick={e => e.stopPropagation()}
+            className="w-4 h-4 rounded accent-accent-green cursor-pointer"
+          />
+        ) : (
+          !isEditing && (
+            <>
               <button
                 type="button"
-                id={`preset-delete-btn-${preset.id}`}
-                onClick={(e) => { e.stopPropagation(); onDelete() }}
-                className="p-1 text-zinc-500 hover:text-red-400 rounded hover:bg-red-500/10 transition-all"
-                title="削除"
+                onClick={(e) => { e.stopPropagation(); onStartEdit() }}
+                className="p-1 text-zinc-500 hover:text-zinc-300 rounded hover:bg-white/5 transition-all"
+                title="名前を変更"
               >
-                <Trash2 size={13} />
+                <Pencil size={13} />
               </button>
-            )}
-          </>
+              {onDelete && (
+                <button
+                  type="button"
+                  id={`preset-delete-btn-${preset.id}`}
+                  onClick={(e) => { e.stopPropagation(); onDelete() }}
+                  className="p-1 text-zinc-500 hover:text-red-400 rounded hover:bg-red-500/10 transition-all"
+                  title="削除"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </>
+          )
         )}
       </div>
     </div>

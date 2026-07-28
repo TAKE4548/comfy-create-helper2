@@ -88,6 +88,16 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
     return _preset_to_schema(preset)
 
 
+@router.delete("/bulk", status_code=status.HTTP_204_NO_CONTENT)
+def bulk_delete_presets(payload: schemas.WorkflowPresetBulkDelete, db: Session = Depends(get_db)):
+    """Delete multiple presets by ID. Non-existent IDs are silently skipped."""
+    if payload.ids:
+        db.query(models.WorkflowPreset).filter(
+            models.WorkflowPreset.id.in_(payload.ids)
+        ).delete(synchronize_session=False)
+        db.commit()
+
+
 @router.delete("/{preset_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_preset(preset_id: int, db: Session = Depends(get_db)):
     preset = db.query(models.WorkflowPreset).filter(models.WorkflowPreset.id == preset_id).first()

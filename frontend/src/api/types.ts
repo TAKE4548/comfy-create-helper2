@@ -386,6 +386,10 @@ export interface WorkflowPresetReorder {
   ordered_ids: number[]
 }
 
+export interface WorkflowPresetBulkDeleteRequest {
+  ids: number[]
+}
+
 export interface LoraReorder {
   ordered_ids: number[]
 }
