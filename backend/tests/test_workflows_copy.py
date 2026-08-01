@@ -115,6 +115,36 @@ class TestWorkflowsCopy(unittest.TestCase):
         snapshots_count = self.db.query(models.Snapshot).filter(models.Snapshot.workflow_id == new_id).count()
         self.assertEqual(snapshots_count, 0)
 
+    def test_copy_workflow_with_bypass_profiles(self):
+        # 1. BypassProfile を持つワークフローを作成
+        wf = models.Workflow(name="Source WF", json_body="{}")
+        self.db.add(wf)
+        self.db.commit()
+        self.db.refresh(wf)
+        
+        profile = models.BypassProfile(
+            workflow_id=wf.id,
+            name="Test Bypass Profile",
+            bypassed_node_ids='["10", "20"]',
+            is_enabled=True,
+        )
+        self.db.add(profile)
+        self.db.commit()
+
+        # 2. ワークフローのコピーAPIを実行
+        response = self.client.post(f"/api/workflows/{wf.id}/copy", json={"name": "Copied WF"})
+        self.assertEqual(response.status_code, 201)
+        new_wf_id = response.json()["id"]
+
+        # 3. コピー先ワークフローのバイパスプロファイル一覧を取得して検証
+        res_profiles = self.client.get(f"/api/workflows/{new_wf_id}/bypass-profiles")
+        self.assertEqual(res_profiles.status_code, 200)
+        profiles_data = res_profiles.json()
+        self.assertEqual(len(profiles_data), 1)
+        self.assertEqual(profiles_data[0]["name"], "Test Bypass Profile")
+        self.assertEqual(profiles_data[0]["bypassed_node_ids"], ["10", "20"])
+        self.assertEqual(profiles_data[0]["is_enabled"], True)
+
     def test_copy_workflow_not_found(self):
         payload = {"name": "non_existent_copy"}
         response = self.client.post("/api/workflows/99999/copy", json=payload)

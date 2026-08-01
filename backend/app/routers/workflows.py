@@ -41,6 +41,13 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
             batch_size=p.batch_size, seed_mode=p.seed_mode, seed=p.seed,
             sort_order=p.sort_order,
         ))
+    for bp in src.bypass_profiles:
+        db.add(models.BypassProfile(
+            workflow_id=new_wf.id,
+            name=bp.name,
+            bypassed_node_ids=bp.bypassed_node_ids,
+            is_enabled=bp.is_enabled,
+        ))
     db.commit()
     db.refresh(new_wf)
     return new_wf
