@@ -59,6 +59,7 @@ export const DesktopLayout = ({
     workflow,
     mappingMasters,
     loras,
+    paramTypeMasters,
     tagSets,
     presets,
     comfyObjectInfo,
@@ -477,6 +478,7 @@ export const DesktopLayout = ({
           paramValues={paramValues}
           setParamValues={setParamValues}
           loras={loras}
+          paramTypeMasters={paramTypeMasters}
           batchSize={batchSize}
           setBatchSize={setBatchSize}
           seedMode={seedMode}

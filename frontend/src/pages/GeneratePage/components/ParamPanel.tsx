@@ -1,5 +1,5 @@
 import { Shuffle, Lock, Settings } from 'lucide-react'
-import type { Lora } from '../../../api/types'
+import type { Lora, ParamTypeMaster } from '../../../api/types'
 import { LoraStackEditor } from '../../../components/LoraStackEditor'
 import { SearchableLoraSelect } from '../../../components/SearchableLoraSelect'
 
@@ -19,6 +19,7 @@ export interface ParamPanelProps {
   paramValues: Record<string, string>
   setParamValues: (values: Record<string, string>) => void
   loras?: Lora[]
+  paramTypeMasters?: ParamTypeMaster[]
   batchSize: number
   setBatchSize: (size: number) => void
   seedMode: 'random' | 'fixed'
@@ -38,6 +39,7 @@ export const ParamPanel = ({
   paramValues,
   setParamValues,
   loras,
+  paramTypeMasters,
   batchSize,
   setBatchSize,
   seedMode,
@@ -117,12 +119,71 @@ export const ParamPanel = ({
                   }`}
                 />
               </button>
-            ) : (
-              <input id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} type="number" value={paramValues[m.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                step={m.input_type === 'float' ? 0.1 : 1}
-                className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
-            )}
+            ) : (() => {
+              const customType = paramTypeMasters?.find((ptm) => ptm.name === m.input_type)
+              if (customType) {
+                if (customType.widget_type === 'select' && customType.combo_options) {
+                  return (
+                    <select
+                      id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                      value={paramValues[m.role!] ?? ''}
+                      onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                      className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}
+                    >
+                      <option value="">選択してください…</option>
+                      {customType.combo_options.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                } else if (customType.widget_type === 'boolean') {
+                  return (
+                    <button
+                      id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                      type="button"
+                      onClick={() => {
+                        const currentVal = paramValues[m.role!] === 'true'
+                        setParamValues({ ...paramValues, [m.role!]: currentVal ? 'false' : 'true' })
+                      }}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        paramValues[m.role!] === 'true' ? 'bg-accent-green' : 'bg-zinc-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          paramValues[m.role!] === 'true' ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  )
+                } else {
+                  return (
+                    <input
+                      id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                      type={customType.widget_type === 'textarea' ? 'text' : 'number'}
+                      value={paramValues[m.role!] ?? ''}
+                      onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                      min={customType.min_value ?? undefined}
+                      max={customType.max_value ?? undefined}
+                      step={customType.step ?? (customType.widget_type === 'float' ? 0.01 : 1)}
+                      className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`}
+                    />
+                  )
+                }
+              }
+              return (
+                <input
+                  id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                  type="number"
+                  value={paramValues[m.role!] ?? ''}
+                  onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                  step={m.input_type === 'float' ? 0.1 : 1}
+                  className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`}
+                />
+              )
+            })()}
           </div>
         )
       })}

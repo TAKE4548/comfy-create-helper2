@@ -16,6 +16,7 @@ from app.routers import (
     workflows, mapping_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
     presets, bypass_profiles, base_models, fonts,
+    param_type_masters, comfy,
 )
 
 logging.basicConfig(
@@ -195,6 +196,22 @@ def run_migrations():
                 """))
                 logger.info("Migrated: Added 'sort_order' column to 'tagset_categories' table.")
 
+        # Create param_type_masters table if not exists
+        if "param_type_masters" not in inspector.get_table_names():
+            conn.execute(sa.text("""
+                CREATE TABLE param_type_masters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR NOT NULL UNIQUE,
+                    widget_type VARCHAR NOT NULL DEFAULT 'select',
+                    combo_options TEXT,
+                    min_value FLOAT,
+                    max_value FLOAT,
+                    step FLOAT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            logger.info("Migrated: Created 'param_type_masters' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -244,6 +261,8 @@ app.include_router(presets.router)
 app.include_router(bypass_profiles.router)
 app.include_router(base_models.router)
 app.include_router(fonts.router)
+app.include_router(param_type_masters.router)
+app.include_router(comfy.router)
 
 
 class CachedStaticFiles(StaticFiles):

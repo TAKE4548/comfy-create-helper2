@@ -11,6 +11,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class ParamTypeMaster(Base):
+    __tablename__ = "param_type_masters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    widget_type: Mapped[str] = mapped_column(String, nullable=False, default="select")
+    # widget_type の値: select / int / float / textarea / boolean
+    combo_options: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    min_value: Mapped[Optional[float]] = mapped_column(Float)
+    max_value: Mapped[Optional[float]] = mapped_column(Float)
+    step: Mapped[Optional[float]] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class MappingMaster(Base):
     __tablename__ = "mapping_master"
 

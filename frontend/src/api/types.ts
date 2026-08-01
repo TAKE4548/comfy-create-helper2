@@ -476,4 +476,43 @@ export interface ServerFont {
   file_name: string
 }
 
+// ─── ParamTypeMaster ─────────────────────────────────────────────
+
+export interface ParamTypeMaster {
+  id: number
+  name: string
+  widget_type: 'select' | 'int' | 'float' | 'textarea' | 'boolean'
+  combo_options: string[] | null
+  min_value: number | null
+  max_value: number | null
+  step: number | null
+  created_at: string
+}
+
+export interface ParamTypeMasterCreate {
+  name: string
+  widget_type: string
+  combo_options?: string[]
+  min_value?: number
+  max_value?: number
+  step?: number
+}
+
+// ─── ComfyUI Object Info ─────────────────────────────────────────
+
+/**
+ * ComfyUI /object_info/{class_type} のレスポンス。
+ * キーはclass_type名、値はノード定義。
+ * input.required の各エントリ:
+ *   - combo: [string[], {}]
+ *   - INT/FLOAT: ["INT"|"FLOAT", {min?, max?, default?, step?}]
+ */
+export type ComfyObjectInfo = Record<string, {
+  input?: {
+    required?: Record<string, [unknown, Record<string, unknown>]>
+    optional?: Record<string, [unknown, Record<string, unknown>]>
+  }
+}>
+
+
 

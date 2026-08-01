@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, WorkflowPresetBulkDeleteRequest, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, WorkflowPresetBulkDeleteRequest, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo } from './types'
 
 const BASE_URL = '/api'
 
@@ -235,5 +235,21 @@ export const checkpointMappingsApi = {
   create: (data: CheckpointMappingCreate) => request<CheckpointMapping>('/checkpoint-mappings', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/checkpoint-mappings/${id}`, { method: 'DELETE' }),
   getComfyCheckpoints: () => request<string[]>('/comfy/checkpoints'),
+}
+
+// ─── ParamTypeMaster ─────────────────────────────────────────────
+export const paramTypeMastersApi = {
+  list: () => request<ParamTypeMaster[]>('/param-type-masters'),
+  create: (data: ParamTypeMasterCreate) =>
+    request<ParamTypeMaster>('/param-type-masters', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: ParamTypeMasterCreate) =>
+    request<ParamTypeMaster>(`/param-type-masters/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/param-type-masters/${id}`, { method: 'DELETE' }),
+}
+
+// ─── ComfyUI Object Info ─────────────────────────────────────────
+export const comfyApi = {
+  getObjectInfo: (classType: string) =>
+    request<ComfyObjectInfo>(`/comfy/object-info/${encodeURIComponent(classType)}`),
 }
 

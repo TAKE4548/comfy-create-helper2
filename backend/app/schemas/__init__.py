@@ -95,6 +95,12 @@ from app.schemas.base_model import (
     CheckpointMappingRead,
 )
 
+from app.schemas.param_type import (
+    ParamTypeMasterBase,
+    ParamTypeMasterCreate,
+    ParamTypeMasterRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -124,4 +130,6 @@ __all__ = [
     "BypassProfileCreate", "BypassProfileUpdate", "BypassProfileRead",
     # BaseModel / CheckpointMapping
     "BaseModelCreate", "BaseModelRead", "CheckpointMappingCreate", "CheckpointMappingRead",
+    # ParamTypeMaster
+    "ParamTypeMasterBase", "ParamTypeMasterCreate", "ParamTypeMasterRead",
 ]

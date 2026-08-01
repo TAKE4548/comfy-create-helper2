@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings, Sliders, Wand2, ChevronDown, Save, RefreshCw, Plus, Pencil, Trash2, Copy, Layers } from 'lucide-react'
 import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import { llmPromptsApi, configApi, mappingMastersApi, workflowsApi, workflowPresetsApi, snapshotsApi } from '../api/client'
-import type { LlmPrompt, MappingMaster, WorkflowSummary, WorkflowPreset } from '../api/types'
+import { llmPromptsApi, configApi, mappingMastersApi, workflowsApi, workflowPresetsApi, snapshotsApi, paramTypeMastersApi } from '../api/client'
+import type { LlmPrompt, MappingMaster, WorkflowSummary, WorkflowPreset, ParamTypeMaster, ParamTypeMasterCreate } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import {
   MappingMasterModal,
@@ -25,6 +25,7 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import { WorkflowManageModal } from '../components/WorkflowManageModal'
 import { PresetManagerPanel } from '../components/PresetManagerPanel'
 import { BaseModelSection } from './SettingsPage/components/BaseModelSection'
+import { ParamTypeMasterModal } from '../components/ParamTypeMasterModal'
 
 interface ExpandedSectionsState {
   prompts: boolean;
@@ -165,6 +166,41 @@ export function SettingsPage() {
     queryKey: ['mapping-master-usages', selectedMaster?.id],
     queryFn: () => mappingMastersApi.getUsages(selectedMaster!.id),
     enabled: !!selectedMaster && showDeleteModal,
+  })
+
+  // ParamTypeMasters queries and mutations
+  const { data: paramTypeMasters = [] } = useQuery<ParamTypeMaster[]>({
+    queryKey: ['param-type-masters'],
+    queryFn: () => paramTypeMastersApi.list() as Promise<ParamTypeMaster[]>,
+  })
+
+  const [paramTypeModalMode, setParamTypeModalMode] = useState<'create' | 'edit' | null>(null)
+  const [editingParamType, setEditingParamType] = useState<ParamTypeMaster | null>(null)
+
+  const createParamTypeMutation = useMutation({
+    mutationFn: paramTypeMastersApi.create,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['param-type-masters'] })
+      setParamTypeModalMode(null)
+      setEditingParamType(null)
+    },
+  })
+
+  const updateParamTypeMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: ParamTypeMasterCreate }) =>
+      paramTypeMastersApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['param-type-masters'] })
+      setParamTypeModalMode(null)
+      setEditingParamType(null)
+    },
+  })
+
+  const deleteParamTypeMutation = useMutation({
+    mutationFn: paramTypeMastersApi.delete,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['param-type-masters'] })
+    },
   })
 
   // Workflow states & queries
@@ -928,7 +964,56 @@ export function SettingsPage() {
             </div>
           </div>
           {expandedSections.mappingMasters && (
-            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
+              {/* Custom Param Types Bar */}
+              <div className="p-3 bg-surface-2/40 rounded-lg border border-[rgba(255,255,255,0.06)] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-zinc-300">カスタム型マスター ({paramTypeMasters.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingParamType(null); setParamTypeModalMode('create') }}
+                    className="flex items-center gap-1 text-xs text-[#7C6FDD] hover:text-[#9185e6] font-medium transition-colors"
+                  >
+                    <Plus size={12} /> 新規型を作成
+                  </button>
+                </div>
+                {paramTypeMasters.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {paramTypeMasters.map((ptm) => (
+                      <div
+                        key={ptm.id}
+                        className="flex items-center gap-2 px-2.5 py-1 bg-surface border border-[rgba(255,255,255,0.08)] rounded-md text-xs text-zinc-300"
+                      >
+                        <span className="font-semibold text-zinc-200">{ptm.name}</span>
+                        <span className="text-[10px] text-zinc-500 font-mono">({ptm.widget_type})</span>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingParamType(ptm); setParamTypeModalMode('edit') }}
+                          className="text-zinc-400 hover:text-zinc-200"
+                          title="編集"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`'${ptm.name}' を削除しますか？`)) {
+                              deleteParamTypeMutation.mutate(ptm.id)
+                            }
+                          }}
+                          className="text-zinc-400 hover:text-red-400"
+                          title="削除"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-zinc-500">カスタム型マスターはまだ登録されていません。</p>
+                )}
+              </div>
+
               {isLoadingMasters ? (
                 <div className="flex items-center gap-2 text-zinc-600 text-sm py-8"><RefreshCw size={14} className="animate-spin" />Loading mapping masters…</div>
               ) : (
@@ -1222,7 +1307,25 @@ export function SettingsPage() {
       {showMasterModal && (
         <MappingMasterModal mode={showMasterModal} form={masterForm} setForm={setMasterForm}
           isPending={createMaster.isPending || updateMaster.isPending}
-          onClose={closeMasterModal} onSubmit={handleSaveMaster} masters={masters} />
+          onClose={closeMasterModal} onSubmit={handleSaveMaster} masters={masters}
+          paramTypeMasters={paramTypeMasters}
+          onOpenCreateParamType={() => setParamTypeModalMode('create')}
+        />
+      )}
+      {paramTypeModalMode && (
+        <ParamTypeMasterModal
+          mode={paramTypeModalMode}
+          initial={editingParamType ?? undefined}
+          isPending={createParamTypeMutation.isPending || updateParamTypeMutation.isPending}
+          onClose={() => { setParamTypeModalMode(null); setEditingParamType(null) }}
+          onSubmit={(data) => {
+            if (paramTypeModalMode === 'create') {
+              createParamTypeMutation.mutate(data)
+            } else if (editingParamType) {
+              updateParamTypeMutation.mutate({ id: editingParamType.id, data })
+            }
+          }}
+        />
       )}
       {showDeleteModal && selectedMaster && (
         <MappingMasterDeleteModal master={selectedMaster} usages={usages as any} isLoadingUsages={isLoadingUsages}

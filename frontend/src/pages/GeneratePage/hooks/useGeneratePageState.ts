@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi, llmPromptsApi } from '../../../api/client'
-import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel, LlmPrompt } from '../../../api/types'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi, llmPromptsApi, paramTypeMastersApi } from '../../../api/client'
+import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel, LlmPrompt, ParamTypeMaster } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { useWorkflowParams, getInitialParams } from './useWorkflowParams'
@@ -168,6 +168,10 @@ export function useGeneratePageState() {
   const { data: tagSets } = useQuery({
     queryKey: ['tag-sets'],
     queryFn: () => tagSetsApi.list() as Promise<TagSet[]>,
+  })
+  const { data: paramTypeMasters } = useQuery({
+    queryKey: ['param-type-masters'],
+    queryFn: () => paramTypeMastersApi.list() as Promise<ParamTypeMaster[]>,
   })
   const { data: presets } = useQuery({
     queryKey: ['workflow-presets', selectedWorkflowId],
@@ -1398,5 +1402,6 @@ export function useGeneratePageState() {
     handleBulkEditRequest,
     handleBulkEditApply,
     bulkDeletePresetsMutation,
+    paramTypeMasters,
   }
 }

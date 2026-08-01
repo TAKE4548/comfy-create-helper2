@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { X, RefreshCw, AlertTriangle, GripVertical, Edit2, Trash2, Copy } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { MappingMaster, MappingMasterCreate } from '../api/types'
+import type { MappingMaster, MappingMasterCreate, ParamTypeMaster } from '../api/types'
 
 const inputCls = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
 
@@ -18,7 +18,7 @@ export interface MappingMasterFormState {
   role: string
   displayName: string
   paramName: string
-  inputType: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean'
+  inputType: string
   expectedClassTypes: string
   titlePatterns: string
 }
@@ -51,7 +51,7 @@ export function masterToForm(mm: MappingMaster): MappingMasterFormState {
 
 // ─── Create / Edit Modal ────────────────────────────────────────
 export function MappingMasterModal({
-  mode, form, setForm, isPending, onClose, onSubmit, masters,
+  mode, form, setForm, isPending, onClose, onSubmit, masters, paramTypeMasters, onOpenCreateParamType,
 }: {
   mode: 'create' | 'edit'
   form: MappingMasterFormState
@@ -60,6 +60,8 @@ export function MappingMasterModal({
   onClose: () => void
   onSubmit: (e: React.FormEvent) => void
   masters?: MappingMaster[]
+  paramTypeMasters?: ParamTypeMaster[]
+  onOpenCreateParamType?: () => void
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -112,9 +114,38 @@ export function MappingMasterModal({
             </div>
             <div className="space-y-1.5">
               <label className="text-[11px] text-zinc-400 font-medium">Input Type</label>
-              <select value={form.inputType} onChange={(e) => setForm((f) => ({ ...f, inputType: e.target.value as MappingMasterFormState['inputType'] }))} className={inputCls}>
-                {(['textarea', 'int', 'float', 'select', 'lora_stack', 'select_sampler', 'select_scheduler', 'boolean'] as const).map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <div className="flex gap-2 items-center">
+                <select
+                  value={form.inputType}
+                  onChange={(e) => setForm((f) => ({ ...f, inputType: e.target.value }))}
+                  className={inputCls}
+                >
+                  <optgroup label="Built-in">
+                    {(['textarea', 'int', 'float', 'select', 'lora_stack', 'select_sampler', 'select_scheduler', 'boolean'] as const).map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </optgroup>
+                  {paramTypeMasters && paramTypeMasters.length > 0 && (
+                    <optgroup label="Custom Types">
+                      {paramTypeMasters.map((ptm) => (
+                        <option key={ptm.id} value={ptm.name}>
+                          {ptm.name} ({ptm.widget_type})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {onOpenCreateParamType && (
+                  <button
+                    type="button"
+                    onClick={onOpenCreateParamType}
+                    className="flex-shrink-0 text-xs px-2 py-2 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all whitespace-nowrap"
+                    title="新しいカスタム型を作成"
+                  >
+                    ＋ 型
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="space-y-1.5">
