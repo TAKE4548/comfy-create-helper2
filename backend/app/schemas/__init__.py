@@ -101,6 +101,13 @@ from app.schemas.param_type import (
     ParamTypeMasterRead,
 )
 
+from app.schemas.param_sync_groups import (
+    ParamSyncGroupBase,
+    ParamSyncGroupCreate,
+    ParamSyncGroupUpdate,
+    ParamSyncGroupRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -132,4 +139,7 @@ __all__ = [
     "BaseModelCreate", "BaseModelRead", "CheckpointMappingCreate", "CheckpointMappingRead",
     # ParamTypeMaster
     "ParamTypeMasterBase", "ParamTypeMasterCreate", "ParamTypeMasterRead",
+    # ParamSyncGroup
+    "ParamSyncGroupBase", "ParamSyncGroupCreate", "ParamSyncGroupUpdate", "ParamSyncGroupRead",
 ]
+

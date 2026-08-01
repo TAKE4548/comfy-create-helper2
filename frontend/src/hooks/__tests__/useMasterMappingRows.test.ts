@@ -181,4 +181,90 @@ describe('useMasterMappingRows', () => {
     const mappings = result.current.getMappings(mainRows, notFoundRows)
     expect(mappings).toEqual([])
   })
+
+  it('should initialize using existingMappings when valid', () => {
+    const scanResult: ScanResult = {
+      matched: [
+        {
+          master_id: 1,
+          role: 'prompt',
+          node_id: '6',
+          node_title: 'CLIP Text Encode',
+          status: 'ok',
+          node_ids: ['6', '10'],
+        },
+      ],
+      warnings: [],
+    }
+
+    const { result } = renderHook(() => useMasterMappingRows(mockMasters, scanResult))
+
+    act(() => {
+      result.current.initFromScan(scanResult, [{ master_id: 1, node_id: '10' }])
+    })
+
+    const { mainRows } = result.current.buildRows()
+    const promptRow = mainRows.find(r => r.master.id === 1)
+
+    expect(promptRow?.node_id).toBe('10')
+    expect(promptRow?.is_existing_mismatch).toBe(false)
+  })
+
+  it('should fallback to scan default and set is_existing_mismatch when existingMapping is invalid', () => {
+    const scanResult: ScanResult = {
+      matched: [
+        {
+          master_id: 1,
+          role: 'prompt',
+          node_id: '6',
+          node_title: 'CLIP Text Encode',
+          status: 'ok',
+        },
+      ],
+      warnings: [],
+    }
+
+    const { result } = renderHook(() => useMasterMappingRows(mockMasters, scanResult))
+
+    act(() => {
+      result.current.initFromScan(scanResult, [{ master_id: 1, node_id: '999' }])
+    })
+
+    const { mainRows } = result.current.buildRows()
+    const promptRow = mainRows.find(r => r.master.id === 1)
+
+    expect(promptRow?.node_id).toBe('6')
+    expect(promptRow?.is_existing_mismatch).toBe(true)
+  })
+
+  it('should validate existingMapping via workflowJson if node exists in workflowJson', () => {
+    const scanResult: ScanResult = {
+      matched: [
+        {
+          master_id: 1,
+          role: 'prompt',
+          node_id: '6',
+          node_title: 'CLIP Text Encode',
+          status: 'ok',
+        },
+      ],
+      warnings: [],
+    }
+
+    const { result } = renderHook(() => useMasterMappingRows(mockMasters, scanResult))
+
+    act(() => {
+      result.current.initFromScan(
+        scanResult,
+        [{ master_id: 1, node_id: '15' }],
+        { '15': { class_type: 'CustomNode' } }
+      )
+    })
+
+    const { mainRows } = result.current.buildRows()
+    const promptRow = mainRows.find(r => r.master.id === 1)
+
+    expect(promptRow?.node_id).toBe('15')
+    expect(promptRow?.is_existing_mismatch).toBe(false)
+  })
 })

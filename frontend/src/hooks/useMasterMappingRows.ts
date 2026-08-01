@@ -7,6 +7,7 @@ export interface MasterMappingRow {
   candidates: string[]
   status: 'ok' | 'duplicated' | 'class_type_mismatch' | 'not_found'
   node_title?: string
+  is_existing_mismatch?: boolean
 }
 
 export function useMasterMappingRows(
@@ -14,6 +15,7 @@ export function useMasterMappingRows(
   scanResult: ScanResult | null
 ) {
   const [rowState, setRowState] = useState<Record<number, string>>({})  // master_id -> node_id
+  const [mismatchState, setMismatchState] = useState<Record<number, boolean>>({})
 
   const buildRows = (): { mainRows: MasterMappingRow[]; notFoundRows: MasterMappingRow[] } => {
     if (!scanResult) return { mainRows: [], notFoundRows: [] }
@@ -64,6 +66,7 @@ export function useMasterMappingRows(
         candidates,
         status,
         node_title,
+        is_existing_mismatch: mismatchState[master.id] ?? false,
       }
 
       if (status === 'not_found') {
@@ -80,17 +83,63 @@ export function useMasterMappingRows(
     setRowState(prev => ({ ...prev, [master_id]: node_id }))
   }
 
-  const initFromScan = (result: ScanResult) => {
-    // スキャン結果から初期node_idを設定（初回のみ）
-    const initial: Record<number, string> = {}
+  const initFromScan = (
+    result: ScanResult,
+    existingMappings?: { master_id: number; node_id: string }[],
+    workflowJson?: Record<string, unknown>
+  ) => {
+    const scanDefaults: Record<number, string> = {}
     for (const m of result.matched) {
-      initial[m.master_id] = m.node_id
+      scanDefaults[m.master_id] = m.node_id
     }
     for (const w of result.warnings) {
-      if (w.status === 'duplicated' && w.node_ids?.[0]) initial[w.master_id] = w.node_ids[0]
-      else if (w.status === 'class_type_mismatch' && w.node_id) initial[w.master_id] = w.node_id
+      if (w.status === 'duplicated' && w.node_ids?.[0]) scanDefaults[w.master_id] = w.node_ids[0]
+      else if (w.status === 'class_type_mismatch' && w.node_id) scanDefaults[w.master_id] = w.node_id
     }
+
+    const initial: Record<number, string> = {}
+    const mismatches: Record<number, boolean> = {}
+
+    const matchedMap = new Map(result.matched.map(m => [m.master_id, m]))
+    const warningMap = new Map(result.warnings.map(w => [w.master_id, w]))
+
+    if (existingMappings && existingMappings.length > 0) {
+      const existingMap = new Map(existingMappings.map(e => [e.master_id, e.node_id]))
+      for (const master of masters) {
+        const existingNodeId = existingMap.get(master.id)
+        if (existingNodeId !== undefined && existingNodeId.trim() !== '') {
+          const matched = matchedMap.get(master.id)
+          const warning = warningMap.get(master.id)
+          const validCandidates = [
+            ...(matched?.node_ids ?? (matched ? [matched.node_id] : [])),
+            ...(warning?.node_ids ?? (warning?.node_id ? [warning.node_id] : []))
+          ]
+
+          let isValid = validCandidates.includes(existingNodeId)
+          if (!isValid && workflowJson) {
+            if (Object.prototype.hasOwnProperty.call(workflowJson, existingNodeId)) {
+              isValid = true
+            }
+          }
+
+          if (isValid) {
+            initial[master.id] = existingNodeId
+          } else {
+            initial[master.id] = scanDefaults[master.id] ?? ''
+            mismatches[master.id] = true
+          }
+        } else {
+          initial[master.id] = scanDefaults[master.id] ?? ''
+        }
+      }
+    } else {
+      for (const mId of Object.keys(scanDefaults)) {
+        initial[Number(mId)] = scanDefaults[Number(mId)]
+      }
+    }
+
     setRowState(initial)
+    setMismatchState(mismatches)
   }
 
   const getMappings = (mainRows: MasterMappingRow[], notFoundRows: MasterMappingRow[]) =>

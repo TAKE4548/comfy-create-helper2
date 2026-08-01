@@ -141,3 +141,5 @@ db/snapshots/
 *.db.bak
 *.db-journal
 db/prompt_surgeon.db
+brain/
+

@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, WorkflowPresetBulkDeleteRequest, Category, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo } from './types'
 
 const BASE_URL = '/api'
 
@@ -30,7 +30,7 @@ async function request<T>(
 // ─── Workflows ──────────────────────────────────────────────────
 export const workflowsApi = {
   list: () => request<WorkflowSummary[]>('/workflows'),
-  get: (id: number) => request(`/workflows/${id}`),
+  get: (id: number) => request<Workflow>(`/workflows/${id}`),
   create: (data: unknown) => request('/workflows', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: unknown) => request(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request(`/workflows/${id}`, { method: 'DELETE' }),
@@ -219,6 +219,18 @@ export const bypassProfilesApi = {
     request<BypassProfile>(`/bypass-profiles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) =>
     request<void>(`/bypass-profiles/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Param Sync Groups ─────────────────────────────────────────
+export const paramSyncGroupsApi = {
+  list: (workflow_id: number) =>
+    request<ParamSyncGroup[]>(`/workflows/${workflow_id}/param-sync-groups`),
+  create: (workflow_id: number, data: ParamSyncGroupCreate) =>
+    request<ParamSyncGroup>(`/workflows/${workflow_id}/param-sync-groups`, { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: ParamSyncGroupUpdate) =>
+    request<ParamSyncGroup>(`/param-sync-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) =>
+    request<void>(`/param-sync-groups/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Base Models ───────────────────────────────────────────────

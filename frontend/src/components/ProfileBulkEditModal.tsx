@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Loader2, AlertTriangle } from 'lucide-react';
 import type { WorkflowPreset, MappingMaster, Lora } from '../api/types';
 import type { AppliedAsset } from '../store/useGenerationStore';

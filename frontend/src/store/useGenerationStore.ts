@@ -11,8 +11,8 @@
  */
 
 import { create } from 'zustand'
-import { configApi, bypassProfilesApi } from '../api/client'
-import type { BypassProfile } from '../api/types'
+import { configApi, bypassProfilesApi, paramSyncGroupsApi } from '../api/client'
+import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
@@ -137,6 +137,7 @@ export interface GenerationState {
 
   // ─── Bypass Profiles State ─────────────────────────────────────
   bypassProfiles: BypassProfile[]
+  paramSyncGroups: ParamSyncGroup[]
   errorToast: { message: string; type: 'error' | 'success' } | null
 
   // ─── Multi-Set State (New) ─────────────────────────────────────
@@ -182,6 +183,12 @@ export interface GenerationState {
   createBypassProfile: (workflowId: number, name: string, nodeIds: string[]) => Promise<void>
   updateBypassProfile: (profileId: number, data: { name?: string; bypassed_node_ids?: string[]; is_enabled?: boolean }) => Promise<void>
   deleteBypassProfile: (profileId: number) => Promise<void>
+
+  fetchParamSyncGroups: (workflowId: number) => Promise<void>
+  createParamSyncGroup: (workflowId: number, data: ParamSyncGroupCreate) => Promise<ParamSyncGroup>
+  updateParamSyncGroup: (id: number, data: ParamSyncGroupUpdate) => Promise<ParamSyncGroup>
+  deleteParamSyncGroup: (id: number) => Promise<void>
+  toggleParamSyncGroup: (id: number, isEnabled: boolean) => Promise<void>
 
   // ─── Multi-Set Actions (New) ───────────────────────────────────
   initSets: (workflowId: number) => void
@@ -353,6 +360,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     queueRunning: [],
     queuePending: [],
     bypassProfiles: [],
+    paramSyncGroups: [],
     errorToast: null,
     sets: initialSets,
     activeSetId: initialActiveSetId,
@@ -400,6 +408,43 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       } catch (e) {
         console.error('Failed to delete bypass profile:', e)
       }
+    },
+
+    fetchParamSyncGroups: async (workflowId) => {
+      try {
+        const groups = await paramSyncGroupsApi.list(workflowId)
+        set({ paramSyncGroups: groups })
+      } catch (e) {
+        console.error('Failed to fetch param sync groups:', e)
+      }
+    },
+
+    createParamSyncGroup: async (workflowId, data) => {
+      const newGroup = await paramSyncGroupsApi.create(workflowId, data)
+      set((state) => ({ paramSyncGroups: [...state.paramSyncGroups, newGroup] }))
+      return newGroup
+    },
+
+    updateParamSyncGroup: async (id, data) => {
+      const updated = await paramSyncGroupsApi.update(id, data)
+      set((state) => ({
+        paramSyncGroups: state.paramSyncGroups.map((g) => (g.id === id ? updated : g)),
+      }))
+      return updated
+    },
+
+    deleteParamSyncGroup: async (id) => {
+      await paramSyncGroupsApi.delete(id)
+      set((state) => ({
+        paramSyncGroups: state.paramSyncGroups.filter((g) => g.id !== id),
+      }))
+    },
+
+    toggleParamSyncGroup: async (id, isEnabled) => {
+      const updated = await paramSyncGroupsApi.update(id, { is_enabled: isEnabled })
+      set((state) => ({
+        paramSyncGroups: state.paramSyncGroups.map((g) => (g.id === id ? updated : g)),
+      }))
     },
 
     initialize: () => {
@@ -718,6 +763,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           seedMode: defaultSeedMode,
           seed: defaultSeed
         })
+        get().fetchParamSyncGroups(id)
       } else {
         localStorage.removeItem(LS_KEYS.WORKFLOW_ID)
         set({
@@ -728,7 +774,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           appliedAssets: {},
           batchSize: 1,
           seedMode: 'random',
-          seed: 42
+          seed: 42,
+          paramSyncGroups: [],
         })
       }
     },

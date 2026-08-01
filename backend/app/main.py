@@ -16,7 +16,7 @@ from app.routers import (
     workflows, mapping_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
     presets, bypass_profiles, base_models, fonts,
-    param_type_masters, comfy,
+    param_type_masters, comfy, param_sync_groups,
 )
 
 logging.basicConfig(
@@ -263,6 +263,7 @@ app.include_router(base_models.router)
 app.include_router(fonts.router)
 app.include_router(param_type_masters.router)
 app.include_router(comfy.router)
+app.include_router(param_sync_groups.router)
 
 
 class CachedStaticFiles(StaticFiles):

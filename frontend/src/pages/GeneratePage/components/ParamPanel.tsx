@@ -1,5 +1,5 @@
-import { Shuffle, Lock, Settings } from 'lucide-react'
-import type { Lora, ParamTypeMaster } from '../../../api/types'
+import { Shuffle, Lock, Settings, Link } from 'lucide-react'
+import type { Lora, ParamTypeMaster, ParamSyncGroup } from '../../../api/types'
 import { LoraStackEditor } from '../../../components/LoraStackEditor'
 import { SearchableLoraSelect } from '../../../components/SearchableLoraSelect'
 
@@ -31,6 +31,9 @@ export interface ParamPanelProps {
   bypassProfiles?: any[]
   onToggleBypass?: (profileId: number, isEnabled: boolean) => void
   onOpenBypassSettings?: () => void
+  paramSyncGroups?: ParamSyncGroup[]
+  onToggleParamSync?: (groupId: number, isEnabled: boolean) => void
+  onOpenParamSyncSettings?: () => void
   activeBaseModelId?: number | null
 }
 
@@ -51,13 +54,29 @@ export const ParamPanel = ({
   bypassProfiles = [],
   onToggleBypass,
   onOpenBypassSettings,
+  paramSyncGroups = [],
+  onToggleParamSync,
+  onOpenParamSyncSettings,
   activeBaseModelId,
 }: ParamPanelProps) => {
   if (paramMappings.length === 0) return null
+
+  // Active slave roles and their master group mapping
+  const activeSlaveMap = new Map<string, ParamSyncGroup>()
+  paramSyncGroups.filter((g) => g.is_enabled).forEach((g) => {
+    g.slave_roles.forEach((slaveRole) => {
+      activeSlaveMap.set(slaveRole, g)
+    })
+  })
+
   return (
     <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
       <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Parameters</p>
       {paramMappings.map((m) => {
+        const syncGroup = activeSlaveMap.get(m.role!)
+        const isSyncedSlave = Boolean(syncGroup)
+        const masterDisplayName = syncGroup ? (paramMappings.find((pm) => pm.role === syncGroup.master_role)?.display_name || syncGroup.master_role) : ''
+
         if (m.input_type === 'lora_stack') {
           return (
             <LoraStackEditor
@@ -73,11 +92,19 @@ export const ParamPanel = ({
         }
         return (
           <div key={m.id} className="flex items-center justify-between gap-4">
-            <label className="text-xs text-zinc-400 flex-shrink-0">{m.display_name}</label>
+            <div className="flex flex-col min-w-0 flex-shrink-0">
+              <label className="text-xs text-zinc-400 truncate">{m.display_name}</label>
+              {isSyncedSlave && (
+                <span className="text-[9px] text-accent-green/80 flex items-center gap-0.5" title={`Synced with ${masterDisplayName}`}>
+                  <Link size={9} /> Synced: {masterDisplayName}
+                </span>
+              )}
+            </div>
             {m.input_type === 'select_sampler' ? (
               <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+                disabled={isSyncedSlave}
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
                 <option value="">Select sampler…</option>
                 {(comfyObjectInfo?.KSampler?.input?.required?.sampler_name?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.sampler_name?.[0] || DEFAULT_SAMPLERS)?.map((name: string) => (
                   <option key={name} value={name}>{name}</option>
@@ -85,8 +112,9 @@ export const ParamPanel = ({
               </select>
             ) : m.input_type === 'select_scheduler' ? (
               <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
+                disabled={isSyncedSlave}
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}>
+                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
                 <option value="">Select scheduler…</option>
                 {(comfyObjectInfo?.KSampler?.input?.required?.scheduler?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.scheduler?.[0] || DEFAULT_SCHEDULERS)?.map((name: string) => (
                   <option key={name} value={name}>{name}</option>
@@ -98,18 +126,19 @@ export const ParamPanel = ({
                 onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                 loras={loras}
                 activeBaseModelId={activeBaseModelId}
-                className={`${mobile ? 'w-36' : 'w-48'}`}
+                className={`${mobile ? 'w-36' : 'w-48'} ${isSyncedSlave ? 'opacity-40 pointer-events-none' : ''}`}
                 placeholder="Select option…"
               />
             ) : m.input_type === 'boolean' ? (
               <button
                 id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                 type="button"
+                disabled={isSyncedSlave}
                 onClick={() => {
                   const currentVal = paramValues[m.role!] === 'true'
                   setParamValues({ ...paramValues, [m.role!]: currentVal ? 'false' : 'true' })
                 }}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
                   paramValues[m.role!] === 'true' ? 'bg-accent-green' : 'bg-zinc-700'
                 }`}
               >
@@ -127,8 +156,9 @@ export const ParamPanel = ({
                     <select
                       id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                       value={paramValues[m.role!] ?? ''}
+                      disabled={isSyncedSlave}
                       onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                      className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40`}
+                      className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}
                     >
                       <option value="">選択してください…</option>
                       {customType.combo_options.map((opt) => (
@@ -143,11 +173,12 @@ export const ParamPanel = ({
                     <button
                       id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                       type="button"
+                      disabled={isSyncedSlave}
                       onClick={() => {
                         const currentVal = paramValues[m.role!] === 'true'
                         setParamValues({ ...paramValues, [m.role!]: currentVal ? 'false' : 'true' })
                       }}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
                         paramValues[m.role!] === 'true' ? 'bg-accent-green' : 'bg-zinc-700'
                       }`}
                     >
@@ -164,11 +195,12 @@ export const ParamPanel = ({
                       id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                       type={customType.widget_type === 'textarea' ? 'text' : 'number'}
                       value={paramValues[m.role!] ?? ''}
+                      disabled={isSyncedSlave}
                       onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                       min={customType.min_value ?? undefined}
                       max={customType.max_value ?? undefined}
                       step={customType.step ?? (customType.widget_type === 'float' ? 0.01 : 1)}
-                      className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`}
+                      className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
                     />
                   )
                 }
@@ -178,9 +210,10 @@ export const ParamPanel = ({
                   id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                   type="number"
                   value={paramValues[m.role!] ?? ''}
+                  disabled={isSyncedSlave}
                   onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
                   step={m.input_type === 'float' ? 0.1 : 1}
-                  className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`}
+                  className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
                 />
               )
             })()}
@@ -205,6 +238,49 @@ export const ParamPanel = ({
             onChange={(e) => setSeed(Number(e.target.value))} disabled={seedMode === 'random'}
             className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40`} />
         </div>
+      </div>
+
+      {/* Param Sync Section */}
+      <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 mt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Param Sync</p>
+          <button
+            id={`param-sync-settings-btn${mobile ? '-mobile' : ''}`}
+            type="button"
+            onClick={onOpenParamSyncSettings}
+            className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-1"
+            title="Param Sync Settings"
+          >
+            <Settings size={12} />
+            <span className="text-[10px] text-zinc-400 hover:underline">Settings</span>
+          </button>
+        </div>
+
+        {paramSyncGroups && paramSyncGroups.length > 0 ? (
+          <div className="space-y-1.5">
+            {paramSyncGroups.map((g) => (
+              <div key={g.id} className="flex items-center justify-between gap-4">
+                <span className="text-xs text-zinc-400 truncate max-w-[150px]">{g.name}</span>
+                <button
+                  id={`param-sync-toggle-${g.id}${mobile ? '-mobile' : ''}`}
+                  type="button"
+                  onClick={() => onToggleParamSync?.(g.id, !g.is_enabled)}
+                  className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    g.is_enabled ? 'bg-accent-green' : 'bg-zinc-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      g.is_enabled ? 'translate-x-3' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-zinc-500 italic">No sync groups. Open Settings to add.</p>
+        )}
       </div>
 
       {/* Bypass Section */}

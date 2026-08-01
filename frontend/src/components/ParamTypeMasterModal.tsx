@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { X, ChevronDown, ChevronRight, Loader2, Wand2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { ParamTypeMaster, ParamTypeMasterCreate, Workflow } from '../api/types'

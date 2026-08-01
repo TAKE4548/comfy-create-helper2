@@ -442,6 +442,34 @@ export interface BypassProfileUpdate {
 }
 
 
+// ─── ParamSyncGroup ──────────────────────────────────────────────
+
+export interface ParamSyncGroup {
+  id: number
+  workflow_id: number
+  name: string
+  master_role: string
+  slave_roles: string[]
+  is_enabled: boolean
+  created_at: string
+}
+
+export interface ParamSyncGroupCreate {
+  name: string
+  master_role: string
+  slave_roles: string[]
+  is_enabled?: boolean
+}
+
+export interface ParamSyncGroupUpdate {
+  name?: string
+  master_role?: string
+  slave_roles?: string[]
+  is_enabled?: boolean
+}
+
+
+
 // ─── BaseModel & CheckpointMapping ──────────────────────────────
 
 export interface BaseModel {

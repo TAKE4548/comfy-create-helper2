@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, ScanLine, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
-import type { ScanResult, MappingMaster } from '../api/types'
+import type { ScanResult, MappingMaster, WorkflowMapping } from '../api/types'
 import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
@@ -10,6 +10,7 @@ type Phase = 'scanning' | 'editing' | 'saving' | 'done'
 interface RescanModalProps {
   workflowId: number
   workflowJson: Record<string, unknown>
+  existingMappings?: { master_id: number; node_id: string }[] | WorkflowMapping[]
   onClose: () => void
   onSaved: () => void
 }
@@ -32,7 +33,7 @@ function statusColor(status: string): string {
   }
 }
 
-export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: RescanModalProps) {
+export function RescanModal({ workflowId, workflowJson, existingMappings, onClose, onSaved }: RescanModalProps) {
   const [phase, setPhase] = useState<Phase>('scanning')
   const [scanError, setScanError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -72,7 +73,7 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
         if (!cancelled) {
           const res = result as ScanResult
           setScanResult(res)
-          initFromScan(res)
+          initFromScan(res, existingMappings, workflowJson)
           setPhase('editing')
         }
       })
@@ -257,7 +258,12 @@ export function RescanModal({ workflowId, workflowJson, onClose, onSaved }: Resc
                         )}
                       </div>
 
-                      {/* Status label if not OK */}
+                      {/* Status label if not OK or existing mismatch */}
+                      {row.is_existing_mismatch && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 flex-shrink-0">
+                          既存設定無効（初期化）
+                        </span>
+                      )}
                       {row.status !== 'ok' && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
                           {statusLabel(row.status)}

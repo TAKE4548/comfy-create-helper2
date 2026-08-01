@@ -323,3 +323,16 @@ class SnapshotTagSet(Base):
 
     snapshot: Mapped["Snapshot"] = relationship(back_populates="tag_sets")
     tag_set: Mapped["TagSet"] = relationship(back_populates="snapshots")
+
+
+class ParamSyncGroup(Base):
+    __tablename__ = "param_sync_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    master_role: Mapped[str] = mapped_column(String, nullable=False)
+    slave_roles: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON string
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+

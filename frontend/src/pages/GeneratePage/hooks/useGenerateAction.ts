@@ -19,6 +19,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     setActiveBatch,
     appliedAssets,
     bypassProfiles = [],
+    paramSyncGroups = [],
   } = useGenerationStore()
 
   const injectParams = (
@@ -136,6 +137,22 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     }
   }
 
+  const applyParamSync = (paramValues: Record<string, string>): Record<string, string> => {
+    const activeGroups = (paramSyncGroups || []).filter((g) => g.is_enabled)
+    if (activeGroups.length === 0) return paramValues
+
+    const merged = { ...paramValues }
+    activeGroups.forEach((g) => {
+      const masterVal = merged[g.master_role]
+      if (masterVal !== undefined) {
+        g.slave_roles.forEach((slaveRole) => {
+          merged[slaveRole] = masterVal
+        })
+      }
+    })
+    return merged
+  }
+
   const handleGenerate = async () => {
     if (!workflow) return
     const activeBypassNodeIds = Array.from(
@@ -146,13 +163,15 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
+    const syncedParamValues = applyParamSync(currentParamValues)
+
     for (let i = 0; i < currentBatchSize; i++) {
       let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-      injectParams(wfJson, currentParamValues, currentSeedMode, currentSeed, i)
+      injectParams(wfJson, syncedParamValues, currentSeedMode, currentSeed, i)
       if (activeBypassNodeIds.length > 0) {
         wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
       }
-      await queuePrompt(wfJson, { paramValues: currentParamValues, appliedAssets })
+      await queuePrompt(wfJson, { paramValues: syncedParamValues, appliedAssets })
     }
   }
 
@@ -174,15 +193,16 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     )
 
     for (const setItem of checkedSets) {
+      const syncedParamValues = applyParamSync(setItem.paramValues)
       for (let i = 0; i < setItem.batchSize; i++) {
         let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-        injectParams(wfJson, setItem.paramValues, setItem.seedMode, setItem.seed, i)
+        injectParams(wfJson, syncedParamValues, setItem.seedMode, setItem.seed, i)
         if (activeBypassNodeIds.length > 0) {
           wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
         }
         
         try {
-          const promptId = await queuePrompt(wfJson, { paramValues: setItem.paramValues, appliedAssets: setItem.appliedAssets })
+          const promptId = await queuePrompt(wfJson, { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets })
           if (promptId) {
             mappings[promptId] = setItem.name
             newBatch.push({
