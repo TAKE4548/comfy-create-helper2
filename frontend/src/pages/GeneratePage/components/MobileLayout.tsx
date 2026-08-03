@@ -13,6 +13,7 @@ import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
+import { ParamSyncModal } from '../../../components/ParamSyncModal'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -110,10 +111,13 @@ export const MobileLayout = ({
   const bypassProfiles = useGenerationStore((state) => state.bypassProfiles)
   const updateBypassProfile = useGenerationStore((state) => state.updateBypassProfile)
   const fetchBypassProfiles = useGenerationStore((state) => state.fetchBypassProfiles)
+  const paramSyncGroups = useGenerationStore((state) => state.paramSyncGroups)
+  const toggleParamSyncGroup = useGenerationStore((state) => state.toggleParamSyncGroup)
   const errorToast = useGenerationStore((state) => state.errorToast)
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
+  const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
 
   useEffect(() => {
@@ -658,6 +662,9 @@ export const MobileLayout = ({
           bypassProfiles={bypassProfiles}
           onToggleBypass={(profileId, isEnabled) => updateBypassProfile(profileId, { is_enabled: isEnabled })}
           onOpenBypassSettings={() => setIsBypassSettingsOpen(true)}
+          paramSyncGroups={paramSyncGroups}
+          onToggleParamSync={(groupId, isEnabled) => toggleParamSyncGroup(groupId, isEnabled)}
+          onOpenParamSyncSettings={() => setIsParamSyncSettingsOpen(true)}
         />
       </div>
 
@@ -736,6 +743,12 @@ export const MobileLayout = ({
         <BypassSettingsModal 
           onClose={() => setIsBypassSettingsOpen(false)} 
           workflowJson={workflow?.json_body}
+        />
+      )}
+
+      {isParamSyncSettingsOpen && (
+        <ParamSyncModal
+          onClose={() => setIsParamSyncSettingsOpen(false)}
         />
       )}
 

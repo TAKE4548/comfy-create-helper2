@@ -9,6 +9,62 @@ interface SpeechBubbleEditorModalProps {
   onSaved: () => void
 }
 
+const verticalCharMap: Record<string, string> = {
+  'ー': '｜',
+  '―': '｜',
+  '–': '｜',
+  '-': '｜',
+  '~': '｜',
+  '～': '｜',
+  '「': '﹁',
+  '」': '﹂',
+  '『': '﹃',
+  '』': '﹄',
+  '（': '︵',
+  '）': '︶',
+  '(': '︵',
+  ')': '︶',
+  '【': '︻',
+  '】': '︼',
+  '〔': '︹',
+  '〕': '︺',
+  '［': '﹇',
+  '］': '﹈',
+  '{': '︷',
+  '}': '︸',
+  '｛': '︷',
+  '｝': '︸',
+  '…': '⋮',
+  '..': '︰',
+  '：': '︓',
+  '；': '︔',
+  '、': '︑',
+  '。': '︒',
+  '.': '︒',
+  ',': '︑',
+}
+
+const layoutVerticalText = (text: string, fontSize: number, maxHeight: number): string[] => {
+  const columns: string[] = []
+  const paragraphs = text.split('\n')
+  for (const para of paragraphs) {
+    let currentColumn = ''
+    for (const char of para) {
+      const mappedChar = verticalCharMap[char] || char
+      if ((currentColumn.length + 1) * fontSize > maxHeight) {
+        columns.push(currentColumn)
+        currentColumn = mappedChar
+      } else {
+        currentColumn += mappedChar
+      }
+    }
+    if (currentColumn || para === '') {
+      columns.push(currentColumn)
+    }
+  }
+  return columns
+}
+
 export function SpeechBubbleEditorModal({
   snapshot,
   onClose,
@@ -166,63 +222,6 @@ export function SpeechBubbleEditorModal({
     // Clear and draw background image
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height)
-
-    // Helper to layout vertical text
-    const verticalCharMap: Record<string, string> = {
-      'ー': '｜',
-      '―': '｜',
-      '–': '｜',
-      '-': '｜',
-      '~': '｜',
-      '～': '｜',
-      '「': '﹁',
-      '」': '﹂',
-      '『': '﹃',
-      '』': '﹄',
-      '（': '︵',
-      '）': '︶',
-      '(': '︵',
-      ')': '︶',
-      '【': '︻',
-      '】': '︼',
-      '〔': '︹',
-      '〕': '︺',
-      '［': '﹇',
-      '］': '﹈',
-      '{': '︷',
-      '}': '︸',
-      '｛': '︷',
-      '｝': '︸',
-      '…': '⋮',
-      '..': '︰',
-      '：': '︓',
-      '；': '︔',
-      '、': '︑',
-      '。': '︒',
-      '.': '︒',
-      ',': '︑',
-    }
-
-    const layoutVerticalText = (text: string, fontSize: number, maxHeight: number): string[] => {
-      const columns: string[] = []
-      const paragraphs = text.split('\n')
-      for (const para of paragraphs) {
-        let currentColumn = ''
-        for (const char of para) {
-          const mappedChar = verticalCharMap[char] || char
-          if ((currentColumn.length + 1) * fontSize > maxHeight) {
-            columns.push(currentColumn)
-            currentColumn = mappedChar
-          } else {
-            currentColumn += mappedChar
-          }
-        }
-        if (currentColumn || para === '') {
-          columns.push(currentColumn)
-        }
-      }
-      return columns
-    }
 
     // Draw bounding box and text
     if (boundingBox) {
@@ -439,22 +438,87 @@ export function SpeechBubbleEditorModal({
   }
 
   const handleSave = async () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    if (!imageObj) return
 
     setIsSaving(true)
     try {
-      // 1. Get blob from canvas
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      // 1. Create offscreen canvas at original image resolution
+      const offCanvas = document.createElement('canvas')
+      offCanvas.width = imageObj.naturalWidth
+      offCanvas.height = imageObj.naturalHeight
+      const offCtx = offCanvas.getContext('2d')
+      if (!offCtx) throw new Error('Offscreen canvas context generation failed')
+
+      // 2. Draw background image
+      offCtx.drawImage(imageObj, 0, 0, offCanvas.width, offCanvas.height)
+
+      // 3. Draw speech bubble text if boundingBox and speechText exist
+      if (boundingBox && speechText) {
+        const scaleFactor = imageObj.naturalWidth / canvasDimensions.width
+        const padding = 16 * scaleFactor
+        const maxWidth = boundingBox.w - padding
+        const maxHeight = boundingBox.h - padding
+
+        // Fill white background in bubble area (1px inset)
+        offCtx.fillStyle = 'rgba(255, 255, 255, 0.92)'
+        offCtx.fillRect(
+          boundingBox.x + 1,
+          boundingBox.y + 1,
+          boundingBox.w - 2,
+          boundingBox.h - 2
+        )
+
+        const startFontSize = 36 * scaleFactor
+        const minFontSize = 8 * scaleFactor
+        let computedFontSize = startFontSize
+
+        for (let size = startFontSize; size >= minFontSize; size--) {
+          const cols = layoutVerticalText(speechText, size, maxHeight)
+          const totalWidth = cols.length * size * 1.3
+          if (totalWidth <= maxWidth) {
+            computedFontSize = size
+            break
+          }
+          if (size <= minFontSize) {
+            computedFontSize = minFontSize
+          }
+        }
+
+        offCtx.font = `bold ${computedFontSize}px ${activeFontFamily}`
+        offCtx.fillStyle = '#000000'
+        offCtx.textBaseline = 'middle'
+        offCtx.textAlign = 'center'
+
+        const cols = layoutVerticalText(speechText, computedFontSize, maxHeight)
+        const totalWidth = cols.length * computedFontSize * 1.3
+        const boxCenter = boundingBox.x + boundingBox.w / 2
+        const startX = boxCenter + (totalWidth - computedFontSize * 1.3) / 2
+
+        cols.forEach((col, colIndex) => {
+          const colX = startX - colIndex * (computedFontSize * 1.3)
+          const colHeight = col.length * computedFontSize
+          const boxMiddle = boundingBox.y + boundingBox.h / 2
+          const colTop = boxMiddle - colHeight / 2
+
+          for (let i = 0; i < col.length; i++) {
+            const char = col[i]
+            const charY = colTop + i * computedFontSize + computedFontSize / 2
+            offCtx.fillText(char, colX, charY)
+          }
+        })
+      }
+
+      // 4. Get blob from offscreen canvas
+      const blob = await new Promise<Blob | null>((resolve) => offCanvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Canvas blob generation failed')
 
-      // 2. Upload image
+      // 5. Upload image
       const uploadRes = await snapshotsApi.upload(blob)
 
-      // 3. Retrieve parent snapshot details
+      // 6. Retrieve parent snapshot details
       const parentSnapshot = await snapshotsApi.get(snapshot.id)
 
-      // 4. Create new snapshot
+      // 7. Create new snapshot
       await snapshotsApi.create({
         workflow_id: parentSnapshot.workflow_id,
         image_path: uploadRes.image_path,

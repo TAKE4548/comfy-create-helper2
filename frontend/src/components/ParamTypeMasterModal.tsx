@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import { X, ChevronDown, ChevronRight, Loader2, Wand2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import type { ParamTypeMaster, ParamTypeMasterCreate, Workflow } from '../api/types'
+import type { ParamTypeMaster, ParamTypeMasterCreate, Workflow, ComfyObjectInfo } from '../api/types'
 import { comfyApi, workflowsApi } from '../api/client'
 
 const inputCls =
@@ -65,6 +65,15 @@ export function ParamTypeMasterModal({
     enabled: showAutoFill && selectedWorkflowId !== null,
   })
 
+  // Fetch object_info for selected class type (auto-detect types on node selection)
+  const { data: objectInfoData } = useQuery<ComfyObjectInfo>({
+    queryKey: ['comfy-object-info', selectedClassType],
+    queryFn: () => comfyApi.getObjectInfo(selectedClassType),
+    enabled: showAutoFill && !!selectedClassType,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  })
+
   // Nodes in selected workflow
   const nodeList = useMemo(() => {
     if (!selectedWorkflow?.json_body) return []
@@ -78,13 +87,38 @@ export function ParamTypeMasterModal({
       }))
   }, [selectedWorkflow])
 
+  /** ComfyUI の object_info において他ノードとの接続専用とみなす大文字型名 */
+  const LINK_ONLY_TYPES = new Set(['MODEL', 'CONDITIONING', 'LATENT', 'IMAGE', 'CLIP', 'VAE', 'CONTROL_NET'])
+
   // Parameters in selected node
   const paramList = useMemo(() => {
     if (!selectedNodeId) return []
+
+    // ── 優先: object_info ベース (ComfyUI 接続時) ──────────────────────
+    if (objectInfoData && selectedClassType) {
+      const nodeInfo = objectInfoData[selectedClassType]
+      if (nodeInfo) {
+        const allInputs = {
+          ...nodeInfo.input?.required,
+          ...nodeInfo.input?.optional,
+        }
+        return Object.entries(allInputs)
+          .filter(([, entry]) => {
+            if (Array.isArray(entry[0])) return true        // combo
+            const typeName = String(entry[0]).toUpperCase()
+            return !LINK_ONLY_TYPES.has(typeName)          // リンク型以外（カスタム型含む）を通す
+          })
+          .map(([key]) => key)
+      }
+    }
+
+    // ── フォールバック: ワークフロー JSON (ComfyUI 未接続時) ────────────
     const targetNode = nodeList.find((n) => n.nodeId === selectedNodeId)
     if (!targetNode?.inputs) return []
-    return Object.keys(targetNode.inputs)
-  }, [nodeList, selectedNodeId])
+    return Object.keys(targetNode.inputs).filter(
+      (key) => !Array.isArray(targetNode.inputs![key])  // リンク接続(配列値)を除外
+    )
+  }, [nodeList, selectedNodeId, objectInfoData, selectedClassType])
 
   // Handle node selection change
   const handleNodeChange = (nodeId: string) => {
@@ -97,6 +131,75 @@ export function ParamTypeMasterModal({
     }
     setSelectedParamName('')
   }
+
+  /** object_info の entry からフォーム state を更新する共通ロジック */
+  const applyTypeFromEntry = useCallback(
+    (entry: [unknown, (Record<string, unknown> | undefined)?]) => {
+      const firstItem = entry[0]
+      const config = entry[1] ?? {}
+
+      // 1. entry[0] が直接配列、または config.values / config.options が配列の場合は combo (select)
+      const optionsList = Array.isArray(firstItem)
+        ? (firstItem as string[])
+        : Array.isArray(config.values)
+          ? (config.values as string[])
+          : Array.isArray(config.options)
+            ? (config.options as string[])
+            : null
+
+      if (optionsList) {
+        setForm((f) => ({
+          ...f,
+          widget_type: 'select',
+          combo_options_text: optionsList.join('\n'),
+        }))
+      } else {
+        const typeName = String(firstItem).toUpperCase()
+        if (typeName === 'INT') {
+          setForm((f) => ({
+            ...f,
+            widget_type: 'int',
+            min_value: config.min !== undefined ? String(config.min) : '',
+            max_value: config.max !== undefined ? String(config.max) : '',
+            step: config.step !== undefined ? String(config.step) : '1',
+          }))
+        } else if (typeName === 'FLOAT') {
+          setForm((f) => ({
+            ...f,
+            widget_type: 'float',
+            min_value: config.min !== undefined ? String(config.min) : '',
+ max_value: config.max !== undefined ? String(config.max) : '',
+            step: config.step !== undefined ? String(config.step) : '0.01',
+          }))
+        } else if (typeName === 'BOOLEAN') {
+          setForm((f) => ({ ...f, widget_type: 'boolean' }))
+        } else {
+          setForm((f) => ({ ...f, widget_type: 'textarea' }))
+        }
+      }
+    },
+    []
+  )
+
+  /** パラメータ選択時に自動で型を検出してフォームをプレビュー更新 */
+  const handleParamChange = useCallback(
+    (paramName: string) => {
+      setSelectedParamName(paramName)
+      if (!paramName || !objectInfoData || !selectedClassType) return
+
+      const nodeInfo = objectInfoData[selectedClassType]
+      if (!nodeInfo) return
+      const allInputs = {
+        ...nodeInfo.input?.required,
+        ...nodeInfo.input?.optional,
+      }
+      const entry = allInputs?.[paramName]
+      if (!entry) return
+
+      applyTypeFromEntry(entry as [unknown, Record<string, number>?])
+    },
+    [objectInfoData, selectedClassType, applyTypeFromEntry]
+  )
 
   // Handle auto-fill fetch button click
   const handleAutoFill = async () => {
@@ -116,39 +219,7 @@ export function ParamTypeMasterModal({
         setError(`パラメータ '${selectedParamName}' の定義が見つかりませんでした。`)
         return
       }
-
-      if (Array.isArray(entry[0])) {
-        // Combo type
-        setForm((f) => ({
-          ...f,
-          widget_type: 'select',
-          combo_options_text: (entry[0] as string[]).join('\n'),
-        }))
-      } else {
-        const typeName = String(entry[0]).toUpperCase()
-        const config = (entry[1] as Record<string, number>) ?? {}
-        if (typeName === 'INT') {
-          setForm((f) => ({
-            ...f,
-            widget_type: 'int',
-            min_value: config.min !== undefined ? String(config.min) : '',
-            max_value: config.max !== undefined ? String(config.max) : '',
-            step: config.step !== undefined ? String(config.step) : '1',
-          }))
-        } else if (typeName === 'FLOAT') {
-          setForm((f) => ({
-            ...f,
-            widget_type: 'float',
-            min_value: config.min !== undefined ? String(config.min) : '',
-            max_value: config.max !== undefined ? String(config.max) : '',
-            step: config.step !== undefined ? String(config.step) : '0.01',
-          }))
-        } else if (typeName === 'BOOLEAN') {
-          setForm((f) => ({ ...f, widget_type: 'boolean' }))
-        } else {
-          setForm((f) => ({ ...f, widget_type: 'textarea' }))
-        }
-      }
+      applyTypeFromEntry(entry as [unknown, Record<string, number>?])
     } catch (e: any) {
       setError(`ComfyUI データの取得に失敗しました: ${e.message || String(e)}`)
     } finally {
@@ -354,7 +425,7 @@ export function ParamTypeMasterModal({
                       <label className={labelCls}>パラメータ名</label>
                       <select
                         value={selectedParamName}
-                        onChange={(e) => setSelectedParamName(e.target.value)}
+                        onChange={(e) => handleParamChange(e.target.value)}
                         className={inputCls}
                         disabled={!selectedNodeId}
                       >
