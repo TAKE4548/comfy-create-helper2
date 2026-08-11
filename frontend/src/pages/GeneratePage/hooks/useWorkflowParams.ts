@@ -79,30 +79,49 @@ export function getInitialParams(workflow: Workflow): Record<string, string> {
 
 
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
-  const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets } = useGenerationStore()
+  const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets, sets, setSets } = useGenerationStore()
   const qc = useQueryClient()
 
   // Initialize params when workflow loads
   useEffect(() => {
     if (!workflow) return
-    
-    // Initialize params
+
+    const defaultParams = getInitialParams(workflow)
+
+    // ─── 全セットへの新規ロール補完 ────────────────────────────
+    const currentSets = sets || []
+    const hasNewKeys = currentSets.some((s) =>
+      Object.keys(defaultParams).some((k) => !(k in (s.paramValues || {})))
+    )
+    if (hasNewKeys && typeof setSets === 'function') {
+      const updatedSets = currentSets.map((s) => ({
+        ...s,
+        paramValues: { ...defaultParams, ...(s.paramValues || {}) }, // デフォルト値ベース、既存値優先
+      }))
+      setSets(updatedSets)
+    }
+
+    // ─── アクティブ paramValues の初期化/補完 ──────────────────
     const savedStr = localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflow.id)
-    let hasLoadedParams = false
     if (savedStr) {
       try {
         const savedParams = JSON.parse(savedStr)
-        setParamValues(savedParams)
-        hasLoadedParams = true
+        if (hasNewKeys) {
+          const merged = { ...defaultParams, ...savedParams }
+          setParamValues(merged)
+          localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(merged))
+        } else {
+          setParamValues(savedParams)
+        }
       } catch (e) {
         console.error('Failed to parse workflow saved params:', e)
+        setParamValues(defaultParams)
+        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(defaultParams))
       }
-    }
-
-    if (!hasLoadedParams) {
-      const init = getInitialParams(workflow)
-      setParamValues(init)
-      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(init))
+    } else {
+      // localStorage 未保存の場合は初回初期化
+      setParamValues(defaultParams)
+      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(defaultParams))
     }
 
     // Initialize applied assets (only if not customized in local storage yet)

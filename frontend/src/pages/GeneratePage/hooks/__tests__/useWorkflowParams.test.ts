@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest';
-import { getInitialParams, extractGeneralParam, extractLoraStackParams } from '../useWorkflowParams';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { getInitialParams, extractGeneralParam, extractLoraStackParams, useWorkflowParams } from '../useWorkflowParams';
+import { useGenerationStore } from '../../../../store/useGenerationStore';
+import { LS_KEYS } from '../../../../utils/localStorageKeys';
 import type { Workflow } from '../../../../api/types';
+
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return ({ children }: { children: React.ReactNode }) => (
+    React.createElement(QueryClientProvider, { client: queryClient }, children)
+  );
+};
 
 describe('extractGeneralParam', () => {
   it('should return param value when paramName exists in inputs', () => {
@@ -168,6 +185,102 @@ describe('getInitialParams (Integration)', () => {
       MyLoraStack_model_str_1: '1.0',
       MyLoraStack_clip_str_1: '1.0',
       Detailer_Enable: 'true',
+    });
+  });
+});
+
+describe('useWorkflowParams hook - remapping backfill', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useGenerationStore.setState({
+      paramValues: {},
+      sets: [],
+    });
+  });
+
+  it('should complement missing role keys in all sets when workflow has new roles', () => {
+    useGenerationStore.setState({
+      sets: [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          paramValues: { Text_Prompt: 'existing prompt' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 1,
+          checked: true,
+        },
+      ],
+    });
+
+    const mockWorkflow: Workflow = {
+      id: 1,
+      name: 'Test Workflow',
+      created_at: '',
+      json_body: {
+        '1': { inputs: { ckpt_name: 'v1-5-pruned.safetensors' } },
+        '2': { inputs: { text: 'hello' } },
+      },
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'Checkpoint_Name', param_name: 'ckpt_name', input_type: 'string', display_name: 'Checkpoint' },
+        { id: 2, master_id: 2, node_id: '2', role: 'Text_Prompt', param_name: 'text', input_type: 'string', display_name: 'Prompt' },
+      ],
+    };
+
+    renderHook(() => useWorkflowParams(mockWorkflow, 1), { wrapper: createWrapper() });
+
+    const updatedSets = useGenerationStore.getState().sets;
+    expect(updatedSets[0].paramValues).toEqual({
+      Checkpoint_Name: 'v1-5-pruned.safetensors',
+      Text_Prompt: 'existing prompt',
+    });
+  });
+
+  it('should merge missing keys into localStorage saved params if new roles exist', () => {
+    localStorage.setItem(LS_KEYS.PARAMS_PREFIX + '1', JSON.stringify({ Text_Prompt: 'saved prompt' }));
+
+    const mockWorkflow: Workflow = {
+      id: 1,
+      name: 'Test Workflow',
+      created_at: '',
+      json_body: {
+        '1': { inputs: { ckpt_name: 'default.safetensors' } },
+        '2': { inputs: { text: 'default prompt' } },
+      },
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'Checkpoint_Name', param_name: 'ckpt_name', input_type: 'string', display_name: 'Checkpoint' },
+        { id: 2, master_id: 2, node_id: '2', role: 'Text_Prompt', param_name: 'text', input_type: 'string', display_name: 'Prompt' },
+      ],
+    };
+
+    useGenerationStore.setState({
+      sets: [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          paramValues: { Text_Prompt: 'saved prompt' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 1,
+          checked: true,
+        },
+      ],
+    });
+
+    renderHook(() => useWorkflowParams(mockWorkflow, 1), { wrapper: createWrapper() });
+
+    const activeParams = useGenerationStore.getState().paramValues;
+    expect(activeParams).toEqual({
+      Checkpoint_Name: 'default.safetensors',
+      Text_Prompt: 'saved prompt',
+    });
+
+    const savedInLS = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + '1') || '{}');
+    expect(savedInLS).toEqual({
+      Checkpoint_Name: 'default.safetensors',
+      Text_Prompt: 'saved prompt',
     });
   });
 });
