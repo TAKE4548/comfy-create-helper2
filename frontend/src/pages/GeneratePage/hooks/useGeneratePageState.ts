@@ -493,6 +493,12 @@ export function useGeneratePageState() {
           String(newPreset.id)
         )
         openPreset?.(newPreset.id)
+        setActiveSetId(newPreset.id)
+        if (newPreset.param_values) setParamValues(newPreset.param_values)
+        if (newPreset.applied_assets) setAppliedAssets(newPreset.applied_assets)
+        if (newPreset.batch_size !== undefined) setBatchSize(newPreset.batch_size)
+        if (newPreset.seed_mode) setSeedMode(newPreset.seed_mode)
+        if (newPreset.seed !== undefined) setSeed(newPreset.seed)
       }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
       setNewPresetName('')
@@ -940,9 +946,9 @@ export function useGeneratePageState() {
       const storedActiveStr = selectedWorkflowId
         ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`)
         : null
-      const matchedPreset = presets.find(
-        p => String(p.id) === String(storedActiveStr) || String(p.id) === String(activeSetId)
-      )
+      const matchedByStored = storedActiveStr ? presets.find(p => String(p.id) === String(storedActiveStr)) : undefined
+      const matchedByActive = activeSetId ? presets.find(p => String(p.id) === String(activeSetId)) : undefined
+      const matchedPreset = matchedByStored || matchedByActive
       const targetActiveId = matchedPreset
         ? matchedPreset.id
         : safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
