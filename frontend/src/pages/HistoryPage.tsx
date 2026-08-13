@@ -388,10 +388,22 @@ export function HistoryPage() {
 
     if (albumItemMultiSelect.isMultiSelectMode && albumItemMultiSelect.selectedIds.has(active.id as number) && albumItemMultiSelect.selectedIds.size > 1) {
       // グループ移動
-      const selected = currentAlbum.items.filter(item => albumItemMultiSelect.selectedIds.has(item.snapshot_id))
-      const nonSelected = currentAlbum.items.filter(item => !albumItemMultiSelect.selectedIds.has(item.snapshot_id))
-      const insertAt = nonSelected.findIndex(item => item.snapshot_id === over.id) + 1
-      const newItems = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
+      const selected = sortedAlbumItems.filter(item => albumItemMultiSelect.selectedIds.has(item.snapshot_id))
+      const nonSelected = sortedAlbumItems.filter(item => !albumItemMultiSelect.selectedIds.has(item.snapshot_id))
+
+      const overIndexInNonSelected = nonSelected.findIndex(item => item.snapshot_id === over.id)
+      if (overIndexInNonSelected === -1) return
+
+      const activeIndexInSorted = sortedAlbumItems.findIndex(item => item.snapshot_id === active.id)
+      const overIndexInSorted = sortedAlbumItems.findIndex(item => item.snapshot_id === over.id)
+
+      const insertAt = activeIndexInSorted < overIndexInSorted ? overIndexInNonSelected + 1 : overIndexInNonSelected
+
+      const newItems = [
+        ...nonSelected.slice(0, insertAt),
+        ...selected,
+        ...nonSelected.slice(insertAt)
+      ]
       
       const updatedSnapshotIds = newItems.map(item => item.snapshot_id)
       updateAlbumOrder.mutate({
@@ -399,11 +411,11 @@ export function HistoryPage() {
         snapshotIds: updatedSnapshotIds
       })
     } else {
-      const oldIndex = currentAlbum.items.findIndex(item => item.snapshot_id === active.id)
-      const newIndex = currentAlbum.items.findIndex(item => item.snapshot_id === over.id)
+      const oldIndex = sortedAlbumItems.findIndex(item => item.snapshot_id === active.id)
+      const newIndex = sortedAlbumItems.findIndex(item => item.snapshot_id === over.id)
 
       if (oldIndex !== -1 && newIndex !== -1) {
-        const newItems = [...currentAlbum.items]
+        const newItems = [...sortedAlbumItems]
         const [movedItem] = newItems.splice(oldIndex, 1)
         newItems.splice(newIndex, 0, movedItem)
 
@@ -616,7 +628,7 @@ export function HistoryPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {visibleAlbumItems.map((item) => {
                     const isSelected = albumItemMultiSelect.isSelected(item.snapshot_id)
-                    const isDndEnabled = sortBy === 'custom' && !albumItemMultiSelect.isMultiSelectMode && !updateAlbumOrder.isPending
+                    const isDndEnabled = sortBy === 'custom' && !updateAlbumOrder.isPending
                     const longPressHandlers = albumItemMultiSelect.getLongPressHandlers(item.snapshot_id)
 
                     const cardContent = (
@@ -729,7 +741,15 @@ export function HistoryPage() {
               <DragOverlay>
                 {activeId && (
                   <div className="relative">
-                    <div className="opacity-90 scale-105 ring-2 ring-[#7C6FDD] rounded-xl pointer-events-none bg-surface-2 border border-zinc-700 flex items-center justify-center w-[120px] h-[120px]">
+                    {albumItemMultiSelect.isMultiSelectMode && albumItemMultiSelect.selectedIds.size > 1 && (
+                      <>
+                        {albumItemMultiSelect.selectedIds.size > 2 && (
+                          <div className="absolute inset-0 bg-surface-2 border border-zinc-700/80 rounded-xl transform translate-x-2 translate-y-2 -rotate-6 pointer-events-none opacity-60 w-[120px] h-[120px]" />
+                        )}
+                        <div className="absolute inset-0 bg-surface-2 border border-zinc-700/90 rounded-xl transform translate-x-1 translate-y-1 rotate-3 pointer-events-none opacity-75 w-[120px] h-[120px]" />
+                      </>
+                    )}
+                    <div className="relative z-10 opacity-90 scale-105 ring-2 ring-[#7C6FDD] rounded-xl pointer-events-none bg-surface-2 border border-zinc-700 flex items-center justify-center w-[120px] h-[120px]">
                       {(() => {
                         const item = currentAlbum?.items.find((x) => x.snapshot_id === activeId)
                         return item?.image_path ? (
@@ -740,7 +760,7 @@ export function HistoryPage() {
                       })()}
                     </div>
                     {albumItemMultiSelect.isMultiSelectMode && albumItemMultiSelect.selectedIds.size > 1 && (
-                      <div className="absolute -bottom-2 -right-2 bg-[#7C6FDD] text-white text-xs font-bold
+                      <div className="absolute -bottom-2 -right-2 z-20 bg-[#7C6FDD] text-white text-xs font-bold
                                       rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
                         +{albumItemMultiSelect.selectedIds.size - 1}
                       </div>
