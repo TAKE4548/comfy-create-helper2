@@ -101,13 +101,17 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
       setSets(updatedSets)
     }
 
+    const currentParamValues = paramValues || {}
+    const isParamValuesMissingKeys = Object.keys(defaultParams).some((k) => !(k in currentParamValues))
+    const shouldMerge = hasNewKeys || isParamValuesMissingKeys
+
     // ─── アクティブ paramValues の初期化/補完 ──────────────────
     const savedStr = localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflow.id)
     if (savedStr) {
       try {
         const savedParams = JSON.parse(savedStr)
-        if (hasNewKeys) {
-          const merged = { ...defaultParams, ...savedParams }
+        if (shouldMerge) {
+          const merged = { ...defaultParams, ...savedParams, ...currentParamValues }
           setParamValues(merged)
           localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(merged))
         } else {
@@ -120,8 +124,9 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
       }
     } else {
       // localStorage 未保存の場合は初回初期化
-      setParamValues(defaultParams)
-      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(defaultParams))
+      const merged = { ...defaultParams, ...currentParamValues }
+      setParamValues(merged)
+      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(merged))
     }
 
     // Initialize applied assets (only if not customized in local storage yet)

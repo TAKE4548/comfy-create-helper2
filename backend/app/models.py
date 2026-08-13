@@ -158,6 +158,7 @@ class Snapshot(Base):
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
     params: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: {role: value}
     image_path: Mapped[Optional[str]] = mapped_column(String)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     source_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id", ondelete="SET NULL"), nullable=True)
 

@@ -18,6 +18,7 @@ export interface SnapshotSummaryWithParams {
   id: number
   workflow_id: number
   image_path: string | null
+  thumbnail_path?: string | null
   created_at: string
   params?: Record<string, any>
 }
@@ -497,7 +498,7 @@ export function useGeneratePageState() {
         if (newPreset.param_values) setParamValues(newPreset.param_values)
         if (newPreset.applied_assets) setAppliedAssets(newPreset.applied_assets)
         if (newPreset.batch_size !== undefined) setBatchSize(newPreset.batch_size)
-        if (newPreset.seed_mode) setSeedMode(newPreset.seed_mode)
+        if (newPreset.seed_mode) setSeedMode(newPreset.seed_mode as 'fixed' | 'random')
         if (newPreset.seed !== undefined) setSeed(newPreset.seed)
       }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
@@ -756,14 +757,17 @@ export function useGeneratePageState() {
     }
     setActiveSetId(preset.id)
 
-    setParamValues(preset.param_values)
+    const defaultParams = workflow ? getInitialParams(workflow) : {}
+    const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
+
+    setParamValues(mergedParamValues)
     setAppliedAssets(preset.applied_assets)
     setBatchSize(preset.batch_size)
     setSeedMode(preset.seed_mode as 'random' | 'fixed')
     setSeed(preset.seed)
-    
+
     updateActiveSet({
-      paramValues: preset.param_values,
+      paramValues: mergedParamValues,
       appliedAssets: preset.applied_assets,
       batchSize: preset.batch_size,
       seedMode: preset.seed_mode as 'random' | 'fixed',
@@ -913,11 +917,13 @@ export function useGeneratePageState() {
     )
     const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : []
 
-    // バックエンドの生データをマップ
+    const defaultParams = workflow ? getInitialParams(workflow) : {}
+
+    // バックエンドの生データをマップ（ワークフローの最新デフォルト値で未設定キーを補完）
     const rawMappedSets = presets.map((p) => ({
       id: p.id,
       name: p.name,
-      paramValues: p.param_values || {},
+      paramValues: { ...defaultParams, ...(p.param_values || {}) },
       appliedAssets: p.applied_assets || {},
       batchSize: p.batch_size || 1,
       seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2, Info, Maximize2 } from 'lucide-react'
+import { X, Loader2, Info, Maximize2, Download } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
 import type { Snapshot, Lora, TagSet } from '../api/types'
 
@@ -307,15 +307,53 @@ export function HistoryModalPreview({
       onClick={handleContainerClick}
       onMouseMove={handleMouseMove}
     >
-      {/* Header with Close Button */}
+      {/* Header with Close & Format Download Buttons */}
       {showControls && (
         <div 
-          className={`${isFullscreen ? 'absolute top-0 left-0 right-0 z-10' : 'relative'} h-12 flex items-center justify-end px-4`} 
+          className={`${isFullscreen ? 'absolute top-0 left-0 right-0 z-10' : 'relative'} h-12 flex items-center justify-between px-4 z-50`} 
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="flex items-center gap-2">
+            {activeSnapshotId ? (
+              <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur rounded-lg px-2.5 py-1 border border-[rgba(255,255,255,0.1)] text-xs">
+                <span className="text-zinc-400 font-medium text-[11px] flex items-center gap-1">
+                  <Download size={12} /> DL:
+                </span>
+                <a
+                  href={`/api/snapshots/${activeSnapshotId}/download?format=webp`}
+                  download
+                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
+                >
+                  WebP
+                </a>
+                <a
+                  href={`/api/snapshots/${activeSnapshotId}/download?format=png`}
+                  download
+                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
+                >
+                  PNG
+                </a>
+                <a
+                  href={`/api/snapshots/${activeSnapshotId}/download?format=jpeg`}
+                  download
+                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
+                >
+                  JPEG
+                </a>
+              </div>
+            ) : activeImage ? (
+              <a
+                href={activeImage}
+                download
+                className="flex items-center gap-1 px-3 py-1 rounded-lg bg-black/60 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-semibold hover:bg-black/80 transition-colors"
+              >
+                <Download size={12} /> Download
+              </a>
+            ) : null}
+          </div>
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
             aria-label="Close preview"
           >
             <X size={20} />

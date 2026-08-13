@@ -546,7 +546,7 @@ export const MobileLayout = ({
                   <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
                     className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded border border-[rgba(255,255,255,0.06)] bg-surface-2/40 hover:bg-surface-2 transition-all w-20 group">
                     <div className="w-16 h-16 rounded overflow-hidden bg-black/40">
-                      {snap.image_path ? <img src={snap.image_path} alt="Snapshot" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={14} /></div>}
+                      {snap.image_path || snap.thumbnail_path ? <img src={snap.thumbnail_path || snap.image_path!} alt="Snapshot" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={14} /></div>}
                     </div>
                     <span className="text-[8px] text-zinc-450 text-center truncate w-full font-mono">{getPromptPrefix(snap.params) || `Snap #${snap.id}`}</span>
                   </button>

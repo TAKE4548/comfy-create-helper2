@@ -646,9 +646,9 @@ export function HistoryPage() {
                             : 'border-transparent hover:border-zinc-700'
                         }`}
                       >
-                        {item.image_path ? (
+                        {item.image_path || item.thumbnail_path ? (
                           <img
-                            src={item.image_path}
+                            src={item.thumbnail_path || item.image_path!}
                             alt=""
                             loading="lazy"
                             className="max-w-full max-h-full object-contain pointer-events-none"
@@ -940,8 +940,8 @@ export function HistoryPage() {
                       }}
                     >
                       <div className="aspect-square bg-surface-2">
-                        {snap.image_path ? (
-                          <img src={snap.image_path} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover" />
+                        {snap.image_path || snap.thumbnail_path ? (
+                          <img src={snap.thumbnail_path || snap.image_path!} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-600">
                             <ImageOff size={20} strokeWidth={1} />
@@ -1030,8 +1030,8 @@ export function HistoryPage() {
                     <div className="grid grid-cols-3 gap-0.5 aspect-[3/1] bg-surface-2">
                       {album.items.slice(0, 3).map((item, i) => (
                         <div key={i} className="bg-surface-2 overflow-hidden">
-                          {item.image_path ? (
-                            <img src={item.image_path} alt="" loading="lazy" className="w-full h-full object-cover" />
+                          {item.image_path || item.thumbnail_path ? (
+                            <img src={item.thumbnail_path || item.image_path!} alt="" loading="lazy" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-zinc-700">
                               <ImageOff size={16} strokeWidth={1} />

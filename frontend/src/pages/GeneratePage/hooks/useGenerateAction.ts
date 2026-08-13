@@ -7,6 +7,7 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { BatchJob } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 import { applyBypass } from '../../../utils/bypassUtils'
+import { getInitialParams } from './useWorkflowParams'
 
 export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInfo: any = {}) {
   const {
@@ -24,12 +25,15 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
 
   const injectParams = (
     wfJson: Record<string, unknown>,
-    paramValues: Record<string, string>,
+    paramValuesInput: Record<string, string>,
     seedMode: 'random' | 'fixed',
     seed: number,
     index: number
   ) => {
     if (!workflow) return
+
+    const defaultParams = getInitialParams(workflow)
+    const paramValues = { ...defaultParams, ...paramValuesInput }
 
     // Inject paramValues into workflow JSON nodes
     workflow.mappings.forEach((m) => {

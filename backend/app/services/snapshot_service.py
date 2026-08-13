@@ -16,6 +16,36 @@ from app import models, schemas
 logger = logging.getLogger(__name__)
 
 
+import io
+from PIL import Image
+
+def process_and_save_image(image_bytes: bytes, target_dir: Path, filename_base: str) -> tuple[str, str]:
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA")
+        
+        img_filename = f"{filename_base}.webp"
+        img_path = target_dir / img_filename
+        img.save(img_path, format="WEBP", quality=90)
+        
+        thumb_img = img.copy()
+        thumb_img.thumbnail((300, 300))
+        thumb_filename = f"thumb_{filename_base}.webp"
+        thumb_path = target_dir / thumb_filename
+        thumb_img.save(thumb_path, format="WEBP", quality=80)
+        
+        return f"/api/snapshots/images/{img_filename}", f"/api/snapshots/images/{thumb_filename}"
+    except Exception as e:
+        logger.warning(f"Image processing failed, saving raw file: {e}")
+        filename = f"{filename_base}.png"
+        file_path = target_dir / filename
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+        path_str = f"/api/snapshots/images/{filename}"
+        return path_str, path_str
+
+
 class SnapshotService:
     @staticmethod
     def list_snapshots(
@@ -56,6 +86,7 @@ class SnapshotService:
             target_album_id = album.id
 
         saved_image_path = payload.image_path
+        saved_thumbnail_path = payload.thumbnail_path
         downloaded_file_path: Optional[Path] = None
 
         if payload.image_path and (payload.image_path.startswith("http://") or payload.image_path.startswith("https://")):
@@ -66,34 +97,49 @@ class SnapshotService:
                 
                 if not filename:
                     filename = Path(parsed_url.path).name
-                if not filename or filename.strip() == "":
-                    filename = f"snapshot_{uuid.uuid4().hex}.png"
-                else:
-                    ext = Path(filename).suffix or ".png"
-                    stem = Path(filename).stem
-                    filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
-                
-                target_dir = settings.snapshot_path
-                target_path = target_dir / filename
+                stem = Path(filename).stem if (filename and filename.strip()) else "snapshot"
+                filename_base = f"{stem}_{uuid.uuid4().hex[:8]}"
                 
                 req = urllib.request.Request(
                     payload.image_path, 
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
                 with urllib.request.urlopen(req, timeout=5) as response:
-                    with open(target_path, 'wb') as f:
-                        f.write(response.read())
-                
-                downloaded_file_path = target_path
-                saved_image_path = f"/api/snapshots/images/{filename}"
+                    image_bytes = response.read()
+
+                saved_image_path, saved_thumbnail_path = process_and_save_image(
+                    image_bytes, settings.snapshot_path, filename_base
+                )
+                downloaded_file_path = settings.snapshot_path / Path(saved_image_path).name
             except Exception as e:
                 logger.error(f"Failed to download snapshot image from {payload.image_path}: {e}")
+
+        elif payload.image_path and payload.image_path.startswith("/api/snapshots/images/") and not saved_thumbnail_path:
+            filename = payload.image_path.split("/")[-1]
+            target_dir = settings.snapshot_path
+            orig_file = target_dir / filename
+            if orig_file.exists():
+                thumb_filename = f"thumb_{filename}"
+                thumb_file = target_dir / thumb_filename
+                if not thumb_file.exists():
+                    try:
+                        with open(orig_file, "rb") as f:
+                            img_bytes = f.read()
+                        stem = Path(filename).stem
+                        if stem.startswith("thumb_"):
+                            stem = stem[6:]
+                        _, saved_thumbnail_path = process_and_save_image(img_bytes, target_dir, stem)
+                    except Exception as e:
+                        logger.error(f"Failed to generate thumbnail for local file {filename}: {e}")
+                else:
+                    saved_thumbnail_path = f"/api/snapshots/images/{thumb_filename}"
 
         try:
             s = models.Snapshot(
                 workflow_id=payload.workflow_id,
                 params=json.dumps(payload.params),
                 image_path=saved_image_path,
+                thumbnail_path=saved_thumbnail_path,
             )
             db.add(s)
             db.flush()
@@ -202,23 +248,17 @@ class SnapshotService:
             raise db_err
 
     @staticmethod
-    async def save_uploaded_image(file: UploadFile) -> str:
-        ext = Path(file.filename).suffix or ".png"
-        if ext.lower() not in [".png", ".jpg", ".jpeg", ".webp"]:
-            ext = ".png"
-        filename = f"upload_{uuid.uuid4().hex}{ext}"
-        
+    async def save_uploaded_image(file: UploadFile) -> tuple[str, str]:
+        filename_base = f"upload_{uuid.uuid4().hex}"
         target_dir = settings.snapshot_path
-        target_path = target_dir / filename
         
         try:
             content = await file.read()
-            with open(target_path, "wb") as f:
-                f.write(content)
+            image_path, thumbnail_path = process_and_save_image(content, target_dir, filename_base)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to save uploaded file: {str(e)}"
             )
             
-        return f"/api/snapshots/images/{filename}"
+        return image_path, thumbnail_path

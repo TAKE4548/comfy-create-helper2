@@ -132,6 +132,7 @@ export interface SnapshotSummary {
   id: number
   workflow_id: number
   image_path: string | null
+  thumbnail_path?: string | null
   created_at: string
   source_snapshot_id?: number
 }
@@ -141,6 +142,7 @@ export interface Snapshot {
   workflow_id: number
   params: Record<string, unknown>
   image_path: string | null
+  thumbnail_path?: string | null
   created_at: string
   source_snapshot_id?: number
   loras?: SnapshotLoraRead[]
@@ -150,6 +152,7 @@ export interface Snapshot {
 export interface SnapshotCreate {
   workflow_id: number
   image_path?: string
+  thumbnail_path?: string
   params: Record<string, unknown>
   album_id?: number
   new_album_name?: string
@@ -186,6 +189,7 @@ export interface AlbumItem {
   snapshot_id: number
   sequence_order: number
   image_path: string | null
+  thumbnail_path?: string | null
   created_at?: string | null
 }
 

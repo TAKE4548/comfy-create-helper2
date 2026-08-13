@@ -1,15 +1,17 @@
-"""Snapshots router."""
-
+import io
 import json
 from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import FileResponse, Response
+from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import schemas
 from app.services.snapshot_service import SnapshotService
+from app.config import settings
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
@@ -27,6 +29,7 @@ def list_snapshots(
             id=s.id,
             workflow_id=s.workflow_id,
             image_path=s.image_path,
+            thumbnail_path=s.thumbnail_path,
             created_at=s.created_at,
             params=json.loads(s.params) if s.params else None,
             source_snapshot_id=s.source_snapshot_id
@@ -44,6 +47,7 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
         workflow_id=s.workflow_id,
         params=json.loads(s.params),
         image_path=s.image_path,
+        thumbnail_path=s.thumbnail_path,
         created_at=s.created_at,
         source_snapshot_id=s.source_snapshot_id,
         loras=[
@@ -77,6 +81,7 @@ def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_d
         id=s.id,
         workflow_id=s.workflow_id,
         image_path=s.image_path,
+        thumbnail_path=s.thumbnail_path,
         created_at=s.created_at,
         params=json.loads(s.params) if s.params else None,
         source_snapshot_id=s.source_snapshot_id
@@ -96,8 +101,66 @@ def update_snapshot(snapshot_id: int, payload: schemas.SnapshotUpdate, db: Sessi
 
 @router.post("/upload")
 async def upload_snapshot_image(file: UploadFile = File(...)):
-    image_path = await SnapshotService.save_uploaded_image(file)
-    return {"image_path": image_path}
+    image_path, thumbnail_path = await SnapshotService.save_uploaded_image(file)
+    return {"image_path": image_path, "thumbnail_path": thumbnail_path}
+
+
+@router.get("/{snapshot_id}/download")
+def download_snapshot(
+    snapshot_id: int,
+    format: Optional[str] = "webp",
+    db: Session = Depends(get_db)
+):
+    s = SnapshotService.get_snapshot(db, snapshot_id)
+    if not s or not s.image_path:
+        raise HTTPException(status_code=404, detail="Snapshot or image not found")
+    
+    filename = s.image_path.split("/")[-1]
+    file_path = Path(settings.snapshot_path) / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+
+    fmt = (format or "webp").lower()
+    if fmt not in ["webp", "png", "jpeg", "jpg"]:
+        raise HTTPException(status_code=400, detail="Unsupported format. Choose from webp, png, jpeg")
+
+    if fmt in ["jpeg", "jpg"]:
+        target_ext = "jpg"
+        media_type = "image/jpeg"
+        pil_format = "JPEG"
+    elif fmt == "png":
+        target_ext = "png"
+        media_type = "image/png"
+        pil_format = "PNG"
+    else:
+        target_ext = "webp"
+        media_type = "image/webp"
+        pil_format = "WEBP"
+
+    download_filename = f"snapshot_{snapshot_id}.{target_ext}"
+
+    orig_ext = file_path.suffix.lower().lstrip(".")
+    if (orig_ext in ["jpg", "jpeg"] and fmt in ["jpg", "jpeg"]) or (orig_ext == fmt):
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type,
+            filename=download_filename
+        )
+
+    try:
+        with Image.open(file_path) as img:
+            out_io = io.BytesIO()
+            if pil_format == "JPEG" and img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(out_io, format=pil_format)
+            out_io.seek(0)
+            return Response(
+                content=out_io.getvalue(),
+                media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="{download_filename}"'}
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to convert image format: {str(e)}")
 
 
 class ROIRequest(BaseModel):

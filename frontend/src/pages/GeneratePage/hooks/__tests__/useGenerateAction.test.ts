@@ -282,4 +282,39 @@ describe('useGenerateAction', () => {
     expect(nodeInputs['lora_count']).toBeUndefined();
     expect(nodeInputs['lora_name_1']).toBeUndefined();
   });
+
+  it('should fallback to workflow default values if paramValues in store is missing a role key', async () => {
+    const ckptWorkflow: Workflow = {
+      id: 4,
+      name: 'Checkpoint Workflow',
+      created_at: '',
+      json_body: {
+        '1': {
+          inputs: {
+            ckpt_name: 'v1-5-pruned.safetensors',
+          },
+        },
+      },
+      mappings: [
+        {
+          id: 10,
+          master_id: 10,
+          node_id: '1',
+          role: 'Checkpoint_Name',
+          param_name: 'ckpt_name',
+          input_type: 'string',
+          display_name: 'Checkpoint',
+        },
+      ],
+    };
+
+    // Store has empty paramValues (simulating a preset missing the new mapping key)
+    mockStore.paramValues = {};
+
+    const { handleGenerate } = useGenerateAction(ckptWorkflow);
+    await handleGenerate();
+
+    const nodeInputs = mockStore.queuePrompt.mock.calls[0][0]['1'].inputs;
+    expect(nodeInputs['ckpt_name']).toBe('v1-5-pruned.safetensors');
+  });
 });

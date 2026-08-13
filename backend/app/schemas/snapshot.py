@@ -38,6 +38,7 @@ class SnapshotTagSetRead(BaseModel):
 class SnapshotCreate(BaseModel):
     workflow_id: int
     image_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     params: dict[str, Any]
     album_id: Optional[int] = None
     new_album_name: Optional[str] = None
@@ -52,6 +53,7 @@ class SnapshotRead(BaseModel):
     workflow_id: int
     params: dict[str, Any]
     image_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     created_at: datetime
     loras: list[SnapshotLoraRead] = []
     tag_sets: list[SnapshotTagSetRead] = []
@@ -69,6 +71,7 @@ class SnapshotSummary(BaseModel):
     id: int
     workflow_id: int
     image_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
     created_at: datetime
     params: Optional[dict[str, Any]] = None
     source_snapshot_id: Optional[int] = None
