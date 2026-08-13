@@ -90,6 +90,7 @@ vi.mock('../../store/useGenerationStore', () => {
     setActiveSetId: vi.fn(),
     updateActiveSet: vi.fn(),
     activeBatch: null,
+    fetchParamSyncGroups: vi.fn(),
   };
   return {
     useGenerationStore: () => store,

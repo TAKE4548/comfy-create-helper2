@@ -211,3 +211,33 @@ class TestWorkflowsCopy(unittest.TestCase):
         response = self.client.put(f"/api/workflows/{self.wf.id}", json=payload)
         self.assertEqual(response.status_code, 422)
 
+    def test_copy_workflow_with_param_sync_groups(self):
+        wf = models.Workflow(name="Source Sync WF", json_body="{}")
+        self.db.add(wf)
+        self.db.commit()
+        self.db.refresh(wf)
+
+        sync_group = models.ParamSyncGroup(
+            workflow_id=wf.id,
+            name="Test Sync Group",
+            master_role="prompt_master",
+            slave_roles='["prompt_slave_1", "prompt_slave_2"]',
+            is_enabled=True,
+        )
+        self.db.add(sync_group)
+        self.db.commit()
+
+        response = self.client.post(f"/api/workflows/{wf.id}/copy", json={"name": "Copied Sync WF"})
+        self.assertEqual(response.status_code, 201)
+        new_wf_id = response.json()["id"]
+
+        res_groups = self.client.get(f"/api/workflows/{new_wf_id}/param-sync-groups")
+        self.assertEqual(res_groups.status_code, 200)
+        groups_data = res_groups.json()
+        self.assertEqual(len(groups_data), 1)
+        self.assertEqual(groups_data[0]["name"], "Test Sync Group")
+        self.assertEqual(groups_data[0]["master_role"], "prompt_master")
+        self.assertEqual(groups_data[0]["slave_roles"], ["prompt_slave_1", "prompt_slave_2"])
+        self.assertTrue(groups_data[0]["is_enabled"])
+
+

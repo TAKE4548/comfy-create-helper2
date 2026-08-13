@@ -107,6 +107,9 @@ class Workflow(Base):
     bypass_profiles: Mapped[list["BypassProfile"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    param_sync_groups: Mapped[list["ParamSyncGroup"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
 
 
 class BypassProfile(Base):
@@ -336,4 +339,6 @@ class ParamSyncGroup(Base):
     slave_roles: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON string
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    workflow: Mapped["Workflow"] = relationship(back_populates="param_sync_groups")
 

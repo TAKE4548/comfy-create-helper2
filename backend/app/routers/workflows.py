@@ -48,6 +48,14 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
             bypassed_node_ids=bp.bypassed_node_ids,
             is_enabled=bp.is_enabled,
         ))
+    for sg in src.param_sync_groups:
+        db.add(models.ParamSyncGroup(
+            workflow_id=new_wf.id,
+            name=sg.name,
+            master_role=sg.master_role,
+            slave_roles=sg.slave_roles,
+            is_enabled=sg.is_enabled,
+        ))
     db.commit()
     db.refresh(new_wf)
     return new_wf

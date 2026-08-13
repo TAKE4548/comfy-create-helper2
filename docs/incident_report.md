@@ -1,55 +1,60 @@
-# インシデント調査レポート: Add Set 実行時に追加されたセットがアクティブ化されない件
+# インシデント調査レポート: param sync の設定状態がリロードで解除される & ワークフローコピー時にコピーされない件
 
 ## 1. 概要
-生成画面（GeneratePage）において「+ Add Set」ボタンから新規プロファイル（セット）を作成した際、作成された新セットのタブは追加されるものの、アクティブ（選択状態）にならず、作成前の既存セットがアクティブなまま残る現像が発生している。
+「param sync（パラメータ同期グループ）」の設定において、以下の2つの不具合が報告された。
+1. **ページリロード時の設定解除**: ページをリロードすると param sync の設定状態（有効/無効やグループ定義）が反映されなくなる。ただしデータは保持されており、設定（`ParamSyncModal`）を開いて閉じると復旧する。
+2. **ワークフローコピー時の設定未引継ぎ**: ワークフローをコピー作成した際、元のワークフローに設定されていた param sync の設定がコピー先に引き継がれず、再設定が必要になる。
+
+---
 
 ## 2. 再現手順
-1. 生成画面（GeneratePage）を開く（例: Set 1 がアクティブな状態）。
-2. ヘッダー/タブエリアの「+ Add Set」ボタンをクリックし、新規プロファイル作成モーダルを表示する。
-3. 任意のプロファイル名（例: "Set 2"）を入力し、「作成」ボタンを押下する。
-4. **期待結果**: 新しく追加された "Set 2" のタブが選択状態（アクティブ）になり、フォーム値も Set 2 の内容に切り替わる。
-5. **実際の結果**: "Set 2" のタブは追加されるが、アクティブタブは "Set 1" のままであり、自動的に切り替わらない。
+
+### 不具合1: ページリロード時の設定解除
+1. 任意のワークフローを選択し、param sync 設定モーダルからパラメータ同期グループを作成・有効化する。
+2. ブラウザをリロード（F5 / ページ再読み込み）する。
+3. **実際の結果**: パラメータパネル上で Synced 表示が消え、同期が機能しなくなる。設定モーダルを一度開いて閉じると復旧する。
+
+### 不具合2: ワークフローコピー時の設定未引継ぎ
+1. param sync グループが設定されているワークフローを開く。
+2. 「ワークフローのコピー」を実行して新しいワークフローを作成する。
+3. **実際の結果**: コピーされた新ワークフローの param sync グループ一覧が空（未設定）になり、同期設定が引き継がれない。
+
+---
 
 ## 3. 根本原因 (Root Cause) — 確定
 
-### 主因 1: `createPresetMutation.onSuccess` で `setActiveSetId` が呼ばれていない
-`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` L489-499:
-```typescript
-onSuccess: (newPreset) => {
-  if (newPreset?.id && selectedWorkflowId) {
-    localStorage.setItem(
-      `${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`,
-      String(newPreset.id)
-    )
-    openPreset?.(newPreset.id)
-  }
-  qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
-  setNewPresetName('')
-}
-```
-- 新規作成成功時、`localStorage` の保存と `openPreset`（開いているタブ一覧 `openPresetIds` への追加）は行われるが、Zustand store 上の `activeSetId` を更新する `setActiveSetId(newPreset.id)` が呼び出されていない。
+### 不具合1の主因: 初期ロード時に Store の `paramSyncGroups` が取得されない
+- **該当ファイル**: `frontend/src/store/useGenerationStore.ts` および `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts`
+- **メカニズム**:
+  - `useGenerationStore` は初期起動時に `localStorage` から `selectedWorkflowId`（例: `1`）を復元するが、`paramSyncGroups` は `[]`（空配列）として初期化される。
+  - `fetchParamSyncGroups(workflowId)` は `setSelectedWorkflowId(id)` の内部でのみ実行される設計になっている。
+  - ページリロード時、`selectedWorkflowId` は既に store 上に存在するため `setSelectedWorkflowId` は再呼び出しされず、`paramSyncGroups` が空 `[]` のまま保持される。
+  - そのため `ParamPanel` 等の UI 判定（`activeSlaveMap`）が空となり、連動状態が解除されたように見える。
+  - 設定モーダル（`ParamSyncModal`）を開くと、モーダル内の `useEffect` により `fetchParamSyncGroups(selectedWorkflowId)` が発火して Zustand store が更新されるため、モーダルを閉じた後に設定が「復旧」する。
 
-### 主因 2: presets 同期エフェクトにおける `matchedPreset` 検索条件の不備
-`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` L943-950:
-```typescript
-const matchedPreset = presets.find(
-  p => String(p.id) === String(storedActiveStr) || String(p.id) === String(activeSetId)
-)
-```
-- `qc.invalidateQueries` により `presets` クエリが再取得された際、上記の同期エフェクトが発火する。
-- この時、`storedActiveStr` には `onSuccess` で書き込まれた新 Preset ID（例: `11`）が入っているが、`activeSetId` には未更新の旧 Preset ID（例: `10`）が入っている。
-- `presets.find` 内の判定で `|| String(p.id) === String(activeSetId)` が含まれているため、`presets` 配列の先頭側にある旧 Preset (`id: 10`) が先に条件を満たしてヒットしてしまう。
-- この結果、`targetActiveId` が旧 Preset ID (`10`) と評価され、`String(activeSetId) !== String(targetActiveId)` の条件を満たさず、新 Preset への切り替えが発生しない。
+### 不具合2の主因: バックエンドの `copy_workflow` エンドポイントにおける `ParamSyncGroup` のコピー処理漏れ
+- **該当ファイル**: `backend/app/routers/workflows.py` (`copy_workflow` 関数: Line 20-53)
+- **メカニズム**:
+  - バックエンドのワークフローコピー処理において、`mappings`（マッピング）、`presets`（プリセット）、`bypass_profiles`（バイパスプロファイル）のコピー処理はループで記述されているが、`param_sync_groups`（`models.ParamSyncGroup`）の複製ループ処理が存在しない。
+  - このため、コピー作成された新ワークフローには同期グループが一切生成されない。
+
+---
 
 ## 4. 障害分類
 - **分類**: **Type A (Implementation Bug / 実装バグ)**
-- **該当ファイル**: `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts`
-  - L489–L499 (`createPresetMutation.onSuccess`)
-  - L943–L950 (`matchedPreset` 算出ロジック)
+- **該当ファイル**:
+  - フロントエンド: `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` または `frontend/src/store/useGenerationStore.ts`
+  - バックエンド: `backend/app/routers/workflows.py` (Line 20-53)
+
+---
 
 ## 5. 修正の方向性 (参考：/dev-design で正式設計)
-1. `createPresetMutation.onSuccess` 内で、`setActiveSetId(newPreset.id)` を明示的に呼び出し、さらにパラメータ等の状態も新 Preset の初期値に即時同期する。
-2. presets 同期エフェクトにおいて、`storedActiveStr` に対応する Preset が存在する場合は `storedActiveStr` を優先して `matchedPreset` を決定するように評価順序・ロジックを修正する。
+1. **フロントエンド**:
+   - `useGeneratePageState`（またはワークフローロード時の `useEffect`）にて、`selectedWorkflowId` が確定した初期ロード時にも `fetchParamSyncGroups(selectedWorkflowId)` を確実に実行して store に同期グループを保持させる。
+2. **バックエンド**:
+   - `backend/app/routers/workflows.py` の `copy_workflow` 関数内に `src.param_sync_groups` のコピー処理を追加し、新ワークフロー ID で同期グループ（`ParamSyncGroup`）を複製生成する。
+
+---
 
 ## 6. 次のステップ
 調査完了につき、ユーザーの承認後に `/dev-design` Workflow を実行して詳細設計および実装タスクの分割を行います。

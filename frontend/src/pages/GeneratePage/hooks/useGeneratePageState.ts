@@ -135,9 +135,16 @@ export function useGeneratePageState() {
     openPresetIds,
     openPreset,
     closePreset,
+    fetchParamSyncGroups,
   } = store
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
+
+  useEffect(() => {
+    if (selectedWorkflowId) {
+      fetchParamSyncGroups(selectedWorkflowId)
+    }
+  }, [selectedWorkflowId, fetchParamSyncGroups])
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: workflows } = useQuery({

@@ -56,6 +56,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     openPresetIds: [10],
     openPreset: vi.fn(),
     closePreset: vi.fn(),
+    fetchParamSyncGroups: vi.fn(),
   }
   return {
     useGenerationStore: () => store,
