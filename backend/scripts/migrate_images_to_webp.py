@@ -17,6 +17,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 
+def _update_path_to_webp(path_str: str | None) -> str | None:
+    if not path_str:
+        return path_str
+    lower_path = path_str.lower()
+    for old_ext in [".png", ".jpg", ".jpeg"]:
+        if lower_path.endswith(old_ext):
+            return path_str[:-len(old_ext)] + ".webp"
+    return path_str
+
+
 def migrate_images():
     run_migrations()
     db = SessionLocal()
@@ -88,6 +98,26 @@ def migrate_images():
 
             except Exception as e:
                 logger.error(f"Snapshot ID {s.id}: Error migrating image {orig_file}: {e}")
+
+        # Update LoRA thumbnail_path
+        loras = db.query(models.Lora).all()
+        lora_migrated_count = 0
+        for lora in loras:
+            updated = _update_path_to_webp(lora.thumbnail_path)
+            if updated != lora.thumbnail_path:
+                lora.thumbnail_path = updated
+                lora_migrated_count += 1
+        logger.info(f"Updated {lora_migrated_count} LoRA thumbnail paths.")
+
+        # Update TagSet thumbnail_path
+        tag_sets = db.query(models.TagSet).all()
+        tagset_migrated_count = 0
+        for ts in tag_sets:
+            updated = _update_path_to_webp(ts.thumbnail_path)
+            if updated != ts.thumbnail_path:
+                ts.thumbnail_path = updated
+                tagset_migrated_count += 1
+        logger.info(f"Updated {tagset_migrated_count} TagSet thumbnail paths.")
 
         db.commit()
         logger.info(f"Migration completed successfully. Updated {migrated_count} snapshots.")

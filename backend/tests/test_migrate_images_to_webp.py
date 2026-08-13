@@ -54,6 +54,20 @@ class TestMigrateImagesToWebP(unittest.TestCase):
                     pass
 
     def test_migrate_images_converts_png_and_sets_thumbnail(self):
+        # Create test records for Lora and TagSet
+        lora_png = models.Lora(model_name="test_lora", thumbnail_path="/api/loras/images/test_lora.png")
+        lora_jpg = models.Lora(model_name="test_lora2", thumbnail_path="/api/loras/images/test_lora2.JPG")
+        tagset_jpeg = models.TagSet(name="test_tagset", tags="", thumbnail_path="/api/tagsets/images/test_tagset.jpeg")
+        tagset_webp = models.TagSet(name="test_tagset2", tags="", thumbnail_path="/api/tagsets/images/test_tagset2.webp")
+
+        self.db.add_all([lora_png, lora_jpg, tagset_jpeg, tagset_webp])
+        self.db.commit()
+        lora_png_id = lora_png.id
+        lora_jpg_id = lora_jpg.id
+        tagset_jpeg_id = tagset_jpeg.id
+        tagset_webp_id = tagset_webp.id
+        self.db.close()
+
         with patch("scripts.migrate_images_to_webp.SessionLocal", side_effect=TestingSessionLocal):
             migrate_images()
 
@@ -63,6 +77,18 @@ class TestMigrateImagesToWebP(unittest.TestCase):
             self.assertIsNotNone(snapshot)
             self.assertEqual(snapshot.image_path, "/api/snapshots/images/legacy_test.webp")
             self.assertEqual(snapshot.thumbnail_path, "/api/snapshots/images/thumb_legacy_test.webp")
+
+            lora1 = db2.query(models.Lora).filter(models.Lora.id == lora_png_id).first()
+            self.assertEqual(lora1.thumbnail_path, "/api/loras/images/test_lora.webp")
+
+            lora2 = db2.query(models.Lora).filter(models.Lora.id == lora_jpg_id).first()
+            self.assertEqual(lora2.thumbnail_path, "/api/loras/images/test_lora2.webp")
+
+            ts1 = db2.query(models.TagSet).filter(models.TagSet.id == tagset_jpeg_id).first()
+            self.assertEqual(ts1.thumbnail_path, "/api/tagsets/images/test_tagset.webp")
+
+            ts2 = db2.query(models.TagSet).filter(models.TagSet.id == tagset_webp_id).first()
+            self.assertEqual(ts2.thumbnail_path, "/api/tagsets/images/test_tagset2.webp")
         finally:
             db2.close()
 

@@ -1,60 +1,73 @@
-# インシデント調査レポート: param sync の設定状態がリロードで解除される & ワークフローコピー時にコピーされない件
+# インシデントレポート: REQ-132実装後のバックエンド起動時 PIL インポートエラー
 
-## 1. 概要
-「param sync（パラメータ同期グループ）」の設定において、以下の2つの不具合が報告された。
-1. **ページリロード時の設定解除**: ページをリロードすると param sync の設定状態（有効/無効やグループ定義）が反映されなくなる。ただしデータは保持されており、設定（`ParamSyncModal`）を開いて閉じると復旧する。
-2. **ワークフローコピー時の設定未引継ぎ**: ワークフローをコピー作成した際、元のワークフローに設定されていた param sync の設定がコピー先に引き継がれず、再設定が必要になる。
-
----
-
-## 2. 再現手順
-
-### 不具合1: ページリロード時の設定解除
-1. 任意のワークフローを選択し、param sync 設定モーダルからパラメータ同期グループを作成・有効化する。
-2. ブラウザをリロード（F5 / ページ再読み込み）する。
-3. **実際の結果**: パラメータパネル上で Synced 表示が消え、同期が機能しなくなる。設定モーダルを一度開いて閉じると復旧する。
-
-### 不具合2: ワークフローコピー時の設定未引継ぎ
-1. param sync グループが設定されているワークフローを開く。
-2. 「ワークフローのコピー」を実行して新しいワークフローを作成する。
-3. **実際の結果**: コピーされた新ワークフローの param sync グループ一覧が空（未設定）になり、同期設定が引き継がれない。
+## 概要 (Overview)
+REQ-132のWebP化対応において、`backend/app/routers/snapshots.py` および `backend/app/services/snapshot_service.py` 等で `from PIL import Image` が追加されましたが、`backend/requirements.txt` に `Pillow` パッケージが定義されていませんでした。
+このため、バックエンド再起動時や依存関係をインストールし直した環境において、`ModuleNotFoundError: No module named 'PIL'` が発生し、バックエンドサーバーの起動に失敗します。
 
 ---
 
-## 3. 根本原因 (Root Cause) — 確定
-
-### 不具合1の主因: 初期ロード時に Store の `paramSyncGroups` が取得されない
-- **該当ファイル**: `frontend/src/store/useGenerationStore.ts` および `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts`
-- **メカニズム**:
-  - `useGenerationStore` は初期起動時に `localStorage` から `selectedWorkflowId`（例: `1`）を復元するが、`paramSyncGroups` は `[]`（空配列）として初期化される。
-  - `fetchParamSyncGroups(workflowId)` は `setSelectedWorkflowId(id)` の内部でのみ実行される設計になっている。
-  - ページリロード時、`selectedWorkflowId` は既に store 上に存在するため `setSelectedWorkflowId` は再呼び出しされず、`paramSyncGroups` が空 `[]` のまま保持される。
-  - そのため `ParamPanel` 等の UI 判定（`activeSlaveMap`）が空となり、連動状態が解除されたように見える。
-  - 設定モーダル（`ParamSyncModal`）を開くと、モーダル内の `useEffect` により `fetchParamSyncGroups(selectedWorkflowId)` が発火して Zustand store が更新されるため、モーダルを閉じた後に設定が「復旧」する。
-
-### 不具合2の主因: バックエンドの `copy_workflow` エンドポイントにおける `ParamSyncGroup` のコピー処理漏れ
-- **該当ファイル**: `backend/app/routers/workflows.py` (`copy_workflow` 関数: Line 20-53)
-- **メカニズム**:
-  - バックエンドのワークフローコピー処理において、`mappings`（マッピング）、`presets`（プリセット）、`bypass_profiles`（バイパスプロファイル）のコピー処理はループで記述されているが、`param_sync_groups`（`models.ParamSyncGroup`）の複製ループ処理が存在しない。
-  - このため、コピー作成された新ワークフローには同期グループが一切生成されない。
+## 再現手順 (Reproduction Steps)
+1. `backend` ディレクトリにて `requirements.txt` に基づき作成された仮想環境 (`.venv`) を用意する。
+2. バックエンドサーバーを起動しようとする（または `python -c "import app.main"` を実行する）。
+3. `app/routers/snapshots.py` のインポート処理時に `from PIL import Image` が評価される。
+4. `ModuleNotFoundError: No module named 'PIL'` が発生し、バックエンドが起動に失敗する。
 
 ---
 
-## 4. 障害分類
-- **分類**: **Type A (Implementation Bug / 実装バグ)**
-- **該当ファイル**:
-  - フロントエンド: `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` または `frontend/src/store/useGenerationStore.ts`
-  - バックエンド: `backend/app/routers/workflows.py` (Line 20-53)
+## 影響範囲 (Affected Area)
+- **依存関係設定**:
+  - `backend/requirements.txt`: `Pillow` の定義が漏れている。
+- **バックエンドソースコード**:
+  - `backend/app/routers/snapshots.py` (L8: `from PIL import Image`)
+  - `backend/app/services/snapshot_service.py` (L20: `from PIL import Image`)
+  - `backend/scripts/migrate_images_to_webp.py` (L7: `from PIL import Image`)
+  - `backend/tests/test_migrate_images_to_webp.py` (L4)
+  - `backend/tests/test_snapshots_webp.py` (L4)
 
 ---
 
-## 5. 修正の方向性 (参考：/dev-design で正式設計)
-1. **フロントエンド**:
-   - `useGeneratePageState`（またはワークフローロード時の `useEffect`）にて、`selectedWorkflowId` が確定した初期ロード時にも `fetchParamSyncGroups(selectedWorkflowId)` を確実に実行して store に同期グループを保持させる。
-2. **バックエンド**:
-   - `backend/app/routers/workflows.py` の `copy_workflow` 関数内に `src.param_sync_groups` のコピー処理を追加し、新ワークフロー ID で同期グループ（`ParamSyncGroup`）を複製生成する。
+## 原因分類 (Root Cause Classification)
+- **分類**: **Type A (実装バグ / Implementation Bug)**
+- **理由**: REQ-132の実装時に Python コード上で `Pillow (PIL)` への依存を追加したが、プロジェクトの依存定義ファイルである `backend/requirements.txt` への追記が漏れていたため。
 
 ---
 
-## 6. 次のステップ
-調査完了につき、ユーザーの承認後に `/dev-design` Workflow を実行して詳細設計および実装タスクの分割を行います。
+## 調査詳細 (Deep Dive Analysis)
+
+### 1. エラーログ（検証結果）
+`python -c "import app.main"` 実行時のスタックトレース:
+```
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "backend/app/main.py", line 15, in <module>
+    from app.routers import (
+  File "backend/app/routers/snapshots.py", line 8, in <module>
+    from PIL import Image
+ModuleNotFoundError: No module named 'PIL'
+```
+
+### 2. 依存定義ファイルの状態
+`backend/requirements.txt`:
+```
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+aiofiles>=23.2.1
+opencv-python-headless
+numpy
+```
+（`Pillow` の記載が存在しない）
+
+---
+
+## 次のステップ提案 (Next Action)
+本調査結果（Type A 実装バグ）に基づき、`/dev-design` ワークフローへ進み修正設計を行うことを提案します。
+
+- **承認の確認**: 次のステップ（修正設計 `/dev-design`）へ進んでよろしいですか？ (YES / NO)
+
