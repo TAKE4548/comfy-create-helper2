@@ -40,6 +40,7 @@ export function GeneratePage() {
     handleBulkEditRequest, handleBulkEditApply,
     bulkDeletePresetsMutation,
     loras,
+    tagSets,
   } = state
 
   return (
@@ -272,6 +273,7 @@ export function GeneratePage() {
           sort_order: 0,
         })) ?? []}
         loras={loras ?? []}
+        tagSets={tagSets ?? []}
         onApply={handleBulkEditApply}
         isApplying={isBulkApplying}
       />

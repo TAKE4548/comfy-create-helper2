@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { X, Loader2, AlertTriangle } from 'lucide-react';
-import type { WorkflowPreset, MappingMaster, Lora } from '../api/types';
+import { X, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import type { WorkflowPreset, MappingMaster, Lora, TagSet } from '../api/types';
 import type { AppliedAsset } from '../store/useGenerationStore';
 import { SearchableLoraSelect } from './SearchableLoraSelect';
 import { LoraStackEditor } from './LoraStackEditor';
+import { AddAssetModal } from '../pages/GeneratePage/components/AddAssetModal';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -24,11 +25,18 @@ export interface LoraOp {
   asset: AppliedAsset;
 }
 
+export interface AppliedAssetOp {
+  mode: 'append' | 'replace';
+  role: string;
+  assets: AppliedAsset[];
+}
+
 export interface BulkEditPayload {
   promptOps?: PromptOp[];
   paramPatch?: Record<string, string>;
   batchSize?: number;
   loraOps?: LoraOp[];
+  assetOps?: AppliedAssetOp[];
 }
 
 export interface ProfileBulkEditModalProps {
@@ -37,6 +45,7 @@ export interface ProfileBulkEditModalProps {
   selectedPresets: WorkflowPreset[];
   mappingMasters: MappingMaster[];
   loras: Lora[];
+  tagSets?: TagSet[];
   comfyObjectInfo?: Record<string, any>;
   onApply: (payload: BulkEditPayload) => void;
   isApplying?: boolean;
@@ -61,6 +70,7 @@ export function ProfileBulkEditModal({
   selectedPresets,
   mappingMasters,
   loras,
+  tagSets = [],
   comfyObjectInfo,
   onApply,
   isApplying = false,
@@ -79,11 +89,16 @@ export function ProfileBulkEditModal({
   const [paramPatch, setParamPatch] = useState<Record<string, string>>({});
   const [batchSizeInput, setBatchSizeInput] = useState('');
 
-  // LoRA tab state
+  // LoRA / Asset tab state
   const [loraFilename, setLoraFilename] = useState('');
   const [loraRole, setLoraRole] = useState('');
   const [loraMode, setLoraMode] = useState<'append' | 'replace'>('append');
   const [loraStrength, setLoraStrength] = useState('1.0');
+
+  // AddAssetModal & AssetOps state
+  const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
+  const [targetAssetRole, setTargetAssetRole] = useState<string>('');
+  const [assetOps, setAssetOps] = useState<AppliedAssetOp[]>([]);
 
   // Confirmation state
   const [showConfirm, setShowConfirm] = useState(false);
@@ -107,56 +122,116 @@ export function ProfileBulkEditModal({
     !['textarea'].includes(m.input_type)
   );
   const loraRoles = mappingMasters.filter(m => m.input_type === 'lora_stack');
+  const allAssetTargetRoles = mappingMasters.filter(m => m.input_type === 'textarea' || m.input_type === 'lora_stack');
+
+  const handleAddAppliedAsset = (role: string, assetData: Omit<AppliedAsset, 'id' | 'enabled'>) => {
+    const asset: AppliedAsset = {
+      ...assetData,
+      id: `${assetData.type}-${assetData.assetId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      enabled: true,
+    };
+
+    // Determine target roles (if in prompt tab, apply to all selected target fields or default to role)
+    const targetRoles = activeTab === 'prompt'
+      ? (promptTargetAll ? textareaRoles.map(m => m.role) : Array.from(promptTargetFields))
+      : [role];
+    const rolesToApply = targetRoles.length > 0 ? targetRoles : [role];
+
+    // Determine asset operation mode (if promptOp is overwrite, treat assetOp mode as replace)
+    const effectiveMode = promptOp === 'overwrite' ? 'replace' : loraMode;
+
+    // 1. Queue for asset registration in applied_assets for each target role
+    setAssetOps(prev => {
+      let updated = [...prev];
+      for (const r of rolesToApply) {
+        const existingOpIndex = updated.findIndex(op => op.role === r);
+        if (existingOpIndex >= 0) {
+          updated[existingOpIndex] = {
+            ...updated[existingOpIndex],
+            mode: effectiveMode,
+            assets: effectiveMode === 'replace' ? [asset] : [...updated[existingOpIndex].assets, asset],
+          };
+        } else {
+          updated.push({ mode: effectiveMode, role: r, assets: [asset] });
+        }
+      }
+      return updated;
+    });
+
+    // 2. Append text (LoRA syntax / tags) directly into active prompt tab input field
+    const textToAdd = asset.loraPromptString ?? (asset.tags ? asset.tags.join(', ') : '');
+    if (textToAdd) {
+      if (promptOp === 'search_replace') {
+        setPromptReplaceText(prev => (prev ? `${prev}, ${textToAdd}` : textToAdd));
+      } else {
+        setPromptValue(prev => (prev ? `${prev}, ${textToAdd}` : textToAdd));
+      }
+    }
+  };
+
+  const handleRemoveQueuedAsset = (role: string, assetId: string) => {
+    setAssetOps(prev => {
+      return prev
+        .map(op => {
+          if (op.role !== role) return op;
+          return {
+            ...op,
+            assets: op.assets.filter(a => a.id !== assetId),
+          };
+        })
+        .filter(op => op.assets.length > 0);
+    });
+  };
 
   // ── Build payload ──
   const buildPayload = (): BulkEditPayload | null => {
     const payload: BulkEditPayload = {};
 
-    // Prompt ops
-    if (activeTab === 'prompt') {
-      const targetFields = promptTargetAll ? null : Array.from(promptTargetFields);
-
-      if (promptOp === 'search_replace') {
-        if (!promptFindText) return null;
+    // 1. Prompt ops (if configured)
+    const targetFields = promptTargetAll ? null : Array.from(promptTargetFields);
+    if (promptOp === 'search_replace') {
+      if (promptFindText) {
         payload.promptOps = [{ op: 'search_replace', fields: targetFields, find: promptFindText, replace: promptReplaceText }];
-      } else {
-        if (!promptValue) return null;
+      }
+    } else {
+      if (promptValue) {
         payload.promptOps = [{ op: promptOp, fields: targetFields ?? textareaRoles.map(m => m.role), value: promptValue }];
       }
     }
 
-    // Param patch
-    if (activeTab === 'params') {
-      const filtered: Record<string, string> = {};
-      Object.entries(paramPatch).forEach(([k, v]) => { if (v !== '') filtered[k] = v; });
-      if (Object.keys(filtered).length > 0) payload.paramPatch = filtered;
-      if (batchSizeInput !== '') {
-        const n = parseInt(batchSizeInput, 10);
-        if (!isNaN(n) && n > 0) payload.batchSize = n;
-      }
-      if (!payload.paramPatch && payload.batchSize === undefined) return null;
+    // 2. Asset ops (LoRA & TagSet queue from AddAssetModal)
+    if (assetOps.length > 0) {
+      payload.assetOps = assetOps;
     }
 
-    // LoRA op
-    if (activeTab === 'lora') {
-      const targetRole = loraRole || (loraRoles.length > 0 ? loraRoles[0].role : 'lora');
-      if (!loraFilename || !targetRole) return null;
-      const loraData = loras.find(l => l.model_name === loraFilename || l.file_path === loraFilename);
-      if (!loraData) return null;
+    // 3. Param patch
+    const filteredParams: Record<string, string> = {};
+    Object.entries(paramPatch).forEach(([k, v]) => { if (v !== '') filteredParams[k] = v; });
+    if (Object.keys(filteredParams).length > 0) payload.paramPatch = filteredParams;
+    if (batchSizeInput !== '') {
+      const n = parseInt(batchSizeInput, 10);
+      if (!isNaN(n) && n > 0) payload.batchSize = n;
+    }
 
-      const path = loraData.file_path || loraData.model_name || '';
-      const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, '') || 'lora';
-      const strength = parseFloat(loraStrength) || 1.0;
-      const asset: AppliedAsset = {
-        id: `lora-${loraData.id}-${Date.now()}`,
-        type: 'lora',
-        assetId: loraData.id,
-        name: loraData.description || filename,
-        enabled: true,
-        tags: loraData.trigger_word_sets?.[0]?.words ?? [],
-        loraPromptString: `<lora:${filename}:${strength.toFixed(1)}>`,
-      };
-      payload.loraOps = [{ mode: loraMode, role: targetRole, asset }];
+    // 4. Legacy LoRA op
+    if (loraFilename) {
+      const targetRole = loraRole || (loraRoles.length > 0 ? loraRoles[0].role : 'lora');
+      const loraData = loras.find(l => l.model_name === loraFilename || l.file_path === loraFilename);
+      if (loraData && targetRole) {
+        const path = loraData.file_path || loraData.model_name || '';
+        const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, '') || 'lora';
+        const strength = parseFloat(loraStrength) || 1.0;
+        const asset: AppliedAsset = {
+          id: `lora-${loraData.id}-${Date.now()}`,
+          type: 'lora',
+          assetId: loraData.id,
+          name: loraData.description || filename,
+          enabled: true,
+          tags: loraData.trigger_word_sets?.[0]?.words ?? [],
+          loraPromptString: `<lora:${filename}:${strength.toFixed(1)}>`,
+        };
+        payload.loraOps = [{ mode: loraMode, role: targetRole, asset }];
+      }
     }
 
     return Object.keys(payload).length > 0 ? payload : null;
@@ -304,7 +379,20 @@ export function ProfileBulkEditModal({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">置換後の文字列</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">置換後の文字列</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaultRole = textareaRoles[0]?.role || 'positive';
+                          setTargetAssetRole(defaultRole);
+                          setIsAddAssetOpen(true);
+                        }}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-[#3ECF8E] hover:underline"
+                      >
+                        <Plus size={12} /> アセットを追加
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={promptReplaceText}
@@ -316,9 +404,22 @@ export function ProfileBulkEditModal({
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    {promptOp === 'overwrite' ? '置換するテキスト' : promptOp === 'prefix' ? '先頭に追加するテキスト' : '末尾に追加するテキスト'}
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                      {promptOp === 'overwrite' ? '置換するテキスト' : promptOp === 'prefix' ? '先頭に追加するテキスト' : '末尾に追加するテキスト'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultRole = textareaRoles[0]?.role || 'positive';
+                        setTargetAssetRole(defaultRole);
+                        setIsAddAssetOpen(true);
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-[#3ECF8E] hover:underline"
+                    >
+                      <Plus size={12} /> アセットを追加
+                    </button>
+                  </div>
                   <textarea
                     value={promptValue}
                     onChange={e => setPromptValue(e.target.value)}
@@ -326,6 +427,31 @@ export function ProfileBulkEditModal({
                     placeholder="テキストを入力..."
                     className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors resize-none"
                   />
+                </div>
+              )}
+
+              {/* Queued assets badge in prompt tab */}
+              {assetOps.length > 0 && (
+                <div className="p-2.5 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-gray-300">適用・登録予定のアセット ({assetOps.reduce((sum, op) => sum + op.assets.length, 0)}件)</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {assetOps.map(op =>
+                      op.assets.map(asset => (
+                        <span key={asset.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-gray-200">
+                          <span className="font-medium">{asset.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQueuedAsset(op.role, asset.id)}
+                            className="text-gray-400 hover:text-red-400 ml-1 transition-colors"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -439,12 +565,64 @@ export function ProfileBulkEditModal({
             </div>
           )}
 
-          {/* ── LoRA Tab ── */}
+          {/* ── LoRA / Asset Tab ── */}
           {activeTab === 'lora' && (
             <div className="space-y-4">
-              {/* LoRA selection */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">追加する LoRA</label>
+              {/* Asset Modal Opener */}
+              <div className="p-3 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-[#3ECF8E] uppercase tracking-wider">アセット一括追加（LoRA・タグセット）</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaultRole = allAssetTargetRoles[0]?.role || loraRoles[0]?.role || textareaRoles[0]?.role || 'lora';
+                      setTargetAssetRole(defaultRole);
+                      setIsAddAssetOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#3ECF8E]/20 text-[#3ECF8E] border border-[#3ECF8E]/40 text-xs font-semibold hover:bg-[#3ECF8E]/30 transition-all"
+                  >
+                    <Plus size={14} />
+                    アセットを追加
+                  </button>
+                </div>
+
+                {assetOps.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                    <span className="text-[11px] font-medium text-gray-400">適用予定のアセット:</span>
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                      {assetOps.map(op => (
+                        <div key={op.role} className="p-2 bg-[#18181C] border border-[rgba(255,255,255,0.06)] rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-gray-300">ロール: <span className="text-[#3ECF8E]">{op.role}</span></span>
+                            <span className="text-[10px] text-gray-500 font-mono">({op.mode === 'replace' ? '置換' : '追記'})</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {op.assets.map(asset => (
+                              <span key={asset.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-gray-200">
+                                <span className="font-medium">{asset.name}</span>
+                                {asset.type === 'lora' && asset.loraPromptString && (
+                                  <span className="text-[10px] text-amber-300 font-mono">{asset.loraPromptString}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveQueuedAsset(op.role, asset.id)}
+                                  className="text-gray-400 hover:text-red-400 ml-1 transition-colors"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Legacy LoRA selection fallback */}
+              <div className="space-y-1.5 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">単一 LoRA 指定（従来機能）</label>
                 <SearchableLoraSelect
                   loras={loras}
                   value={loraFilename}
@@ -487,7 +665,7 @@ export function ProfileBulkEditModal({
 
               {/* Mode */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">操作モード</label>
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider font-semibold">操作モード</label>
                 <div className="grid grid-cols-2 gap-2">
                   {([['append', '追加（既存を保持）'], ['replace', '置換（既存を削除）']] as const).map(([mode, label]) => (
                     <button
@@ -506,7 +684,7 @@ export function ProfileBulkEditModal({
                 {loraMode === 'replace' && (
                   <p className="text-xs text-amber-400 flex items-center gap-1">
                     <AlertTriangle size={12} />
-                    置換モードは選択ロールの既存 LoRA をすべて削除します
+                    置換モードは選択ロールの既存 アセット/LoRA をすべて削除します
                   </p>
                 )}
               </div>
@@ -532,6 +710,17 @@ export function ProfileBulkEditModal({
           </button>
         </div>
       </div>
+
+      {isAddAssetOpen && targetAssetRole && (
+        <AddAssetModal
+          role={targetAssetRole}
+          loras={loras}
+          tagSets={tagSets}
+          onClose={() => setIsAddAssetOpen(false)}
+          addAppliedAsset={handleAddAppliedAsset}
+          setRoleCollapsed={() => {}}
+        />
+      )}
     </div>
   );
 }

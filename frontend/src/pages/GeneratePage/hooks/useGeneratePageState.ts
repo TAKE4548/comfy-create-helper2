@@ -601,6 +601,8 @@ export function useGeneratePageState() {
                 newParamValues[field] = current.split(op.find!).join(op.replace ?? '')
               } else if (op.op === 'overwrite') {
                 newParamValues[field] = op.value!
+                // プロンプト上書きの場合、既存アセット管理データもクリアする
+                delete newAppliedAssets[field]
               } else if (op.op === 'prefix') {
                 newParamValues[field] = op.value! + current
               } else if (op.op === 'suffix') {
@@ -643,6 +645,34 @@ export function useGeneratePageState() {
             } else {
               newAppliedAssets[loraOp.role] = [...existing, loraOp.asset]
             }
+          }
+        }
+
+        // Apply Asset ops (LoRA & TagSet)
+        if (payload.assetOps) {
+          for (const assetOp of payload.assetOps) {
+            const existingAssets = newAppliedAssets[assetOp.role] ?? []
+            // プロンプト上書き(overwrite)が指定されている場合、またはモードがreplaceの場合は既存アセットをクリア
+            const isOverwriteOp = payload.promptOps?.some(p => p.op === 'overwrite')
+            let updatedAssets: AppliedAsset[] = (assetOp.mode === 'replace' || isOverwriteOp) ? [] : [...existingAssets]
+
+            for (const asset of assetOp.assets) {
+              // Deduplication check (AC-4)
+              const isDuplicate = updatedAssets.some(
+                existing =>
+                  existing.type === asset.type &&
+                  existing.assetId === asset.assetId &&
+                  existing.name === asset.name &&
+                  existing.loraPromptString === asset.loraPromptString &&
+                  JSON.stringify(existing.tags) === JSON.stringify(asset.tags)
+              )
+              if (!isDuplicate) {
+                updatedAssets.push(asset)
+                // If promptOp was 'overwrite', newParamValues[assetOp.role] was already set to op.value in promptOps loop.
+                // If promptOps did not explicitly run or for general sync, sync text safely.
+              }
+            }
+            newAppliedAssets[assetOp.role] = updatedAssets
           }
         }
 

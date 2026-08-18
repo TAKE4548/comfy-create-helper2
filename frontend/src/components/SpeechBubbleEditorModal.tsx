@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, Sparkles, Loader2, Save } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { X, Loader2, Save } from 'lucide-react'
 import { snapshotsApi, llmPromptsApi, fontsApi } from '../api/client'
 import type { SnapshotSummary, BubbleCandidate, ServerFont } from '../api/types'
+import type { SpeechBubble } from '../types/speechBubble'
+import { drawSpeechBubble } from '../utils/speechBubbleRenderer'
+import { SpeechBubbleControls } from './SpeechBubbleControls'
 
 interface SpeechBubbleEditorModalProps {
   snapshot: SnapshotSummary
@@ -9,69 +12,23 @@ interface SpeechBubbleEditorModalProps {
   onSaved: () => void
 }
 
-const verticalCharMap: Record<string, string> = {
-  'ー': '｜',
-  '―': '｜',
-  '–': '｜',
-  '-': '｜',
-  '~': '｜',
-  '～': '｜',
-  '「': '﹁',
-  '」': '﹂',
-  '『': '﹃',
-  '』': '﹄',
-  '（': '︵',
-  '）': '︶',
-  '(': '︵',
-  ')': '︶',
-  '【': '︻',
-  '】': '︼',
-  '〔': '︹',
-  '〕': '︺',
-  '［': '﹇',
-  '］': '﹈',
-  '{': '︷',
-  '}': '︸',
-  '｛': '︷',
-  '｝': '︸',
-  '…': '⋮',
-  '..': '︰',
-  '：': '︓',
-  '；': '︔',
-  '、': '︑',
-  '。': '︒',
-  '.': '︒',
-  ',': '︑',
-}
-
-const layoutVerticalText = (text: string, fontSize: number, maxHeight: number): string[] => {
-  const columns: string[] = []
-  const paragraphs = text.split('\n')
-  for (const para of paragraphs) {
-    let currentColumn = ''
-    for (const char of para) {
-      const mappedChar = verticalCharMap[char] || char
-      if ((currentColumn.length + 1) * fontSize > maxHeight) {
-        columns.push(currentColumn)
-        currentColumn = mappedChar
-      } else {
-        currentColumn += mappedChar
-      }
-    }
-    if (currentColumn || para === '') {
-      columns.push(currentColumn)
-    }
-  }
-  return columns
-}
-
 export function SpeechBubbleEditorModal({
   snapshot,
   onClose,
   onSaved,
 }: SpeechBubbleEditorModalProps) {
-  const [boundingBox, setBoundingBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-  const [speechText, setSpeechText] = useState('')
+  const [bubbles, setBubbles] = useState<SpeechBubble[]>([])
+  const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(null)
+  const [draggingState, setDraggingState] = useState<{
+    type: 'bubble' | 'tail' | 'resize'
+    handle?: 'nw' | 'ne' | 'se' | 'sw'
+    bubbleId: string
+    startX: number
+    startY: number
+    initialBubble: SpeechBubble
+  } | null>(null)
+  const [cursorStyle, setCursorStyle] = useState<string>('crosshair')
+
   const [fontList, setFontList] = useState<ServerFont[]>([])
   const [selectedFont, setSelectedFont] = useState<string>('')
   const [activeFontFamily, setActiveFontFamily] = useState<string>('sans-serif')
@@ -88,18 +45,6 @@ export function SpeechBubbleEditorModal({
   const [sortBy, setSortBy] = useState<'area_desc' | 'area_asc' | 'brightness_desc' | 'distance_center' | 'id'>('area_desc')
   const [lastUsedROI, setLastUsedROI] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
-  const fetchDebugCandidates = async (roi: { x: number; y: number; w: number; h: number } | null = null) => {
-    setIsDebugLoading(true)
-    try {
-      const res = await snapshotsApi.detectBubbleDebug(snapshot.id, roi)
-      setCandidates(res.candidates)
-    } catch (err) {
-      console.error('Failed to fetch debug candidates:', err)
-    } finally {
-      setIsDebugLoading(false)
-    }
-  }
-
   // ROI states
   const [isDrawingROI, setIsDrawingROI] = useState(false)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -113,15 +58,26 @@ export function SpeechBubbleEditorModal({
   const scaleX = imageObj ? canvasDimensions.width / imageObj.naturalWidth : 1
   const scaleY = imageObj ? canvasDimensions.height / imageObj.naturalHeight : 1
 
+  const fetchDebugCandidates = async (roi: { x: number; y: number; w: number; h: number } | null = null) => {
+    setIsDebugLoading(true)
+    try {
+      const res = await snapshotsApi.detectBubbleDebug(snapshot.id, roi)
+      setCandidates(res.candidates)
+    } catch (err) {
+      console.error('Failed to fetch debug candidates:', err)
+    } finally {
+      setIsDebugLoading(false)
+    }
+  }
+
   // Load image on mount
   useEffect(() => {
     if (!snapshot.image_path) return
     const img = new Image()
     img.src = snapshot.image_path
-    img.crossOrigin = 'anonymous' // To prevent tainted canvas on saving
+    img.crossOrigin = 'anonymous'
     img.onload = () => {
       setImageObj(img)
-      // Scale image to fit inside 500x500 container while preserving aspect ratio
       const maxW = 500
       const maxH = 500
       let w = img.naturalWidth
@@ -156,37 +112,51 @@ export function SpeechBubbleEditorModal({
     fetchFonts()
   }, [])
 
-  // Load selected font dynamically
+  // Load all selected fonts for bubbles dynamically
   useEffect(() => {
-    if (!selectedFont) return
-    const fontFamilyName = `server-font-${selectedFont.replace(/\./g, '-')}`
-    
-    let isAlreadyLoaded = false
-    document.fonts.forEach((font) => {
-      if (font.family === fontFamilyName) {
-        isAlreadyLoaded = true
+    if (typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return
+
+    // Collect all font files used across bubbles
+    const fontsToLoad = new Set<string>()
+    bubbles.forEach((b) => {
+      if (b.fontFamily && b.fontFamily !== 'sans-serif' && b.fontFamily !== 'serif') {
+        fontsToLoad.add(b.fontFamily)
       }
     })
-    
-    if (isAlreadyLoaded) {
-      setActiveFontFamily(fontFamilyName)
-      return
-    }
 
-    setIsFontLoading(true)
-    const fontUrl = `/api/fonts/${encodeURIComponent(selectedFont)}`
-    const fontFace = new FontFace(fontFamilyName, `url(${fontUrl})`)
-    fontFace.load().then((loadedFace) => {
-      document.fonts.add(loadedFace)
-      setActiveFontFamily(fontFamilyName)
-      setIsFontLoading(false)
-    }).catch((err) => {
-      console.error('Failed to load font:', err)
-      setIsFontLoading(false)
+    fontsToLoad.forEach((fontFileName) => {
+      const familyName = `server-font-${fontFileName.replace(/\./g, '-')}`
+      let isAlreadyLoaded = false
+      if (typeof document.fonts.forEach === 'function') {
+        document.fonts.forEach((font) => {
+          if (font.family === familyName) {
+            isAlreadyLoaded = true
+          }
+        })
+      }
+
+      if (!isAlreadyLoaded) {
+        setIsFontLoading(true)
+        const fontUrl = `/api/fonts/${encodeURIComponent(fontFileName)}`
+        const fontFace = new FontFace(familyName, `url(${fontUrl})`)
+        fontFace
+          .load()
+          .then((loadedFace) => {
+            document.fonts.add(loadedFace)
+            // Trigger canvas redraw by updating activeFontFamily counter
+            setActiveFontFamily(`${familyName}-${Date.now()}`)
+            setIsFontLoading(false)
+          })
+          .catch((err) => {
+            console.error(`Failed to load font ${fontFileName}:`, err)
+            setIsFontLoading(false)
+          })
+      }
     })
-  }, [selectedFont])
+  }, [bubbles])
 
-  // Run bubble detection on open
+
+  // Auto-detect bubble on mount
   useEffect(() => {
     let active = true
     const runAutoDetect = async () => {
@@ -194,7 +164,28 @@ export function SpeechBubbleEditorModal({
       try {
         const res = await snapshotsApi.detectBubble(snapshot.id)
         if (active && res.bounding_box) {
-          setBoundingBox(res.bounding_box)
+          const newBubble: SpeechBubble = {
+            id: `bubble-${Date.now()}`,
+            x: res.bounding_box.x,
+            y: res.bounding_box.y,
+            w: res.bounding_box.w,
+            h: res.bounding_box.h,
+            text: '',
+            shape: 'oval',
+            orientation: 'vertical',
+            fontFamily: selectedFont || 'sans-serif',
+            fontSize: 0,
+            textColor: 'rgba(0, 0, 0, 1)',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderColor: 'rgba(0, 0, 0, 1)',
+            borderWidth: 2,
+            tail: {
+              x: res.bounding_box.x + res.bounding_box.w / 2 - 20,
+              y: res.bounding_box.y + res.bounding_box.h + 30
+            }
+          }
+          setBubbles([newBubble])
+          setSelectedBubbleId(newBubble.id)
         }
         if (active && showDebugPanel) {
           fetchDebugCandidates(null)
@@ -209,7 +200,23 @@ export function SpeechBubbleEditorModal({
     return () => {
       active = false
     }
-  }, [snapshot.id, showDebugPanel])
+  }, [snapshot.id])
+
+  // Delete key handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBubbleId) {
+        const tag = (document.activeElement?.tagName || '').toUpperCase()
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+          return
+        }
+        setBubbles((prev) => prev.filter((b) => b.id !== selectedBubbleId))
+        setSelectedBubbleId(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedBubbleId])
 
   // Draw loop
   useEffect(() => {
@@ -223,100 +230,20 @@ export function SpeechBubbleEditorModal({
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height)
 
-    // Draw bounding box and text
-    if (boundingBox) {
-      // Draw detection box border
-      ctx.strokeStyle = '#3ECF8E'
-      ctx.lineWidth = 2
-      ctx.strokeRect(
-        boundingBox.x * scaleX,
-        boundingBox.y * scaleY,
-        boundingBox.w * scaleX,
-        boundingBox.h * scaleY
-      )
-
-      if (speechText) {
-        // Draw white background inside the speech bubble area to print text
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)'
-        ctx.fillRect(
-          boundingBox.x * scaleX + 1,
-          boundingBox.y * scaleY + 1,
-          boundingBox.w * scaleX - 2,
-          boundingBox.h * scaleY - 2
-        )
-
-        if (isFontLoading) {
-          ctx.fillStyle = '#999999'
-          ctx.font = '14px sans-serif'
-          ctx.textBaseline = 'middle'
-          ctx.textAlign = 'center'
-          ctx.fillText(
-            'フォント読み込み中...',
-            (boundingBox.x + boundingBox.w / 2) * scaleX,
-            (boundingBox.y + boundingBox.h / 2) * scaleY
-          )
-        } else {
-          const padding = 16
-          const maxWidth = boundingBox.w * scaleX - padding
-          const maxHeight = boundingBox.h * scaleY - padding
-
-          // Step-down search for font size
-          let computedFontSize = 36
-          const minFontSize = 8
-          for (let size = 36; size >= minFontSize; size--) {
-            const cols = layoutVerticalText(speechText, size, maxHeight)
-            const totalWidth = cols.length * size * 1.3
-            if (totalWidth <= maxWidth) {
-              computedFontSize = size
-              break
-            }
-            if (size === minFontSize) {
-              computedFontSize = minFontSize
-            }
-          }
-
-          ctx.font = `bold ${computedFontSize}px ${activeFontFamily}`
-          ctx.fillStyle = '#000000'
-          ctx.textBaseline = 'middle'
-          ctx.textAlign = 'center'
-
-          const cols = layoutVerticalText(speechText, computedFontSize, maxHeight)
-          const totalWidth = cols.length * computedFontSize * 1.3
-          const boxCenter = (boundingBox.x + boundingBox.w / 2) * scaleX
-          const startX = boxCenter + (totalWidth - computedFontSize * 1.3) / 2
-
-          cols.forEach((col, colIndex) => {
-            const colX = startX - colIndex * (computedFontSize * 1.3)
-            const colHeight = col.length * computedFontSize
-            const boxMiddle = (boundingBox.y + boundingBox.h / 2) * scaleY
-            const colTop = boxMiddle - colHeight / 2
-
-            for (let i = 0; i < col.length; i++) {
-              const char = col[i]
-              const charY = colTop + i * computedFontSize + computedFontSize / 2
-              ctx.fillText(char, colX, charY)
-            }
-          })
-        }
-      }
-    }
+    // Draw all speech bubbles
+    bubbles.forEach((bubble) => {
+      const isSelected = bubble.id === selectedBubbleId
+      drawSpeechBubble(ctx, bubble, isSelected, scaleX, scaleY, activeFontFamily)
+    })
 
     // Draw all debug candidates if panel is open
     if (showDebugPanel && candidates) {
       candidates.forEach((c) => {
-        // Skip active bounding box and hovered candidate (we draw them separately/highlighted)
-        if (boundingBox && Math.abs(boundingBox.x - c.x) < 2 && Math.abs(boundingBox.y - c.y) < 2) return;
-        if (hoveredCandidate && hoveredCandidate.id === c.id) return;
-
+        if (hoveredCandidate && hoveredCandidate.id === c.id) return
         ctx.strokeStyle = c.status === 'PASS' ? 'rgba(62, 207, 142, 0.4)' : 'rgba(239, 68, 68, 0.3)'
         ctx.lineWidth = 1
         ctx.setLineDash([2, 2])
-        ctx.strokeRect(
-          c.x * scaleX,
-          c.y * scaleY,
-          c.w * scaleX,
-          c.h * scaleY
-        )
+        ctx.strokeRect(c.x * scaleX, c.y * scaleY, c.w * scaleX, c.h * scaleY)
         ctx.setLineDash([])
       })
     }
@@ -331,8 +258,6 @@ export function SpeechBubbleEditorModal({
         hoveredCandidate.w * scaleX,
         hoveredCandidate.h * scaleY
       )
-      
-      // Draw status and ID
       ctx.fillStyle = '#f59e0b'
       ctx.font = 'bold 10px sans-serif'
       ctx.textBaseline = 'top'
@@ -354,37 +279,235 @@ export function SpeechBubbleEditorModal({
       ctx.fillRect(currentROI.x, currentROI.y, currentROI.w, currentROI.h)
       ctx.setLineDash([])
     }
-  }, [imageObj, boundingBox, speechText, activeFontFamily, isFontLoading, isDrawingROI, dragStart, currentROI, scaleX, scaleY, showDebugPanel, candidates, hoveredCandidate])
+  }, [
+    imageObj,
+    bubbles,
+    selectedBubbleId,
+    activeFontFamily,
+    isDrawingROI,
+    dragStart,
+    currentROI,
+    scaleX,
+    scaleY,
+    showDebugPanel,
+    candidates,
+    hoveredCandidate,
+  ])
 
-  // Canvas Mouse handlers for ROI selection
+  // Canvas Mouse handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+
+    const activeBubble = bubbles.find((b) => b.id === selectedBubbleId)
+
+    // 1. Check if clicking any resize handle on the selected bubble
+    if (activeBubble) {
+      const bx = activeBubble.x * scaleX
+      const by = activeBubble.y * scaleY
+      const bw = activeBubble.w * scaleX
+      const bh = activeBubble.h * scaleY
+      const hs = 10
+
+      const handles: { handle: 'nw' | 'ne' | 'se' | 'sw'; hx: number; hy: number }[] = [
+        { handle: 'nw', hx: bx, hy: by },
+        { handle: 'ne', hx: bx + bw, hy: by },
+        { handle: 'se', hx: bx + bw, hy: by + bh },
+        { handle: 'sw', hx: bx, hy: by + bh },
+      ]
+
+      for (const h of handles) {
+        if (Math.hypot(x - h.hx, y - h.hy) <= hs) {
+          setDraggingState({
+            type: 'resize',
+            handle: h.handle,
+            bubbleId: activeBubble.id,
+            startX: x,
+            startY: y,
+            initialBubble: { ...activeBubble },
+          })
+          return
+        }
+      }
+    }
+
+    // 2. Check if clicking tail handle of selected bubble or any bubble with tail
+    if (activeBubble && activeBubble.tail) {
+      const tx = activeBubble.tail.x * scaleX
+      const ty = activeBubble.tail.y * scaleY
+      const dist = Math.hypot(x - tx, y - ty)
+      if (dist <= 12) {
+        setDraggingState({
+          type: 'tail',
+          bubbleId: activeBubble.id,
+          startX: x,
+          startY: y,
+          initialBubble: { ...activeBubble }
+        })
+        return
+      }
+    }
+
+    // 3. Check if clicking inside any bubble (in reverse order to hit top-most)
+    const reversedBubbles = [...bubbles].reverse()
+    for (const b of reversedBubbles) {
+      const bx = b.x * scaleX
+      const by = b.y * scaleY
+      const bw = b.w * scaleX
+      const bh = b.h * scaleY
+
+      if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+        setSelectedBubbleId(b.id)
+        setDraggingState({
+          type: 'bubble',
+          bubbleId: b.id,
+          startX: x,
+          startY: y,
+          initialBubble: { ...b }
+        })
+        return
+      }
+    }
+
+    // 4. Otherwise start ROI selection or deselect
+    setSelectedBubbleId(null)
     setIsDrawingROI(true)
     setDragStart({ x, y })
     setCurrentROI({ x, y, w: 0, h: 0 })
   }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawingROI || !dragStart) return
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    const roiX = Math.min(dragStart.x, x)
-    const roiY = Math.min(dragStart.y, y)
-    const roiW = Math.abs(dragStart.x - x)
-    const roiH = Math.abs(dragStart.y - y)
+    if (draggingState) {
+      const dx = Math.round((x - draggingState.startX) / scaleX)
+      const dy = Math.round((y - draggingState.startY) / scaleY)
+      const initB = draggingState.initialBubble
 
-    setCurrentROI({ x: roiX, y: roiY, w: roiW, h: roiH })
+      if (draggingState.type === 'bubble') {
+        setBubbles((prev) =>
+          prev.map((b) => {
+            if (b.id !== draggingState.bubbleId) return b
+            return {
+              ...b,
+              x: initB.x + dx,
+              y: initB.y + dy,
+              tail: initB.tail ? { x: initB.tail.x + dx, y: initB.tail.y + dy } : undefined
+            }
+          })
+        )
+      } else if (draggingState.type === 'tail') {
+        const tx = Math.round(x / scaleX)
+        const ty = Math.round(y / scaleY)
+        setBubbles((prev) =>
+          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, tail: { x: tx, y: ty } } : b))
+        )
+      } else if (draggingState.type === 'resize' && draggingState.handle) {
+        let newX = initB.x
+        let newY = initB.y
+        let newW = initB.w
+        let newH = initB.h
+
+        const minSize = 30
+
+        if (draggingState.handle === 'se') {
+          newW = Math.max(minSize, initB.w + dx)
+          newH = Math.max(minSize, initB.h + dy)
+        } else if (draggingState.handle === 'sw') {
+          const wCandidate = initB.w - dx
+          if (wCandidate >= minSize) {
+            newX = initB.x + dx
+            newW = wCandidate
+          } else {
+            newX = initB.x + (initB.w - minSize)
+            newW = minSize
+          }
+          newH = Math.max(minSize, initB.h + dy)
+        } else if (draggingState.handle === 'ne') {
+          newW = Math.max(minSize, initB.w + dx)
+          const hCandidate = initB.h - dy
+          if (hCandidate >= minSize) {
+            newY = initB.y + dy
+            newH = hCandidate
+          } else {
+            newY = initB.y + (initB.h - minSize)
+            newH = minSize
+          }
+        } else if (draggingState.handle === 'nw') {
+          const wCandidate = initB.w - dx
+          if (wCandidate >= minSize) {
+            newX = initB.x + dx
+            newW = wCandidate
+          } else {
+            newX = initB.x + (initB.w - minSize)
+            newW = minSize
+          }
+          const hCandidate = initB.h - dy
+          if (hCandidate >= minSize) {
+            newY = initB.y + dy
+            newH = hCandidate
+          } else {
+            newY = initB.y + (initB.h - minSize)
+            newH = minSize
+          }
+        }
+
+        setBubbles((prev) =>
+          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, x: newX, y: newY, w: newW, h: newH } : b))
+        )
+      }
+      return
+    }
+
+    // Cursor style update on hover
+    const activeBubble = bubbles.find((b) => b.id === selectedBubbleId)
+    if (activeBubble) {
+      const bx = activeBubble.x * scaleX
+      const by = activeBubble.y * scaleY
+      const bw = activeBubble.w * scaleX
+      const bh = activeBubble.h * scaleY
+      const hs = 10
+
+      if (Math.hypot(x - bx, y - by) <= hs || Math.hypot(x - (bx + bw), y - (by + bh)) <= hs) {
+        setCursorStyle('nwse-resize')
+        return
+      } else if (Math.hypot(x - (bx + bw), y - by) <= hs || Math.hypot(x - bx, y - (by + bh)) <= hs) {
+        setCursorStyle('nesw-resize')
+        return
+      } else if (activeBubble.tail && Math.hypot(x - activeBubble.tail.x * scaleX, y - activeBubble.tail.y * scaleY) <= 12) {
+        setCursorStyle('pointer')
+        return
+      } else if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+        setCursorStyle('move')
+        return
+      }
+    }
+
+    setCursorStyle('crosshair')
+
+    if (isDrawingROI && dragStart) {
+      const roiX = Math.min(dragStart.x, x)
+      const roiY = Math.min(dragStart.y, y)
+      const roiW = Math.abs(dragStart.x - x)
+      const roiH = Math.abs(dragStart.y - y)
+      setCurrentROI({ x: roiX, y: roiY, w: roiW, h: roiH })
+    }
   }
 
+
   const handleMouseUp = async () => {
+    if (draggingState) {
+      setDraggingState(null)
+      return
+    }
+
     if (!isDrawingROI || !dragStart || !currentROI) return
     setIsDrawingROI(false)
     setDragStart(null)
@@ -394,7 +517,6 @@ export function SpeechBubbleEditorModal({
       return
     }
 
-    // Map canvas coordinates to original image coordinates
     const originalROI = {
       x: Math.round(currentROI.x / scaleX),
       y: Math.round(currentROI.y / scaleY),
@@ -406,7 +528,28 @@ export function SpeechBubbleEditorModal({
     try {
       const res = await snapshotsApi.detectBubbleROI(snapshot.id, originalROI)
       if (res.bounding_box) {
-        setBoundingBox(res.bounding_box)
+        const newBubble: SpeechBubble = {
+          id: `bubble-${Date.now()}`,
+          x: res.bounding_box.x,
+          y: res.bounding_box.y,
+          w: res.bounding_box.w,
+          h: res.bounding_box.h,
+          text: '',
+          shape: 'oval',
+          orientation: 'vertical',
+          fontFamily: selectedFont || 'sans-serif',
+          fontSize: 0,
+          textColor: 'rgba(0, 0, 0, 1)',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderColor: 'rgba(0, 0, 0, 1)',
+          borderWidth: 2,
+          tail: {
+            x: res.bounding_box.x + res.bounding_box.w / 2 - 20,
+            y: res.bounding_box.y + res.bounding_box.h + 30
+          }
+        }
+        setBubbles((prev) => [...prev, newBubble])
+        setSelectedBubbleId(newBubble.id)
       } else {
         alert('ROI指定範囲内に吹き出しを検出できませんでした。')
       }
@@ -424,11 +567,46 @@ export function SpeechBubbleEditorModal({
     }
   }
 
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const cx = Math.round(x / scaleX)
+    const cy = Math.round(y / scaleY)
+
+    const newBubble: SpeechBubble = {
+      id: `bubble-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      x: Math.max(0, cx - 80),
+      y: Math.max(0, cy - 70),
+      w: 160,
+      h: 140,
+      text: '',
+      shape: 'oval',
+      orientation: 'vertical',
+      fontFamily: selectedFont || 'sans-serif',
+      fontSize: 0,
+      textColor: 'rgba(0, 0, 0, 1)',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: 'rgba(0, 0, 0, 1)',
+      borderWidth: 2,
+      tail: { x: cx - 30, y: cy + 90 }
+    }
+
+    setBubbles((prev) => [...prev, newBubble])
+    setSelectedBubbleId(newBubble.id)
+  }
+
   const handleGenerateDraft = async () => {
+    if (!selectedBubbleId) return
     setIsDrafting(true)
     try {
       const res = await llmPromptsApi.speechDraft(snapshot.id)
-      setSpeechText(res.draft)
+      setBubbles((prev) =>
+        prev.map((b) => (b.id === selectedBubbleId ? { ...b, text: res.draft } : b))
+      )
     } catch (err: any) {
       console.error(err)
       alert('セリフドラフト生成に失敗しました: ' + err.message)
@@ -438,87 +616,30 @@ export function SpeechBubbleEditorModal({
   }
 
   const handleSave = async () => {
-    if (!imageObj) return
+    if (!imageObj || bubbles.length === 0) return
 
     setIsSaving(true)
     try {
-      // 1. Create offscreen canvas at original image resolution
       const offCanvas = document.createElement('canvas')
       offCanvas.width = imageObj.naturalWidth
       offCanvas.height = imageObj.naturalHeight
       const offCtx = offCanvas.getContext('2d')
       if (!offCtx) throw new Error('Offscreen canvas context generation failed')
 
-      // 2. Draw background image
+      // Draw background image
       offCtx.drawImage(imageObj, 0, 0, offCanvas.width, offCanvas.height)
 
-      // 3. Draw speech bubble text if boundingBox and speechText exist
-      if (boundingBox && speechText) {
-        const scaleFactor = imageObj.naturalWidth / canvasDimensions.width
-        const padding = 16 * scaleFactor
-        const maxWidth = boundingBox.w - padding
-        const maxHeight = boundingBox.h - padding
+      // Draw all speech bubbles without selection outline at 1:1 scale
+      bubbles.forEach((bubble) => {
+        drawSpeechBubble(offCtx, bubble, false, 1, 1, activeFontFamily)
+      })
 
-        // Fill white background in bubble area (1px inset)
-        offCtx.fillStyle = 'rgba(255, 255, 255, 0.92)'
-        offCtx.fillRect(
-          boundingBox.x + 1,
-          boundingBox.y + 1,
-          boundingBox.w - 2,
-          boundingBox.h - 2
-        )
-
-        const startFontSize = 36 * scaleFactor
-        const minFontSize = 8 * scaleFactor
-        let computedFontSize = startFontSize
-
-        for (let size = startFontSize; size >= minFontSize; size--) {
-          const cols = layoutVerticalText(speechText, size, maxHeight)
-          const totalWidth = cols.length * size * 1.3
-          if (totalWidth <= maxWidth) {
-            computedFontSize = size
-            break
-          }
-          if (size <= minFontSize) {
-            computedFontSize = minFontSize
-          }
-        }
-
-        offCtx.font = `bold ${computedFontSize}px ${activeFontFamily}`
-        offCtx.fillStyle = '#000000'
-        offCtx.textBaseline = 'middle'
-        offCtx.textAlign = 'center'
-
-        const cols = layoutVerticalText(speechText, computedFontSize, maxHeight)
-        const totalWidth = cols.length * computedFontSize * 1.3
-        const boxCenter = boundingBox.x + boundingBox.w / 2
-        const startX = boxCenter + (totalWidth - computedFontSize * 1.3) / 2
-
-        cols.forEach((col, colIndex) => {
-          const colX = startX - colIndex * (computedFontSize * 1.3)
-          const colHeight = col.length * computedFontSize
-          const boxMiddle = boundingBox.y + boundingBox.h / 2
-          const colTop = boxMiddle - colHeight / 2
-
-          for (let i = 0; i < col.length; i++) {
-            const char = col[i]
-            const charY = colTop + i * computedFontSize + computedFontSize / 2
-            offCtx.fillText(char, colX, charY)
-          }
-        })
-      }
-
-      // 4. Get blob from offscreen canvas
       const blob = await new Promise<Blob | null>((resolve) => offCanvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Canvas blob generation failed')
 
-      // 5. Upload image
       const uploadRes = await snapshotsApi.upload(blob)
-
-      // 6. Retrieve parent snapshot details
       const parentSnapshot = await snapshotsApi.get(snapshot.id)
 
-      // 7. Create new snapshot
       await snapshotsApi.create({
         workflow_id: parentSnapshot.workflow_id,
         image_path: uploadRes.image_path,
@@ -536,36 +657,35 @@ export function SpeechBubbleEditorModal({
     }
   }
 
+  const selectedBubble = bubbles.find((b) => b.id === selectedBubbleId) || null
+
   // Filter and Sort Candidates
   const processedCandidates = [...candidates]
     .filter((c) => {
-      if (filterStatus === 'pass') return c.status === 'PASS';
-      if (filterStatus === 'fail') return c.status !== 'PASS';
-      return true;
+      if (filterStatus === 'pass') return c.status === 'PASS'
+      if (filterStatus === 'fail') return c.status !== 'PASS'
+      return true
     })
     .sort((a, b) => {
-      if (sortBy === 'area_desc') return b.area - a.area;
-      if (sortBy === 'area_asc') return a.area - b.area;
-      if (sortBy === 'brightness_desc') return b.mean_brightness - a.mean_brightness;
-      if (sortBy === 'id') return a.id - b.id;
-      
+      if (sortBy === 'area_desc') return b.area - a.area
+      if (sortBy === 'area_asc') return a.area - b.area
+      if (sortBy === 'brightness_desc') return b.mean_brightness - a.mean_brightness
+      if (sortBy === 'id') return a.id - b.id
+
       if (sortBy === 'distance_center' && lastUsedROI) {
-        const roiCx = lastUsedROI.x + lastUsedROI.w / 2;
-        const roiCy = lastUsedROI.y + lastUsedROI.h / 2;
-        
-        const aCx = a.x + a.w / 2;
-        const aCy = a.y + a.h / 2;
-        const distA = Math.pow(aCx - roiCx, 2) + Math.pow(aCy - roiCy, 2);
-        
-        const bCx = b.x + b.w / 2;
-        const bCy = b.y + b.h / 2;
-        const distB = Math.pow(bCx - roiCx, 2) + Math.pow(bCy - roiCy, 2);
-        
-        return distA - distB;
+        const roiCx = lastUsedROI.x + lastUsedROI.w / 2
+        const roiCy = lastUsedROI.y + lastUsedROI.h / 2
+        const aCx = a.x + a.w / 2
+        const aCy = a.y + a.h / 2
+        const distA = Math.pow(aCx - roiCx, 2) + Math.pow(aCy - roiCy, 2)
+        const bCx = b.x + b.w / 2
+        const bCy = b.y + b.h / 2
+        const distB = Math.pow(bCx - roiCx, 2) + Math.pow(bCy - roiCy, 2)
+        return distA - distB
       }
-      
-      return b.area - a.area;
-    });
+
+      return b.area - a.area
+    })
 
   return (
     <div className="modal-backdrop">
@@ -578,7 +698,7 @@ export function SpeechBubbleEditorModal({
           <div>
             <h3 className="text-lg font-semibold text-white">セリフ編集・吹き出し追加</h3>
             <p className="text-xs text-zinc-400 mt-0.5">
-              画像上の吹き出しの自動検出、またはドラッグして検出範囲（ROI）を指定できます。
+              画像上をダブルクリックして吹き出しを追加。ドラッグで位置や尻尾の移動、範囲（ROI）指定が可能です。
             </p>
           </div>
           <button
@@ -590,7 +710,7 @@ export function SpeechBubbleEditorModal({
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 overflow-y-auto p-6 gap-6 min-h-[400px]">
+        <div className="flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]">
           {/* Left: Canvas Area */}
           <div className="flex-[3] flex flex-col items-center justify-center bg-black/40 rounded-lg p-4 border border-[rgba(255,255,255,0.04)] relative">
             {!imageObj ? (
@@ -604,80 +724,42 @@ export function SpeechBubbleEditorModal({
                   ref={canvasRef}
                   width={canvasDimensions.width}
                   height={canvasDimensions.height}
-                  className="cursor-crosshair block"
+                  style={{ cursor: cursorStyle }}
+                  className="block"
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
+                  onDoubleClick={handleDoubleClick}
                 />
               </div>
             )}
             <span className="text-[10px] text-zinc-500 mt-3">
-              ※画像内をドラッグして検出範囲（ROI）を絞り込むことができます。
+              ※ダブルクリックで新規吹き出し追加 / バブル・尻尾・四隅ハンドルをドラッグして移動・サイズ変更 / 余白ドラッグでROI検出
             </span>
           </div>
 
           {/* Right: Controls Pane */}
-          <div className="flex-[2] flex flex-col justify-between gap-6 border-l border-[rgba(255,255,255,0.08)] pl-6">
+          <div className="flex-[2] flex flex-col justify-between gap-6 border-l border-[rgba(255,255,255,0.08)] pl-6 overflow-y-auto">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold text-zinc-200">セリフテキスト</label>
-                <button
-                  type="button"
-                  onClick={handleGenerateDraft}
-                  disabled={isDrafting || !snapshot.image_path}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-accent-green/10 text-accent-green hover:bg-accent-green/20 rounded transition-all disabled:opacity-50"
-                >
-                  {isDrafting ? (
-                    <Loader2 className="animate-spin" size={14} />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}
-                  ドラフト生成 (LLM)
-                </button>
-              </div>
-
-              <textarea
-                value={speechText}
-                onChange={(e) => setSpeechText(e.target.value)}
-                placeholder="吹き出しに描画するセリフを入力してください。"
-                className="w-full h-32 px-3.5 py-2.5 bg-zinc-900 border border-[rgba(255,255,255,0.08)] focus:border-accent-green/50 text-white rounded-lg text-sm resize-none focus:outline-none focus:ring-1 focus:ring-accent-green/20"
+              <SpeechBubbleControls
+                bubble={selectedBubble}
+                bubblesCount={bubbles.length}
+                fontList={fontList}
+                isFontLoading={isFontLoading}
+                isDrafting={isDrafting}
+                onUpdate={(updated) => {
+                  if (!selectedBubbleId) return
+                  setBubbles((prev) =>
+                    prev.map((b) => (b.id === selectedBubbleId ? { ...b, ...updated } : b))
+                  )
+                }}
+                onDelete={() => {
+                  if (!selectedBubbleId) return
+                  setBubbles((prev) => prev.filter((b) => b.id !== selectedBubbleId))
+                  setSelectedBubbleId(null)
+                }}
+                onGenerateDraft={handleGenerateDraft}
               />
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-zinc-300">描画フォント</label>
-                <select
-                  value={selectedFont}
-                  onChange={(e) => setSelectedFont(e.target.value)}
-                  className="w-full bg-zinc-900 border border-[rgba(255,255,255,0.08)] focus:border-accent-green/50 text-white rounded px-3 py-2 text-sm focus:outline-none"
-                >
-                  {fontList.length === 0 ? (
-                    <option value="">フォントが見つかりません</option>
-                  ) : (
-                    fontList.map((f) => (
-                      <option key={f.file_name} value={f.file_name}>
-                        {f.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-                {isFontLoading && (
-                  <span className="text-[10px] text-zinc-400 block mt-1 flex items-center gap-1">
-                    <Loader2 className="animate-spin" size={10} />
-                    フォントを読み込み中...
-                  </span>
-                )}
-              </div>
-
-              {boundingBox ? (
-                <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-xs text-green-400">
-                  <span className="font-semibold block mb-0.5">吹き出し検出状態: 検出済み</span>
-                  検出位置: X={boundingBox.x}, Y={boundingBox.y}, W={boundingBox.w}, H={boundingBox.h}
-                </div>
-              ) : (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-400">
-                  吹き出しが自動検出されていません。画像内をドラッグして指定するか、再度検出をお試しください。
-                </div>
-              )}
 
               {/* Debug candidates utility */}
               <div className="space-y-2 border-t border-[rgba(255,255,255,0.06)] pt-3">
@@ -698,7 +780,6 @@ export function SpeechBubbleEditorModal({
 
                 {showDebugPanel && (
                   <>
-                    {/* Filter and Sort selectors */}
                     <div className="flex gap-2 text-[10px] text-zinc-400 bg-zinc-950/40 p-2 rounded-lg border border-[rgba(255,255,255,0.06)]">
                       <div className="flex-1 flex flex-col gap-1">
                         <span className="text-[9px] text-zinc-500 font-semibold">判定フィルタ</span>
@@ -728,7 +809,7 @@ export function SpeechBubbleEditorModal({
                       </div>
                     </div>
 
-                    <div className="border border-[rgba(255,255,255,0.08)] bg-zinc-950/40 rounded-lg overflow-hidden text-[11px] font-sans max-h-48 overflow-y-auto">
+                    <div className="border border-[rgba(255,255,255,0.08)] bg-zinc-950/40 rounded-lg overflow-hidden text-[11px] font-sans max-h-40 overflow-y-auto">
                       {isDebugLoading ? (
                         <div className="p-4 text-center text-zinc-500">読み込み中...</div>
                       ) : processedCandidates.length === 0 ? (
@@ -745,7 +826,7 @@ export function SpeechBubbleEditorModal({
                           </thead>
                           <tbody>
                             {processedCandidates.map((c) => {
-                              const isPass = c.status === 'PASS';
+                              const isPass = c.status === 'PASS'
                               return (
                                 <tr
                                   key={c.id}
@@ -755,15 +836,33 @@ export function SpeechBubbleEditorModal({
                                   onMouseEnter={() => setHoveredCandidate(c)}
                                   onMouseLeave={() => setHoveredCandidate(null)}
                                   onClick={() => {
-                                    setBoundingBox({ x: c.x, y: c.y, w: c.w, h: c.h })
+                                    const newBubble: SpeechBubble = {
+                                      id: `bubble-${Date.now()}`,
+                                      x: c.x,
+                                      y: c.y,
+                                      w: c.w,
+                                      h: c.h,
+                                      text: '',
+                                      shape: 'oval',
+                                      orientation: 'vertical',
+                                      fontFamily: selectedFont || 'sans-serif',
+                                      fontSize: 0,
+                                      textColor: 'rgba(0, 0, 0, 1)',
+                                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                      borderColor: 'rgba(0, 0, 0, 1)',
+                                      borderWidth: 2,
+                                      tail: { x: c.x + c.w / 2 - 20, y: c.y + c.h + 30 }
+                                    }
+                                    setBubbles((prev) => [...prev, newBubble])
+                                    setSelectedBubbleId(newBubble.id)
                                   }}
                                 >
                                   <td className="p-1.5 text-center">
-                                    <span className={`px-1 rounded text-[9px] font-bold ${
-                                      isPass 
-                                        ? 'bg-green-500/20 text-green-400' 
-                                        : 'bg-red-500/20 text-red-400'
-                                    }`}>
+                                    <span
+                                      className={`px-1 rounded text-[9px] font-bold ${
+                                        isPass ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                      }`}
+                                    >
                                       {isPass ? 'OK' : c.status.replace('FAIL_', '')}
                                     </span>
                                   </td>
@@ -775,14 +874,32 @@ export function SpeechBubbleEditorModal({
                                       className="px-1.5 py-0.5 bg-[#7C6FDD] hover:bg-[#6d62cc] text-white rounded text-[10px]"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        setBoundingBox({ x: c.x, y: c.y, w: c.w, h: c.h })
+                                        const newBubble: SpeechBubble = {
+                                          id: `bubble-${Date.now()}`,
+                                          x: c.x,
+                                          y: c.y,
+                                          w: c.w,
+                                          h: c.h,
+                                          text: '',
+                                          shape: 'oval',
+                                          orientation: 'vertical',
+                                          fontFamily: selectedFont || 'sans-serif',
+                                          fontSize: 0,
+                                          textColor: 'rgba(0, 0, 0, 1)',
+                                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                          borderColor: 'rgba(0, 0, 0, 1)',
+                                          borderWidth: 2,
+                                          tail: { x: c.x + c.w / 2 - 20, y: c.y + c.h + 30 }
+                                        }
+                                        setBubbles((prev) => [...prev, newBubble])
+                                        setSelectedBubbleId(newBubble.id)
                                       }}
                                     >
                                       適用
                                     </button>
                                   </td>
                                 </tr>
-                              );
+                              )
                             })}
                           </tbody>
                         </table>
@@ -805,15 +922,11 @@ export function SpeechBubbleEditorModal({
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={isSaving || !boundingBox}
+                disabled={isSaving || bubbles.length === 0}
                 className="flex items-center justify-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-accent-green hover:bg-accent-green-hover rounded-lg transition-all disabled:opacity-50"
               >
-                {isSaving ? (
-                  <Loader2 className="animate-spin" size={16} />
-                ) : (
-                  <Save size={16} />
-                )}
-                保存して履歴へ追加
+                {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                保存して履歴へ追加 ({bubbles.length})
               </button>
             </div>
           </div>
