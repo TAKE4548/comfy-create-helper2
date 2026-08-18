@@ -142,7 +142,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const borderColorParsed = rgbaToHexAndAlpha(bubble.borderColor)
 
   return (
-    <div className="space-y-4 p-4 bg-[#1F1F25] rounded-lg border border-[rgba(255,255,255,0.08)] shadow-sm text-sm text-zinc-200">
+    <div className="space-y-4 p-3 md:p-4 bg-[#1F1F25] rounded-lg border border-[rgba(255,255,255,0.08)] shadow-sm text-sm text-zinc-200">
       {/* 吹き出しテキスト & ドラフト生成 */}
       <div>
         <div className="flex items-center justify-between mb-1.5">

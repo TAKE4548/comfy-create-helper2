@@ -6,7 +6,9 @@ import type { SpeechBubble } from '../types/speechBubble'
 import { drawSpeechBubble } from '../utils/speechBubbleRenderer'
 import { SpeechBubbleControls } from './SpeechBubbleControls'
 
-interface SpeechBubbleEditorModalProps {
+export type MobileTab = 'preview' | 'controls'
+
+export interface SpeechBubbleEditorModalProps {
   snapshot: SnapshotSummary
   onClose: () => void
   onSaved: () => void
@@ -19,44 +21,93 @@ export function SpeechBubbleEditorModal({
 }: SpeechBubbleEditorModalProps) {
   const [bubbles, setBubbles] = useState<SpeechBubble[]>([])
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(null)
-  const [draggingState, setDraggingState] = useState<{
-    type: 'bubble' | 'tail' | 'resize'
-    handle?: 'nw' | 'ne' | 'se' | 'sw'
-    bubbleId: string
-    startX: number
-    startY: number
-    initialBubble: SpeechBubble
-  } | null>(null)
-  const [cursorStyle, setCursorStyle] = useState<string>('crosshair')
-
   const [fontList, setFontList] = useState<ServerFont[]>([])
   const [selectedFont, setSelectedFont] = useState<string>('')
   const [activeFontFamily, setActiveFontFamily] = useState<string>('sans-serif')
   const [isFontLoading, setIsFontLoading] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
   const [isDrafting, setIsDrafting] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('preview')
 
   // Debug candidates states
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [candidates, setCandidates] = useState<BubbleCandidate[]>([])
-  const [hoveredCandidate, setHoveredCandidate] = useState<BubbleCandidate | null>(null)
   const [isDebugLoading, setIsDebugLoading] = useState(false)
+  const [hoveredCandidate, setHoveredCandidate] = useState<BubbleCandidate | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | 'pass' | 'fail'>('pass')
   const [sortBy, setSortBy] = useState<'area_desc' | 'area_asc' | 'brightness_desc' | 'distance_center' | 'id'>('area_desc')
   const [lastUsedROI, setLastUsedROI] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
-  // ROI states
+  // Canvas interaction state
+  const [draggingState, setDraggingState] = useState<{
+    bubbleId: string
+    type: 'body' | 'tail' | 'nw' | 'ne' | 'se' | 'sw'
+    startX: number
+    startY: number
+    origX: number
+    origY: number
+    origW: number
+    origH: number
+    origTailX: number
+    origTailY: number
+  } | null>(null)
+
+  const [cursorStyle, setCursorStyle] = useState<string>('default')
   const [isDrawingROI, setIsDrawingROI] = useState(false)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [currentROI, setCurrentROI] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const miniCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [miniPreviewHeight, setMiniPreviewHeight] = useState<number>(180)
+  const resizeStartYRef = useRef<number | null>(null)
+  const startHeightRef = useRef<number>(180)
+
   const [imageObj, setImageObj] = useState<HTMLImageElement | null>(null)
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 500, height: 500 })
 
   // Scale factors
   const scaleX = imageObj ? canvasDimensions.width / imageObj.naturalWidth : 1
   const scaleY = imageObj ? canvasDimensions.height / imageObj.naturalHeight : 1
+
+  // Handle mini preview resize drag
+  const handleResizeStart = (clientY: number) => {
+    resizeStartYRef.current = clientY
+    startHeightRef.current = miniPreviewHeight
+  }
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (resizeStartYRef.current !== null) {
+        const delta = e.clientY - resizeStartYRef.current
+        setMiniPreviewHeight(Math.max(100, Math.min(380, startHeightRef.current + delta)))
+      }
+    }
+    const onMouseUp = () => {
+      resizeStartYRef.current = null
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (resizeStartYRef.current !== null && e.touches.length > 0) {
+        const delta = e.touches[0].clientY - resizeStartYRef.current
+        setMiniPreviewHeight(Math.max(100, Math.min(380, startHeightRef.current + delta)))
+      }
+    }
+    const onTouchEnd = () => {
+      resizeStartYRef.current = null
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    window.addEventListener('touchmove', onTouchMove, { passive: true })
+    window.addEventListener('touchend', onTouchEnd)
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [])
 
   const fetchDebugCandidates = async (roi: { x: number; y: number; w: number; h: number } | null = null) => {
     setIsDebugLoading(true)
@@ -78,7 +129,7 @@ export function SpeechBubbleEditorModal({
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       setImageObj(img)
-      const maxW = 500
+      const maxW = typeof window !== 'undefined' ? Math.min(500, window.innerWidth - 48) : 500
       const maxH = 500
       let w = img.naturalWidth
       let h = img.naturalHeight
@@ -279,6 +330,19 @@ export function SpeechBubbleEditorModal({
       ctx.fillRect(currentROI.x, currentROI.y, currentROI.w, currentROI.h)
       ctx.setLineDash([])
     }
+
+    // Draw on mini preview canvas (if rendered in DOM)
+    if (miniCanvasRef.current && imageObj) {
+      const miniCtx = miniCanvasRef.current.getContext('2d')
+      if (miniCtx) {
+        miniCtx.clearRect(0, 0, miniCanvasRef.current.width, miniCanvasRef.current.height)
+        miniCtx.drawImage(imageObj, 0, 0, miniCanvasRef.current.width, miniCanvasRef.current.height)
+        bubbles.forEach((bubble) => {
+          const isSelected = bubble.id === selectedBubbleId
+          drawSpeechBubble(miniCtx, bubble, isSelected, scaleX, scaleY, activeFontFamily)
+        })
+      }
+    }
   }, [
     imageObj,
     bubbles,
@@ -292,6 +356,8 @@ export function SpeechBubbleEditorModal({
     showDebugPanel,
     candidates,
     hoveredCandidate,
+    activeMobileTab,
+    miniPreviewHeight,
   ])
 
   // Canvas Mouse handlers
@@ -599,6 +665,44 @@ export function SpeechBubbleEditorModal({
     setSelectedBubbleId(newBubble.id)
   }
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    const fakeMouseEvent = {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      button: 0,
+      shiftKey: false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: () => e.preventDefault(),
+      stopPropagation: () => e.stopPropagation(),
+    } as unknown as React.MouseEvent<HTMLCanvasElement>
+    handleMouseDown(fakeMouseEvent)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    const fakeMouseEvent = {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      button: 0,
+      shiftKey: false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: () => e.preventDefault(),
+      stopPropagation: () => e.stopPropagation(),
+    } as unknown as React.MouseEvent<HTMLCanvasElement>
+    handleMouseMove(fakeMouseEvent)
+  }
+
+  const handleTouchEnd = () => {
+    handleMouseUp()
+  }
+
   const handleGenerateDraft = async () => {
     if (!selectedBubbleId) return
     setIsDrafting(true)
@@ -709,38 +813,111 @@ export function SpeechBubbleEditorModal({
           </button>
         </div>
 
+        {/* Mobile Tab Switcher */}
+        <div className="flex md:hidden border-b border-[rgba(255,255,255,0.08)] bg-zinc-900/60 px-4 py-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveMobileTab('preview')}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+              activeMobileTab === 'preview'
+                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
+                : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/40'
+            }`}
+          >
+            🖼️ プレビュー
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMobileTab('controls')}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+              activeMobileTab === 'controls'
+                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
+                : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/40'
+            }`}
+          >
+            ⚙️ 編集設定
+          </button>
+        </div>
+
         {/* Content */}
-        <div className="flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]">
+        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto p-3 md:p-6 gap-4 md:gap-6 min-h-[450px]">
           {/* Left: Canvas Area */}
-          <div className="flex-[3] flex flex-col items-center justify-center bg-black/40 rounded-lg p-4 border border-[rgba(255,255,255,0.04)] relative">
+          <div
+            className={`${
+              activeMobileTab === 'preview' ? 'flex' : 'hidden'
+            } md:flex flex-[3] flex-col items-center justify-center bg-black/40 rounded-lg p-3 md:p-4 border border-[rgba(255,255,255,0.04)] relative`}
+          >
             {!imageObj ? (
               <div className="flex flex-col items-center gap-2 text-zinc-400">
                 <Loader2 className="animate-spin" size={28} />
                 <span>画像をロード中...</span>
               </div>
             ) : (
-              <div className="relative border border-[rgba(255,255,255,0.08)] shadow-lg rounded">
+              <div className="relative border border-[rgba(255,255,255,0.08)] shadow-lg rounded max-w-full overflow-hidden">
                 <canvas
                   ref={canvasRef}
                   width={canvasDimensions.width}
                   height={canvasDimensions.height}
                   style={{ cursor: cursorStyle }}
-                  className="block"
+                  className="block touch-none max-w-full"
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                   onDoubleClick={handleDoubleClick}
                 />
               </div>
             )}
-            <span className="text-[10px] text-zinc-500 mt-3">
+            <span className="text-[10px] text-zinc-500 mt-3 text-center">
               ※ダブルクリックで新規吹き出し追加 / バブル・尻尾・四隅ハンドルをドラッグして移動・サイズ変更 / 余白ドラッグでROI検出
             </span>
           </div>
 
           {/* Right: Controls Pane */}
-          <div className="flex-[2] flex flex-col justify-between gap-6 border-l border-[rgba(255,255,255,0.08)] pl-6 overflow-y-auto">
+          <div
+            className={`${
+              activeMobileTab === 'controls' ? 'flex' : 'hidden'
+            } md:flex flex-[2] flex-col justify-between gap-6 md:border-l md:border-[rgba(255,255,255,0.08)] md:pl-6 overflow-y-auto`}
+          >
             <div className="space-y-4">
+              {/* Mobile Resizable Mini Preview (md:hidden) */}
+              <div className="flex md:hidden flex-col bg-black/40 rounded-lg border border-[rgba(255,255,255,0.06)] overflow-hidden mb-3">
+                <div
+                  style={{ height: `${miniPreviewHeight}px` }}
+                  className="relative flex items-center justify-center p-2 bg-zinc-950/60 overflow-hidden"
+                >
+                  <canvas
+                    ref={miniCanvasRef}
+                    width={canvasDimensions.width}
+                    height={canvasDimensions.height}
+                    className="block max-h-full max-w-full object-contain rounded"
+                    data-testid="mobile-mini-preview-canvas"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setActiveMobileTab('preview')}
+                    className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 hover:bg-black/80 text-[10px] text-blue-300 border border-blue-500/30 backdrop-blur-sm transition-colors"
+                  >
+                    全画面操作 ↗
+                  </button>
+                </div>
+                {/* Drag Resize Handle */}
+                <div
+                  className="h-4 bg-zinc-800/80 hover:bg-zinc-700 active:bg-zinc-600 cursor-row-resize flex items-center justify-center border-t border-[rgba(255,255,255,0.08)] select-none touch-none"
+                  onMouseDown={(e) => handleResizeStart(e.clientY)}
+                  onTouchStart={(e) => {
+                    if (e.touches.length > 0) {
+                      handleResizeStart(e.touches[0].clientY)
+                    }
+                  }}
+                  data-testid="mini-preview-resize-handle"
+                >
+                  <div className="w-8 h-1 bg-zinc-400/50 rounded-full" />
+                </div>
+              </div>
+
               <SpeechBubbleControls
                 bubble={selectedBubble}
                 bubblesCount={bubbles.length}

@@ -190,4 +190,86 @@ describe('SpeechBubbleEditorModal', () => {
     fireEvent.click(cancelBtn)
     expect(mockOnClose).toHaveBeenCalled()
   })
+
+  it('switches mobile tabs when tab buttons are clicked', async () => {
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    const previewTab = screen.getByText(/プレビュー/)
+    const controlsTab = screen.getByText(/編集設定/)
+
+    expect(previewTab).toBeDefined()
+    expect(controlsTab).toBeDefined()
+
+    // Switch to controls tab
+    fireEvent.click(controlsTab)
+    // Switch back to preview tab
+    fireEvent.click(previewTab)
+  })
+
+  it('handles canvas touch interaction events', async () => {
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    const canvas = document.querySelector('canvas')
+    expect(canvas).toBeDefined()
+    if (canvas) {
+      fireEvent.touchStart(canvas, {
+        touches: [{ clientX: 100, clientY: 100 }],
+      })
+      fireEvent.touchMove(canvas, {
+        touches: [{ clientX: 150, clientY: 150 }],
+      })
+      fireEvent.touchEnd(canvas)
+    }
+  })
+
+  it('renders and resizes mini preview in mobile controls tab', async () => {
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    const controlsTab = screen.getByText(/編集設定/)
+    fireEvent.click(controlsTab)
+
+    // Check mini preview canvas exists
+    const miniCanvas = screen.getByTestId('mobile-mini-preview-canvas')
+    expect(miniCanvas).toBeDefined()
+
+    // Test resize handle dragging with mouse
+    const resizeHandle = screen.getByTestId('mini-preview-resize-handle')
+    expect(resizeHandle).toBeDefined()
+
+    fireEvent.mouseDown(resizeHandle, { clientY: 100 })
+    fireEvent.mouseMove(window, { clientY: 150 })
+    fireEvent.mouseUp(window)
+
+    // Test resize handle dragging with touch
+    fireEvent.touchStart(resizeHandle, {
+      touches: [{ clientY: 100 }],
+    })
+    fireEvent.touchMove(window, {
+      touches: [{ clientY: 180 }],
+    })
+    fireEvent.touchEnd(window)
+
+    // Test switching back to full preview via button on mini preview
+    const fullPreviewBtn = screen.getByText(/全画面操作 ↗/)
+    expect(fullPreviewBtn).toBeDefined()
+    fireEvent.click(fullPreviewBtn)
+  })
 })

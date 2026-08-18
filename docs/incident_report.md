@@ -1,73 +1,62 @@
-# インシデントレポート: REQ-132実装後のバックエンド起動時 PIL インポートエラー
+# インシデントレポート: REQ-136 モバイルモードにおける SpeechBubbleEditorModal 表示切れ・操作不可
 
 ## 概要 (Overview)
-REQ-132のWebP化対応において、`backend/app/routers/snapshots.py` および `backend/app/services/snapshot_service.py` 等で `from PIL import Image` が追加されましたが、`backend/requirements.txt` に `Pillow` パッケージが定義されていませんでした。
-このため、バックエンド再起動時や依存関係をインストールし直した環境において、`ModuleNotFoundError: No module named 'PIL'` が発生し、バックエンドサーバーの起動に失敗します。
+`SpeechBubbleEditorModal`（REQ-136: 任意位置へのセリフ手動追加および吹き出し・テキスト装飾機能）をモバイル端末または画面幅が狭いビューポート（例: 768px未満）で開いた際、キャンバス領域（プレビューエリア）とコントロールパネル（入力・調整エリア）が横並び（`flex-row`）で固定配置されているため、コントロールパネルが画面外へはみ出す、または水平方向に著しく圧迫されて入力・編集操作を行えない事象が発生しています。
 
 ---
 
 ## 再現手順 (Reproduction Steps)
-1. `backend` ディレクトリにて `requirements.txt` に基づき作成された仮想環境 (`.venv`) を用意する。
-2. バックエンドサーバーを起動しようとする（または `python -c "import app.main"` を実行する）。
-3. `app/routers/snapshots.py` のインポート処理時に `from PIL import Image` が評価される。
-4. `ModuleNotFoundError: No module named 'PIL'` が発生し、バックエンドが起動に失敗する。
+1. ブラウザのデベロッパーツール等を開き、ビューポートをモバイルサイズ（幅 768px 未満）に設定する。
+2. 履歴ページ等からスナップショットの「セリフ編集・吹き出し追加」ボタンをクリックし、`SpeechBubbleEditorModal` を開く。
+3. モーダル内のレイアウトおよび操作感を確認する。
+   - キャンバス（プレビューエリア）が画面幅の大半を占有し、右側のコントロールパネル（テキスト入力、形状・文字方向・フォント・カラーピッカー等）が画面外にはみ出る、または潰れて表示される。
+   - スクロールを行っても入力欄や設定ボタンの操作が困難または不可能となる。
+   - キャンバス上の吹き出し操作においてタッチドラッグ (`Touch` イベント) に対応していない。
 
 ---
 
 ## 影響範囲 (Affected Area)
-- **依存関係設定**:
-  - `backend/requirements.txt`: `Pillow` の定義が漏れている。
-- **バックエンドソースコード**:
-  - `backend/app/routers/snapshots.py` (L8: `from PIL import Image`)
-  - `backend/app/services/snapshot_service.py` (L20: `from PIL import Image`)
-  - `backend/scripts/migrate_images_to_webp.py` (L7: `from PIL import Image`)
-  - `backend/tests/test_migrate_images_to_webp.py` (L4)
-  - `backend/tests/test_snapshots_webp.py` (L4)
+- **フロントエンドコンポーネント**:
+  - `frontend/src/components/SpeechBubbleEditorModal.tsx`:
+    - L692: `max-h-[90vh]` のモーダルコンテナ。
+    - L713: `flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]` (ビューポート幅に応じた `flex-col` / `flex-row` 切り替えが存在しない)。
+    - L715, L742: `flex-[3]` (キャンバスエリア) と `flex-[2]` (コントロールパネル) の横並び固定比率配置。
+    - L723: キャンバス解像度計算 (`maxW = 500, maxH = 500`) がモバイル端末の画面幅に合わせた動的縮小に対応していない。
+    - L729-732: キャンバス要素が `onMouseDown` / `onMouseMove` / `onMouseUp` のみで、`onTouchStart` / `onTouchMove` / `onTouchEnd` を持たない。
+  - `frontend/src/components/SpeechBubbleControls.tsx`:
+    - モバイル画面表示時にプレビューとコントロールを切り替えるタブ表示・ドロワー等の専用UI構造が存在しない。
 
 ---
 
 ## 原因分類 (Root Cause Classification)
-- **分類**: **Type A (実装バグ / Implementation Bug)**
-- **理由**: REQ-132の実装時に Python コード上で `Pillow (PIL)` への依存を追加したが、プロジェクトの依存定義ファイルである `backend/requirements.txt` への追記が漏れていたため。
+- **分類**: **Type B (仕様欠落・設計不備 / Specification Flaw)**
+- **理由**: REQ-136 の詳細設計書 (`docs/design/REQ-136.md`) および実装において、デスクトップ表示（横並びレイアウト・マウスドラッグ操作）のみが想定されており、モバイル画面でのレイアウト構造（縦積みまたはタブ切り替え、タッチ操作対応）に関する要件・仕様が定義されていなかったため。
 
 ---
 
 ## 調査詳細 (Deep Dive Analysis)
 
-### 1. エラーログ（検証結果）
-`python -c "import app.main"` 実行時のスタックトレース:
-```
-Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-  File "backend/app/main.py", line 15, in <module>
-    from app.routers import (
-  File "backend/app/routers/snapshots.py", line 8, in <module>
-    from PIL import Image
-ModuleNotFoundError: No module named 'PIL'
-```
+### 1. コード検証結果
+`SpeechBubbleEditorModal.tsx` の L713-742 周辺:
+```tsx
+<div className="flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]">
+  {/* Left: Canvas Area */}
+  <div className="flex-[3] flex flex-col items-center justify-center bg-black/40 rounded-lg p-4 border border-[rgba(255,255,255,0.04)] relative">
+    ...
+  </div>
 
-### 2. 依存定義ファイルの状態
-`backend/requirements.txt`:
+  {/* Right: Controls Pane */}
+  <div className="flex-[2] flex flex-col justify-between gap-6 border-l border-[rgba(255,255,255,0.08)] pl-6 overflow-y-auto">
+    ...
+  </div>
+</div>
 ```
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-sqlalchemy>=2.0.0
-alembic>=1.13.0
-pydantic>=2.6.0
-pydantic-settings>=2.2.0
-httpx>=0.27.0
-python-multipart>=0.0.9
-python-dotenv>=1.0.0
-aiofiles>=23.2.1
-opencv-python-headless
-numpy
-```
-（`Pillow` の記載が存在しない）
+- `flex`（標準は `flex-row`）で指定されており、レスポンシブ修飾子（例: `flex-col md:flex-row`）が存在しません。
+- 幅の狭い画面では `flex-[3]` と `flex-[2]` によりコントロールパネルの幅が極小化・画面外へ溢れる構造になっています。
 
 ---
 
 ## 次のステップ提案 (Next Action)
-本調査結果（Type A 実装バグ）に基づき、`/dev-design` ワークフローへ進み修正設計を行うことを提案します。
+本調査結果（Type B 仕様欠落）に基づき、モバイルモード対応（縦積みレイアウト/タブ切り替えUIおよびタッチ操作対応）の仕様策定とUI設計を行うため、`/sys-design`（または `/dev-design`）へ進むことを提案します。
 
-- **承認の確認**: 次のステップ（修正設計 `/dev-design`）へ進んでよろしいですか？ (YES / NO)
-
+- **承認の確認**: 次のステップへ進んでよろしいですか？ (YES / NO)
