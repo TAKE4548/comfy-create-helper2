@@ -23,6 +23,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     paramSyncGroups = [],
     setSubmissionAbortController,
     fetchQueue,
+    setErrorToast,
   } = useGenerationStore()
 
   const injectParams = (
@@ -203,7 +204,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     })
     setActiveBatch(initialBatch)
 
-    const newBatch: BatchJob[] = []
+    const currentBatch: BatchJob[] = [...initialBatch]
     const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
     const mappings = JSON.parse(mappingsJson)
 
@@ -215,6 +216,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
+    let currentIdx = 0
     try {
       for (const setItem of checkedSets) {
         const syncedParamValues = applyParamSync(setItem.paramValues)
@@ -231,33 +233,41 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
             wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
           }
           
+          let promptId: string | null = null
           try {
             // skipQueueFetch: true で個別フェッチをバイパス
-            const promptId = await queuePrompt(
+            promptId = await queuePrompt(
               wfJson,
               { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets },
               { skipQueueFetch: true }
             )
-            if (promptId) {
-              mappings[promptId] = setItem.name
-              newBatch.push({
-                promptId,
-                setName: setItem.name,
-                status: 'pending'
-              })
-              // 随時 activeBatch の実 promptId を反映
-              setActiveBatch([...newBatch])
-            }
           } catch (err) {
             console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
           }
+
+          if (promptId) {
+            mappings[promptId] = setItem.name
+            currentBatch[currentIdx] = {
+              ...currentBatch[currentIdx],
+              promptId,
+              status: 'pending',
+            }
+            setActiveBatch([...currentBatch])
+          } else {
+            const errorMsg = `[${setItem.name}] (${i + 1}/${setItem.batchSize}) のキュー投入に失敗しました`
+            setErrorToast?.({ message: errorMsg, type: 'error' })
+            currentBatch[currentIdx] = {
+              ...currentBatch[currentIdx],
+              status: 'failed',
+            }
+            setActiveBatch([...currentBatch])
+          }
+          currentIdx++
         }
       }
     } finally {
       localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
-      if (newBatch.length > 0) {
-        setActiveBatch(newBatch)
-      }
+      setActiveBatch([...currentBatch])
       // 全ループ終了後に 1 回のみキューを同期
       await fetchQueue?.()
     }

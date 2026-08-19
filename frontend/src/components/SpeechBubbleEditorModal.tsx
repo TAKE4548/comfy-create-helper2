@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Loader2, Save } from 'lucide-react'
+import { X, Loader2, Save, Image as ImageIcon } from 'lucide-react'
 import { snapshotsApi, llmPromptsApi, fontsApi } from '../api/client'
 import type { SnapshotSummary, BubbleCandidate, ServerFont } from '../api/types'
-import type { SpeechBubble } from '../types/speechBubble'
+import type { SpeechBubble, BubbleStyleConfig } from '../types/speechBubble'
+import {
+  DEFAULT_BUBBLE_BOUNDS,
+  extractBubbleStyle,
+  loadLastUsedBubbleStyle,
+  saveLastUsedBubbleStyle,
+} from '../types/speechBubble'
 import { drawSpeechBubble } from '../utils/speechBubbleRenderer'
 import { SpeechBubbleControls } from './SpeechBubbleControls'
+import { BaseImageSelectModal } from './BaseImageSelectModal'
 
 export type MobileTab = 'preview' | 'controls'
 
@@ -23,11 +30,15 @@ export function SpeechBubbleEditorModal({
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(null)
   const [fontList, setFontList] = useState<ServerFont[]>([])
   const [selectedFont, setSelectedFont] = useState<string>('')
+  const [lastUsedStyle, setLastUsedStyle] = useState<BubbleStyleConfig>(() => loadLastUsedBubbleStyle())
   const [activeFontFamily, setActiveFontFamily] = useState<string>('sans-serif')
   const [isFontLoading, setIsFontLoading] = useState(false)
   const [isDrafting, setIsDrafting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('preview')
+  const [currentSourceSnapshotId, setCurrentSourceSnapshotId] = useState<number>(snapshot.id)
+  const [currentImageUrl, setCurrentImageUrl] = useState<string>(snapshot.image_path || '')
+  const [isImageSelectOpen, setIsImageSelectOpen] = useState<boolean>(false)
 
   // Debug candidates states
   const [showDebugPanel, setShowDebugPanel] = useState(false)
@@ -121,11 +132,11 @@ export function SpeechBubbleEditorModal({
     }
   }
 
-  // Load image on mount
+  // Load image when currentImageUrl changes
   useEffect(() => {
-    if (!snapshot.image_path) return
+    if (!currentImageUrl) return
     const img = new Image()
-    img.src = snapshot.image_path
+    img.src = currentImageUrl
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       setImageObj(img)
@@ -140,7 +151,7 @@ export function SpeechBubbleEditorModal({
       }
       setCanvasDimensions({ width: w, height: h })
     }
-  }, [snapshot.image_path])
+  }, [currentImageUrl])
 
   // Load font list on mount
   useEffect(() => {
@@ -150,11 +161,9 @@ export function SpeechBubbleEditorModal({
         setFontList(list)
         if (list.length > 0) {
           const msgothic = list.find((f) => f.file_name.toLowerCase() === 'msgothic.ttc')
-          if (msgothic) {
-            setSelectedFont(msgothic.file_name)
-          } else {
-            setSelectedFont(list[0].file_name)
-          }
+          const initialFont = msgothic ? msgothic.file_name : list[0].file_name
+          setSelectedFont(initialFont)
+          setLastUsedStyle((prev) => (prev.fontFamily === 'sans-serif' ? { ...prev, fontFamily: initialFont } : prev))
         }
       } catch (err) {
         console.error('Failed to fetch font list:', err)
@@ -162,6 +171,35 @@ export function SpeechBubbleEditorModal({
     }
     fetchFonts()
   }, [])
+
+  // Create bubble helper with last used style
+  const createBubbleFromStyle = (params: {
+    id?: string
+    x: number
+    y: number
+    w?: number
+    h?: number
+    text?: string
+    tail?: { x: number; y: number }
+  }): SpeechBubble => {
+    return {
+      id: params.id || `bubble-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      x: params.x,
+      y: params.y,
+      w: params.w ?? DEFAULT_BUBBLE_BOUNDS.w,
+      h: params.h ?? DEFAULT_BUBBLE_BOUNDS.h,
+      text: params.text ?? '',
+      shape: lastUsedStyle.shape,
+      orientation: lastUsedStyle.orientation,
+      fontFamily: lastUsedStyle.fontFamily || selectedFont || 'sans-serif',
+      fontSize: lastUsedStyle.fontSize ?? 0,
+      textColor: lastUsedStyle.textColor,
+      backgroundColor: lastUsedStyle.backgroundColor,
+      borderColor: lastUsedStyle.borderColor,
+      borderWidth: lastUsedStyle.borderWidth,
+      tail: params.tail,
+    }
+  }
 
   // Load all selected fonts for bubbles dynamically
   useEffect(() => {
@@ -207,51 +245,73 @@ export function SpeechBubbleEditorModal({
   }, [bubbles])
 
 
-  // Auto-detect bubble on mount
+  // Snapshot initialization and metadata restore / auto-detection
   useEffect(() => {
     let active = true
-    const runAutoDetect = async () => {
-      setIsDrafting(true)
+    const initEditor = async () => {
       try {
-        const res = await snapshotsApi.detectBubble(snapshot.id)
-        if (active && res.bounding_box) {
-          const newBubble: SpeechBubble = {
-            id: `bubble-${Date.now()}`,
-            x: res.bounding_box.x,
-            y: res.bounding_box.y,
-            w: res.bounding_box.w,
-            h: res.bounding_box.h,
-            text: '',
-            shape: 'oval',
-            orientation: 'vertical',
-            fontFamily: selectedFont || 'sans-serif',
-            fontSize: 0,
-            textColor: 'rgba(0, 0, 0, 1)',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            borderColor: 'rgba(0, 0, 0, 1)',
-            borderWidth: 2,
-            tail: {
-              x: res.bounding_box.x + res.bounding_box.w / 2 - 20,
-              y: res.bounding_box.y + res.bounding_box.h + 30
+        const fullSnapshot = await snapshotsApi.get(snapshot.id)
+        const params = fullSnapshot.params as Record<string, any> | undefined
+        const savedBubbles = params?.speech_bubbles as SpeechBubble[] | undefined
+        const baseSnapId = (params?.base_snapshot_id as number) || fullSnapshot.source_snapshot_id || fullSnapshot.id
+        const baseImgPath = (params?.base_image_path as string) || fullSnapshot.image_path
+
+        if (!active) return
+
+        if (savedBubbles && Array.isArray(savedBubbles) && savedBubbles.length > 0) {
+          setBubbles(savedBubbles)
+          setSelectedBubbleId(savedBubbles[0]?.id || null)
+          setCurrentSourceSnapshotId(baseSnapId)
+          setCurrentImageUrl(baseImgPath || fullSnapshot.image_path || '')
+        } else {
+          setCurrentSourceSnapshotId(fullSnapshot.id)
+          setCurrentImageUrl(fullSnapshot.image_path || '')
+          // Initial auto detection
+          setIsDrafting(true)
+          try {
+            const res = await snapshotsApi.detectBubble(fullSnapshot.id)
+            if (active && res.bounding_box) {
+              const newBubble = createBubbleFromStyle({
+                id: `bubble-${Date.now()}`,
+                x: res.bounding_box.x,
+                y: res.bounding_box.y,
+                w: res.bounding_box.w,
+                h: res.bounding_box.h,
+                tail: {
+                  x: res.bounding_box.x + res.bounding_box.w / 2 - 20,
+                  y: res.bounding_box.y + res.bounding_box.h + 30
+                }
+              })
+              setBubbles([newBubble])
+              setSelectedBubbleId(newBubble.id)
             }
+            if (active && showDebugPanel) {
+              fetchDebugCandidates(null)
+            }
+          } catch (e) {
+            console.error(e)
+          } finally {
+            if (active) setIsDrafting(false)
           }
-          setBubbles([newBubble])
-          setSelectedBubbleId(newBubble.id)
-        }
-        if (active && showDebugPanel) {
-          fetchDebugCandidates(null)
         }
       } catch (err) {
-        console.error('Auto detect failed:', err)
-      } finally {
-        if (active) setIsDrafting(false)
+        console.error('Failed to init editor:', err)
+        setCurrentImageUrl(snapshot.image_path || '')
       }
     }
-    runAutoDetect()
+    initEditor()
     return () => {
       active = false
     }
   }, [snapshot.id])
+
+  const handleSelectNewBaseImage = (selectedSnapshot: SnapshotSummary) => {
+    if (selectedSnapshot.image_path) {
+      setCurrentSourceSnapshotId(selectedSnapshot.id)
+      setCurrentImageUrl(selectedSnapshot.image_path)
+      setIsImageSelectOpen(false)
+    }
+  }
 
   // Delete key handler
   useEffect(() => {
@@ -427,6 +487,9 @@ export function SpeechBubbleEditorModal({
 
       if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
         setSelectedBubbleId(b.id)
+        const style = extractBubbleStyle(b)
+        setLastUsedStyle((prev) => ({ ...prev, ...style }))
+        saveLastUsedBubbleStyle(style)
         setDraggingState({
           type: 'bubble',
           bubbleId: b.id,
@@ -594,26 +657,17 @@ export function SpeechBubbleEditorModal({
     try {
       const res = await snapshotsApi.detectBubbleROI(snapshot.id, originalROI)
       if (res.bounding_box) {
-        const newBubble: SpeechBubble = {
+        const newBubble = createBubbleFromStyle({
           id: `bubble-${Date.now()}`,
           x: res.bounding_box.x,
           y: res.bounding_box.y,
           w: res.bounding_box.w,
           h: res.bounding_box.h,
-          text: '',
-          shape: 'oval',
-          orientation: 'vertical',
-          fontFamily: selectedFont || 'sans-serif',
-          fontSize: 0,
-          textColor: 'rgba(0, 0, 0, 1)',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          borderColor: 'rgba(0, 0, 0, 1)',
-          borderWidth: 2,
           tail: {
             x: res.bounding_box.x + res.bounding_box.w / 2 - 20,
             y: res.bounding_box.y + res.bounding_box.h + 30
           }
-        }
+        })
         setBubbles((prev) => [...prev, newBubble])
         setSelectedBubbleId(newBubble.id)
       } else {
@@ -643,23 +697,13 @@ export function SpeechBubbleEditorModal({
     const cx = Math.round(x / scaleX)
     const cy = Math.round(y / scaleY)
 
-    const newBubble: SpeechBubble = {
-      id: `bubble-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    const newBubble = createBubbleFromStyle({
       x: Math.max(0, cx - 80),
       y: Math.max(0, cy - 70),
-      w: 160,
-      h: 140,
-      text: '',
-      shape: 'oval',
-      orientation: 'vertical',
-      fontFamily: selectedFont || 'sans-serif',
-      fontSize: 0,
-      textColor: 'rgba(0, 0, 0, 1)',
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: 'rgba(0, 0, 0, 1)',
-      borderWidth: 2,
+      w: DEFAULT_BUBBLE_BOUNDS.w,
+      h: DEFAULT_BUBBLE_BOUNDS.h,
       tail: { x: cx - 30, y: cy + 90 }
-    }
+    })
 
     setBubbles((prev) => [...prev, newBubble])
     setSelectedBubbleId(newBubble.id)
@@ -742,12 +786,19 @@ export function SpeechBubbleEditorModal({
       if (!blob) throw new Error('Canvas blob generation failed')
 
       const uploadRes = await snapshotsApi.upload(blob)
-      const parentSnapshot = await snapshotsApi.get(snapshot.id)
+      const parentSnapshot = await snapshotsApi.get(currentSourceSnapshotId)
+
+      const updatedParams = {
+        ...(parentSnapshot.params || {}),
+        speech_bubbles: bubbles,
+        base_snapshot_id: currentSourceSnapshotId,
+        base_image_path: currentImageUrl,
+      }
 
       await snapshotsApi.create({
         workflow_id: parentSnapshot.workflow_id,
         image_path: uploadRes.image_path,
-        params: parentSnapshot.params,
+        params: updatedParams,
         source_snapshot_id: parentSnapshot.id,
       })
 
@@ -805,12 +856,22 @@ export function SpeechBubbleEditorModal({
               画像上をダブルクリックして吹き出しを追加。ドラッグで位置や尻尾の移動、範囲（ROI）指定が可能です。
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsImageSelectOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 transition-colors"
+            >
+              <ImageIcon size={14} />
+              <span>ベース画像差し替え</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Mobile Tab Switcher */}
@@ -929,6 +990,14 @@ export function SpeechBubbleEditorModal({
                   setBubbles((prev) =>
                     prev.map((b) => (b.id === selectedBubbleId ? { ...b, ...updated } : b))
                   )
+                  const updatedStyle = extractBubbleStyle(updated)
+                  if (Object.keys(updatedStyle).length > 0) {
+                    setLastUsedStyle((prev) => {
+                      const next = { ...prev, ...updatedStyle }
+                      saveLastUsedBubbleStyle(next)
+                      return next
+                    })
+                  }
                 }}
                 onDelete={() => {
                   if (!selectedBubbleId) return
@@ -1013,23 +1082,14 @@ export function SpeechBubbleEditorModal({
                                   onMouseEnter={() => setHoveredCandidate(c)}
                                   onMouseLeave={() => setHoveredCandidate(null)}
                                   onClick={() => {
-                                    const newBubble: SpeechBubble = {
+                                    const newBubble = createBubbleFromStyle({
                                       id: `bubble-${Date.now()}`,
                                       x: c.x,
                                       y: c.y,
                                       w: c.w,
                                       h: c.h,
-                                      text: '',
-                                      shape: 'oval',
-                                      orientation: 'vertical',
-                                      fontFamily: selectedFont || 'sans-serif',
-                                      fontSize: 0,
-                                      textColor: 'rgba(0, 0, 0, 1)',
-                                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                      borderColor: 'rgba(0, 0, 0, 1)',
-                                      borderWidth: 2,
                                       tail: { x: c.x + c.w / 2 - 20, y: c.y + c.h + 30 }
-                                    }
+                                    })
                                     setBubbles((prev) => [...prev, newBubble])
                                     setSelectedBubbleId(newBubble.id)
                                   }}
@@ -1051,23 +1111,14 @@ export function SpeechBubbleEditorModal({
                                       className="px-1.5 py-0.5 bg-[#7C6FDD] hover:bg-[#6d62cc] text-white rounded text-[10px]"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        const newBubble: SpeechBubble = {
+                                        const newBubble = createBubbleFromStyle({
                                           id: `bubble-${Date.now()}`,
                                           x: c.x,
                                           y: c.y,
                                           w: c.w,
                                           h: c.h,
-                                          text: '',
-                                          shape: 'oval',
-                                          orientation: 'vertical',
-                                          fontFamily: selectedFont || 'sans-serif',
-                                          fontSize: 0,
-                                          textColor: 'rgba(0, 0, 0, 1)',
-                                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                          borderColor: 'rgba(0, 0, 0, 1)',
-                                          borderWidth: 2,
                                           tail: { x: c.x + c.w / 2 - 20, y: c.y + c.h + 30 }
-                                        }
+                                        })
                                         setBubbles((prev) => [...prev, newBubble])
                                         setSelectedBubbleId(newBubble.id)
                                       }}
@@ -1108,6 +1159,14 @@ export function SpeechBubbleEditorModal({
             </div>
           </div>
         </div>
+        {isImageSelectOpen && (
+          <BaseImageSelectModal
+            workflowId={snapshot.workflow_id}
+            currentSnapshotId={currentSourceSnapshotId}
+            onClose={() => setIsImageSelectOpen(false)}
+            onSelect={handleSelectNewBaseImage}
+          />
+        )}
       </div>
     </div>
   )

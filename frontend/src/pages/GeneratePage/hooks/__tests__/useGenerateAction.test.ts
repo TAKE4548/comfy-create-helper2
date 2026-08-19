@@ -17,6 +17,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     setActiveBatch: vi.fn(),
     setSubmissionAbortController: vi.fn(),
     fetchQueue: vi.fn(),
+    setErrorToast: vi.fn(),
   };
   return {
     useGenerationStore: () => store,
@@ -40,6 +41,7 @@ describe('useGenerateAction', () => {
     mockStore.setActiveBatch.mockReset();
     mockStore.setSubmissionAbortController.mockReset();
     mockStore.fetchQueue.mockReset();
+    mockStore.setErrorToast.mockReset();
   });
 
   const baseWorkflow: Workflow = {
@@ -382,6 +384,101 @@ describe('useGenerateAction', () => {
       // Only 1 job should have been submitted because loop aborts before index 1
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
       expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('handleGenerateSets REQ-141 instant pending rendering & ComfyUI error handling', () => {
+    it('should initialize activeBatch with pending jobs for all checked sets immediately and keep fixed length array during execution', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set 1', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+        { id: '2', name: 'Set 2', checked: true, batchSize: 1, seedMode: 'random', seed: 200, paramValues: {}, appliedAssets: {} },
+      ];
+
+      let callIndex = 0;
+      mockStore.queuePrompt.mockImplementation(async () => {
+        callIndex++;
+        return `real-prompt-${callIndex}`;
+      });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      // Check initial call to setActiveBatch
+      expect(mockStore.setActiveBatch).toHaveBeenCalled();
+      const firstCallBatch = mockStore.setActiveBatch.mock.calls[0][0];
+      expect(firstCallBatch).toHaveLength(3);
+      expect(firstCallBatch[0].setName).toBe('Set 1');
+      expect(firstCallBatch[0].status).toBe('pending');
+      expect(firstCallBatch[0].promptId).toMatch(/^pending-Set 1-0-/);
+      expect(firstCallBatch[1].setName).toBe('Set 1');
+      expect(firstCallBatch[1].status).toBe('pending');
+      expect(firstCallBatch[1].promptId).toMatch(/^pending-Set 1-1-/);
+      expect(firstCallBatch[2].setName).toBe('Set 2');
+      expect(firstCallBatch[2].status).toBe('pending');
+      expect(firstCallBatch[2].promptId).toMatch(/^pending-Set 2-0-/);
+
+      // Every setActiveBatch call should maintain array length of 3
+      mockStore.setActiveBatch.mock.calls.forEach((call: any[]) => {
+        expect(call[0]).toHaveLength(3);
+      });
+
+      // After first job queued: job 0 promptId updated to real-prompt-1
+      const callAfterJob0 = mockStore.setActiveBatch.mock.calls[1][0];
+      expect(callAfterJob0[0].promptId).toBe('real-prompt-1');
+      expect(callAfterJob0[1].promptId).toMatch(/^pending-Set 1-1-/);
+      expect(callAfterJob0[2].promptId).toMatch(/^pending-Set 2-0-/);
+
+      // Final batch should have all real prompt IDs
+      const finalCallBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalCallBatch[0].promptId).toBe('real-prompt-1');
+      expect(finalCallBatch[1].promptId).toBe('real-prompt-2');
+      expect(finalCallBatch[2].promptId).toBe('real-prompt-3');
+    });
+
+    it('should set error toast and mark job status as failed when queuePrompt returns null or throws', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set Fail', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      // Job 0 succeeds, Job 1 returns null (failure)
+      mockStore.queuePrompt
+        .mockResolvedValueOnce('prompt-success')
+        .mockResolvedValueOnce(null);
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '[Set Fail] (2/2) のキュー投入に失敗しました',
+        type: 'error',
+      });
+
+      // Check final activeBatch has status: 'failed' for second job
+      const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalBatch).toHaveLength(2);
+      expect(finalBatch[0].promptId).toBe('prompt-success');
+      expect(finalBatch[0].status).toBe('pending');
+      expect(finalBatch[1].status).toBe('failed');
+    });
+
+    it('should handle thrown exception from queuePrompt, set toast and mark job as failed', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set Error', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      mockStore.queuePrompt.mockRejectedValueOnce(new Error('Network error'));
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '[Set Error] (1/1) のキュー投入に失敗しました',
+        type: 'error',
+      });
+
+      const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalBatch).toHaveLength(1);
+      expect(finalBatch[0].status).toBe('failed');
     });
   });
 });

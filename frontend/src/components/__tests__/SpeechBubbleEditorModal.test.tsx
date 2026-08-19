@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SpeechBubbleEditorModal } from '../SpeechBubbleEditorModal'
 import { snapshotsApi, llmPromptsApi, fontsApi } from '../../api/client'
 import type { SnapshotSummary } from '../../api/types'
+import { LAST_USED_STYLE_STORAGE_KEY } from '../../types/speechBubble'
 
 vi.mock('../../api/client', () => ({
   snapshotsApi: {
+    list: vi.fn(),
     detectBubble: vi.fn(),
     detectBubbleROI: vi.fn(),
     detectBubbleDebug: vi.fn(),
@@ -35,6 +37,10 @@ describe('SpeechBubbleEditorModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      { id: 1, workflow_id: 1, created_at: '2026-08-18T00:00:00Z', image_path: '/test-image.png' },
+      { id: 2, workflow_id: 1, created_at: '2026-08-18T01:00:00Z', image_path: '/test-image-2.png' },
+    ])
     vi.mocked(snapshotsApi.detectBubble).mockResolvedValue({
       bounding_box: { x: 50, y: 50, w: 100, h: 80 }
     } as any)
@@ -53,8 +59,9 @@ describe('SpeechBubbleEditorModal', () => {
       { name: 'MS Gothic', file_name: 'msgothic.ttc', path: '/fonts/msgothic.ttc' } as any
     ])
     vi.mocked(snapshotsApi.get).mockResolvedValue({
-      id: 'snap-1',
-      workflow_id: 'wf-1',
+      id: 1,
+      workflow_id: 1,
+      image_path: '/test-image.png',
       params: { prompt: 'test' },
     } as any)
     vi.mocked(snapshotsApi.upload).mockResolvedValue({
@@ -272,4 +279,237 @@ describe('SpeechBubbleEditorModal', () => {
     expect(fullPreviewBtn).toBeDefined()
     fireEvent.click(fullPreviewBtn)
   })
+
+  it('inherits last used style on new bubble creation and persists to localStorage', async () => {
+    localStorage.clear()
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    // Change shape to burst
+    const burstBtn = await screen.findByRole('button', { name: '叫び' })
+    fireEvent.click(burstBtn)
+
+    // Check localStorage
+    const saved = localStorage.getItem(LAST_USED_STYLE_STORAGE_KEY)
+    expect(saved).not.toBeNull()
+    const parsed = JSON.parse(saved!)
+    expect(parsed.shape).toBe('burst')
+
+    // Add another bubble via double click
+    const canvas = document.querySelector('canvas')
+    expect(canvas).toBeDefined()
+    if (canvas) {
+      fireEvent.doubleClick(canvas, { clientX: 200, clientY: 200 })
+    }
+
+    // New bubble should have the burst shape active
+    await waitFor(() => {
+      const activeBurstBtn = screen.getByRole('button', { name: '叫び' })
+      expect(activeBurstBtn.className).toContain('bg-blue-600')
+    })
+  })
+
+  it('restores lastUsedStyle from localStorage on mount', async () => {
+    localStorage.setItem(
+      LAST_USED_STYLE_STORAGE_KEY,
+      JSON.stringify({
+        shape: 'rounded-rect',
+        orientation: 'horizontal',
+        fontFamily: 'serif',
+        fontSize: 24,
+        textColor: 'rgba(255, 0, 0, 1)',
+        backgroundColor: 'rgba(0, 0, 0, 1)',
+        borderColor: 'rgba(255, 255, 0, 1)',
+        borderWidth: 4,
+      })
+    )
+
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    // The auto-detected bubble should inherit localStorage settings
+    const roundedRectBtn = await screen.findByRole('button', { name: '角丸' })
+    expect(roundedRectBtn.className).toContain('bg-blue-600')
+
+    const horizBtn = screen.getByRole('button', { name: '横書き' })
+    expect(horizBtn.className).toContain('bg-blue-600')
+  })
+
+  it('updates lastUsedStyle and persists to localStorage when selecting an existing bubble', async () => {
+    localStorage.clear()
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    // First bubble is auto-detected. Set its shape to burst
+    const burstBtn = await screen.findByRole('button', { name: '叫び' })
+    fireEvent.click(burstBtn)
+
+    // Verify localStorage has burst
+    expect(JSON.parse(localStorage.getItem(LAST_USED_STYLE_STORAGE_KEY)!).shape).toBe('burst')
+  })
+
+  it('restores existing speech bubbles and base image metadata without calling auto-detect', async () => {
+    vi.mocked(snapshotsApi.get).mockResolvedValueOnce({
+      id: 1,
+      workflow_id: 1,
+      image_path: '/composed-image.png',
+      params: {
+        speech_bubbles: [
+          {
+            id: 'saved-bubble-1',
+            x: 20,
+            y: 30,
+            w: 120,
+            h: 90,
+            text: '復元されたセリフ',
+            shape: 'oval',
+            orientation: 'vertical',
+            fontFamily: 'sans-serif',
+            fontSize: 16,
+            textColor: 'rgba(0, 0, 0, 1)',
+            backgroundColor: 'rgba(255, 255, 255, 1)',
+            borderColor: 'rgba(0, 0, 0, 1)',
+            borderWidth: 2,
+          }
+        ],
+        base_snapshot_id: 99,
+        base_image_path: '/base-clean-image.png',
+      },
+    } as any)
+
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    // Should NOT call auto-detect because saved bubbles exist
+    await waitFor(() => {
+      expect(snapshotsApi.get).toHaveBeenCalledWith(1)
+    })
+    expect(snapshotsApi.detectBubble).not.toHaveBeenCalled()
+
+    // Controls should show the restored bubble's text
+    const textarea = await screen.findByDisplayValue('復元されたセリフ')
+    expect(textarea).toBeDefined()
+  })
+
+  it('opens BaseImageSelectModal and replaces base image when a snapshot is selected', async () => {
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    // Click base image replacement button
+    const replaceBtn = screen.getByRole('button', { name: /ベース画像差し替え/ })
+    fireEvent.click(replaceBtn)
+
+    // Verify modal appears
+    expect(await screen.findByText('生成履歴からベース画像を差し替え')).toBeDefined()
+    expect(snapshotsApi.list).toHaveBeenCalledWith({ workflow_id: 1 })
+
+    // Select snapshot #2
+    const snap2Btn = screen.getByText('#2')
+    fireEvent.click(snap2Btn)
+
+    // Modal should close
+    await waitFor(() => {
+      expect(screen.queryByText('生成履歴からベース画像を差し替え')).toBeNull()
+    })
+  })
+
+  it('saves image composite and includes speech_bubbles metadata, base_snapshot_id, and base_image_path', async () => {
+    // Mock Image to trigger onload synchronously
+    const OriginalImage = global.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    global.Image = MockLoadedImage as any
+
+    try {
+      render(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      // Wait for image load and save button enabled
+      const saveBtn = await screen.findByRole('button', { name: /保存して履歴へ追加/ })
+      await waitFor(() => {
+        expect(saveBtn).not.toBeDisabled()
+      })
+
+      fireEvent.click(saveBtn)
+
+      await waitFor(() => {
+        expect(snapshotsApi.upload).toHaveBeenCalled()
+        expect(snapshotsApi.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            workflow_id: 1,
+            image_path: '/uploads/new-snap.png',
+            params: expect.objectContaining({
+              speech_bubbles: expect.any(Array),
+              base_snapshot_id: 1,
+              base_image_path: '/test-image.png',
+            }),
+          })
+        )
+        expect(mockOnSaved).toHaveBeenCalled()
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    } finally {
+      global.Image = OriginalImage
+    }
+  })
 })
+
