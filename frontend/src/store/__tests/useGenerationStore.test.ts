@@ -168,6 +168,7 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
 
     // Trigger queuePrompt which will prune the items
     await useGenerationStore.getState().queuePrompt({ nodes: {} });
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     // Check that we have exactly 200 items starting with 'prompt-surgeon-meta-'
     const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'));
@@ -181,5 +182,112 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
     // id-7 and onwards should remain
     expect(localStorage.getItem('prompt-surgeon-meta-id-7')).not.toBeNull();
     expect(localStorage.getItem('prompt-surgeon-meta-id-206')).not.toBeNull();
+  });
+});
+
+describe('useGenerationStore REQ-140 queuePrompt optimization and abort control', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('should skip fetchQueue when skipQueueFetch option is true', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'mock-prompt-id' }),
+        });
+      }
+      if (url.endsWith('/queue')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().queuePrompt({ nodes: {} }, undefined, { skipQueueFetch: true });
+
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    fetchQueueSpy.mockRestore();
+  });
+
+  it('should call fetchQueue when skipQueueFetch option is falsy', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'mock-prompt-id' }),
+        });
+      }
+      if (url.endsWith('/queue')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().queuePrompt({ nodes: {} });
+
+    expect(fetchQueueSpy).toHaveBeenCalledTimes(1);
+
+    fetchQueueSpy.mockRestore();
+  });
+
+  it('should abort submission controller when abortSubmission is called', () => {
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, 'abort');
+
+    useGenerationStore.getState().setSubmissionAbortController(controller);
+    expect(useGenerationStore.getState().submissionAbortController).toBe(controller);
+
+    useGenerationStore.getState().abortSubmission();
+
+    expect(abortSpy).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().submissionAbortController).toBeNull();
+  });
+
+  it('should call abortSubmission when cancelJob or cancelAllJobs is called', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const controller1 = new AbortController();
+    const abortSpy1 = vi.spyOn(controller1, 'abort');
+    useGenerationStore.getState().setSubmissionAbortController(controller1);
+
+    await useGenerationStore.getState().cancelJob('prompt-1');
+    expect(abortSpy1).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().submissionAbortController).toBeNull();
+
+    const controller2 = new AbortController();
+    const abortSpy2 = vi.spyOn(controller2, 'abort');
+    useGenerationStore.getState().setSubmissionAbortController(controller2);
+
+    await useGenerationStore.getState().cancelAllJobs();
+    expect(abortSpy2).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().submissionAbortController).toBeNull();
   });
 });

@@ -106,6 +106,10 @@ export interface ComfyHistoryDeletePayload {
   delete: string[]
 }
 
+export interface QueuePromptOptions {
+  skipQueueFetch?: boolean;
+}
+
 export interface GenerationState {
   // ─── Connection ────────────────────────────────────────────────
   clientId: string
@@ -120,6 +124,11 @@ export interface GenerationState {
   currentPromptId: string | null
   activeClientId: string | null
   comfyUrl: string | null
+
+  // ─── Submission Abort Controller ──────────────────────────────
+  submissionAbortController: AbortController | null
+  setSubmissionAbortController: (controller: AbortController | null) => void
+  abortSubmission: () => void
 
   // ─── UI / Workflow ─────────────────────────────────────────────
   filterOwnSession: boolean
@@ -166,9 +175,10 @@ export interface GenerationState {
   queuePrompt: (
     workflow: Record<string, unknown>,
     metadata?: {
-      paramValues: Record<string, string>;
-      appliedAssets: Record<string, AppliedAsset[]>;
-    }
+      paramValues?: Record<string, string>;
+      appliedAssets?: Record<string, AppliedAsset[]>;
+    },
+    options?: QueuePromptOptions
   ) => Promise<string | null>
   cancelGeneration: () => void
   clearPreview: () => void
@@ -366,6 +376,17 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     activeSetId: initialActiveSetId,
     openPresetIds: initialOpenPresetIds,
     activeBatch: null,
+
+    // ─── Submission Abort Controller ──────────────────────────────
+    submissionAbortController: null,
+    setSubmissionAbortController: (controller) => set({ submissionAbortController: controller }),
+    abortSubmission: () => {
+      const controller = get().submissionAbortController
+      if (controller) {
+        controller.abort()
+        set({ submissionAbortController: null })
+      }
+    },
 
     // ── Actions ──────────────────────────────────────────────
     setErrorToast: (toast) => set({ errorToast: toast }),
@@ -891,7 +912,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       }
     },
 
-    queuePrompt: async (workflow, metadata) => {
+    queuePrompt: async (workflow, metadata, options) => {
       if (!comfyUrl) return null
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
@@ -936,27 +957,31 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           }
           localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
 
-          // 古いキャッシュの自動削除 (最大200件制限)
-          try {
-            const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
-            if (keys.length > 200) {
-              const items = keys.map(k => {
-                try {
-                  const val = JSON.parse(localStorage.getItem(k) || '{}')
-                  return { key: k, timestamp: val.timestamp || 0 }
-                } catch {
-                  return { key: k, timestamp: 0 }
-                }
-              })
-              items.sort((a, b) => a.timestamp - b.timestamp)
-              const toDelete = items.slice(0, items.length - 200)
-              toDelete.forEach(item => localStorage.removeItem(item.key))
+          // 古いキャッシュの自動削除 (最大200件制限) - メタデータ走査を非同期化してメインスレッドのブロックを防止
+          setTimeout(() => {
+            try {
+              const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
+              if (keys.length > 200) {
+                const items = keys.map(k => {
+                  try {
+                    const val = JSON.parse(localStorage.getItem(k) || '{}')
+                    return { key: k, timestamp: val.timestamp || 0 }
+                  } catch {
+                    return { key: k, timestamp: 0 }
+                  }
+                })
+                items.sort((a, b) => a.timestamp - b.timestamp)
+                const toDelete = items.slice(0, items.length - 200)
+                toDelete.forEach(item => localStorage.removeItem(item.key))
+              }
+            } catch (e) {
+              console.error('Failed to prune prompt metadata:', e)
             }
-          } catch (e) {
-            console.error('Failed to prune prompt metadata:', e)
-          }
+          }, 0)
         }
-        await get().fetchQueue()
+        if (!options?.skipQueueFetch) {
+          await get().fetchQueue()
+        }
         return promptId
       } catch (e: any) {
         console.error('Failed to queue prompt:', e)
@@ -1064,6 +1089,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     cancelJob: async (promptId: string): Promise<void> => {
+      get().abortSubmission();
       if (!comfyUrl) return
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
@@ -1110,6 +1136,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     cancelAllJobs: async (): Promise<void> => {
+      get().abortSubmission();
       if (!comfyUrl) return
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {

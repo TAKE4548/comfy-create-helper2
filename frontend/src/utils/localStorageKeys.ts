@@ -27,6 +27,7 @@ export const LS_KEYS = {
   LAYOUT_PREVIEW_SPLIT: 'prompt-surgeon-layout-preview-split',
   SETTINGS_SECTIONS_EXPANDED: 'prompt-surgeon-settings-sections-expanded',
   ACTIVE_PROMPT_TAB_PREFIX: 'prompt-surgeon-active-prompt-tab-',
+  LAST_SAVE_ALBUM_ID: 'prompt-surgeon-last-save-album-id',
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

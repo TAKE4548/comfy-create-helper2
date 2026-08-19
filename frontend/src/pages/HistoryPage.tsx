@@ -681,6 +681,25 @@ export function HistoryPage() {
                               </div>
                             )}
                             {item.image_path && (
+                              <button
+                                id={`item-speech-edit-${item.snapshot_id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedForSpeech({
+                                    id: item.snapshot_id,
+                                    workflow_id: 0,
+                                    image_path: item.image_path,
+                                    thumbnail_path: item.thumbnail_path,
+                                    created_at: item.created_at || '',
+                                  })
+                                }}
+                                title="セリフ編集・吹き出し追加"
+                                className="absolute top-2 right-16 p-1.5 rounded-md bg-black/60 text-zinc-400 hover:text-accent-green opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                              >
+                                <MessageSquarePlus size={12} />
+                              </button>
+                            )}
+                            {item.image_path && (
                               <a
                                 href={item.image_path}
                                 download
@@ -1092,6 +1111,10 @@ export function HistoryPage() {
           onClose={() => setSelectedForSpeech(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['snapshots'] })
+            if (selectedAlbumId !== null) {
+              qc.invalidateQueries({ queryKey: ['album', selectedAlbumId] })
+            }
+            qc.invalidateQueries({ queryKey: ['albums'] })
           }}
         />
       )}

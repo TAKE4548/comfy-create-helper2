@@ -12,6 +12,7 @@ interface AddSnapshotToAlbumModalProps {
   confirmText?: string
   title?: string
   allowNone?: boolean
+  storageKey?: string
 }
 
 export function AddSnapshotToAlbumModal({
@@ -22,6 +23,7 @@ export function AddSnapshotToAlbumModal({
   confirmText = '保存',
   title = 'スナップショットをアルバムに追加',
   allowNone = true,
+  storageKey,
 }: AddSnapshotToAlbumModalProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | 'new' | ''>(allowNone ? '' : 'new')
@@ -57,12 +59,33 @@ export function AddSnapshotToAlbumModal({
   // Initialize selection when opening
   useEffect(() => {
     if (isOpen) {
-      setSelectedAlbumId(allowNone ? '' : 'new')
+      if (storageKey) {
+        const saved = localStorage.getItem(storageKey)
+        if (saved === '' || saved === 'none') {
+          setSelectedAlbumId(allowNone ? '' : 'new')
+        } else if (saved !== null && !isNaN(Number(saved)) && Number(saved) > 0) {
+          setSelectedAlbumId(Number(saved))
+        } else {
+          setSelectedAlbumId(allowNone ? '' : 'new')
+        }
+      } else {
+        setSelectedAlbumId(allowNone ? '' : 'new')
+      }
       setNewAlbumName('')
       setSearchQuery('')
       setIsDropdownOpen(false)
     }
-  }, [isOpen, allowNone])
+  }, [isOpen, allowNone, storageKey])
+
+  // アルバム存在確認とフォールバック
+  useEffect(() => {
+    if (isOpen && albums && albums.length > 0 && typeof selectedAlbumId === 'number') {
+      const exists = albums.some((a) => a.id === selectedAlbumId)
+      if (!exists) {
+        setSelectedAlbumId(allowNone ? '' : 'new')
+      }
+    }
+  }, [isOpen, albums, selectedAlbumId, allowNone])
 
   if (!isOpen) return null
 
@@ -78,6 +101,13 @@ export function AddSnapshotToAlbumModal({
 
   const handleConfirm = () => {
     if (selectedAlbumId === 'new' && !newAlbumName.trim()) return
+    if (storageKey) {
+      if (typeof selectedAlbumId === 'number') {
+        localStorage.setItem(storageKey, String(selectedAlbumId))
+      } else if (selectedAlbumId === '') {
+        localStorage.setItem(storageKey, '')
+      }
+    }
     onConfirm({
       albumId: typeof selectedAlbumId === 'number' ? selectedAlbumId : null,
       newAlbumName: selectedAlbumId === 'new' ? newAlbumName.trim() : undefined,

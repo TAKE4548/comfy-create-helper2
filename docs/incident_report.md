@@ -1,62 +1,76 @@
-# インシデントレポート: REQ-136 モバイルモードにおける SpeechBubbleEditorModal 表示切れ・操作不可
+# インシデントレポート: モバイルモードにおけるバッチ・複数プリセット生成のキュー登録遅延および取り消しレスポンス遅延
 
 ## 概要 (Overview)
-`SpeechBubbleEditorModal`（REQ-136: 任意位置へのセリフ手動追加および吹き出し・テキスト装飾機能）をモバイル端末または画面幅が狭いビューポート（例: 768px未満）で開いた際、キャンバス領域（プレビューエリア）とコントロールパネル（入力・調整エリア）が横並び（`flex-row`）で固定配置されているため、コントロールパネルが画面外へはみ出す、または水平方向に著しく圧迫されて入力・編集操作を行えない事象が発生しています。
+モバイル環境（スマートフォン等の実機Wi-Fi接続、または画面幅768px未満のモバイル表示環境）において、バッチ生成または複数プリセットを選択して生成を実行した際、ComfyUIキューへの登録完了までに著しい遅延が発生し、また実行・待機ジョブの取り消し（キャンセル）操作を行っても即座に停止せずレスポンスが悪化する事象が確認されました。なお、同一PC上のローカルブラウザ（通常モード）では遅延が顕著化しにくい傾向にあります。
 
 ---
 
 ## 再現手順 (Reproduction Steps)
-1. ブラウザのデベロッパーツール等を開き、ビューポートをモバイルサイズ（幅 768px 未満）に設定する。
-2. 履歴ページ等からスナップショットの「セリフ編集・吹き出し追加」ボタンをクリックし、`SpeechBubbleEditorModal` を開く。
-3. モーダル内のレイアウトおよび操作感を確認する。
-   - キャンバス（プレビューエリア）が画面幅の大半を占有し、右側のコントロールパネル（テキスト入力、形状・文字方向・フォント・カラーピッカー等）が画面外にはみ出る、または潰れて表示される。
-   - スクロールを行っても入力欄や設定ボタンの操作が困難または不可能となる。
-   - キャンバス上の吹き出し操作においてタッチドラッグ (`Touch` イベント) に対応していない。
+1. スマートフォン実機（Wi-Fi経由）、またはブラウザでモバイルモード（幅 768px 未満）を開く。
+2. 複数のプリセット（例: 3〜5個）にチェックを入れる、またはバッチサイズを 2 以上に設定する。
+3. 「Generate Batch」ボタン（`#generate-btn-mobile`）をタップして生成を実行する。
+4. **観測事象 1 (キュー登録遅延)**:
+   - ボタン押下後、すべてのジョブがComfyUIのキューに登録されてバッチ進捗表示が正常化するまでに数秒〜十数秒のタイムラグが発生する。
+5. **観測事象 2 (取り消しレスポンス悪化)**:
+   - キュー登録中または生成開始直後に「ジョブ管理」モーダル等からキャンセル（または一括キャンセル）を実行しても、キャンセル直後に後続のジョブが再度キューに投入され、生成が即座に停止しない。
 
 ---
 
 ## 影響範囲 (Affected Area)
-- **フロントエンドコンポーネント**:
-  - `frontend/src/components/SpeechBubbleEditorModal.tsx`:
-    - L692: `max-h-[90vh]` のモーダルコンテナ。
-    - L713: `flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]` (ビューポート幅に応じた `flex-col` / `flex-row` 切り替えが存在しない)。
-    - L715, L742: `flex-[3]` (キャンバスエリア) と `flex-[2]` (コントロールパネル) の横並び固定比率配置。
-    - L723: キャンバス解像度計算 (`maxW = 500, maxH = 500`) がモバイル端末の画面幅に合わせた動的縮小に対応していない。
-    - L729-732: キャンバス要素が `onMouseDown` / `onMouseMove` / `onMouseUp` のみで、`onTouchStart` / `onTouchMove` / `onTouchEnd` を持たない。
-  - `frontend/src/components/SpeechBubbleControls.tsx`:
-    - モバイル画面表示時にプレビューとコントロールを切り替えるタブ表示・ドロワー等の専用UI構造が存在しない。
+- **フロントエンド生成アクションフック**:
+  - `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`:
+    - L182-228: `handleGenerateSets` において、選択された全プリセット（`checkedSets`）とバッチサイズ（`setItem.batchSize`）に対する二重ループ内で `await queuePrompt(...)` を直列（逐次）実行している。
+    - L199-222: ループ内でキャンセル状態の検知・中断フラグ（AbortController / Cancel Token）のチェック機構が存在しない。
+    - L225-227: 全てのキュー投入ループが完了するまで `setActiveBatch` が呼び出されず、ループ処理中は `activeBatch` が `null` のままとなる。
+- **グローバル生成状態ストア**:
+  - `frontend/src/store/useGenerationStore.ts`:
+    - L894-966: `queuePrompt` 実行毎に `POST /prompt` に加え、`localStorage` のメタデータ走査・削除処理（L940-957）および `await get().fetchQueue()`（`GET /queue` の通信 + Zustand 状態更新）が毎回直列で実行されている。
+    - L1066-1167: `cancelJob` / `cancelAllJobs` がComfyUIキューをクリアしても、`useGenerateAction` の直列ループが並行して動き続け、後続のプロンプトを再投入してしまう。
 
 ---
 
 ## 原因分類 (Root Cause Classification)
-- **分類**: **Type B (仕様欠落・設計不備 / Specification Flaw)**
-- **理由**: REQ-136 の詳細設計書 (`docs/design/REQ-136.md`) および実装において、デスクトップ表示（横並びレイアウト・マウスドラッグ操作）のみが想定されており、モバイル画面でのレイアウト構造（縦積みまたはタブ切り替え、タッチ操作対応）に関する要件・仕様が定義されていなかったため。
+- **分類**: **Type A (実装不備 / Implementation Bug)**
+- **理由**:
+  - 複数ジョブ投入時における非同期通信の直列化（逐次リクエスト）、不要な毎回のキュー取得（`fetchQueue`）、およびキャンセル時の生成ループ中断機構の欠落という実装上の問題に起因するため。
 
 ---
 
 ## 調査詳細 (Deep Dive Analysis)
 
-### 1. コード検証結果
-`SpeechBubbleEditorModal.tsx` の L713-742 周辺:
-```tsx
-<div className="flex flex-1 overflow-y-auto p-6 gap-6 min-h-[450px]">
-  {/* Left: Canvas Area */}
-  <div className="flex-[3] flex flex-col items-center justify-center bg-black/40 rounded-lg p-4 border border-[rgba(255,255,255,0.04)] relative">
+### 1. 直列リクエストとネットワーク往復遅延 (RTT) の累積
+`frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` L199-222:
+```ts
+for (const setItem of checkedSets) {
+  const syncedParamValues = applyParamSync(setItem.paramValues)
+  for (let i = 0; i < setItem.batchSize; i++) {
     ...
-  </div>
-
-  {/* Right: Controls Pane */}
-  <div className="flex-[2] flex flex-col justify-between gap-6 border-l border-[rgba(255,255,255,0.08)] pl-6 overflow-y-auto">
+    const promptId = await queuePrompt(wfJson, { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets })
     ...
-  </div>
-</div>
+  }
+}
 ```
-- `flex`（標準は `flex-row`）で指定されており、レスポンシブ修飾子（例: `flex-col md:flex-row`）が存在しません。
-- 幅の狭い画面では `flex-[3]` と `flex-[2]` によりコントロールパネルの幅が極小化・画面外へ溢れる構造になっています。
+`frontend/src/store/useGenerationStore.ts` L894-965 (`queuePrompt`):
+```ts
+const res = await fetch(`${activeUrl}/prompt`, ...)
+...
+localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+// 毎回全メタキー走査
+...
+await get().fetchQueue() // 毎回 GET /queue 通信を実行
+```
+- 例えば 4 プリセット × バッチ 4 の場合、合計 16 回の `POST /prompt` と 16 回の `GET /queue`（計 32 回の HTTP 通信）が完全に 1 つずつ直列に実行されます。
+- **PCローカル環境（`localhost`）**: RTT が 1ms 未満のため、32 回の通信でも数十ミリ秒で完了し遅延が目立ちません。
+- **モバイル実機（Wi-Fi / LAN 経由）**: 1 通信あたり 20〜100ms 程度のレイテンシが生じるため、32 回の通信で数秒以上のブロッキングが発生します。また、低スペック端末では通信ごとの Zustand 再レンダリングと localStorage 走査負荷が加わり、キュー登録が著しく遅延します。
+
+### 2. 取り消し（キャンセル）時のループ継続と再投入
+- ユーザーがジョブのキャンセルを実行した場合、`cancelAllJobs` は ComfyUI 上の待機キューを削除し `interrupt` を送信します。
+- しかし、フロントエンドの `handleGenerateSets` ループはキャンセルの発生を感知せず稼働し続けるため、キューがクリアされた直後に次のループの `queuePrompt` が ComfyUI に新規送信されます。
+- これにより「キャンセルしたはずなのに次のジョブがキューに追加され生成が続く」という現象が発生し、レスポンスが極めて悪く見えます。
 
 ---
 
 ## 次のステップ提案 (Next Action)
-本調査結果（Type B 仕様欠落）に基づき、モバイルモード対応（縦積みレイアウト/タブ切り替えUIおよびタッチ操作対応）の仕様策定とUI設計を行うため、`/sys-design`（または `/dev-design`）へ進むことを提案します。
+本問題は Type A（実装不備）に分類されるため、`/dev-design` に進み、キュー投入処理の最適化（一括/パイプライン化、不要な中間フェッチ削減、キャンセル用 Abort シグナルの導入）の設計を行うことを提案します。
 
-- **承認の確認**: 次のステップへ進んでよろしいですか？ (YES / NO)
+- **承認の確認**: 次のステップ（`/dev-design`）へ進んでよろしいですか？ (YES / NO)

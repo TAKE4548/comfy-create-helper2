@@ -21,6 +21,8 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     appliedAssets,
     bypassProfiles = [],
     paramSyncGroups = [],
+    setSubmissionAbortController,
+    fetchQueue,
   } = useGenerationStore()
 
   const injectParams = (
@@ -184,6 +186,23 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     const checkedSets = sets.filter((s) => s.checked)
     if (checkedSets.length === 0) return
 
+    // 中断用 AbortController の作成とストア登録
+    const abortController = new AbortController()
+    setSubmissionAbortController?.(abortController)
+
+    // 事前に全体の枠を構築して activeBatch を即時初期化
+    const initialBatch: BatchJob[] = []
+    checkedSets.forEach((setItem) => {
+      for (let i = 0; i < setItem.batchSize; i++) {
+        initialBatch.push({
+          promptId: `pending-${setItem.name}-${i}-${Date.now()}`,
+          setName: setItem.name,
+          status: 'pending'
+        })
+      }
+    })
+    setActiveBatch(initialBatch)
+
     const newBatch: BatchJob[] = []
     const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
     const mappings = JSON.parse(mappingsJson)
@@ -196,34 +215,51 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
-    for (const setItem of checkedSets) {
-      const syncedParamValues = applyParamSync(setItem.paramValues)
-      for (let i = 0; i < setItem.batchSize; i++) {
-        let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-        injectParams(wfJson, syncedParamValues, setItem.seedMode, setItem.seed, i)
-        if (activeBypassNodeIds.length > 0) {
-          wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
-        }
-        
-        try {
-          const promptId = await queuePrompt(wfJson, { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets })
-          if (promptId) {
-            mappings[promptId] = setItem.name
-            newBatch.push({
-              promptId,
-              setName: setItem.name,
-              status: 'pending'
-            })
+    try {
+      for (const setItem of checkedSets) {
+        const syncedParamValues = applyParamSync(setItem.paramValues)
+        for (let i = 0; i < setItem.batchSize; i++) {
+          // キャンセル中断チェック
+          if (abortController.signal.aborted) {
+            console.log('Batch queueing aborted by user.')
+            return
           }
-        } catch (err) {
-          console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
+
+          let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
+          injectParams(wfJson, syncedParamValues, setItem.seedMode, setItem.seed, i)
+          if (activeBypassNodeIds.length > 0) {
+            wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
+          }
+          
+          try {
+            // skipQueueFetch: true で個別フェッチをバイパス
+            const promptId = await queuePrompt(
+              wfJson,
+              { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets },
+              { skipQueueFetch: true }
+            )
+            if (promptId) {
+              mappings[promptId] = setItem.name
+              newBatch.push({
+                promptId,
+                setName: setItem.name,
+                status: 'pending'
+              })
+              // 随時 activeBatch の実 promptId を反映
+              setActiveBatch([...newBatch])
+            }
+          } catch (err) {
+            console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
+          }
         }
       }
-    }
-
-    localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
-    if (newBatch.length > 0) {
-      setActiveBatch(newBatch)
+    } finally {
+      localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
+      if (newBatch.length > 0) {
+        setActiveBatch(newBatch)
+      }
+      // 全ループ終了後に 1 回のみキューを同期
+      await fetchQueue?.()
     }
   }
 

@@ -9,7 +9,14 @@ vi.mock('../../../../store/useGenerationStore', () => {
     batchSize: 1,
     seedMode: 'random',
     seed: 12345,
+    sets: [],
+    appliedAssets: {},
+    bypassProfiles: [],
+    paramSyncGroups: [],
     queuePrompt: vi.fn(),
+    setActiveBatch: vi.fn(),
+    setSubmissionAbortController: vi.fn(),
+    fetchQueue: vi.fn(),
   };
   return {
     useGenerationStore: () => store,
@@ -25,7 +32,14 @@ describe('useGenerateAction', () => {
     mockStore.batchSize = 1;
     mockStore.seedMode = 'random';
     mockStore.seed = 12345;
+    mockStore.sets = [];
+    mockStore.appliedAssets = {};
+    mockStore.bypassProfiles = [];
+    mockStore.paramSyncGroups = [];
     mockStore.queuePrompt.mockReset();
+    mockStore.setActiveBatch.mockReset();
+    mockStore.setSubmissionAbortController.mockReset();
+    mockStore.fetchQueue.mockReset();
   });
 
   const baseWorkflow: Workflow = {
@@ -316,5 +330,58 @@ describe('useGenerateAction', () => {
 
     const nodeInputs = mockStore.queuePrompt.mock.calls[0][0]['1'].inputs;
     expect(nodeInputs['ckpt_name']).toBe('v1-5-pruned.safetensors');
+  });
+
+  describe('handleGenerateSets REQ-140 batch queueing and abort control', () => {
+    it('should pass skipQueueFetch: true to queuePrompt and call fetchQueue once after all sets are queued', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+        { id: '2', name: 'Set B', checked: false, batchSize: 1, seedMode: 'random', seed: 200, paramValues: {}, appliedAssets: {} },
+        { id: '3', name: 'Set C', checked: true, batchSize: 1, seedMode: 'random', seed: 300, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt.mockResolvedValue('prompt-id-123');
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setSubmissionAbortController).toHaveBeenCalled();
+      // 2 jobs for Set A + 1 job for Set C = 3 calls
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
+      expect(mockStore.queuePrompt.mock.calls[0][2]).toEqual({ skipQueueFetch: true });
+      expect(mockStore.queuePrompt.mock.calls[1][2]).toEqual({ skipQueueFetch: true });
+      expect(mockStore.queuePrompt.mock.calls[2][2]).toEqual({ skipQueueFetch: true });
+
+      // Initial placeholder batch + per prompt updates + final batch
+      expect(mockStore.setActiveBatch).toHaveBeenCalled();
+      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
+    });
+
+    it('should abort queueing loop when abort controller is aborted mid-execution', async () => {
+      let capturedController: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((controller: AbortController) => {
+        capturedController = controller;
+      });
+
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 3, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      let callCount = 0;
+      mockStore.queuePrompt.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          // Abort after first job is submitted
+          capturedController?.abort();
+        }
+        return `prompt-id-${callCount}`;
+      });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      // Only 1 job should have been submitted because loop aborts before index 1
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
+    });
   });
 });
