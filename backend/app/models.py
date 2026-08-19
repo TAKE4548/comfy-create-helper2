@@ -342,3 +342,21 @@ class ParamSyncGroup(Base):
 
     workflow: Mapped["Workflow"] = relationship(back_populates="param_sync_groups")
 
+
+class SpeechBubblePreset(Base):
+    __tablename__ = "speech_bubble_presets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    shape: Mapped[str] = mapped_column(String, nullable=False, default="oval")
+    orientation: Mapped[str] = mapped_column(String, nullable=False, default="vertical")
+    font_family: Mapped[str] = mapped_column(String, nullable=False, default="sans-serif")
+    font_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    text_color: Mapped[str] = mapped_column(String, nullable=False, default="rgba(0, 0, 0, 1)")
+    background_color: Mapped[str] = mapped_column(String, nullable=False, default="rgba(255, 255, 255, 0.95)")
+    border_color: Mapped[str] = mapped_column(String, nullable=False, default="rgba(0, 0, 0, 1)")
+    border_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+

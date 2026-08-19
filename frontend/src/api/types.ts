@@ -3,6 +3,8 @@
  * Auto-generated shape: matches FastAPI schemas.py
  */
 
+import type { BubbleShapeType, TextOrientation } from '../types/speechBubble'
+
 // ─── MappingMaster ─────────────────────────────────────────────
 
 export interface MappingMaster {
@@ -545,6 +547,50 @@ export type ComfyObjectInfo = Record<string, {
     optional?: Record<string, [unknown, Record<string, unknown>]>
   }
 }>
+
+// ─── SpeechBubblePreset ──────────────────────────────────────────
+
+export interface SpeechBubblePreset {
+  id: number
+  name: string
+  shape: BubbleShapeType
+  orientation: TextOrientation
+  font_family: string
+  font_size: number
+  text_color: string
+  background_color: string
+  border_color: string
+  border_width: number
+  sort_order: number
+  created_at: string
+}
+
+export interface SpeechBubblePresetCreate {
+  name: string
+  shape?: BubbleShapeType
+  orientation?: TextOrientation
+  font_family?: string
+  font_size?: number
+  text_color?: string
+  background_color?: string
+  border_color?: string
+  border_width?: number
+  sort_order?: number
+}
+
+export interface SpeechBubblePresetUpdate {
+  name?: string
+  shape?: BubbleShapeType
+  orientation?: TextOrientation
+  font_family?: string
+  font_size?: number
+  text_color?: string
+  background_color?: string
+  border_color?: string
+  border_width?: number
+  sort_order?: number
+}
+
 
 
 

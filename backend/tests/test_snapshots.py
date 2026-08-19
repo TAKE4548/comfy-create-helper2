@@ -744,6 +744,41 @@ class TestSnapshotsAPI(unittest.TestCase):
             if image_path.exists():
                 os.remove(image_path)
 
+    def test_patch_snapshot_image_and_params(self):
+        # 1. 初期スナップショットを作成
+        init_payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "original.png",
+            "thumbnail_path": "thumb_original.png",
+            "params": {"prompt": "1girl", "seed": 123},
+            "loras": [],
+            "tag_sets": []
+        }
+        create_resp = self.client.post("/api/snapshots", json=init_payload)
+        self.assertEqual(create_resp.status_code, 201)
+        snapshot_id = create_resp.json()["id"]
+
+        # 2. PATCH API で image_path, thumbnail_path, params を上書き
+        patch_payload = {
+            "image_path": "updated.png",
+            "thumbnail_path": "thumb_updated.png",
+            "params": {"prompt": "1girl, speech bubble", "seed": 123, "speech_bubbles": [{"text": "hello"}]}
+        }
+        patch_resp = self.client.patch(f"/api/snapshots/{snapshot_id}", json=patch_payload)
+        self.assertEqual(patch_resp.status_code, 200)
+        data = patch_resp.json()
+        self.assertEqual(data["image_path"], "updated.png")
+        self.assertEqual(data["thumbnail_path"], "thumb_updated.png")
+        self.assertEqual(data["params"]["speech_bubbles"][0]["text"], "hello")
+
+        # 3. GET API でも更新が永続化されていることを確認
+        get_resp = self.client.get(f"/api/snapshots/{snapshot_id}")
+        self.assertEqual(get_resp.status_code, 200)
+        get_data = get_resp.json()
+        self.assertEqual(get_data["image_path"], "updated.png")
+        self.assertEqual(get_data["thumbnail_path"], "thumb_updated.png")
+        self.assertEqual(get_data["params"]["speech_bubbles"][0]["text"], "hello")
+
 
 if __name__ == "__main__":
     unittest.main()

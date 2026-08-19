@@ -2,7 +2,8 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album } from './types'
+
 
 const BASE_URL = '/api'
 
@@ -64,8 +65,16 @@ export const snapshotsApi = {
   },
   get: (id: number) => request<Snapshot>(`/snapshots/${id}`),
   create: (data: unknown) => request<SnapshotSummary>('/snapshots', { method: 'POST', body: JSON.stringify(data) }),
-  patch: (id: number, data: { lora_ids: number[]; tag_set_ids: number[] }) =>
-    request<Snapshot>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  patch: (
+    id: number,
+    data: {
+      lora_ids?: number[]
+      tag_set_ids?: number[]
+      image_path?: string
+      thumbnail_path?: string
+      params?: any
+    }
+  ) => request<Snapshot>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/snapshots/${id}`, { method: 'DELETE' }),
   detectBubble: (id: number) =>
     request<BubbleDetectResponse>(`/snapshots/${id}/detect-bubble`, { method: 'POST' }),
@@ -82,7 +91,7 @@ export const snapshotsApi = {
   upload: (blob: Blob) => {
     const formData = new FormData()
     formData.append('file', blob, 'snapshot.png')
-    return request<{ image_path: string }>('/snapshots/upload', {
+    return request<{ image_path: string; thumbnail_path?: string }>('/snapshots/upload', {
       method: 'POST',
       body: formData,
     })
@@ -91,9 +100,9 @@ export const snapshotsApi = {
 
 // ─── Albums ─────────────────────────────────────────────────────
 export const albumsApi = {
-  list: () => request('/albums'),
-  get: (id: number) => request(`/albums/${id}`),
-  create: (data: unknown) => request('/albums', { method: 'POST', body: JSON.stringify(data) }),
+  list: () => request<Album[]>('/albums'),
+  get: (id: number) => request<Album>(`/albums/${id}`),
+  create: (data: unknown) => request<Album>('/albums', { method: 'POST', body: JSON.stringify(data) }),
   updateOrder: (id: number, snapshot_ids: number[]) =>
     request(`/albums/${id}/order`, { method: 'PUT', body: JSON.stringify({ snapshot_ids }) }),
   delete: (id: number) => request('/albums/' + id, { method: 'DELETE' }),
@@ -102,6 +111,7 @@ export const albumsApi = {
   addItems: (id: number, snapshot_ids: number[]) =>
     request(`/albums/${id}/items`, { method: 'POST', body: JSON.stringify({ snapshot_ids }) }),
 }
+
 
 // ─── LoRAs ──────────────────────────────────────────────────────
 export const lorasApi = {
@@ -264,4 +274,24 @@ export const comfyApi = {
   getObjectInfo: (classType: string) =>
     request<ComfyObjectInfo>(`/comfy/object-info/${encodeURIComponent(classType)}`),
 }
+
+// ─── Speech Bubble Presets ───────────────────────────────────────
+export const speechBubblePresetsApi = {
+  list: () => request<SpeechBubblePreset[]>('/speech-bubble-presets'),
+  create: (data: SpeechBubblePresetCreate) =>
+    request<SpeechBubblePreset>('/speech-bubble-presets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: number, data: SpeechBubblePresetUpdate) =>
+    request<SpeechBubblePreset>(`/speech-bubble-presets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: number) =>
+    request<void>(`/speech-bubble-presets/${id}`, {
+      method: 'DELETE',
+    }),
+}
+
 

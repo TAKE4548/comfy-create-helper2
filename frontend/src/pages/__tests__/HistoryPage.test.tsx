@@ -3,6 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoryPage } from '../HistoryPage'
 import { albumsApi, snapshotsApi, workflowsApi, lorasApi, tagSetsApi } from '../../api/client'
+import type { Album } from '../../api/types'
+
 
 vi.mock('../../api/client', () => ({
   snapshotsApi: {
@@ -54,7 +56,8 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
         order: 0,
       }
     ]
-  }
+  } as unknown as Album
+
 
   beforeEach(() => {
     vi.clearAllMocks()

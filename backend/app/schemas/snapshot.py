@@ -61,8 +61,11 @@ class SnapshotRead(BaseModel):
 
 
 class SnapshotUpdate(BaseModel):
-    lora_ids: list[int] = []
-    tag_set_ids: list[int] = []
+    lora_ids: Optional[list[int]] = None
+    tag_set_ids: Optional[list[int]] = None
+    image_path: Optional[str] = None
+    thumbnail_path: Optional[str] = None
+    params: Optional[dict[str, Any]] = None
 
 
 

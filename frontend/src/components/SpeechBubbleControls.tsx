@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { SpeechBubble, BubbleShapeType, TextOrientation } from '../types/speechBubble'
-import type { ServerFont } from '../api/types'
+import type { ServerFont, SpeechBubblePreset } from '../api/types'
+import { speechBubblePresetsApi } from '../api/client'
 import { calculateFitBubbleDimensions } from '../utils/speechBubbleRenderer'
 
 export interface SpeechBubbleControlsProps {
@@ -74,6 +75,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   onGenerateDraft,
 }) => {
   const [recentColors, setRecentColors] = useState<string[]>([])
+  const [presets, setPresets] = useState<SpeechBubblePreset[]>([])
+  const [isSavingPreset, setIsSavingPreset] = useState(false)
+  const [newPresetName, setNewPresetName] = useState('')
+  const [showAddPresetInput, setShowAddPresetInput] = useState(false)
 
   useEffect(() => {
     try {
@@ -86,6 +91,20 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     }
   }, [])
 
+  useEffect(() => {
+    let mounted = true
+    speechBubblePresetsApi.list()
+      .then((data) => {
+        if (mounted) setPresets(data)
+      })
+      .catch((err) => {
+        console.error('Failed to load speech bubble presets', err)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const addRecentColor = (color: string) => {
     if (!color) return
     try {
@@ -94,6 +113,77 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
       localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(updated))
     } catch {
       // ignore storage errors
+    }
+  }
+
+  const handleApplyPreset = (preset: SpeechBubblePreset) => {
+    onUpdate({
+      shape: preset.shape,
+      orientation: preset.orientation,
+      fontFamily: preset.font_family,
+      fontSize: preset.font_size,
+      textColor: preset.text_color,
+      backgroundColor: preset.background_color,
+      borderColor: preset.border_color,
+      borderWidth: preset.border_width,
+    })
+  }
+
+  const handleCreatePreset = async () => {
+    if (!newPresetName.trim() || !bubble) return
+    setIsSavingPreset(true)
+    try {
+      const created = await speechBubblePresetsApi.create({
+        name: newPresetName.trim(),
+        shape: bubble.shape,
+        orientation: bubble.orientation,
+        font_family: bubble.fontFamily,
+        font_size: bubble.fontSize || 0,
+        text_color: bubble.textColor,
+        background_color: bubble.backgroundColor,
+        border_color: bubble.borderColor,
+        border_width: bubble.borderWidth,
+        sort_order: presets.length,
+      })
+      setPresets((prev) => [...prev, created])
+      setNewPresetName('')
+      setShowAddPresetInput(false)
+    } catch (err: any) {
+      alert('プリセットの保存に失敗しました: ' + (err.message || 'Error'))
+    } finally {
+      setIsSavingPreset(false)
+    }
+  }
+
+  const handleOverwritePreset = async (preset: SpeechBubblePreset, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!bubble) return
+    if (!window.confirm(`プリセット「${preset.name}」を現在の装飾設定で上書き保存しますか？`)) return
+    try {
+      const updated = await speechBubblePresetsApi.update(preset.id, {
+        shape: bubble.shape,
+        orientation: bubble.orientation,
+        font_family: bubble.fontFamily,
+        font_size: bubble.fontSize || 0,
+        text_color: bubble.textColor,
+        background_color: bubble.backgroundColor,
+        border_color: bubble.borderColor,
+        border_width: bubble.borderWidth,
+      })
+      setPresets((prev) => prev.map((p) => (p.id === preset.id ? updated : p)))
+    } catch (err: any) {
+      alert('プリセットの更新に失敗しました: ' + (err.message || 'Error'))
+    }
+  }
+
+  const handleDeletePreset = async (preset: SpeechBubblePreset, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!window.confirm(`プリセット「${preset.name}」を削除しますか？`)) return
+    try {
+      await speechBubblePresetsApi.delete(preset.id)
+      setPresets((prev) => prev.filter((p) => p.id !== preset.id))
+    } catch (err: any) {
+      alert('プリセットの削除に失敗しました: ' + (err.message || 'Error'))
     }
   }
 
@@ -164,6 +254,113 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           className="w-full p-2 border border-[rgba(255,255,255,0.12)] rounded bg-[#18181C] text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 text-xs"
         />
       </div>
+
+      {/* 修飾プリセット */}
+      <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="speech-bubble-presets-section">
+        <div className="flex items-center justify-between">
+          <label className="font-medium text-xs text-zinc-200">修飾プリセット</label>
+          <button
+            type="button"
+            onClick={() => setShowAddPresetInput((prev) => !prev)}
+            className="text-[11px] px-2 py-0.5 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 rounded border border-blue-700/40 transition-colors"
+          >
+            {showAddPresetInput ? '閉じる' : '＋ プリセット登録'}
+          </button>
+        </div>
+
+        {/* 新規プリセット登録インラインフォーム */}
+        {showAddPresetInput && (
+          <div className="p-2 bg-[#18181C] rounded border border-[rgba(255,255,255,0.12)] space-y-2">
+            <input
+              type="text"
+              placeholder="プリセット名を入力..."
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+              className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none focus:border-blue-500"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleCreatePreset()
+                }
+              }}
+            />
+            <div className="flex justify-end space-x-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddPresetInput(false)
+                  setNewPresetName('')
+                }}
+                className="px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 rounded"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={!newPresetName.trim() || isSavingPreset}
+                onClick={handleCreatePreset}
+                className="px-2.5 py-0.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded font-medium disabled:opacity-50 transition-colors"
+              >
+                {isSavingPreset ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* プリセット一覧 */}
+        <div className="flex flex-wrap gap-1.5">
+          {presets.length === 0 ? (
+            <span className="text-[11px] text-zinc-500">登録済みのプリセットはありません</span>
+          ) : (
+            presets.map((p) => (
+              <div
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleApplyPreset(p)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleApplyPreset(p)
+                  }
+                }}
+                className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
+                title={`${p.name} (クリックで適用)`}
+              >
+                {/* プレビュードット（背景色＋枠線色） */}
+                <span
+                  className="w-3 h-3 rounded-full border flex-shrink-0"
+                  style={{
+                    backgroundColor: p.background_color,
+                    borderColor: p.border_color,
+                    borderWidth: Math.min(2, Math.max(1, p.border_width)),
+                  }}
+                />
+                <span className="truncate max-w-[100px]">{p.name}</span>
+                {/* 上書き保存ボタン */}
+                <button
+                  type="button"
+                  title="現在の修飾で上書き"
+                  onClick={(e) => handleOverwritePreset(p, e)}
+                  className="opacity-0 group-hover:opacity-100 hover:text-blue-400 p-0.5 text-[10px] transition-opacity"
+                >
+                  💾
+                </button>
+                {/* 削除ボタン */}
+                <button
+                  type="button"
+                  title="プリセットを削除"
+                  onClick={(e) => handleDeletePreset(p, e)}
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 text-[10px] transition-opacity"
+                >
+                  ✕
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
 
       {/* 形状選択 */}
       <div>

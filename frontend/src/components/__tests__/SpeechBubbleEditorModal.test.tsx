@@ -1,9 +1,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SpeechBubbleEditorModal } from '../SpeechBubbleEditorModal'
-import { snapshotsApi, llmPromptsApi, fontsApi } from '../../api/client'
+import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../../api/client'
 import type { SnapshotSummary } from '../../api/types'
 import { LAST_USED_STYLE_STORAGE_KEY } from '../../types/speechBubble'
+import { LS_KEYS } from '../../utils/localStorageKeys'
 
 vi.mock('../../api/client', () => ({
   snapshotsApi: {
@@ -14,6 +15,22 @@ vi.mock('../../api/client', () => ({
     upload: vi.fn(),
     get: vi.fn(),
     create: vi.fn(),
+    patch: vi.fn(),
+  },
+  workflowsApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+  lorasApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+  tagSetsApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+  albumsApi: {
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue({ items: [] }),
+    create: vi.fn().mockResolvedValue({ id: 10, name: 'New Album' }),
+    addItems: vi.fn().mockResolvedValue(undefined),
   },
   llmPromptsApi: {
     speechDraft: vi.fn(),
@@ -21,7 +38,14 @@ vi.mock('../../api/client', () => ({
   fontsApi: {
     list: vi.fn(),
   },
+  speechBubblePresetsApi: {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({ id: 1, name: 'Default', shape: 'oval', orientation: 'vertical', font_family: 'sans-serif', font_size: 0, text_color: 'rgba(0,0,0,1)', background_color: 'rgba(255,255,255,1)', border_color: 'rgba(0,0,0,1)', border_width: 2, sort_order: 0, created_at: '' }),
+    update: vi.fn().mockResolvedValue({ id: 1, name: 'Default', shape: 'oval', orientation: 'vertical', font_family: 'sans-serif', font_size: 0, text_color: 'rgba(0,0,0,1)', background_color: 'rgba(255,255,255,1)', border_color: 'rgba(0,0,0,1)', border_width: 2, sort_order: 0, created_at: '' }),
+    delete: vi.fn().mockResolvedValue(undefined),
+  },
 }))
+
 
 describe('SpeechBubbleEditorModal', () => {
   const mockSnapshot: SnapshotSummary = {
@@ -441,8 +465,12 @@ describe('SpeechBubbleEditorModal', () => {
     fireEvent.click(replaceBtn)
 
     // Verify modal appears
-    expect(await screen.findByText('生成履歴からベース画像を差し替え')).toBeDefined()
-    expect(snapshotsApi.list).toHaveBeenCalledWith({ workflow_id: 1 })
+    expect(await screen.findByRole('heading', { name: 'ベース画像を差し替え' })).toBeDefined()
+    expect(snapshotsApi.list).toHaveBeenCalledWith({
+      workflow_id: 1,
+      lora_id: undefined,
+      tag_set_id: undefined,
+    })
 
     // Select snapshot #2
     const snap2Btn = screen.getByText('#2')
@@ -450,13 +478,13 @@ describe('SpeechBubbleEditorModal', () => {
 
     // Modal should close
     await waitFor(() => {
-      expect(screen.queryByText('生成履歴からベース画像を差し替え')).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'ベース画像を差し替え' })).toBeNull()
     })
   })
 
   it('saves image composite and includes speech_bubbles metadata, base_snapshot_id, and base_image_path', async () => {
     // Mock Image to trigger onload synchronously
-    const OriginalImage = global.Image
+    const OriginalImage = window.Image
     class MockLoadedImage {
       src = ''
       naturalWidth = 500
@@ -468,7 +496,7 @@ describe('SpeechBubbleEditorModal', () => {
         }, 0)
       }
     }
-    global.Image = MockLoadedImage as any
+    window.Image = MockLoadedImage as any
 
     try {
       render(
@@ -489,6 +517,9 @@ describe('SpeechBubbleEditorModal', () => {
         expect(saveBtn).not.toBeDisabled()
       })
 
+      const newAlbumInput = screen.getByTestId('new-album-name-input')
+      fireEvent.change(newAlbumInput, { target: { value: 'Test Album' } })
+
       fireEvent.click(saveBtn)
 
       await waitFor(() => {
@@ -508,8 +539,203 @@ describe('SpeechBubbleEditorModal', () => {
         expect(mockOnClose).toHaveBeenCalled()
       })
     } finally {
-      global.Image = OriginalImage
+      window.Image = OriginalImage
     }
   })
+
+  it('handles saveMode overwrite by calling snapshotsApi.patch', async () => {
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      render(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      // Switch save mode to overwrite
+      const overwriteBtn = screen.getByTestId('save-mode-overwrite')
+      fireEvent.click(overwriteBtn)
+
+      // Set album select to none
+      const albumSelect = screen.getByTestId('save-album-select')
+      fireEvent.change(albumSelect, { target: { value: '' } })
+
+      const saveBtn = screen.getByTestId('speech-bubble-save-btn')
+      await waitFor(() => {
+        expect(saveBtn).not.toBeDisabled()
+      })
+      expect(saveBtn.textContent).toContain('上書き保存')
+
+      fireEvent.click(saveBtn)
+
+      await waitFor(() => {
+        expect(snapshotsApi.upload).toHaveBeenCalled()
+        expect(snapshotsApi.patch).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({
+            image_path: '/uploads/new-snap.png',
+            params: expect.objectContaining({
+              speech_bubbles: expect.any(Array),
+            }),
+          })
+        )
+        expect(snapshotsApi.create).not.toHaveBeenCalled()
+        expect(mockOnSaved).toHaveBeenCalled()
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
+
+  it('creates new album and sets LS_KEYS.LAST_SAVE_ALBUM_ID on save', async () => {
+    localStorage.clear()
+    vi.mocked(albumsApi.create).mockResolvedValueOnce({ id: 99, name: 'My Comic Album' } as any)
+    vi.mocked(snapshotsApi.create).mockResolvedValueOnce({ id: 55 } as any)
+
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      render(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      const newAlbumInput = screen.getByTestId('new-album-name-input')
+      fireEvent.change(newAlbumInput, { target: { value: 'My Comic Album' } })
+
+      const saveBtn = screen.getByTestId('speech-bubble-save-btn')
+      await waitFor(() => {
+        expect(saveBtn).not.toBeDisabled()
+      })
+
+      fireEvent.click(saveBtn)
+
+      await waitFor(() => {
+        expect(albumsApi.create).toHaveBeenCalledWith({
+          name: 'My Comic Album',
+          snapshot_ids: [55],
+        })
+        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)).toBe('99')
+        expect(mockOnSaved).toHaveBeenCalled()
+      })
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
+
+  it('adds snapshot to existing selected album and updates localStorage on save', async () => {
+    vi.mocked(albumsApi.list).mockResolvedValueOnce([
+      { id: 42, name: 'Chapter 1', items: [] } as any,
+    ])
+    vi.mocked(snapshotsApi.create).mockResolvedValueOnce({ id: 77 } as any)
+
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      render(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(albumsApi.list).toHaveBeenCalled()
+      })
+
+      const albumSelect = screen.getByTestId('save-album-select')
+      fireEvent.change(albumSelect, { target: { value: '42' } })
+
+      const saveBtn = screen.getByTestId('speech-bubble-save-btn')
+      await waitFor(() => {
+        expect(saveBtn).not.toBeDisabled()
+      })
+
+      fireEvent.click(saveBtn)
+
+      await waitFor(() => {
+        expect(albumsApi.addItems).toHaveBeenCalledWith(42, [77])
+        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)).toBe('42')
+        expect(mockOnSaved).toHaveBeenCalled()
+      })
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
+
+  it('prioritizes LAST_SAVE_ALBUM_ID from localStorage over initialAlbumId, with fallback if not found in list', async () => {
+    localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, '999') // Non-existent in fetched album list
+    vi.mocked(albumsApi.list).mockResolvedValueOnce([
+      { id: 200, name: 'Initial Album', items: [] } as any,
+    ])
+
+    render(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        initialAlbumId={200}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    // After albums load, since 999 is not in list, fallback to initialAlbumId (200)
+    await waitFor(() => {
+      const albumSelect = screen.getByTestId('save-album-select') as HTMLSelectElement
+      expect(albumSelect.value).toBe('200')
+    })
+  })
+
 })
 

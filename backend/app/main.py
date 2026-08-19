@@ -17,6 +17,7 @@ from app.routers import (
     loras, tag_sets, categories, audit, llm_prompts,
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
+    speech_bubble_presets,
 )
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ def run_migrations():
     import sqlalchemy as sa
     with engine.begin() as conn:
         inspector = sa.inspect(conn)
+
         
         # Add default_applied_assets to workflows if not exists
         if "workflows" in inspector.get_table_names():
@@ -219,6 +221,26 @@ def run_migrations():
             """))
             logger.info("Migrated: Created 'param_type_masters' table.")
 
+        # Create speech_bubble_presets table if not exists
+        if "speech_bubble_presets" not in inspector.get_table_names():
+            conn.execute(sa.text("""
+                CREATE TABLE speech_bubble_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR NOT NULL UNIQUE,
+                    shape VARCHAR NOT NULL DEFAULT 'oval',
+                    orientation VARCHAR NOT NULL DEFAULT 'vertical',
+                    font_family VARCHAR NOT NULL DEFAULT 'sans-serif',
+                    font_size INTEGER NOT NULL DEFAULT 0,
+                    text_color VARCHAR NOT NULL DEFAULT 'rgba(0, 0, 0, 1)',
+                    background_color VARCHAR NOT NULL DEFAULT 'rgba(255, 255, 255, 0.95)',
+                    border_color VARCHAR NOT NULL DEFAULT 'rgba(0, 0, 0, 1)',
+                    border_width INTEGER NOT NULL DEFAULT 2,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            logger.info("Migrated: Created 'speech_bubble_presets' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -271,6 +293,8 @@ app.include_router(fonts.router)
 app.include_router(param_type_masters.router)
 app.include_router(comfy.router)
 app.include_router(param_sync_groups.router)
+app.include_router(speech_bubble_presets.router)
+
 
 
 class CachedStaticFiles(StaticFiles):

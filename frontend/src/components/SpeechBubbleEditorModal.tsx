@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { X, Loader2, Save, Image as ImageIcon } from 'lucide-react'
-import { snapshotsApi, llmPromptsApi, fontsApi } from '../api/client'
-import type { SnapshotSummary, BubbleCandidate, ServerFont } from '../api/types'
+import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../api/client'
+import type { SnapshotSummary, BubbleCandidate, ServerFont, Album } from '../api/types'
 import type { SpeechBubble, BubbleStyleConfig } from '../types/speechBubble'
 import {
   DEFAULT_BUBBLE_BOUNDS,
@@ -11,18 +11,21 @@ import {
 } from '../types/speechBubble'
 import { drawSpeechBubble } from '../utils/speechBubbleRenderer'
 import { SpeechBubbleControls } from './SpeechBubbleControls'
-import { BaseImageSelectModal } from './BaseImageSelectModal'
+import { BaseImageSelectModal, type BaseImageOption } from './BaseImageSelectModal'
+import { LS_KEYS } from '../utils/localStorageKeys'
 
 export type MobileTab = 'preview' | 'controls'
 
 export interface SpeechBubbleEditorModalProps {
   snapshot: SnapshotSummary
+  initialAlbumId?: number
   onClose: () => void
   onSaved: () => void
 }
 
 export function SpeechBubbleEditorModal({
   snapshot,
+  initialAlbumId,
   onClose,
   onSaved,
 }: SpeechBubbleEditorModalProps) {
@@ -39,8 +42,6 @@ export function SpeechBubbleEditorModal({
   const [currentSourceSnapshotId, setCurrentSourceSnapshotId] = useState<number>(snapshot.id)
   const [currentImageUrl, setCurrentImageUrl] = useState<string>(snapshot.image_path || '')
   const [isImageSelectOpen, setIsImageSelectOpen] = useState<boolean>(false)
-
-  // Debug candidates states
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [candidates, setCandidates] = useState<BubbleCandidate[]>([])
   const [isDebugLoading, setIsDebugLoading] = useState(false)
@@ -49,19 +50,50 @@ export function SpeechBubbleEditorModal({
   const [sortBy, setSortBy] = useState<'area_desc' | 'area_asc' | 'brightness_desc' | 'distance_center' | 'id'>('area_desc')
   const [lastUsedROI, setLastUsedROI] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
+  // Save mode and album settings
+  const [saveMode, setSaveMode] = useState<'new' | 'overwrite'>('new')
+  const [targetAlbumId, setTargetAlbumId] = useState<number | 'new' | ''>(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)
+      if (saved && !isNaN(Number(saved)) && Number(saved) > 0) {
+        return Number(saved)
+      }
+    } catch {}
+    if (initialAlbumId !== undefined) return initialAlbumId
+    return 'new'
+  })
+  const [newAlbumName, setNewAlbumName] = useState('')
+  const [albums, setAlbums] = useState<Album[]>([])
+
+  useEffect(() => {
+    albumsApi.list().then((list) => {
+      setAlbums(list || [])
+      if (typeof targetAlbumId === 'number' && list) {
+        const exists = list.some((a) => a.id === targetAlbumId)
+        if (!exists) {
+          if (initialAlbumId !== undefined && list.some((a) => a.id === initialAlbumId)) {
+            setTargetAlbumId(initialAlbumId)
+          } else {
+            setTargetAlbumId('new')
+          }
+        }
+      }
+    }).catch((err) => {
+      console.error('Failed to load albums for save dropdown:', err)
+    })
+  }, [])
+
+
   // Canvas interaction state
   const [draggingState, setDraggingState] = useState<{
     bubbleId: string
-    type: 'body' | 'tail' | 'nw' | 'ne' | 'se' | 'sw'
+    type: 'bubble' | 'tail' | 'resize'
+    handle?: 'nw' | 'ne' | 'se' | 'sw'
     startX: number
     startY: number
-    origX: number
-    origY: number
-    origW: number
-    origH: number
-    origTailX: number
-    origTailY: number
+    initialBubble: SpeechBubble
   } | null>(null)
+
 
   const [cursorStyle, setCursorStyle] = useState<string>('default')
   const [isDrawingROI, setIsDrawingROI] = useState(false)
@@ -305,13 +337,14 @@ export function SpeechBubbleEditorModal({
     }
   }, [snapshot.id])
 
-  const handleSelectNewBaseImage = (selectedSnapshot: SnapshotSummary) => {
+  const handleSelectNewBaseImage = (selectedSnapshot: BaseImageOption) => {
     if (selectedSnapshot.image_path) {
       setCurrentSourceSnapshotId(selectedSnapshot.id)
       setCurrentImageUrl(selectedSnapshot.image_path)
       setIsImageSelectOpen(false)
     }
   }
+
 
   // Delete key handler
   useEffect(() => {
@@ -765,6 +798,10 @@ export function SpeechBubbleEditorModal({
 
   const handleSave = async () => {
     if (!imageObj || bubbles.length === 0) return
+    if (targetAlbumId === 'new' && !newAlbumName.trim()) {
+      alert('新規アルバム名を入力してください')
+      return
+    }
 
     setIsSaving(true)
     try {
@@ -795,12 +832,43 @@ export function SpeechBubbleEditorModal({
         base_image_path: currentImageUrl,
       }
 
-      await snapshotsApi.create({
-        workflow_id: parentSnapshot.workflow_id,
-        image_path: uploadRes.image_path,
-        params: updatedParams,
-        source_snapshot_id: parentSnapshot.id,
-      })
+      let savedSnapshotId: number
+
+      if (saveMode === 'overwrite') {
+        await snapshotsApi.patch(snapshot.id, {
+          image_path: uploadRes.image_path,
+          thumbnail_path: uploadRes.thumbnail_path,
+          params: updatedParams,
+        })
+        savedSnapshotId = snapshot.id
+      } else {
+        const created = await snapshotsApi.create({
+          workflow_id: parentSnapshot.workflow_id,
+          image_path: uploadRes.image_path,
+          params: updatedParams,
+          source_snapshot_id: parentSnapshot.id,
+        })
+        savedSnapshotId = created.id
+      }
+
+      if (targetAlbumId === 'new') {
+        const createdAlbum = await albumsApi.create({
+          name: newAlbumName.trim(),
+          snapshot_ids: [savedSnapshotId],
+        })
+        try {
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, String(createdAlbum.id))
+        } catch {}
+      } else if (typeof targetAlbumId === 'number') {
+        await albumsApi.addItems(targetAlbumId, [savedSnapshotId])
+        try {
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, String(targetAlbumId))
+        } catch {}
+      } else {
+        try {
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, '')
+        } catch {}
+      }
 
       onSaved()
       onClose()
@@ -1138,24 +1206,93 @@ export function SpeechBubbleEditorModal({
               </div>
             </div>
 
-            {/* Footer actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[rgba(255,255,255,0.08)]">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-semibold text-zinc-400 hover:text-white bg-transparent hover:bg-white/5 border border-zinc-800 hover:border-zinc-700 rounded-lg transition-all"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving || bubbles.length === 0}
-                className="flex items-center justify-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-accent-green hover:bg-accent-green-hover rounded-lg transition-all disabled:opacity-50"
-              >
-                {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                保存して履歴へ追加 ({bubbles.length})
-              </button>
+            {/* Footer actions & save settings */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-[rgba(255,255,255,0.08)]">
+              {/* Save Options */}
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                <div className="flex items-center gap-2 bg-white/5 p-1 rounded-lg border border-zinc-800">
+                  <label className="text-zinc-400 font-medium px-1">保存方法:</label>
+                  <button
+                    type="button"
+                    data-testid="save-mode-new"
+                    onClick={() => setSaveMode('new')}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      saveMode === 'new'
+                        ? 'bg-accent-green text-white font-medium'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    新規保存
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="save-mode-overwrite"
+                    onClick={() => setSaveMode('overwrite')}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      saveMode === 'overwrite'
+                        ? 'bg-accent-green text-white font-medium'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    上書き保存
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-zinc-400 font-medium">保存先アルバム:</label>
+                  <select
+                    data-testid="save-album-select"
+                    value={targetAlbumId}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'new') setTargetAlbumId('new')
+                      else if (val === '') setTargetAlbumId('')
+                      else setTargetAlbumId(Number(val))
+                    }}
+                    className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green"
+                  >
+                    <option value="new">+ 新規アルバムを作成</option>
+                    <option value="">なし (アルバムに追加しない)</option>
+                    {albums.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.items?.length ?? 0}件)
+                      </option>
+                    ))}
+                  </select>
+
+                  {targetAlbumId === 'new' && (
+                    <input
+                      type="text"
+                      data-testid="new-album-name-input"
+                      value={newAlbumName}
+                      onChange={(e) => setNewAlbumName(e.target.value)}
+                      placeholder="新規アルバム名を入力"
+                      className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-semibold text-zinc-400 hover:text-white bg-transparent hover:bg-white/5 border border-zinc-800 hover:border-zinc-700 rounded-lg transition-all"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving || bubbles.length === 0}
+                  data-testid="speech-bubble-save-btn"
+                  className="flex items-center justify-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-accent-green hover:bg-accent-green-hover rounded-lg transition-all disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                  {saveMode === 'overwrite' ? '上書き保存' : '新規保存して履歴へ追加'} ({bubbles.length})
+                </button>
+              </div>
             </div>
           </div>
         </div>

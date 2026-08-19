@@ -196,23 +196,12 @@ class SnapshotService:
         if not s:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
 
-        # Validate that lora_ids and tag_set_ids exist
-        for lora_id in payload.lora_ids:
-            exists = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
-            if not exists:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lora with ID {lora_id} does not exist")
-
-        for tag_set_id in payload.tag_set_ids:
-            exists = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
-            if not exists:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"TagSet with ID {tag_set_id} does not exist")
-
-        try:
-            # Delete existing lora/tag_set relations
+        if payload.lora_ids is not None:
+            for lora_id in payload.lora_ids:
+                exists = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
+                if not exists:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lora with ID {lora_id} does not exist")
             db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).delete()
-            db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
-
-            # Create new relations (重複排除してから登録)
             for lora_id in set(payload.lora_ids):
                 db.add(models.SnapshotLora(
                     snapshot_id=snapshot_id,
@@ -221,6 +210,12 @@ class SnapshotService:
                     role="positive"
                 ))
 
+        if payload.tag_set_ids is not None:
+            for tag_set_id in payload.tag_set_ids:
+                exists = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
+                if not exists:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"TagSet with ID {tag_set_id} does not exist")
+            db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
             for tag_set_id in set(payload.tag_set_ids):
                 db.add(models.SnapshotTagSet(
                     snapshot_id=snapshot_id,
@@ -228,6 +223,14 @@ class SnapshotService:
                     role="positive"
                 ))
 
+        if payload.image_path is not None:
+            s.image_path = payload.image_path
+        if payload.thumbnail_path is not None:
+            s.thumbnail_path = payload.thumbnail_path
+        if payload.params is not None:
+            s.params = json.dumps(payload.params)
+
+        try:
             db.commit()
             db.refresh(s)
             return s

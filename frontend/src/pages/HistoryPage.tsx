@@ -1108,6 +1108,7 @@ export function HistoryPage() {
       {selectedForSpeech && (
         <SpeechBubbleEditorModal
           snapshot={selectedForSpeech}
+          initialAlbumId={selectedAlbumId ?? undefined}
           onClose={() => setSelectedForSpeech(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['snapshots'] })

@@ -108,6 +108,13 @@ from app.schemas.param_sync_groups import (
     ParamSyncGroupRead,
 )
 
+from app.schemas.speech_bubble_preset import (
+    SpeechBubblePresetBase,
+    SpeechBubblePresetCreate,
+    SpeechBubblePresetUpdate,
+    SpeechBubblePresetRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -141,5 +148,8 @@ __all__ = [
     "ParamTypeMasterBase", "ParamTypeMasterCreate", "ParamTypeMasterRead",
     # ParamSyncGroup
     "ParamSyncGroupBase", "ParamSyncGroupCreate", "ParamSyncGroupUpdate", "ParamSyncGroupRead",
+    # SpeechBubblePreset
+    "SpeechBubblePresetBase", "SpeechBubblePresetCreate", "SpeechBubblePresetUpdate", "SpeechBubblePresetRead",
 ]
+
 
