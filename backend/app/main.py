@@ -205,6 +205,18 @@ def run_migrations():
                 """))
                 logger.info("Migrated: Added 'sort_order' column to 'tagset_categories' table.")
 
+        # Add sort_order to albums if not exists
+        if "albums" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("albums")]
+            if "sort_order" not in columns:
+                conn.execute(sa.text("ALTER TABLE albums ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text("""
+                    UPDATE albums SET sort_order = (
+                        SELECT COUNT(*) FROM albums AS a2 WHERE a2.id <= albums.id
+                    ) - 1
+                """))
+                logger.info("Migrated: Added 'sort_order' column to 'albums' table.")
+
         # Create param_type_masters table if not exists
         if "param_type_masters" not in inspector.get_table_names():
             conn.execute(sa.text("""

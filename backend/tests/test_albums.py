@@ -130,3 +130,62 @@ class TestAlbumsAPI(unittest.TestCase):
         data2 = response2.json()
         self.assertEqual(len(data2["items"]), 3)
 
+    def test_list_and_create_album_sort_order(self):
+        # アルバム作成: 自動的に sort_order が割り振られることを検証
+        res1 = self.client.post("/api/albums", json={"name": "Album A"})
+        self.assertEqual(res1.status_code, 201)
+        a1_data = res1.json()
+        self.assertEqual(a1_data["sort_order"], 0)
+
+        res2 = self.client.post("/api/albums", json={"name": "Album B"})
+        self.assertEqual(res2.status_code, 201)
+        a2_data = res2.json()
+        self.assertEqual(a2_data["sort_order"], 1)
+
+        # 一覧取得: sort_order 昇順で返されること
+        list_res = self.client.get("/api/albums")
+        self.assertEqual(list_res.status_code, 200)
+        albums = list_res.json()
+        self.assertEqual(len(albums), 2)
+        self.assertEqual(albums[0]["name"], "Album A")
+        self.assertEqual(albums[1]["name"], "Album B")
+
+    def test_reorder_albums(self):
+        # 3つのアルバム作成
+        a1 = self.client.post("/api/albums", json={"name": "A"}).json()
+        a2 = self.client.post("/api/albums", json={"name": "B"}).json()
+        a3 = self.client.post("/api/albums", json={"name": "C"}).json()
+
+        # 並び替え: C (a3), A (a1), B (a2)
+        reorder_payload = {"ordered_ids": [a3["id"], a1["id"], a2["id"]]}
+        reorder_res = self.client.put("/api/albums/reorder", json=reorder_payload)
+        self.assertEqual(reorder_res.status_code, 204)
+
+        # 一覧取得で順序が反映されていること
+        list_res = self.client.get("/api/albums")
+        albums = list_res.json()
+        self.assertEqual([a["name"] for a in albums], ["C", "A", "B"])
+        self.assertEqual([a["sort_order"] for a in albums], [0, 1, 2])
+
+    def test_update_album_rename_and_sort_order(self):
+        a1 = self.client.post("/api/albums", json={"name": "Original Name"}).json()
+        a2 = self.client.post("/api/albums", json={"name": "Other Name"}).json()
+
+        # リネーム
+        update_res = self.client.put(f"/api/albums/{a1['id']}", json={"name": "Renamed Album"})
+        self.assertEqual(update_res.status_code, 200)
+        updated = update_res.json()
+        self.assertEqual(updated["name"], "Renamed Album")
+
+        # 空白文字のみの名前への変更は 400 エラー
+        empty_res = self.client.put(f"/api/albums/{a1['id']}", json={"name": "   "})
+        self.assertEqual(empty_res.status_code, 400)
+
+        # 既存の名前への重複変更は 400 エラー
+        dup_res = self.client.put(f"/api/albums/{a1['id']}", json={"name": "Other Name"})
+        self.assertEqual(dup_res.status_code, 400)
+
+        # 存在しないアルバムの更新は 404 エラー
+        not_found_res = self.client.put("/api/albums/99999", json={"name": "New"})
+        self.assertEqual(not_found_res.status_code, 404)
+

@@ -125,7 +125,7 @@ export function AddSnapshotToAlbumModal({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative max-h-full lg:max-h-[85vh] overflow-y-auto"
+        className="w-full max-w-lg bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative max-h-full lg:max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -147,17 +147,17 @@ export function AddSnapshotToAlbumModal({
               type="button"
               id="album-selector-trigger"
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-300 flex items-center justify-between hover:border-zinc-700 transition-all text-left focus:outline-none"
+              className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3.5 py-2.5 text-sm text-zinc-300 flex items-center justify-between hover:border-zinc-700 transition-all text-left focus:outline-none"
             >
               <span className="truncate flex items-center gap-2">
-                <BookOpen size={14} className="text-zinc-500 flex-shrink-0" />
+                <BookOpen size={15} className="text-zinc-500 flex-shrink-0" />
                 {getSelectorLabel()}
               </span>
               <ChevronDown size={16} className="text-zinc-500 flex-shrink-0" />
             </button>
 
             {isDropdownOpen && (
-              <div className="absolute top-[calc(100%+4px)] left-0 w-full z-50 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl overflow-hidden flex flex-col max-h-60 animate-fade-in">
+              <div className="absolute top-[calc(100%+4px)] left-0 w-full z-50 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl overflow-hidden flex flex-col max-h-96 animate-fade-in">
                 {/* Search Box */}
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
                   <Search size={14} className="text-zinc-500 flex-shrink-0" />
@@ -172,7 +172,7 @@ export function AddSnapshotToAlbumModal({
                   />
                 </div>
 
-                <div className="overflow-y-auto custom-scrollbar p-1 space-y-0.5">
+                <div className="overflow-y-auto custom-scrollbar p-1.5 space-y-1 max-h-80">
                   {/* None Option */}
                   {allowNone && (
                     <button

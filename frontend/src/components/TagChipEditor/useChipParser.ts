@@ -1,10 +1,23 @@
 import { generateChipId } from './idGenerator';
 
+export interface ParsedTagWeight {
+  baseText: string;
+  weight: number | null;
+}
+
 export type TagChip = {
   id: string;
   text: string;
   enabled: boolean;
 };
+
+export interface UseChipParserReturn {
+  parseToChips: (text: string) => TagChip[];
+  chipsToString: (chips: TagChip[]) => string;
+  parseTagWeight: (text: string) => ParsedTagWeight;
+  formatTagWeight: (baseText: string, weight: number | null) => string;
+  adjustWeight: (currentWeight: number | null, delta: number) => number;
+}
 
 /**
  * カンマ区切りの文字列をパースしてTagChipの配列に変換します。
@@ -34,11 +47,57 @@ export const chipsToString = (chips: TagChip[]): string => {
 };
 
 /**
+ * タグ文字列からベーステキストと強度を抽出します。
+ * 例: "(1girl:1.2)" -> { baseText: "1girl", weight: 1.2 }
+ * 例: "1girl" -> { baseText: "1girl", weight: null }
+ */
+export function parseTagWeight(text: string): ParsedTagWeight {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\((.+):([0-9.]+)\)$/);
+  if (match) {
+    const baseText = match[1].trim();
+    const weightNum = parseFloat(match[2]);
+    if (!isNaN(weightNum)) {
+      return { baseText, weight: weightNum };
+    }
+  }
+  return { baseText: trimmed, weight: null };
+}
+
+/**
+ * ベーステキストと強度からSD形式のタグ文字列を整形します。
+ * weightがnullまたは1.0の場合はベーステキストのみを返します。
+ */
+export function formatTagWeight(baseText: string, weight: number | null): string {
+  const trimmedBase = baseText.trim();
+  if (weight === null || isNaN(weight) || weight === 1) {
+    return trimmedBase;
+  }
+  const rounded = parseFloat(weight.toFixed(2));
+  if (rounded === 1) {
+    return trimmedBase;
+  }
+  return `(${trimmedBase}:${rounded})`;
+}
+
+/**
+ * 現在の強度に対してdeltaを加算・調整します（0未満にはならないよう保護）。
+ */
+export function adjustWeight(currentWeight: number | null, delta: number): number {
+  const base = currentWeight ?? 1.0;
+  const next = Math.max(0, base + delta);
+  return parseFloat(next.toFixed(2));
+}
+
+/**
  * カスタムフック形式でのエクスポート
  */
-export const useChipParser = () => {
+export const useChipParser = (): UseChipParserReturn => {
   return {
     parseToChips,
     chipsToString,
+    parseTagWeight,
+    formatTagWeight,
+    adjustWeight,
   };
 };

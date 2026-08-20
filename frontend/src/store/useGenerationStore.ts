@@ -108,6 +108,8 @@ export interface ComfyHistoryDeletePayload {
 
 export interface QueuePromptOptions {
   skipQueueFetch?: boolean;
+  signal?: AbortSignal;
+  isBatchIntermediate?: boolean;
 }
 
 export interface GenerationState {
@@ -155,6 +157,8 @@ export interface GenerationState {
   openPresetIds: (string | number)[]
   
   // ─── Batch Job State ───────────────────────────────────────────
+  isBatchSubmitting: boolean
+  setIsBatchSubmitting: (value: boolean) => void
   activeBatch: BatchJob[] | null
   setActiveBatch: (batch: BatchJob[] | null) => void
   updateBatchJobStatus: (promptId: string, status: BatchJob['status']) => void
@@ -375,6 +379,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     sets: initialSets,
     activeSetId: initialActiveSetId,
     openPresetIds: initialOpenPresetIds,
+    isBatchSubmitting: false,
+    setIsBatchSubmitting: (value) => set({ isBatchSubmitting: value }),
     activeBatch: null,
 
     // ─── Submission Abort Controller ──────────────────────────────
@@ -920,6 +926,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: workflow, client_id: get().clientId }),
+          signal: options?.signal,
         })
         if (!res.ok) {
           let errorMsg = `ComfyUI returned ${res.status}`;
@@ -938,52 +945,62 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
         const data = await res.json()
         const promptId = data.prompt_id ?? null
-        set({
-          isGenerating: true,
-          previewImage: null,
-          progress: null,
-          currentPromptId: promptId,
-          activeClientId: get().clientId,
-          currentWorkflow: workflow,
-        })
-        if (promptId) {
-          localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
-          // キャッシュ保存
-          const metaKey = `prompt-surgeon-meta-${promptId}`
-          const promptMetadata = {
-            paramValues: metadata?.paramValues ?? get().paramValues,
-            appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
-            timestamp: Date.now()
-          }
-          localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
-
-          // 古いキャッシュの自動削除 (最大200件制限) - メタデータ走査を非同期化してメインスレッドのブロックを防止
-          setTimeout(() => {
-            try {
-              const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
-              if (keys.length > 200) {
-                const items = keys.map(k => {
-                  try {
-                    const val = JSON.parse(localStorage.getItem(k) || '{}')
-                    return { key: k, timestamp: val.timestamp || 0 }
-                  } catch {
-                    return { key: k, timestamp: 0 }
-                  }
-                })
-                items.sort((a, b) => a.timestamp - b.timestamp)
-                const toDelete = items.slice(0, items.length - 200)
-                toDelete.forEach(item => localStorage.removeItem(item.key))
-              }
-            } catch (e) {
-              console.error('Failed to prune prompt metadata:', e)
+        if (options?.isBatchIntermediate) {
+          set({
+            isGenerating: true,
+            currentPromptId: promptId,
+          })
+        } else {
+          set({
+            isGenerating: true,
+            previewImage: null,
+            progress: null,
+            currentPromptId: promptId,
+            activeClientId: get().clientId,
+            currentWorkflow: workflow,
+          })
+          if (promptId) {
+            localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+            // キャッシュ保存
+            const metaKey = `prompt-surgeon-meta-${promptId}`
+            const promptMetadata = {
+              paramValues: metadata?.paramValues ?? get().paramValues,
+              appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
+              timestamp: Date.now()
             }
-          }, 0)
+            localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+
+            // 古いキャッシュの自動削除 (最大200件制限) - メタデータ走査を非同期化してメインスレッドのブロックを防止
+            setTimeout(() => {
+              try {
+                const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
+                if (keys.length > 200) {
+                  const items = keys.map(k => {
+                    try {
+                      const val = JSON.parse(localStorage.getItem(k) || '{}')
+                      return { key: k, timestamp: val.timestamp || 0 }
+                    } catch {
+                      return { key: k, timestamp: 0 }
+                    }
+                  })
+                  items.sort((a, b) => a.timestamp - b.timestamp)
+                  const toDelete = items.slice(0, items.length - 200)
+                  toDelete.forEach(item => localStorage.removeItem(item.key))
+                }
+              } catch (e) {
+                console.error('Failed to prune prompt metadata:', e)
+              }
+            }, 0)
+          }
         }
         if (!options?.skipQueueFetch) {
           await get().fetchQueue()
         }
         return promptId
       } catch (e: any) {
+        if (e?.name === 'AbortError' || options?.signal?.aborted) {
+          return null
+        }
         console.error('Failed to queue prompt:', e)
         get().setErrorToast({ message: e.message || 'Failed to queue prompt', type: 'error' });
         return null
@@ -991,6 +1008,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     cancelGeneration: async () => {
+      get().abortSubmission()
       if (!comfyUrl) return
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
@@ -1063,6 +1081,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               (job) => job.status === 'pending' || job.status === 'generating'
             )
             if (activeUnfinishedJobs.length > 0) {
+              if (get().isBatchSubmitting) return
+
               const anyUnfinishedInQueue = activeUnfinishedJobs.some(
                 (job) => activeQueueIds.has(job.promptId)
               )

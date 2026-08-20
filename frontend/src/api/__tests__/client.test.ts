@@ -287,7 +287,7 @@ describe('client.ts API client', () => {
   })
 
   describe('albumsApi', () => {
-    it('should support list, get, create, updateOrder, delete, deleteItems, addItems', async () => {
+    it('should support list, get, create, update, reorder, updateOrder, delete, deleteItems, addItems', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -306,6 +306,20 @@ describe('client.ts API client', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Album 1' }),
+      })
+
+      await albumsApi.update(1, { name: 'Renamed Album' })
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/albums/1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Renamed Album' }),
+      })
+
+      await albumsApi.reorder([3, 1, 2])
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/albums/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ordered_ids: [3, 1, 2] }),
       })
 
       await albumsApi.updateOrder(1, [10, 20])

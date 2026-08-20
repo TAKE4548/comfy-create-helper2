@@ -54,7 +54,7 @@ export function SpeechBubbleEditorModal({
   const [saveMode, setSaveMode] = useState<'new' | 'overwrite'>('new')
   const [targetAlbumId, setTargetAlbumId] = useState<number | 'new' | ''>(() => {
     try {
-      const saved = localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)
+      const saved = localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH)
       if (saved && !isNaN(Number(saved)) && Number(saved) > 0) {
         return Number(saved)
       }
@@ -857,16 +857,16 @@ export function SpeechBubbleEditorModal({
           snapshot_ids: [savedSnapshotId],
         })
         try {
-          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, String(createdAlbum.id))
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH, String(createdAlbum.id))
         } catch {}
       } else if (typeof targetAlbumId === 'number') {
         await albumsApi.addItems(targetAlbumId, [savedSnapshotId])
         try {
-          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, String(targetAlbumId))
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH, String(targetAlbumId))
         } catch {}
       } else {
         try {
-          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, '')
+          localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH, '')
         } catch {}
       }
 

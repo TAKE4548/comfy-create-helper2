@@ -291,3 +291,125 @@ describe('useGenerationStore REQ-140 queuePrompt optimization and abort control'
     expect(useGenerationStore.getState().submissionAbortController).toBeNull();
   });
 });
+
+describe('useGenerationStore REQ-152 batch queueing optimization & cancellation recovery fixes', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('should not clear activeBatch in fetchQueue when isBatchSubmitting is true (Issue 4)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        queue_running: [],
+        queue_pending: [],
+      }),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const mockBatch = [
+      { promptId: 'pending-set-0-12345', setName: 'Set 1', status: 'pending' as const },
+    ];
+    useGenerationStore.setState({
+      isGenerating: true,
+      activeBatch: mockBatch,
+      isBatchSubmitting: true,
+    });
+
+    await useGenerationStore.getState().fetchQueue();
+
+    // With isBatchSubmitting: true, activeBatch should NOT be cleared even if no IDs are in queue
+    const state = useGenerationStore.getState();
+    expect(state.activeBatch).toEqual(mockBatch);
+    expect(state.isGenerating).toBe(true);
+
+    // If isBatchSubmitting is set to false, fetchQueue should clear it
+    useGenerationStore.setState({ isBatchSubmitting: false });
+    await useGenerationStore.getState().fetchQueue();
+    expect(useGenerationStore.getState().activeBatch).toBeNull();
+  });
+
+  it('should not show error toast when fetch is aborted with AbortError (Issue 2)', async () => {
+    const abortError = new Error('The user aborted a request.');
+    abortError.name = 'AbortError';
+
+    const mockFetch = vi.fn().mockRejectedValue(abortError);
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} },
+      undefined,
+      { signal: controller.signal }
+    );
+
+    expect(result).toBeNull();
+    expect(setErrorToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('should call abortSubmission when cancelGeneration is called', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, 'abort');
+    useGenerationStore.getState().setSubmissionAbortController(controller);
+
+    await useGenerationStore.getState().cancelGeneration();
+    expect(abortSpy).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().submissionAbortController).toBeNull();
+  });
+
+  it('should only update lightweight state when isBatchIntermediate is true (Issue 3)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'batch-prompt-id' }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      previewImage: 'existing-preview.png',
+      currentWorkflow: { initial: true },
+    });
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { updated: true },
+      undefined,
+      { skipQueueFetch: true, isBatchIntermediate: true }
+    );
+
+    expect(result).toBe('batch-prompt-id');
+    const state = useGenerationStore.getState();
+    expect(state.currentPromptId).toBe('batch-prompt-id');
+    expect(state.isGenerating).toBe(true);
+    // previewImage and currentWorkflow should remain untouched in intermediate mode
+    expect(state.previewImage).toBe('existing-preview.png');
+    expect(state.currentWorkflow).toEqual({ initial: true });
+    expect(localStorage.getItem('prompt-surgeon-meta-batch-prompt-id')).toBeNull();
+  });
+});

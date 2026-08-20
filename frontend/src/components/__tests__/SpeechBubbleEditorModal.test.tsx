@@ -607,7 +607,7 @@ describe('SpeechBubbleEditorModal', () => {
     }
   })
 
-  it('creates new album and sets LS_KEYS.LAST_SAVE_ALBUM_ID on save', async () => {
+  it('creates new album and sets LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH on save', async () => {
     localStorage.clear()
     vi.mocked(albumsApi.create).mockResolvedValueOnce({ id: 99, name: 'My Comic Album' } as any)
     vi.mocked(snapshotsApi.create).mockResolvedValueOnce({ id: 55 } as any)
@@ -654,7 +654,7 @@ describe('SpeechBubbleEditorModal', () => {
           name: 'My Comic Album',
           snapshot_ids: [55],
         })
-        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)).toBe('99')
+        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH)).toBe('99')
         expect(mockOnSaved).toHaveBeenCalled()
       })
     } finally {
@@ -707,7 +707,7 @@ describe('SpeechBubbleEditorModal', () => {
 
       await waitFor(() => {
         expect(albumsApi.addItems).toHaveBeenCalledWith(42, [77])
-        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID)).toBe('42')
+        expect(localStorage.getItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH)).toBe('42')
         expect(mockOnSaved).toHaveBeenCalled()
       })
     } finally {
@@ -715,8 +715,8 @@ describe('SpeechBubbleEditorModal', () => {
     }
   })
 
-  it('prioritizes LAST_SAVE_ALBUM_ID from localStorage over initialAlbumId, with fallback if not found in list', async () => {
-    localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID, '999') // Non-existent in fetched album list
+  it('prioritizes LAST_SAVE_ALBUM_ID_SPEECH from localStorage over initialAlbumId, with fallback if not found in list', async () => {
+    localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH, '999') // Non-existent in fetched album list
     vi.mocked(albumsApi.list).mockResolvedValueOnce([
       { id: 200, name: 'Initial Album', items: [] } as any,
     ])

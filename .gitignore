@@ -142,4 +142,5 @@ db/snapshots/
 *.db-journal
 db/prompt_surgeon.db
 brain/
+.vite/
 

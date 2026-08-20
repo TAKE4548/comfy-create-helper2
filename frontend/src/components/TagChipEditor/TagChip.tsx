@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { X, GripVertical } from 'lucide-react';
+import { parseTagWeight, formatTagWeight, adjustWeight } from './useChipParser';
 
-interface TagChipProps {
+export interface TagChipProps {
   id: string;
   text: string;
   enabled: boolean;
@@ -24,7 +25,9 @@ export const TagChip: React.FC<TagChipProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(text);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const {
     attributes,
@@ -34,6 +37,31 @@ export const TagChip: React.FC<TagChipProps> = ({
     transition,
     isDragging,
   } = useSortable({ id });
+
+  // タグ文字列からベース名と現在の強度を取得
+  const { baseText, weight } = parseTagWeight(text);
+  // UI表示用の強度文字列（未設定時は 1.0）
+  const [weightInput, setWeightInput] = useState(weight !== null ? weight.toString() : '1.0');
+
+  useEffect(() => {
+    const { weight: currentWeight } = parseTagWeight(text);
+    setWeightInput(currentWeight !== null ? currentWeight.toString() : '1.0');
+    setEditValue(text);
+  }, [text]);
+
+  // サブメニュー外クリック検知
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   // ドラッグ時のインラインスタイル
   const style: React.CSSProperties = {
@@ -48,7 +76,6 @@ export const TagChip: React.FC<TagChipProps> = ({
     boxShadow: isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.3)' : undefined,
   };
 
-  // 編集モードに入った際にインプットを選択フォーカスする
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
@@ -56,20 +83,25 @@ export const TagChip: React.FC<TagChipProps> = ({
     }
   }, [isEditing]);
 
-  // テキストプロップスが更新されたら編集値も同期
-  useEffect(() => {
-    setEditValue(text);
-  }, [text]);
-
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsMenuOpen(false);
     setIsEditing(true);
+  };
+
+  const handleChipClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isEditing) return;
+    setIsMenuOpen((prev) => !prev);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (isEditing) return;
 
-    if (e.key === ' ') {
+    if (e.key === 'Escape' && isMenuOpen) {
+      e.preventDefault();
+      setIsMenuOpen(false);
+    } else if (e.key === ' ') {
       e.preventDefault();
       onToggle(id);
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -78,6 +110,42 @@ export const TagChip: React.FC<TagChipProps> = ({
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
       e.preventDefault();
       onDuplicate(id);
+    }
+  };
+
+  const handleStepWeight = (delta: number) => {
+    const { baseText: currentBase, weight: currentWeight } = parseTagWeight(text);
+    const newWeight = adjustWeight(currentWeight, delta);
+    setWeightInput(newWeight.toString());
+    const newFormatted = formatTagWeight(currentBase, newWeight);
+    onEdit(id, newFormatted);
+  };
+
+  const handleDirectWeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setWeightInput(e.target.value);
+  };
+
+  const handleWeightSubmit = () => {
+    const parsed = parseFloat(weightInput);
+    const { baseText: currentBase } = parseTagWeight(text);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(0, parseFloat(parsed.toFixed(2)));
+      setWeightInput(clamped.toString());
+      const newFormatted = formatTagWeight(currentBase, clamped);
+      onEdit(id, newFormatted);
+    } else {
+      const { weight: currentWeight } = parseTagWeight(text);
+      setWeightInput(currentWeight !== null ? currentWeight.toString() : '1.0');
+    }
+  };
+
+  const handleWeightKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleWeightSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsMenuOpen(false);
     }
   };
 
@@ -115,12 +183,12 @@ export const TagChip: React.FC<TagChipProps> = ({
       tabIndex={isEditing ? -1 : 0}
       onKeyDown={handleKeyDown}
       className={`
-        flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none
+        relative flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none
         ${isEditing ? 'bg-[#18181C] border-[#7C6FDD]' : ''}
         ${!isEditing && enabled ? 'bg-[#1F1F25] border-[rgba(255,255,255,0.08)] text-[#E4E4E7] hover:border-[rgba(255,255,255,0.15)] focus:border-[#7C6FDD]' : ''}
         ${!isEditing && !enabled ? 'bg-zinc-900 border-dashed border-[rgba(255,255,255,0.05)] text-[#A1A1AA] opacity-50 line-through' : ''}
       `}
-      title="ダブルクリックで編集 / 左右キーで移動 / Spaceで切替 / Delで削除 / Ctrl+Dで複製"
+      title="クリックでメニュー / ダブルクリックで編集 / Spaceで切替 / Delで削除 / Ctrl+Dで複製"
       aria-roledescription="ドラッグで並び替え可能"
     >
       {/* ドラッグハンドル */}
@@ -148,7 +216,7 @@ export const TagChip: React.FC<TagChipProps> = ({
       ) : (
         <span
           onDoubleClick={handleDoubleClick}
-          onClick={() => onToggle(id)}
+          onClick={handleChipClick}
           className="cursor-pointer flex-grow"
         >
           {text}
@@ -167,6 +235,81 @@ export const TagChip: React.FC<TagChipProps> = ({
       >
         <X size={13} />
       </button>
+
+      {/* サブメニュー (ポップオーバー) */}
+      {isMenuOpen && !isEditing && (
+        <div
+          ref={menuRef}
+          className="absolute top-full left-0 mt-1.5 z-50 min-w-[200px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2 text-xs select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* ヘッダー: タグ名 + 有効/無効トグル */}
+          <div className="flex items-center justify-between gap-2 border-b border-[rgba(255,255,255,0.08)] pb-1.5">
+            <span className="font-semibold text-[#E4E4E7] truncate max-w-[120px]" title={baseText}>
+              {baseText}
+            </span>
+            <button
+              type="button"
+              onClick={() => onToggle(id)}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                enabled
+                  ? 'bg-[#3ecf8e] text-zinc-950 font-bold hover:bg-[#3ecf8e]/90'
+                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+              }`}
+            >
+              {enabled ? '有効' : '無効'}
+            </button>
+          </div>
+
+          {/* 強度調整エリア */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[#A1A1AA]">
+              <span>強度 (Weight)</span>
+              <input
+                type="number"
+                step="0.1"
+                value={weightInput}
+                onChange={handleDirectWeightChange}
+                onBlur={handleWeightSubmit}
+                onKeyDown={handleWeightKeyDown}
+                className="w-16 px-1.5 py-0.5 bg-[#1F1F25] border border-[rgba(255,255,255,0.1)] rounded text-right text-[#E4E4E7] focus:outline-none focus:border-[#7C6FDD]"
+              />
+            </div>
+
+            {/* ステップ増減ボタン */}
+            <div className="grid grid-cols-4 gap-1">
+              <button
+                type="button"
+                onClick={() => handleStepWeight(-1.0)}
+                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
+              >
+                -1.0
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStepWeight(-0.1)}
+                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
+              >
+                -0.1
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStepWeight(0.1)}
+                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
+              >
+                +0.1
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStepWeight(1.0)}
+                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
+              >
+                +1.0
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

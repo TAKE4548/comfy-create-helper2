@@ -10,6 +10,15 @@ class AlbumCreate(BaseModel):
     snapshot_ids: list[int] = []
 
 
+class AlbumUpdate(BaseModel):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class AlbumReorder(BaseModel):
+    ordered_ids: list[int]
+
+
 class AlbumOrderUpdate(BaseModel):
     snapshot_ids: list[int]
 
@@ -34,6 +43,7 @@ class AlbumRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    sort_order: int = 0
     created_at: datetime
     items: list[AlbumItemRead] = []
 
@@ -42,4 +52,5 @@ class AlbumSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    sort_order: int = 0
     created_at: datetime

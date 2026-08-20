@@ -201,12 +201,14 @@ export type AlbumItemRead = AlbumItem;
 export interface AlbumSummary {
   id: number
   name: string
+  sort_order?: number
   created_at: string
 }
 
 export interface Album {
   id: number
   name: string
+  sort_order?: number
   created_at: string
   items: AlbumItem[]
 }
@@ -214,6 +216,15 @@ export interface Album {
 export interface AlbumCreate {
   name: string
   snapshot_ids: number[]
+}
+
+export interface AlbumUpdate {
+  name?: string
+  sort_order?: number
+}
+
+export interface AlbumReorder {
+  ordered_ids: number[]
 }
 
 // ─── Category ───────────────────────────────────────────────────

@@ -35,6 +35,8 @@ from app.schemas.snapshot import (
 
 from app.schemas.album import (
     AlbumCreate,
+    AlbumUpdate,
+    AlbumReorder,
     AlbumOrderUpdate,
     AlbumItemRead,
     AlbumRead,
@@ -125,7 +127,7 @@ __all__ = [
     "SnapshotLoraCreate", "SnapshotLoraRead",
     "SnapshotTagSetCreate", "SnapshotTagSetRead",
     "SnapshotCreate", "SnapshotRead", "SnapshotUpdate", "SnapshotSummary",
-    "AlbumCreate", "AlbumOrderUpdate", "AlbumItemRead", "AlbumRead", "AlbumSummary",
+    "AlbumCreate", "AlbumUpdate", "AlbumReorder", "AlbumOrderUpdate", "AlbumItemRead", "AlbumRead", "AlbumSummary",
     "AlbumItemsDelete", "AlbumItemsAdd",
     # LoRA
     "CategoryCreate", "CategoryRead",

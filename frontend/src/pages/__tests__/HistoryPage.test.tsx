@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoryPage } from '../HistoryPage'
 import { albumsApi, snapshotsApi, workflowsApi, lorasApi, tagSetsApi } from '../../api/client'
@@ -14,6 +14,8 @@ vi.mock('../../api/client', () => ({
   albumsApi: {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockResolvedValue({}),
+    reorder: vi.fn().mockResolvedValue({}),
     deleteItems: vi.fn().mockResolvedValue({}),
     updateOrder: vi.fn().mockResolvedValue({}),
   },
@@ -133,5 +135,68 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['snapshots'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['album', 10] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['albums'] })
+  })
+
+  it('renames an album from the album card in albums view', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    // Switch to Albums view
+    const albumsTabBtn = screen.getByRole('button', { name: /albums/i })
+    fireEvent.click(albumsTabBtn)
+
+    // Find the edit button for the album
+    const editBtn = await screen.findByRole('button', { name: /アルバム名を変更/i })
+    fireEvent.click(editBtn)
+
+    // Input should appear
+    const input = screen.getByRole('textbox')
+    expect(input).toHaveValue('Test Album')
+
+    // Change input value and press Enter
+    fireEvent.change(input, { target: { value: 'Renamed Test Album' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    // Verify albumsApi.update was called
+    await waitFor(() => {
+      expect(albumsApi.update).toHaveBeenCalledWith(10, { name: 'Renamed Test Album' })
+    })
+  })
+
+  it('renames an album from the header in album detail view', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    // Switch to Albums view
+    const albumsTabBtn = screen.getByRole('button', { name: /albums/i })
+    fireEvent.click(albumsTabBtn)
+
+    // Enter album detail
+    const albumCard = await screen.findByText('Test Album')
+    fireEvent.click(albumCard)
+
+    // Find header edit button
+    const editBtn = await screen.findByRole('button', { name: /アルバム名を変更/i })
+    fireEvent.click(editBtn)
+
+    // Input should appear in header
+    const input = screen.getByRole('textbox')
+    expect(input).toHaveValue('Test Album')
+
+    // Change input value and click save button
+    fireEvent.change(input, { target: { value: 'Header Renamed Album' } })
+    const saveBtn = screen.getByTitle('保存')
+    fireEvent.click(saveBtn)
+
+    // Verify albumsApi.update was called
+    await waitFor(() => {
+      expect(albumsApi.update).toHaveBeenCalledWith(10, { name: 'Header Renamed Album' })
+    })
   })
 })

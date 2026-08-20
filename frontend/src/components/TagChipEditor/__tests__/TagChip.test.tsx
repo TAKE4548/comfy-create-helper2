@@ -134,4 +134,105 @@ describe('TagChip', () => {
     fireEvent.keyDown(chipContainer, { key: 'd', code: 'KeyD', ctrlKey: true });
     expect(mockOnDuplicate).toHaveBeenCalledWith('1');
   });
+
+  it('opens submenu on single click and allows toggling enabled status', () => {
+    render(
+      <TagChip
+        id="1"
+        text="menu-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    const tagText = screen.getByText('menu-tag');
+    fireEvent.click(tagText);
+
+    // Submenu is open: shows weight label and toggle button
+    expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
+    const toggleBtn = screen.getByRole('button', { name: '有効' });
+    fireEvent.click(toggleBtn);
+
+    expect(mockOnToggle).toHaveBeenCalledWith('1');
+  });
+
+  it('adjusts weight using step buttons in submenu', () => {
+    render(
+      <TagChip
+        id="1"
+        text="1girl"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('1girl'));
+    const plusPointOne = screen.getByRole('button', { name: '+0.1' });
+    fireEvent.click(plusPointOne);
+
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.1)');
+  });
+
+  it('adjusts weight by direct number input in submenu', () => {
+    render(
+      <TagChip
+        id="1"
+        text="1girl"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('1girl'));
+    const numInput = screen.getByRole('spinbutton');
+    expect(numInput).toHaveValue(1);
+
+    fireEvent.change(numInput, { target: { value: '1.35' } });
+    fireEvent.keyDown(numInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.35)');
+  });
+
+  it('closes submenu on outside click or Escape key', () => {
+    const { container } = render(
+      <div>
+        <div data-testid="outside">Outside</div>
+        <TagChip
+          id="1"
+          text="escape-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      </div>
+    );
+
+    const tagText = screen.getByText('escape-tag');
+    const chipContainer = tagText.closest('div')!;
+
+    // Open submenu
+    fireEvent.click(tagText);
+    expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
+
+    // Press Escape
+    fireEvent.keyDown(chipContainer, { key: 'Escape', code: 'Escape' });
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+
+    // Reopen and click outside
+    fireEvent.click(tagText);
+    expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByTestId('outside'));
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+  });
 });

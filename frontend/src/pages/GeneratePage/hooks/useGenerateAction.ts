@@ -22,6 +22,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     bypassProfiles = [],
     paramSyncGroups = [],
     setSubmissionAbortController,
+    setIsBatchSubmitting,
     fetchQueue,
     setErrorToast,
   } = useGenerationStore()
@@ -190,6 +191,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     // 中断用 AbortController の作成とストア登録
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
+    setIsBatchSubmitting?.(true)
 
     // 事前に全体の枠を構築して activeBatch を即時初期化
     const initialBatch: BatchJob[] = []
@@ -235,14 +237,22 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
           
           let promptId: string | null = null
           try {
-            // skipQueueFetch: true で個別フェッチをバイパス
             promptId = await queuePrompt(
               wfJson,
               { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets },
-              { skipQueueFetch: true }
+              {
+                skipQueueFetch: true,
+                signal: abortController.signal,
+                isBatchIntermediate: true,
+              }
             )
           } catch (err) {
             console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
+          }
+
+          // queuePrompt 完了後のキャンセルチェック
+          if (abortController.signal.aborted) {
+            return
           }
 
           if (promptId) {
@@ -266,10 +276,14 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
         }
       }
     } finally {
+      setIsBatchSubmitting?.(false)
       localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
-      setActiveBatch([...currentBatch])
-      // 全ループ終了後に 1 回のみキューを同期
-      await fetchQueue?.()
+
+      // キャンセル中断時は setActiveBatch 上書きと fetchQueue を抑止
+      if (!abortController.signal.aborted) {
+        setActiveBatch([...currentBatch])
+        await fetchQueue?.()
+      }
     }
   }
 

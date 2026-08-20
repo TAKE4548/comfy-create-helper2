@@ -12,11 +12,12 @@ router = APIRouter(prefix="/api/albums", tags=["albums"])
 
 @router.get("", response_model=list[schemas.AlbumRead])
 def list_albums(db: Session = Depends(get_db)):
-    albums = db.query(models.Album).order_by(models.Album.name).all()
+    albums = db.query(models.Album).order_by(models.Album.sort_order.asc(), models.Album.id.asc()).all()
     return [
         schemas.AlbumRead(
             id=album.id,
             name=album.name,
+            sort_order=album.sort_order,
             created_at=album.created_at,
             items=[
                 schemas.AlbumItemRead(
@@ -40,6 +41,7 @@ def get_album(album_id: int, db: Session = Depends(get_db)):
     return schemas.AlbumRead(
         id=album.id,
         name=album.name,
+        sort_order=album.sort_order,
         created_at=album.created_at,
         items=[
             schemas.AlbumItemRead(
@@ -55,7 +57,9 @@ def get_album(album_id: int, db: Session = Depends(get_db)):
 
 @router.post("", response_model=schemas.AlbumSummary, status_code=status.HTTP_201_CREATED)
 def create_album(payload: schemas.AlbumCreate, db: Session = Depends(get_db)):
-    album = models.Album(name=payload.name)
+    max_order = db.query(func.max(models.Album.sort_order)).scalar()
+    next_order = (max_order + 1) if max_order is not None else 0
+    album = models.Album(name=payload.name, sort_order=next_order)
     db.add(album)
     db.flush()
     for idx, snap_id in enumerate(payload.snapshot_ids):
@@ -67,6 +71,41 @@ def create_album(payload: schemas.AlbumCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(album)
     return album
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_albums(payload: schemas.AlbumReorder, db: Session = Depends(get_db)):
+    for i, aid in enumerate(payload.ordered_ids):
+        db.query(models.Album).filter(models.Album.id == aid).update({"sort_order": i})
+    db.commit()
+
+
+@router.put("/{album_id}", response_model=schemas.AlbumRead)
+def update_album(album_id: int, payload: schemas.AlbumUpdate, db: Session = Depends(get_db)):
+    album = db.query(models.Album).filter(models.Album.id == album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+    
+    if payload.name is not None:
+        trimmed_name = payload.name.strip()
+        if not trimmed_name:
+            raise HTTPException(status_code=400, detail="Album name cannot be empty")
+        
+        existing = db.query(models.Album).filter(
+            models.Album.name == trimmed_name,
+            models.Album.id != album_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Album with this name already exists")
+        
+        album.name = trimmed_name
+
+    if payload.sort_order is not None:
+        album.sort_order = payload.sort_order
+
+    db.commit()
+    db.refresh(album)
+    return get_album(album_id, db)
 
 
 @router.put("/{album_id}/order", response_model=schemas.AlbumRead)

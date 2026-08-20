@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseToChips, chipsToString } from '../useChipParser';
+import { parseToChips, chipsToString, parseTagWeight, formatTagWeight, adjustWeight, useChipParser } from '../useChipParser';
 
 describe('useChipParser', () => {
   describe('parseToChips', () => {
@@ -53,6 +53,67 @@ describe('useChipParser', () => {
         { id: '2', text: 'banana', enabled: false },
       ];
       expect(chipsToString(chips)).toBe('');
+    });
+  });
+
+  describe('parseTagWeight', () => {
+    it('should parse SD weighted tag format (tag:weight)', () => {
+      expect(parseTagWeight('(1girl:1.2)')).toEqual({
+        baseText: '1girl',
+        weight: 1.2,
+      });
+      expect(parseTagWeight(' (solo:0.8) ')).toEqual({
+        baseText: 'solo',
+        weight: 0.8,
+      });
+    });
+
+    it('should return null weight for unweighted tags', () => {
+      expect(parseTagWeight('1girl')).toEqual({
+        baseText: '1girl',
+        weight: null,
+      });
+      expect(parseTagWeight('(masterpiece)')).toEqual({
+        baseText: '(masterpiece)',
+        weight: null,
+      });
+    });
+  });
+
+  describe('formatTagWeight', () => {
+    it('should format tag with weight when weight is not 1 or null', () => {
+      expect(formatTagWeight('1girl', 1.2)).toBe('(1girl:1.2)');
+      expect(formatTagWeight('solo', 0.8)).toBe('(solo:0.8)');
+    });
+
+    it('should return plain text when weight is 1.0 or null', () => {
+      expect(formatTagWeight('1girl', 1.0)).toBe('1girl');
+      expect(formatTagWeight('1girl', 1)).toBe('1girl');
+      expect(formatTagWeight('1girl', null)).toBe('1girl');
+    });
+  });
+
+  describe('adjustWeight', () => {
+    it('should adjust weight with delta using default 1.0 base if null', () => {
+      expect(adjustWeight(null, 0.1)).toBe(1.1);
+      expect(adjustWeight(null, -0.1)).toBe(0.9);
+    });
+
+    it('should adjust existing weight with delta and round to 2 decimals', () => {
+      expect(adjustWeight(1.2, 0.1)).toBe(1.3);
+      expect(adjustWeight(1.2, -0.1)).toBe(1.1);
+      expect(adjustWeight(0.05, -0.1)).toBe(0);
+    });
+  });
+
+  describe('useChipParser hook', () => {
+    it('should return all utility functions', () => {
+      const hook = useChipParser();
+      expect(typeof hook.parseToChips).toBe('function');
+      expect(typeof hook.chipsToString).toBe('function');
+      expect(typeof hook.parseTagWeight).toBe('function');
+      expect(typeof hook.formatTagWeight).toBe('function');
+      expect(typeof hook.adjustWeight).toBe('function');
     });
   });
 });

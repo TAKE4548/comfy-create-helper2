@@ -103,6 +103,10 @@ export const albumsApi = {
   list: () => request<Album[]>('/albums'),
   get: (id: number) => request<Album>(`/albums/${id}`),
   create: (data: unknown) => request<Album>('/albums', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: { name?: string; sort_order?: number }) =>
+    request<Album>(`/albums/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  reorder: (ordered_ids: number[]) =>
+    request<void>('/albums/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
   updateOrder: (id: number, snapshot_ids: number[]) =>
     request(`/albums/${id}/order`, { method: 'PUT', body: JSON.stringify({ snapshot_ids }) }),
   delete: (id: number) => request('/albums/' + id, { method: 'DELETE' }),

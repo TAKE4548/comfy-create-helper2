@@ -28,6 +28,8 @@ export const LS_KEYS = {
   SETTINGS_SECTIONS_EXPANDED: 'prompt-surgeon-settings-sections-expanded',
   ACTIVE_PROMPT_TAB_PREFIX: 'prompt-surgeon-active-prompt-tab-',
   LAST_SAVE_ALBUM_ID: 'prompt-surgeon-last-save-album-id',
+  LAST_SAVE_ALBUM_ID_GENERATE: 'prompt-surgeon-last-save-album-id-generate',
+  LAST_SAVE_ALBUM_ID_SPEECH: 'prompt-surgeon-last-save-album-id-speech',
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

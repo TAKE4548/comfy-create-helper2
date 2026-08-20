@@ -212,3 +212,105 @@ class TestPresetsAPI(unittest.TestCase):
         assert data[1]["id"] == p1.id
         assert data[1]["sort_order"] == 1
 
+    def test_create_preset_auto_sort_order(self):
+        # 1. Create first preset with default sort_order (0) -> gets sort_order 0
+        payload1 = {
+            "workflow_id": self.workflow.id,
+            "name": "Preset 1",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        }
+        res1 = self.client.post("/api/workflow-presets", json=payload1)
+        assert res1.status_code == 201
+        assert res1.json()["sort_order"] == 0
+
+        # 2. Create second preset with default sort_order (0) -> gets sort_order 1
+        payload2 = {
+            "workflow_id": self.workflow.id,
+            "name": "Preset 2",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        }
+        res2 = self.client.post("/api/workflow-presets", json=payload2)
+        assert res2.status_code == 201
+        assert res2.json()["sort_order"] == 1
+
+        # 3. Create preset for a different workflow -> gets sort_order 0
+        workflow2 = models.Workflow(name="test_wf_2", json_body="{}")
+        self.db.add(workflow2)
+        self.db.commit()
+        self.db.refresh(workflow2)
+
+        payload_wf2 = {
+            "workflow_id": workflow2.id,
+            "name": "Preset WF2",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        }
+        res_wf2 = self.client.post("/api/workflow-presets", json=payload_wf2)
+        assert res_wf2.status_code == 201
+        assert res_wf2.json()["sort_order"] == 0
+
+        # 4. Create third preset with explicit non-zero sort_order (e.g., 10)
+        payload3 = {
+            "workflow_id": self.workflow.id,
+            "name": "Preset 3",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+            "sort_order": 10,
+        }
+        res3 = self.client.post("/api/workflow-presets", json=payload3)
+        assert res3.status_code == 201
+        assert res3.json()["sort_order"] == 10
+
+        # 5. Create fourth preset with default sort_order (0) -> gets max_sort (10) + 1 = 11
+        payload4 = {
+            "workflow_id": self.workflow.id,
+            "name": "Preset 4",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        }
+        res4 = self.client.post("/api/workflow-presets", json=payload4)
+        assert res4.status_code == 201
+        assert res4.json()["sort_order"] == 11
+
+        # 6. Reorder and create new preset -> gets next sequential sort_order
+        p1_id = res1.json()["id"]
+        p2_id = res2.json()["id"]
+        p3_id = res3.json()["id"]
+        p4_id = res4.json()["id"]
+        self.client.put(
+            "/api/workflow-presets/reorder",
+            json={"ordered_ids": [p4_id, p3_id, p2_id, p1_id]},
+        )
+        # Now sort_orders are 0, 1, 2, 3
+
+        payload5 = {
+            "workflow_id": self.workflow.id,
+            "name": "Preset 5",
+            "param_values": {},
+            "applied_assets": {},
+            "batch_size": 1,
+            "seed_mode": "random",
+            "seed": -1,
+        }
+        res5 = self.client.post("/api/workflow-presets", json=payload5)
+        assert res5.status_code == 201
+        assert res5.json()["sort_order"] == 4
+
+

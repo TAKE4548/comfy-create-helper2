@@ -81,7 +81,7 @@ export function GeneratePage() {
         title="スナップショットを保存"
         confirmText="保存"
         allowNone={true}
-        storageKey={LS_KEYS.LAST_SAVE_ALBUM_ID}
+        storageKey={LS_KEYS.LAST_SAVE_ALBUM_ID_GENERATE}
       />
       {selectedLoraForModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">

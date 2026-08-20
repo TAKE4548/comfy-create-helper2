@@ -3,6 +3,7 @@
 import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -31,7 +32,7 @@ def list_presets(workflow_id: Optional[int] = None, db: Session = Depends(get_db
     q = db.query(models.WorkflowPreset)
     if workflow_id is not None:
         q = q.filter(models.WorkflowPreset.workflow_id == workflow_id)
-    return [_preset_to_schema(p) for p in q.order_by(models.WorkflowPreset.sort_order.asc()).all()]
+    return [_preset_to_schema(p) for p in q.order_by(models.WorkflowPreset.sort_order.asc(), models.WorkflowPreset.id.asc()).all()]
 
 
 @router.post("", response_model=schemas.WorkflowPresetRead, status_code=status.HTTP_201_CREATED)
@@ -41,6 +42,13 @@ def create_preset(payload: schemas.WorkflowPresetCreate, db: Session = Depends(g
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    sort_order = payload.sort_order
+    if sort_order == 0:
+        max_sort = db.query(func.max(models.WorkflowPreset.sort_order)).filter(
+            models.WorkflowPreset.workflow_id == payload.workflow_id
+        ).scalar()
+        sort_order = (max_sort + 1) if max_sort is not None else 0
+
     preset = models.WorkflowPreset(
         workflow_id=payload.workflow_id,
         name=payload.name,
@@ -49,7 +57,7 @@ def create_preset(payload: schemas.WorkflowPresetCreate, db: Session = Depends(g
         batch_size=payload.batch_size,
         seed_mode=payload.seed_mode,
         seed=payload.seed,
-        sort_order=payload.sort_order,
+        sort_order=sort_order,
     )
     db.add(preset)
     db.commit()

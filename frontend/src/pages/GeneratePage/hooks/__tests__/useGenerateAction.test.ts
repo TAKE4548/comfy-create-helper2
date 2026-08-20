@@ -16,6 +16,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     queuePrompt: vi.fn(),
     setActiveBatch: vi.fn(),
     setSubmissionAbortController: vi.fn(),
+    setIsBatchSubmitting: vi.fn(),
     fetchQueue: vi.fn(),
     setErrorToast: vi.fn(),
   };
@@ -40,6 +41,7 @@ describe('useGenerateAction', () => {
     mockStore.queuePrompt.mockReset();
     mockStore.setActiveBatch.mockReset();
     mockStore.setSubmissionAbortController.mockReset();
+    mockStore.setIsBatchSubmitting.mockReset();
     mockStore.fetchQueue.mockReset();
     mockStore.setErrorToast.mockReset();
   });
@@ -349,9 +351,21 @@ describe('useGenerateAction', () => {
       expect(mockStore.setSubmissionAbortController).toHaveBeenCalled();
       // 2 jobs for Set A + 1 job for Set C = 3 calls
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
-      expect(mockStore.queuePrompt.mock.calls[0][2]).toEqual({ skipQueueFetch: true });
-      expect(mockStore.queuePrompt.mock.calls[1][2]).toEqual({ skipQueueFetch: true });
-      expect(mockStore.queuePrompt.mock.calls[2][2]).toEqual({ skipQueueFetch: true });
+      expect(mockStore.queuePrompt.mock.calls[0][2]).toEqual({
+        skipQueueFetch: true,
+        signal: expect.any(AbortSignal),
+        isBatchIntermediate: true,
+      });
+      expect(mockStore.queuePrompt.mock.calls[1][2]).toEqual({
+        skipQueueFetch: true,
+        signal: expect.any(AbortSignal),
+        isBatchIntermediate: true,
+      });
+      expect(mockStore.queuePrompt.mock.calls[2][2]).toEqual({
+        skipQueueFetch: true,
+        signal: expect.any(AbortSignal),
+        isBatchIntermediate: true,
+      });
 
       // Initial placeholder batch + per prompt updates + final batch
       expect(mockStore.setActiveBatch).toHaveBeenCalled();
@@ -383,7 +397,89 @@ describe('useGenerateAction', () => {
 
       // Only 1 job should have been submitted because loop aborts before index 1
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
-      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
+      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleGenerateSets REQ-152 batch queueing optimization & cancellation recovery fixes', () => {
+    it('should pass signal and isBatchIntermediate: true to queuePrompt (Issue 2 & Issue 3)', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt.mockResolvedValue('prompt-1');
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(Object),
+        expect.objectContaining({
+          skipQueueFetch: true,
+          signal: expect.any(AbortSignal),
+          isBatchIntermediate: true,
+        })
+      );
+    });
+
+    it('should not overwrite setActiveBatch and not call fetchQueue in finally when aborted (Issue 1)', async () => {
+      let capturedController: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((controller: AbortController) => {
+        capturedController = controller;
+      });
+
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      mockStore.queuePrompt.mockImplementation(async () => {
+        capturedController?.abort();
+        return 'prompt-1';
+      });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+    });
+
+    it('should immediately return and skip subsequent batch updates when aborted right after queuePrompt (Issue 1 & 2)', async () => {
+      let capturedController: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((controller: AbortController) => {
+        capturedController = controller;
+      });
+
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      mockStore.queuePrompt.mockImplementation(async () => {
+        // simulate aborting during fetch
+        capturedController?.abort();
+        return null;
+      });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      expect(mockStore.setErrorToast).not.toHaveBeenCalled();
+      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+    });
+
+    it('should call setIsBatchSubmitting(true) on start and setIsBatchSubmitting(false) in finally (Issue 4)', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt.mockResolvedValue('prompt-1');
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(true);
+      expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(false);
+      expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledTimes(2);
     });
   });
 

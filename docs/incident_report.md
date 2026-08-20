@@ -1,49 +1,63 @@
-# インシデントレポート: バッチ生成におけるpending即時描画とComfyUI逐次投入エラーハンドリング・キュー数リアルタイム補正
+# インシデントレポート: バッチ生成キュー登録時の不要オーバーヘッドおよびキャンセル時の状態復活（デグレ）不具合
 
 ## 概要 (Overview)
-PC（デスクトップ）およびモバイル環境において、複数プリセット・バッチ生成を実行した際、ComfyUI側のワークフロー検証（Verify）待ちとアプリ側の逐次投入ループ内でのReact状態更新の不整合により、画面のレスポンス低下や進捗表示のバタつき（State Thrashing）が発生していました。
-また、ComfyUI側からNG（バリデーションエラー等）が返却された場合に、どのプリセットの何番目のバッチが失敗したかが明確でなく、キュー件数のリアルタイムな整合性が損なわれる課題が確認されました。
+バッチ生成（複数プリセット・複数枚生成）の投入時およびジョブ管理モーダル等からのキャンセル操作において、レスポンスの悪化やキャンセル後の進捗表示の不整合（キャンセルしたはずのジョブ枠が残る・復活する）が発生している。
+調査の結果、REQ-141で行われた `activeBatch` のインプレース更新処理の導入に伴い、キャンセル中断時のクリーンアップ処理において深刻なデグレ（状態復活バグ）が生じていること、および逐次投入時の多重状態更新・通信オーバーヘッドが残存していることが判明した。
 
 ---
 
 ## 再現手順 (Reproduction Steps)
-1. 複数のプリセットにチェックを入れる、またはバッチサイズを2以上に設定する。
-2. 「Generate Batch」ボタンを押下する。
-3. **観測事象 1 (描画レスポンス低下・配列伸縮)**:
-   - ループ開始時に初期枠が生成された後、1件投入完了ごとに配列が縮小・拡大（1件→2件...）され、全画面再レンダリングが連続発生して体感レスポンスが重くなる。
-4. **観測事象 2 (NG発生時のフィードバックとキュー数同期)**:
-   - ComfyUI側でノードエラーやモデル欠損等のNG応答（HTTP 400）が返った際、どのプリセット・どのバッチ番号で失敗したかが即座に判別しづらく、キュー進捗の整合性が崩れる。
+1. 複数の生成プリセットまたはバッチ数（例: 2プリセット × 4枚 = 8件）を選択し、「Generate Batch」ボタンを押下する。
+2. キュー投入中（1〜2件目が投入された段階）に、キューカウントをクリックして「ジョブ管理」モーダルを開き、「一括キャンセル」または個別ジョブの「キャンセル」を実行する。
+3. **観測事象**:
+   - キャンセル操作（`cancelAllJobs` / `cancelJob`）により一度ステートが初期化（`activeBatch: null`, `isGenerating: false`）されるが、直後に投入ループ側の `finally` 句が走り、未投入のダミー `pending` ジョブを含んだ `activeBatch` でストアが上書きされ、生成中ステータスが復活してしまう。
+   - `fetch(/prompt)` の通信自体に AbortSignal が伝播していないため、進行中のHTTPリクエストがComfyUIへ届いてキューに登録されてしまう。
+   - また、キュー投入中にもWebSocket経由の `status` イベント等によって多重の `fetchQueue()` と再レンダリングが連続発生し、UI応答性が悪化する。
 
 ---
 
 ## 影響範囲 (Affected Area)
-- **フロントエンド生成アクションフック**:
-  - `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`:
-    - `handleGenerateSets`: 逐次投入ループ内での `setActiveBatch([...newBatch])` による配列伸縮とReact再レンダリングの連続発生。
-    - エラー発生時のプリセット名・バッチインデックス（`preset (i+1/batchSize)`）の特定と通知、およびバッチ状態のリアルタイム補正処理。
-- **グローバル生成状態ストア**:
-  - `frontend/src/store/useGenerationStore.ts`:
-    - `activeBatch` / `queueRunning` / `queuePending` の状態管理とNG発生時のキュー数・進捗即時補正。
+- **フロントエンド アクションフック**:
+  - `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` (`handleGenerateSets`, `handleGenerate`)
+- **フロントエンド グローバルストア**:
+  - `frontend/src/store/useGenerationStore.ts` (`queuePrompt`, `cancelJob`, `cancelAllJobs`, `cancelGeneration`, WebSocketメッセージハンドラ)
 
 ---
 
 ## 原因分類 (Root Cause Classification)
-- **分類**: **Type A (実装不備 / Implementation Bug)**
+- **分類**: **Type A (実装不備 / Implementation Bug - 回帰・デグレ)**
 - **理由**:
-  - ComfyUIの逐次投入順序（FIFO）を維持しつつ、UIの即時描画（0msレスポンス）とエラー時のリアルタイムなキュー数補正を行うステート管理構造の改善により解消可能なため。
+  - REQ-141で `currentBatch` を固定長配列として保持・更新する仕組みを入れた際、`handleGenerateSets` の `finally` ブロックで `abortController.signal.aborted` の判定を行わずに無条件で `setActiveBatch([...currentBatch])` および `fetchQueue()` を呼び出していたため、キャンセル処理完了後にバッチステートが上書き復活する回帰が発生している。
+  - 加えて、`queuePrompt` に `AbortSignal` が渡されておらず、投入ループ中の中断シグナルが `fetch` レベルで即時遮断されていない。
 
 ---
 
 ## 調査詳細 (Deep Dive Analysis)
 
-### 1. 逐次投入ループ内での配列伸縮（State Thrashing）と全画面再レンダリング
-`useGenerateAction.ts` において、`initialBatch`（全N件）がセットされた直後、ループの各イテレーションで `setActiveBatch([...newBatch])` が呼ばれることで、配列長が `16 -> 1 -> 2 ... -> 16` と伸縮し、投入中に16回連続で全画面再レンダリングが発生して描画パイプラインが詰まる。
+### 1. `handleGenerateSets` におけるキャンセル中断時のステート上書き復活（デグレ）
+- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` L225-L273:
+  - ユーザーがキャンセルボタンを押すと、`cancelAllJobs` / `cancelJob` が `get().abortSubmission()` を実行し、ストアの `activeBatch` を `null` にリセットする。
+  - `handleGenerateSets` のループは `if (abortController.signal.aborted) return` で離脱するが、**JavaScriptの仕様上 `finally` ブロックが必ず実行される**。
+  - `finally` 内で無条件に `setActiveBatch([...currentBatch])` が実行されるため、未投入の仮ID（`pending-Set-0-...`）を含むバッチ配列でストアが上書きされ、直後の `fetchQueue()` によって `isGenerating: true` が再点灯してしまう。
+  - また、`await queuePrompt` の完了直後にも `abortController.signal.aborted` のチェックがないため、通信待ちの間にキャンセルされた場合でも `setActiveBatch` が呼ばれてしまう。
 
-### 2. ComfyUI エラー（NG）時のエラー通知とキュー数不整合
-ComfyUI側がノードエラー等で HTTP 400 を返却した際、どのプリセットの何番目のジョブが失敗したかがトースト等で具体的に通知されず、また失敗したジョブが `activeBatch` 上で適切に除外・カウント補正されないため、キュー進捗の表示と実態が乖離する。
+### 2. `queuePrompt` における AbortSignal の非連動
+- `frontend/src/store/useGenerationStore.ts` L915-L991:
+  - `queuePrompt` 内の `fetch(`${activeUrl}/prompt`, ...)` に `signal` オプションが指定されていない。
+  - そのため、ComfyUIへの投入HTTPリクエストが進行している最中にキャンセルを押してもネットワークリクエストが即時Abortされず、ComfyUI側でキュー登録が完了してしまう。
+
+### 3. キュー逐次投入時の多重状態更新と不要通信の発生
+- `queuePrompt` が1件完了するたびに以下の処理が同期的に走る：
+  - `useGenerationStore` の `set({ isGenerating: true, currentPromptId, currentWorkflow })`（全画面再レンダリング）
+  - `handleGenerateSets` の `setActiveBatch([...currentBatch])`（再レンダリング）
+  - ComfyUIからのWebSocket `status` メッセージ受信による `fetchQueue()`（GET `/queue` 通信と再レンダリング）
+  - これらがバッチ件数分（8〜20回）高速で連続実行されるため、メインスレッドおよびReactのレンダリングパイプラインが飽和し、ボタン操作やキャンセルのUI応答が遅延する。
 
 ---
 
 ## 次のステップ提案 (Next Action)
-本インシデントに基づき、新規PBI「**REQ-141: バッチ生成におけるpending即時描画とComfyUI逐次投入エラーハンドリング・キュー数リアルタイム補正**」をバックログに登録しました。
-`/dev-design` へ進み、詳細設計を実施することを推奨します。
+本インシデントは **Type A（実装不備・デグレ）** です。
+調査結果の承認後、`/dev-design` ワークフローへ進み、以下の修正を行う設計・実装タスク（PBI）を作成することを推奨します：
+1. `handleGenerateSets` の `finally` 句における `abortController.signal.aborted` ガードの追加（中断時は `activeBatch` 上書きと `fetchQueue` を抑止）。
+2. `queuePrompt` への `AbortSignal` 伝播と `fetch` 即時中断の対応。
+3. 逐次投入中の中間ステート更新の軽量化（バッチ投入中の冗長な `set()` や WebSocket `status` 経由の過剰フェッチ抑制）。

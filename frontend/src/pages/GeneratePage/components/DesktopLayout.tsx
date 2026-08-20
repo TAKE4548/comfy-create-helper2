@@ -17,6 +17,7 @@ import { TagChipEditor } from '../../../components/TagChipEditor'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
+import { generateNextProfileName } from '../../../utils/profileUtils'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -335,7 +336,8 @@ export const DesktopLayout = ({
           </div>
           <div className="flex gap-2">
             <button type="button" id="add-set-btn" onClick={() => {
-              setNewSetName(`Set ${sets.length + 1}`)
+              const allNames = presets?.map((p) => p.name) || []
+              setNewSetName(generateNextProfileName('Set', allNames))
               setCopySourceId('default')
               setShowCopyModal(true)
             }}
@@ -904,7 +906,18 @@ export const DesktopLayout = ({
                 value={copySourceId}
                 onChange={(e) => {
                   const val = e.target.value
-                  setCopySourceId(val === 'default' ? 'default' : Number(val))
+                  const allNames = presets?.map((p) => p.name) || []
+                  if (val === 'default') {
+                    setCopySourceId('default')
+                    setNewSetName(generateNextProfileName('Set', allNames))
+                  } else {
+                    const numId = Number(val)
+                    setCopySourceId(numId)
+                    const selected = presets?.find((p) => p.id === numId)
+                    if (selected) {
+                      setNewSetName(generateNextProfileName(selected.name, allNames))
+                    }
+                  }
                 }}
                 className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
               >
