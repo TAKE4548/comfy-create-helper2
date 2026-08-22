@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { configApi } from '../api/client'
+import { useConfig } from './useConfig'
 
 export interface ComfyProgress {
   value: number
@@ -49,20 +49,18 @@ export function useComfyWebSocket(clientId?: string): UseComfyWebSocketReturn {
   const clientIdRef = useRef<string>(clientId ?? 'prompt-surgeon-' + Math.random().toString(36).slice(2, 9))
   const resolvedClientId = clientIdRef.current
 
-  // Fetch ComfyUI config on mount
+  const { data: config } = useConfig()
+
+  // Fetch ComfyUI config via React Query
   useEffect(() => {
-    configApi.get()
-      .then((config) => {
-        const url = (config && config.comfy_url) ? config.comfy_url : 'http://localhost:8188'
-        setComfyUrl(url)
-        comfyUrlRef.current = url
-      })
-      .catch((e) => {
-        console.error('Failed to fetch comfy_url, fallback to localhost:', e)
-        setComfyUrl('http://localhost:8188')
-        comfyUrlRef.current = 'http://localhost:8188'
-      })
-  }, [])
+    if (config && config.comfy_url) {
+      setComfyUrl(config.comfy_url)
+      comfyUrlRef.current = config.comfy_url
+    } else if (config !== undefined) {
+      setComfyUrl('http://localhost:8188')
+      comfyUrlRef.current = 'http://localhost:8188'
+    }
+  }, [config])
 
   // Establish WebSocket connection when comfyUrl is available
   useEffect(() => {

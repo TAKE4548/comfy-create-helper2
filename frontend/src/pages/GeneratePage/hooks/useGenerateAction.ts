@@ -17,6 +17,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     seed: currentSeed,
     sets,
     queuePrompt,
+    activeBatch,
     setActiveBatch,
     appliedAssets,
     bypassProfiles = [],
@@ -79,6 +80,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
             }
           })
         } else {
+          // Standard loraStack: dynamically write slots 1..N
           inputs['lora_count'] = loraCount
           for (let idx = 1; idx <= loraCount; idx++) {
             inputs[`lora_name_${idx}`] = paramValues[`${m.role}_lora_name_${idx}`] || ''
@@ -105,15 +107,16 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
           })
         }
       } else {
+        const rawVal = paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
         let val: string | number | boolean = ''
         if (m.input_type === 'int') {
-          val = parseInt(paramValues[m.role] || '0')
+          val = parseInt(rawVal || '0', 10)
         } else if (m.input_type === 'float') {
-          val = parseFloat(paramValues[m.role] || '0.0')
+          val = parseFloat(rawVal || '0.0')
         } else if (m.input_type === 'boolean') {
-          val = paramValues[m.role] === 'true'
+          val = rawVal === 'true' || rawVal === '1'
         } else {
-          val = paramValues[m.role] || ''
+          val = rawVal !== undefined ? rawVal : ''
         }
 
         if (inputs[m.param_name] !== undefined) {
@@ -173,13 +176,31 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
 
     const syncedParamValues = applyParamSync(currentParamValues)
 
-    for (let i = 0; i < currentBatchSize; i++) {
-      let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-      injectParams(wfJson, syncedParamValues, currentSeedMode, currentSeed, i)
-      if (activeBypassNodeIds.length > 0) {
-        wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
+    const abortController = new AbortController()
+    setSubmissionAbortController?.(abortController)
+    setIsBatchSubmitting?.(true)
+
+    try {
+      for (let i = 0; i < currentBatchSize; i++) {
+        if (abortController.signal.aborted) {
+          return
+        }
+        let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
+        injectParams(wfJson, syncedParamValues, currentSeedMode, currentSeed, i)
+        if (activeBypassNodeIds.length > 0) {
+          wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
+        }
+        await queuePrompt(
+          wfJson,
+          { paramValues: syncedParamValues, appliedAssets },
+          { signal: abortController.signal }
+        )
+        if (abortController.signal.aborted) {
+          return
+        }
       }
-      await queuePrompt(wfJson, { paramValues: syncedParamValues, appliedAssets })
+    } finally {
+      setIsBatchSubmitting?.(false)
     }
   }
 
@@ -193,20 +214,23 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
 
-    // 事前に全体の枠を構築して activeBatch を即時初期化
-    const initialBatch: BatchJob[] = []
+    // 新規投入分のジョブ枠を構築
+    const newBatchJobs: BatchJob[] = []
     checkedSets.forEach((setItem) => {
       for (let i = 0; i < setItem.batchSize; i++) {
-        initialBatch.push({
+        newBatchJobs.push({
           promptId: `pending-${setItem.name}-${i}-${Date.now()}`,
           setName: setItem.name,
           status: 'pending'
         })
       }
     })
-    setActiveBatch(initialBatch)
 
-    const currentBatch: BatchJob[] = [...initialBatch]
+    // 既存の activeBatch があればマージして母数を合算
+    const existingActiveBatch = activeBatch ? [...activeBatch] : []
+    const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
+    setActiveBatch([...currentBatch])
+
     const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
     const mappings = JSON.parse(mappingsJson)
 
@@ -218,7 +242,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
-    let currentIdx = 0
+    let currentIdx = existingActiveBatch.length
     try {
       for (const setItem of checkedSets) {
         const syncedParamValues = applyParamSync(setItem.paramValues)

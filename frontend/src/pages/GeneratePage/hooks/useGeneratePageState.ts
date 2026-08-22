@@ -381,7 +381,7 @@ export function useGeneratePageState() {
   const { handlePrevImg, handleNextImg } = useImageNavigation(sortedDisplayImages)
 
   const historyItems = useMemo(() => {
-    return sortedDisplayImages.map((url, idx) => ({ id: idx, url }))
+    return sortedDisplayImages.map((url) => ({ id: url, url }))
   }, [sortedDisplayImages])
 
   const {
@@ -393,7 +393,7 @@ export function useGeneratePageState() {
     exitMultiSelectMode,
     selectAll,
     clearSelection,
-  } = useMultiSelect({ items: historyItems })
+  } = useMultiSelect<string>({ items: historyItems })
 
   const {
     isSaveModalOpen,
@@ -813,8 +813,11 @@ export function useGeneratePageState() {
     setIsPresetOpen(false)
   }
 
-  // ── Derived state ────────────────────────────────────────────
-  const isGeneratingHere = store.isGenerating && (!store.filterOwnSession || store.activeClientId === clientId)
+  const isGeneratingHere = store.isGenerating && (
+    !store.filterOwnSession ||
+    store.activeClientId === clientId ||
+    (store.activeBatch !== null && store.activeBatch.some(j => j.status === 'generating' || j.status === 'pending'))
+  )
 
   const totalQueueCount = useMemo(() => {
     const filterJob = (job: any) => !store.filterOwnSession || job[3]?.client_id === clientId
@@ -840,11 +843,10 @@ export function useGeneratePageState() {
   useEffect(() => {
     if (isMultiSelectMode && selectedIds.size > 0) {
       const idsArray = Array.from(selectedIds);
-      const lastId = idsArray[idsArray.length - 1];
-      if (lastId !== undefined && lastId >= 0 && lastId < sortedDisplayImages.length) {
-        const lastImg = sortedDisplayImages[lastId];
-        if (lastImg !== selectedImg) {
-          setSelectedImg(lastImg);
+      const lastUrl = idsArray[idsArray.length - 1];
+      if (lastUrl && sortedDisplayImages.includes(lastUrl)) {
+        if (lastUrl !== selectedImg) {
+          setSelectedImg(lastUrl);
         }
       }
     }
@@ -859,6 +861,21 @@ export function useGeneratePageState() {
       setActivePromptTabState(texts.length > 0 ? texts[0].role || '' : '')
     }
   }, [workflow, selectedWorkflowId])
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        store.fetchQueue()
+        store.fetchHistory()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleVisibility)
+    }
+  }, [store])
 
   // ─── Undo/Redo History Stack ────────────────────────────────────
   interface HistoryState {

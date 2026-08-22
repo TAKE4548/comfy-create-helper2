@@ -148,7 +148,9 @@ export interface GenerationState {
 
   // ─── Bypass Profiles State ─────────────────────────────────────
   bypassProfiles: BypassProfile[]
+  bypassProfilesCache: Record<number, BypassProfile[]>
   paramSyncGroups: ParamSyncGroup[]
+  paramSyncGroupsCache: Record<number, ParamSyncGroup[]>
   errorToast: { message: string; type: 'error' | 'success' } | null
 
   // ─── Multi-Set State (New) ─────────────────────────────────────
@@ -374,7 +376,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     queueRunning: [],
     queuePending: [],
     bypassProfiles: [],
+    bypassProfilesCache: {},
     paramSyncGroups: [],
+    paramSyncGroupsCache: {},
     errorToast: null,
     sets: initialSets,
     activeSetId: initialActiveSetId,
@@ -398,9 +402,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     setErrorToast: (toast) => set({ errorToast: toast }),
 
     fetchBypassProfiles: async (workflowId) => {
+      const cached = get().bypassProfilesCache[workflowId]
+      if (cached) {
+        set({ bypassProfiles: cached })
+      }
       try {
         const profiles = await bypassProfilesApi.list(workflowId)
-        set({ bypassProfiles: profiles })
+        set((state) => ({
+          bypassProfiles: profiles,
+          bypassProfilesCache: { ...state.bypassProfilesCache, [workflowId]: profiles },
+        }))
       } catch (e) {
         console.error('Failed to fetch bypass profiles:', e)
       }
@@ -409,7 +420,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     createBypassProfile: async (workflowId, name, nodeIds) => {
       try {
         const newProfile = await bypassProfilesApi.create(workflowId, { name, bypassed_node_ids: nodeIds })
-        set((state) => ({ bypassProfiles: [...state.bypassProfiles, newProfile] }))
+        set((state) => {
+          const updated = [...state.bypassProfiles, newProfile]
+          return {
+            bypassProfiles: updated,
+            bypassProfilesCache: { ...state.bypassProfilesCache, [workflowId]: updated },
+          }
+        })
       } catch (e) {
         console.error('Failed to create bypass profile:', e)
       }
@@ -418,9 +435,17 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     updateBypassProfile: async (profileId, data) => {
       try {
         const updated = await bypassProfilesApi.update(profileId, data)
-        set((state) => ({
-          bypassProfiles: state.bypassProfiles.map((p) => (p.id === profileId ? updated : p)),
-        }))
+        set((state) => {
+          const nextProfiles = state.bypassProfiles.map((p) => (p.id === profileId ? updated : p))
+          const nextCache: Record<number, BypassProfile[]> = {}
+          for (const [wid, list] of Object.entries(state.bypassProfilesCache)) {
+            nextCache[Number(wid)] = list.map((p) => (p.id === profileId ? updated : p))
+          }
+          return {
+            bypassProfiles: nextProfiles,
+            bypassProfilesCache: nextCache,
+          }
+        })
       } catch (e) {
         console.error('Failed to update bypass profile:', e)
       }
@@ -429,18 +454,33 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     deleteBypassProfile: async (profileId) => {
       try {
         await bypassProfilesApi.delete(profileId)
-        set((state) => ({
-          bypassProfiles: state.bypassProfiles.filter((p) => p.id !== profileId),
-        }))
+        set((state) => {
+          const nextProfiles = state.bypassProfiles.filter((p) => p.id !== profileId)
+          const nextCache: Record<number, BypassProfile[]> = {}
+          for (const [wid, list] of Object.entries(state.bypassProfilesCache)) {
+            nextCache[Number(wid)] = list.filter((p) => p.id !== profileId)
+          }
+          return {
+            bypassProfiles: nextProfiles,
+            bypassProfilesCache: nextCache,
+          }
+        })
       } catch (e) {
         console.error('Failed to delete bypass profile:', e)
       }
     },
 
     fetchParamSyncGroups: async (workflowId) => {
+      const cached = get().paramSyncGroupsCache[workflowId]
+      if (cached) {
+        set({ paramSyncGroups: cached })
+      }
       try {
         const groups = await paramSyncGroupsApi.list(workflowId)
-        set({ paramSyncGroups: groups })
+        set((state) => ({
+          paramSyncGroups: groups,
+          paramSyncGroupsCache: { ...state.paramSyncGroupsCache, [workflowId]: groups },
+        }))
       } catch (e) {
         console.error('Failed to fetch param sync groups:', e)
       }
@@ -448,30 +488,60 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     createParamSyncGroup: async (workflowId, data) => {
       const newGroup = await paramSyncGroupsApi.create(workflowId, data)
-      set((state) => ({ paramSyncGroups: [...state.paramSyncGroups, newGroup] }))
+      set((state) => {
+        const updated = [...state.paramSyncGroups, newGroup]
+        return {
+          paramSyncGroups: updated,
+          paramSyncGroupsCache: { ...state.paramSyncGroupsCache, [workflowId]: updated },
+        }
+      })
       return newGroup
     },
 
     updateParamSyncGroup: async (id, data) => {
       const updated = await paramSyncGroupsApi.update(id, data)
-      set((state) => ({
-        paramSyncGroups: state.paramSyncGroups.map((g) => (g.id === id ? updated : g)),
-      }))
+      set((state) => {
+        const nextGroups = state.paramSyncGroups.map((g) => (g.id === id ? updated : g))
+        const nextCache: Record<number, ParamSyncGroup[]> = {}
+        for (const [wid, list] of Object.entries(state.paramSyncGroupsCache)) {
+          nextCache[Number(wid)] = list.map((g) => (g.id === id ? updated : g))
+        }
+        return {
+          paramSyncGroups: nextGroups,
+          paramSyncGroupsCache: nextCache,
+        }
+      })
       return updated
     },
 
     deleteParamSyncGroup: async (id) => {
       await paramSyncGroupsApi.delete(id)
-      set((state) => ({
-        paramSyncGroups: state.paramSyncGroups.filter((g) => g.id !== id),
-      }))
+      set((state) => {
+        const nextGroups = state.paramSyncGroups.filter((g) => g.id !== id)
+        const nextCache: Record<number, ParamSyncGroup[]> = {}
+        for (const [wid, list] of Object.entries(state.paramSyncGroupsCache)) {
+          nextCache[Number(wid)] = list.filter((g) => g.id !== id)
+        }
+        return {
+          paramSyncGroups: nextGroups,
+          paramSyncGroupsCache: nextCache,
+        }
+      })
     },
 
     toggleParamSyncGroup: async (id, isEnabled) => {
       const updated = await paramSyncGroupsApi.update(id, { is_enabled: isEnabled })
-      set((state) => ({
-        paramSyncGroups: state.paramSyncGroups.map((g) => (g.id === id ? updated : g)),
-      }))
+      set((state) => {
+        const nextGroups = state.paramSyncGroups.map((g) => (g.id === id ? updated : g))
+        const nextCache: Record<number, ParamSyncGroup[]> = {}
+        for (const [wid, list] of Object.entries(state.paramSyncGroupsCache)) {
+          nextCache[Number(wid)] = list.map((g) => (g.id === id ? updated : g))
+        }
+        return {
+          paramSyncGroups: nextGroups,
+          paramSyncGroupsCache: nextCache,
+        }
+      })
     },
 
     initialize: () => {
@@ -565,14 +635,18 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
               case 'execution_start': {
                 const promptId = data.prompt_id as string
-                if (get().activeBatch) {
+                const currentBatch = get().activeBatch
+                const isOwnBatchJob = currentBatch ? currentBatch.some((job) => job.promptId === promptId) : false
+                const hasUnfinishedBatch = currentBatch ? currentBatch.some((job) => job.status === 'pending' || job.status === 'generating') : false
+
+                if (currentBatch) {
                   get().updateBatchJobStatus(promptId, 'generating')
                 }
                 set({
                   isGenerating: true,
                   progress: null,
                   currentPromptId: promptId,
-                  activeClientId: null,
+                  activeClientId: (isOwnBatchJob || hasUnfinishedBatch) ? get().clientId : (get().activeClientId ?? get().clientId),
                   generationStartTime: Date.now(),
                   currentNode: null,
                   nodeProgress: null,
@@ -949,6 +1023,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           set({
             isGenerating: true,
             currentPromptId: promptId,
+            activeClientId: get().clientId,
           })
         } else {
           set({
@@ -1008,25 +1083,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     cancelGeneration: async () => {
-      get().abortSubmission()
-      if (!comfyUrl) return
-      const activeUrl = resolveComfyUrl(comfyUrl)
-      try {
-        await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
-        set({
-          isGenerating: false,
-          currentPromptId: null,
-          activeClientId: null,
-          generationStartTime: null,
-          currentNode: null,
-          nodeProgress: null,
-          currentWorkflow: null,
-        })
-        localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-        await get().fetchQueue()
-      } catch (e) {
-        console.error('Failed to cancel:', e)
-      }
+      await get().cancelAllJobs()
     },
 
     clearPreview: () => set({ previewImage: null, progress: null }),
@@ -1039,24 +1096,49 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (!res.ok) return
         const data = await res.json()
         const allImages: string[] = []
-        const entries = Object.entries(data) as [string, ComfyHistoryItem][]
+        const ownImages: string[] = []
+        const clientId = get().clientId
+
+        const entries = Object.entries(data || {}) as [string, ComfyHistoryItem][]
         const sortedEntries = entries.sort(([, itemA], [, itemB]) => {
-          const indexA = itemA.prompt ? itemA.prompt[0] : 0
-          const indexB = itemB.prompt ? itemB.prompt[0] : 0
+          const indexA = itemA?.prompt ? itemA.prompt[0] : 0
+          const indexB = itemB?.prompt ? itemB.prompt[0] : 0
           return indexB - indexA
         })
+
         sortedEntries.forEach(([key, item]) => {
-          Object.values(item.outputs).forEach((out) => {
-            if (out.images) {
-              out.images.forEach((img) => {
-                allImages.push(
-                  `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
-                )
-              })
-            }
-          })
+          if (!item) return
+          const isOwnPrompt = item.prompt && item.prompt[3]?.client_id === clientId
+          if (item.outputs) {
+            Object.values(item.outputs).forEach((out) => {
+              if (out?.images) {
+                out.images.forEach((img) => {
+                  const url = `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
+                  allImages.push(url)
+                  if (isOwnPrompt) {
+                    ownImages.push(url)
+                  }
+                })
+              }
+            })
+          }
         })
-        set({ comfyHistoryImages: allImages.slice(0, 50) })
+
+        set((state) => {
+          // 自セッション履歴のマージ (既存と結合して重複排除、最大50件)
+          const mergedBatchImages = Array.from(new Set([...state.batchImages, ...ownImages])).slice(0, 50)
+          localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
+          const nextSelected = state.selectedImg || (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
+          if (nextSelected && !state.selectedImg) {
+            localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
+          }
+
+          return {
+            comfyHistoryImages: allImages.slice(0, 50),
+            batchImages: mergedBatchImages,
+            selectedImg: nextSelected,
+          }
+        })
       } catch (e) {
         console.error('Failed to fetch comfy history:', e)
       }
@@ -1070,6 +1152,14 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         if (res.ok) {
           const data = (await res.json()) as ComfyQueueResponse
           set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
+
+          const running = data.queue_running || []
+          if (running.length > 0) {
+            const activeJobClientId = running[0][3]?.client_id || null
+            if (activeJobClientId) {
+              set({ activeClientId: activeJobClientId })
+            }
+          }
 
           const activeBatch = get().activeBatch
           if (activeBatch) {
@@ -1113,7 +1203,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (!comfyUrl) return
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
-        const isRunning = get().queueRunning.some((job) => job[1] === promptId)
+        const isCurrentRunning = get().currentPromptId === promptId
+        const isInQueueRunning = get().queueRunning.some((job) => job[1] === promptId)
+        const isRunning = isCurrentRunning || isInQueueRunning
         
         // 1. 実行中の場合は割り込みを投げる
         if (isRunning) {
@@ -1134,8 +1226,43 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           body: JSON.stringify({ delete: [promptId] } as ComfyHistoryDeletePayload),
         })
 
-        // 4. 自セッションの実行中ジョブであった場合はステートをリセット
-        if (promptId === get().currentPromptId || get().activeBatch?.some((job) => job.promptId === promptId)) {
+        // 4. 自セッションのバッチジョブ/実行中ジョブのステート更新
+        const activeBatch = get().activeBatch
+        if (activeBatch && activeBatch.some((job) => job.promptId === promptId)) {
+          const updatedBatch = activeBatch.map((job) =>
+            job.promptId === promptId ? { ...job, status: 'failed' as const } : job
+          )
+          const remainingUnfinished = updatedBatch.filter(
+            (job) => job.status === 'pending' || job.status === 'generating'
+          )
+          if (remainingUnfinished.length > 0) {
+            set({
+              activeBatch: updatedBatch,
+              ...(promptId === get().currentPromptId
+                ? {
+                    currentPromptId: null,
+                    currentNode: null,
+                    nodeProgress: null,
+                  }
+                : {}),
+            })
+            if (promptId === get().currentPromptId) {
+              localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+            }
+          } else {
+            set({
+              activeBatch: null,
+              isGenerating: false,
+              currentPromptId: null,
+              activeClientId: null,
+              generationStartTime: null,
+              currentNode: null,
+              nodeProgress: null,
+              currentWorkflow: null,
+            })
+            localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+          }
+        } else if (promptId === get().currentPromptId) {
           set({
             activeBatch: null,
             isGenerating: false,
@@ -1160,15 +1287,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       if (!comfyUrl) return
       const activeUrl = resolveComfyUrl(comfyUrl)
       try {
-        // 1. 中断
-        await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
-
         const filterJob = (job: any) => !get().filterOwnSession || job[3]?.client_id === get().clientId
         const runningIds = get().queueRunning.map((j) => j[1])
         const pendingIds = get().queuePending.filter(filterJob).map((j) => j[1])
         const allIds = [...runningIds, ...pendingIds]
 
-        // 2. 待機キューのクリア
+        // 1. 待機キューのクリア (interruptより先に実行)
         if (get().filterOwnSession) {
           if (pendingIds.length > 0) {
             await fetch(`${activeUrl}/queue`, {
@@ -1184,6 +1308,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             body: JSON.stringify({ clear: true } as ComfyQueueClearPayload),
           })
         }
+
+        // 2. 中断 (割り込み)
+        await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
 
         // 3. 履歴からの削除
         if (allIds.length > 0) {

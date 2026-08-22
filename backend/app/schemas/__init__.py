@@ -117,6 +117,15 @@ from app.schemas.speech_bubble_preset import (
     SpeechBubblePresetRead,
 )
 
+from app.schemas.speech_tone_preset import (
+    SpeechTonePresetBase,
+    SpeechTonePresetCreate,
+    SpeechTonePresetUpdate,
+    SpeechTonePresetRead,
+    SpeechToneRewriteRequest,
+    SpeechToneRewriteResponse,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -152,6 +161,10 @@ __all__ = [
     "ParamSyncGroupBase", "ParamSyncGroupCreate", "ParamSyncGroupUpdate", "ParamSyncGroupRead",
     # SpeechBubblePreset
     "SpeechBubblePresetBase", "SpeechBubblePresetCreate", "SpeechBubblePresetUpdate", "SpeechBubblePresetRead",
+    # SpeechTonePreset
+    "SpeechTonePresetBase", "SpeechTonePresetCreate", "SpeechTonePresetUpdate", "SpeechTonePresetRead",
+    "SpeechToneRewriteRequest", "SpeechToneRewriteResponse",
 ]
+
 
 

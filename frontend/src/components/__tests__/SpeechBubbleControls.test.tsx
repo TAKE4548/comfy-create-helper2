@@ -1,9 +1,12 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import React from 'react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SpeechBubbleControls, SpeechBubbleControlsProps } from '../SpeechBubbleControls'
 import { SpeechBubble } from '../../types/speechBubble'
-import { speechBubblePresetsApi } from '../../api/client'
-import type { SpeechBubblePreset } from '../../api/types'
+import { speechBubblePresetsApi, speechTonePresetsApi } from '../../api/client'
+import type { SpeechBubblePreset, SpeechTonePreset } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
   speechBubblePresetsApi: {
@@ -12,9 +15,19 @@ vi.mock('../../api/client', () => ({
     update: vi.fn(),
     delete: vi.fn(),
   },
+  speechTonePresetsApi: {
+    list: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    rewrite: vi.fn(),
+  },
 }))
 
+
 describe('SpeechBubbleControls', () => {
+  let queryClient: QueryClient
+
   const mockBubble: SpeechBubble = {
     id: 'b-1',
     x: 100,
@@ -64,6 +77,25 @@ describe('SpeechBubbleControls', () => {
     },
   ]
 
+  const mockTonePresets: SpeechTonePreset[] = [
+    {
+      id: 10,
+      name: 'ツンデレ風',
+      prompt: 'ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。',
+      description: 'ツンデレ',
+      sort_order: 0,
+      created_at: '2026-08-20T00:00:00Z',
+    },
+    {
+      id: 11,
+      name: 'お嬢様風',
+      prompt: '上品なお嬢様言葉で「〜ですわ」をつけて。',
+      description: 'お嬢様',
+      sort_order: 1,
+      created_at: '2026-08-20T00:00:00Z',
+    },
+  ]
+
   const defaultProps: SpeechBubbleControlsProps = {
     bubble: mockBubble,
     bubblesCount: 1,
@@ -80,16 +112,33 @@ describe('SpeechBubbleControls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
     vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(mockPresets)
+    vi.mocked(speechTonePresetsApi.list).mockResolvedValue(mockTonePresets)
   })
 
+
+  const renderWithQuery = (ui: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    )
+  }
+
   it('renders guidance message when bubble is null', async () => {
-    render(<SpeechBubbleControls {...defaultProps} bubble={null} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={null} />)
     expect(screen.getByText(/吹き出しが選択されていません/i)).toBeDefined()
   })
 
   it('renders form controls when bubble is selected', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByDisplayValue('こんにちは')).toBeDefined()
     })
@@ -99,7 +148,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('calls onUpdate when text is modified', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByPlaceholderText('セリフを入力...')).toBeDefined()
     })
@@ -109,7 +158,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('calls onUpdate when shape is changed', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText('叫び')).toBeDefined()
     })
@@ -119,7 +168,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('calls onUpdate when orientation is changed', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText('横書き')).toBeDefined()
     })
@@ -129,7 +178,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('calls onGenerateDraft when draft button is clicked', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText(/ドラフト生成/)).toBeDefined()
     })
@@ -139,7 +188,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('calls onDelete when delete button is clicked', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText(/この吹き出しを削除/)).toBeDefined()
     })
@@ -149,7 +198,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('handles font selection', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByDisplayValue('標準ゴシック (sans-serif)')).toBeDefined()
     })
@@ -159,7 +208,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('handles font size auto-fit toggle and manual slider', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByRole('checkbox')).toBeDefined()
     })
@@ -173,7 +222,7 @@ describe('SpeechBubbleControls', () => {
 
   it('handles recent colors storage and applying', async () => {
     localStorage.setItem('speech_bubble_recent_colors', JSON.stringify(['rgba(255, 0, 0, 1)']))
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByTestId('recent-colors-palette')).toBeDefined()
     })
@@ -187,7 +236,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('saves new color to recent colors when color input is changed', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByLabelText('文字色')).toBeDefined()
     })
@@ -203,7 +252,7 @@ describe('SpeechBubbleControls', () => {
   // ─── Preset Tests ──────────────────────────────────────────────
 
   it('renders presets list on mount', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText('コミック標準')).toBeDefined()
       expect(screen.getByText('叫び・赤枠')).toBeDefined()
@@ -211,7 +260,7 @@ describe('SpeechBubbleControls', () => {
   })
 
   it('applies preset style when preset chip is clicked', async () => {
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText('叫び・赤枠')).toBeDefined()
     })
@@ -246,9 +295,12 @@ describe('SpeechBubbleControls', () => {
       sort_order: 2,
       created_at: '2026-08-20T01:00:00Z',
     }
-    vi.mocked(speechBubblePresetsApi.create).mockResolvedValue(newPreset)
+    vi.mocked(speechBubblePresetsApi.create).mockImplementation(async () => {
+      vi.mocked(speechBubblePresetsApi.list).mockResolvedValue([...mockPresets, newPreset])
+      return newPreset
+    })
 
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
 
     // Open add input
     const addToggleBtn = screen.getByText('＋ プリセット登録')
@@ -280,9 +332,11 @@ describe('SpeechBubbleControls', () => {
 
   it('deletes preset when delete icon is clicked', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    vi.mocked(speechBubblePresetsApi.delete).mockResolvedValue(undefined as any)
+    vi.mocked(speechBubblePresetsApi.delete).mockImplementation(async () => {
+      vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(mockPresets.filter((p) => p.id !== 1))
+    })
 
-    render(<SpeechBubbleControls {...defaultProps} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
       expect(screen.getByText('コミック標準')).toBeDefined()
     })
@@ -304,7 +358,7 @@ describe('SpeechBubbleControls', () => {
     }
     vi.mocked(speechBubblePresetsApi.update).mockResolvedValue(updatedPreset)
 
-    render(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, shape: 'burst' }} />)
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, shape: 'burst' }} />)
     await waitFor(() => {
       expect(screen.getByText('コミック標準')).toBeDefined()
     })
@@ -321,5 +375,196 @@ describe('SpeechBubbleControls', () => {
       )
     })
   })
+
+  // ─── Speech Tone Conversion Tests ──────────────────────────────
+
+  it('renders tone presets and custom prompt input when tone section is opened', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    
+    // Toggle tone section open
+    const toneToggle = screen.getByText(/セリフ口調変換/)
+    fireEvent.click(toneToggle)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('口調プリセット選択')).toBeDefined()
+      expect(screen.getByPlaceholderText(/口調の指示を入力/)).toBeDefined()
+      expect(screen.getByText('✨ 口調変換 (LLM)')).toBeDefined()
+      expect(screen.getByText('ツンデレ風')).toBeDefined()
+      expect(screen.getByText('お嬢様風')).toBeDefined()
+    })
+  })
+
+  it('selects a tone preset and updates prompt textarea', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    
+    // Open section
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByText('ツンデレ風')).toBeDefined()
+    })
+
+    const select = screen.getByLabelText('口調プリセット選択')
+    fireEvent.change(select, { target: { value: '10' } })
+
+    const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/) as HTMLTextAreaElement
+    expect(promptTextarea.value).toBe('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')
+  })
+
+  it('executes rewrite and displays preview with before/after', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockResolvedValue({
+      rewritten_text: 'べ、別に用事があるわけじゃないんだからね！',
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByText('ツンデレ風')).toBeDefined()
+    })
+
+    // Select preset
+    fireEvent.change(screen.getByLabelText('口調プリセット選択'), { target: { value: '10' } })
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')).toBeDefined()
+    })
+
+    // Click rewrite
+    const rewriteBtn = screen.getByText('✨ 口調変換 (LLM)')
+    fireEvent.click(rewriteBtn)
+
+    await waitFor(() => {
+      expect(speechTonePresetsApi.rewrite).toHaveBeenCalledWith({
+        text: 'こんにちは',
+        tone_prompt: 'ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。',
+        preset_id: 10,
+      })
+      const preview = screen.getByTestId('tone-rewrite-preview')
+      expect(within(preview).getByText('こんにちは')).toBeDefined()
+      expect(within(preview).getByText('べ、別に用事があるわけじゃないんだからね！')).toBeDefined()
+    })
+
+  })
+
+  it('applies rewritten text to bubble on clicking apply button', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockResolvedValue({
+      rewritten_text: 'ごきげんよう、皆様。',
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByText('お嬢様風')).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByLabelText('口調プリセット選択'), { target: { value: '11' } })
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('上品なお嬢様言葉で「〜ですわ」をつけて。')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(screen.getByText('セリフに適用')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByText('セリフに適用'))
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ text: 'ごきげんよう、皆様。' })
+    expect(screen.queryByTestId('tone-rewrite-preview')).toBeNull()
+  })
+
+
+  it('discards preview on clicking discard button', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockResolvedValue({
+      rewritten_text: 'テスト変換セリフ',
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('口調プリセット選択')).toBeDefined()
+    })
+
+    const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/)
+    fireEvent.change(promptTextarea, { target: { value: 'カスタム口調指示' } })
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(screen.getByText('破棄')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByText('破棄'))
+    expect(defaultProps.onUpdate).not.toHaveBeenCalledWith({ text: 'テスト変換セリフ' })
+    expect(screen.queryByTestId('tone-rewrite-preview')).toBeNull()
+  })
+
+  it('displays error message when rewrite fails', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockRejectedValue(new Error('LLMタイムアウト'))
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('口調プリセット選択')).toBeDefined()
+    })
+
+    const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/)
+    fireEvent.change(promptTextarea, { target: { value: 'カスタム口調指示' } })
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(screen.getByText('LLMタイムアウト')).toBeDefined()
+    })
+  })
+
+  it('saves custom tone prompt as a new preset', async () => {
+    const newTonePreset: SpeechTonePreset = {
+      id: 12,
+      name: '武士風',
+      prompt: '〜でござる口調で',
+      description: null,
+      sort_order: 2,
+      created_at: '2026-08-20T02:00:00Z',
+    }
+    vi.mocked(speechTonePresetsApi.create).mockImplementation(async () => {
+      vi.mocked(speechTonePresetsApi.list).mockResolvedValue([...mockTonePresets, newTonePreset])
+      return newTonePreset
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/口調の指示を入力/)).toBeDefined()
+    })
+
+    // Input prompt
+    const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/)
+    fireEvent.change(promptTextarea, { target: { value: '〜でござる口調で' } })
+
+    // Open add preset form in speech-tone-section
+    const toneSection = screen.getByTestId('speech-tone-section')
+    const addPresetBtn = within(toneSection).getByText('＋ プリセット登録')
+    fireEvent.click(addPresetBtn)
+
+    const nameInput = screen.getByPlaceholderText(/新しい口調プリセット名/)
+    fireEvent.change(nameInput, { target: { value: '武士風' } })
+
+    const registerBtn = screen.getByText('登録')
+    fireEvent.click(registerBtn)
+
+    await waitFor(() => {
+      expect(speechTonePresetsApi.create).toHaveBeenCalledWith({
+        name: '武士風',
+        prompt: '〜でござる口調で',
+        sort_order: 2,
+      })
+      expect(screen.getByText('武士風')).toBeDefined()
+    })
+  })
+
 })
+
 

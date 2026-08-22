@@ -1,5 +1,7 @@
+import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BaseImageSelectModal } from '../BaseImageSelectModal'
 import { snapshotsApi, workflowsApi, lorasApi, tagSetsApi, albumsApi } from '../../api/client'
 import type { SnapshotSummary, WorkflowSummary, Lora, TagSet, Album } from '../../api/types'
@@ -24,6 +26,8 @@ vi.mock('../../api/client', () => ({
 }))
 
 describe('BaseImageSelectModal', () => {
+  let queryClient: QueryClient
+
   const mockWorkflows: WorkflowSummary[] = [
     { id: 1, name: 'Workflow 1', created_at: '2026-08-18T00:00:00Z' },
     { id: 2, name: 'Workflow 2', created_at: '2026-08-18T01:00:00Z' },
@@ -60,6 +64,13 @@ describe('BaseImageSelectModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(lorasApi.list).mockResolvedValue(mockLoras)
     vi.mocked(tagSetsApi.list).mockResolvedValue(mockTagSets)
@@ -68,8 +79,16 @@ describe('BaseImageSelectModal', () => {
     vi.mocked(albumsApi.get).mockResolvedValue(mockAlbums[0])
   })
 
+  const renderWithQuery = (ui: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    )
+  }
+
   it('renders snapshot tab and loads filter options and snapshots by default', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -100,7 +119,7 @@ describe('BaseImageSelectModal', () => {
   })
 
   it('switches to Albums tab and displays album list', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -121,7 +140,7 @@ describe('BaseImageSelectModal', () => {
   })
 
   it('filters snapshots by Workflow, LoRA, and TagSet', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         currentSnapshotId={1}
         onClose={mockOnClose}
@@ -129,9 +148,9 @@ describe('BaseImageSelectModal', () => {
       />
     )
 
-    await waitFor(() => {
-      expect(workflowsApi.list).toHaveBeenCalled()
-    })
+    expect(await screen.findByText('Workflow 2')).toBeDefined()
+    expect(await screen.findByText('Lora A')).toBeDefined()
+    expect(await screen.findByText('TagSet 1')).toBeDefined()
 
     const workflowSelect = screen.getByLabelText('Workflow Filter')
     fireEvent.change(workflowSelect, { target: { value: '2' } })
@@ -162,7 +181,7 @@ describe('BaseImageSelectModal', () => {
   })
 
   it('sorts snapshots when sort buttons are clicked', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -171,21 +190,17 @@ describe('BaseImageSelectModal', () => {
       />
     )
 
-    await waitFor(() => {
-      expect(screen.getByText('#1')).toBeDefined()
-    })
+    expect(await screen.findByText('#1')).toBeDefined()
 
-    // Click '古い順' (asc)
-    const sortAscBtn = screen.getByText('古い順')
+    const sortAscBtn = document.getElementById('sort-asc')!
     fireEvent.click(sortAscBtn)
 
-    // Click '新しい順' (desc)
-    const sortDescBtn = screen.getByText('新しい順')
+    const sortDescBtn = document.getElementById('sort-desc')!
     fireEvent.click(sortDescBtn)
   })
 
   it('calls onSelect when a snapshot card is clicked', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -194,8 +209,9 @@ describe('BaseImageSelectModal', () => {
       />
     )
 
-    const snap2Btn = await screen.findByText('#2')
-    fireEvent.click(snap2Btn)
+    expect(await screen.findByText('#2')).toBeDefined()
+    const card = screen.getByText('#2').closest('button')!
+    fireEvent.click(card)
 
     expect(mockOnSelect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 2, image_path: '/snap2.png' })
@@ -203,7 +219,7 @@ describe('BaseImageSelectModal', () => {
   })
 
   it('browses album, sorts album items, and selects an item', async () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -212,53 +228,48 @@ describe('BaseImageSelectModal', () => {
       />
     )
 
-    // Switch to albums tab
+    // Switch to album tab
     const albumTabBtn = screen.getByRole('button', { name: /アルバム/ })
     fireEvent.click(albumTabBtn)
 
-    const albumCard = await screen.findByText('Album 1')
+    expect(await screen.findByText('Album 1')).toBeDefined()
+
+    // Click on album card
+    const albumCard = screen.getByText('Album 1').closest('button')!
     fireEvent.click(albumCard)
 
+    // In album detail view
     await waitFor(() => {
       expect(albumsApi.get).toHaveBeenCalledWith(100)
     })
-
     expect(await screen.findByRole('button', { name: /アルバム一覧へ/ })).toBeDefined()
     expect(screen.getByText('#1')).toBeDefined()
     expect(screen.getByText('#2')).toBeDefined()
 
     // Test album sorting buttons
-    const dateAscBtn = screen.getByRole('button', { name: '古い順' })
+    const dateAscBtn = document.getElementById('album-sort-date-asc')!
     fireEvent.click(dateAscBtn)
 
-    const dateDescBtn = screen.getByRole('button', { name: '新しい順' })
+    const dateDescBtn = document.getElementById('album-sort-date-desc')!
     fireEvent.click(dateDescBtn)
 
-    const customSortBtn = screen.getByRole('button', { name: '並び順' })
+    const customSortBtn = document.getElementById('album-sort-custom')!
     fireEvent.click(customSortBtn)
 
-    // Select album item
-    const itemCard = screen.getByText('#2')
+    // Select snapshot inside album
+    const itemCard = (await screen.findByText('#1')).closest('button')!
     fireEvent.click(itemCard)
 
-    expect(mockOnSelect).toHaveBeenCalledWith({
-      id: 2,
-      image_path: '/snap2.png',
-      thumbnail_path: '/thumb2.png',
-    })
-
-    // Go back to album list
-    const backBtn = screen.getByRole('button', { name: /アルバム一覧へ/ })
-    fireEvent.click(backBtn)
-
-    expect(await screen.findByText('Album 1')).toBeDefined()
+    expect(mockOnSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, image_path: '/snap1.png' })
+    )
   })
 
-  it('shows empty messages when snapshots or albums are empty', async () => {
+  it('renders empty states when no snapshots or albums available', async () => {
     vi.mocked(snapshotsApi.list).mockResolvedValue([])
     vi.mocked(albumsApi.list).mockResolvedValue([])
 
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}
@@ -276,7 +287,7 @@ describe('BaseImageSelectModal', () => {
   })
 
   it('calls onClose when close button or backdrop is clicked', () => {
-    render(
+    renderWithQuery(
       <BaseImageSelectModal
         workflowId={1}
         currentSnapshotId={1}

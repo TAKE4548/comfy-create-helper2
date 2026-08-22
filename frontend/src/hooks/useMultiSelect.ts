@@ -1,21 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
 import { LS_KEYS } from '../utils/localStorageKeys';
 
-export interface UseMultiSelectOptions<T extends { id: number }> {
+export interface UseMultiSelectOptions<ID extends number | string = number, T extends { id: ID } = { id: ID }> {
   items: T[];
 }
 
-export interface UseMultiSelectReturn {
+export interface UseMultiSelectReturn<ID extends number | string = number> {
   isMultiSelectMode: boolean;
-  selectedIds: Set<number>;
-  enterMultiSelectMode: (firstId?: number) => void;
+  selectedIds: Set<ID>;
+  enterMultiSelectMode: (firstId?: ID) => void;
   exitMultiSelectMode: () => void;
-  handleItemClick: (id: number, event: React.MouseEvent) => void;
-  toggleItem: (id: number) => void;
+  handleItemClick: (id: ID, event: React.MouseEvent) => void;
+  toggleItem: (id: ID) => void;
   selectAll: () => void;
   clearSelection: () => void;
-  isSelected: (id: number) => boolean;
-  getLongPressHandlers: (id: number) => {
+  isSelected: (id: ID) => boolean;
+  getLongPressHandlers: (id: ID) => {
     onMouseDown: (e: React.MouseEvent) => void;
     onMouseUp: () => void;
     onMouseLeave: () => void;
@@ -24,15 +24,15 @@ export interface UseMultiSelectReturn {
   };
 }
 
-export function useMultiSelect<T extends { id: number }>({
+export function useMultiSelect<ID extends number | string = number, T extends { id: ID } = { id: ID }>({
   items,
-}: UseMultiSelectOptions<T>): UseMultiSelectReturn {
+}: UseMultiSelectOptions<ID, T>): UseMultiSelectReturn<ID> {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const lastSelectedIdRef = useRef<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<ID>>(new Set());
+  const lastSelectedIdRef = useRef<ID | null>(null);
   const isDraggingRef = useRef(false);
 
-  const enterMultiSelectMode = useCallback((firstId?: number) => {
+  const enterMultiSelectMode = useCallback((firstId?: ID) => {
     setIsMultiSelectMode(true);
     if (firstId !== undefined) {
       setSelectedIds(new Set([firstId]));
@@ -46,7 +46,7 @@ export function useMultiSelect<T extends { id: number }>({
     lastSelectedIdRef.current = null;
   }, []);
 
-  const toggleItem = useCallback((id: number) => {
+  const toggleItem = useCallback((id: ID) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -59,7 +59,7 @@ export function useMultiSelect<T extends { id: number }>({
   }, []);
 
   const handleItemClick = useCallback(
-    (id: number, event: React.MouseEvent) => {
+    (id: ID, event: React.MouseEvent) => {
       if (!isMultiSelectMode) {
         if (event.ctrlKey || event.metaKey || event.shiftKey) {
           const prevLastSelected = lastSelectedIdRef.current;
@@ -114,14 +114,14 @@ export function useMultiSelect<T extends { id: number }>({
   }, []);
 
   const isSelected = useCallback(
-    (id: number) => {
+    (id: ID) => {
       return selectedIds.has(id);
     },
     [selectedIds]
   );
 
   const getLongPressHandlers = useCallback(
-    (id: number) => {
+    (id: ID) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
       let startX: number | null = null;
       let startY: number | null = null;

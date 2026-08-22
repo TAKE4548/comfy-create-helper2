@@ -235,4 +235,121 @@ describe('TagChip', () => {
     fireEvent.mouseDown(screen.getByTestId('outside'));
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
   });
+
+  it('allows editing the tag word in the submenu while preserving weight on Enter and blur', () => {
+    render(
+      <TagChip
+        id="1"
+        text="(looking back:1.2)"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('(looking back:1.2)'));
+
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    expect(wordInput).toHaveValue('looking back');
+
+    // Change word and press Enter
+    fireEvent.change(wordInput, { target: { value: 'looking away' } });
+    fireEvent.keyDown(wordInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(looking away:1.2)');
+
+    // Test onBlur update
+    mockOnEdit.mockClear();
+    fireEvent.change(wordInput, { target: { value: 'solo' } });
+    fireEvent.blur(wordInput);
+
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(solo:1.2)');
+  });
+
+  it('restores original baseText when word is cleared to empty in submenu', () => {
+    render(
+      <TagChip
+        id="1"
+        text="masterpiece"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('masterpiece'));
+
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    expect(wordInput).toHaveValue('masterpiece');
+
+    // Clear text and blur
+    mockOnEdit.mockClear();
+    mockOnDelete.mockClear();
+    fireEvent.change(wordInput, { target: { value: '   ' } });
+    fireEvent.blur(wordInput);
+
+    expect(mockOnEdit).not.toHaveBeenCalled();
+    expect(mockOnDelete).not.toHaveBeenCalled();
+    expect(wordInput).toHaveValue('masterpiece');
+  });
+
+  it('cancels word edit and closes submenu on Escape key in word input', () => {
+    render(
+      <TagChip
+        id="1"
+        text="1girl"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('1girl'));
+
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    fireEvent.change(wordInput, { target: { value: '2girls' } });
+
+    // Press Escape
+    fireEvent.keyDown(wordInput, { key: 'Escape', code: 'Escape' });
+
+    expect(mockOnEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: 'タグ名編集' })).not.toBeInTheDocument();
+  });
+
+  it('does not trigger parent chip shortcuts (Space, Delete) when typing in word input', () => {
+    render(
+      <TagChip
+        id="1"
+        text="test-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('test-tag'));
+
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    mockOnToggle.mockClear();
+    mockOnDelete.mockClear();
+
+    // Type Space and Delete in word input
+    fireEvent.keyDown(wordInput, { key: ' ', code: 'Space' });
+    expect(mockOnToggle).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(wordInput, { key: 'Delete', code: 'Delete' });
+    expect(mockOnDelete).not.toHaveBeenCalled();
+  });
 });

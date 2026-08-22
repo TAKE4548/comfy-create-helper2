@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { X, Image as ImageIcon, Loader2, ArrowLeft, BookOpen, Layers } from 'lucide-react'
 
 import { snapshotsApi, workflowsApi, lorasApi, tagSetsApi, albumsApi } from '../api/client'
+import { STALE_TIMES } from '../constants/staleTimes'
 import type { SnapshotSummary, WorkflowSummary, Lora, TagSet, Album } from '../api/types'
 
 export interface BaseImageOption {
@@ -29,10 +31,22 @@ export function BaseImageSelectModal({
   // Tab State
   const [activeTab, setActiveTab] = useState<'snapshots' | 'albums'>('snapshots')
 
-  // Filter Data
-  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([])
-  const [loras, setLoras] = useState<Lora[]>([])
-  const [tagSets, setTagSets] = useState<TagSet[]>([])
+  // Filter Data (React Query)
+  const { data: workflows = [] } = useQuery<WorkflowSummary[]>({
+    queryKey: ['workflows'],
+    queryFn: () => workflowsApi.list(),
+    staleTime: STALE_TIMES.WORKFLOWS,
+  })
+  const { data: loras = [] } = useQuery<Lora[]>({
+    queryKey: ['loras'],
+    queryFn: () => lorasApi.list(),
+    staleTime: STALE_TIMES.LORAS,
+  })
+  const { data: tagSets = [] } = useQuery<TagSet[]>({
+    queryKey: ['tag-sets'],
+    queryFn: () => tagSetsApi.list(),
+    staleTime: STALE_TIMES.TAG_SETS,
+  })
 
   // Snapshots Tab State
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(workflowId ?? null)
@@ -40,82 +54,53 @@ export function BaseImageSelectModal({
   const [selectedTagSetId, setSelectedTagSetId] = useState<number | null>(null)
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [snapshotLimit, setSnapshotLimit] = useState<number>(24)
-  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([])
-  const [isLoadingSnapshots, setIsLoadingSnapshots] = useState<boolean>(false)
   const snapshotSentinelRef = useRef<HTMLDivElement | null>(null)
 
+  const { data: snapshots = [], isLoading: isLoadingSnapshots } = useQuery<SnapshotSummary[]>({
+    queryKey: [
+      'snapshots',
+      {
+        workflow_id: selectedWorkflowId,
+        lora_id: selectedLoraId,
+        tag_set_id: selectedTagSetId,
+      },
+    ],
+    queryFn: () =>
+      snapshotsApi.list({
+        workflow_id: selectedWorkflowId ?? undefined,
+        lora_id: selectedLoraId ?? undefined,
+        tag_set_id: selectedTagSetId ?? undefined,
+      }),
+    staleTime: STALE_TIMES.SNAPSHOTS,
+  })
+
   // Albums Tab State
-  const [albums, setAlbums] = useState<Album[]>([])
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null)
-  const [currentAlbum, setCurrentAlbum] = useState<Album | null>(null)
   const [albumSortBy, setAlbumSortBy] = useState<'custom' | 'date-asc' | 'date-desc'>('custom')
   const [albumItemLimit, setAlbumItemLimit] = useState<number>(24)
-  const [isLoadingAlbums, setIsLoadingAlbums] = useState<boolean>(false)
-  const [isLoadingAlbumDetail, setIsLoadingAlbumDetail] = useState<boolean>(false)
   const albumItemSentinelRef = useRef<HTMLDivElement | null>(null)
 
-  // Load filter options on mount
-  useEffect(() => {
-    workflowsApi.list().then(setWorkflows).catch((e) => console.error('Failed to load workflows', e))
-    lorasApi.list().then(setLoras).catch((e) => console.error('Failed to load loras', e))
-    tagSetsApi.list().then(setTagSets).catch((e) => console.error('Failed to load tagSets', e))
-  }, [])
+  const { data: albums = [], isLoading: isLoadingAlbums } = useQuery<Album[]>({
+    queryKey: ['albums'],
+    queryFn: () => albumsApi.list() as Promise<Album[]>,
+    staleTime: STALE_TIMES.ALBUMS,
+    enabled: activeTab === 'albums',
+  })
 
-  // Fetch snapshots when filters change
+  const { data: currentAlbum = null, isLoading: isLoadingAlbumDetail } = useQuery<Album | null>({
+    queryKey: ['album', selectedAlbumId],
+    queryFn: () => (selectedAlbumId != null ? albumsApi.get(selectedAlbumId) : null),
+    staleTime: STALE_TIMES.SNAPSHOT_DETAIL,
+    enabled: activeTab === 'albums' && selectedAlbumId != null,
+  })
+
+  // Reset pagination on filter / album selection change
   useEffect(() => {
-    setIsLoadingSnapshots(true)
     setSnapshotLimit(24)
-    snapshotsApi.list({
-      workflow_id: selectedWorkflowId ?? undefined,
-      lora_id: selectedLoraId ?? undefined,
-      tag_set_id: selectedTagSetId ?? undefined,
-    })
-      .then((data) => {
-        setSnapshots(data || [])
-      })
-      .catch((err) => {
-        console.error('Failed to list snapshots:', err)
-      })
-      .finally(() => {
-        setIsLoadingSnapshots(false)
-      })
   }, [selectedWorkflowId, selectedLoraId, selectedTagSetId])
 
-  // Load albums when tab switches to 'albums'
   useEffect(() => {
-    if (activeTab === 'albums' && albums.length === 0) {
-      setIsLoadingAlbums(true)
-      albumsApi.list()
-        .then((data) => {
-          setAlbums(data || [])
-        })
-        .catch((err) => {
-          console.error('Failed to list albums:', err)
-        })
-        .finally(() => {
-          setIsLoadingAlbums(false)
-        })
-    }
-  }, [activeTab, albums.length])
-
-  // Load album detail when selectedAlbumId changes
-  useEffect(() => {
-    if (selectedAlbumId != null) {
-      setIsLoadingAlbumDetail(true)
-      setAlbumItemLimit(24)
-      albumsApi.get(selectedAlbumId)
-        .then((data) => {
-          setCurrentAlbum(data)
-        })
-        .catch((err) => {
-          console.error('Failed to get album detail:', err)
-        })
-        .finally(() => {
-          setIsLoadingAlbumDetail(false)
-        })
-    } else {
-      setCurrentAlbum(null)
-    }
+    setAlbumItemLimit(24)
   }, [selectedAlbumId])
 
   // Sort snapshots

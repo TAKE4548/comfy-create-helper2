@@ -1,5 +1,7 @@
+import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SpeechBubbleEditorModal } from '../SpeechBubbleEditorModal'
 import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../../api/client'
 import type { SnapshotSummary } from '../../api/types'
@@ -44,10 +46,20 @@ vi.mock('../../api/client', () => ({
     update: vi.fn().mockResolvedValue({ id: 1, name: 'Default', shape: 'oval', orientation: 'vertical', font_family: 'sans-serif', font_size: 0, text_color: 'rgba(0,0,0,1)', background_color: 'rgba(255,255,255,1)', border_color: 'rgba(0,0,0,1)', border_width: 2, sort_order: 0, created_at: '' }),
     delete: vi.fn().mockResolvedValue(undefined),
   },
+  speechTonePresetsApi: {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({ id: 1, name: 'Default', prompt: 'prompt', description: '', sort_order: 0, created_at: '' }),
+    update: vi.fn().mockResolvedValue({ id: 1, name: 'Default', prompt: 'prompt', description: '', sort_order: 0, created_at: '' }),
+    delete: vi.fn().mockResolvedValue(undefined),
+    rewrite: vi.fn().mockResolvedValue({ rewritten_text: '' }),
+  },
 }))
 
 
+
 describe('SpeechBubbleEditorModal', () => {
+  let queryClient: QueryClient
+
   const mockSnapshot: SnapshotSummary = {
     id: 1,
     workflow_id: 1,
@@ -61,6 +73,13 @@ describe('SpeechBubbleEditorModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
     vi.mocked(snapshotsApi.list).mockResolvedValue([
       { id: 1, workflow_id: 1, created_at: '2026-08-18T00:00:00Z', image_path: '/test-image.png' },
       { id: 2, workflow_id: 1, created_at: '2026-08-18T01:00:00Z', image_path: '/test-image-2.png' },
@@ -122,8 +141,16 @@ describe('SpeechBubbleEditorModal', () => {
     }) as any
   })
 
+  const renderWithQuery = (ui: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    )
+  }
+
   it('renders modal and auto-detects initial bubble', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -138,7 +165,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('adds a new bubble on double click', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -160,7 +187,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('generates speech draft when draft button is clicked', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -181,7 +208,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('saves image composite and creates new snapshot on save', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -209,7 +236,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('calls onClose when close button is clicked', () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -223,7 +250,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('switches mobile tabs when tab buttons are clicked', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -244,7 +271,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('handles canvas touch interaction events', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -266,7 +293,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('renders and resizes mini preview in mobile controls tab', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -306,7 +333,7 @@ describe('SpeechBubbleEditorModal', () => {
 
   it('inherits last used style on new bubble creation and persists to localStorage', async () => {
     localStorage.clear()
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -357,7 +384,7 @@ describe('SpeechBubbleEditorModal', () => {
       })
     )
 
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -379,7 +406,7 @@ describe('SpeechBubbleEditorModal', () => {
 
   it('updates lastUsedStyle and persists to localStorage when selecting an existing bubble', async () => {
     localStorage.clear()
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -428,7 +455,7 @@ describe('SpeechBubbleEditorModal', () => {
       },
     } as any)
 
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -448,7 +475,7 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   it('opens BaseImageSelectModal and replaces base image when a snapshot is selected', async () => {
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         onClose={mockOnClose}
@@ -473,7 +500,7 @@ describe('SpeechBubbleEditorModal', () => {
     })
 
     // Select snapshot #2
-    const snap2Btn = screen.getByText('#2')
+    const snap2Btn = await screen.findByText('#2')
     fireEvent.click(snap2Btn)
 
     // Modal should close
@@ -499,7 +526,7 @@ describe('SpeechBubbleEditorModal', () => {
     window.Image = MockLoadedImage as any
 
     try {
-      render(
+      renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
           onClose={mockOnClose}
@@ -559,7 +586,7 @@ describe('SpeechBubbleEditorModal', () => {
     window.Image = MockLoadedImage as any
 
     try {
-      render(
+      renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
           onClose={mockOnClose}
@@ -627,7 +654,7 @@ describe('SpeechBubbleEditorModal', () => {
     window.Image = MockLoadedImage as any
 
     try {
-      render(
+      renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
           onClose={mockOnClose}
@@ -683,7 +710,7 @@ describe('SpeechBubbleEditorModal', () => {
     window.Image = MockLoadedImage as any
 
     try {
-      render(
+      renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
           onClose={mockOnClose}
@@ -721,7 +748,7 @@ describe('SpeechBubbleEditorModal', () => {
       { id: 200, name: 'Initial Album', items: [] } as any,
     ])
 
-    render(
+    renderWithQuery(
       <SpeechBubbleEditorModal
         snapshot={mockSnapshot}
         initialAlbumId={200}

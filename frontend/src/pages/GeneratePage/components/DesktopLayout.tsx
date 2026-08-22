@@ -223,6 +223,11 @@ export const DesktopLayout = ({
     }
   })()
 
+  const finishedBatchCount = activeBatch ? activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length : 0
+  const hasGeneratingJob = activeBatch ? activeBatch.some((j: any) => j.status === 'generating') : isGeneratingHere
+  const totalBatchCount = activeBatch ? activeBatch.length : 1
+  const currentBatchItemNumber = hasGeneratingJob ? Math.min(totalBatchCount, finishedBatchCount + 1) : Math.min(totalBatchCount, finishedBatchCount)
+
   const overallPercentage = isGeneratingHere ? batchProgress.percentage : 0
   const eta = (overallPercentage > 0 && elapsedTime > 0)
     ? Math.round(elapsedTime * (100 - overallPercentage) / overallPercentage)
@@ -557,7 +562,7 @@ export const DesktopLayout = ({
                         {/* 全体バッチ進捗 */}
                         <div className="space-y-1">
                           <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                            <span>全体進捗: {activeBatch ? activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length : 0}/{activeBatch ? activeBatch.length : 1} 枚目</span>
+                            <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
                             <span>{overallPercentage}%</span>
                           </div>
                           <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
@@ -685,10 +690,10 @@ export const DesktopLayout = ({
                         )}
                         <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto custom-scrollbar pb-1 items-center">
                           {sortedDisplayImages.map((img, i) => {
-                            const longPressHandlers = getLongPressHandlers(i)
-                            const isSel = isSelected(i)
+                            const longPressHandlers = getLongPressHandlers(img)
+                            const isSel = isSelected(img)
                             return (
-                              <button key={i} type="button" id={`thumb-${i}`}
+                              <button key={img || i} type="button" id={`thumb-${i}`}
                                 onMouseDown={longPressHandlers.onMouseDown}
                                 onMouseUp={longPressHandlers.onMouseUp}
                                 onMouseLeave={longPressHandlers.onMouseLeave}
@@ -697,7 +702,7 @@ export const DesktopLayout = ({
                                 onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                                 style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                                 onClick={(e) => {
-                                  handleItemClick(i, e)
+                                  handleItemClick(img, e)
                                   if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                                     setSelectedImg(img)
                                   }
@@ -798,7 +803,7 @@ export const DesktopLayout = ({
                     {/* 全体バッチ進捗 */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                        <span>全体進捗: {activeBatch ? activeBatch.filter((j: any) => j.status === 'completed' || j.status === 'failed').length : 0}/{activeBatch ? activeBatch.length : 1} 枚目</span>
+                        <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
                         <span>{overallPercentage}%</span>
                       </div>
                       <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">

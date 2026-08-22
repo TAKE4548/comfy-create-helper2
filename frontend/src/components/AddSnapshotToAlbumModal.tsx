@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Search, ChevronDown, Loader2, BookOpen } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { albumsApi } from '../api/client'
-import type { AlbumSummary } from '../api/types'
+import { useAlbums } from '../hooks/useAlbums'
 
 interface AddSnapshotToAlbumModalProps {
   isOpen: boolean
@@ -32,11 +30,7 @@ export function AddSnapshotToAlbumModal({
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: albums, isLoading } = useQuery<AlbumSummary[]>({
-    queryKey: ['albums'],
-    queryFn: () => albumsApi.list() as Promise<AlbumSummary[]>,
-    enabled: isOpen,
-  })
+  const { albums, isLoading } = useAlbums(isOpen)
 
   // Close dropdown on click outside
   useEffect(() => {

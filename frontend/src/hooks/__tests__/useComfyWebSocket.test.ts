@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias */
+import React from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useComfyWebSocket } from '../useComfyWebSocket'
 import { configApi } from '../../api/client'
 
@@ -11,6 +13,7 @@ vi.mock('../../api/client', () => ({
 }))
 
 describe('useComfyWebSocket', () => {
+  let queryClient: QueryClient
   const originalWebSocket = globalThis.WebSocket
   const originalFetch = globalThis.fetch
   const originalCreateObjectURL = globalThis.URL.createObjectURL
@@ -33,6 +36,13 @@ describe('useComfyWebSocket', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
     mockWebSocketInstance = null
     const mockGet = configApi.get as any
     mockGet.mockResolvedValue({ comfy_url: 'http://localhost:8188' })
@@ -45,6 +55,9 @@ describe('useComfyWebSocket', () => {
     }) as any
     globalThis.URL.createObjectURL = vi.fn().mockReturnValue('blob:http://localhost:8188/mock-uuid')
   })
+
+  const wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(QueryClientProvider, { client: queryClient }, children)
 
   afterEach(() => {
     globalThis.WebSocket = originalWebSocket
@@ -63,7 +76,7 @@ describe('useComfyWebSocket', () => {
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'))
+    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
 
     // URL取得を待つ
     await waitFor(() => {
@@ -83,7 +96,7 @@ describe('useComfyWebSocket', () => {
   })
 
   it('should toggle isConnected state on open, close, and error events', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'))
+    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
 
     // Wait for websocket instance creation
     await waitFor(() => {
@@ -116,7 +129,7 @@ describe('useComfyWebSocket', () => {
   })
 
   it('should handle progress, execution_start, executed, execution_complete, and execution_error events', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'))
+    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
 
     await waitFor(() => {
       expect(mockWebSocketInstance).not.toBeNull()
@@ -193,7 +206,7 @@ describe('useComfyWebSocket', () => {
   })
 
   it('should handle Blob and ArrayBuffer message data to set previewImage', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'))
+    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
 
     await waitFor(() => {
       expect(mockWebSocketInstance).not.toBeNull()
@@ -223,7 +236,7 @@ describe('useComfyWebSocket', () => {
     })
     globalThis.fetch = mockFetch
 
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'))
+    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
 
     // Test queuePrompt
     let promptId: string | null = null

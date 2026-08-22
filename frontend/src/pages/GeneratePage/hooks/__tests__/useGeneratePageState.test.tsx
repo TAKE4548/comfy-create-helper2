@@ -200,12 +200,20 @@ describe('useGeneratePageState', () => {
     expect(mockStore.setAppliedAssets).toHaveBeenCalled()
   })
 
-  it('should integrate with useMultiSelect state', () => {
+  it('should integrate with useMultiSelect state and synchronize preview image', () => {
     const wrapper = createWrapper()
     const { result } = renderHook(() => useGeneratePageState(), { wrapper })
 
     expect(result.current.isMultiSelectMode).toBe(false)
     expect(result.current.selectedIds.size).toBe(0)
+
+    act(() => {
+      result.current.handleItemClick('image2.png', { ctrlKey: true } as any)
+    })
+
+    expect(result.current.isMultiSelectMode).toBe(true)
+    expect(result.current.isSelected('image2.png')).toBe(true)
+    expect(mockStore.setSelectedImg).toHaveBeenCalledWith('image2.png')
   })
 
   it('should handle preset creation, update, and deletion mutations', async () => {
@@ -285,4 +293,57 @@ describe('useGeneratePageState', () => {
     expect(result.current.getIsRoleCollapsed('positive')).toBe(false)
     expect(localStorage.getItem('prompt-surgeon-collapsed-positive')).toBe('false')
   })
+
+  it('should compute totalQueueCount based purely on ComfyUI queue running and pending (REQ-159)', () => {
+    mockStore.queueRunning = [['0', 'run-1', {}, { client_id: 'test-client-id' }]]
+    mockStore.queuePending = [['1', 'pend-1', {}, { client_id: 'test-client-id' }]]
+    mockStore.activeBatch = [
+      { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+      { promptId: 'pending-Set 1-1-12345', setName: 'Set 1', status: 'pending' },
+      { promptId: 'pending-Set 2-0-12345', setName: 'Set 2', status: 'pending' },
+    ]
+
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    // ComfyUI running (1) + ComfyUI pending (1) = 2 (client pending is not added to totalQueueCount)
+    expect(result.current.totalQueueCount).toBe(2)
+  })
+
+  it('should consider isGeneratingHere true when filterOwnSession is true and activeBatch has pending/generating jobs (REQ-159)', () => {
+    mockStore.isGenerating = true
+    mockStore.filterOwnSession = true
+    mockStore.activeClientId = 'other-client-id'
+    mockStore.activeBatch = [
+      { promptId: 'p-1', setName: 'Set 1', status: 'completed' },
+      { promptId: 'p-2', setName: 'Set 1', status: 'generating' },
+    ]
+
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    expect(result.current.isGeneratingHere).toBe(true)
+  })
+
+  it('should sync queue and history on visibilitychange when document becomes visible (REQ-159)', () => {
+    const fetchQueueMock = vi.fn()
+    const fetchHistoryMock = vi.fn()
+    mockStore.fetchQueue = fetchQueueMock
+    mockStore.fetchHistory = fetchHistoryMock
+
+    const wrapper = createWrapper()
+    renderHook(() => useGeneratePageState(), { wrapper })
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      writable: true,
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(fetchQueueMock).toHaveBeenCalled()
+    expect(fetchHistoryMock).toHaveBeenCalled()
+  })
 })
+
+

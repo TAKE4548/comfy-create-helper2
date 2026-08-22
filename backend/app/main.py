@@ -17,8 +17,9 @@ from app.routers import (
     loras, tag_sets, categories, audit, llm_prompts,
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
-    speech_bubble_presets,
+    speech_bubble_presets, speech_tone_presets,
 )
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -253,6 +254,20 @@ def run_migrations():
             """))
             logger.info("Migrated: Created 'speech_bubble_presets' table.")
 
+        # Create speech_tone_presets table if not exists
+        if "speech_tone_presets" not in inspector.get_table_names():
+            conn.execute(sa.text("""
+                CREATE TABLE speech_tone_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR NOT NULL UNIQUE,
+                    prompt TEXT NOT NULL,
+                    description TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            logger.info("Migrated: Created 'speech_tone_presets' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -306,6 +321,8 @@ app.include_router(param_type_masters.router)
 app.include_router(comfy.router)
 app.include_router(param_sync_groups.router)
 app.include_router(speech_bubble_presets.router)
+app.include_router(speech_tone_presets.router)
+
 
 
 

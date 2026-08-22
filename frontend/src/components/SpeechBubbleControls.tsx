@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SpeechBubble, BubbleShapeType, TextOrientation } from '../types/speechBubble'
-import type { ServerFont, SpeechBubblePreset } from '../api/types'
-import { speechBubblePresetsApi } from '../api/client'
+import type { ServerFont, SpeechBubblePreset, SpeechTonePreset } from '../api/types'
+import { speechBubblePresetsApi, speechTonePresetsApi } from '../api/client'
 import { calculateFitBubbleDimensions } from '../utils/speechBubbleRenderer'
+import { STALE_TIMES } from '../constants/staleTimes'
+
 
 export interface SpeechBubbleControlsProps {
   bubble: SpeechBubble | null
@@ -74,11 +77,35 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   onDelete,
   onGenerateDraft,
 }) => {
+  const qc = useQueryClient()
+  const { data: presets = [] } = useQuery<SpeechBubblePreset[]>({
+    queryKey: ['speech-bubble-presets'],
+    queryFn: speechBubblePresetsApi.list,
+    staleTime: STALE_TIMES.SPEECH_BUBBLE_PRESETS,
+  })
+
+  const { data: tonePresets = [] } = useQuery<SpeechTonePreset[]>({
+    queryKey: ['speech-tone-presets'],
+    queryFn: speechTonePresetsApi.list,
+    staleTime: STALE_TIMES.SPEECH_TONE_PRESETS,
+  })
+  
   const [recentColors, setRecentColors] = useState<string[]>([])
-  const [presets, setPresets] = useState<SpeechBubblePreset[]>([])
   const [isSavingPreset, setIsSavingPreset] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
   const [showAddPresetInput, setShowAddPresetInput] = useState(false)
+
+  // 口調変換 (LLM) 状態
+  const [isToneSectionOpen, setIsToneSectionOpen] = useState(false)
+  const [selectedTonePresetId, setSelectedTonePresetId] = useState<number | null>(null)
+  const [customTonePrompt, setCustomTonePrompt] = useState('')
+  const [isRewriting, setIsRewriting] = useState(false)
+  const [rewriteError, setRewriteError] = useState<string | null>(null)
+  const [rewriteResult, setRewriteResult] = useState<{ original: string; rewritten: string } | null>(null)
+  const [showAddTonePreset, setShowAddTonePreset] = useState(false)
+  const [newTonePresetName, setNewTonePresetName] = useState('')
+  const [isSavingTonePreset, setIsSavingTonePreset] = useState(false)
+
 
   useEffect(() => {
     try {
@@ -88,20 +115,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
       }
     } catch {
       setRecentColors([])
-    }
-  }, [])
-
-  useEffect(() => {
-    let mounted = true
-    speechBubblePresetsApi.list()
-      .then((data) => {
-        if (mounted) setPresets(data)
-      })
-      .catch((err) => {
-        console.error('Failed to load speech bubble presets', err)
-      })
-    return () => {
-      mounted = false
     }
   }, [])
 
@@ -145,7 +158,8 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         border_width: bubble.borderWidth,
         sort_order: presets.length,
       })
-      setPresets((prev) => [...prev, created])
+      qc.setQueryData<SpeechBubblePreset[]>(['speech-bubble-presets'], (old) => (old ? [...old, created] : [created]))
+      await qc.invalidateQueries({ queryKey: ['speech-bubble-presets'] })
       setNewPresetName('')
       setShowAddPresetInput(false)
     } catch (err: any) {
@@ -170,7 +184,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         border_color: bubble.borderColor,
         border_width: bubble.borderWidth,
       })
-      setPresets((prev) => prev.map((p) => (p.id === preset.id ? updated : p)))
+      qc.setQueryData<SpeechBubblePreset[]>(['speech-bubble-presets'], (old) =>
+        old ? old.map((p) => (p.id === preset.id ? updated : p)) : [updated]
+      )
+      await qc.invalidateQueries({ queryKey: ['speech-bubble-presets'] })
     } catch (err: any) {
       alert('プリセットの更新に失敗しました: ' + (err.message || 'Error'))
     }
@@ -181,9 +198,56 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     if (!window.confirm(`プリセット「${preset.name}」を削除しますか？`)) return
     try {
       await speechBubblePresetsApi.delete(preset.id)
-      setPresets((prev) => prev.filter((p) => p.id !== preset.id))
+      qc.setQueryData<SpeechBubblePreset[]>(['speech-bubble-presets'], (old) =>
+        old ? old.filter((p) => p.id !== preset.id) : []
+      )
+      await qc.invalidateQueries({ queryKey: ['speech-bubble-presets'] })
     } catch (err: any) {
       alert('プリセットの削除に失敗しました: ' + (err.message || 'Error'))
+    }
+  }
+
+  const handleRewrite = async () => {
+    const promptToSend = customTonePrompt.trim() || (selectedTonePresetId ? tonePresets.find((p) => p.id === selectedTonePresetId)?.prompt : '')
+    if (!bubble?.text?.trim() || !promptToSend) return
+    setIsRewriting(true)
+    setRewriteError(null)
+    try {
+      const res = await speechTonePresetsApi.rewrite({
+        text: bubble.text,
+        tone_prompt: promptToSend,
+        preset_id: selectedTonePresetId || undefined,
+      })
+      setRewriteResult({
+        original: bubble.text,
+        rewritten: res.rewritten_text,
+      })
+    } catch (err: any) {
+      setRewriteError(err.message || '口調変換に失敗しました')
+    } finally {
+      setIsRewriting(false)
+    }
+  }
+
+
+  const handleSaveTonePreset = async () => {
+    if (!newTonePresetName.trim() || !customTonePrompt.trim()) return
+    setIsSavingTonePreset(true)
+    try {
+      const created = await speechTonePresetsApi.create({
+        name: newTonePresetName.trim(),
+        prompt: customTonePrompt.trim(),
+        sort_order: tonePresets.length,
+      })
+      qc.setQueryData<SpeechTonePreset[]>(['speech-tone-presets'], (old) => (old ? [...old, created] : [created]))
+      await qc.invalidateQueries({ queryKey: ['speech-tone-presets'] })
+      setSelectedTonePresetId(created.id)
+      setNewTonePresetName('')
+      setShowAddTonePreset(false)
+    } catch (err: any) {
+      alert('口調プリセットの保存に失敗しました: ' + (err.message || 'Error'))
+    } finally {
+      setIsSavingTonePreset(false)
     }
   }
 
@@ -254,6 +318,180 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           className="w-full p-2 border border-[rgba(255,255,255,0.12)] rounded bg-[#18181C] text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 text-xs"
         />
       </div>
+
+      {/* 口調変換 (LLM) セクション */}
+      <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="speech-tone-section">
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex items-center justify-between cursor-pointer select-none"
+          onClick={() => setIsToneSectionOpen((prev) => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setIsToneSectionOpen((prev) => !prev)
+            }
+          }}
+        >
+          <div className="flex items-center gap-1.5 font-medium text-xs text-zinc-200">
+            <span className="text-[10px] text-zinc-400">{isToneSectionOpen ? '▼' : '▶'}</span>
+            <span>🎭 セリフ口調変換 (LLM)</span>
+          </div>
+          {rewriteResult && (
+            <span className="text-[10px] text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
+              プレビュー中
+            </span>
+          )}
+        </div>
+
+        {isToneSectionOpen && (
+          <div className="space-y-2.5 bg-[#18181C] p-2.5 rounded border border-[rgba(255,255,255,0.08)]">
+            {/* プリセット選択 & 新規プリセット保存ボタン */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <select
+                  aria-label="口調プリセット選択"
+                  value={selectedTonePresetId ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value ? parseInt(e.target.value, 10) : null
+                    setSelectedTonePresetId(id)
+                    if (id) {
+                      const preset = tonePresets.find((p) => p.id === id)
+                      if (preset) {
+                        setCustomTonePrompt(preset.prompt)
+                      }
+                    }
+                  }}
+                  className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none focus:border-purple-500"
+                >
+                  <option value="">カスタム指示 / プリセット選択...</option>
+                  {tonePresets.map((tp) => (
+                    <option key={tp.id} value={tp.id}>
+                      {tp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddTonePreset((prev) => !prev)}
+                className="text-[11px] px-2 py-1 bg-purple-900/30 hover:bg-purple-900/50 text-purple-300 rounded border border-purple-700/40 whitespace-nowrap transition-colors"
+              >
+                {showAddTonePreset ? '閉じる' : '＋ プリセット登録'}
+              </button>
+            </div>
+
+            {/* 新規口調プリセット登録フォーム */}
+            {showAddTonePreset && (
+              <div className="p-2 bg-[#1F1F25] rounded border border-purple-500/30 space-y-2">
+                <input
+                  type="text"
+                  placeholder="新しい口調プリセット名（例: ツンデレ風）..."
+                  value={newTonePresetName}
+                  onChange={(e) => setNewTonePresetName(e.target.value)}
+                  className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#18181C] text-zinc-100 text-xs focus:outline-none focus:border-purple-500"
+                />
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddTonePreset(false)
+                      setNewTonePresetName('')
+                    }}
+                    className="px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newTonePresetName.trim() || !customTonePrompt.trim() || isSavingTonePreset}
+                    onClick={handleSaveTonePreset}
+                    className="px-2.5 py-0.5 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded font-medium disabled:opacity-50 transition-colors"
+                  >
+                    {isSavingTonePreset ? '保存中...' : '登録'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 口調プロンプト入力 */}
+            <div>
+              <textarea
+                value={customTonePrompt}
+                onChange={(e) => setCustomTonePrompt(e.target.value)}
+                placeholder="口調の指示を入力（例: お嬢様言葉で「〜ですわ」を語尾につけて）..."
+                rows={2}
+                className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            {/* 変換実行ボタン */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleRewrite}
+                disabled={isRewriting || !bubble.text.trim() || (!customTonePrompt.trim() && !selectedTonePresetId)}
+                className="px-3 py-1 bg-purple-600/80 hover:bg-purple-600 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
+              >
+                {isRewriting ? '変換中...' : '✨ 口調変換 (LLM)'}
+              </button>
+
+            </div>
+
+            {/* エラー表示 */}
+            {rewriteError && (
+              <div className="p-2 bg-red-950/40 border border-red-900/50 rounded text-xs text-red-300">
+                {rewriteError}
+              </div>
+            )}
+
+            {/* プレビュー & 反映・破棄エリア */}
+            {rewriteResult && (
+              <div className="p-2.5 bg-[#1F1F25] border border-purple-500/40 rounded space-y-2" data-testid="tone-rewrite-preview">
+                <div className="text-[11px] font-medium text-purple-300">口調変換プレビュー</div>
+                <div className="space-y-1 text-xs">
+                  <div className="text-zinc-400">
+                    <span className="inline-block w-12 text-[10px] text-zinc-500 font-bold">変換前:</span>
+                    <span className="line-through text-zinc-400">{rewriteResult.original}</span>
+                  </div>
+                  <div className="text-zinc-100 font-medium">
+                    <span className="inline-block w-12 text-[10px] text-purple-400 font-bold">変換後:</span>
+                    <span className="text-emerald-300">{rewriteResult.rewritten}</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-1.5 pt-1 border-t border-[rgba(255,255,255,0.06)]">
+                  <button
+                    type="button"
+                    onClick={() => setRewriteResult(null)}
+                    className="px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 rounded"
+                  >
+                    破棄
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isRewriting}
+                    onClick={handleRewrite}
+                    className="px-2 py-0.5 text-xs text-purple-300 hover:text-purple-200 bg-purple-950/40 hover:bg-purple-900/50 border border-purple-700/40 rounded transition-colors"
+                  >
+                    再試行
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdate({ text: rewriteResult.rewritten })
+                      setRewriteResult(null)
+                    }}
+                    className="px-3 py-0.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium transition-colors"
+                  >
+                    セリフに適用
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
 
       {/* 修飾プリセット */}
       <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="speech-bubble-presets-section">

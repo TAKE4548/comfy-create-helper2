@@ -2,7 +2,8 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse } from './types'
+
 
 
 const BASE_URL = '/api'
@@ -297,5 +298,30 @@ export const speechBubblePresetsApi = {
       method: 'DELETE',
     }),
 }
+
+// ─── Speech Tone Presets ─────────────────────────────────────────
+export const speechTonePresetsApi = {
+  list: () => request<SpeechTonePreset[]>('/speech-tone-presets'),
+  create: (data: SpeechTonePresetCreate) =>
+    request<SpeechTonePreset>('/speech-tone-presets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: number, data: SpeechTonePresetUpdate) =>
+    request<SpeechTonePreset>(`/speech-tone-presets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: number) =>
+    request<void>(`/speech-tone-presets/${id}`, {
+      method: 'DELETE',
+    }),
+  rewrite: (data: SpeechToneRewriteRequest) =>
+    request<SpeechToneRewriteResponse>('/speech-tone-presets/rewrite', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
 
 

@@ -413,3 +413,215 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
     expect(localStorage.getItem('prompt-surgeon-meta-batch-prompt-id')).toBeNull();
   });
 });
+
+describe('useGenerationStore REQ-154 cancellation order and partial batch cancellation', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('cancelAllJobs executes /queue delete BEFORE /interrupt', async () => {
+    const fetchCalls: { url: string; method?: string; body?: string }[] = [];
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      fetchCalls.push({
+        url,
+        method: init?.method,
+        body: init?.body as string,
+      });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+      });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      queueRunning: [['0', 'run-1', {}, {}]],
+      queuePending: [['1', 'pend-1', {}, {}]],
+      filterOwnSession: false,
+      isGenerating: true,
+      currentPromptId: 'run-1',
+    });
+
+    await useGenerationStore.getState().cancelAllJobs();
+
+    const urls = fetchCalls.map((c) => c.url);
+    const queueIndex = urls.findIndex((u) => u.endsWith('/queue'));
+    const interruptIndex = urls.findIndex((u) => u.endsWith('/interrupt'));
+    const historyIndex = urls.findIndex((u) => u.endsWith('/history'));
+
+    expect(queueIndex).toBeGreaterThanOrEqual(0);
+    expect(interruptIndex).toBeGreaterThan(queueIndex);
+    expect(historyIndex).toBeGreaterThan(interruptIndex);
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(false);
+    expect(state.currentPromptId).toBeNull();
+    expect(state.activeBatch).toBeNull();
+  });
+
+  it('cancelJob updates status of target job to failed and maintains activeBatch if remaining jobs exist', async () => {
+    const fetchCalls: { url: string; method?: string }[] = [];
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, method: init?.method });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ queue_running: [], queue_pending: [['1', 'job-2', {}, {}]] }),
+      });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      isGenerating: true,
+      currentPromptId: 'job-1',
+      queueRunning: [['0', 'job-1', {}, {}]],
+      queuePending: [['1', 'job-2', {}, {}]],
+      activeBatch: [
+        { promptId: 'job-1', setName: 'Set A', status: 'generating' },
+        { promptId: 'job-2', setName: 'Set A', status: 'pending' },
+      ],
+    });
+
+    await useGenerationStore.getState().cancelJob('job-1');
+
+    const state = useGenerationStore.getState();
+    // job-1 is failed, but job-2 is still pending so activeBatch is NOT null and isGenerating remains true
+    expect(state.activeBatch).toHaveLength(2);
+    expect(state.activeBatch?.[0].status).toBe('failed');
+    expect(state.activeBatch?.[1].status).toBe('pending');
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBeNull();
+  });
+
+  it('cancelJob clears activeBatch when last unfinished job is cancelled', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ queue_running: [], queue_pending: [] }),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      isGenerating: true,
+      currentPromptId: 'job-2',
+      queueRunning: [['0', 'job-2', {}, {}]],
+      activeBatch: [
+        { promptId: 'job-1', setName: 'Set A', status: 'completed' },
+        { promptId: 'job-2', setName: 'Set A', status: 'generating' },
+      ],
+    });
+
+    await useGenerationStore.getState().cancelJob('job-2');
+
+    const state = useGenerationStore.getState();
+    expect(state.activeBatch).toBeNull();
+    expect(state.isGenerating).toBe(false);
+  });
+});
+
+describe('useGenerationStore REQ-159 activeClientId and batch session preservation', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('queuePrompt with isBatchIntermediate sets activeClientId to clientId', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/prompt')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ prompt_id: 'batch-prompt-id' }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    useGenerationStore.setState({ activeClientId: null });
+
+    await useGenerationStore.getState().queuePrompt({ nodes: {} }, undefined, { isBatchIntermediate: true });
+
+    const state = useGenerationStore.getState();
+    expect(state.activeClientId).toBe(state.clientId);
+    expect(state.currentPromptId).toBe('batch-prompt-id');
+  });
+
+  it('fetchQueue sets activeClientId from queue_running if running job has client_id', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        queue_running: [['0', 'job-1', {}, { client_id: 'remote-client-123' }]],
+        queue_pending: [],
+      }),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    useGenerationStore.setState({ activeClientId: null });
+
+    await useGenerationStore.getState().fetchQueue();
+
+    expect(useGenerationStore.getState().activeClientId).toBe('remote-client-123');
+  });
+
+  it('fetchHistory reconciles own session images into batchImages and localStorage', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    const myClientId = useGenerationStore.getState().clientId;
+
+    useGenerationStore.setState({
+      batchImages: ['existing-image.png'],
+    });
+
+    const mockHistoryData = {
+      'prompt-1': {
+        prompt: [1, 'prompt-1', {}, { client_id: myClientId }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'my-new-image.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+      'prompt-2': {
+        prompt: [2, 'prompt-2', {}, { client_id: 'other-client-id' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'other-image.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+    };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockHistoryData),
+    });
+    (globalThis as any).fetch = mockFetch;
+
+    await useGenerationStore.getState().fetchHistory();
+
+    const state = useGenerationStore.getState();
+    // comfyHistoryImages has both
+    expect(state.comfyHistoryImages.length).toBe(2);
+    // batchImages has existing + own image, but NOT other image
+    expect(state.batchImages).toContain('existing-image.png');
+    expect(state.batchImages.some(img => img.includes('my-new-image.png'))).toBe(true);
+    expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(false);
+
+    const storedBatchImages = JSON.parse(localStorage.getItem('prompt-surgeon-batch-images') || '[]');
+    expect(storedBatchImages.some((img: string) => img.includes('my-new-image.png'))).toBe(true);
+  });
+});
+
+

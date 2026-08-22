@@ -30,6 +30,7 @@ export const LS_KEYS = {
   LAST_SAVE_ALBUM_ID: 'prompt-surgeon-last-save-album-id',
   LAST_SAVE_ALBUM_ID_GENERATE: 'prompt-surgeon-last-save-album-id-generate',
   LAST_SAVE_ALBUM_ID_SPEECH: 'prompt-surgeon-last-save-album-id-speech',
+  GENERATE_SECTIONS_EXPANDED: 'prompt-surgeon-generate-sections-expanded',
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

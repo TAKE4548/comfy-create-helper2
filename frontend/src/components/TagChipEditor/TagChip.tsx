@@ -42,10 +42,13 @@ export const TagChip: React.FC<TagChipProps> = ({
   const { baseText, weight } = parseTagWeight(text);
   // UI表示用の強度文字列（未設定時は 1.0）
   const [weightInput, setWeightInput] = useState(weight !== null ? weight.toString() : '1.0');
+  // サブメニュー内タグ単語編集用
+  const [wordInput, setWordInput] = useState(baseText);
 
   useEffect(() => {
-    const { weight: currentWeight } = parseTagWeight(text);
+    const { baseText: currentBase, weight: currentWeight } = parseTagWeight(text);
     setWeightInput(currentWeight !== null ? currentWeight.toString() : '1.0');
+    setWordInput(currentBase);
     setEditValue(text);
   }, [text]);
 
@@ -149,6 +152,31 @@ export const TagChip: React.FC<TagChipProps> = ({
     }
   };
 
+  const handleWordSubmit = () => {
+    const trimmed = wordInput.trim();
+    if (!trimmed) {
+      setWordInput(baseText);
+      return;
+    }
+    if (trimmed !== baseText) {
+      const { weight: currentWeight } = parseTagWeight(text);
+      const newFormatted = formatTagWeight(trimmed, currentWeight);
+      onEdit(id, newFormatted);
+    }
+  };
+
+  const handleWordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleWordSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setWordInput(baseText);
+      setIsMenuOpen(false);
+    }
+  };
+
   const handleEditSubmit = () => {
     const trimmed = editValue.trim();
     if (trimmed === '') {
@@ -243,18 +271,25 @@ export const TagChip: React.FC<TagChipProps> = ({
       {isMenuOpen && !isEditing && (
         <div
           ref={menuRef}
-          className="absolute top-full left-0 mt-1.5 z-50 min-w-[200px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2 text-xs select-none"
+          className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* ヘッダー: タグ名 + 有効/無効トグル */}
-          <div className="flex items-center justify-between gap-2 border-b border-[rgba(255,255,255,0.08)] pb-1.5">
-            <span className="font-semibold text-[#E4E4E7] truncate max-w-[120px]" title={baseText}>
-              {baseText}
-            </span>
+          {/* ヘッダー: タグ名入力 + 有効/無効トグル */}
+          <div className="flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.08)] pb-2">
+            <input
+              type="text"
+              value={wordInput}
+              onChange={(e) => setWordInput(e.target.value)}
+              onBlur={handleWordSubmit}
+              onKeyDown={handleWordKeyDown}
+              placeholder="タグ名"
+              className="flex-1 min-w-0 px-2 py-1 bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] rounded text-[#E4E4E7] text-xs font-medium focus:outline-none focus:border-[#7C6FDD]"
+              aria-label="タグ名編集"
+            />
             <button
               type="button"
               onClick={() => onToggle(id)}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors shrink-0 ${
                 enabled
                   ? 'bg-[#3ecf8e] text-zinc-950 font-bold hover:bg-[#3ecf8e]/90'
                   : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'

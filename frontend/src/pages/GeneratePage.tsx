@@ -67,7 +67,7 @@ export function GeneratePage() {
         onClose={() => setIsSaveModalOpen(false)}
         onConfirm={(data) => {
           const urls = isMultiSelectMode
-            ? [...selectedIds].map(idx => sortedDisplayImages[idx]).filter(Boolean)
+            ? [...selectedIds].filter(Boolean)
             : (selectedImg ? [selectedImg] : [])
           saveSnapshot.mutate({ ...data, imagePaths: urls }, {
             onSuccess: () => {

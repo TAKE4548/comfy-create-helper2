@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, Save, Image as ImageIcon } from 'lucide-react'
 import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../api/client'
+import { useAlbums } from '../hooks/useAlbums'
+import { STALE_TIMES } from '../constants/staleTimes'
 import type { SnapshotSummary, BubbleCandidate, ServerFont, Album } from '../api/types'
 import type { SpeechBubble, BubbleStyleConfig } from '../types/speechBubble'
 import {
@@ -29,9 +32,16 @@ export function SpeechBubbleEditorModal({
   onClose,
   onSaved,
 }: SpeechBubbleEditorModalProps) {
+  const qc = useQueryClient()
+  const { albums } = useAlbums(true)
+  const { data: fontList = [] } = useQuery<ServerFont[]>({
+    queryKey: ['fonts'],
+    queryFn: fontsApi.list,
+    staleTime: STALE_TIMES.FONTS,
+  })
+
   const [bubbles, setBubbles] = useState<SpeechBubble[]>([])
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(null)
-  const [fontList, setFontList] = useState<ServerFont[]>([])
   const [selectedFont, setSelectedFont] = useState<string>('')
   const [lastUsedStyle, setLastUsedStyle] = useState<BubbleStyleConfig>(() => loadLastUsedBubbleStyle())
   const [activeFontFamily, setActiveFontFamily] = useState<string>('sans-serif')
@@ -63,25 +73,19 @@ export function SpeechBubbleEditorModal({
     return 'new'
   })
   const [newAlbumName, setNewAlbumName] = useState('')
-  const [albums, setAlbums] = useState<Album[]>([])
 
   useEffect(() => {
-    albumsApi.list().then((list) => {
-      setAlbums(list || [])
-      if (typeof targetAlbumId === 'number' && list) {
-        const exists = list.some((a) => a.id === targetAlbumId)
-        if (!exists) {
-          if (initialAlbumId !== undefined && list.some((a) => a.id === initialAlbumId)) {
-            setTargetAlbumId(initialAlbumId)
-          } else {
-            setTargetAlbumId('new')
-          }
+    if (typeof targetAlbumId === 'number' && albums && albums.length > 0) {
+      const exists = albums.some((a) => a.id === targetAlbumId)
+      if (!exists) {
+        if (initialAlbumId !== undefined && albums.some((a) => a.id === initialAlbumId)) {
+          setTargetAlbumId(initialAlbumId)
+        } else {
+          setTargetAlbumId('new')
         }
       }
-    }).catch((err) => {
-      console.error('Failed to load albums for save dropdown:', err)
-    })
-  }, [])
+    }
+  }, [albums, targetAlbumId, initialAlbumId])
 
 
   // Canvas interaction state
@@ -187,22 +191,13 @@ export function SpeechBubbleEditorModal({
 
   // Load font list on mount
   useEffect(() => {
-    const fetchFonts = async () => {
-      try {
-        const list = await fontsApi.list()
-        setFontList(list)
-        if (list.length > 0) {
-          const msgothic = list.find((f) => f.file_name.toLowerCase() === 'msgothic.ttc')
-          const initialFont = msgothic ? msgothic.file_name : list[0].file_name
-          setSelectedFont(initialFont)
-          setLastUsedStyle((prev) => (prev.fontFamily === 'sans-serif' ? { ...prev, fontFamily: initialFont } : prev))
-        }
-      } catch (err) {
-        console.error('Failed to fetch font list:', err)
-      }
+    if (fontList.length > 0 && !selectedFont) {
+      const msgothic = fontList.find((f) => f.file_name.toLowerCase() === 'msgothic.ttc')
+      const initialFont = msgothic ? msgothic.file_name : fontList[0].file_name
+      setSelectedFont(initialFont)
+      setLastUsedStyle((prev) => (prev.fontFamily === 'sans-serif' ? { ...prev, fontFamily: initialFont } : prev))
     }
-    fetchFonts()
-  }, [])
+  }, [fontList, selectedFont])
 
   // Create bubble helper with last used style
   const createBubbleFromStyle = (params: {
@@ -869,6 +864,9 @@ export function SpeechBubbleEditorModal({
           localStorage.setItem(LS_KEYS.LAST_SAVE_ALBUM_ID_SPEECH, '')
         } catch {}
       }
+
+      await qc.invalidateQueries({ queryKey: ['albums'] })
+      await qc.invalidateQueries({ queryKey: ['snapshots'] })
 
       onSaved()
       onClose()

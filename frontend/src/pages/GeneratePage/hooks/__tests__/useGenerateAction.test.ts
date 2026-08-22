@@ -577,4 +577,64 @@ describe('useGenerateAction', () => {
       expect(finalBatch[0].status).toBe('failed');
     });
   });
+
+  describe('handleGenerate REQ-154 abort control', () => {
+    it('should create AbortController and abort single generation loop when cancelled', async () => {
+      let capturedController: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((controller: AbortController) => {
+        capturedController = controller;
+      });
+
+      mockStore.batchSize = 4;
+      let count = 0;
+      mockStore.queuePrompt.mockImplementation(async () => {
+        count++;
+        if (count === 2) {
+          capturedController?.abort();
+        }
+        return `prompt-${count}`;
+      });
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      await handleGenerate();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(true);
+      expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('handleGenerateSets REQ-154 activeBatch merging on additional submission', () => {
+    it('should merge new batch jobs into existing activeBatch array', async () => {
+      mockStore.activeBatch = [
+        { promptId: 'existing-1', setName: 'Set Old', status: 'generating' },
+        { promptId: 'existing-2', setName: 'Set Old', status: 'pending' },
+      ];
+
+      mockStore.sets = [
+        { id: '1', name: 'Set New', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
+      ];
+
+      mockStore.queuePrompt
+        .mockResolvedValueOnce('new-prompt-1')
+        .mockResolvedValueOnce('new-prompt-2');
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      // First call to setActiveBatch should have length 4 (2 old + 2 new placeholders)
+      const firstBatch = mockStore.setActiveBatch.mock.calls[0][0];
+      expect(firstBatch).toHaveLength(4);
+      expect(firstBatch[0].promptId).toBe('existing-1');
+      expect(firstBatch[1].promptId).toBe('existing-2');
+      expect(firstBatch[2].promptId).toMatch(/^pending-Set New-0-/);
+      expect(firstBatch[3].promptId).toMatch(/^pending-Set New-1-/);
+
+      // Final call should have real prompt IDs for new jobs
+      const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalBatch).toHaveLength(4);
+      expect(finalBatch[2].promptId).toBe('new-prompt-1');
+      expect(finalBatch[3].promptId).toBe('new-prompt-2');
+    });
+  });
 });

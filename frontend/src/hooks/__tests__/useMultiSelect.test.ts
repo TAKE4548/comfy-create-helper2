@@ -378,4 +378,30 @@ describe('useMultiSelect', () => {
     expect(result.current.isSelected(4)).toBe(true);
     expect(result.current.isSelected(5)).toBe(true);
   });
+
+  it('should support string IDs with generics', () => {
+    const stringItems = [
+      { id: 'url1.png', url: 'url1.png' },
+      { id: 'url2.png', url: 'url2.png' },
+      { id: 'url3.png', url: 'url3.png' },
+    ];
+    const { result } = renderHook(() => useMultiSelect<string>({ items: stringItems }));
+
+    act(() => {
+      result.current.enterMultiSelectMode('url2.png');
+    });
+
+    expect(result.current.isMultiSelectMode).toBe(true);
+    expect(result.current.isSelected('url2.png')).toBe(true);
+    expect(result.current.selectedIds.has('url2.png')).toBe(true);
+
+    act(() => {
+      const e = { ctrlKey: false, metaKey: false, shiftKey: true } as unknown as React.MouseEvent;
+      result.current.handleItemClick('url3.png', e);
+    });
+
+    expect(result.current.isSelected('url2.png')).toBe(true);
+    expect(result.current.isSelected('url3.png')).toBe(true);
+    expect(result.current.isSelected('url1.png')).toBe(false);
+  });
 });

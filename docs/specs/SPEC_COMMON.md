@@ -125,10 +125,11 @@ type TagChipEditorProps = {
 
 | 操作 | 動作 |
 |---|---|
-| クリック（テキスト部） | 有効 ↔ 無効 トグル |
+| クリック（テキスト部） | サブメニュー表示（タグ名編集、有効/無効トグル、強度調整） |
+| サブメニュー内タグ名入力 | タグ単語のインライン編集（Enter/Blurで確定、既存重みを維持、Escapeでキャンセル） |
 | `×` クリック | チップ削除 |
 | ドラッグ&ドロップ | 並び替え（@dnd-kit/sortable） |
-| ダブルクリック | インライン編集モード |
+| ダブルクリック | チップ直接インライン編集モード |
 | `Delete` / `Backspace`（フォーカス中） | チップ削除 |
 | `Space`（フォーカス中） | 有効 ↔ 無効 トグル |
 
@@ -257,7 +258,33 @@ props による静的な受け渡しではなく、親（GeneratePage等）と�
 
 ---
 
-## 6. 未解決・判断保留事項（共通）
+## 6. フロントエンドキャッシュ・データフェッチ仕様（FE Cache & Fetching Policy）
+
+### 6-1. キャッシュ基本方針（Stale-While-Revalidate）
+- 静的・準静的データは React Query を用いてメモリキャッシュし、UI 遷移時のフリッカーおよび BE への重複リクエストを排除する。
+- 複数デバイス・別タブでの変更に追従するため、`refetchOnMount: 'always'` や `refetchOnWindowFocus: true` を組み合わせた **Stale-While-Revalidate（SWR）** モデルを採用する。
+
+### 6-2. staleTime 定数テーブル (`frontend/src/constants/staleTimes.ts`)
+
+| データ分類 | 該当データ・API | `staleTime` |
+|---|---|---|
+| 静的・不変 | `config`, `fonts` | `Infinity` |
+| 準静的マスター | `base-models`, `lora-categories`, `tagset-categories`, `llm-prompts` | 10分 (`10 * 60 * 1000`) |
+| マスター設定 | `param-type-masters`, `mapping-masters`, `speech-bubble-presets`, `snapshots/:id` (詳細) | 5分 (`5 * 60 * 1000`) |
+| 頻出アセット | `workflows`, `loras`, `tag-sets`, `albums` | 1分 (`60 * 1000`) |
+| 動的データ | `snapshots` (一覧) | 15秒 (`15 * 1000`) |
+
+### 6-3. 共通 Hook とキャッシュマッピング
+- **`useConfig` (`frontend/src/hooks/useConfig.ts`)**: `GET /api/config` を `queryKey: ['config']` で一元管理し、アプリ起動時の多重呼び出しを集約。
+- **`useAlbums` (`frontend/src/hooks/useAlbums.ts`)**: `GET /api/albums` のキャッシュに加え、`albumMap` (`Map<number, string>`) を生成して `lastSaveAlbumId` 等のアルバム名即時解決（0ms）を提供。
+- **ワークフロー別キャッシュ (`useGenerationStore.ts`)**: `bypassProfilesCache` / `paramSyncGroupsCache` を `workflowId` ごとの Map 構造で保持し、ワークフロー切替時のラグを排除。
+
+### 6-4. キャッシュ無効化（Invalidation）ルール
+- 作成・更新・削除・並び替え等の mutation 成功時は、該当クエリキーの `queryClient.invalidateQueries` を実行して即時再同期を行う。
+
+---
+
+## 7. 未解決・判断保留事項（共通）
 
 - **重み付き記法** `(tag:1.3)` や `[tag]` の扱い: 現状は記法込みで1チップとして扱う。重みの可視化 UI は将来拡張
 - **LoRA タグ** `<lora:name:0.8>` のチップ表示/別枠扱いは未定
@@ -266,3 +293,4 @@ props による静的な受け渡しではなく、親（GeneratePage等）と�
 ---
 
 *このドキュメントは `docs/spec_tag_chip_editor.md` および `docs/Prompt Surgeon FEデザイン・実装仕様書.md` のデザインシステム部分を統合・再構成したものです。*
+

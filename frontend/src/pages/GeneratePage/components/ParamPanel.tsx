@@ -1,7 +1,9 @@
-import { Shuffle, Lock, Settings, Link } from 'lucide-react'
+import { useState } from 'react'
+import { Shuffle, Lock, Settings, Link, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Lora, ParamTypeMaster, ParamSyncGroup } from '../../../api/types'
 import { LoraStackEditor } from '../../../components/LoraStackEditor'
 import { SearchableLoraSelect } from '../../../components/SearchableLoraSelect'
+import { LS_KEYS } from '../../../utils/localStorageKeys'
 
 const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
@@ -13,6 +15,18 @@ const DEFAULT_SAMPLERS = [
 const DEFAULT_SCHEDULERS = [
   'normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta'
 ]
+
+export interface GenerateSectionsExpandedState {
+  parameters: boolean;
+  paramSync: boolean;
+  bypass: boolean;
+}
+
+const DEFAULT_EXPANDED_STATE: GenerateSectionsExpandedState = {
+  parameters: true,
+  paramSync: true,
+  bypass: true,
+};
 
 export interface ParamPanelProps {
   paramMappings: any[]
@@ -59,6 +73,23 @@ export const ParamPanel = ({
   onOpenParamSyncSettings,
   activeBaseModelId,
 }: ParamPanelProps) => {
+  const [expandedSections, setExpandedSections] = useState<GenerateSectionsExpandedState>(() => {
+    try {
+      const stored = localStorage.getItem(LS_KEYS.GENERATE_SECTIONS_EXPANDED);
+      return stored ? { ...DEFAULT_EXPANDED_STATE, ...JSON.parse(stored) } : DEFAULT_EXPANDED_STATE;
+    } catch {
+      return DEFAULT_EXPANDED_STATE;
+    }
+  });
+
+  const toggleSection = (key: keyof GenerateSectionsExpandedState) => {
+    setExpandedSections((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem(LS_KEYS.GENERATE_SECTIONS_EXPANDED, JSON.stringify(next));
+      return next;
+    });
+  };
+
   if (paramMappings.length === 0) return null
 
   // Active slave roles and their master group mapping
@@ -71,7 +102,19 @@ export const ParamPanel = ({
 
   return (
     <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
-      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Parameters</p>
+      {/* Parameters Header */}
+      <button
+        type="button"
+        id={`parameters-section-toggle${mobile ? '-mobile' : ''}`}
+        onClick={() => toggleSection('parameters')}
+        className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors w-full text-left focus:outline-none"
+      >
+        {expandedSections.parameters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>Parameters</span>
+      </button>
+
+      {expandedSections.parameters && (
+        <div className="space-y-3 pt-1">
       {paramMappings.map((m) => {
         const syncGroup = activeSlaveMap.get(m.role!)
         const isSyncedSlave = Boolean(syncGroup)
@@ -239,11 +282,21 @@ export const ParamPanel = ({
             className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40`} />
         </div>
       </div>
+    </div>
+  )}
 
       {/* Param Sync Section */}
       <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 mt-3 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Param Sync</p>
+          <button
+            type="button"
+            id={`paramsync-section-toggle${mobile ? '-mobile' : ''}`}
+            onClick={() => toggleSection('paramSync')}
+            className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors focus:outline-none"
+          >
+            {expandedSections.paramSync ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span>Param Sync</span>
+          </button>
           <button
             id={`param-sync-settings-btn${mobile ? '-mobile' : ''}`}
             type="button"
@@ -256,37 +309,49 @@ export const ParamPanel = ({
           </button>
         </div>
 
-        {paramSyncGroups && paramSyncGroups.length > 0 ? (
-          <div className="space-y-1.5">
-            {paramSyncGroups.map((g) => (
-              <div key={g.id} className="flex items-center justify-between gap-4">
-                <span className="text-xs text-zinc-400 truncate max-w-[150px]">{g.name}</span>
-                <button
-                  id={`param-sync-toggle-${g.id}${mobile ? '-mobile' : ''}`}
-                  type="button"
-                  onClick={() => onToggleParamSync?.(g.id, !g.is_enabled)}
-                  className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    g.is_enabled ? 'bg-accent-green' : 'bg-zinc-700'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      g.is_enabled ? 'translate-x-3' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+        {expandedSections.paramSync && (
+          <div className="pt-1">
+            {paramSyncGroups && paramSyncGroups.length > 0 ? (
+              <div className="space-y-1.5">
+                {paramSyncGroups.map((g) => (
+                  <div key={g.id} className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-zinc-400 truncate max-w-[150px]">{g.name}</span>
+                    <button
+                      id={`param-sync-toggle-${g.id}${mobile ? '-mobile' : ''}`}
+                      type="button"
+                      onClick={() => onToggleParamSync?.(g.id, !g.is_enabled)}
+                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        g.is_enabled ? 'bg-accent-green' : 'bg-zinc-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          g.is_enabled ? 'translate-x-3' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <p className="text-[10px] text-zinc-500 italic">No sync groups. Open Settings to add.</p>
+            )}
           </div>
-        ) : (
-          <p className="text-[10px] text-zinc-500 italic">No sync groups. Open Settings to add.</p>
         )}
       </div>
 
       {/* Bypass Section */}
       <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 mt-3 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Bypasses</p>
+          <button
+            type="button"
+            id={`bypass-section-toggle${mobile ? '-mobile' : ''}`}
+            onClick={() => toggleSection('bypass')}
+            className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors focus:outline-none"
+          >
+            {expandedSections.bypass ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span>Bypasses</span>
+          </button>
           <button
             id={`bypass-settings-btn${mobile ? '-mobile' : ''}`}
             type="button"
@@ -299,30 +364,34 @@ export const ParamPanel = ({
           </button>
         </div>
 
-        {bypassProfiles && bypassProfiles.length > 0 ? (
-          <div className="space-y-1.5">
-            {bypassProfiles.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-4">
-                <span className="text-xs text-zinc-400 truncate max-w-[150px]">{p.name}</span>
-                <button
-                  id={`bypass-toggle-${p.id}${mobile ? '-mobile' : ''}`}
-                  type="button"
-                  onClick={() => onToggleBypass?.(p.id, !p.is_enabled)}
-                  className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    p.is_enabled ? 'bg-red-500' : 'bg-zinc-700'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      p.is_enabled ? 'translate-x-3' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+        {expandedSections.bypass && (
+          <div className="pt-1">
+            {bypassProfiles && bypassProfiles.length > 0 ? (
+              <div className="space-y-1.5">
+                {bypassProfiles.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-zinc-400 truncate max-w-[150px]">{p.name}</span>
+                    <button
+                      id={`bypass-toggle-${p.id}${mobile ? '-mobile' : ''}`}
+                      type="button"
+                      onClick={() => onToggleBypass?.(p.id, !p.is_enabled)}
+                      className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        p.is_enabled ? 'bg-red-500' : 'bg-zinc-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          p.is_enabled ? 'translate-x-3' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <p className="text-[10px] text-zinc-500 italic">No profiles. Open Settings to add.</p>
+            )}
           </div>
-        ) : (
-          <p className="text-[10px] text-zinc-500 italic">No profiles. Open Settings to add.</p>
         )}
       </div>
     </div>

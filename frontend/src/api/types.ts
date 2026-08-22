@@ -602,6 +602,44 @@ export interface SpeechBubblePresetUpdate {
   sort_order?: number
 }
 
+// ─── SpeechTonePreset ────────────────────────────────────────────
+
+export interface SpeechTonePreset {
+  id: number
+  name: string
+  prompt: string
+  description?: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface SpeechTonePresetCreate {
+  name: string
+  prompt: string
+  description?: string | null
+  sort_order?: number
+}
+
+export interface SpeechTonePresetUpdate {
+  name?: string
+  prompt?: string
+  description?: string | null
+  sort_order?: number
+}
+
+export interface SpeechToneRewriteRequest {
+  text: string
+  tone_prompt?: string
+  preset_id?: number
+  model?: string
+  llm_params?: Record<string, any>
+}
+
+export interface SpeechToneRewriteResponse {
+  rewritten_text: string
+}
+
+
 
 
 
