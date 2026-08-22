@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings, Sliders, Wand2, ChevronDown, Save, RefreshCw, Plus, Pencil, Trash2, Copy, Layers } from 'lucide-react'
-import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core'
+import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverlay, useSensors, useSensor, MouseSensor, TouchSensor } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { llmPromptsApi, configApi, mappingMastersApi, workflowsApi, workflowPresetsApi, snapshotsApi, paramTypeMastersApi } from '../api/client'
 import type { LlmPrompt, MappingMaster, WorkflowSummary, WorkflowPreset, ParamTypeMaster, ParamTypeMasterCreate } from '../api/types'
@@ -298,6 +298,20 @@ export function SettingsPage() {
       qc.invalidateQueries({ queryKey: ['mapping-masters'] })
     },
   })
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        distance: 5,
+        tolerance: 5,
+      },
+    })
+  )
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as number)
@@ -1026,7 +1040,7 @@ export function SettingsPage() {
                         ))}
                       </tr>
                     </thead>
-                    <DndContext collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                       <SortableContext items={sortedMasters.map((m) => m.id)} strategy={verticalListSortingStrategy}>
                         <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
                           {sortedMasters.map((mm) => {

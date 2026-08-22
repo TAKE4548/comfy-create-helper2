@@ -195,8 +195,11 @@ export const TagChip: React.FC<TagChipProps> = ({
       {!isEditing && (
         <div
           {...dragProps}
-          className="cursor-grab text-zinc-500 hover:text-zinc-300 active:cursor-grabbing p-0.5"
-          title="ドラッグで並び替え"
+          className="cursor-grab text-zinc-500 hover:text-zinc-300 active:cursor-grabbing p-0.5 touch-none select-none"
+          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+          onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => e.preventDefault()}
+          title="ドラッグして並び替え"
+          aria-label="並び替えハンドル"
         >
           <GripVertical size={14} />
         </div>

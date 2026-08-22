@@ -694,13 +694,15 @@ export const DesktopLayout = ({
                                 onMouseLeave={longPressHandlers.onMouseLeave}
                                 onTouchStart={longPressHandlers.onTouchStart}
                                 onTouchEnd={longPressHandlers.onTouchEnd}
+                                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                                style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                                 onClick={(e) => {
                                   handleItemClick(i, e)
                                   if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                                     setSelectedImg(img)
                                   }
                                 }}
-                                className={`flex-shrink-0 h-[85%] aspect-square max-h-[140px] min-h-[48px] rounded-md overflow-hidden border-2 transition-all relative ${
+                                className={`flex-shrink-0 h-[85%] aspect-square max-h-[140px] min-h-[48px] rounded-md overflow-hidden border-2 transition-all relative select-none ${
                                   isMultiSelectMode
                                     ? isSel
                                       ? 'border-purple-500 ring-2 ring-purple-500/30'
@@ -710,7 +712,12 @@ export const DesktopLayout = ({
                                       : 'border-transparent hover:border-zinc-650'
                                 }`}
                               >
-                                <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                                <img
+                                  src={img}
+                                  alt={`Generated ${i + 1}`}
+                                  className="w-full h-full object-cover pointer-events-none select-none"
+                                  style={{ WebkitTouchCallout: 'none' }}
+                                />
                                 {getSetNameForImage(img) && (
                                   <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[8px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
                                     {getSetNameForImage(img)}

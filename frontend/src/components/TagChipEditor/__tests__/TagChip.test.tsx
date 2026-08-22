@@ -203,7 +203,7 @@ describe('TagChip', () => {
   });
 
   it('closes submenu on outside click or Escape key', () => {
-    const { container } = render(
+    render(
       <div>
         <div data-testid="outside">Outside</div>
         <TagChip

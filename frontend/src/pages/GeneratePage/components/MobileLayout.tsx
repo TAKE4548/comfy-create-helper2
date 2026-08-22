@@ -507,6 +507,8 @@ export const MobileLayout = ({
                         onMouseLeave={longPressHandlers.onMouseLeave}
                         onTouchStart={longPressHandlers.onTouchStart}
                         onTouchEnd={longPressHandlers.onTouchEnd}
+                        onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                        style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                         onClick={(e) => {
                           handleItemClick(i, e)
                           if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -515,7 +517,7 @@ export const MobileLayout = ({
                             setIsModalPreviewOpen(true)
                           }
                         }}
-                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative ${
+                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative select-none ${
                           isMultiSelectMode
                             ? isSel
                               ? 'border-purple-500 ring-2 ring-purple-500/30'
@@ -524,7 +526,12 @@ export const MobileLayout = ({
                               ? 'border-accent-green'
                               : 'border-transparent hover:border-zinc-600'
                         }`}>
-                        <img src={img} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" />
+                        <img
+                          src={img}
+                          alt={`Generated ${i + 1}`}
+                          className="w-full h-full object-cover pointer-events-none select-none"
+                          style={{ WebkitTouchCallout: 'none' }}
+                        />
                         {getSetNameForImage(img) && (
                           <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
                             {getSetNameForImage(img)}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square } from 'lucide-react'
+import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -27,7 +27,6 @@ import {
 import { ImageCropper } from '../components/ImageCropper'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
-import { LS_KEYS } from '../utils/localStorageKeys'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
@@ -42,16 +41,42 @@ const EMPTY_FORM: LoraFormState = {
   target_base_model_ids: [],
 }
 
-function SortableLoraCard({ id, children, disabled }: { id: number; children: React.ReactNode; disabled: boolean }) {
+interface DragHandleListeners {
+  onMouseDown?: (event: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void
+  onTouchStart?: (event: React.TouchEvent<HTMLButtonElement | HTMLDivElement>) => void
+  onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement | HTMLDivElement>) => void
+  [key: string]: any
+}
+
+interface DragHandleRenderProps {
+  attributes: Record<string, any>
+  listeners: DragHandleListeners
+  isDragging: boolean
+}
+
+function SortableLoraCard({ id, children, disabled }: { id: number; children: (handleProps: DragHandleRenderProps) => React.ReactNode; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
-  const style = {
+
+  const mouseListeners: React.DOMAttributes<HTMLDivElement> = {
+    onMouseDown: listeners?.onMouseDown as any,
+    onKeyDown: listeners?.onKeyDown as any,
+  }
+
+  const touchHandleListeners: DragHandleListeners = {
+    onTouchStart: listeners?.onTouchStart as any,
+    onMouseDown: listeners?.onMouseDown as any,
+  }
+
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 1,
   }
+
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
+    <div ref={setNodeRef} style={style} {...attributes} {...mouseListeners}>
+      {children({ attributes, listeners: touchHandleListeners, isDragging })}
     </div>
   )
 }
@@ -78,20 +103,14 @@ export function LoRAsPage() {
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 8, // PCマウス: 8px移動でドラッグ開始
       },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: isMultiSelectMode
-        ? { distance: 8 }
-        : {
-            delay: (() => {
-              const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE);
-              const parsed = stored !== null ? parseFloat(stored) : NaN;
-              return !isNaN(parsed) ? parsed * 1000 : 500;
-            })(),
-            tolerance: 5,
-          },
+      activationConstraint: {
+        distance: 5, // モバイルタッチ: ドラッグハンドル上で5px移動で即時開始
+        tolerance: 5,
+      },
     })
   )
   const [search, setSearch] = useState('')
@@ -407,6 +426,7 @@ export function LoRAsPage() {
                 const longPressHandlers = getLongPressHandlers(lora.id)
                 return (
                   <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
+                    {({ listeners: touchHandleListeners }) => (
                     <div
                       id={`lora-card-${lora.id}`}
                       onClick={(e) => {
@@ -433,6 +453,22 @@ export function LoRAsPage() {
                         <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-[#3ECF8E] border border-[rgba(255,255,255,0.08)]">
                           {isSelected(lora.id) ? <CheckSquare size={16} /> : <Square size={16} />}
                         </div>
+                      )}
+
+                      {/* タッチ用ドラッグハンドル */}
+                      {!isMultiSelectMode && isDndActive && (
+                        <button
+                          type="button"
+                          className="absolute top-2 right-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                          onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                          {...touchHandleListeners}
+                          title="ドラッグして並び替え"
+                          aria-label="並び替えハンドル"
+                        >
+                          <GripVertical size={14} />
+                        </button>
                       )}
                       
                       <ImageCarousel
@@ -508,6 +544,7 @@ export function LoRAsPage() {
                       </div>
 
                     </div>
+                    )}
                   </SortableLoraCard>
                 )
               })}

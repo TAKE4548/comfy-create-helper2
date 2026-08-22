@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { GripVertical, Pencil, Loader2, Trash2, ListChecks } from 'lucide-react';
-import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  closestCenter,
+  DragEndEvent,
+  useSensors,
+  useSensor,
+  MouseSensor,
+  TouchSensor
+} from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { WorkflowPreset } from '../api/types';
@@ -46,6 +54,20 @@ export function PresetManagerPanel({
   const [editingName, setEditingName] = useState('');
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [newName, setNewName] = useState('');
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        distance: 5,
+        tolerance: 5,
+      },
+    })
+  );
 
   // Bulk operation state (separate from generation "checked" state)
   const [bulkMode, setBulkMode] = useState(false);
@@ -196,7 +218,7 @@ export function PresetManagerPanel({
           登録されているプリセットはありません。
         </div>
       ) : (
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={localPresets.map((p) => p.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
               {localPresets.map((preset) => (
@@ -406,9 +428,13 @@ function SortablePresetRow({
       {!bulkMode && (
         <button
           type="button"
-          className="text-zinc-500 hover:text-zinc-355 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
+          className="text-zinc-500 hover:text-zinc-355 cursor-grab active:cursor-grabbing touch-none select-none p-1 rounded hover:bg-white/5 transition-all flex-shrink-0"
+          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+          onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
           {...attributes}
           {...listeners}
+          title="ドラッグして並び替え"
+          aria-label="並び替えハンドル"
         >
           <GripVertical size={16} />
         </button>

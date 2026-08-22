@@ -56,7 +56,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 500,
+        distance: 5,
         tolerance: 5,
       },
     }),

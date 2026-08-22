@@ -309,9 +309,13 @@ export function SortableMasterRow({
           )}
           <button
             type="button"
-            className="cursor-grab active:cursor-grabbing p-1 hover:text-zinc-400 transition-colors focus:outline-none flex-shrink-0"
+            className="cursor-grab active:cursor-grabbing touch-none select-none p-1 hover:text-zinc-400 transition-colors focus:outline-none flex-shrink-0"
+            style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+            onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
             {...attributes}
             {...listeners}
+            title="ドラッグして並び替え"
+            aria-label="並び替えハンドル"
           >
             <GripVertical size={13} />
           </button>

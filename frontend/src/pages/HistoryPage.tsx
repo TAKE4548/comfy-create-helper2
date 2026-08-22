@@ -9,14 +9,14 @@ import {
   ImageOff,
   ArrowLeft,
   Square,
-  Move,
   SortAsc,
   SortDesc,
   SlidersHorizontal,
   Check,
   MessageSquarePlus,
   Edit2,
-  X
+  X,
+  GripVertical
 } from 'lucide-react'
 import { snapshotsApi, albumsApi, workflowsApi, lorasApi, tagSetsApi } from '../api/client'
 import type { SnapshotSummary, Album, Lora, TagSet } from '../api/types'
@@ -46,7 +46,19 @@ import {
   arrayMove
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { LS_KEYS } from '../utils/localStorageKeys'
+
+interface DragHandleListeners {
+  onMouseDown?: (event: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void
+  onTouchStart?: (event: React.TouchEvent<HTMLButtonElement | HTMLDivElement>) => void
+  onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement | HTMLDivElement>) => void
+  [key: string]: any
+}
+
+interface DragHandleRenderProps {
+  attributes: Record<string, any>
+  listeners: DragHandleListeners
+  isDragging: boolean
+}
 
 // Sortable wrapper component
 function SortableItem({
@@ -55,7 +67,7 @@ function SortableItem({
   disabled
 }: {
   id: number
-  children: React.ReactNode
+  children: (handleProps: DragHandleRenderProps) => React.ReactNode
   disabled?: boolean
 }) {
   const {
@@ -67,7 +79,17 @@ function SortableItem({
     isDragging
   } = useSortable({ id, disabled })
 
-  const style = {
+  const mouseListeners: React.DOMAttributes<HTMLDivElement> = {
+    onMouseDown: listeners?.onMouseDown as any,
+    onKeyDown: listeners?.onKeyDown as any,
+  }
+
+  const touchHandleListeners: DragHandleListeners = {
+    onTouchStart: listeners?.onTouchStart as any,
+    onMouseDown: listeners?.onMouseDown as any,
+  }
+
+  const style: React.CSSProperties = {
     transform: transform
       ? `${CSS.Transform.toString(transform)} scale(1.05)`
       : isDragging
@@ -77,14 +99,11 @@ function SortableItem({
     zIndex: isDragging ? 50 : 1,
     opacity: isDragging ? 0.9 : 1,
     boxShadow: isDragging ? '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5)' : undefined,
-    touchAction: isDragging ? 'none' : 'pan-y'
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="h-full w-full relative">
-      <div {...attributes} {...listeners} className="h-full w-full">
-        {children}
-      </div>
+    <div ref={setNodeRef} style={style} className="h-full w-full relative" {...attributes} {...mouseListeners}>
+      {children({ attributes, listeners: touchHandleListeners, isDragging })}
     </div>
   )
 }
@@ -283,8 +302,6 @@ export function HistoryPage() {
   const snapshotMultiSelect = useMultiSelect({ items: snapshots ?? [] })
   const albumItemMultiSelect = useMultiSelect({ items: sortedAlbumItems.map(i => ({ id: i.snapshot_id })) })
 
-  const isAnyMultiSelect = snapshotMultiSelect.isMultiSelectMode || albumItemMultiSelect.isMultiSelectMode
-
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
@@ -292,16 +309,10 @@ export function HistoryPage() {
       }
     }),
     useSensor(TouchSensor, {
-      activationConstraint: isAnyMultiSelect
-        ? { distance: 8 }
-        : {
-            delay: (() => {
-              const stored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE);
-              const parsed = stored !== null ? parseFloat(stored) : NaN;
-              return !isNaN(parsed) ? parsed * 1000 : 500;
-            })(),
-            tolerance: 5
-          }
+      activationConstraint: {
+        distance: 5,
+        tolerance: 5
+      }
     })
   )
 
@@ -756,7 +767,7 @@ export function HistoryPage() {
                     const isDndEnabled = sortBy === 'custom' && !updateAlbumOrder.isPending
                     const longPressHandlers = albumItemMultiSelect.getLongPressHandlers(item.snapshot_id)
 
-                    const cardContent = (
+                    const renderCardContent = (touchHandleListeners?: DragHandleListeners) => (
                       <div
                         id={`album-item-card-${item.snapshot_id}`}
                         onClick={(e) => handleItemClick(item.snapshot_id, e)}
@@ -801,9 +812,18 @@ export function HistoryPage() {
                         {!albumItemMultiSelect.isMultiSelectMode && (
                           <>
                             {isDndEnabled && (
-                              <div className="absolute top-2 left-2 p-1.5 rounded-md bg-black/60 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                <Move size={12} />
-                              </div>
+                              <button
+                                type="button"
+                                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                                onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                                {...touchHandleListeners}
+                                title="ドラッグして並び替え"
+                                aria-label="並び替えハンドル"
+                              >
+                                <GripVertical size={12} />
+                              </button>
                             )}
                             {item.image_path && (
                               <button
@@ -859,10 +879,10 @@ export function HistoryPage() {
                       <div key={item.snapshot_id} className="aspect-square">
                         {isDndEnabled ? (
                           <SortableItem id={item.snapshot_id}>
-                            {cardContent}
+                            {({ listeners }) => renderCardContent(listeners)}
                           </SortableItem>
                         ) : (
-                          cardContent
+                          renderCardContent()
                         )}
                       </div>
                     )
@@ -1175,6 +1195,7 @@ export function HistoryPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     {albums?.map((album) => (
                       <SortableItem key={album.id} id={album.id} disabled={editingAlbumId !== null}>
+                        {({ listeners: touchHandleListeners }) => (
                         <div
                           id={`album-card-${album.id}`}
                           onClick={() => {
@@ -1182,8 +1203,24 @@ export function HistoryPage() {
                               setSelectedAlbumId(album.id)
                             }
                           }}
-                          className="group rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.1)] transition-all cursor-pointer h-full flex flex-col justify-between select-none"
+                          className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.1)] transition-all cursor-pointer h-full flex flex-col justify-between select-none"
                         >
+                          {/* タッチ用ドラッグハンドル */}
+                          {editingAlbumId !== album.id && (
+                            <button
+                              type="button"
+                              className="absolute top-2 right-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                              style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                              onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                              onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                              {...touchHandleListeners}
+                              title="ドラッグして並び替え"
+                              aria-label="並び替えハンドル"
+                            >
+                              <GripVertical size={14} />
+                            </button>
+                          )}
+
                           {/* Album thumbnail grid */}
                           <div className="grid grid-cols-3 gap-0.5 aspect-[3/1] bg-surface-2">
                             {album.items.slice(0, 3).map((item, i) => (
@@ -1278,6 +1315,7 @@ export function HistoryPage() {
                             </button>
                           </div>
                         </div>
+                        )}
                       </SortableItem>
                     ))}
                     {(albums?.length === 0) && (
