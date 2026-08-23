@@ -32,6 +32,27 @@ export interface SpeechBubbleControlsProps {
 const RECENT_COLORS_KEY = 'speech_bubble_recent_colors'
 const MAX_RECENT_COLORS = 10
 
+export const PRESET_SETTINGS_KEY = 'speech_bubble_preset_filter_settings'
+
+export type PresetSortOption = 'name-asc' | 'name-desc' | 'created-asc' | 'created-desc'
+export type PresetDirectionFilter = 'all' | 'vertical' | 'horizontal'
+
+export interface PresetFilterSettings {
+  searchQuery: string
+  directionFilter: PresetDirectionFilter
+  sortBy: PresetSortOption
+  isWithTextOpen: boolean
+  isWithoutTextOpen: boolean
+}
+
+export const DEFAULT_PRESET_FILTER_SETTINGS: PresetFilterSettings = {
+  searchQuery: '',
+  directionFilter: 'all',
+  sortBy: 'name-asc',
+  isWithTextOpen: true,
+  isWithoutTextOpen: true,
+}
+
 // Color parsing & formatting helpers
 function rgbaToHexAndAlpha(rgbaStr: string): { hex: string; alpha: number } {
   if (!rgbaStr) return { hex: '#000000', alpha: 1 }
@@ -105,6 +126,35 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const [newPresetName, setNewPresetName] = useState('')
   const [includeTextInPreset, setIncludeTextInPreset] = useState(false)
   const [showAddPresetInput, setShowAddPresetInput] = useState(false)
+
+  // プリセット一覧のフィルタ・ソート・開閉状態
+  const [presetSettings, setPresetSettings] = useState<PresetFilterSettings>(() => {
+    try {
+      const saved = localStorage.getItem(PRESET_SETTINGS_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          ...DEFAULT_PRESET_FILTER_SETTINGS,
+          ...parsed,
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_PRESET_FILTER_SETTINGS
+  })
+
+  const updatePresetSettings = (partial: Partial<PresetFilterSettings>) => {
+    setPresetSettings((prev) => {
+      const next = { ...prev, ...partial }
+      try {
+        localStorage.setItem(PRESET_SETTINGS_KEY, JSON.stringify(next))
+      } catch {
+        // ignore storage errors
+      }
+      return next
+    })
+  }
 
   // プリセット上書きモーダル状態
   const [overwriteModalPreset, setOverwriteModalPreset] = useState<SpeechBubblePreset | null>(null)
@@ -404,6 +454,102 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const textColorParsed = rgbaToHexAndAlpha(bubble.textColor)
   const bgColorParsed = rgbaToHexAndAlpha(bubble.backgroundColor)
   const borderColorParsed = rgbaToHexAndAlpha(bubble.borderColor)
+
+  // プリセットのフィルタ & ソート
+  const filteredPresets = presets.filter((p) => {
+    if (presetSettings.directionFilter === 'vertical' && p.orientation !== 'vertical') return false
+    if (presetSettings.directionFilter === 'horizontal' && p.orientation !== 'horizontal') return false
+
+    if (presetSettings.searchQuery.trim()) {
+      const q = presetSettings.searchQuery.trim().toLowerCase()
+      const nameMatch = p.name.toLowerCase().includes(q)
+      const textMatch = p.text ? p.text.toLowerCase().includes(q) : false
+      if (!nameMatch && !textMatch) return false
+    }
+
+    return true
+  })
+
+  const sortedPresets = [...filteredPresets].sort((a, b) => {
+    switch (presetSettings.sortBy) {
+      case 'name-asc':
+        return a.name.localeCompare(b.name, 'ja')
+      case 'name-desc':
+        return b.name.localeCompare(a.name, 'ja')
+      case 'created-asc': {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : a.id
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : b.id
+        return timeA - timeB
+      }
+      case 'created-desc': {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : a.id
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : b.id
+        return timeB - timeA
+      }
+      default:
+        return 0
+    }
+  })
+
+  const withTextPresets = sortedPresets.filter((p) => p.text !== undefined && p.text !== null && p.text.trim() !== '')
+  const withoutTextPresets = sortedPresets.filter((p) => !p.text || p.text.trim() === '')
+
+  const renderPresetChips = (list: SpeechBubblePreset[]) => (
+    <div className="flex flex-wrap gap-1.5">
+      {list.map((p) => {
+        const orientationSuffix = p.orientation === 'horizontal' ? '(横)' : '(縦)'
+        return (
+          <div
+            key={p.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => handleApplyPreset(p)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleApplyPreset(p)
+              }
+            }}
+            className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
+            title={`${p.name} ${orientationSuffix}${p.text ? `\n💬 テキスト: ${p.text}` : ''} (クリックで適用)`}
+          >
+            <span
+              className="w-3 h-3 rounded-full border flex-shrink-0"
+              style={{
+                backgroundColor: p.background_color,
+                borderColor: p.border_color,
+                borderWidth: Math.min(2, Math.max(1, p.border_width)),
+              }}
+            />
+            <span className="truncate max-w-[120px]">
+              {p.name} {orientationSuffix}
+            </span>
+            {p.text && (
+              <span className="text-[10px] text-amber-400 font-bold" title={`保存テキスト: ${p.text}`}>
+                💬
+              </span>
+            )}
+            <button
+              type="button"
+              title="現在の修飾で上書き"
+              onClick={(e) => handleOpenOverwriteModal(p, e)}
+              className="opacity-0 group-hover:opacity-100 hover:text-blue-400 p-0.5 text-[10px] transition-opacity"
+            >
+              💾
+            </button>
+            <button
+              type="button"
+              title="プリセットを削除"
+              onClick={(e) => handleDeletePreset(p, e)}
+              className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 text-[10px] transition-opacity"
+            >
+              ✕
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 
   return (
     <div className="space-y-4 p-3 md:p-4 bg-[#1F1F25] rounded-lg border border-[rgba(255,255,255,0.08)] shadow-sm text-sm text-zinc-200">
@@ -1257,64 +1403,135 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           </div>
         )}
 
-        {/* プリセット一覧 */}
-        <div className="flex flex-wrap gap-1.5">
-          {presets.length === 0 ? (
-            <span className="text-[11px] text-zinc-500">登録済みのプリセットはありません</span>
-          ) : (
-            presets.map((p) => {
-              const orientationSuffix = p.orientation === 'horizontal' ? '(横)' : '(縦)'
-              return (
-                <div
-                  key={p.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleApplyPreset(p)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      handleApplyPreset(p)
-                    }
-                  }}
-                  className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
-                  title={`${p.name} ${orientationSuffix}${p.text ? `\n💬 テキスト: ${p.text}` : ''} (クリックで適用)`}
+        {/* 検索・フィルタ・ソートコントロール */}
+        <div className="space-y-1.5 bg-[#18181C] p-2 rounded border border-[rgba(255,255,255,0.06)]">
+          {/* 検索バー */}
+          <div className="relative">
+            <input
+              type="text"
+              aria-label="プリセット検索"
+              placeholder="プリセット名 / テキストで検索..."
+              value={presetSettings.searchQuery}
+              onChange={(e) => updatePresetSettings({ searchQuery: e.target.value })}
+              className="w-full p-1.5 text-xs bg-[#1F1F25] text-zinc-100 placeholder-zinc-500 rounded border border-[rgba(255,255,255,0.1)] focus:outline-none focus:border-blue-500"
+            />
+            {presetSettings.searchQuery && (
+              <button
+                type="button"
+                aria-label="検索クリア"
+                onClick={() => updatePresetSettings({ searchQuery: '' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* 縦横フィルタ & ソートセレクタ */}
+          <div className="flex items-center justify-between gap-1.5">
+            {/* 種別フィルタ */}
+            <div className="flex items-center gap-1" role="group" aria-label="プリセット種別フィルタ">
+              {(
+                [
+                  { value: 'all', label: 'すべて', ariaLabel: 'すべてのプリセット' },
+                  { value: 'vertical', label: '縦書き', ariaLabel: '縦書きプリセット' },
+                  { value: 'horizontal', label: '横書き', ariaLabel: '横書きプリセット' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-label={opt.ariaLabel}
+                  onClick={() => updatePresetSettings({ directionFilter: opt.value })}
+                  className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
+                    presetSettings.directionFilter === opt.value
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'bg-[#1F1F25] text-zinc-400 hover:text-zinc-200 hover:bg-[#282830]'
+                  }`}
                 >
-                  <span
-                    className="w-3 h-3 rounded-full border flex-shrink-0"
-                    style={{
-                      backgroundColor: p.background_color,
-                      borderColor: p.border_color,
-                      borderWidth: Math.min(2, Math.max(1, p.border_width)),
-                    }}
-                  />
-                  <span className="truncate max-w-[120px]">{p.name} {orientationSuffix}</span>
-                  {p.text && (
-                    <span className="text-[10px] text-amber-400 font-bold" title={`保存テキスト: ${p.text}`}>
-                      💬
-                    </span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ソートセレクタ */}
+            <div className="flex items-center gap-1">
+              <select
+                aria-label="プリセット並び順"
+                value={presetSettings.sortBy}
+                onChange={(e) => updatePresetSettings({ sortBy: e.target.value as PresetSortOption })}
+                className="p-1 text-[11px] bg-[#1F1F25] text-zinc-200 border border-[rgba(255,255,255,0.1)] rounded focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="name-asc">名前昇順</option>
+                <option value="name-desc">名前降順</option>
+                <option value="created-asc">日時昇順</option>
+                <option value="created-desc">日時降順</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* プリセット一覧 (2区分折り畳み) */}
+        {presets.length === 0 ? (
+          <div className="p-2 text-center text-[11px] text-zinc-500">
+            登録済みのプリセットはありません
+          </div>
+        ) : filteredPresets.length === 0 ? (
+          <div className="p-2 text-center text-[11px] text-zinc-500">
+            条件に一致するプリセットがありません
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* 1. テキスト付きプリセット */}
+            <div className="border border-[rgba(255,255,255,0.06)] rounded bg-[#18181C]/50 overflow-hidden">
+              <button
+                type="button"
+                aria-label="テキスト付きプリセットの折り畳み切替"
+                onClick={() => updatePresetSettings({ isWithTextOpen: !presetSettings.isWithTextOpen })}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
+              >
+                <span className="font-medium flex items-center gap-1.5">
+                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithTextOpen ? '▼' : '▶'}</span>
+                  <span>💬 テキスト付き ({withTextPresets.length})</span>
+                </span>
+              </button>
+              {presetSettings.isWithTextOpen && (
+                <div className="p-2 border-t border-[rgba(255,255,255,0.04)]">
+                  {withTextPresets.length === 0 ? (
+                    <span className="text-[11px] text-zinc-500">テキスト付きプリセットはありません</span>
+                  ) : (
+                    renderPresetChips(withTextPresets)
                   )}
-                <button
-                  type="button"
-                  title="現在の修飾で上書き"
-                  onClick={(e) => handleOpenOverwriteModal(p, e)}
-                  className="opacity-0 group-hover:opacity-100 hover:text-blue-400 p-0.5 text-[10px] transition-opacity"
-                >
-                  💾
-                </button>
-                <button
-                  type="button"
-                  title="プリセットを削除"
-                  onClick={(e) => handleDeletePreset(p, e)}
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 text-[10px] transition-opacity"
-                >
-                  ✕
-                </button>
-              </div>
-            )
-          })
+                </div>
+              )}
+            </div>
+
+            {/* 2. スタイル専用（テキストなし）プリセット */}
+            <div className="border border-[rgba(255,255,255,0.06)] rounded bg-[#18181C]/50 overflow-hidden">
+              <button
+                type="button"
+                aria-label="スタイル専用プリセットの折り畳み切替"
+                onClick={() => updatePresetSettings({ isWithoutTextOpen: !presetSettings.isWithoutTextOpen })}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
+              >
+                <span className="font-medium flex items-center gap-1.5">
+                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithoutTextOpen ? '▼' : '▶'}</span>
+                  <span>🎨 スタイル専用 ({withoutTextPresets.length})</span>
+                </span>
+              </button>
+              {presetSettings.isWithoutTextOpen && (
+                <div className="p-2 border-t border-[rgba(255,255,255,0.04)]">
+                  {withoutTextPresets.length === 0 ? (
+                    <span className="text-[11px] text-zinc-500">スタイル専用プリセットはありません</span>
+                  ) : (
+                    renderPresetChips(withoutTextPresets)
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
-    </div>
 
       {/* 形状選択 */}
       <div>

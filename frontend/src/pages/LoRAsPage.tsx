@@ -109,7 +109,6 @@ export function LoRAsPage() {
     useSensor(TouchSensor, {
       activationConstraint: {
         distance: 5, // モバイルタッチ: ドラッグハンドル上で5px移動で即時開始
-        tolerance: 5,
       },
     })
   )

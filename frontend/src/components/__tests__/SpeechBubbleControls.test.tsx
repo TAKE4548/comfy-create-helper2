@@ -143,8 +143,9 @@ describe('SpeechBubbleControls', () => {
       expect(screen.getByDisplayValue('こんにちは')).toBeDefined()
     })
     expect(screen.getByText('楕円')).toBeDefined()
-    expect(screen.getByText('縦書き')).toBeDefined()
-    expect(screen.getByText('横書き')).toBeDefined()
+    const quickAdjust = screen.getByTestId('quick-adjust-section')
+    expect(within(quickAdjust).getByText('縦書き')).toBeDefined()
+    expect(within(quickAdjust).getByText('横書き')).toBeDefined()
   })
 
   it('calls onUpdate when text is modified', async () => {
@@ -170,9 +171,11 @@ describe('SpeechBubbleControls', () => {
   it('calls onUpdate when orientation is changed', async () => {
     renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
-      expect(screen.getByText('横書き')).toBeDefined()
+      const quickAdjust = screen.getByTestId('quick-adjust-section')
+      expect(within(quickAdjust).getByText('横書き')).toBeDefined()
     })
-    const horizBtn = screen.getByText('横書き')
+    const quickAdjust = screen.getByTestId('quick-adjust-section')
+    const horizBtn = within(quickAdjust).getByText('横書き')
     fireEvent.click(horizBtn)
     expect(defaultProps.onUpdate).toHaveBeenCalledWith({ orientation: 'horizontal' })
   })
@@ -536,6 +539,304 @@ describe('SpeechBubbleControls', () => {
         fontSize: 22,
       })
     )
+  })
+
+  it('separates presets into with-text and style-only sections with independent collapse/expand (AC-1)', async () => {
+    const mixedPresets: SpeechBubblePreset[] = [
+      {
+        id: 1,
+        name: 'スタイルのみA',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000000',
+        background_color: '#ffffff',
+        border_color: '#000000',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T00:00:00Z',
+        text: null,
+      },
+      {
+        id: 2,
+        name: 'テキスト付きB',
+        shape: 'burst',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 24,
+        text_color: '#ff0000',
+        background_color: '#ffffff',
+        border_color: '#000000',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T01:00:00Z',
+        text: 'ドォォン！',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(mixedPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText(/💬 テキスト付き \(1\)/)).toBeDefined()
+      expect(screen.getByText(/🎨 スタイル専用 \(1\)/)).toBeDefined()
+      expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
+      expect(screen.getByText('スタイルのみA (縦)')).toBeDefined()
+    })
+
+    // Toggle collapse for with-text section
+    const toggleWithTextBtn = screen.getByLabelText('テキスト付きプリセットの折り畳み切替')
+    fireEvent.click(toggleWithTextBtn)
+    expect(screen.queryByText('テキスト付きB (縦)')).toBeNull()
+    expect(screen.getByText('スタイルのみA (縦)')).toBeDefined()
+
+    // Toggle expand for with-text section
+    fireEvent.click(toggleWithTextBtn)
+    expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
+
+    // Toggle collapse for without-text section
+    const toggleWithoutTextBtn = screen.getByLabelText('スタイル専用プリセットの折り畳み切替')
+    fireEvent.click(toggleWithoutTextBtn)
+    expect(screen.queryByText('スタイルのみA (縦)')).toBeNull()
+    expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
+  })
+
+  it('sorts presets by name (asc/desc) and created date (asc/desc) with default name-asc (AC-2)', async () => {
+    const unsortedPresets: SpeechBubblePreset[] = [
+      {
+        id: 1,
+        name: 'Bプリセット',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T01:00:00Z',
+      },
+      {
+        id: 2,
+        name: 'Aプリセット',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T02:00:00Z',
+      },
+      {
+        id: 3,
+        name: 'Cプリセット',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 2,
+        created_at: '2026-08-20T00:00:00Z',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(unsortedPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('Aプリセット (縦)')).toBeDefined()
+    })
+
+    const sortSelect = screen.getByLabelText('プリセット並び順') as HTMLSelectElement
+    expect(sortSelect.value).toBe('name-asc')
+
+    // Name Ascending: A, B, C
+    const getPresetTexts = () =>
+      Array.from(document.querySelectorAll('[data-testid="speech-bubble-presets-section"] .group')).map(
+        (el) => el.textContent || ''
+      )
+
+    let texts = getPresetTexts()
+    expect(texts[0]).toContain('Aプリセット')
+    expect(texts[1]).toContain('Bプリセット')
+    expect(texts[2]).toContain('Cプリセット')
+
+    // Sort by name-desc: C, B, A
+    fireEvent.change(sortSelect, { target: { value: 'name-desc' } })
+    texts = getPresetTexts()
+    expect(texts[0]).toContain('Cプリセット')
+    expect(texts[1]).toContain('Bプリセット')
+    expect(texts[2]).toContain('Aプリセット')
+
+    // Sort by created-asc (00:00 C, 01:00 B, 02:00 A)
+    fireEvent.change(sortSelect, { target: { value: 'created-asc' } })
+    texts = getPresetTexts()
+    expect(texts[0]).toContain('Cプリセット')
+    expect(texts[1]).toContain('Bプリセット')
+    expect(texts[2]).toContain('Aプリセット')
+
+    // Sort by created-desc (02:00 A, 01:00 B, 00:00 C)
+    fireEvent.change(sortSelect, { target: { value: 'created-desc' } })
+    texts = getPresetTexts()
+    expect(texts[0]).toContain('Aプリセット')
+    expect(texts[1]).toContain('Bプリセット')
+    expect(texts[2]).toContain('Cプリセット')
+  })
+
+  it('filters presets in real-time by search query across name and text (AC-3)', async () => {
+    const searchPresets: SpeechBubblePreset[] = [
+      {
+        id: 1,
+        name: '日常会話',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T00:00:00Z',
+        text: 'こんにちは',
+      },
+      {
+        id: 2,
+        name: 'バトル叫び',
+        shape: 'burst',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 24,
+        text_color: '#f00',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T00:00:00Z',
+        text: 'うわあああ',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(searchPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('日常会話 (縦)')).toBeDefined()
+      expect(screen.getByText('バトル叫び (縦)')).toBeDefined()
+    })
+
+    const searchInput = screen.getByLabelText('プリセット検索')
+
+    // Search by name
+    fireEvent.change(searchInput, { target: { value: 'バトル' } })
+    expect(screen.queryByText('日常会話 (縦)')).toBeNull()
+    expect(screen.getByText('バトル叫び (縦)')).toBeDefined()
+
+    // Search by text
+    fireEvent.change(searchInput, { target: { value: 'こんにちは' } })
+    expect(screen.getByText('日常会話 (縦)')).toBeDefined()
+    expect(screen.queryByText('バトル叫び (縦)')).toBeNull()
+
+    // Search non-matching
+    fireEvent.change(searchInput, { target: { value: '該当なし検索語' } })
+    expect(screen.getByText('条件に一致するプリセットがありません')).toBeDefined()
+
+    // Clear search
+    const clearBtn = screen.getByLabelText('検索クリア')
+    fireEvent.click(clearBtn)
+    expect(screen.getByText('日常会話 (縦)')).toBeDefined()
+    expect(screen.getByText('バトル叫び (縦)')).toBeDefined()
+  })
+
+  it('filters presets by direction filter (all / vertical / horizontal) (AC-4)', async () => {
+    const directionPresets: SpeechBubblePreset[] = [
+      {
+        id: 1,
+        name: '縦書きプリセット',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T00:00:00Z',
+      },
+      {
+        id: 2,
+        name: '横書きプリセット',
+        shape: 'rectangle',
+        orientation: 'horizontal',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000',
+        background_color: '#fff',
+        border_color: '#000',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T00:00:00Z',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(directionPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('縦書きプリセット (縦)')).toBeDefined()
+      expect(screen.getByText('横書きプリセット (横)')).toBeDefined()
+    })
+
+    const filterGroup = screen.getByRole('group', { name: 'プリセット種別フィルタ' })
+
+    // Filter vertical only
+    fireEvent.click(within(filterGroup).getByText('縦書き'))
+    expect(screen.getByText('縦書きプリセット (縦)')).toBeDefined()
+    expect(screen.queryByText('横書きプリセット (横)')).toBeNull()
+
+    // Filter horizontal only
+    fireEvent.click(within(filterGroup).getByText('横書き'))
+    expect(screen.queryByText('縦書きプリセット (縦)')).toBeNull()
+    expect(screen.getByText('横書きプリセット (横)')).toBeDefined()
+
+    // Reset to all
+    fireEvent.click(within(filterGroup).getByText('すべて'))
+    expect(screen.getByText('縦書きプリセット (縦)')).toBeDefined()
+    expect(screen.getByText('横書きプリセット (横)')).toBeDefined()
+  })
+
+  it('persists and restores filter, sort, and collapse settings in localStorage (AC-5)', async () => {
+    // 1. Restore from existing localStorage
+    const savedSettings = {
+      searchQuery: 'コミック',
+      directionFilter: 'vertical',
+      sortBy: 'created-desc',
+      isWithTextOpen: false,
+      isWithoutTextOpen: true,
+    }
+    localStorage.setItem('speech_bubble_preset_filter_settings', JSON.stringify(savedSettings))
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      const searchInput = screen.getByLabelText('プリセット検索') as HTMLInputElement
+      expect(searchInput.value).toBe('コミック')
+      const sortSelect = screen.getByLabelText('プリセット並び順') as HTMLSelectElement
+      expect(sortSelect.value).toBe('created-desc')
+    })
+
+    // 2. Modify settings and verify saved to localStorage
+    const searchInput = screen.getByLabelText('プリセット検索')
+    fireEvent.change(searchInput, { target: { value: '新しい検索' } })
+
+    const updated = JSON.parse(localStorage.getItem('speech_bubble_preset_filter_settings') || '{}')
+    expect(updated.searchQuery).toBe('新しい検索')
+    expect(updated.directionFilter).toBe('vertical')
+    expect(updated.sortBy).toBe('created-desc')
   })
 
   // ─── Speech Tone Conversion Tests ──────────────────────────────

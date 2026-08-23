@@ -479,7 +479,6 @@ export function SettingsPage() {
     useSensor(TouchSensor, {
       activationConstraint: {
         distance: 5,
-        tolerance: 5,
       },
     })
   )

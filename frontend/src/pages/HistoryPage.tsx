@@ -310,8 +310,7 @@ export function HistoryPage() {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        distance: 5,
-        tolerance: 5
+        distance: 5
       }
     })
   )

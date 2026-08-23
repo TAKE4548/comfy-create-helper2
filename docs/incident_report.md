@@ -1,23 +1,23 @@
-# インシデントレポート: 縦書きセリフにおけるパス・軌道レイアウトの横書き配置不具合に関する調査報告書
+# インシデントレポート: タッチ操作端末におけるタグチップ並び替え不能（D&D即時キャンセル不具合）に関する調査報告書
 
 ## 1. 障害概要 (Overview)
 
-REQ-168（セリフ修飾機能）にて追加されたパス・軌道レイアウト機能において、セリフの文字方向を「縦書き（`orientation: 'vertical'`）」に設定している状態でパスプリセット（直線・円弧・S字波・階段）を選択すると、文字が上から下への縦書き軌道ではなく、左から右への横書き軌道（X軸方向 0.1〜0.9）に沿って配置されてしまう不具合が観測された。
+タッチ操作環境（スマートフォン・タブレット等のタッチ端末）において、タグチップエディタ（`TagChipEditor`）のタグチップ（並び替えハンドル含む）をドラッグして移動・並び替えを行おうとしても、ドラッグが開始されず移動できない現象が報告された。
 
 ### 観測されている事象:
-1. **縦書き設定時の横方向配置**: 縦書き指定であっても、パスプリセット有効時に文字が横方向（水平）に流れるように描画される。
-2. **縦書きレイアウトのバイパス**: レンダラー内部で `pathPreset !== 'none'` の場合に縦書き用の段落・行配置処理（`layoutVerticalText`）がバイパスされ、横書き前提の制御点補間のみが実行されている。
-3. **接線回転角の不整合**: パス接線方向への文字回転追従（`pathFollowRotation`）が横書きテキスト基準（水平進行角）で計算されているため、縦書き文字の流れに対して意図しない回転角が適用される。
+1. **タッチドラッグの不発**: タッチ操作でタグチップのドラッグハンドル（`<GripVertical>`）を押下して指を動かしても、ドラッグ状態に移行せず並び替えが行えない。
+2. **PCマウス操作との差異**: PC環境でのマウス操作によるドラッグ＆ドロップは正常に動作するが、タッチ操作時のみ完全に無反応となる。
+3. **他画面での同様の設定**: REQ-153で一括変更された他画面（プリセットパネル、タグ一覧、LoRA一覧、生成履歴、設定画面）の `TouchSensor` 設定にも同様のパラメータが設定されている。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
 - **再現手順**:
-  1. 吹き出し編集モーダルにて、文字方向を「縦書き」に設定したセリフを作成・選択する。
-  2. 演出パラメータ「3. パス・軌道レイアウト」にて、軌道タイプ（`line`, `arc`, `wave`, `stepped`）を選択する。
+  1. タッチ対応端末（またはブラウザのDevToolsモバイルエミュレーション/タッチモード）でタグ編集可能な画面（Generate画面、TagSet編集モーダル等）を開く。
+  2. チップモードの `TagChipEditor` において、任意のタグチップのドラッグハンドル（あるいはチップ本体）をタッチし、左右にドラッグしようとする。
 - **観測結果**:
-  1. 縦書き設定であるにもかかわらず、文字が水平方向（左から右）のパス上に並んで描画される。
+  1. タッチ移動を開始した瞬間にドラッグセッションがキャンセルされ、タグチップが移動しない。
 
 ---
 
@@ -25,22 +25,35 @@ REQ-168（セリフ修飾機能）にて追加されたパス・軌道レイア�
 
 | # | 対象ファイル | 該当行 / 関数 | 詳細 |
 |---|---|---|---|
-| 1 | `frontend/src/utils/speechBubbleRenderer.ts` | L168-223 (`calculateCharacterTransform`) | `line`, `arc`, `wave`, `stepped` のデフォルト制御点が横書き基準（X: 0.1〜0.9）でハードコードされており、`bubble.orientation` による分岐がない。 |
-| 2 | `frontend/src/utils/speechBubbleRenderer.ts` | L225 (`tangentAngle`), L737 | パス接線回転角が横書き基準角（水平ベクトル）で算出されている。 |
-| 3 | `frontend/src/utils/speechBubbleRenderer.ts` | L762-768 (`drawSpeechBubbleText`) | `pathPreset !== 'none'` の際、縦書きテキストの進行方向やレイアウト情報が考慮されずに全文字がパス上に単一配置される。 |
-| 4 | `frontend/src/types/speechBubble.ts` | L75-92 (`DEFAULT_MANGA_EFFECTS`) | `pathPoints` の初期値が横書き基準（X: 0.1〜0.9）となっている。 |
+| 1 | `frontend/src/components/TagChipEditor/index.tsx` | L57-62 (`useSensors`) | `TouchSensor` の `activationConstraint` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
+| 2 | `frontend/src/components/PresetManagerPanel.tsx` | L64-69 (`useSensors`) | 同様に `TouchSensor` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
+| 3 | `frontend/src/pages/TagsPage.tsx` | L108-114 (`useSensors`) | 同様に `TouchSensor` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
+| 4 | `frontend/src/pages/LoRAsPage.tsx` | L108-114 (`useSensors`) | 同様に `TouchSensor` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
+| 5 | `frontend/src/pages/HistoryPage.tsx` | L310-316 (`useSensors`) | 同様に `TouchSensor` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
+| 6 | `frontend/src/pages/SettingsPage.tsx` | L478-484 (`useSensors`) | 同様に `TouchSensor` に `{ distance: 5, tolerance: 5 }` が設定されている。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 根本原因 1: デフォルト制御点座標の orientation 非連動
-- `calculateCharacterTransform` 内において、`fx.pathPoints` が未指定（またはデフォルト）の場合のフォールバック制御点（直線・円弧・波・階段）がすべて横方向（X軸: 0.1 → 0.9, Y軸: 中央または上下変動）に定義されている。
-- 縦書き（`orientation === 'vertical'`）の場合に上から下（Y軸: 0.1 → 0.9, X軸: 中央または左右変動）へ流れる制御点への切り替えが行われていない。
+### 根本原因 1: `@dnd-kit/core` の `AbstractPointerSensor` における制約判定順序と `tolerance` の競合
+- `@dnd-kit/core` の `AbstractPointerSensor.prototype.handleMove` 内における `activationConstraint`（距離制約 `isDistanceConstraint`）の判定ロジックは以下の通り実装されている：
+  ```javascript
+  if (isDistanceConstraint(activationConstraint)) {
+    if (activationConstraint.tolerance != null && hasExceededDistance(delta, activationConstraint.tolerance)) {
+      return this.handleCancel(); // tolerance を超えるとキャンセル
+    }
+    if (hasExceededDistance(delta, activationConstraint.distance)) {
+      return this.handleStart();  // distance を超えるとドラッグ開始
+    }
+  }
+  ```
+- `activationConstraint` に `{ distance: 5, tolerance: 5 }` が指定されている場合、移動量（`delta`）が 5px を超えた瞬間に、1つ目の条件分岐である `hasExceededDistance(delta, 5)` が真と評価され、**ドラッグ開始条件（`distance`）を評価する前に `handleCancel()` が呼び出されて即時キャンセル**される。
+- これにより、タッチドラッグを発動させることが原理的に不可能となっている。
 
-### 根本原因 2: 縦書き時におけるパス進行方向と文字接線回転角の不整合
-- パス追従回転（`pathFollowRotation`）において算出される `tangentAngle` が `Math.atan2(dy, dx)` であり、横書き（水平進行）をベース角度 $0^\circ$ としている。
-- 縦書き文字に対して水平基準の接線角度をそのまま加算すると文字が不自然に傾くため、縦書き基準角（$+90^\circ$ または垂直進行）との差分を考慮する必要がある。
+### 根本原因 2: REQ-153 における `TouchSensor` 制約移行時の残存設定
+- 以前の実装では `{ delay: 500, tolerance: 5 }`（「500msの長押し待ち時間中、許容移動量5px以内なら開始」）として `tolerance` を使用していた。
+- REQ-153（タッチ端末でのドラッグハンドル導入・即時レスポンス改善）において `delay` を廃止し `distance: 5` へ変更した際、不要となった `tolerance: 5` がそのまま残存したため、本不具合が発生した。
 
 ---
 
@@ -54,12 +67,12 @@ REQ-168（セリフ修飾機能）にて追加されたパス・軌道レイア�
 </diagnostic_check>
 
 * **分類**: **Type A (Implementation Bug / 実装不具合)**
-  * 縦書き時（`orientation === 'vertical'`）におけるパス軌道のデフォルト制御点（Y軸方向進行）の適用および接線回転角度の縦書き補正が必要。
+  * `@dnd-kit/core` の距離制約仕様に対する誤ったプロパティ指定（`distance` と同値の `tolerance` 併用）に起因する実装不具合。
 
 ---
 
 ## 6. 次のステップ提案 (Next Action)
 
 不具合の原因特定と分類（Type A: 実装不具合）が完了しました。
-バックログに PBI-REQ-171 を登録し、詳細設計およびテストケース策定を行うため **`/dev-design` ワークフロー** への移行を推奨します。
+バックログへ PBI を登録し、修正設計および検証テストケースを策定するため、**`/dev-design` ワークフロー** への移行を提案します。
 
