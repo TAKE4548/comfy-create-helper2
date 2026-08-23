@@ -251,23 +251,64 @@ describe('SpeechBubbleControls', () => {
 
   // ─── Preset Tests ──────────────────────────────────────────────
 
-  it('renders presets list on mount', async () => {
+  it('renders presets list on mount with orientation suffix', async () => {
     renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
-      expect(screen.getByText('コミック標準')).toBeDefined()
-      expect(screen.getByText('叫び・赤枠')).toBeDefined()
+      expect(screen.getByText('コミック標準 (縦)')).toBeDefined()
+      expect(screen.getByText('叫び・赤枠 (横)')).toBeDefined()
     })
   })
 
-  it('applies preset style when preset chip is clicked', async () => {
+  it('applies preset style and loads text when preset includes text', async () => {
+    const textPreset: SpeechBubblePreset = {
+      id: 5,
+      name: 'SE効果音',
+      shape: 'burst',
+      orientation: 'vertical',
+      font_family: 'sans-serif',
+      font_size: 28,
+      text_color: 'rgba(255, 0, 0, 1)',
+      background_color: 'rgba(255, 255, 255, 1)',
+      border_color: 'rgba(0, 0, 0, 1)',
+      border_width: 3,
+      sort_order: 2,
+      text: 'ドォォン！',
+      created_at: '2026-08-20T00:00:00Z',
+    }
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue([...mockPresets, textPreset])
+
     renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
-      expect(screen.getByText('叫び・赤枠')).toBeDefined()
+      expect(screen.getByText('SE効果音 (縦)')).toBeDefined()
     })
 
-    const presetChip = screen.getByText('叫び・赤枠')
+    const presetChip = screen.getByText('SE効果音 (縦)')
     fireEvent.click(presetChip)
 
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({
+      shape: 'burst',
+      orientation: 'vertical',
+      fontFamily: 'sans-serif',
+      fontSize: 28,
+      textColor: 'rgba(255, 0, 0, 1)',
+      backgroundColor: 'rgba(255, 255, 255, 1)',
+      borderColor: 'rgba(0, 0, 0, 1)',
+      borderWidth: 3,
+      effects: undefined,
+      text: 'ドォォン！',
+    })
+  })
+
+  it('applies preset style without overwriting text when preset has no text', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('叫び・赤枠 (横)')).toBeDefined()
+    })
+
+    const presetChip = screen.getByText('叫び・赤枠 (横)')
+    fireEvent.click(presetChip)
+
+    // text property should not be present in payload
     expect(defaultProps.onUpdate).toHaveBeenCalledWith({
       shape: 'burst',
       orientation: 'horizontal',
@@ -277,8 +318,10 @@ describe('SpeechBubbleControls', () => {
       backgroundColor: 'rgba(255, 255, 200, 0.9)',
       borderColor: 'rgba(255, 0, 0, 1)',
       borderWidth: 4,
+      effects: undefined,
     })
   })
+
 
   it('creates and adds a new preset', async () => {
     const newPreset: SpeechBubblePreset = {
@@ -326,7 +369,7 @@ describe('SpeechBubbleControls', () => {
           border_width: 2,
         })
       )
-      expect(screen.getByText('新規プリセット')).toBeDefined()
+      expect(screen.getByText('新規プリセット (縦)')).toBeDefined()
     })
   })
 
@@ -338,7 +381,7 @@ describe('SpeechBubbleControls', () => {
 
     renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
-      expect(screen.getByText('コミック標準')).toBeDefined()
+      expect(screen.getByText('コミック標準 (縦)')).toBeDefined()
     })
 
     const deleteButtons = screen.getAllByTitle('プリセットを削除')
@@ -346,34 +389,153 @@ describe('SpeechBubbleControls', () => {
 
     await waitFor(() => {
       expect(speechBubblePresetsApi.delete).toHaveBeenCalledWith(1)
-      expect(screen.queryByText('コミック標準')).toBeNull()
+      expect(screen.queryByText('コミック標準 (縦)')).toBeNull()
     })
   })
 
-  it('overwrites preset when overwrite icon is clicked', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('opens overwrite modal and updates preset name and style on submit', async () => {
     const updatedPreset: SpeechBubblePreset = {
       ...mockPresets[0],
+      name: 'コミック標準改',
       shape: 'burst',
     }
     vi.mocked(speechBubblePresetsApi.update).mockResolvedValue(updatedPreset)
 
     renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, shape: 'burst' }} />)
     await waitFor(() => {
-      expect(screen.getByText('コミック標準')).toBeDefined()
+      expect(screen.getByText('コミック標準 (縦)')).toBeDefined()
     })
 
     const overwriteButtons = screen.getAllByTitle('現在の修飾で上書き')
     fireEvent.click(overwriteButtons[0])
 
+    // Verify modal is open
+    expect(screen.getByTestId('preset-overwrite-modal')).toBeDefined()
+    expect(screen.getByText('プリセットの上書き保存')).toBeDefined()
+
+    // Change name
+    const nameInput = screen.getByTestId('overwrite-preset-name-input')
+    expect((nameInput as HTMLInputElement).value).toBe('コミック標準')
+    fireEvent.change(nameInput, { target: { value: 'コミック標準改' } })
+
+    // Submit overwrite
+    const submitBtn = screen.getByTestId('overwrite-preset-submit-btn')
+    fireEvent.click(submitBtn)
+
     await waitFor(() => {
       expect(speechBubblePresetsApi.update).toHaveBeenCalledWith(
         1,
         expect.objectContaining({
+          name: 'コミック標準改',
           shape: 'burst',
+          text: null,
+        })
+      )
+      expect(screen.queryByTestId('preset-overwrite-modal')).toBeNull()
+    })
+  })
+
+  it('updates text inclusion when toggling checkbox in overwrite modal', async () => {
+    const updatedPresetWithText: SpeechBubblePreset = {
+      ...mockPresets[0],
+      text: '保存テキスト',
+    }
+    vi.mocked(speechBubblePresetsApi.update).mockResolvedValue(updatedPresetWithText)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, text: '保存テキスト' }} />)
+    await waitFor(() => {
+      expect(screen.getByText('コミック標準 (縦)')).toBeDefined()
+    })
+
+    const overwriteButtons = screen.getAllByTitle('現在の修飾で上書き')
+    fireEvent.click(overwriteButtons[0])
+
+    const textCheckbox = screen.getByTestId('overwrite-preset-include-text-checkbox') as HTMLInputElement
+    expect(textCheckbox.checked).toBe(false)
+
+    // Check include text
+    fireEvent.click(textCheckbox)
+    expect(textCheckbox.checked).toBe(true)
+
+    const submitBtn = screen.getByTestId('overwrite-preset-submit-btn')
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(speechBubblePresetsApi.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          text: '保存テキスト',
         })
       )
     })
+  })
+
+  it('closes overwrite modal without saving on cancel button click', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('コミック標準 (縦)')).toBeDefined()
+    })
+
+    const overwriteButtons = screen.getAllByTitle('現在の修飾で上書き')
+    fireEvent.click(overwriteButtons[0])
+
+    expect(screen.getByTestId('preset-overwrite-modal')).toBeDefined()
+
+    const cancelBtn = screen.getByTestId('overwrite-preset-cancel-btn')
+    fireEvent.click(cancelBtn)
+
+    expect(screen.queryByTestId('preset-overwrite-modal')).toBeNull()
+    expect(speechBubblePresetsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes presets with the same name but different orientations', async () => {
+    const dualPresets: SpeechBubblePreset[] = [
+      {
+        id: 101,
+        name: '共有スタイル',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: 'rgba(0, 0, 0, 1)',
+        background_color: 'rgba(255, 255, 255, 1)',
+        border_color: 'rgba(0, 0, 0, 1)',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: '共有スタイル',
+        shape: 'rectangle',
+        orientation: 'horizontal',
+        font_family: 'sans-serif',
+        font_size: 22,
+        text_color: 'rgba(0, 0, 0, 1)',
+        background_color: 'rgba(255, 255, 255, 1)',
+        border_color: 'rgba(0, 0, 0, 1)',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T00:00:00Z',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(dualPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      expect(screen.getByText('共有スタイル (縦)')).toBeDefined()
+      expect(screen.getByText('共有スタイル (横)')).toBeDefined()
+    })
+
+    // Click horizontal preset
+    fireEvent.click(screen.getByText('共有スタイル (横)'))
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shape: 'rectangle',
+        orientation: 'horizontal',
+        fontSize: 22,
+      })
+    )
   })
 
   // ─── Speech Tone Conversion Tests ──────────────────────────────
@@ -565,6 +727,325 @@ describe('SpeechBubbleControls', () => {
     })
   })
 
+  // ─── Manga FX Tests ──────────────────────────────────────────
+
+  it('renders manga effects section and allows toggling effects', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    const fxToggle = screen.getByText(/漫画テキスト演出/)
+    fireEvent.click(fxToggle)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('字間')).toBeDefined()
+      expect(screen.getByLabelText('スケール変化カーブ')).toBeDefined()
+      expect(screen.getByLabelText('軌道タイプ')).toBeDefined()
+      expect(screen.getByLabelText('塗りモード')).toBeDefined()
+      expect(screen.getByText('＋ フチ追加')).toBeDefined()
+    })
+
+    // Change letter spacing
+    const spacingSlider = screen.getByLabelText('字間')
+    fireEvent.change(spacingSlider, { target: { value: '15' } })
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effects: expect.objectContaining({ letterSpacing: 15 }),
+      })
+    )
+
+    // Change scale curve
+    const scaleSelect = screen.getByLabelText('スケール変化カーブ')
+    fireEvent.change(scaleSelect, { target: { value: 'ease-in' } })
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effects: expect.objectContaining({ scaleCurve: 'ease-in' }),
+      })
+    )
+  })
+
+  it('toggles tatechuyoko for punctuation in vertical text', async () => {
+    const bubbleWithPunctuation: SpeechBubble = {
+      ...mockBubble,
+      text: 'すごい!?本当！',
+      orientation: 'vertical',
+    }
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={bubbleWithPunctuation} />)
+    fireEvent.click(screen.getByText(/漫画テキスト演出/))
+
+    await waitFor(() => {
+      expect(screen.getByText('!? 自動回転トグル')).toBeDefined()
+    })
+
+    const autoRotateBtn = screen.getByText('!? 自動回転トグル')
+    fireEvent.click(autoRotateBtn)
+
+    // Indices for '!' '?' '！' in 'すごい!?本当！' are 3, 4, 7
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effects: expect.objectContaining({
+          rotate90Indices: [3, 4, 7],
+        }),
+      })
+    )
+  })
+
+  it('adds and updates multi-stroke layers', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/漫画テキスト演出/))
+
+    await waitFor(() => {
+      expect(screen.getByText('＋ フチ追加')).toBeDefined()
+    })
+
+    const addStrokeBtn = screen.getByText('＋ フチ追加')
+    fireEvent.click(addStrokeBtn)
+
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effects: expect.objectContaining({
+          multiStrokes: expect.arrayContaining([
+            expect.objectContaining({ width: 3, color: 'rgba(255, 255, 255, 1)' }),
+          ]),
+        }),
+      })
+    )
+  })
+
+  it('preserves effects when creating and applying presets', async () => {
+    const fxData = { scaleCurve: 'linear' as const, scaleStart: 1.0, scaleEnd: 2.0 }
+    const bubbleWithFx: SpeechBubble = {
+      ...mockBubble,
+      effects: fxData,
+    }
+    const presetWithFx: SpeechBubblePreset = {
+      id: 99,
+      name: 'FX付きプリセット',
+      shape: 'burst',
+      orientation: 'vertical',
+      font_family: 'sans-serif',
+      font_size: 20,
+      text_color: 'rgba(0, 0, 0, 1)',
+      background_color: 'rgba(255, 255, 255, 1)',
+      border_color: 'rgba(0, 0, 0, 1)',
+      border_width: 2,
+      sort_order: 5,
+      effects: fxData,
+      created_at: '2026-08-20T00:00:00Z',
+    }
+    vi.mocked(speechBubblePresetsApi.create).mockResolvedValue(presetWithFx)
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue([...mockPresets, presetWithFx])
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={bubbleWithFx} />)
+
+    // Add preset
+    fireEvent.click(screen.getByText('＋ プリセット登録'))
+    fireEvent.change(screen.getByPlaceholderText('プリセット名を入力...'), {
+      target: { value: 'FX付きプリセット' },
+    })
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() => {
+      expect(speechBubblePresetsApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'FX付きプリセット',
+          effects: fxData,
+        })
+      )
+    })
+
+    // Click on preset chip
+    const presetChip = screen.getByText('FX付きプリセット (縦)')
+    fireEvent.click(presetChip)
+
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shape: 'burst',
+        effects: fxData,
+      })
+    )
+  })
+
+  it('updates bubble rotation on slider, input change and reset button', () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, rotation: 30 }} />)
+
+    // Slider
+    const slider = screen.getByLabelText('吹き出しの回転')
+    fireEvent.change(slider, { target: { value: '45' } })
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ rotation: 45 })
+
+    // Number input
+    const numInput = screen.getByLabelText('吹き出し回転角度数値')
+    fireEvent.change(numInput, { target: { value: '-30' } })
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ rotation: -30 })
+
+    // 0° reset button
+    const resetBtn = screen.getByText('0° リセット')
+    fireEvent.click(resetBtn)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ rotation: 0 })
+  })
+
+  it('calls onDuplicate when duplicate button is clicked', () => {
+    const onDuplicateMock = vi.fn()
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} onDuplicate={onDuplicateMock} />)
+
+    const dupBtn = screen.getByText('📋 この吹き出しを複製')
+    fireEvent.click(dupBtn)
+    expect(onDuplicateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates preset with text when checkbox is checked, and without text when unchecked', async () => {
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, text: 'ドン！' }} />)
+
+    // Open add preset
+    fireEvent.click(screen.getByText('＋ プリセット登録'))
+    const nameInput = screen.getByPlaceholderText('プリセット名を入力...')
+    fireEvent.change(nameInput, { target: { value: 'SEプリセット' } })
+
+    // Check text checkbox
+    const textCheck = screen.getByLabelText('テキストを含める')
+    expect(textCheck).toBeDefined()
+    fireEvent.click(textCheck)
+
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() => {
+      expect(speechBubblePresetsApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'SEプリセット',
+          text: 'ドン！',
+        })
+      )
+    })
+  })
+
+  it('does not overwrite current text when applying a preset without text', async () => {
+    const presetWithoutText: SpeechBubblePreset = {
+      id: 50,
+      name: '装飾のみプリセット',
+      shape: 'burst',
+      orientation: 'horizontal',
+      font_family: 'sans-serif',
+      font_size: 24,
+      text_color: '#ff0000',
+      background_color: '#ffffff',
+      border_color: '#000000',
+      border_width: 2,
+      sort_order: 0,
+      text: null,
+      created_at: '',
+    }
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue([presetWithoutText])
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, text: '保持されるべきテキスト' }} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('装飾のみプリセット (横)')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByText('装飾のみプリセット (横)'))
+
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        text: expect.anything(),
+      })
+    )
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shape: 'burst',
+        orientation: 'horizontal',
+      })
+    )
+  })
+
+  it('overwrites text and renders 💬 badge when preset has text', async () => {
+    const presetWithText: SpeechBubblePreset = {
+      id: 51,
+      name: 'セリフ入りプリセット',
+      shape: 'burst',
+      orientation: 'horizontal',
+      font_family: 'sans-serif',
+      font_size: 24,
+      text_color: '#ff0000',
+      background_color: '#ffffff',
+      border_color: '#000000',
+      border_width: 2,
+      sort_order: 0,
+      text: 'バーン！',
+      created_at: '',
+    }
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue([presetWithText])
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} bubble={{ ...mockBubble, text: '元のテキスト' }} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('セリフ入りプリセット (横)')).toBeDefined()
+    })
+
+    // Verify 💬 badge is shown
+    expect(screen.getByText('💬')).toBeDefined()
+
+    // Click preset
+    fireEvent.click(screen.getByText('セリフ入りプリセット (横)'))
+
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'バーン！',
+      })
+    )
+  })
+
+  it('increments and decrements values with step buttons', () => {
+    renderWithQuery(
+      <SpeechBubbleControls
+        {...defaultProps}
+        bubble={{ ...mockBubble, rotation: 10, fontSize: 20, borderWidth: 2, w: 150, h: 120 }}
+      />
+    )
+
+    // Rotation steppers
+    const rotDec = screen.getByLabelText('回転角度を減らす')
+    fireEvent.click(rotDec)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ rotation: 9 })
+
+    const rotInc = screen.getByLabelText('回転角度を増やす')
+    fireEvent.click(rotInc)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ rotation: 11 })
+
+    // Font size steppers
+    const fontDec = screen.getByLabelText('フォントサイズを減らす')
+    fireEvent.click(fontDec)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ fontSize: 19 })
+
+    const fontInc = screen.getByLabelText('フォントサイズを増やす')
+    fireEvent.click(fontInc)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ fontSize: 21 })
+
+    // Border width steppers
+    const borderDec = screen.getByLabelText('枠線幅を減らす')
+    fireEvent.click(borderDec)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ borderWidth: 1 })
+
+    const borderInc = screen.getByLabelText('枠線幅を増やす')
+    fireEvent.click(borderInc)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ borderWidth: 3 })
+
+    // Width steppers
+    const wDec = screen.getByLabelText('吹き出し幅を減らす')
+    fireEvent.click(wDec)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ w: 145 })
+
+    const wInc = screen.getByLabelText('吹き出し幅を増やす')
+    fireEvent.click(wInc)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ w: 155 })
+
+    // Height steppers
+    const hDec = screen.getByLabelText('吹き出し高さを減らす')
+    fireEvent.click(hDec)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ h: 115 })
+
+    const hInc = screen.getByLabelText('吹き出し高さを増やす')
+    fireEvent.click(hInc)
+    expect(defaultProps.onUpdate).toHaveBeenCalledWith({ h: 125 })
+  })
 })
+
 
 

@@ -17,6 +17,7 @@ import { TagChipEditor } from '../../../components/TagChipEditor'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
+import { PromptTranslationModal } from './PromptTranslationModal'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
@@ -33,6 +34,7 @@ export const DesktopLayout = ({
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     selectedImg, setSelectedImg,
+    comfyHistoryImages,
     appliedAssets,
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
@@ -84,7 +86,10 @@ export const DesktopLayout = ({
     auditTypes, setAuditTypes,
     auditResult, auditStatus, runAudit,
     dragOver, handleFileSelect, handleDragOver, handleDragLeave, handleDrop,
-    isGeneratingHere, totalQueueCount,
+    isGeneratingHere,
+    isOtherSessionGenerating,
+    allQueueCount,
+    totalQueueCount,
     showStrip, invalidMappings, textMappings, paramMappings,
     
     // handlers
@@ -103,14 +108,7 @@ export const DesktopLayout = ({
     saveDefaultParamsMutation,
     isAnimaMode,
     setIsAnimaMode,
-    isTranslationOpen,
-    translationTargetRole,
-    toggleTranslationWindow,
-    translationJa,
-    handleTranslationJaChange,
-    translationEn,
-    handleTranslationEnChange,
-    isTranslating,
+    promptTranslation,
   } = state
 
   const [showCopyModal, setShowCopyModal] = useState(false)
@@ -131,46 +129,6 @@ export const DesktopLayout = ({
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
-
-  // 翻訳ウィンドウのドラッグ状態
-  const [translationPosition, setTranslationPosition] = useState({ x: 450, y: 120 })
-  const [isDraggingTranslation, setIsDraggingTranslation] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.drag-handle')) {
-      setIsDraggingTranslation(true)
-      setDragOffset({
-        x: e.clientX - translationPosition.x,
-        y: e.clientY - translationPosition.y
-      })
-    }
-  }
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDraggingTranslation) {
-        setTranslationPosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y
-        })
-      }
-    }
-
-    const handleMouseUp = () => {
-      setIsDraggingTranslation(false)
-    }
-
-    if (isDraggingTranslation) {
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isDraggingTranslation, dragOffset])
 
   useEffect(() => {
     if (selectedWorkflowId !== null && typeof fetchBypassProfiles === 'function') {
@@ -232,6 +190,119 @@ export const DesktopLayout = ({
   const eta = (overallPercentage > 0 && elapsedTime > 0)
     ? Math.round(elapsedTime * (100 - overallPercentage) / overallPercentage)
     : null
+
+  const renderStatusBar = () => {
+    if (isGeneratingHere) {
+      return (
+        <>
+          {/* 全体バッチ進捗 */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+              <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
+              <span>{overallPercentage}%</span>
+            </div>
+            <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+              <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${overallPercentage}%` }} />
+            </div>
+          </div>
+
+          {/* 詳細ノード進捗 */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+              <span>実行中: {currentNode?.name || '準備中...'}</span>
+              <span>{nodeProgress?.percentage || 0}%</span>
+            </div>
+            <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+              <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 0}%` }} />
+            </div>
+          </div>
+
+          {/* 時間情報・Queue情報 */}
+          <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
+            <div className="flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" />
+              <span>経過時間: {elapsedTime}秒</span>
+              {eta !== null && (
+                <>
+                  <span className="text-zinc-700">|</span>
+                  <span>残り約: {eta}秒</span>
+                </>
+              )}
+            </div>
+            <span 
+              onClick={() => setIsJobModalOpen(true)}
+              className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
+            >
+              Queue: {totalQueueCount}
+            </span>
+          </div>
+        </>
+      )
+    }
+
+    if (isOtherSessionGenerating) {
+      return (
+        <>
+          {/* ステータスバッジ & 進捗 */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-amber-300 font-semibold">他セッションで生成中...</span>
+              </span>
+              <span>{nodeProgress?.percentage || 0}%</span>
+            </div>
+            <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+              <div className="h-full bg-amber-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 100}%` }} />
+            </div>
+          </div>
+
+          {/* 実行中ノード */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+              <span>実行中: {currentNode?.name || '処理中...'}</span>
+            </div>
+          </div>
+
+          {/* 時間情報・Queue情報 */}
+          <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
+            <div className="flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin text-amber-400 flex-shrink-0" />
+              <span>経過: {elapsedTime}秒</span>
+            </div>
+            <span 
+              onClick={() => setIsJobModalOpen(true)}
+              className="text-amber-300 cursor-pointer hover:text-white transition-colors font-semibold"
+            >
+              Queue: {allQueueCount} (他セッション)
+            </span>
+          </div>
+        </>
+      )
+    }
+
+    return (
+      <>
+        <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+          <div className="h-full bg-accent-green transition-all duration-200" style={{ width: '0%' }} />
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />
+            <span className="font-semibold text-zinc-300">Ready</span>
+            <span className="text-zinc-700">|</span>
+            <span 
+              onClick={() => setIsJobModalOpen(true)}
+              className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
+            >
+              Queue: {totalQueueCount}
+            </span>
+          </div>
+          <span className="font-mono text-accent-green font-semibold">0%</span>
+        </div>
+      </>
+    )
+  }
 
   const renderUploadZone = () => (
     <div
@@ -437,9 +508,9 @@ export const DesktopLayout = ({
                   <div className="relative flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => toggleTranslationWindow(m.role!)}
+                      onClick={() => promptTranslation.openTranslation(m.role!, paramValues[m.role!] || '')}
                       className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
-                        isTranslationOpen && translationTargetRole === m.role
+                        promptTranslation.isOpen && promptTranslation.activeRole === m.role
                           ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
                           : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
                       }`}
@@ -557,71 +628,7 @@ export const DesktopLayout = ({
                   )}
                   {/* Status bar */}
                   <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
-                    {isGeneratingHere ? (
-                      <>
-                        {/* 全体バッチ進捗 */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                            <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
-                            <span>{overallPercentage}%</span>
-                          </div>
-                          <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                            <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${overallPercentage}%` }} />
-                          </div>
-                        </div>
-
-                        {/* 詳細ノード進捗 */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                            <span>実行中: {currentNode?.name || '準備中...'}</span>
-                            <span>{nodeProgress?.percentage || 0}%</span>
-                          </div>
-                          <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                            <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 0}%` }} />
-                          </div>
-                        </div>
-
-                        {/* 時間情報・Queue情報 */}
-                        <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
-                          <div className="flex items-center gap-2">
-                            <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" />
-                            <span>経過時間: {elapsedTime}秒</span>
-                            {eta !== null && (
-                              <>
-                                <span className="text-zinc-700">|</span>
-                                <span>残り約: {eta}秒</span>
-                              </>
-                            )}
-                          </div>
-                          <span 
-                            onClick={() => setIsJobModalOpen(true)}
-                            className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
-                          >
-                            Queue: {totalQueueCount}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                          <div className="h-full bg-accent-green transition-all duration-200" style={{ width: '0%' }} />
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />
-                            <span className="font-semibold text-zinc-300">Ready</span>
-                            <span className="text-zinc-700">|</span>
-                            <span 
-                              onClick={() => setIsJobModalOpen(true)}
-                              className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
-                            >
-                              Queue: {totalQueueCount}
-                            </span>
-                          </div>
-                          <span className="font-mono text-accent-green font-semibold">0%</span>
-                        </div>
-                      </>
-                    )}
+                    {renderStatusBar()}
                   </div>
                 </div>
               </div>
@@ -738,6 +745,17 @@ export const DesktopLayout = ({
                           })}
                         </div>
                       </div>
+                    ) : filterOwnSession && comfyHistoryImages.length > 0 ? (
+                      <div className="flex flex-col items-center justify-center py-4 gap-2 text-center h-full">
+                        <p className="text-xs text-zinc-400">他セッションの履歴（{comfyHistoryImages.length}件）があります</p>
+                        <button
+                          type="button"
+                          onClick={() => setFilterOwnSession(false)}
+                          className="px-3 py-1 bg-surface-2 border border-accent-green/30 text-accent-green hover:bg-accent-green/10 rounded text-xs font-semibold transition-all"
+                        >
+                          自セッションのみ表示を解除
+                        </button>
+                      </div>
                     ) : <p className="text-xs text-zinc-600 py-2">No history images found for this session.</p>
                   ) : (
                     sortedSnapshots && sortedSnapshots.length > 0 ? (
@@ -798,71 +816,7 @@ export const DesktopLayout = ({
               )}
               {/* Status bar */}
               <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
-                {isGeneratingHere ? (
-                  <>
-                    {/* 全体バッチ進捗 */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                        <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
-                        <span>{overallPercentage}%</span>
-                      </div>
-                      <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                        <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${overallPercentage}%` }} />
-                      </div>
-                    </div>
-
-                    {/* 詳細ノード進捗 */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                        <span>実行中: {currentNode?.name || '準備中...'}</span>
-                        <span>{nodeProgress?.percentage || 0}%</span>
-                      </div>
-                      <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                        <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 0}%` }} />
-                      </div>
-                    </div>
-
-                    {/* 時間情報・Queue情報 */}
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
-                      <div className="flex items-center gap-2">
-                        <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" />
-                        <span>経過時間: {elapsedTime}秒</span>
-                        {eta !== null && (
-                          <>
-                            <span className="text-zinc-700">|</span>
-                            <span>残り約: {eta}秒</span>
-                          </>
-                        )}
-                      </div>
-                      <span 
-                        onClick={() => setIsJobModalOpen(true)}
-                        className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
-                      >
-                        Queue: {totalQueueCount}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-                      <div className="h-full bg-accent-green transition-all duration-200" style={{ width: '0%' }} />
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-accent-green flex-shrink-0" />
-                        <span className="font-semibold text-zinc-300">Ready</span>
-                        <span className="text-zinc-700">|</span>
-                        <span 
-                          onClick={() => setIsJobModalOpen(true)}
-                          className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
-                        >
-                          Queue: {totalQueueCount}
-                        </span>
-                      </div>
-                      <span className="font-mono text-accent-green font-semibold">0%</span>
-                    </div>
-                  </>
-                )}
+                {renderStatusBar()}
               </div>
             </div>
           </div>
@@ -992,64 +946,25 @@ export const DesktopLayout = ({
         </div>
       )}
 
-      {isTranslationOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            left: `${translationPosition.x}px`,
-            top: `${translationPosition.y}px`,
-            zIndex: 9999,
-          }}
-          className="w-80 bg-surface border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl overflow-hidden flex flex-col"
-          onMouseDown={handleMouseDown}
-        >
-          {/* Drag Handle & Header */}
-          <div className="drag-handle cursor-move flex items-center justify-between px-3 py-2 bg-surface-2 border-b border-[rgba(255,255,255,0.06)] select-none">
-            <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 animate-fade-in">
-              翻訳: {textMappings.find((m) => m.role === translationTargetRole)?.display_name || 'プロンプト'}
-              {isTranslating && (
-                <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-[#7C6FDD]" />
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (translationTargetRole) {
-                  toggleTranslationWindow(translationTargetRole)
-                }
-              }}
-              className="text-zinc-500 hover:text-zinc-300 p-0.5 rounded transition-colors"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          {/* Content */}
-          <div className="p-3 space-y-3" onMouseDown={(e) => e.stopPropagation()}>
-            <div>
-              <label className="block text-[10px] text-zinc-500 mb-1">日本語</label>
-              <textarea
-                value={translationJa}
-                onChange={(e) => handleTranslationJaChange(e.target.value)}
-                placeholder="日本語のプロンプトを入力..."
-                rows={4}
-                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] text-zinc-500 mb-1">
-                英語 ({textMappings.find((m) => m.role === translationTargetRole)?.display_name || '入力欄'} に連動)
-              </label>
-              <textarea
-                value={translationEn}
-                onChange={(e) => handleTranslationEnChange(e.target.value)}
-                placeholder="English prompt will appear here..."
-                rows={4}
-                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar resize-none"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <PromptTranslationModal
+        isOpen={promptTranslation.isOpen}
+        onClose={promptTranslation.closeTranslation}
+        roleDisplayName={
+          textMappings.find((m) => m.role === promptTranslation.activeRole)?.display_name ||
+          promptTranslation.activeRole ||
+          'プロンプト'
+        }
+        mode={promptTranslation.mode}
+        onModeChange={promptTranslation.setMode}
+        sourceText={promptTranslation.sourceText}
+        onSourceTextChange={promptTranslation.setSourceText}
+        translatedText={promptTranslation.translatedText}
+        meta={promptTranslation.meta}
+        isTranslating={promptTranslation.isTranslating}
+        error={promptTranslation.error}
+        onTranslate={promptTranslation.executeTranslate}
+        onApply={promptTranslation.applyToPrompt}
+      />
     </div>
   )
 }

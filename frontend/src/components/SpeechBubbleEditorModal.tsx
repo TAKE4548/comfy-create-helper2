@@ -91,7 +91,7 @@ export function SpeechBubbleEditorModal({
   // Canvas interaction state
   const [draggingState, setDraggingState] = useState<{
     bubbleId: string
-    type: 'bubble' | 'tail' | 'resize'
+    type: 'bubble' | 'tail' | 'resize' | 'rotate'
     handle?: 'nw' | 'ne' | 'se' | 'sw'
     startX: number
     startY: number
@@ -109,6 +109,7 @@ export function SpeechBubbleEditorModal({
   const [miniPreviewHeight, setMiniPreviewHeight] = useState<number>(180)
   const resizeStartYRef = useRef<number | null>(null)
   const startHeightRef = useRef<number>(180)
+  const copiedBubbleRef = useRef<SpeechBubble | null>(null)
 
   const [imageObj, setImageObj] = useState<HTMLImageElement | null>(null)
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 500, height: 500 })
@@ -341,21 +342,58 @@ export function SpeechBubbleEditorModal({
   }
 
 
-  // Delete key handler
+  const handleDuplicateBubble = (targetBubble?: SpeechBubble) => {
+    const source = targetBubble || bubbles.find((b) => b.id === selectedBubbleId)
+    if (!source) return
+
+    const offset = 20
+    const newBubble: SpeechBubble = {
+      ...source,
+      id: `bubble-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      x: source.x + offset,
+      y: source.y + offset,
+      tail: source.tail ? { x: source.tail.x + offset, y: source.tail.y + offset } : undefined,
+    }
+
+    setBubbles((prev) => [...prev, newBubble])
+    setSelectedBubbleId(newBubble.id)
+    const style = extractBubbleStyle(newBubble)
+    setLastUsedStyle((prev) => {
+      const next = { ...prev, ...style }
+      saveLastUsedBubbleStyle(next)
+      return next
+    })
+  }
+
+  // Keyboard shortcuts (Delete, Backspace, Ctrl+C / Cmd+C, Ctrl+V / Cmd+V)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (document.activeElement?.tagName || '').toUpperCase()
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBubbleId) {
-        const tag = (document.activeElement?.tagName || '').toUpperCase()
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-          return
-        }
         setBubbles((prev) => prev.filter((b) => b.id !== selectedBubbleId))
         setSelectedBubbleId(null)
+        return
+      }
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey
+      if (isCtrlOrCmd && e.key.toLowerCase() === 'c' && selectedBubbleId) {
+        const active = bubbles.find((b) => b.id === selectedBubbleId)
+        if (active) {
+          copiedBubbleRef.current = { ...active }
+          e.preventDefault()
+        }
+      } else if (isCtrlOrCmd && e.key.toLowerCase() === 'v' && copiedBubbleRef.current) {
+        handleDuplicateBubble(copiedBubbleRef.current)
+        e.preventDefault()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedBubbleId])
+  }, [selectedBubbleId, bubbles])
 
   // Draw loop
   useEffect(() => {
@@ -448,6 +486,26 @@ export function SpeechBubbleEditorModal({
     miniPreviewHeight,
   ])
 
+function getLocalBubblePoint(
+  x: number,
+  y: number,
+  bubble: SpeechBubble,
+  scaleX: number,
+  scaleY: number
+): { x: number; y: number } {
+  const rotation = bubble.rotation || 0
+  if (rotation === 0) return { x, y }
+  const cx = (bubble.x + bubble.w / 2) * scaleX
+  const cy = (bubble.y + bubble.h / 2) * scaleY
+  const rad = (-rotation * Math.PI) / 180
+  const dx = x - cx
+  const dy = y - cy
+  return {
+    x: cx + (dx * Math.cos(rad) - dy * Math.sin(rad)),
+    y: cy + (dx * Math.sin(rad) + dy * Math.cos(rad)),
+  }
+}
+
   // Canvas Mouse handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -458,13 +516,28 @@ export function SpeechBubbleEditorModal({
 
     const activeBubble = bubbles.find((b) => b.id === selectedBubbleId)
 
-    // 1. Check if clicking any resize handle on the selected bubble
+    // 1. Check if clicking rotation handle or any resize handle on the selected bubble
     if (activeBubble) {
+      const localPt = getLocalBubblePoint(x, y, activeBubble, scaleX, scaleY)
       const bx = activeBubble.x * scaleX
       const by = activeBubble.y * scaleY
       const bw = activeBubble.w * scaleX
       const bh = activeBubble.h * scaleY
       const hs = 10
+
+      // Check rotation handle (top center offset -20px)
+      const rotHx = bx + bw / 2
+      const rotHy = by - 20
+      if (Math.hypot(localPt.x - rotHx, localPt.y - rotHy) <= 10) {
+        setDraggingState({
+          type: 'rotate',
+          bubbleId: activeBubble.id,
+          startX: x,
+          startY: y,
+          initialBubble: { ...activeBubble },
+        })
+        return
+      }
 
       const handles: { handle: 'nw' | 'ne' | 'se' | 'sw'; hx: number; hy: number }[] = [
         { handle: 'nw', hx: bx, hy: by },
@@ -474,7 +547,7 @@ export function SpeechBubbleEditorModal({
       ]
 
       for (const h of handles) {
-        if (Math.hypot(x - h.hx, y - h.hy) <= hs) {
+        if (Math.hypot(localPt.x - h.hx, localPt.y - h.hy) <= hs) {
           setDraggingState({
             type: 'resize',
             handle: h.handle,
@@ -486,34 +559,35 @@ export function SpeechBubbleEditorModal({
           return
         }
       }
-    }
 
-    // 2. Check if clicking tail handle of selected bubble or any bubble with tail
-    if (activeBubble && activeBubble.tail) {
-      const tx = activeBubble.tail.x * scaleX
-      const ty = activeBubble.tail.y * scaleY
-      const dist = Math.hypot(x - tx, y - ty)
-      if (dist <= 12) {
-        setDraggingState({
-          type: 'tail',
-          bubbleId: activeBubble.id,
-          startX: x,
-          startY: y,
-          initialBubble: { ...activeBubble }
-        })
-        return
+      // Check tail handle of activeBubble
+      if (activeBubble.tail) {
+        const tx = activeBubble.tail.x * scaleX
+        const ty = activeBubble.tail.y * scaleY
+        const dist = Math.hypot(localPt.x - tx, localPt.y - ty)
+        if (dist <= 12) {
+          setDraggingState({
+            type: 'tail',
+            bubbleId: activeBubble.id,
+            startX: x,
+            startY: y,
+            initialBubble: { ...activeBubble }
+          })
+          return
+        }
       }
     }
 
     // 3. Check if clicking inside any bubble (in reverse order to hit top-most)
     const reversedBubbles = [...bubbles].reverse()
     for (const b of reversedBubbles) {
+      const localPt = getLocalBubblePoint(x, y, b, scaleX, scaleY)
       const bx = b.x * scaleX
       const by = b.y * scaleY
       const bw = b.w * scaleX
       const bh = b.h * scaleY
 
-      if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+      if (localPt.x >= bx && localPt.x <= bx + bw && localPt.y >= by && localPt.y <= by + bh) {
         setSelectedBubbleId(b.id)
         const style = extractBubbleStyle(b)
         setLastUsedStyle((prev) => ({ ...prev, ...style }))
@@ -547,6 +621,20 @@ export function SpeechBubbleEditorModal({
       const dx = Math.round((x - draggingState.startX) / scaleX)
       const dy = Math.round((y - draggingState.startY) / scaleY)
       const initB = draggingState.initialBubble
+
+      if (draggingState.type === 'rotate') {
+        const cx = (initB.x + initB.w / 2) * scaleX
+        const cy = (initB.y + initB.h / 2) * scaleY
+        const rad = Math.atan2(y - cy, x - cx)
+        let deg = (rad * 180) / Math.PI + 90
+        while (deg > 180) deg -= 360
+        while (deg < -180) deg += 360
+        const rounded = Math.round(deg)
+        setBubbles((prev) =>
+          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, rotation: rounded } : b))
+        )
+        return
+      }
 
       if (draggingState.type === 'bubble') {
         setBubbles((prev) =>
@@ -626,22 +714,31 @@ export function SpeechBubbleEditorModal({
     // Cursor style update on hover
     const activeBubble = bubbles.find((b) => b.id === selectedBubbleId)
     if (activeBubble) {
+      const localPt = getLocalBubblePoint(x, y, activeBubble, scaleX, scaleY)
       const bx = activeBubble.x * scaleX
       const by = activeBubble.y * scaleY
       const bw = activeBubble.w * scaleX
       const bh = activeBubble.h * scaleY
       const hs = 10
 
-      if (Math.hypot(x - bx, y - by) <= hs || Math.hypot(x - (bx + bw), y - (by + bh)) <= hs) {
+      // Rotation handle hover
+      const rotHx = bx + bw / 2
+      const rotHy = by - 20
+      if (Math.hypot(localPt.x - rotHx, localPt.y - rotHy) <= 10) {
+        setCursorStyle('grab')
+        return
+      }
+
+      if (Math.hypot(localPt.x - bx, localPt.y - by) <= hs || Math.hypot(localPt.x - (bx + bw), localPt.y - (by + bh)) <= hs) {
         setCursorStyle('nwse-resize')
         return
-      } else if (Math.hypot(x - (bx + bw), y - by) <= hs || Math.hypot(x - bx, y - (by + bh)) <= hs) {
+      } else if (Math.hypot(localPt.x - (bx + bw), localPt.y - by) <= hs || Math.hypot(localPt.x - bx, localPt.y - (by + bh)) <= hs) {
         setCursorStyle('nesw-resize')
         return
-      } else if (activeBubble.tail && Math.hypot(x - activeBubble.tail.x * scaleX, y - activeBubble.tail.y * scaleY) <= 12) {
+      } else if (activeBubble.tail && Math.hypot(localPt.x - activeBubble.tail.x * scaleX, localPt.y - activeBubble.tail.y * scaleY) <= 12) {
         setCursorStyle('pointer')
         return
-      } else if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+      } else if (localPt.x >= bx && localPt.x <= bx + bw && localPt.y >= by && localPt.y <= by + bh) {
         setCursorStyle('move')
         return
       }
@@ -1070,6 +1167,7 @@ export function SpeechBubbleEditorModal({
                   setBubbles((prev) => prev.filter((b) => b.id !== selectedBubbleId))
                   setSelectedBubbleId(null)
                 }}
+                onDuplicate={() => handleDuplicateBubble()}
                 onGenerateDraft={handleGenerateDraft}
               />
 

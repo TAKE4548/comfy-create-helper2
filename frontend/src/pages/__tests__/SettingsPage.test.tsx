@@ -52,6 +52,12 @@ vi.mock('../../api/client', () => ({
     delete: vi.fn(),
     rewrite: vi.fn(),
   },
+  translateApi: {
+    translatePrompt: vi.fn().mockResolvedValue({ translated_prompt: '', meta: { total_chunks: 0, cached_chunks: 0, api_requested_chunks: 0, billed_characters: 0, provider: 'google_free' } }),
+    testConnection: vi.fn().mockResolvedValue({ success: true, sample_translation: 'テスト' }),
+    getStats: vi.fn().mockResolvedValue({ cached_entries_count: 0 }),
+    clearCache: vi.fn().mockResolvedValue({ message: 'OK', cleared_count: 0 }),
+  },
 }))
 
 vi.mock('../../hooks/useComfyWebSocket', () => ({

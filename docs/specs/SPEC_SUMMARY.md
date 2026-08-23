@@ -155,6 +155,7 @@ comfy-create-helper2/
 | `lora_categories` | LoRA カテゴリマスタ |
 | `tagset_categories` | タグセットカテゴリマスタ |
 | `llm_prompts` | LLM システムプロンプト（key / content / description） |
+| `speech_bubble_presets` | セリフ装飾プリセット（shape / font / border / effects_json 等） |
 
 ### MappingMaster の役割
 

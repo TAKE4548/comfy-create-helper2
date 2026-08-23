@@ -1,11 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { SpeechBubble, BubbleShapeType, TextOrientation } from '../types/speechBubble'
+import {
+  SpeechBubble,
+  BubbleShapeType,
+  TextOrientation,
+  DEFAULT_MANGA_EFFECTS,
+  MangaTextEffectConfig,
+  MultiStrokeLayer,
+  PathPresetType,
+  ScaleCurveType,
+  FillModeType,
+  StrokeLineStyle,
+} from '../types/speechBubble'
 import type { ServerFont, SpeechBubblePreset, SpeechTonePreset } from '../api/types'
 import { speechBubblePresetsApi, speechTonePresetsApi } from '../api/client'
 import { calculateFitBubbleDimensions } from '../utils/speechBubbleRenderer'
 import { STALE_TIMES } from '../constants/staleTimes'
-
 
 export interface SpeechBubbleControlsProps {
   bubble: SpeechBubble | null
@@ -15,6 +25,7 @@ export interface SpeechBubbleControlsProps {
   isDrafting: boolean
   onUpdate: (updated: Partial<SpeechBubble>) => void
   onDelete: () => void
+  onDuplicate?: () => void
   onGenerateDraft: () => void
 }
 
@@ -25,7 +36,6 @@ const MAX_RECENT_COLORS = 10
 function rgbaToHexAndAlpha(rgbaStr: string): { hex: string; alpha: number } {
   if (!rgbaStr) return { hex: '#000000', alpha: 1 }
 
-  // Check for rgba(r, g, b, a) or rgb(r, g, b)
   const rgbaMatch = rgbaStr.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/i)
   if (rgbaMatch) {
     const r = parseInt(rgbaMatch[1], 10).toString(16).padStart(2, '0')
@@ -35,7 +45,6 @@ function rgbaToHexAndAlpha(rgbaStr: string): { hex: string; alpha: number } {
     return { hex: `#${r}${g}${b}`, alpha: a }
   }
 
-  // Check for hex #RRGGBB or #RGB
   if (rgbaStr.startsWith('#')) {
     if (rgbaStr.length === 4) {
       const r = rgbaStr[1] + rgbaStr[1]
@@ -59,7 +68,7 @@ function rgbaToHexAndAlpha(rgbaStr: string): { hex: string; alpha: number } {
 function hexAndAlphaToRgba(hex: string, alpha: number): string {
   let cleanHex = hex.replace('#', '')
   if (cleanHex.length === 3) {
-    cleanHex = cleanHex.split('').map(c => c + c).join('')
+    cleanHex = cleanHex.split('').map((c) => c + c).join('')
   }
   const r = parseInt(cleanHex.substring(0, 2), 16) || 0
   const g = parseInt(cleanHex.substring(2, 4), 16) || 0
@@ -75,6 +84,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   isDrafting,
   onUpdate,
   onDelete,
+  onDuplicate,
   onGenerateDraft,
 }) => {
   const qc = useQueryClient()
@@ -89,11 +99,18 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     queryFn: speechTonePresetsApi.list,
     staleTime: STALE_TIMES.SPEECH_TONE_PRESETS,
   })
-  
+
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [isSavingPreset, setIsSavingPreset] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
+  const [includeTextInPreset, setIncludeTextInPreset] = useState(false)
   const [showAddPresetInput, setShowAddPresetInput] = useState(false)
+
+  // プリセット上書きモーダル状態
+  const [overwriteModalPreset, setOverwriteModalPreset] = useState<SpeechBubblePreset | null>(null)
+  const [overwriteName, setOverwriteName] = useState('')
+  const [overwriteIncludeText, setOverwriteIncludeText] = useState(false)
+  const [isOverwritingPreset, setIsOverwritingPreset] = useState(false)
 
   // 口調変換 (LLM) 状態
   const [isToneSectionOpen, setIsToneSectionOpen] = useState(false)
@@ -106,6 +123,8 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const [newTonePresetName, setNewTonePresetName] = useState('')
   const [isSavingTonePreset, setIsSavingTonePreset] = useState(false)
 
+  // 漫画演出 (FX) 状態
+  const [isMangaFxOpen, setIsMangaFxOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -121,7 +140,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const addRecentColor = (color: string) => {
     if (!color) return
     try {
-      const updated = [color, ...recentColors.filter(c => c !== color)].slice(0, MAX_RECENT_COLORS)
+      const updated = [color, ...recentColors.filter((c) => c !== color)].slice(0, MAX_RECENT_COLORS)
       setRecentColors(updated)
       localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(updated))
     } catch {
@@ -130,7 +149,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   }
 
   const handleApplyPreset = (preset: SpeechBubblePreset) => {
-    onUpdate({
+    const updatePayload: Partial<SpeechBubble> = {
       shape: preset.shape,
       orientation: preset.orientation,
       fontFamily: preset.font_family,
@@ -139,7 +158,13 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
       backgroundColor: preset.background_color,
       borderColor: preset.border_color,
       borderWidth: preset.border_width,
-    })
+      effects: preset.effects,
+    }
+    // preset.text が保存されている場合のみテキストを反映し、未設定の場合は現在のテキストを保持
+    if (preset.text !== undefined && preset.text !== null && preset.text !== '') {
+      updatePayload.text = preset.text
+    }
+    onUpdate(updatePayload)
   }
 
   const handleCreatePreset = async () => {
@@ -156,11 +181,14 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         background_color: bubble.backgroundColor,
         border_color: bubble.borderColor,
         border_width: bubble.borderWidth,
+        effects: bubble.effects,
+        text: includeTextInPreset ? (bubble.text?.trim() || null) : null,
         sort_order: presets.length,
       })
       qc.setQueryData<SpeechBubblePreset[]>(['speech-bubble-presets'], (old) => (old ? [...old, created] : [created]))
       await qc.invalidateQueries({ queryKey: ['speech-bubble-presets'] })
       setNewPresetName('')
+      setIncludeTextInPreset(false)
       setShowAddPresetInput(false)
     } catch (err: any) {
       alert('プリセットの保存に失敗しました: ' + (err.message || 'Error'))
@@ -169,12 +197,21 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     }
   }
 
-  const handleOverwritePreset = async (preset: SpeechBubblePreset, e: React.MouseEvent) => {
+  const handleOpenOverwriteModal = (preset: SpeechBubblePreset, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!bubble) return
-    if (!window.confirm(`プリセット「${preset.name}」を現在の装飾設定で上書き保存しますか？`)) return
+    setOverwriteModalPreset(preset)
+    setOverwriteName(preset.name)
+    setOverwriteIncludeText(preset.text !== undefined && preset.text !== null)
+  }
+
+  const handleExecuteOverwritePreset = async () => {
+    if (!overwriteModalPreset || !bubble) return
+    const targetName = overwriteName.trim() || overwriteModalPreset.name
+    setIsOverwritingPreset(true)
     try {
-      const updated = await speechBubblePresetsApi.update(preset.id, {
+      const updated = await speechBubblePresetsApi.update(overwriteModalPreset.id, {
+        name: targetName,
         shape: bubble.shape,
         orientation: bubble.orientation,
         font_family: bubble.fontFamily,
@@ -183,13 +220,18 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         background_color: bubble.backgroundColor,
         border_color: bubble.borderColor,
         border_width: bubble.borderWidth,
+        effects: bubble.effects,
+        text: overwriteIncludeText ? (bubble.text?.trim() || null) : null,
       })
       qc.setQueryData<SpeechBubblePreset[]>(['speech-bubble-presets'], (old) =>
-        old ? old.map((p) => (p.id === preset.id ? updated : p)) : [updated]
+        old ? old.map((p) => (p.id === overwriteModalPreset.id ? updated : p)) : [updated]
       )
       await qc.invalidateQueries({ queryKey: ['speech-bubble-presets'] })
+      setOverwriteModalPreset(null)
     } catch (err: any) {
       alert('プリセットの更新に失敗しました: ' + (err.message || 'Error'))
+    } finally {
+      setIsOverwritingPreset(false)
     }
   }
 
@@ -208,7 +250,9 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   }
 
   const handleRewrite = async () => {
-    const promptToSend = customTonePrompt.trim() || (selectedTonePresetId ? tonePresets.find((p) => p.id === selectedTonePresetId)?.prompt : '')
+    const promptToSend =
+      customTonePrompt.trim() ||
+      (selectedTonePresetId ? tonePresets.find((p) => p.id === selectedTonePresetId)?.prompt : '')
     if (!bubble?.text?.trim() || !promptToSend) return
     setIsRewriting(true)
     setRewriteError(null)
@@ -228,7 +272,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
       setIsRewriting(false)
     }
   }
-
 
   const handleSaveTonePreset = async () => {
     if (!newTonePresetName.trim() || !customTonePrompt.trim()) return
@@ -259,6 +302,82 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     )
   }
 
+  const fx: MangaTextEffectConfig = bubble.effects || DEFAULT_MANGA_EFFECTS
+
+  const updateEffects = (partial: Partial<MangaTextEffectConfig>) => {
+    const updatedFx: MangaTextEffectConfig = {
+      ...DEFAULT_MANGA_EFFECTS,
+      ...(bubble.effects || {}),
+      ...partial,
+    }
+    onUpdate({ effects: updatedFx })
+  }
+
+  const handleAutoFitBubbleSize = () => {
+    const { w, h } = calculateFitBubbleDimensions(
+      bubble.text,
+      bubble.fontSize || 18,
+      bubble.orientation,
+      bubble.effects
+    )
+    onUpdate({ w, h })
+  }
+
+  // 縦中横の「!?」自動トグル
+  const handleAutoRotatePunctuation = () => {
+    if (!bubble.text) return
+    const textChars = Array.from(bubble.text)
+    const targetIndices: number[] = []
+    const punctuationRegex = /[!?！？]/
+
+    textChars.forEach((ch, idx) => {
+      if (punctuationRegex.test(ch)) {
+        targetIndices.push(idx)
+      }
+    })
+
+    const currentRotateIndices = fx.rotate90Indices || []
+    const allAlreadyIncluded = targetIndices.length > 0 && targetIndices.every((i) => currentRotateIndices.includes(i))
+
+    let nextRotateIndices: number[]
+    if (allAlreadyIncluded) {
+      nextRotateIndices = currentRotateIndices.filter((i) => !targetIndices.includes(i))
+    } else {
+      nextRotateIndices = Array.from(new Set([...currentRotateIndices, ...targetIndices]))
+    }
+    updateEffects({ rotate90Indices: nextRotateIndices })
+  }
+
+  const handleToggleCharRotate = (charIdx: number) => {
+    const current = fx.rotate90Indices || []
+    const next = current.includes(charIdx) ? current.filter((i) => i !== charIdx) : [...current, charIdx]
+    updateEffects({ rotate90Indices: next })
+  }
+
+  const handleAddMultiStroke = () => {
+    const newLayer: MultiStrokeLayer = {
+      id: crypto.randomUUID(),
+      width: 3,
+      color: 'rgba(255, 255, 255, 1)',
+      opacity: 1,
+      offsetX: 0,
+      offsetY: 0,
+      lineJoin: 'round',
+      lineStyle: 'solid',
+    }
+    updateEffects({ multiStrokes: [...(fx.multiStrokes || []), newLayer] })
+  }
+
+  const handleUpdateMultiStroke = (id: string, partial: Partial<MultiStrokeLayer>) => {
+    const updated = (fx.multiStrokes || []).map((layer) => (layer.id === id ? { ...layer, ...partial } : layer))
+    updateEffects({ multiStrokes: updated })
+  }
+
+  const handleDeleteMultiStroke = (id: string) => {
+    const updated = (fx.multiStrokes || []).filter((layer) => layer.id !== id)
+    updateEffects({ multiStrokes: updated })
+  }
+
   const shapes: { type: BubbleShapeType; label: string }[] = [
     { type: 'oval', label: '楕円' },
     { type: 'rounded-rect', label: '角丸' },
@@ -280,15 +399,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
     const rgba = hexAndAlphaToRgba(newHex, newAlpha)
     onUpdate({ [field]: rgba })
     addRecentColor(rgba)
-  }
-
-  const handleAutoFitBubbleSize = () => {
-    const { w, h } = calculateFitBubbleDimensions(
-      bubble.text,
-      bubble.fontSize || 18,
-      bubble.orientation
-    )
-    onUpdate({ w, h })
   }
 
   const textColorParsed = rgbaToHexAndAlpha(bubble.textColor)
@@ -319,6 +429,164 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         />
       </div>
 
+      {/* 都度調整系（文字方向、枠サイズ自動フィット、回転、サイズ微調整） */}
+      <div className="space-y-2.5 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="quick-adjust-section">
+        {/* 文字方向 & 枠サイズ自動フィット */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="font-medium text-xs text-zinc-200">文字方向 & サイズ</label>
+            <button
+              type="button"
+              onClick={handleAutoFitBubbleSize}
+              className="text-[11px] px-2 py-0.5 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 rounded border border-blue-700/40 transition-colors"
+            >
+              📐 枠サイズ自動フィット
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            {orientations.map((o) => (
+              <button
+                key={o.type}
+                type="button"
+                onClick={() => onUpdate({ orientation: o.type })}
+                className={`py-1 px-3 text-xs rounded border text-center transition-colors ${
+                  bubble.orientation === o.type
+                    ? 'bg-blue-600 text-white border-blue-500 font-semibold'
+                    : 'bg-[#18181C] text-zinc-300 border-[rgba(255,255,255,0.08)] hover:bg-[#282830]'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 幅・高さ微調整 (ステップボタン付き) */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center space-x-1 bg-[#18181C] px-1.5 py-1 rounded border border-[rgba(255,255,255,0.08)]">
+              <span className="text-[11px] text-zinc-400">W:</span>
+              <button
+                type="button"
+                aria-label="吹き出し幅を減らす"
+                onClick={() => onUpdate({ w: Math.max(30, bubble.w - 5) })}
+                className="w-5 h-5 flex items-center justify-center bg-[#282830] hover:bg-[#383842] text-zinc-300 rounded text-xs transition-colors"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                aria-label="吹き出し幅"
+                min="30"
+                max="2000"
+                value={bubble.w}
+                onChange={(e) => onUpdate({ w: Math.max(30, parseInt(e.target.value, 10) || 30) })}
+                className="w-full bg-transparent text-xs text-center text-zinc-200 focus:outline-none"
+              />
+              <button
+                type="button"
+                aria-label="吹き出し幅を増やす"
+                onClick={() => onUpdate({ w: Math.min(2000, bubble.w + 5) })}
+                className="w-5 h-5 flex items-center justify-center bg-[#282830] hover:bg-[#383842] text-zinc-300 rounded text-xs transition-colors"
+              >
+                +
+              </button>
+              <span className="text-[10px] text-zinc-500">px</span>
+            </div>
+            <div className="flex items-center space-x-1 bg-[#18181C] px-1.5 py-1 rounded border border-[rgba(255,255,255,0.08)]">
+              <span className="text-[11px] text-zinc-400">H:</span>
+              <button
+                type="button"
+                aria-label="吹き出し高さを減らす"
+                onClick={() => onUpdate({ h: Math.max(30, bubble.h - 5) })}
+                className="w-5 h-5 flex items-center justify-center bg-[#282830] hover:bg-[#383842] text-zinc-300 rounded text-xs transition-colors"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                aria-label="吹き出し高さ"
+                min="30"
+                max="2000"
+                value={bubble.h}
+                onChange={(e) => onUpdate({ h: Math.max(30, parseInt(e.target.value, 10) || 30) })}
+                className="w-full bg-transparent text-xs text-center text-zinc-200 focus:outline-none"
+              />
+              <button
+                type="button"
+                aria-label="吹き出し高さを増やす"
+                onClick={() => onUpdate({ h: Math.min(2000, bubble.h + 5) })}
+                className="w-5 h-5 flex items-center justify-center bg-[#282830] hover:bg-[#383842] text-zinc-300 rounded text-xs transition-colors"
+              >
+                +
+              </button>
+              <span className="text-[10px] text-zinc-500">px</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 吹き出しの回転 (ステップボタン付き) */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="font-medium text-xs text-zinc-200">吹き出しの回転</label>
+            <button
+              type="button"
+              onClick={() => onUpdate({ rotation: 0 })}
+              className="text-[11px] text-zinc-400 hover:text-zinc-200 underline"
+            >
+              0° リセット
+            </button>
+          </div>
+          <div className="flex items-center space-x-1.5">
+            <button
+              type="button"
+              aria-label="回転角度を減らす"
+              onClick={() => {
+                const cur = bubble.rotation || 0
+                onUpdate({ rotation: Math.max(-180, cur - 1) })
+              }}
+              className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+            >
+              -
+            </button>
+            <input
+              type="range"
+              aria-label="吹き出しの回転"
+              min="-180"
+              max="180"
+              step="1"
+              value={bubble.rotation || 0}
+              onChange={(e) => onUpdate({ rotation: parseInt(e.target.value, 10) || 0 })}
+              className="flex-1 accent-blue-500"
+            />
+            <button
+              type="button"
+              aria-label="回転角度を増やす"
+              onClick={() => {
+                const cur = bubble.rotation || 0
+                onUpdate({ rotation: Math.min(180, cur + 1) })
+              }}
+              className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+            >
+              +
+            </button>
+            <div className="flex items-center space-x-0.5 bg-[#18181C] px-1.5 py-0.5 rounded border border-[rgba(255,255,255,0.08)]">
+              <input
+                type="number"
+                aria-label="吹き出し回転角度数値"
+                min="-180"
+                max="180"
+                value={bubble.rotation || 0}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10)
+                  onUpdate({ rotation: isNaN(val) ? 0 : Math.max(-180, Math.min(180, val)) })
+                }}
+                className="w-10 bg-transparent text-xs text-right text-zinc-200 focus:outline-none"
+              />
+              <span className="text-[10px] text-zinc-400">°</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* 口調変換 (LLM) セクション */}
       <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="speech-tone-section">
         <div
@@ -346,7 +614,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
 
         {isToneSectionOpen && (
           <div className="space-y-2.5 bg-[#18181C] p-2.5 rounded border border-[rgba(255,255,255,0.08)]">
-            {/* プリセット選択 & 新規プリセット保存ボタン */}
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <select
@@ -381,7 +648,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               </button>
             </div>
 
-            {/* 新規口調プリセット登録フォーム */}
             {showAddTonePreset && (
               <div className="p-2 bg-[#1F1F25] rounded border border-purple-500/30 space-y-2">
                 <input
@@ -414,7 +680,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               </div>
             )}
 
-            {/* 口調プロンプト入力 */}
             <div>
               <textarea
                 value={customTonePrompt}
@@ -425,7 +690,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               />
             </div>
 
-            {/* 変換実行ボタン */}
             <div className="flex justify-end">
               <button
                 type="button"
@@ -435,17 +699,14 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               >
                 {isRewriting ? '変換中...' : '✨ 口調変換 (LLM)'}
               </button>
-
             </div>
 
-            {/* エラー表示 */}
             {rewriteError && (
               <div className="p-2 bg-red-950/40 border border-red-900/50 rounded text-xs text-red-300">
                 {rewriteError}
               </div>
             )}
 
-            {/* プレビュー & 反映・破棄エリア */}
             {rewriteResult && (
               <div className="p-2.5 bg-[#1F1F25] border border-purple-500/40 rounded space-y-2" data-testid="tone-rewrite-preview">
                 <div className="text-[11px] font-medium text-purple-300">口調変換プレビュー</div>
@@ -492,6 +753,446 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         )}
       </div>
 
+      {/* 漫画テキスト演出 (FX) セクション */}
+      <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="manga-effects-section">
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex items-center justify-between cursor-pointer select-none"
+          onClick={() => setIsMangaFxOpen((prev) => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setIsMangaFxOpen((prev) => !prev)
+            }
+          }}
+        >
+          <div className="flex items-center gap-1.5 font-medium text-xs text-zinc-200">
+            <span className="text-[10px] text-zinc-400">{isMangaFxOpen ? '▼' : '▶'}</span>
+            <span>💥 漫画テキスト演出 (FX)</span>
+          </div>
+          {(fx.scaleCurve !== 'none' ||
+            (fx.multiStrokes && fx.multiStrokes.length > 0) ||
+            fx.pathPreset !== 'none' ||
+            fx.fillMode !== 'solid' ||
+            (fx.rotate90Indices && fx.rotate90Indices.length > 0)) && (
+            <span className="text-[10px] text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
+              演出適用中
+            </span>
+          )}
+        </div>
+
+        {isMangaFxOpen && (
+          <div className="space-y-3 bg-[#18181C] p-2.5 rounded border border-[rgba(255,255,255,0.08)]">
+            {/* 1. タイポグラフィ & 縦中横 */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                1. タイポグラフィ & 縦中横
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-400 mb-0.5">
+                    <span>字間 (Letter Spacing)</span>
+                    <span>{fx.letterSpacing ?? 0}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="字間"
+                    min="-10"
+                    max="50"
+                    value={fx.letterSpacing ?? 0}
+                    onChange={(e) => updateEffects({ letterSpacing: parseInt(e.target.value, 10) })}
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-400 mb-0.5">
+                    <span>行間倍率 (Line Height)</span>
+                    <span>{(fx.lineHeightRatio ?? (bubble.orientation === 'vertical' ? 1.15 : 1.25)).toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="行間倍率"
+                    min="0.8"
+                    max="2.5"
+                    step="0.05"
+                    value={fx.lineHeightRatio ?? (bubble.orientation === 'vertical' ? 1.15 : 1.25)}
+                    onChange={(e) => updateEffects({ lineHeightRatio: parseFloat(e.target.value) })}
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[11px] text-zinc-400 mb-0.5">
+                  <span>シアー傾斜 (Shear)</span>
+                  <span>{fx.shearAngle ?? 0}°</span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="シアー傾斜"
+                  min="-45"
+                  max="45"
+                  value={fx.shearAngle ?? 0}
+                  onChange={(e) => updateEffects({ shearAngle: parseInt(e.target.value, 10) })}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+
+              {bubble.orientation === 'vertical' && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-400 font-medium">縦中横（90度回転）</span>
+                    <button
+                      type="button"
+                      onClick={handleAutoRotatePunctuation}
+                      className="text-[10px] px-2 py-0.5 bg-blue-900/40 hover:bg-blue-900/60 text-blue-300 rounded border border-blue-700/50 transition-colors"
+                    >
+                      !? 自動回転トグル
+                    </button>
+                  </div>
+                  {bubble.text && (
+                    <div className="flex flex-wrap gap-1 bg-[#1F1F25] p-1.5 rounded border border-[rgba(255,255,255,0.06)]">
+                      {Array.from(bubble.text).map((char, idx) => {
+                        const isRotated = fx.rotate90Indices?.includes(idx)
+                        return (
+                          <button
+                            key={`${char}-${idx}`}
+                            type="button"
+                            onClick={() => handleToggleCharRotate(idx)}
+                            className={`w-6 h-6 text-xs rounded border flex items-center justify-center transition-colors ${
+                              isRotated
+                                ? 'bg-amber-600 border-amber-500 text-white font-bold'
+                                : 'bg-[#18181C] border-[rgba(255,255,255,0.1)] text-zinc-300 hover:bg-[#282830]'
+                            }`}
+                            title={`文字「${char}」(位置:${idx + 1}) を90度回転`}
+                          >
+                            {char === '\n' ? '↵' : char}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 2. ダイナミックスケール & 感情揺らぎ */}
+            <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                2. ダイナミックスケール & 感情揺らぎ
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-0.5">スケール変化カーブ</label>
+                  <select
+                    aria-label="スケール変化カーブ"
+                    value={fx.scaleCurve ?? 'none'}
+                    onChange={(e) => updateEffects({ scaleCurve: e.target.value as ScaleCurveType })}
+                    className="w-full p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none"
+                  >
+                    <option value="none">なし (均一サイズ)</option>
+                    <option value="linear">線形変化 (Linear)</option>
+                    <option value="ease-in">イーズイン (Ease In)</option>
+                    <option value="ease-out">イーズアウト (Ease Out)</option>
+                    <option value="bezier">ベジェ (S字カーブ)</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-400 mb-0.5">
+                    <span>サイズ揺らぎ (Jitter)</span>
+                    <span>{fx.sizeJitter ?? 0}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="サイズ揺らぎ"
+                    min="0"
+                    max="50"
+                    value={fx.sizeJitter ?? 0}
+                    onChange={(e) => updateEffects({ sizeJitter: parseInt(e.target.value, 10) })}
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+              </div>
+
+              {fx.scaleCurve && fx.scaleCurve !== 'none' && (
+                <div className="grid grid-cols-2 gap-2 bg-[#1F1F25] p-1.5 rounded border border-[rgba(255,255,255,0.06)]">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-zinc-400 mb-0.5">
+                      <span>開始倍率 (Start)</span>
+                      <span>{(fx.scaleStart ?? 1.0).toFixed(1)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      aria-label="開始倍率"
+                      min="0.5"
+                      max="3.0"
+                      step="0.1"
+                      value={fx.scaleStart ?? 1.0}
+                      onChange={(e) => updateEffects({ scaleStart: parseFloat(e.target.value) })}
+                      className="w-full accent-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-zinc-400 mb-0.5">
+                      <span>終了倍率 (End)</span>
+                      <span>{(fx.scaleEnd ?? 1.0).toFixed(1)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      aria-label="終了倍率"
+                      min="0.5"
+                      max="3.0"
+                      step="0.1"
+                      value={fx.scaleEnd ?? 1.0}
+                      onChange={(e) => updateEffects({ scaleEnd: parseFloat(e.target.value) })}
+                      className="w-full accent-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. パス・軌道レイアウト */}
+            <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                3. パス・軌道レイアウト
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-0.5">軌道タイプ</label>
+                  <select
+                    aria-label="軌道タイプ"
+                    value={fx.pathPreset ?? 'none'}
+                    onChange={(e) => {
+                      const val = e.target.value as PathPresetType
+                      updateEffects({ pathPreset: val })
+                    }}
+                    className="w-full p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none"
+                  >
+                    <option value="none">なし (通常整列)</option>
+                    <option value="line">直線 (2制御点)</option>
+                    <option value="arc">円弧・アーチ (3制御点)</option>
+                    <option value="wave">S字波 (4制御点)</option>
+                    <option value="stepped">階段 (2制御点)</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-400 mb-0.5">
+                    <span>ガタつき (Baseline Jitter)</span>
+                    <span>{fx.baselineJitter ?? 0}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="ガタつき"
+                    min="0"
+                    max="20"
+                    value={fx.baselineJitter ?? 0}
+                    onChange={(e) => updateEffects({ baselineJitter: parseInt(e.target.value, 10) })}
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+              </div>
+
+              {fx.pathPreset && fx.pathPreset !== 'none' && (
+                <div className="flex items-center space-x-2 pt-1">
+                  <label className="inline-flex items-center text-xs text-zinc-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!fx.pathFollowRotation}
+                      onChange={(e) => updateEffects({ pathFollowRotation: e.target.checked })}
+                      className="mr-1.5 rounded accent-blue-500"
+                    />
+                    パス接線方向に文字を回転追従させる
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 4. カラー・塗り・テクスチャ */}
+            <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                4. カラー・塗り・グラデーション
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-0.5">塗りモード</label>
+                  <select
+                    aria-label="塗りモード"
+                    value={fx.fillMode ?? 'solid'}
+                    onChange={(e) => updateEffects({ fillMode: e.target.value as FillModeType })}
+                    className="w-full p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none"
+                  >
+                    <option value="solid">単色塗り (Solid)</option>
+                    <option value="gradient">グラデーション (Gradient)</option>
+                    <option value="tone">スクリーントーン網点 (Tone)</option>
+                    <option value="hollow">中抜き (Hollow)</option>
+                  </select>
+                </div>
+                {fx.fillMode === 'gradient' && (
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 mb-0.5">種別</label>
+                    <select
+                      aria-label="グラデーション種別"
+                      value={fx.gradientType ?? 'linear'}
+                      onChange={(e) => updateEffects({ gradientType: e.target.value as 'linear' | 'radial' })}
+                      className="w-full p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none"
+                    >
+                      <option value="linear">線形 (Linear)</option>
+                      <option value="radial">放射状 (Radial)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {fx.fillMode === 'gradient' && (
+                <div className="space-y-1.5 bg-[#1F1F25] p-2 rounded border border-[rgba(255,255,255,0.06)]">
+                  {fx.gradientType === 'linear' && (
+                    <div>
+                      <div className="flex justify-between text-[10px] text-zinc-400 mb-0.5">
+                        <span>角度 (Angle)</span>
+                        <span>{fx.gradientAngle ?? 0}°</span>
+                      </div>
+                      <input
+                        type="range"
+                        aria-label="グラデーション角度"
+                        min="0"
+                        max="360"
+                        value={fx.gradientAngle ?? 0}
+                        onChange={(e) => updateEffects({ gradientAngle: parseInt(e.target.value, 10) })}
+                        className="w-full accent-blue-500"
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[11px] text-zinc-300">
+                    <span>グラデーション色</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        aria-label="グラデーション開始色"
+                        value={rgbaToHexAndAlpha(fx.gradientStops?.[0]?.color || bubble.textColor).hex}
+                        onChange={(e) => {
+                          const c1 = e.target.value
+                          const c2 = fx.gradientStops?.[1]?.color || 'rgba(100, 100, 100, 1)'
+                          updateEffects({
+                            gradientStops: [
+                              { color: c1, offset: 0 },
+                              { color: c2, offset: 1 },
+                            ],
+                          })
+                        }}
+                        className="w-6 h-6 rounded border border-[rgba(255,255,255,0.15)] bg-transparent cursor-pointer p-0.5"
+                      />
+                      <span>→</span>
+                      <input
+                        type="color"
+                        aria-label="グラデーション終了色"
+                        value={rgbaToHexAndAlpha(fx.gradientStops?.[1]?.color || 'rgba(100, 100, 100, 1)').hex}
+                        onChange={(e) => {
+                          const c1 = fx.gradientStops?.[0]?.color || bubble.textColor
+                          const c2 = e.target.value
+                          updateEffects({
+                            gradientStops: [
+                              { color: c1, offset: 0 },
+                              { color: c2, offset: 1 },
+                            ],
+                          })
+                        }}
+                        className="w-6 h-6 rounded border border-[rgba(255,255,255,0.15)] bg-transparent cursor-pointer p-0.5"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 5. 多重フチ（多層アウトライン） */}
+            <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+              <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1">
+                <span className="text-[11px] font-semibold text-blue-400">5. 多重フチ（多層アウトライン）</span>
+                <button
+                  type="button"
+                  onClick={handleAddMultiStroke}
+                  className="text-[10px] px-2 py-0.5 bg-blue-900/40 hover:bg-blue-900/60 text-blue-300 rounded border border-blue-700/50 transition-colors"
+                >
+                  ＋ フチ追加
+                </button>
+              </div>
+
+              {(!fx.multiStrokes || fx.multiStrokes.length === 0) ? (
+                <div className="text-[11px] text-zinc-500 py-1 text-center">多重フチレイヤーはありません</div>
+              ) : (
+                <div className="space-y-2">
+                  {fx.multiStrokes.map((layer, idx) => {
+                    const layerColorParsed = rgbaToHexAndAlpha(layer.color)
+                    return (
+                      <div
+                        key={layer.id || idx}
+                        className="p-2 bg-[#1F1F25] rounded border border-[rgba(255,255,255,0.08)] space-y-1.5"
+                        data-testid={`multi-stroke-layer-${idx}`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] text-zinc-300">
+                          <span className="font-medium">レイヤー #{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMultiStroke(layer.id)}
+                            className="text-red-400 hover:text-red-300 text-[10px]"
+                            title="レイヤー削除"
+                          >
+                            ✕ 削除
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="flex justify-between text-[10px] text-zinc-400 mb-0.5">
+                              <span>太さ</span>
+                              <span>{layer.width}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              aria-label={`フチレイヤー${idx + 1}太さ`}
+                              min="1"
+                              max="20"
+                              value={layer.width}
+                              onChange={(e) =>
+                                handleUpdateMultiStroke(layer.id, { width: parseInt(e.target.value, 10) })
+                              }
+                              className="w-full accent-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              aria-label={`フチレイヤー${idx + 1}色`}
+                              value={layerColorParsed.hex}
+                              onChange={(e) => {
+                                const rgba = hexAndAlphaToRgba(e.target.value, layer.opacity ?? 1)
+                                handleUpdateMultiStroke(layer.id, { color: rgba })
+                              }}
+                              className="w-6 h-6 rounded border border-[rgba(255,255,255,0.15)] bg-transparent cursor-pointer p-0.5"
+                            />
+                            <select
+                              aria-label={`フチレイヤー${idx + 1}スタイル`}
+                              value={layer.lineStyle ?? 'solid'}
+                              onChange={(e) =>
+                                handleUpdateMultiStroke(layer.id, { lineStyle: e.target.value as StrokeLineStyle })
+                              }
+                              className="flex-1 p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#18181C] text-zinc-100 text-[10px] focus:outline-none"
+                            >
+                              <option value="solid">実線</option>
+                              <option value="dashed">破線</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 修飾プリセット */}
       <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.08)]" data-testid="speech-bubble-presets-section">
@@ -522,12 +1223,23 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                 }
               }}
             />
+            <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                aria-label="テキストを含める"
+                checked={includeTextInPreset}
+                onChange={(e) => setIncludeTextInPreset(e.target.checked)}
+                className="rounded accent-blue-500"
+              />
+              <span>テキストを含める {bubble.text ? `(「${bubble.text.length > 8 ? bubble.text.slice(0, 8) + '...' : bubble.text}」)` : '(空)'}</span>
+            </label>
             <div className="flex justify-end space-x-1.5">
               <button
                 type="button"
                 onClick={() => {
                   setShowAddPresetInput(false)
                   setNewPresetName('')
+                  setIncludeTextInPreset(false)
                 }}
                 className="px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 rounded"
               >
@@ -550,41 +1262,45 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           {presets.length === 0 ? (
             <span className="text-[11px] text-zinc-500">登録済みのプリセットはありません</span>
           ) : (
-            presets.map((p) => (
-              <div
-                key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleApplyPreset(p)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    handleApplyPreset(p)
-                  }
-                }}
-                className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
-                title={`${p.name} (クリックで適用)`}
-              >
-                {/* プレビュードット（背景色＋枠線色） */}
-                <span
-                  className="w-3 h-3 rounded-full border flex-shrink-0"
-                  style={{
-                    backgroundColor: p.background_color,
-                    borderColor: p.border_color,
-                    borderWidth: Math.min(2, Math.max(1, p.border_width)),
+            presets.map((p) => {
+              const orientationSuffix = p.orientation === 'horizontal' ? '(横)' : '(縦)'
+              return (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleApplyPreset(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleApplyPreset(p)
+                    }
                   }}
-                />
-                <span className="truncate max-w-[100px]">{p.name}</span>
-                {/* 上書き保存ボタン */}
+                  className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
+                  title={`${p.name} ${orientationSuffix}${p.text ? `\n💬 テキスト: ${p.text}` : ''} (クリックで適用)`}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full border flex-shrink-0"
+                    style={{
+                      backgroundColor: p.background_color,
+                      borderColor: p.border_color,
+                      borderWidth: Math.min(2, Math.max(1, p.border_width)),
+                    }}
+                  />
+                  <span className="truncate max-w-[120px]">{p.name} {orientationSuffix}</span>
+                  {p.text && (
+                    <span className="text-[10px] text-amber-400 font-bold" title={`保存テキスト: ${p.text}`}>
+                      💬
+                    </span>
+                  )}
                 <button
                   type="button"
                   title="現在の修飾で上書き"
-                  onClick={(e) => handleOverwritePreset(p, e)}
+                  onClick={(e) => handleOpenOverwriteModal(p, e)}
                   className="opacity-0 group-hover:opacity-100 hover:text-blue-400 p-0.5 text-[10px] transition-opacity"
                 >
                   💾
                 </button>
-                {/* 削除ボタン */}
                 <button
                   type="button"
                   title="プリセットを削除"
@@ -594,11 +1310,11 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                   ✕
                 </button>
               </div>
-            ))
-          )}
-        </div>
+            )
+          })
+        )}
       </div>
-
+    </div>
 
       {/* 形状選択 */}
       <div>
@@ -618,65 +1334,6 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               {s.label}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* 文字方向 & 吹き出しサイズ自動フィット */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="font-medium text-xs text-zinc-200">文字方向 & サイズ</label>
-          <button
-            type="button"
-            onClick={handleAutoFitBubbleSize}
-            className="text-[11px] px-2 py-0.5 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 rounded border border-blue-700/40 transition-colors"
-          >
-            📐 枠サイズ自動フィット
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          {orientations.map((o) => (
-            <button
-              key={o.type}
-              type="button"
-              onClick={() => onUpdate({ orientation: o.type })}
-              className={`py-1 px-3 text-xs rounded border text-center transition-colors ${
-                bubble.orientation === o.type
-                  ? 'bg-blue-600 text-white border-blue-500 font-semibold'
-                  : 'bg-[#18181C] text-zinc-300 border-[rgba(255,255,255,0.08)] hover:bg-[#282830]'
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        {/* 幅・高さ微調整 */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex items-center space-x-1.5 bg-[#18181C] px-2 py-1 rounded border border-[rgba(255,255,255,0.08)]">
-            <span className="text-[11px] text-zinc-400">W:</span>
-            <input
-              type="number"
-              aria-label="吹き出し幅"
-              min="30"
-              max="2000"
-              value={bubble.w}
-              onChange={(e) => onUpdate({ w: Math.max(30, parseInt(e.target.value, 10) || 30) })}
-              className="w-full bg-transparent text-xs text-zinc-200 focus:outline-none"
-            />
-            <span className="text-[10px] text-zinc-500">px</span>
-          </div>
-          <div className="flex items-center space-x-1.5 bg-[#18181C] px-2 py-1 rounded border border-[rgba(255,255,255,0.08)]">
-            <span className="text-[11px] text-zinc-400">H:</span>
-            <input
-              type="number"
-              aria-label="吹き出し高さ"
-              min="30"
-              max="2000"
-              value={bubble.h}
-              onChange={(e) => onUpdate({ h: Math.max(30, parseInt(e.target.value, 10) || 30) })}
-              className="w-full bg-transparent text-xs text-zinc-200 focus:outline-none"
-            />
-            <span className="text-[10px] text-zinc-500">px</span>
-          </div>
         </div>
       </div>
 
@@ -714,15 +1371,32 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
             </label>
           </div>
           {bubble.fontSize && bubble.fontSize > 0 ? (
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1.5">
+              <button
+                type="button"
+                aria-label="フォントサイズを減らす"
+                onClick={() => onUpdate({ fontSize: Math.max(8, (bubble.fontSize || 18) - 1) })}
+                className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+              >
+                -
+              </button>
               <input
                 type="range"
+                aria-label="フォントサイズ"
                 min="8"
                 max="64"
                 value={bubble.fontSize}
                 onChange={(e) => onUpdate({ fontSize: parseInt(e.target.value, 10) })}
                 className="flex-1 accent-blue-500"
               />
+              <button
+                type="button"
+                aria-label="フォントサイズを増やす"
+                onClick={() => onUpdate({ fontSize: Math.min(64, (bubble.fontSize || 18) + 1) })}
+                className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+              >
+                +
+              </button>
               <span className="text-xs w-10 text-right text-zinc-300">{bubble.fontSize}px</span>
             </div>
           ) : null}
@@ -810,8 +1484,16 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               className="flex-1 accent-blue-500"
             />
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             <span className="text-[11px] text-zinc-400 w-12">枠線幅</span>
+            <button
+              type="button"
+              aria-label="枠線幅を減らす"
+              onClick={() => onUpdate({ borderWidth: Math.max(0, bubble.borderWidth - 1) })}
+              className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+            >
+              -
+            </button>
             <input
               type="range"
               aria-label="枠線幅"
@@ -822,6 +1504,14 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               onChange={(e) => onUpdate({ borderWidth: parseInt(e.target.value, 10) })}
               className="flex-1 accent-blue-500"
             />
+            <button
+              type="button"
+              aria-label="枠線幅を増やす"
+              onClick={() => onUpdate({ borderWidth: Math.min(10, bubble.borderWidth + 1) })}
+              className="w-6 h-6 flex items-center justify-center bg-[#18181C] hover:bg-[#282830] text-zinc-300 border border-[rgba(255,255,255,0.08)] rounded text-xs transition-colors"
+            >
+              +
+            </button>
             <span className="text-xs w-8 text-right text-zinc-300">{bubble.borderWidth}px</span>
           </div>
         </div>
@@ -851,8 +1541,17 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         )}
       </div>
 
-      {/* 削除ボタン */}
-      <div className="pt-2 border-t border-[rgba(255,255,255,0.08)]">
+      {/* 吹き出しアクション */}
+      <div className="pt-2 border-t border-[rgba(255,255,255,0.08)] space-y-2">
+        {onDuplicate && (
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className="w-full py-1.5 px-3 text-blue-400 hover:text-blue-300 hover:bg-blue-950/40 border border-blue-800/50 rounded transition-colors text-xs font-medium"
+          >
+            📋 この吹き出しを複製
+          </button>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -861,6 +1560,77 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           🗑 この吹き出しを削除
         </button>
       </div>
+
+      {/* プリセット上書きモーダル */}
+      {overwriteModalPreset && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-testid="preset-overwrite-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setOverwriteModalPreset(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-[#1E1E24] border border-[rgba(255,255,255,0.12)] rounded-lg shadow-xl p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[rgba(255,255,255,0.08)]">
+              <h3 className="font-semibold text-xs text-zinc-100">プリセットの上書き保存</h3>
+              <button
+                type="button"
+                onClick={() => setOverwriteModalPreset(null)}
+                className="text-zinc-400 hover:text-zinc-200 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-300 mb-1">プリセット名</label>
+              <input
+                type="text"
+                data-testid="overwrite-preset-name-input"
+                value={overwriteName}
+                onChange={(e) => setOverwriteName(e.target.value)}
+                placeholder="プリセット名を入力..."
+                className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#18181C] text-zinc-100 text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-testid="overwrite-preset-include-text-checkbox"
+                aria-label="テキストを含める"
+                checked={overwriteIncludeText}
+                onChange={(e) => setOverwriteIncludeText(e.target.checked)}
+                className="rounded accent-blue-500"
+              />
+              <span>テキストを含める {bubble.text ? `(「${bubble.text.length > 8 ? bubble.text.slice(0, 8) + '...' : bubble.text}」)` : '(空)'}</span>
+            </label>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[rgba(255,255,255,0.08)]">
+              <button
+                type="button"
+                data-testid="overwrite-preset-cancel-btn"
+                onClick={() => setOverwriteModalPreset(null)}
+                className="px-3 py-1 text-xs text-zinc-400 hover:text-zinc-200 rounded"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                data-testid="overwrite-preset-submit-btn"
+                disabled={!overwriteName.trim() || isOverwritingPreset}
+                onClick={handleExecuteOverwritePreset}
+                className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded font-medium disabled:opacity-50 transition-colors"
+              >
+                {isOverwritingPreset ? '上書き中...' : '上書き保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

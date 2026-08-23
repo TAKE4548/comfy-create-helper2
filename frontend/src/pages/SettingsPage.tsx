@@ -28,6 +28,7 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import { WorkflowManageModal } from '../components/WorkflowManageModal'
 import { PresetManagerPanel } from '../components/PresetManagerPanel'
 import { BaseModelSection } from './SettingsPage/components/BaseModelSection'
+import { TranslationSettingsSection } from './SettingsPage/components/TranslationSettingsSection'
 import { ParamTypeMasterModal } from '../components/ParamTypeMasterModal'
 
 interface ExpandedSectionsState {
@@ -37,6 +38,7 @@ interface ExpandedSectionsState {
   workflows: boolean;
   connections: boolean;
   llmModel: boolean;
+  translation: boolean;
   baseModels: boolean;
   llmParams: boolean;
   speechDraft: boolean;
@@ -222,6 +224,7 @@ export function SettingsPage() {
       workflows: true,
       connections: true,
       llmModel: true,
+      translation: true,
       baseModels: true,
       llmParams: false,
       speechDraft: false,
@@ -892,6 +895,12 @@ export function SettingsPage() {
             </div>
           )}
         </section>
+
+        {/* Translation Settings */}
+        <TranslationSettingsSection
+          isExpanded={expandedSections.translation}
+          onToggle={() => toggleSection('translation')}
+        />
 
         {/* LLM System Prompts */}
         <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">

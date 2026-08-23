@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { useGenerationStore } from '../useGenerationStore';
+import { useGenerationStore, _resetWebSocketForTesting } from '../useGenerationStore';
 import { comfyApi } from '../../api/client';
 
 vi.mock('../../api/client', () => {
@@ -466,3 +466,400 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
     expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(true);
   });
 });
+
+describe('useGenerationStore REQ-164 multi-session WebSocket, history sync, and startup reconciliation', () => {
+  let createdWsList: any[] = [];
+
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    createdWsList = [];
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string | Blob | ArrayBuffer }) => void) | null = null;
+      binaryType: string = '';
+      url: string;
+
+      constructor(url: string) {
+        this.url = url;
+        createdWsList.push(this);
+      }
+
+      close() {}
+    }
+
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+
+  it('Test 1: handles WS executing (node: "3") for other session job by setting isGenerating and currentNode', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.setState({
+      isGenerating: false,
+      currentNode: null,
+      currentPromptId: null,
+      activeClientId: null,
+      queueRunning: [[0, 'job-other-1', {}, { client_id: 'other-session-client' }, []]],
+    });
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executing',
+        data: {
+          node: '3',
+          prompt_id: 'job-other-1',
+        },
+      }),
+    });
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('job-other-1');
+    expect(state.activeClientId).toBe('other-session-client');
+    expect(state.currentNode).toEqual({ id: '3', name: 'Unknown' });
+    expect(state.nodeProgress).toEqual({
+      value: 0,
+      max: 100,
+      percentage: 0,
+      nodeId: '3',
+      nodeName: 'Unknown',
+    });
+  });
+
+  it('Test 2: handles WS executing (node: null) by clearing currentNode and calling fetchHistory and fetchQueue', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.setState({
+      currentNode: { id: '3', name: 'KSampler' },
+      nodeProgress: { value: 50, max: 100, percentage: 50, nodeId: '3', nodeName: 'KSampler' },
+    });
+
+    const fetchHistorySpy = vi.spyOn(useGenerationStore.getState(), 'fetchHistory');
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executing',
+        data: {
+          node: null,
+          prompt_id: 'job-other-1',
+        },
+      }),
+    });
+
+    const state = useGenerationStore.getState();
+    expect(state.currentNode).toBeNull();
+    expect(state.nodeProgress).toBeNull();
+    expect(fetchHistorySpy).toHaveBeenCalled();
+    expect(fetchQueueSpy).toHaveBeenCalled();
+  });
+
+  it('Test 3: reconcileState and initialize load all sessions history and queue without early return', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    localStorage.setItem('prompt-surgeon-current-prompt-id', 'last-prompt-id');
+    useGenerationStore.setState({
+      currentPromptId: 'last-prompt-id',
+      comfyHistoryImages: [],
+      queueRunning: [],
+      isGenerating: false,
+    });
+
+    const mockHistoryRes = {
+      'last-prompt-id': {
+        prompt: [1, 'last-prompt-id', {}, { client_id: 'my-client' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'last-img.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+    };
+
+    const mockQueueRes = {
+      queue_running: [[0, 'running-other-id', {}, { client_id: 'other-session' }, []]],
+      queue_pending: [],
+    };
+
+    const mockAllHistory = {
+      'last-prompt-id': {
+        prompt: [1, 'last-prompt-id', {}, { client_id: 'my-client' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'last-img.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+      'other-prompt-id': {
+        prompt: [2, 'other-prompt-id', {}, { client_id: 'other-session' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'other-img.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('last-prompt-id')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockHistoryRes),
+        });
+      }
+      if (url.includes('queue')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockQueueRes),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    vi.mocked(comfyApi.getHistory).mockResolvedValue(mockAllHistory as any);
+    vi.mocked(comfyApi.getQueue).mockResolvedValue(mockQueueRes as any);
+
+    const fetchHistorySpy = vi.spyOn(useGenerationStore.getState(), 'fetchHistory');
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    useGenerationStore.getState().initialize();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(fetchHistorySpy).toHaveBeenCalled();
+    expect(fetchQueueSpy).toHaveBeenCalled();
+
+    const state = useGenerationStore.getState();
+    expect(state.comfyHistoryImages.length).toBe(2);
+    expect(state.comfyHistoryImages.some(img => img.includes('last-img.png'))).toBe(true);
+    expect(state.comfyHistoryImages.some(img => img.includes('other-img.png'))).toBe(true);
+    expect(state.queueRunning.length).toBe(1);
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('running-other-id');
+    expect(state.activeClientId).toBe('other-session');
+  });
+});
+
+describe('useGenerationStore REQ-166 queue clear vs cancel all separation and execution_interrupted handling', () => {
+  let createdWsList: any[] = [];
+
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    createdWsList = [];
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string | Blob | ArrayBuffer }) => void) | null = null;
+      binaryType: string = '';
+      url: string;
+
+      constructor(url: string) {
+        this.url = url;
+        createdWsList.push(this);
+      }
+
+      close() {}
+    }
+
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+
+  it('clearPendingQueue purges pending queue without calling interrupt and filters pending jobs from activeBatch', async () => {
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, 'abort');
+    useGenerationStore.getState().setSubmissionAbortController(controller);
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'running-id-1', {}, {}, []]],
+      queuePending: [
+        [1, 'pending-id-1', {}, {}, []],
+        [2, 'pending-id-2', {}, {}, []],
+      ],
+      isGenerating: true,
+      currentPromptId: 'running-id-1',
+      activeBatch: [
+        { promptId: 'running-id-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'pending-id-1', setName: 'Set 2', status: 'pending' },
+        { promptId: 'pending-id-2', setName: 'Set 3', status: 'pending' },
+      ],
+    });
+
+    await useGenerationStore.getState().clearPendingQueue();
+
+    expect(abortSpy).toHaveBeenCalled();
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.interrupt).not.toHaveBeenCalled();
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['pending-id-1', 'pending-id-2'] });
+
+    const state = useGenerationStore.getState();
+    expect(state.activeBatch).toEqual([
+      { promptId: 'running-id-1', setName: 'Set 1', status: 'generating' },
+    ]);
+  });
+
+  it('cancelAllJobs aborts submission, clears queue, calls interrupt, deletes history and resets generation state', async () => {
+    const controller = new AbortController();
+    const abortSpy = vi.spyOn(controller, 'abort');
+    useGenerationStore.getState().setSubmissionAbortController(controller);
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'running-id-1', {}, {}, []]],
+      queuePending: [[1, 'pending-id-1', {}, {}, []]],
+      isGenerating: true,
+      currentPromptId: 'running-id-1',
+      activeClientId: 'client-1',
+      activeBatch: [
+        { promptId: 'running-id-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'pending-id-1', setName: 'Set 2', status: 'pending' },
+      ],
+    });
+
+    await useGenerationStore.getState().cancelAllJobs();
+
+    expect(abortSpy).toHaveBeenCalled();
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.interrupt).toHaveBeenCalled();
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['running-id-1', 'pending-id-1'] });
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(false);
+    expect(state.currentPromptId).toBeNull();
+    expect(state.activeClientId).toBeNull();
+    expect(state.activeBatch).toBeNull();
+  });
+
+  it('handles WS execution_interrupted by resetting generation state and dispatching event', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.setState({
+      isGenerating: true,
+      currentPromptId: 'interrupted-id',
+      progress: { value: 10, max: 20, percentage: 50 },
+      activeBatch: [
+        { promptId: 'interrupted-id', setName: 'Set 1', status: 'generating' },
+      ],
+    });
+
+    const eventSpy = vi.fn();
+    window.addEventListener('comfy-job-event', eventSpy);
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'execution_interrupted',
+        data: {
+          prompt_id: 'interrupted-id',
+        },
+      }),
+    });
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(false);
+    expect(state.progress).toBeNull();
+    expect(state.currentPromptId).toBeNull();
+    expect(state.activeBatch).toBeNull();
+
+    expect(eventSpy).toHaveBeenCalled();
+    const eventDetail = eventSpy.mock.calls[0][0].detail;
+    expect(eventDetail).toEqual({
+      type: 'execution_interrupted',
+      promptId: 'interrupted-id',
+    });
+
+    window.removeEventListener('comfy-job-event', eventSpy);
+  });
+});
+
+describe('useGenerationStore REQ-167 history merge order and batch intermediate prompt ID persistence', () => {
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+
+  it('fetchHistory merges new images to the beginning (front) of batchImages and calls getHistory(100)', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    const myClientId = useGenerationStore.getState().clientId;
+
+    useGenerationStore.setState({
+      batchImages: ['http://localhost:8188/view?filename=old-image.png&subfolder=&type=output&t=prompt-old'],
+      selectedImg: null,
+      filterOwnSession: true,
+    });
+
+    const mockHistoryData = {
+      'prompt-new': {
+        prompt: [1, 'prompt-new', {}, { client_id: myClientId }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'new-image.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+    };
+
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce(mockHistoryData as any);
+
+    await useGenerationStore.getState().fetchHistory();
+
+    expect(comfyApi.getHistory).toHaveBeenCalledWith(100);
+    const state = useGenerationStore.getState();
+    expect(state.batchImages).toHaveLength(2);
+    expect(state.batchImages[0]).toContain('new-image.png');
+    expect(state.batchImages[1]).toContain('old-image.png');
+    expect(state.selectedImg).toContain('new-image.png');
+  });
+
+  it('queuePrompt saves CURRENT_PROMPT_ID to localStorage even when isBatchIntermediate is true', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'batch-inter-prompt-1' });
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    const promptId = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} },
+      undefined,
+      { isBatchIntermediate: true, skipQueueFetch: true }
+    );
+
+    expect(promptId).toBe('batch-inter-prompt-1');
+    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('batch-inter-prompt-1');
+  });
+});
+
+

@@ -191,6 +191,7 @@ export interface GenerationState {
   fetchHistory: () => Promise<void>
   fetchQueue: () => Promise<void>
   setComfyUrl: (url: string) => void
+  clearPendingQueue: () => Promise<void>
   cancelJob: (promptId: string) => Promise<void>
   cancelAllJobs: () => Promise<void>
 
@@ -225,6 +226,20 @@ let ws: WebSocket | null = null
 let comfyUrl: string | null = null
 let isInitializing = false
 let reconnectTimer: any = null
+
+export const _resetWebSocketForTesting = () => {
+  if (ws) {
+    try {
+      ws.close()
+    } catch {}
+    ws = null
+  }
+  isInitializing = false
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
 
 // ─── Store ────────────────────────────────────────────────────────
 export const useGenerationStore = create<GenerationState>((set, get) => {
@@ -312,7 +327,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 }
               })
               localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-              return
             }
           }
         }
@@ -336,6 +350,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         }
       }
+
+      get().fetchHistory()
+      get().fetchQueue()
     } catch (e) {
       console.error('Failed to reconcile generation state:', e)
     }
@@ -649,14 +666,22 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               }
 
               case 'executing': {
-                const nodeId = data.node as string | null
+                const nodeId = data.node !== undefined ? (data.node as string | null) : null
+                const promptId = data.prompt_id as string | undefined
                 if (nodeId) {
                   const nodeInfo = get().currentWorkflow?.[nodeId]
                   const nodeName = nodeInfo
                     ? (nodeInfo._meta?.title || nodeInfo.class_type || 'Unknown')
                     : 'Unknown'
                   
+                  const running = get().queueRunning
+                  const activeJob = running.length > 0 ? running[0] : null
+                  const jobClientId = activeJob?.[3]?.client_id || get().activeClientId
+
                   set({
+                    isGenerating: true,
+                    currentPromptId: promptId || get().currentPromptId,
+                    activeClientId: jobClientId,
                     currentNode: { id: nodeId, name: nodeName },
                     nodeProgress: {
                       value: 0,
@@ -667,10 +692,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                     },
                   })
                 } else {
+                  // nodeId === null は 1 つのジョブの実行完了
                   set({
                     currentNode: null,
                     nodeProgress: null,
                   })
+                  get().fetchHistory()
+                  get().fetchQueue()
                 }
                 break
               }
@@ -772,6 +800,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
                 get().fetchQueue()
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_error', promptId } }))
+                break
+              }
+
+              case 'execution_interrupted': {
+                const promptId = data.prompt_id as string
+                set({
+                  isGenerating: false,
+                  progress: null,
+                  currentPromptId: null,
+                  activeClientId: null,
+                  generationStartTime: null,
+                  currentNode: null,
+                  nodeProgress: null,
+                  currentWorkflow: null,
+                  activeBatch: null,
+                })
+                localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+                get().fetchQueue()
+                window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_interrupted', promptId } }))
                 break
               }
             }
@@ -967,6 +1014,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           throw new Error(errorMsg)
         }
         const promptId = data.prompt_id ?? null
+        if (promptId) {
+          localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+        }
         if (options?.isBatchIntermediate) {
           set({
             isGenerating: true,
@@ -983,7 +1033,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             currentWorkflow: workflow,
           })
           if (promptId) {
-            localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
             // キャッシュ保存
             const metaKey = `prompt-surgeon-meta-${promptId}`
             const promptMetadata = {
@@ -1039,7 +1088,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     fetchHistory: async () => {
       const resolvedUrl = resolveComfyUrl(comfyUrl)
       try {
-        const data = await comfyApi.getHistory()
+        const data = await comfyApi.getHistory(100)
         const allImages: string[] = []
         const ownImages: string[] = []
         const clientId = get().clientId
@@ -1072,11 +1121,18 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         set((state) => {
           // filterOwnSession に応じてマージ対象を選択 (OFF時は全セッション、ON時は自セッション)
           const targetImages = state.filterOwnSession ? ownImages : allImages
-          const mergedBatchImages = Array.from(new Set([...state.batchImages, ...targetImages])).slice(0, 50)
+          const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 50)
           localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
-          const nextSelected = state.selectedImg || (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
-          if (nextSelected && !state.selectedImg) {
+
+          const hasNewImages = targetImages.some((img) => !state.batchImages.includes(img))
+          const nextSelected = (hasNewImages || !state.selectedImg || !mergedBatchImages.includes(state.selectedImg))
+            ? (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
+            : state.selectedImg
+
+          if (nextSelected) {
             localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
+          } else {
+            localStorage.removeItem(LS_KEYS.SELECTED_IMG)
           }
 
           return {
@@ -1212,6 +1268,30 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         await get().fetchQueue()
       } catch (e) {
         console.error('Failed to cancel job:', e)
+      }
+    },
+
+    clearPendingQueue: async (): Promise<void> => {
+      get().abortSubmission()
+      try {
+        const pendingIds = get().queuePending.map((j) => j[1])
+        // 待機キューのみ削除（interruptは呼ばない）
+        await comfyApi.deleteQueue({ clear: true })
+        if (pendingIds.length > 0) {
+          await comfyApi.deleteHistory({ delete: pendingIds })
+        }
+
+        // activeBatch がある場合、待機中のジョブのみ除外
+        const activeBatch = get().activeBatch
+        if (activeBatch) {
+          const updatedBatch = activeBatch.filter(
+            (job) => job.status === 'generating' || job.status === 'completed'
+          )
+          set({ activeBatch: updatedBatch.length > 0 ? updatedBatch : null })
+        }
+        await get().fetchQueue()
+      } catch (e) {
+        console.error('Failed to clear pending queue:', e)
       }
     },
 

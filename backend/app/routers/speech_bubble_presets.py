@@ -1,4 +1,5 @@
 """Speech Bubble Preset CRUD router."""
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -25,14 +26,21 @@ def create_speech_bubble_preset(
     """Create a new speech bubble preset."""
     existing = (
         db.query(models.SpeechBubblePreset)
-        .filter(models.SpeechBubblePreset.name == payload.name)
+        .filter(
+            models.SpeechBubblePreset.name == payload.name,
+            models.SpeechBubblePreset.orientation == payload.orientation,
+        )
         .first()
     )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Preset with this name already exists",
+            detail="Preset with this name and orientation already exists",
         )
+
+    effects_json = "{}"
+    if payload.effects is not None:
+        effects_json = json.dumps(payload.effects)
 
     preset = models.SpeechBubblePreset(
         name=payload.name,
@@ -45,6 +53,8 @@ def create_speech_bubble_preset(
         border_color=payload.border_color,
         border_width=payload.border_width,
         sort_order=payload.sort_order,
+        effects_json=effects_json,
+        text=payload.text,
     )
     db.add(preset)
     db.commit()
@@ -70,11 +80,14 @@ def update_speech_bubble_preset(
             detail="Preset not found",
         )
 
-    if payload.name is not None and payload.name != preset.name:
+    target_name = payload.name if payload.name is not None else preset.name
+    target_orientation = payload.orientation if payload.orientation is not None else preset.orientation
+    if target_name != preset.name or target_orientation != preset.orientation:
         existing = (
             db.query(models.SpeechBubblePreset)
             .filter(
-                models.SpeechBubblePreset.name == payload.name,
+                models.SpeechBubblePreset.name == target_name,
+                models.SpeechBubblePreset.orientation == target_orientation,
                 models.SpeechBubblePreset.id != preset_id,
             )
             .first()
@@ -82,10 +95,14 @@ def update_speech_bubble_preset(
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preset with this name already exists",
+                detail="Preset with this name and orientation already exists",
             )
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "effects" in update_data:
+        effects_val = update_data.pop("effects")
+        preset.effects_json = json.dumps(effects_val) if effects_val is not None else "{}"
+
     for field, val in update_data.items():
         setattr(preset, field, val)
 

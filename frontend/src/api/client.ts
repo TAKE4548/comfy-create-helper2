@@ -2,7 +2,8 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode } from './types'
+export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode }
 
 
 
@@ -332,7 +333,31 @@ export const comfyApi = {
   deleteQueue: (data: { delete?: string[]; clear?: boolean }) =>
     request('/comfy/queue', { method: 'POST', body: JSON.stringify(data) }),
   interrupt: () => request('/comfy/interrupt', { method: 'POST' }),
-  getHistory: () => request<Record<string, any>>('/comfy/history'),
+  getHistory: (max_items?: number) =>
+    request<Record<string, any>>(`/comfy/history${max_items !== undefined ? `?max_items=${max_items}` : ''}`),
+  getPromptHistory: (promptId: string) =>
+    request<Record<string, any>>(`/comfy/history/${encodeURIComponent(promptId)}`),
   deleteHistory: (data: { delete?: string[]; clear?: boolean }) =>
     request('/comfy/history', { method: 'POST', body: JSON.stringify(data) }),
 }
+
+// ─── Translation Proxy API ───────────────────────────────────────
+export const translateApi = {
+  translatePrompt: (data: PromptTranslateRequest) =>
+    request<PromptTranslateResponse>('/translate/prompt', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  testConnection: (data: TranslateTestRequest) =>
+    request<TranslateTestResponse>('/translate/test', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getStats: () =>
+    request<{ cached_entries_count: number }>('/translate/stats'),
+  clearCache: () =>
+    request<{ message: string; cleared_count: number }>('/translate/clear-cache', {
+      method: 'POST',
+    }),
+}
+

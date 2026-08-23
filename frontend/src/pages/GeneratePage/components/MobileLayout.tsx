@@ -30,6 +30,7 @@ export const MobileLayout = ({
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     selectedImg, setSelectedImg,
+    comfyHistoryImages,
     appliedAssets,
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
@@ -83,7 +84,10 @@ export const MobileLayout = ({
     auditTypes, setAuditTypes,
     auditResult, auditStatus, runAudit,
     dragOver, handleFileSelect, handleDragOver, handleDragLeave, handleDrop,
-    isGeneratingHere, totalQueueCount,
+    isGeneratingHere,
+    isOtherSessionGenerating,
+    allQueueCount,
+    totalQueueCount,
     showStrip, invalidMappings, textMappings, paramMappings,
     
     // handlers
@@ -313,6 +317,43 @@ export const MobileLayout = ({
                 className="text-zinc-300 cursor-pointer hover:text-white transition-colors font-semibold"
               >
                 Queue: {totalQueueCount}
+              </span>
+            </div>
+          </>
+        ) : isOtherSessionGenerating ? (
+          <>
+            {/* ステータスバッジ & 進捗 */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-amber-300 font-semibold">他セッションで生成中...</span>
+                </span>
+                <span>{nodeProgress?.percentage || 0}%</span>
+              </div>
+              <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
+                <div className="h-full bg-amber-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 100}%` }} />
+              </div>
+            </div>
+
+            {/* 実行中ノード */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
+                <span>実行中: {currentNode?.name || '処理中...'}</span>
+              </div>
+            </div>
+
+            {/* 時間情報・Queue情報 */}
+            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium pt-0.5">
+              <div className="flex items-center gap-2">
+                <Loader2 size={10} className="animate-spin text-amber-400 flex-shrink-0" />
+                <span>経過: {elapsedTime}秒</span>
+              </div>
+              <span 
+                onClick={() => setIsJobModalOpen(true)}
+                className="text-amber-300 cursor-pointer hover:text-white transition-colors font-semibold"
+              >
+                Queue: {allQueueCount} (他セッション)
               </span>
             </div>
           </>
@@ -551,6 +592,17 @@ export const MobileLayout = ({
                     )
                   })}
                 </div>
+              </div>
+            ) : filterOwnSession && comfyHistoryImages.length > 0 ? (
+              <div className="flex flex-col items-center justify-center py-3 gap-1.5 text-center">
+                <p className="text-[11px] text-zinc-400">他セッションの履歴（{comfyHistoryImages.length}件）があります</p>
+                <button
+                  type="button"
+                  onClick={() => setFilterOwnSession(false)}
+                  className="px-2.5 py-0.5 bg-surface-2 border border-accent-green/30 text-accent-green hover:bg-accent-green/10 rounded text-[10px] font-semibold transition-all"
+                >
+                  自セッションのみ表示を解除
+                </button>
               </div>
             ) : <p className="text-[10px] text-zinc-500 py-1">No history images found for this session.</p>
           ) : (

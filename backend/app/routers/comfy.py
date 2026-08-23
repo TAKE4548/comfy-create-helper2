@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 import httpx
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from app.config import settings
 
@@ -140,13 +140,31 @@ async def interrupt_execution():
 
 
 @router.get("/history")
-async def get_history():
+async def get_history(max_items: Optional[int] = Query(default=100, ge=1, le=1000)):
     """
     ComfyUI の /history を取得する。
     """
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{settings.comfy_url}/history", timeout=5.0)
+            params = {"max_items": max_items} if max_items is not None else None
+            response = await client.get(f"{settings.comfy_url}/history", params=params, timeout=15.0)
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type="application/json"
+            )
+        except Exception as e:
+            return {}
+
+
+@router.get("/history/{prompt_id}")
+async def get_prompt_history(prompt_id: str):
+    """
+    ComfyUI の /history/{prompt_id} を取得する。
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{settings.comfy_url}/history/{prompt_id}", timeout=15.0)
             return Response(
                 content=response.content,
                 status_code=response.status_code,

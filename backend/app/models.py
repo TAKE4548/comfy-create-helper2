@@ -347,9 +347,12 @@ class ParamSyncGroup(Base):
 
 class SpeechBubblePreset(Base):
     __tablename__ = "speech_bubble_presets"
+    __table_args__ = (
+        UniqueConstraint("name", "orientation", name="uq_speech_bubble_presets_name_orientation"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     shape: Mapped[str] = mapped_column(String, nullable=False, default="oval")
     orientation: Mapped[str] = mapped_column(String, nullable=False, default="vertical")
     font_family: Mapped[str] = mapped_column(String, nullable=False, default="sans-serif")
@@ -359,6 +362,8 @@ class SpeechBubblePreset(Base):
     border_color: Mapped[str] = mapped_column(String, nullable=False, default="rgba(0, 0, 0, 1)")
     border_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    effects_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="{}")
+    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

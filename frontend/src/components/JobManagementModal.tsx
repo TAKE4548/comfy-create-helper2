@@ -14,6 +14,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     clientId,
     filterOwnSession,
     cancelJob,
+    clearPendingQueue,
     cancelAllJobs,
   } = useGenerationStore()
 
@@ -36,9 +37,17 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     await cancelJob(promptId)
   }
 
+  const handleClearQueueOnly = async () => {
+    if (confirm(`待機中のキュー（${visiblePending.length}件）をクリアしますか？\n※現在生成中の1枚は中断せず最後まで生成されます。`)) {
+      await clearPendingQueue()
+      onClose()
+    }
+  }
+
   const handleCancelAll = async () => {
-    if (confirm('表示中のすべてのジョブをキャンセルしますか？')) {
+    if (confirm('実行中の生成を中断し、待機中のすべてのジョブを削除しますか？')) {
       await cancelAllJobs()
+      onClose()
     }
   }
 
@@ -109,7 +118,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                     <button
                       onClick={(e) => handleCancelJob(promptId, e)}
                       className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 transition-all"
-                      title="中断"
+                      title="中断（生成を停止）"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -156,7 +165,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                       <button
                         onClick={(e) => handleCancelJob(promptId, e)}
                         className="p-1.5 rounded bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-[rgba(255,255,255,0.04)] hover:border-red-500/20 transition-all"
-                        title="キャンセル"
+                        title="キューから削除"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -174,6 +183,16 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
             {filterOwnSession ? '※ 自セッションのジョブのみを表示中' : '※ すべてのセッションのジョブを表示中'}
           </div>
           <div className="flex gap-3">
+            {visiblePending.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearQueueOnly}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              >
+                <Trash2 size={14} />
+                キューのみクリア
+              </button>
+            )}
             {totalJobsCount > 0 && (
               <button
                 type="button"
@@ -181,7 +200,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                 className="px-3.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
               >
                 <Trash2 size={14} />
-                一括キャンセル
+                すべて中断
               </button>
             )}
             <button

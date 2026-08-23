@@ -11,6 +11,7 @@ import { useSnapshotActions } from './useSnapshotActions'
 import { useAuditAction } from './useAuditAction'
 import { useWorkflowUpload } from './useWorkflowUpload'
 import { useMultiSelect } from '../../../hooks/useMultiSelect'
+import { usePromptTranslation } from './usePromptTranslation'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 
 export interface SnapshotSummaryWithParams {
@@ -192,13 +193,9 @@ export function useGeneratePageState() {
   })
 
   const [isAnimaMode, setIsAnimaMode] = useState(false)
-  const [isTranslationOpen, setIsTranslationOpen] = useState(false)
-  const [translationTargetRole, setTranslationTargetRole] = useState<string | null>(null)
-  const [translationJa, setTranslationJa] = useState('')
-  const [translationEn, setTranslationEn] = useState('')
-  const [isTranslating, setIsTranslating] = useState(false)
+  const promptTranslation = usePromptTranslation({ paramValues, setParamValues })
 
-  const { data: prompts } = useQuery({
+  useQuery({
     queryKey: ['llm-prompts'],
     queryFn: () => llmPromptsApi.list() as Promise<LlmPrompt[]>,
   })
@@ -214,131 +211,6 @@ export function useGeneratePageState() {
       }
     }
   }, [workflow, baseModels])
-
-  const translationDebounce = useMemo(() => {
-    const record = prompts?.find((p) => p.key === 'translation_debounce')
-    if (record && record.content) {
-      const val = parseInt(record.content, 10)
-      if (!isNaN(val)) return val
-    }
-    return 500
-  }, [prompts])
-
-  const abortControllerRef = useRef<AbortController | null>(null)
-  const debounceTimerRef = useRef<any>(null)
-
-  const triggerTranslationJaToEn = (text: string) => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-    if (abortControllerRef.current) abortControllerRef.current.abort()
-
-    if (!text.trim()) {
-      setTranslationEn('')
-      return
-    }
-
-    debounceTimerRef.current = setTimeout(async () => {
-      setIsTranslating(true)
-      const controller = new AbortController()
-      abortControllerRef.current = controller
-      try {
-        const result = await llmPromptsApi.translate({
-          text,
-          direction: 'ja_to_en'
-        })
-        if (!controller.signal.aborted) {
-          setTranslationEn(result)
-        }
-      } catch (err) {
-        console.error('Translation error:', err)
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsTranslating(false)
-        }
-      }
-    }, translationDebounce)
-  }
-
-  const triggerTranslationEnToJa = (text: string) => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-    if (abortControllerRef.current) abortControllerRef.current.abort()
-
-    if (!text.trim()) {
-      setTranslationJa('')
-      if (translationTargetRole) {
-        setParamValues({
-          ...paramValues,
-          [translationTargetRole]: ''
-        })
-      }
-      return
-    }
-
-    debounceTimerRef.current = setTimeout(async () => {
-      setIsTranslating(true)
-      const controller = new AbortController()
-      abortControllerRef.current = controller
-      try {
-        const result = await llmPromptsApi.translate({
-          text,
-          direction: 'en_to_ja'
-        })
-        if (!controller.signal.aborted) {
-          setTranslationJa(result)
-          if (translationTargetRole) {
-            setParamValues({
-              ...paramValues,
-              [translationTargetRole]: result
-            })
-          }
-        }
-      } catch (err) {
-        console.error('Translation error:', err)
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsTranslating(false)
-        }
-      }
-    }, translationDebounce)
-  }
-
-  const targetPromptValue = translationTargetRole ? (paramValues[translationTargetRole] || '') : ''
-  useEffect(() => {
-    if (targetPromptValue !== translationJa) {
-      setTranslationJa(targetPromptValue)
-      if (isTranslationOpen) {
-        triggerTranslationJaToEn(targetPromptValue)
-      }
-    }
-  }, [targetPromptValue])
-
-  const handleTranslationJaChange = (val: string) => {
-    setTranslationJa(val)
-    if (translationTargetRole) {
-      setParamValues({
-        ...paramValues,
-        [translationTargetRole]: val
-      })
-    }
-    triggerTranslationJaToEn(val)
-  }
-
-  const handleTranslationEnChange = (val: string) => {
-    setTranslationEn(val)
-    triggerTranslationEnToJa(val)
-  }
-
-  const toggleTranslationWindow = (role: string) => {
-    if (isTranslationOpen && translationTargetRole === role) {
-      setIsTranslationOpen(false)
-      setTranslationTargetRole(null)
-    } else {
-      setTranslationTargetRole(role)
-      const currentPrompt = paramValues[role] || ''
-      setTranslationJa(currentPrompt)
-      setIsTranslationOpen(true)
-      triggerTranslationJaToEn(currentPrompt)
-    }
-  }
 
   // ── Extracted hooks ──────────────────────────────────────────
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
@@ -830,15 +702,21 @@ export function useGeneratePageState() {
   }
 
   const isGeneratingHere = store.isGenerating && (
-    !store.filterOwnSession ||
     store.activeClientId === clientId ||
     (store.activeBatch !== null && store.activeBatch.some(j => j.status === 'generating' || j.status === 'pending'))
   )
 
+  const isOtherSessionGenerating = store.isGenerating && !isGeneratingHere
+
+  const allQueueCount = useMemo(() => {
+    return store.queueRunning.length + store.queuePending.length
+  }, [store.queueRunning, store.queuePending])
+
   const totalQueueCount = useMemo(() => {
-    const filterJob = (job: any) => !store.filterOwnSession || job[3]?.client_id === clientId
+    if (!store.filterOwnSession) return allQueueCount
+    const filterJob = (job: any) => job[3]?.client_id === clientId
     return store.queueRunning.filter(filterJob).length + store.queuePending.filter(filterJob).length
-  }, [store.queueRunning, store.queuePending, store.filterOwnSession, clientId])
+  }, [store.queueRunning, store.queuePending, store.filterOwnSession, clientId, allQueueCount])
 
   const snapshotIdsForDisplay = useMemo(() => {
     return sortedDisplayImages.map((img) => {
@@ -1425,6 +1303,8 @@ export function useGeneratePageState() {
     handleDragLeave,
     handleDrop,
     isGeneratingHere,
+    isOtherSessionGenerating,
+    allQueueCount,
     totalQueueCount,
     snapshotIdsForDisplay,
     showStrip,
@@ -1486,14 +1366,7 @@ export function useGeneratePageState() {
     // 翻訳とAnima特化モード
     isAnimaMode,
     setIsAnimaMode,
-    isTranslationOpen,
-    translationTargetRole,
-    toggleTranslationWindow,
-    translationJa,
-    handleTranslationJaChange,
-    translationEn,
-    handleTranslationEnChange,
-    isTranslating,
+    promptTranslation,
 
     // 一括操作
     isBulkDeleteConfirmOpen,

@@ -132,6 +132,8 @@ describe('SpeechBubbleEditorModal', () => {
       fillText: vi.fn(),
       save: vi.fn(),
       restore: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
       setLineDash: vi.fn(),
       measureText: vi.fn().mockReturnValue({ width: 50 }),
     }) as any
@@ -764,5 +766,123 @@ describe('SpeechBubbleEditorModal', () => {
     })
   })
 
-})
+  it('duplicates selected bubble when duplicate button is clicked', async () => {
+    renderWithQuery(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
 
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    const dupBtn = await screen.findByText('📋 この吹き出しを複製')
+    fireEvent.click(dupBtn)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('speech-bubble-save-btn').textContent).toContain('(2)')
+    })
+  })
+
+  it('copies and pastes bubble using Ctrl+C / Ctrl+V keyboard shortcuts', async () => {
+    renderWithQuery(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    // Press Ctrl+C while bubble is selected
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+
+    // Press Ctrl+V to paste
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('speech-bubble-save-btn').textContent).toContain('(2)')
+    })
+  })
+
+  it('does not duplicate bubble with Ctrl+C / Ctrl+V when typing inside input or textarea', async () => {
+    renderWithQuery(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+    })
+
+    const textarea = screen.getByPlaceholderText('セリフを入力...')
+    textarea.focus()
+
+    fireEvent.keyDown(textarea, { key: 'c', ctrlKey: true })
+    fireEvent.keyDown(textarea, { key: 'v', ctrlKey: true })
+
+    // Count should still be 1
+    expect(screen.getByTestId('speech-bubble-save-btn').textContent).toContain('(1)')
+  })
+
+  it('rotates bubble when dragging rotation handle on canvas', async () => {
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      // Wait for imageObj to load and canvas to render
+      await waitFor(() => {
+        expect(document.querySelector('canvas')).toBeDefined()
+      })
+
+      const canvas = document.querySelector('canvas')!
+      // Bounding box from detectBubble is x:50, y:50, w:100, h:80
+      // Top center is (100, 50), rotation handle is at (100, 30)
+      // Drag rotation handle from (100, 30) to (150, 90) -> 90 degrees clockwise rotation
+      fireEvent.mouseDown(canvas, { clientX: 100, clientY: 30 })
+      fireEvent.mouseMove(canvas, { clientX: 150, clientY: 90 })
+      fireEvent.mouseUp(canvas)
+
+      // The rotation input should be updated
+      await waitFor(() => {
+        const rotInput = screen.getByLabelText('吹き出し回転角度数値') as HTMLInputElement
+        expect(rotInput).toBeDefined()
+        expect(parseInt(rotInput.value, 10)).not.toBe(0)
+      })
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
+})

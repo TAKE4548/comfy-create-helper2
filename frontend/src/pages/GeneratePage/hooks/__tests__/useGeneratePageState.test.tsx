@@ -417,6 +417,57 @@ describe('useGeneratePageState', () => {
       base_updated_at: '2026-08-23T00:00:00Z',
     }))
   })
+
+  describe('REQ-164-T2 multi-session UI state, queue counts, and displayImages', () => {
+    it('Test 1: should set isOtherSessionGenerating true and isGeneratingHere false when store.isGenerating is true and activeClientId !== clientId', () => {
+      mockStore.isGenerating = true
+      mockStore.activeClientId = 'other-client-id'
+      mockStore.clientId = 'my-client-id'
+      mockStore.activeBatch = null
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      expect(result.current.isOtherSessionGenerating).toBe(true)
+      expect(result.current.isGeneratingHere).toBe(false)
+    })
+
+    it('Test 2: should compute allQueueCount across all sessions and switch totalQueueCount based on filterOwnSession', () => {
+      mockStore.clientId = 'my-client-id'
+      mockStore.queueRunning = [['0', 'run-1', {}, { client_id: 'my-client-id' }]]
+      mockStore.queuePending = [
+        ['1', 'pend-1', {}, { client_id: 'my-client-id' }],
+        ['2', 'pend-2', {}, { client_id: 'other-client-id' }],
+      ]
+
+      mockStore.filterOwnSession = false
+      const wrapper = createWrapper()
+      const { result, rerender } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      expect(result.current.allQueueCount).toBe(3)
+      expect(result.current.totalQueueCount).toBe(3)
+
+      mockStore.filterOwnSession = true
+      rerender()
+      expect(result.current.allQueueCount).toBe(3)
+      expect(result.current.totalQueueCount).toBe(2)
+    })
+
+    it('Test 3: should return comfyHistoryImages as displayImages when filterOwnSession is false and batchImages when true', () => {
+      mockStore.batchImages = ['own1.png']
+      mockStore.comfyHistoryImages = ['own1.png', 'other1.png', 'other2.png']
+
+      mockStore.filterOwnSession = false
+      const wrapper = createWrapper()
+      const { result, rerender } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      expect(result.current.displayImages).toEqual(['own1.png', 'other1.png', 'other2.png'])
+
+      mockStore.filterOwnSession = true
+      rerender()
+      expect(result.current.displayImages).toEqual(['own1.png'])
+    })
+  })
 })
 
 

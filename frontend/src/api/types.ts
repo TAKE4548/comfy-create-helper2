@@ -3,7 +3,7 @@
  * Auto-generated shape: matches FastAPI schemas.py
  */
 
-import type { BubbleShapeType, TextOrientation } from '../types/speechBubble'
+import type { BubbleShapeType, MangaTextEffectConfig, TextOrientation } from '../types/speechBubble'
 
 // ─── MappingMaster ─────────────────────────────────────────────
 
@@ -580,6 +580,8 @@ export interface SpeechBubblePreset {
   border_color: string
   border_width: number
   sort_order: number
+  effects?: MangaTextEffectConfig
+  text?: string | null
   created_at: string
 }
 
@@ -594,6 +596,8 @@ export interface SpeechBubblePresetCreate {
   border_color?: string
   border_width?: number
   sort_order?: number
+  effects?: MangaTextEffectConfig
+  text?: string | null
 }
 
 export interface SpeechBubblePresetUpdate {
@@ -607,6 +611,8 @@ export interface SpeechBubblePresetUpdate {
   border_color?: string
   border_width?: number
   sort_order?: number
+  effects?: MangaTextEffectConfig
+  text?: string | null
 }
 
 // ─── SpeechTonePreset ────────────────────────────────────────────
@@ -645,6 +651,42 @@ export interface SpeechToneRewriteRequest {
 export interface SpeechToneRewriteResponse {
   rewritten_text: string
 }
+
+// ─── Translation Types ──────────────────────────────────────────
+
+export interface PromptTranslateRequest {
+  prompt: string
+  source_lang?: string
+  target_lang?: string
+}
+
+export interface TranslateMeta {
+  total_chunks: number
+  cached_chunks: number
+  api_requested_chunks: number
+  billed_characters: number
+  provider: string
+}
+
+export interface PromptTranslateResponse {
+  translated_prompt: string
+  meta: TranslateMeta
+}
+
+export interface TranslateTestRequest {
+  provider: 'google_free' | 'google_cloud' | 'deepl' | 'llm'
+  api_key?: string
+  api_url?: string
+}
+
+export interface TranslateTestResponse {
+  success: boolean
+  sample_translation: string
+  error?: string
+}
+
+export type TranslationMode = 'en_to_ja' | 'ja_to_en'
+
 
 
 

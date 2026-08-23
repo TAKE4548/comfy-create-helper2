@@ -18,6 +18,7 @@ from app.routers import (
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
     speech_bubble_presets, speech_tone_presets,
+    translate,
 )
 
 
@@ -28,10 +29,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_migrations():
+def run_migrations(target_engine=None):
     """Run simple migrations for SQLite database to add missing columns."""
     import sqlalchemy as sa
-    with engine.begin() as conn:
+    eng = target_engine if target_engine is not None else engine
+    with eng.begin() as conn:
         inspector = sa.inspect(conn)
 
         
@@ -239,7 +241,7 @@ def run_migrations():
             conn.execute(sa.text("""
                 CREATE TABLE speech_bubble_presets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name VARCHAR NOT NULL UNIQUE,
+                    name VARCHAR NOT NULL,
                     shape VARCHAR NOT NULL DEFAULT 'oval',
                     orientation VARCHAR NOT NULL DEFAULT 'vertical',
                     font_family VARCHAR NOT NULL DEFAULT 'sans-serif',
@@ -249,10 +251,95 @@ def run_migrations():
                     border_color VARCHAR NOT NULL DEFAULT 'rgba(0, 0, 0, 1)',
                     border_width INTEGER NOT NULL DEFAULT 2,
                     sort_order INTEGER NOT NULL DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    effects_json TEXT DEFAULT '{}',
+                    text TEXT DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (name, orientation)
                 )
             """))
             logger.info("Migrated: Created 'speech_bubble_presets' table.")
+
+        # Ensure effects_json and text columns exist in speech_bubble_presets before table migration
+        if "speech_bubble_presets" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("speech_bubble_presets")]
+            if "effects_json" not in columns:
+                conn.execute(sa.text("ALTER TABLE speech_bubble_presets ADD COLUMN effects_json TEXT DEFAULT '{}'"))
+                logger.info("Migrated: Added 'effects_json' column to 'speech_bubble_presets' table.")
+            if "text" not in columns:
+                conn.execute(sa.text("ALTER TABLE speech_bubble_presets ADD COLUMN text TEXT DEFAULT NULL"))
+                logger.info("Migrated: Added 'text' column to 'speech_bubble_presets' table.")
+
+        # Migrate unique constraint for speech_bubble_presets if old unique on name exists
+        if "speech_bubble_presets" in inspector.get_table_names():
+            # Check unique constraints or unique indices on name alone
+            refreshed_inspector = sa.inspect(conn)
+            constraints = refreshed_inspector.get_unique_constraints("speech_bubble_presets")
+            indexes = refreshed_inspector.get_indexes("speech_bubble_presets")
+            has_old_unique_name = False
+            for c in constraints:
+                cols = c.get("column_names", [])
+                if cols == ["name"]:
+                    has_old_unique_name = True
+                    break
+            if not has_old_unique_name:
+                for idx in indexes:
+                    if idx.get("unique") and idx.get("column_names") == ["name"]:
+                        has_old_unique_name = True
+                        break
+
+            if has_old_unique_name:
+                logger.info("Migrating speech_bubble_presets unique constraint to (name, orientation)...")
+                conn.execute(sa.text("""
+                    CREATE TABLE speech_bubble_presets_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name VARCHAR NOT NULL,
+                        shape VARCHAR NOT NULL DEFAULT 'oval',
+                        orientation VARCHAR NOT NULL DEFAULT 'vertical',
+                        font_family VARCHAR NOT NULL DEFAULT 'sans-serif',
+                        font_size INTEGER NOT NULL DEFAULT 0,
+                        text_color VARCHAR NOT NULL DEFAULT 'rgba(0, 0, 0, 1)',
+                        background_color VARCHAR NOT NULL DEFAULT 'rgba(255, 255, 255, 0.95)',
+                        border_color VARCHAR NOT NULL DEFAULT 'rgba(0, 0, 0, 1)',
+                        border_width INTEGER NOT NULL DEFAULT 2,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        effects_json TEXT DEFAULT '{}',
+                        text TEXT DEFAULT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (name, orientation)
+                    );
+                """))
+                # Copy existing columns safely
+                cols = [c["name"] for c in refreshed_inspector.get_columns("speech_bubble_presets")]
+                def col_val(c_name: str, default_expr: str) -> str:
+                    return c_name if c_name in cols else default_expr
+
+                conn.execute(sa.text(f"""
+                    INSERT INTO speech_bubble_presets_new (
+                        id, name, shape, orientation, font_family, font_size,
+                        text_color, background_color, border_color, border_width,
+                        sort_order, effects_json, text, created_at
+                    )
+                    SELECT
+                        {col_val("id", "NULL")},
+                        {col_val("name", "''")},
+                        {col_val("shape", "'oval'")},
+                        {col_val("orientation", "'vertical'")},
+                        {col_val("font_family", "'sans-serif'")},
+                        {col_val("font_size", "0")},
+                        {col_val("text_color", "'rgba(0, 0, 0, 1)'")},
+                        {col_val("background_color", "'rgba(255, 255, 255, 0.95)'")},
+                        {col_val("border_color", "'rgba(0, 0, 0, 1)'")},
+                        {col_val("border_width", "2")},
+                        {col_val("sort_order", "0")},
+                        {col_val("effects_json", "'{}'")},
+                        {col_val("text", "NULL")},
+                        {col_val("created_at", "CURRENT_TIMESTAMP")}
+                    FROM speech_bubble_presets;
+                """))
+                conn.execute(sa.text("DROP TABLE speech_bubble_presets;"))
+                conn.execute(sa.text("ALTER TABLE speech_bubble_presets_new RENAME TO speech_bubble_presets;"))
+                logger.info("Migrated speech_bubble_presets unique constraint.")
+
 
         # Create speech_tone_presets table if not exists
         if "speech_tone_presets" not in inspector.get_table_names():
@@ -330,6 +417,7 @@ app.include_router(comfy.router)
 app.include_router(param_sync_groups.router)
 app.include_router(speech_bubble_presets.router)
 app.include_router(speech_tone_presets.router)
+app.include_router(translate.router)
 
 
 
