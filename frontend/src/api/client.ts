@@ -2,7 +2,7 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, ComfyObjectInfo, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse } from './types'
+import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse } from './types'
 
 
 
@@ -274,12 +274,6 @@ export const paramTypeMastersApi = {
   delete: (id: number) => request<void>(`/param-type-masters/${id}`, { method: 'DELETE' }),
 }
 
-// ─── ComfyUI Object Info ─────────────────────────────────────────
-export const comfyApi = {
-  getObjectInfo: (classType: string) =>
-    request<ComfyObjectInfo>(`/comfy/object-info/${encodeURIComponent(classType)}`),
-}
-
 // ─── Speech Bubble Presets ───────────────────────────────────────
 export const speechBubblePresetsApi = {
   list: () => request<SpeechBubblePreset[]>('/speech-bubble-presets'),
@@ -323,5 +317,22 @@ export const speechTonePresetsApi = {
     }),
 }
 
-
-
+// ─── ComfyUI Proxy API ───────────────────────────────────────────
+export const comfyApi = {
+  getObjectInfo: (classType?: string) =>
+    classType
+      ? request<Record<string, any>>(`/comfy/object-info/${encodeURIComponent(classType)}`)
+      : request<Record<string, any>>('/comfy/object_info'),
+  queuePrompt: (data: { prompt: Record<string, any>; client_id?: string }) =>
+    request<{ prompt_id?: string; number?: number; error?: any; node_errors?: any }>('/comfy/prompt', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getQueue: () => request<{ queue_running: any[]; queue_pending: any[] }>('/comfy/queue'),
+  deleteQueue: (data: { delete?: string[]; clear?: boolean }) =>
+    request('/comfy/queue', { method: 'POST', body: JSON.stringify(data) }),
+  interrupt: () => request('/comfy/interrupt', { method: 'POST' }),
+  getHistory: () => request<Record<string, any>>('/comfy/history'),
+  deleteHistory: (data: { delete?: string[]; clear?: boolean }) =>
+    request('/comfy/history', { method: 'POST', body: JSON.stringify(data) }),
+}

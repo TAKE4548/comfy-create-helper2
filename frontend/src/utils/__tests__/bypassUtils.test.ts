@@ -155,4 +155,31 @@ describe('bypassUtils', () => {
     // So 6.samples should point to ["5", 0]
     expect(result["6"].inputs.samples).toEqual(["5", 0]);
   });
+
+  it('should not corrupt or delete required input connections if nodeInfo is missing', () => {
+    const workflow = {
+      "10": {
+        "inputs": {
+          "image": ["9", 0],
+          "detailer_pipe": ["8", 0]
+        },
+        "class_type": "UnknownBypassedNode"
+      },
+      "11": {
+        "inputs": {
+          "image": ["10", 0],
+          "detailer_pipe": ["10", 1]
+        },
+        "class_type": "EditDetailerPipe"
+      }
+    };
+
+    // Missing schema info for UnknownBypassedNode
+    const result = applyBypass(workflow, ["10"], {});
+
+    // Node 10 is skipped for bypass rewiring to prevent input connection corruption
+    expect(result["10"]).toBeDefined();
+    expect(result["11"].inputs.detailer_pipe).toEqual(["10", 1]);
+  });
 });
+

@@ -132,7 +132,8 @@ class TestPresetsAPI(unittest.TestCase):
         payload = {
             "name": "Updated Preset",
             "param_values": {"positive_prompt": "new prompt"},
-            "batch_size": 4
+            "batch_size": 4,
+            "base_updated_at": p1.updated_at.isoformat(),
         }
         response = self.client.put(f"/api/workflow-presets/{p1.id}", json=payload)
         assert response.status_code == 200
@@ -141,6 +142,16 @@ class TestPresetsAPI(unittest.TestCase):
         assert data["param_values"] == {"positive_prompt": "new prompt"}
         assert data["batch_size"] == 4
         assert data["seed"] == 123  # unchanged
+        assert "updated_at" in data
+
+        # Test OCC conflict: when base_updated_at is older than current updated_at
+        conflict_payload = {
+            "name": "Stale Update",
+            "base_updated_at": "2000-01-01T00:00:00Z",
+        }
+        response_conflict = self.client.put(f"/api/workflow-presets/{p1.id}", json=conflict_payload)
+        assert response_conflict.status_code == 409
+        assert "Preset was updated by another session" in response_conflict.json()["detail"]
 
         # Test updating non-existent preset
         response_bad = self.client.put("/api/workflow-presets/9999", json=payload)
@@ -312,5 +323,105 @@ class TestPresetsAPI(unittest.TestCase):
         res5 = self.client.post("/api/workflow-presets", json=payload5)
         assert res5.status_code == 201
         assert res5.json()["sort_order"] == 4
+
+
+class TestPresetOCC(unittest.TestCase):
+    def setUp(self):
+        self.old_override = app.dependency_overrides.get(get_db)
+        app.dependency_overrides[get_db] = override_get_db
+        Base.metadata.create_all(bind=connection)
+        self.client = TestClient(app)
+        self.db = TestingSessionLocal()
+
+        self.workflow = models.Workflow(name="test_wf_occ", json_body="{}")
+        self.db.add(self.workflow)
+        self.db.commit()
+        self.db.refresh(self.workflow)
+
+    def tearDown(self):
+        self.db.close()
+        Base.metadata.drop_all(bind=connection)
+        if self.old_override is not None:
+            app.dependency_overrides[get_db] = self.old_override
+        else:
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_preset_read_includes_updated_at(self):
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset OCC 1",
+            param_values='{"positive_prompt": "cat"}',
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+        self.db.refresh(preset)
+
+        response = self.client.get(f"/api/workflow-presets?workflow_id={self.workflow.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert "updated_at" in data[0]
+        assert data[0]["name"] == "Preset OCC 1"
+
+    def test_preset_update_with_valid_base_updated_at(self):
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset OCC 2",
+            param_values='{"positive_prompt": "cat"}',
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+        self.db.refresh(preset)
+
+        initial_updated_at = preset.updated_at.isoformat()
+        payload = {
+            "name": "Preset OCC 2 Updated",
+            "param_values": {"positive_prompt": "dog"},
+            "base_updated_at": initial_updated_at,
+        }
+        response = self.client.put(f"/api/workflow-presets/{preset.id}", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Preset OCC 2 Updated"
+        assert data["param_values"] == {"positive_prompt": "dog"}
+        assert "updated_at" in data
+
+    def test_preset_update_conflict_raises_409(self):
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset OCC 3",
+            param_values='{"positive_prompt": "cat"}',
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+        self.db.refresh(preset)
+
+        # Stale timestamp
+        stale_time = "2000-01-01T00:00:00Z"
+        conflict_payload = {
+            "name": "Overwrite Attempt",
+            "param_values": {"positive_prompt": "stale overwrite"},
+            "base_updated_at": stale_time,
+        }
+        response = self.client.put(f"/api/workflow-presets/{preset.id}", json=conflict_payload)
+        assert response.status_code == 409
+        assert "Preset was updated by another session" in response.json()["detail"]
+
+        # Verify DB was NOT updated
+        self.db.refresh(preset)
+        assert preset.name == "Preset OCC 3"
+
 
 

@@ -23,6 +23,12 @@ export function applyBypass(
     const classType = node.class_type;
     const nodeInfo = comfyObjectInfo?.[classType];
     
+    // nodeInfo がない場合は必須入力リンクを誤削除せずスキップする安全ガード
+    if (!nodeInfo) {
+      console.warn(`[applyBypass] Schema info for node class '${classType}' not found. Skipping bypass for this node to prevent connection corruption.`);
+      continue;
+    }
+
     // If we have class type info, try to map output slots to input slots of matching type
     const mapping: Record<number, string> = {};
     if (nodeInfo) {

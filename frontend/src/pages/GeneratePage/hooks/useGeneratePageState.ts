@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi, llmPromptsApi, paramTypeMastersApi } from '../../../api/client'
+import { workflowsApi, snapshotsApi, mappingMastersApi, lorasApi, tagSetsApi, workflowPresetsApi, baseModelsApi, llmPromptsApi, paramTypeMastersApi, comfyApi } from '../../../api/client'
 import type { Workflow, MappingMaster, Lora, TagSet, WorkflowPreset, BaseModel, LlmPrompt, ParamTypeMaster } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
@@ -11,7 +11,6 @@ import { useSnapshotActions } from './useSnapshotActions'
 import { useAuditAction } from './useAuditAction'
 import { useWorkflowUpload } from './useWorkflowUpload'
 import { useMultiSelect } from '../../../hooks/useMultiSelect'
-import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 
 export interface SnapshotSummaryWithParams {
@@ -187,15 +186,9 @@ export function useGeneratePageState() {
     enabled: !!selectedWorkflowId,
   })
   const { data: comfyObjectInfo } = useQuery({
-    queryKey: ['comfy-object-info', comfyUrl],
-    queryFn: async () => {
-      const resolvedUrl = resolveComfyUrl(comfyUrl)
-      const res = await fetch(resolvedUrl + '/object_info', { signal: AbortSignal.timeout(3000) })
-      if (!res.ok) throw new Error('Failed to fetch object info')
-      return res.json()
-    },
-    enabled: !!comfyUrl,
-    retry: false,
+    queryKey: ['comfy-object-info'],
+    queryFn: () => comfyApi.getObjectInfo(),
+    staleTime: 1000 * 60 * 60, // 1 hour
   })
 
   const [isAnimaMode, setIsAnimaMode] = useState(false)
@@ -514,16 +507,31 @@ export function useGeneratePageState() {
   })
 
   const updatePresetMutation = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) => workflowPresetsApi.update(id, {
-      name,
-      param_values: paramValues,
-      applied_assets: appliedAssets,
-      batch_size: batchSize,
-      seed_mode: seedMode,
-      seed: seed,
+    mutationFn: (args: {
+      id: number
+      name: string
+      param_values?: Record<string, string>
+      applied_assets?: Record<string, any[]>
+      batch_size?: number
+      seed_mode?: string
+      seed?: number
+      base_updated_at?: string
+    }) => workflowPresetsApi.update(args.id, {
+      name: args.name,
+      param_values: args.param_values !== undefined ? args.param_values : paramValues,
+      applied_assets: args.applied_assets !== undefined ? args.applied_assets : appliedAssets,
+      batch_size: args.batch_size !== undefined ? args.batch_size : batchSize,
+      seed_mode: args.seed_mode !== undefined ? args.seed_mode : seedMode,
+      seed: args.seed !== undefined ? args.seed : seed,
+      base_updated_at: args.base_updated_at,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+    },
+    onError: (err: any) => {
+      if (err?.message?.includes('409') || err?.status === 409) {
+        qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+      }
     }
   })
 
@@ -797,6 +805,14 @@ export function useGeneratePageState() {
     const defaultParams = workflow ? getInitialParams(workflow) : {}
     const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
 
+    lastSavedStateRef.current[preset.id] = {
+      paramValues: mergedParamValues,
+      appliedAssets: preset.applied_assets,
+      batchSize: preset.batch_size,
+      seedMode: preset.seed_mode as 'random' | 'fixed',
+      seed: preset.seed,
+    }
+
     setParamValues(mergedParamValues)
     setAppliedAssets(preset.applied_assets)
     setBatchSize(preset.batch_size)
@@ -969,7 +985,7 @@ export function useGeneratePageState() {
     const checkedPresetsRaw = localStorage.getItem(
       `prompt-surgeon-checked-presets-${selectedWorkflowId}`
     )
-    const checkedPresets = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : []
+    const checkedPresets: (string | number)[] | null = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
 
     const defaultParams = workflow ? getInitialParams(workflow) : {}
 
@@ -982,7 +998,7 @@ export function useGeneratePageState() {
       batchSize: p.batch_size || 1,
       seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
       seed: p.seed !== undefined ? p.seed : 42,
-      checked: checkedPresets.includes(p.id)
+      checked: checkedPresets === null ? true : checkedPresets.includes(p.id)
     }))
 
     const isFirstSync = !isInitialSyncRef.current
@@ -1034,6 +1050,18 @@ export function useGeneratePageState() {
             seedMode: activePresetData.seedMode,
             seed: activePresetData.seed,
           }
+          setParamValues(activePresetData.paramValues)
+          setAppliedAssets(activePresetData.appliedAssets)
+          setBatchSize(activePresetData.batchSize)
+          setSeedMode(activePresetData.seedMode)
+          setSeed(activePresetData.seed)
+          updateActiveSet({
+            paramValues: activePresetData.paramValues,
+            appliedAssets: activePresetData.appliedAssets,
+            batchSize: activePresetData.batchSize,
+            seedMode: activePresetData.seedMode,
+            seed: activePresetData.seed,
+          })
         }
       } else if (isInvalidActive || String(activeSetId) !== String(targetActiveId)) {
         setActiveSetId(targetActiveId)
@@ -1050,7 +1078,7 @@ export function useGeneratePageState() {
         handleCreatePreset('Set 1')
       }
     }
-  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId, openPresetIds, openPreset])
+  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId, openPresetIds, openPreset, setParamValues, setAppliedAssets, setBatchSize, setSeedMode, setSeed, updateActiveSet])
 
   // Autosave when paramValues, appliedAssets, batchSize, seedMode, or seed changes
   useEffect(() => {
@@ -1067,23 +1095,34 @@ export function useGeneratePageState() {
       seed,
     }
 
+    const lastSaved = lastSavedStateRef.current[activeSetId]
+    if (lastSaved && isStateEqual(lastSaved, currentState)) {
+      return
+    }
+
     const timer = setTimeout(() => {
-      const lastSaved = lastSavedStateRef.current[activeSetId]
-      if (lastSaved) {
-        if (!isStateEqual(lastSaved, currentState)) {
-          const hist = getHistory(activeSetId)
-          hist.past.push(lastSaved)
-          hist.future = [] // clear redo stack on new action
-          lastSavedStateRef.current[activeSetId] = currentState
-          saveHistory(activeSetId, hist)
-        }
-      } else {
-        lastSavedStateRef.current[activeSetId] = currentState
+      const currentLastSaved = lastSavedStateRef.current[activeSetId]
+      if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) {
+        return
       }
+
+      if (currentLastSaved) {
+        const hist = getHistory(activeSetId)
+        hist.past.push(currentLastSaved)
+        hist.future = [] // clear redo stack on new action
+        saveHistory(activeSetId, hist)
+      }
+      lastSavedStateRef.current[activeSetId] = currentState
 
       updatePresetMutation.mutate({
         id: activePreset.id,
         name: activePreset.name,
+        param_values: currentState.paramValues,
+        applied_assets: currentState.appliedAssets,
+        batch_size: currentState.batchSize,
+        seed_mode: currentState.seedMode,
+        seed: currentState.seed,
+        base_updated_at: activePreset.updated_at,
       })
     }, 1000)
 

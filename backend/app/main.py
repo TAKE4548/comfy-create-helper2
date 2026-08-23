@@ -268,6 +268,14 @@ def run_migrations():
             """))
             logger.info("Migrated: Created 'speech_tone_presets' table.")
 
+        # Add updated_at to workflow_presets if not exists
+        if "workflow_presets" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("workflow_presets")]
+            if "updated_at" not in columns:
+                conn.execute(sa.text("ALTER TABLE workflow_presets ADD COLUMN updated_at DATETIME"))
+                conn.execute(sa.text("UPDATE workflow_presets SET updated_at = created_at WHERE updated_at IS NULL"))
+                logger.info("Migrated: Added 'updated_at' column to 'workflow_presets' table.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

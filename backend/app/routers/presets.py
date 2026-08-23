@@ -1,6 +1,7 @@
 """Workflow presets router."""
 
 import json
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
@@ -23,6 +24,7 @@ def _preset_to_schema(preset: models.WorkflowPreset) -> schemas.WorkflowPresetRe
         seed_mode=preset.seed_mode,
         seed=preset.seed,
         created_at=preset.created_at,
+        updated_at=preset.updated_at or preset.created_at,
         sort_order=preset.sort_order,
     )
 
@@ -78,6 +80,15 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
+    if payload.base_updated_at is not None and preset.updated_at is not None:
+        db_updated_at = preset.updated_at.replace(tzinfo=None) if preset.updated_at.tzinfo else preset.updated_at
+        base_updated_at = payload.base_updated_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.base_updated_at.tzinfo else payload.base_updated_at
+        if db_updated_at > base_updated_at:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Preset was updated by another session. Please reload to get the latest changes."
+            )
+
     if payload.name is not None:
         preset.name = payload.name
     if payload.param_values is not None:
@@ -91,6 +102,7 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
     if payload.seed is not None:
         preset.seed = payload.seed
 
+    preset.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(preset)
     return _preset_to_schema(preset)

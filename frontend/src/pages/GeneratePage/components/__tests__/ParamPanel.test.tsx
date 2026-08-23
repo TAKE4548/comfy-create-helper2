@@ -28,7 +28,7 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     onToggleBypass: vi.fn(),
     onOpenBypassSettings: vi.fn(),
     paramSyncGroups: [
-      { id: 1, name: 'Sampler Sync', is_enabled: true, master_role: 'sampler_1', slave_roles: [] },
+      { id: 1, workflow_id: 1, name: 'Sampler Sync', is_enabled: true, master_role: 'sampler_1', slave_roles: [], created_at: '2026-08-01T00:00:00Z' },
     ],
     onToggleParamSync: vi.fn(),
     onOpenParamSyncSettings: vi.fn(),

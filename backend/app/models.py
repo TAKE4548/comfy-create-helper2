@@ -137,6 +137,7 @@ class WorkflowPreset(Base):
     seed_mode: Mapped[str] = mapped_column(String, nullable=False)
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="presets")

@@ -11,6 +11,7 @@ import {
   workflowPresetsApi
 } from '../../../../api/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { WorkflowPreset } from '../../../../api/types'
 import React from 'react'
 
 // Mock useGenerationStore
@@ -147,7 +148,7 @@ describe('useGeneratePageState', () => {
       { id: 60, name: 'Test TagSet', description: '', category_id: null, tags: ['tag1', 'tag2'], thumbnail_path: null, sort_order: 1, created_at: '' }
     ])
     vi.mocked(workflowPresetsApi.list).mockResolvedValue([
-      { id: 10, workflow_id: 1, name: 'Preset 1', param_values: { Sampler_Seed: '999' }, applied_assets: {}, batch_size: 1, seed_mode: 'fixed', seed: 999, sort_order: 1, created_at: '' }
+      { id: 10, workflow_id: 1, name: 'Preset 1', param_values: { Sampler_Seed: '999' }, applied_assets: {}, batch_size: 1, seed_mode: 'fixed', seed: 999, sort_order: 1, created_at: '', updated_at: '' }
     ])
   })
 
@@ -228,6 +229,7 @@ describe('useGeneratePageState', () => {
       seed: 42,
       sort_order: 1,
       created_at: '',
+      updated_at: '',
     })
 
     const wrapper = createWrapper()
@@ -343,6 +345,77 @@ describe('useGeneratePageState', () => {
 
     expect(fetchQueueMock).toHaveBeenCalled()
     expect(fetchHistoryMock).toHaveBeenCalled()
+  })
+
+  it('should maintain independent prompts when switching presets (REQ-163)', () => {
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    const preset1: WorkflowPreset = {
+      id: 10,
+      workflow_id: 1,
+      name: 'Preset 1',
+      param_values: { positive_prompt: 'cat' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: -1,
+      sort_order: 1,
+      created_at: '2026-08-23T00:00:00Z',
+      updated_at: '2026-08-23T00:00:00Z',
+    }
+
+    const preset2: WorkflowPreset = {
+      id: 20,
+      workflow_id: 1,
+      name: 'Preset 2',
+      param_values: { positive_prompt: 'dog' },
+      applied_assets: {},
+      batch_size: 2,
+      seed_mode: 'fixed',
+      seed: 42,
+      sort_order: 2,
+      created_at: '2026-08-23T00:00:00Z',
+      updated_at: '2026-08-23T00:00:00Z',
+    }
+
+    act(() => {
+      result.current.handleLoadPreset(preset2)
+    })
+
+    expect(mockStore.setActiveSetId).toHaveBeenCalledWith(20)
+    expect(mockStore.setParamValues).toHaveBeenCalledWith(expect.objectContaining({ positive_prompt: 'dog' }))
+    expect(mockStore.setBatchSize).toHaveBeenCalledWith(2)
+
+    act(() => {
+      result.current.handleLoadPreset(preset1)
+    })
+
+    expect(mockStore.setActiveSetId).toHaveBeenCalledWith(10)
+    expect(mockStore.setParamValues).toHaveBeenCalledWith(expect.objectContaining({ positive_prompt: 'cat' }))
+    expect(mockStore.setBatchSize).toHaveBeenCalledWith(1)
+  })
+
+  it('should handle OCC conflict (409) in updatePresetMutation (REQ-163)', async () => {
+    const error409 = new Error('API error 409: Preset was updated by another session')
+    vi.mocked(workflowPresetsApi.update).mockRejectedValueOnce(error409)
+
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    await act(async () => {
+      try {
+        await result.current.updatePresetMutation.mutateAsync({
+          id: 10,
+          name: 'Preset 1',
+          base_updated_at: '2026-08-23T00:00:00Z',
+        })
+      } catch {}
+    })
+
+    expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+      base_updated_at: '2026-08-23T00:00:00Z',
+    }))
   })
 })
 

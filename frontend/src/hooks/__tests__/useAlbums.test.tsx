@@ -1,10 +1,10 @@
-﻿import React from 'react'
+import React from 'react'
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAlbums } from '../useAlbums'
 import { albumsApi } from '../../api/client'
-import type { AlbumSummary } from '../../api/types'
+import type { Album } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
   albumsApi: {
@@ -16,22 +16,18 @@ vi.mock('../../api/client', () => ({
 describe('useAlbums', () => {
   let queryClient: QueryClient
 
-  const mockAlbums: AlbumSummary[] = [
+  const mockAlbums: Album[] = [
     {
       id: 1,
       name: 'Landscape Photos',
       created_at: '2026-08-01T00:00:00Z',
-      item_count: 5,
-      cover_image_path: null,
-      cover_thumbnail_path: null,
+      items: [],
     },
     {
       id: 2,
       name: 'Character Art',
       created_at: '2026-08-02T00:00:00Z',
-      item_count: 12,
-      cover_image_path: null,
-      cover_thumbnail_path: null,
+      items: [],
     },
   ]
 

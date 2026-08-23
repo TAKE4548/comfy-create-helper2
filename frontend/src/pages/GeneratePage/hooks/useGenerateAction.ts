@@ -207,7 +207,10 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
   const handleGenerateSets = async () => {
     if (!workflow) return
     const checkedSets = sets.filter((s) => s.checked)
-    if (checkedSets.length === 0) return
+    if (checkedSets.length === 0) {
+      setErrorToast?.({ message: '生成対象のセットが選択されていません', type: 'error' })
+      return
+    }
 
     // 中断用 AbortController の作成とストア登録
     const abortController = new AbortController()

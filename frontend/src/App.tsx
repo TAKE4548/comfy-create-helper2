@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { AppShell } from './components/layout/AppShell'
 import { GeneratePage } from './pages/GeneratePage'
 import { LoRAsPage } from './pages/LoRAsPage'
@@ -14,8 +16,14 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       staleTime: 30_000,
+      gcTime: 1000 * 60 * 10, // 10分
     },
   },
+})
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'prompt-surgeon-rq-cache',
 })
 
 function App() {
@@ -26,7 +34,20 @@ function App() {
   }, [initializeStore])
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        maxAge: 1000 * 60 * 10, // 10分でキャッシュ無効化
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) => {
+            const key = query.queryKey[0] as string
+            const excluded = ['comfy-object-info', 'snapshots']
+            return !excluded.includes(key)
+          },
+        },
+      }}
+    >
       <BrowserRouter>
         <Routes>
           <Route element={<AppShell />}>
@@ -38,7 +59,7 @@ function App() {
           </Route>
         </Routes>
       </BrowserRouter>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   )
 }
 

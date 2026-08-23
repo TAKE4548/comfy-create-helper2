@@ -27,12 +27,14 @@ class WorkflowPresetUpdate(BaseModel):
     batch_size: Optional[int] = None
     seed_mode: Optional[str] = None
     seed: Optional[int] = None
+    base_updated_at: Optional[datetime] = None
 
 
 class WorkflowPresetRead(WorkflowPresetBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+    updated_at: datetime
 
 
 class WorkflowPresetReorder(BaseModel):

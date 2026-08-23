@@ -4,7 +4,7 @@ import { X, Loader2, Save, Image as ImageIcon } from 'lucide-react'
 import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../api/client'
 import { useAlbums } from '../hooks/useAlbums'
 import { STALE_TIMES } from '../constants/staleTimes'
-import type { SnapshotSummary, BubbleCandidate, ServerFont, Album } from '../api/types'
+import type { SnapshotSummary, BubbleCandidate, ServerFont } from '../api/types'
 import type { SpeechBubble, BubbleStyleConfig } from '../types/speechBubble'
 import {
   DEFAULT_BUBBLE_BOUNDS,

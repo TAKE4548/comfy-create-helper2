@@ -7,7 +7,6 @@ import { useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
-import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { Workflow } from '../../../api/types'
 
 export interface WorkflowNode {
@@ -79,7 +78,7 @@ export function getInitialParams(workflow: Workflow): Record<string, string> {
 
 
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
-  const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets, sets, setSets } = useGenerationStore()
+  const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets, sets, setSets, activeSetId } = useGenerationStore()
   const qc = useQueryClient()
 
   // Initialize params when workflow loads
@@ -101,37 +100,15 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
       setSets(updatedSets)
     }
 
-    const currentParamValues = paramValues || {}
-    const isParamValuesMissingKeys = Object.keys(defaultParams).some((k) => !(k in currentParamValues))
-    const shouldMerge = hasNewKeys || isParamValuesMissingKeys
-
-    // ─── アクティブ paramValues の初期化/補完 ──────────────────
-    const savedStr = localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflow.id)
-    if (savedStr) {
-      try {
-        const savedParams = JSON.parse(savedStr)
-        if (shouldMerge) {
-          const merged = { ...defaultParams, ...savedParams, ...currentParamValues }
-          setParamValues(merged)
-          localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(merged))
-        } else {
-          setParamValues(savedParams)
-        }
-      } catch (e) {
-        console.error('Failed to parse workflow saved params:', e)
-        setParamValues(defaultParams)
-        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(defaultParams))
-      }
-    } else {
-      // localStorage 未保存の場合は初回初期化
-      const merged = { ...defaultParams, ...currentParamValues }
-      setParamValues(merged)
-      localStorage.setItem(LS_KEYS.PARAMS_PREFIX + workflow.id, JSON.stringify(merged))
+    const activeSet = currentSets.find((s) => String(s.id) === String(activeSetId)) || currentSets[0]
+    const baseParams = (paramValues && Object.keys(paramValues).length > 0) ? paramValues : (activeSet?.paramValues || {})
+    const isParamValuesMissingKeys = Object.keys(defaultParams).some((k) => !(k in baseParams))
+    if (isParamValuesMissingKeys || Object.keys(baseParams).length === 0) {
+      setParamValues({ ...defaultParams, ...baseParams })
     }
 
-    // Initialize applied assets (only if not customized in local storage yet)
-    const savedAssetsStr = localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${workflow.id}`)
-    if (!savedAssetsStr && workflow.default_applied_assets) {
+    // Initialize applied assets if empty and workflow has defaults
+    if (workflow.default_applied_assets && Object.keys(appliedAssets || {}).length === 0) {
       try {
         const defaultAssets = JSON.parse(workflow.default_applied_assets)
         setAppliedAssets(defaultAssets)
@@ -267,15 +244,12 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
       json_body: wfJson,
       default_applied_assets: assetsStr,
     })
-    localStorage.setItem(LS_KEYS.PARAMS_PREFIX + selectedWorkflowId, JSON.stringify(paramValues))
-    localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${selectedWorkflowId}`, assetsStr)
   }
 
   const handleResetDefaultParams = () => {
     if (!workflow || !selectedWorkflowId) return
     const init = getInitialParams(workflow)
     setParamValues(init)
-    localStorage.setItem(LS_KEYS.PARAMS_PREFIX + selectedWorkflowId, JSON.stringify(init))
 
     // Reset default applied assets
     let defaultAssets: Record<string, any> = {}

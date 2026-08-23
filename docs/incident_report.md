@@ -1,158 +1,94 @@
-# インシデントレポート: モバイル端末における生成進捗非表示・履歴同期漏れ・投入中断の不具合調査
+# インシデントレポート: デバイス間・セッション間におけるプリセットプロンプト混同・上書き不具合の調査報告書
 
-## 概要 (Overview)
-REQ-154でキュー投入・進捗管理・Abort制御の改修が行われた後、モバイル端末を中心とした利用環境において以下の3点の不具合・現象が報告された。
+## 1. 障害概要 (Overview)
+異なるデバイス間（PCとスマホなど）の切り替えやページリロード時に、直近に編集したプリセットのプロンプトが別のプリセットのプロンプトに勝手に置き換わってしまったり、最新の編集内容が正しく復元されない事象が報告された。
 
-1. **モバイル端末から投入するとプログレスバーが表示されない**
-   - 明示的にリロードすると表示されるが、現在の生成画像が終わって次のjobに移行すると、再度プログレスバーが非表示に戻る。
-2. **キュー投入後に端末を離れると、その間に生成された画像がリロードしても履歴（サムネイル一覧）に出てこない**
-   - ComfyUIのFEやPCなど別セッション（アクティブに保たれていた端末）では正常に表示・生成されている。
-3. **プログレスバーが表示されなくても生成自体は進んでいるが、生成枚数が指定数より少ない場合がある**
+本来の期待仕様：
+- セッションやデバイスを跨いでも、各プリセットで直近に編集したプロンプトがバックエンドDBに正しく永続化されていること。
+- リロード後や他デバイスで開いた際、あるいはタブをアクティブにした際に、各プリセット固有の最新プロンプトが確実に表示・復元されること。
 
-コードベースの静的解析およびロジックトレースを実施し、各事象の根本原因とメカニズムを特定した。
+本調査では、フロントエンド（Zustand Store / `useWorkflowParams` / `useGeneratePageState` / LocalStorage）およびバックエンド（`workflow_presets` API / DB）の状態同期ロジックを解析し、根本原因を特定した。
 
 ---
 
-## 再現手順・事象詳細 (Reproduction & Observed Symptoms)
+## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
-### 事象 1: モバイル端末でのプログレスバー非表示およびジョブ移行時の再非表示
+### 事象 1: デバイス切り替え時のプロンプト混同・上書き
 - **再現手順**:
-  1. モバイル端末（または `filterOwnSession: true` が有効な環境）からバッチ生成を実行する。
-  2. 生成中の画面を確認する。
-  3. 途中でページをリロードする。
-  4. 1枚目の生成が完了し、2枚目の生成（次ジョブ）に移行する瞬間を観察する。
+  1. 端末A（例: PC）で「Workflow 1」を選択し、「Set 1」のプロンプトを `A_prompt` に編集する（DBにオートセーブされる）。
+  2. 端末Aでタブを「Set 2」に切り替え、プロンプト `B_prompt` を編集する。
+  3. 端末B（例: スマホ）で同一の「Workflow 1」を開く（端末BのLocalStorageには以前のSet 1がアクティブとして記録されている）。
 - **観測結果**:
-  - 生成開始直後、プログレスバーが表示されず「Ready (0%)」の表示になる。
-  - ページをリロードすると、実行中ジョブの進捗バーが表示される。
-  - しかし、そのジョブが完了して次のジョブの生成が始まると、再度プログレスバーが消えて「Ready (0%)」に戻ってしまう。
+  - 端末Bで「Set 1」が開かれた際、本来の `A_prompt` ではなく、端末Aで直近に保存されたLocalStorage値や端末Bローカルの古い値が一時的にロードされる。
+  - さらにその直後（約1秒後）、オートセーブ機能が誤作動し、端末Bでアクティブな「Set 1」のDBレコードに対して混同されたプロンプトが上書き保存されてしまう。
+  - 結果として、バックエンドDB上の「Set 1」のプロンプトが「Set 2」の内容で恒久的に破壊される。
 
-### 事象 2: バックグラウンド移行中に完了した生成画像の履歴（サムネイル）反映漏れ
+### 事象 2: ページリロード時の他プリセットプロンプトの読み込み
 - **再現手順**:
-  1. 複数枚のバッチ生成を投入する。
-  2. 投入後すぐにモバイル端末の画面をスリープにするか、別アプリに切り替える。
-  3. ComfyUI側で全画像の生成が完了した後にアプリを再アクティブ化（またはリロード）する。
+  1. 同一ブラウザで「Set 1」と「Set 2」を交互に編集する。
+  2. 「Set 2」を編集した直後に「Set 1」にタブを切り替え、すぐにブラウザをリロードする。
 - **観測結果**:
-  - 自セッション表示モード（`filterOwnSession: true`）において、バックグラウンド中に生成完了した画像がサムネイル一覧・履歴に表示されない。
-  - バックグラウンドにならずアクティブのままであったPC側の画面やComfyUI標準UIで確認すると正常に全枚数生成されている。
-
-### 事象 3: キュー投入直後のバックグラウンド移行による生成枚数の不足
-- **再現手順**:
-  1. 多数のバッチ（例: 5枚以上）を一括投入する。
-  2. 投入ボタン押下直後（1〜2枚の投入完了時点）に端末をスリープまたはバックグラウンドにする。
-- **観測結果**:
-  - ComfyUI側で生成された画像の総数が、指定した枚数より少ない（途中で投入が打ち切られている）。
+  - リロード直後に「Set 1」が表示されるが、プロンプト欄に「Set 2」の内容が一瞬または継続して表示され、DBにもその内容がオートセーブされる。
 
 ---
 
-## 影響範囲 (Affected Area)
+## 3. 影響範囲・該当コード (Affected Area & Source Locations)
 
-### フロントエンド関連ファイル
-1. **`frontend/src/store/useGenerationStore.ts`**:
-   - `execution_start` WebSocketハンドラ: `activeClientId` を `null` に上書き初期化している。
-   - `queuePrompt` (`isBatchIntermediate: true` 時): `activeClientId` の更新がスキップされている。
-   - `reconcileState`: リロード時に `localStorage.CURRENT_PROMPT_ID`（単一ID）のみを復元対象としており、バックグラウンド中に完了した複数ジョブを `/history` から取得・補完していない。
-   - `batchImages` と `comfyHistoryImages` の分離: 自セッションフィルタ時に `batchImages`（リアルタイム受信分のみ）を参照する設計。
-2. **`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts`**:
-   - `isGeneratingHere`: `store.activeClientId === clientId` に厳密依存しており、`activeClientId` が `null` の場合に `false` と判定される。
-   - `displayImages`: `filterOwnSession` が `true` の場合に `batchImages` のみを表示し、ComfyUIの履歴データ（`comfyHistoryImages` / `/history`）と同期されない。
-3. **`frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`**:
-   - `handleGenerateSets`: クライアント側の逐次 `async for` ループ内で `await queuePrompt()` を実行しているため、モバイルOSによるJS実行サスペンド時に後続ジョブの投入が中断される。
-
----
-
-## 原因分類 (Root Cause Classification)
-
-- **総合分類**: **Type A (実装不備) 60% ＋ Type B (クライアント・サーバー状態同期・バックグラウンド耐性の設計不備) 40%**
-- **各項目の詳細原因**:
-
-| # | 報告事象 | 分類 | 該当コード / 根本原因 |
+| # | 対象ファイル | 該当行 / 関数 | 問題の詳細 |
 |---|---|---|---|
-| 1 | プログレスバーが表示されない / 次ジョブで消える | **Type A** (実装不備) | ① `useGenerationStore.ts` (L637-652): WebSocketの `execution_start` 受信時に `activeClientId: null` で上書きリセットしている。<br>② `useGenerationStore.ts` (L1018-1023): バッチ投入時（`isBatchIntermediate: true`）に `activeClientId` をセットしていない。<br>③ `useGeneratePageState.ts` (L818): `isGeneratingHere = store.isGenerating && (!store.filterOwnSession \|\| store.activeClientId === clientId)` の判定で、`activeClientId` が `null` のため常に `false` となりプログレスバーが非表示化される。<br>※リロード時は `reconcileState` が `/queue` の `client_id` を復元するため一時的に表示されるが、次ジョブの `execution_start` で再び `null` にリセットされる。 |
-| 2 | バックグラウンド中の生成画像が履歴に出ない | **Type A** + **Type B** | ① `useGeneratePageState.ts` (L356): `filterOwnSession ? batchImages : comfyHistoryImages` となっており、自セッションモード時は `batchImages` のみ表示される。<br>② `useGenerationStore.ts` (L681-725): `batchImages` はWebSocketの `executed` イベント受信時のみ追加されるため、スリープ等でWSが切断・停止していた間の画像が含まれない。<br>③ `useGenerationStore.ts` (L289-327): リロード時の `reconcileState` も単一の `currentPromptId` しか検証せず、自セッションの過去完了ジョブを `/history` から取得・マージする仕組みがない。 |
-| 3 | 端末を離れると生成枚数が少ない | **Type B** (仕様・構造) | `useGenerateAction.ts` (L247-301): バッチキュー投入がクライアント側の直列 `for` ループ（`await queuePrompt()`）で実行されているため、投入途中でモバイルOSによりブラウザがバックグラウンド休止／サスペンドされると、残りのジョブがComfyUIに送信されない。 |
+| 1 | `frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts` | L109-131 (`useEffect`)<br>L270, L278 | ワークフロー単位の単一キー `LS_KEYS.PARAMS_PREFIX + workflow.id` から無条件にプロンプトを復元し、プリセットごとの独立性を無視して `setParamValues` を呼んでいる。 |
+| 2 | `frontend/src/store/useGenerationStore.ts` | L257-260 (初期化)<br>L840-842 (`setSelectedWorkflowId`)<br>L885-892 (`setParamValues`)<br>L1297 (`initSets`) | プリセット単位ではなくワークフロー単位の `prompt-surgeon-params-wf-${workflowId}` および `prompt-surgeon-applied-assets_${workflowId}` を読み書きしている。 |
+| 3 | `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` | L510-522 (`updatePresetMutation`)<br>L1050-1085 (`useEffect` オートセーブ) | `paramValues` の変更時に1秒デバウンスでDB更新するが、`updatePresetMutation` が現在アクティブなプリセットIDに対してスコープ内の `paramValues` をそのままPUTするため、初期化時の汚染データや切り替え直前の値が誤ったプリセットに保存される。 |
+| 4 | `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` | L785-808 (`handleLoadPreset`)<br>L952-1047 (プリセット同期エフェクト) | プリセット切り替え時やバックエンドからの取得完了時、LocalStorageとバックエンドDB（SSoT）の優先度および同期順序の競合が発生している。 |
 
 ---
 
-## 調査詳細 (Deep Dive Analysis)
+## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 1. `execution_start` による `activeClientId` の消失と判定不整合
-`frontend/src/store/useGenerationStore.ts` (L637-652):
-```typescript
-case 'execution_start': {
-  const promptId = data.prompt_id as string
-  if (get().activeBatch) {
-    get().updateBatchJobStatus(promptId, 'generating')
-  }
-  set({
-    isGenerating: true,
-    progress: null,
-    currentPromptId: promptId,
-    activeClientId: null, // ← ここで null に初期化されてしまう
-    generationStartTime: Date.now(),
-    currentNode: null,
-    nodeProgress: null,
-  })
-  get().fetchQueue()
-  break
-}
-```
-`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` (L818):
-```typescript
-const isGeneratingHere = store.isGenerating && (!store.filterOwnSession || store.activeClientId === clientId)
-```
-- **メカニズム**:
-  - `filterOwnSession` が `true` の場合、`isGeneratingHere` は `store.activeClientId === clientId` を要求します。
-  - バッチ投入時（`handleGenerateSets`）、`isBatchIntermediate: true` により `activeClientId` は更新されず、さらにComfyUIから `execution_start` を受信した瞬間に `activeClientId: null` にリセットされます。
-  - この結果、`isGeneratingHere` が `false` となり、UI上は「Ready (0%)」として描画されます。
-  - ページをリロードすると `reconcileState` が `/queue` APIのレスポンスから `activeJob[3]?.client_id` を読み取って `activeClientId` に設定するため、一時的にプログレスバーが復活します。
-  - しかし現在のジョブが完了して次のジョブが始まると、再び `execution_start` が飛んできて `activeClientId: null` にリセットされ、プログレスバーが再度非表示になります。
+### 根本原因 1: プリセット単位ではなく「ワークフロー単位」の単一LocalStorageキーによるプロンプト汚染 (SSoT破壊)
+- `useWorkflowParams.ts` および `useGenerationStore.ts` では、パラメータ（プロンプト含む）を `prompt-surgeon-params-wf-${workflowId}` というキーでLocalStorageに保存している。
+- このキーは「ワークフロー単位」で1つしか存在しないため、「Set 1」「Set 2」など複数のプリセットが存在する場合、直近にアクティブだったプリセットのプロンプトが常に同じキーへ上書き保存される。
+- 結果として、LocalStorage内のプロンプト値は「最後に触ったプリセットの値」に一本化されてしまい、プリセットごとの独立性が失われている。
 
-### 2. 自セッション履歴（`batchImages`）とサーバー履歴（`/history`）の乖離
-`frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` (L356):
-```typescript
-const displayImages = store.filterOwnSession ? batchImages : comfyHistoryImages
-```
-- **メカニズム**:
-  - `filterOwnSession` が有効な場合、サムネイル一覧に表示されるのは `batchImages`（ローカルステート/LocalStorage保持）です。
-  - `batchImages` への追加は、WebSocketの `executed` イベントを受け取った時のみ行われます。
-  - モバイル端末をスリープさせたり画面をロックすると、OSがWebSocket通信やJavaScriptの実行を停止します。
-  - この間にComfyUI側で生成が完了した画像はWebSocket経由で受信できず、`batchImages` に追加されません。
-  - 復帰・リロード時に `fetchHistory()` は呼ばれるものの、これは `comfyHistoryImages` に格納されるだけであり、`filterOwnSession: true` では無視されます。また `reconcileState` も直前の1件（`currentPromptId`）しかチェックしません。
-  - 結果として、バックグラウンド中に生成された画像が自端末の履歴に一切表示されなくなります。
+### 根本原因 2: マウント時の LocalStorage 優先読み込みによるステート汚染
+- `useWorkflowParams.ts` (L109-130) の `useEffect` は、バックエンドDBのプリセット一覧が読み込まれる前に、上記単一キーのLocalStorageから `savedParams` を取得して `setParamValues(savedParams)` を実行する。
+- このため、現在アクティブなプリセットが「Set 1」であるにもかかわらず、「Set 2」で保存されたプロンプトが `paramValues` に注入される。
 
-### 3. クライアント直列投入ループによるバックグラウンド中断
-`frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` (L247-301):
-```typescript
-for (const setItem of checkedSets) {
-  for (let i = 0; i < setItem.batchSize; i++) {
-    // ...
-    promptId = await queuePrompt(wfJson, ...)
-    // ...
-  }
-}
-```
-- **メカニズム**:
-  - 5枚や10枚などの複数枚生成は、ComfyUIに「10枚生成」という1つの命令を送っているのではなく、フロントエンドが1枚ずつループを回して `POST /prompt` を直列に送信しています。
-  - ユーザーが投入ボタンを押してすぐにアプリを離れると、モバイルOS（iOS Safari / Android Chrome）が省電力のためにバックグラウンドのタイマーや非同期処理を数秒以内に凍結します。
-  - そのため、ループの途中で `POST /prompt` の送信が止まり、ComfyUIには最初の数枚分しか届きません。
-  - これが「枚数が少ないときがある」原因です。
+### 根本原因 3: オートセーブ機能による汚染ステートのDB破壊的書き込み
+- `useGeneratePageState.ts` (L1050-1085) は `paramValues` の変更を検知し、1秒後に `updatePresetMutation.mutate({ id: activePreset.id, name: activePreset.name })` を実行する。
+- `updatePresetMutation` (L510-522) は、現在の `paramValues` を `PUT /api/workflow-presets/{id}` に送信してDBを更新する。
+- 根本原因2によって `paramValues` に別プリセットのプロンプトが入った状態でオートセーブが発火すると、**「Set 1」のDBレコードに対して「Set 2」のプロンプトが上書き保存されてしまう**。
+- これにより、他端末で開いた際やリロードした際に「勝手に別プリセットのプロンプトになっている」「DBのデータ自体が書き換わってしまう」という致命的な障害が発生する。
 
 ---
 
-## 改善方針（技術的考察・次期設計への示唆）
+## 5. 原因分類 (Classification)
 
-1. **進捗表示・アクティブ判定の修正**:
-   - `execution_start` 時に `activeBatch` 内に当該 `promptId` が存在する場合、あるいは自セッションで投入したジョブである場合は `activeClientId` を `clientId` に維持または自セッション判定を正しく行う。
-   - `isGeneratingHere` の判定条件において、`activeBatch` に実行中ジョブが存在するかどうかも加味する。
-2. **履歴同期の堅牢化 (Reconciliation)**:
-   - `filterOwnSession: true` の場合でも、ComfyUIの `/history` から `item.prompt[3].client_id === clientId` に該当する画像を抽出して `displayImages` または `batchImages` に自動マージ・同期する。
-   - アプリ復帰時（`visibilitychange` イベント等）およびリロード時に、未取得の自セッション履歴を自動で完全同期する。
-3. **バッチキュー投入の高速化・耐サスペンド化**:
-   - 投入ループにおける不要な待ち時間を排除し、極力素早く全ジョブをComfyUIへ一括投入（または並列/連続投入）してサーバー側キューに登録しきる。
+<diagnostic_check>
+- Root_Cause_Isolated: Yes
+- Classification: Type_A: Implementation Bug
+- Scope_Restriction: Read-only phase. Code modification or fix proposals are strictly PROHIBITED during this turn.
+- Route: Direct to /dev-design for Type_A
+</diagnostic_check>
+
+* **分類**: **Type A (実装不備・状態管理および永続化ロジックの不整合)**
+  * バックエンドDB（`workflow_presets`）を真のSSoT（Single Source of Truth）として扱い、LocalStorageへの保存キーをプリセット単位に分離（または不要なLocalStorageプロンプト同期を廃止してDB同期を主軸化）し、オートセーブ時の競合を防ぐ実装修正が必要です。
 
 ---
 
-## 次のステップ提案 (Next Action)
+## 6. 改善方針（参考）
 
-本インシデントは **Type A (実装不備) ＋ Type B (モバイル・バックグラウンド耐性設計)** の複合要因です。
-調査結果をご確認の上、本件の修正設計およびタスク作成を進めるため、`/dev-design` へ移行することを提案します。
+1. **SSoTの明確化とLocalStorage依存の排除/分離**:
+   - プロンプトおよびパラメータのマスターデータは、バックエンドDBの `workflow_presets`（`param_values`, `applied_assets`, `batch_size`, `seed` 等）を絶対的なSSoTとする。
+   - ワークフロー単位の単一キー `LS_KEYS.PARAMS_PREFIX` によるプロンプト読み込みを廃止し、プリセット単位（`preset_id` 基準）で状態を管理・同期する。
+2. **初期化シーケンスの適正化**:
+   - ページ初期化時およびワークフロー切り替え時は、バックエンドから取得したアクティブプリセットのデータを優先して `paramValues` にセットし、LocalStorageの不整合データによる上書きを防止する。
+3. **オートセーブの安全性向上**:
+   - プリセット切り替え時や初期同期中の未確定ステートでオートセーブが誤発火しないようガードを追加し、現在編集中のプリセットIDと保存先ID・データが完全に一致している場合のみDB更新を行う。
+
+---
+
+## 7. 次のステップ提案 (Next Action)
+
+根本原因の特定および分類が完了しました。
+修正設計（状態遷移図、LocalStorageキーの見直し、オートセーブガードの実装、テスト計画）を行うため、**`/dev-design` ワークフロー** への移行を推奨します。

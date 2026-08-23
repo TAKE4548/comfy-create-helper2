@@ -6,6 +6,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import { llmPromptsApi, mappingMastersApi, workflowsApi, workflowPresetsApi, snapshotsApi, paramTypeMastersApi, speechTonePresetsApi } from '../api/client'
 import type { LlmPrompt, MappingMaster, WorkflowSummary, WorkflowPreset, ParamTypeMaster, ParamTypeMasterCreate, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate } from '../api/types'
 import { useConfig } from '../hooks/useConfig'
+import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import { STALE_TIMES } from '../constants/staleTimes'
 
 import {

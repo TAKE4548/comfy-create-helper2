@@ -237,9 +237,7 @@ describe('useWorkflowParams hook - remapping backfill', () => {
     });
   });
 
-  it('should merge missing keys into localStorage saved params if new roles exist', () => {
-    localStorage.setItem(LS_KEYS.PARAMS_PREFIX + '1', JSON.stringify({ Text_Prompt: 'saved prompt' }));
-
+  it('should merge missing keys into active set params if new roles exist', () => {
     const mockWorkflow: Workflow = {
       id: 1,
       name: 'Test Workflow',
@@ -255,6 +253,7 @@ describe('useWorkflowParams hook - remapping backfill', () => {
     };
 
     useGenerationStore.setState({
+      activeSetId: 'set-1',
       sets: [
         {
           id: 'set-1',
@@ -277,11 +276,8 @@ describe('useWorkflowParams hook - remapping backfill', () => {
       Text_Prompt: 'saved prompt',
     });
 
-    const savedInLS = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + '1') || '{}');
-    expect(savedInLS).toEqual({
-      Checkpoint_Name: 'default.safetensors',
-      Text_Prompt: 'saved prompt',
-    });
+    // Single LocalStorage key is no longer written
+    expect(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + '1')).toBeNull();
   });
 });
 

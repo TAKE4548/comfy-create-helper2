@@ -1,13 +1,13 @@
-﻿import { useMemo } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { albumsApi } from '../api/client'
 import { STALE_TIMES } from '../constants/staleTimes'
-import type { AlbumSummary } from '../api/types'
+import type { Album } from '../api/types'
 
 export function useAlbums(enabled: boolean = true) {
-  const query = useQuery<AlbumSummary[]>({
+  const query = useQuery<Album[]>({
     queryKey: ['albums'],
-    queryFn: () => albumsApi.list() as Promise<AlbumSummary[]>,
+    queryFn: () => albumsApi.list(),
     staleTime: STALE_TIMES.ALBUMS,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,

@@ -871,7 +871,7 @@ export const DesktopLayout = ({
 
       {/* Action Bar */}
       <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3 flex items-center gap-3">
-        <button id="generate-btn" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected}
+        <button id="generate-btn" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
           className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">
           <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
         </button>

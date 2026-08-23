@@ -11,7 +11,7 @@
  */
 
 import { create } from 'zustand'
-import { configApi, bypassProfilesApi, paramSyncGroupsApi } from '../api/client'
+import { configApi, bypassProfilesApi, paramSyncGroupsApi, comfyApi } from '../api/client'
 import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../utils/localStorageKeys'
@@ -253,14 +253,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       initialActiveSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + storedWorkflowId)
     } catch {}
 
-    try {
-      storedParams = JSON.parse(
-        localStorage.getItem(LS_KEYS.PARAMS_PREFIX + storedWorkflowId) || '{}'
-      )
-    } catch {}
-    try {
-      storedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${storedWorkflowId}`) || '{}')
-    } catch {}
     storedBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
     storedSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
     storedSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
@@ -604,6 +596,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             switch (type) {
               case 'status':
                 get().fetchQueue()
+                get().fetchHistory()
                 break
 
               case 'progress': {
@@ -836,12 +829,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           activeSetId = localStorage.getItem(LS_KEYS.ACTIVE_SET_PREFIX + id)
         } catch {}
 
-        let params: Record<string, string> = {}
-        try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + id) || '{}') } catch {}
-        
-        let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
-        try { loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${id}`) || '{}') } catch {}
-        
         const defaultBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
         const defaultSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
         const defaultSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
@@ -858,8 +845,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           sets: [],
           activeSetId,
           openPresetIds,
-          paramValues: params,
-          appliedAssets: loadedAppliedAssets,
+          paramValues: {},
+          appliedAssets: {},
           batchSize: defaultBatchSize,
           seedMode: defaultSeedMode,
           seed: defaultSeed
@@ -883,11 +870,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     setParamValues: (values) => {
       set({ paramValues: values })
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(values))
-        get().updateActiveSet({ paramValues: values })
-      }
+      get().updateActiveSet({ paramValues: values })
     },
 
     addAppliedAsset: (role, asset) => {
@@ -904,13 +887,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         [role]: addAssetToPrompt(currentParams[role] || '', newAsset.tags, newAsset.loraPromptString),
       }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
-        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
-        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
-      }
+      get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
     },
 
     removeAppliedAsset: (role, id) => {
@@ -927,13 +904,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         }
       }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
-        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
-        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
-      }
+      get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
     },
 
     toggleAppliedAsset: (role, id) => {
@@ -949,22 +920,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         : removeAssetFromPrompt(currentPrompt, asset.tags, asset.loraPromptString)
       const updatedParams = { ...get().paramValues, [role]: updatedPrompt }
       set({ appliedAssets: updated, paramValues: updatedParams })
-      
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(updated))
-        localStorage.setItem(LS_KEYS.PARAMS_PREFIX + activeWfId, JSON.stringify(updatedParams))
-        get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
-      }
+      get().updateActiveSet({ appliedAssets: updated, paramValues: updatedParams })
     },
 
     setAppliedAssets: (assets) => {
       set({ appliedAssets: assets })
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId !== null) {
-        localStorage.setItem(`${LS_KEYS.APPLIED_ASSETS}_${activeWfId}`, JSON.stringify(assets))
-        get().updateActiveSet({ appliedAssets: assets })
-      }
+      get().updateActiveSet({ appliedAssets: assets })
     },
 
     setBatchSize: (size) => {
@@ -993,31 +954,18 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     queuePrompt: async (workflow, metadata, options) => {
-      if (!comfyUrl) return null
-      const activeUrl = resolveComfyUrl(comfyUrl)
       try {
-        const res = await fetch(`${activeUrl}/prompt`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: workflow, client_id: get().clientId }),
-          signal: options?.signal,
+        const data = await comfyApi.queuePrompt({
+          prompt: workflow,
+          client_id: get().clientId
         })
-        if (!res.ok) {
-          let errorMsg = `ComfyUI returned ${res.status}`;
-          try {
-            const errData = await res.json();
-            if (errData && errData.error) {
-              if (typeof errData.error === 'object') {
-                errorMsg = errData.error.message || errData.error.details || JSON.stringify(errData.error);
-              } else {
-                errorMsg = String(errData.error);
-              }
-            }
-          } catch {}
-          get().setErrorToast({ message: errorMsg, type: 'error' });
-          throw new Error(errorMsg);
+        if (data.error) {
+          const errorMsg = typeof data.error === 'object'
+            ? (data.error.message || data.error.details || JSON.stringify(data.error))
+            : String(data.error)
+          get().setErrorToast({ message: errorMsg, type: 'error' })
+          throw new Error(errorMsg)
         }
-        const data = await res.json()
         const promptId = data.prompt_id ?? null
         if (options?.isBatchIntermediate) {
           set({
@@ -1089,12 +1037,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     clearPreview: () => set({ previewImage: null, progress: null }),
 
     fetchHistory: async () => {
-      if (!comfyUrl) return
       const resolvedUrl = resolveComfyUrl(comfyUrl)
       try {
-        const res = await fetch(`${resolvedUrl}/history`)
-        if (!res.ok) return
-        const data = await res.json()
+        const data = await comfyApi.getHistory()
         const allImages: string[] = []
         const ownImages: string[] = []
         const clientId = get().clientId
@@ -1125,8 +1070,9 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         })
 
         set((state) => {
-          // 自セッション履歴のマージ (既存と結合して重複排除、最大50件)
-          const mergedBatchImages = Array.from(new Set([...state.batchImages, ...ownImages])).slice(0, 50)
+          // filterOwnSession に応じてマージ対象を選択 (OFF時は全セッション、ON時は自セッション)
+          const targetImages = state.filterOwnSession ? ownImages : allImages
+          const mergedBatchImages = Array.from(new Set([...state.batchImages, ...targetImages])).slice(0, 50)
           localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
           const nextSelected = state.selectedImg || (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
           if (nextSelected && !state.selectedImg) {
@@ -1145,40 +1091,37 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     fetchQueue: async () => {
-      if (!comfyUrl) return
-      const resolvedUrl = resolveComfyUrl(comfyUrl)
       try {
-        const res = await fetch(`${resolvedUrl}/queue`)
-        if (res.ok) {
-          const data = (await res.json()) as ComfyQueueResponse
-          set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
+        const data = await comfyApi.getQueue()
+        if (!data) return
 
-          const running = data.queue_running || []
-          if (running.length > 0) {
-            const activeJobClientId = running[0][3]?.client_id || null
-            if (activeJobClientId) {
-              set({ activeClientId: activeJobClientId })
-            }
+        set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
+
+        const running = data.queue_running || []
+        if (running.length > 0) {
+          const activeJobClientId = running[0][3]?.client_id || null
+          if (activeJobClientId) {
+            set({ activeClientId: activeJobClientId })
           }
+        }
 
-          const activeBatch = get().activeBatch
-          if (activeBatch) {
-            const activeQueueIds = new Set([
-              ...(data.queue_running || []).map((j: any) => j[1]),
-              ...(data.queue_pending || []).map((j: any) => j[1])
-            ])
-            const activeUnfinishedJobs = activeBatch.filter(
-              (job) => job.status === 'pending' || job.status === 'generating'
+        const activeBatch = get().activeBatch
+        if (activeBatch) {
+          const activeQueueIds = new Set([
+            ...(data.queue_running || []).map((j: any) => j[1]),
+            ...(data.queue_pending || []).map((j: any) => j[1])
+          ])
+          const activeUnfinishedJobs = activeBatch.filter(
+            (job) => job.status === 'pending' || job.status === 'generating'
+          )
+          if (activeUnfinishedJobs.length > 0) {
+            if (get().isBatchSubmitting) return
+
+            const anyUnfinishedInQueue = activeUnfinishedJobs.some(
+              (job) => activeQueueIds.has(job.promptId)
             )
-            if (activeUnfinishedJobs.length > 0) {
-              if (get().isBatchSubmitting) return
-
-              const anyUnfinishedInQueue = activeUnfinishedJobs.some(
-                (job) => activeQueueIds.has(job.promptId)
-              )
-              if (!anyUnfinishedInQueue) {
-                set({ activeBatch: null, isGenerating: false })
-              }
+            if (!anyUnfinishedInQueue) {
+              set({ activeBatch: null, isGenerating: false })
             }
           }
         }
@@ -1200,8 +1143,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     cancelJob: async (promptId: string): Promise<void> => {
       get().abortSubmission();
-      if (!comfyUrl) return
-      const activeUrl = resolveComfyUrl(comfyUrl)
       try {
         const isCurrentRunning = get().currentPromptId === promptId
         const isInQueueRunning = get().queueRunning.some((job) => job[1] === promptId)
@@ -1209,22 +1150,14 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         
         // 1. 実行中の場合は割り込みを投げる
         if (isRunning) {
-          await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
+          await comfyApi.interrupt()
         } else {
           // 2. 待機中の場合はキューから削除する
-          await fetch(`${activeUrl}/queue`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ delete: [promptId] } as ComfyQueueDeletePayload),
-          })
+          await comfyApi.deleteQueue({ delete: [promptId] })
         }
 
         // 3. 履歴に残らないよう削除を投げる (AC-5)
-        await fetch(`${activeUrl}/history`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ delete: [promptId] } as ComfyHistoryDeletePayload),
-        })
+        await comfyApi.deleteHistory({ delete: [promptId] })
 
         // 4. 自セッションのバッチジョブ/実行中ジョブのステート更新
         const activeBatch = get().activeBatch
@@ -1284,41 +1217,20 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     cancelAllJobs: async (): Promise<void> => {
       get().abortSubmission();
-      if (!comfyUrl) return
-      const activeUrl = resolveComfyUrl(comfyUrl)
       try {
-        const filterJob = (job: any) => !get().filterOwnSession || job[3]?.client_id === get().clientId
         const runningIds = get().queueRunning.map((j) => j[1])
-        const pendingIds = get().queuePending.filter(filterJob).map((j) => j[1])
+        const pendingIds = get().queuePending.map((j) => j[1])
         const allIds = [...runningIds, ...pendingIds]
 
-        // 1. 待機キューのクリア (interruptより先に実行)
-        if (get().filterOwnSession) {
-          if (pendingIds.length > 0) {
-            await fetch(`${activeUrl}/queue`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ delete: pendingIds } as ComfyQueueDeletePayload),
-            })
-          }
-        } else {
-          await fetch(`${activeUrl}/queue`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clear: true } as ComfyQueueClearPayload),
-          })
-        }
+        // 1. 待機キューの全クリア (interruptより先に実行し、後続ジョブの自動起動を即座に防止)
+        await comfyApi.deleteQueue({ clear: true })
 
         // 2. 中断 (割り込み)
-        await fetch(`${activeUrl}/interrupt`, { method: 'POST' })
+        await comfyApi.interrupt()
 
         // 3. 履歴からの削除
         if (allIds.length > 0) {
-          await fetch(`${activeUrl}/history`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ delete: allIds } as ComfyHistoryDeletePayload),
-          })
+          await comfyApi.deleteHistory({ delete: allIds })
         }
 
         // 4. ステートリセット
@@ -1341,12 +1253,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     initSets: (workflowId) => {
-      let params: Record<string, string> = {}
-      try { params = JSON.parse(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + workflowId) || '{}') } catch {}
-      
-      let loadedAppliedAssets: Record<string, AppliedAsset[]> = {}
-      try { loadedAppliedAssets = JSON.parse(localStorage.getItem(`${LS_KEYS.APPLIED_ASSETS}_${workflowId}`) || '{}') } catch {}
-      
       const defaultBatchSize = localStorage.getItem(LS_KEYS.BATCH_SIZE) ? Number(localStorage.getItem(LS_KEYS.BATCH_SIZE)) : 1
       const defaultSeedMode = (localStorage.getItem(LS_KEYS.SEED_MODE) as 'random' | 'fixed') || 'random'
       const defaultSeed = localStorage.getItem(LS_KEYS.SEED) ? Number(localStorage.getItem(LS_KEYS.SEED)) : 42
@@ -1354,8 +1260,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const initialSet: GenerationSet = {
         id: 'set-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
         name: 'Set 1',
-        paramValues: params,
-        appliedAssets: loadedAppliedAssets,
+        paramValues: {},
+        appliedAssets: {},
         batchSize: defaultBatchSize,
         seedMode: defaultSeedMode,
         seed: defaultSeed,
@@ -1381,8 +1287,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         sets,
         activeSetId,
         openPresetIds,
-        paramValues: params,
-        appliedAssets: loadedAppliedAssets,
+        paramValues: {},
+        appliedAssets: {},
         batchSize: defaultBatchSize,
         seedMode: defaultSeedMode,
         seed: defaultSeed

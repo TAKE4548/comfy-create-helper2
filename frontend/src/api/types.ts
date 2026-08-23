@@ -227,6 +227,11 @@ export interface AlbumReorder {
   ordered_ids: number[]
 }
 
+// ─── Config ─────────────────────────────────────────────────────
+export interface AppConfig {
+  comfy_url: string
+}
+
 // ─── Category ───────────────────────────────────────────────────
 
 export interface Category {
@@ -372,6 +377,7 @@ export interface WorkflowPreset {
   seed: number
   sort_order: number
   created_at: string
+  updated_at: string
 }
 
 export interface WorkflowPresetCreate {
@@ -393,6 +399,7 @@ export interface WorkflowPresetUpdate {
   seed_mode?: string
   seed?: number
   sort_order?: number
+  base_updated_at?: string
 }
 
 export interface WorkflowCopyRequest {

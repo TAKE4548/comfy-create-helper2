@@ -193,4 +193,63 @@ describe('GeneratePage Component Regression Tests', () => {
       expect(container.querySelector('#popover-rescan-btn')).toBeInTheDocument();
     });
   });
+
+  it('REQ-161: Generate Batch button is disabled when workflow is not loaded (Desktop)', async () => {
+    const { workflowsApi } = await import('../../api/client');
+    // Delay workflow get resolution
+    let resolveWorkflow: (val: any) => void;
+    (workflowsApi.get as any).mockImplementationOnce(() => new Promise((res) => {
+      resolveWorkflow = res;
+    }));
+
+    const { container } = renderPage();
+    const btn = container.querySelector('#generate-btn') as HTMLButtonElement;
+    expect(btn).toBeInTheDocument();
+    expect(btn.disabled).toBe(true);
+
+    // After workflow loads, button becomes enabled
+    await act(async () => {
+      resolveWorkflow!({
+        id: 1,
+        name: 'Standard Workflow',
+        json_body: { '3': { inputs: { seed: 123 } } },
+        mappings: [],
+      });
+    });
+
+    await waitFor(() => {
+      expect(btn.disabled).toBe(false);
+    });
+  });
+
+  it('REQ-161: Generate Batch button is disabled when workflow is not loaded (Mobile)', async () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 500 });
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    const { workflowsApi } = await import('../../api/client');
+    let resolveWorkflow: (val: any) => void;
+    (workflowsApi.get as any).mockImplementationOnce(() => new Promise((res) => {
+      resolveWorkflow = res;
+    }));
+
+    const { container } = renderPage();
+    const mobileBtn = container.querySelector('#generate-btn-mobile') as HTMLButtonElement;
+    expect(mobileBtn).toBeInTheDocument();
+    expect(mobileBtn.disabled).toBe(true);
+
+    await act(async () => {
+      resolveWorkflow!({
+        id: 1,
+        name: 'Standard Workflow',
+        json_body: { '3': { inputs: { seed: 123 } } },
+        mappings: [],
+      });
+    });
+
+    await waitFor(() => {
+      expect(mobileBtn.disabled).toBe(false);
+    });
+  });
 });
