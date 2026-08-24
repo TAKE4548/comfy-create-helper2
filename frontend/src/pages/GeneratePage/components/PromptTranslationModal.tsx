@@ -111,7 +111,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
               </label>
               <button
                 type="button"
-                onClick={onTranslate}
+                onClick={() => onTranslate()}
                 disabled={isTranslating || !sourceText.trim()}
                 className="flex items-center gap-1.5 px-3 py-1 bg-[#7C6FDD] hover:bg-[#7C6FDD]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded shadow-sm transition-all"
               >
@@ -193,7 +193,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
         {meta && (
           <div className="px-4 py-2 bg-surface-2 border-t border-[rgba(255,255,255,0.06)] text-[11px] text-zinc-400 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-zinc-300">{meta.provider || 'google_free'}</span>
+              <span className="font-mono text-zinc-300">{meta.provider || 'google_cloud'}</span>
               <span>•</span>
               <span>
                 全 {meta.total_chunks} チャンク (キャッシュ: {meta.cached_chunks} / API要求:{' '}

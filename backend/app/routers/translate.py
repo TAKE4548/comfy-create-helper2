@@ -32,7 +32,7 @@ class PromptTranslateResponse(BaseModel):
 
 
 class TranslateTestRequest(BaseModel):
-    provider: Literal["google_free", "google_cloud", "deepl", "llm"]
+    provider: Literal["google_cloud", "deepl", "llm"]
     api_key: Optional[str] = None
     api_url: Optional[str] = None
 

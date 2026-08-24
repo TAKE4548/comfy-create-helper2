@@ -95,6 +95,9 @@ export const DEFAULT_MANGA_EFFECTS: MangaTextEffectConfig = {
 export interface BubbleTail {
   x: number // 元画像座標系での尻尾先端X
   y: number // 元画像座標系での尻尾先端Y
+  baseAngleOffset?: number // 本体接点中心角度オフセット (rad, default: 0)
+  baseSpreadRatio?: number // 接点幅倍率 (0.2 ~ 3.0, default: 1.0)
+  isFineTuning?: boolean // 微調整モード有効フラグ (default: false)
 }
 
 export interface BubbleStyleConfig {

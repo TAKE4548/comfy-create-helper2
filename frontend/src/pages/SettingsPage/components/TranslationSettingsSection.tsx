@@ -35,8 +35,8 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
     queryFn: translateApi.getStats,
   })
 
-  const [provider, setProvider] = useState<'google_free' | 'google_cloud' | 'deepl' | 'llm'>(
-    'google_free'
+  const [provider, setProvider] = useState<'google_cloud' | 'deepl' | 'llm'>(
+    'google_cloud'
   )
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState('')
@@ -52,7 +52,11 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
     if (prompts) {
       const pRecord = prompts.find((p) => p.key === 'translation_provider')
       if (pRecord?.content) {
-        setProvider(pRecord.content as any)
+        if (pRecord.content === 'google_free') {
+          setProvider('google_cloud')
+        } else {
+          setProvider(pRecord.content as any)
+        }
       }
       const kRecord = prompts.find((p) => p.key === 'translation_api_key')
       if (kRecord?.content) {
@@ -155,10 +159,10 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                 <label className="block text-xs font-medium text-zinc-300">
                   翻訳プロバイダー <span className="text-[#7C6FDD]">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <label
                     className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all ${
-                      provider === 'google_free'
+                      provider === 'google_cloud'
                         ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-zinc-100'
                         : 'border-[rgba(255,255,255,0.06)] bg-surface-2/40 text-zinc-400 hover:border-zinc-700'
                     }`}
@@ -166,20 +170,17 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                     <input
                       type="radio"
                       name="provider"
-                      value="google_free"
-                      checked={provider === 'google_free'}
-                      onChange={() => setProvider('google_free')}
+                      value="google_cloud"
+                      checked={provider === 'google_cloud'}
+                      onChange={() => setProvider('google_cloud')}
                       className="mt-0.5"
                     />
                     <div>
                       <div className="text-xs font-semibold text-zinc-200">
-                        Google 翻訳 (無料 / APIキー不要)
-                        <span className="ml-1.5 px-1.5 py-0.2 text-[10px] bg-accent-green/20 text-accent-green rounded">
-                          推奨
-                        </span>
+                        Google Cloud Translation API
                       </div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
-                        設定不要ですぐに利用可能。高速かつチャンク単位でキャッシュ。
+                        GCPの公式Translation API v2キーを使用。
                       </div>
                     </div>
                   </label>
@@ -203,31 +204,6 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       <div className="text-xs font-semibold text-zinc-200">DeepL API</div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
                         高精度な自然言語翻訳。DeepL API Free または Pro キーが必要。
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all ${
-                      provider === 'google_cloud'
-                        ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-zinc-100'
-                        : 'border-[rgba(255,255,255,0.06)] bg-surface-2/40 text-zinc-400 hover:border-zinc-700'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="provider"
-                      value="google_cloud"
-                      checked={provider === 'google_cloud'}
-                      onChange={() => setProvider('google_cloud')}
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <div className="text-xs font-semibold text-zinc-200">
-                        Google Cloud Translation API
-                      </div>
-                      <div className="text-[11px] text-zinc-500 mt-0.5">
-                        GCPの公式Translation API v2キーを使用。
                       </div>
                     </div>
                   </label>

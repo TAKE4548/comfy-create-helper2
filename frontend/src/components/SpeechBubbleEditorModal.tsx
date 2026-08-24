@@ -12,7 +12,7 @@ import {
   loadLastUsedBubbleStyle,
   saveLastUsedBubbleStyle,
 } from '../types/speechBubble'
-import { drawSpeechBubble } from '../utils/speechBubbleRenderer'
+import { drawSpeechBubble, getTailBasePosition } from '../utils/speechBubbleRenderer'
 import { SpeechBubbleControls } from './SpeechBubbleControls'
 import { BaseImageSelectModal, type BaseImageOption } from './BaseImageSelectModal'
 import { LS_KEYS } from '../utils/localStorageKeys'
@@ -91,7 +91,7 @@ export function SpeechBubbleEditorModal({
   // Canvas interaction state
   const [draggingState, setDraggingState] = useState<{
     bubbleId: string
-    type: 'bubble' | 'tail' | 'resize' | 'rotate'
+    type: 'bubble' | 'tail' | 'tail-base' | 'resize' | 'rotate'
     handle?: 'nw' | 'ne' | 'se' | 'sw'
     startX: number
     startY: number
@@ -177,8 +177,8 @@ export function SpeechBubbleEditorModal({
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       setImageObj(img)
-      const maxW = typeof window !== 'undefined' ? Math.min(500, window.innerWidth - 48) : 500
-      const maxH = 500
+      const maxW = typeof window !== 'undefined' ? Math.min(900, Math.floor(window.innerWidth * 0.58)) : 600
+      const maxH = typeof window !== 'undefined' ? Math.min(720, Math.floor(window.innerHeight * 0.72)) : 600
       let w = img.naturalWidth
       let h = img.naturalHeight
       if (w > maxW || h > maxH) {
@@ -560,6 +560,21 @@ function getLocalBubblePoint(
         }
       }
 
+      // Check tail base handle if fine tuning
+      if (activeBubble.tail && activeBubble.tail.isFineTuning) {
+        const basePos = getTailBasePosition(activeBubble, scaleX, scaleY)
+        if (basePos && Math.hypot(localPt.x - basePos.x, localPt.y - basePos.y) <= 12) {
+          setDraggingState({
+            type: 'tail-base',
+            bubbleId: activeBubble.id,
+            startX: x,
+            startY: y,
+            initialBubble: { ...activeBubble },
+          })
+          return
+        }
+      }
+
       // Check tail handle of activeBubble
       if (activeBubble.tail) {
         const tx = activeBubble.tail.x * scaleX
@@ -652,7 +667,31 @@ function getLocalBubblePoint(
         const tx = Math.round(x / scaleX)
         const ty = Math.round(y / scaleY)
         setBubbles((prev) =>
-          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, tail: { x: tx, y: ty } } : b))
+          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, tail: { ...b.tail, x: tx, y: ty } } : b))
+        )
+      } else if (draggingState.type === 'tail-base') {
+        const localPt = getLocalBubblePoint(x, y, initB, scaleX, scaleY)
+        const cx = (initB.x + initB.w / 2) * scaleX
+        const cy = (initB.y + initB.h / 2) * scaleY
+        const tx = (initB.tail?.x ?? initB.x) * scaleX
+        const ty = (initB.tail?.y ?? initB.y) * scaleY
+        const currentAngle = Math.atan2(localPt.y - cy, localPt.x - cx)
+        const defaultAngle = Math.atan2(ty - cy, tx - cx)
+        let offset = currentAngle - defaultAngle
+        while (offset > Math.PI) offset -= 2 * Math.PI
+        while (offset < -Math.PI) offset += 2 * Math.PI
+
+        setBubbles((prev) =>
+          prev.map((b) => {
+            if (b.id !== draggingState.bubbleId || !b.tail) return b
+            return {
+              ...b,
+              tail: {
+                ...b.tail,
+                baseAngleOffset: Math.round(offset * 1000) / 1000,
+              },
+            }
+          })
         )
       } else if (draggingState.type === 'resize' && draggingState.handle) {
         let newX = initB.x
@@ -734,6 +773,16 @@ function getLocalBubblePoint(
         return
       } else if (Math.hypot(localPt.x - (bx + bw), localPt.y - by) <= hs || Math.hypot(localPt.x - bx, localPt.y - (by + bh)) <= hs) {
         setCursorStyle('nesw-resize')
+        return
+      } else if (
+        activeBubble.tail &&
+        activeBubble.tail.isFineTuning &&
+        (() => {
+          const basePos = getTailBasePosition(activeBubble, scaleX, scaleY)
+          return basePos && Math.hypot(localPt.x - basePos.x, localPt.y - basePos.y) <= 12
+        })()
+      ) {
+        setCursorStyle('pointer')
         return
       } else if (activeBubble.tail && Math.hypot(localPt.x - activeBubble.tail.x * scaleX, localPt.y - activeBubble.tail.y * scaleY) <= 12) {
         setCursorStyle('pointer')
@@ -1008,11 +1057,11 @@ function getLocalBubblePoint(
   return (
     <div className="modal-backdrop">
       <div
-        className="relative w-full max-w-5xl overflow-hidden bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl transition-all max-h-[90vh] flex flex-col"
+        className="relative w-full max-w-7xl overflow-hidden bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl transition-all max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(255,255,255,0.08)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(255,255,255,0.08)]">
           <div>
             <h3 className="text-lg font-semibold text-white">セリフ編集・吹き出し追加</h3>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -1064,13 +1113,79 @@ function getLocalBubblePoint(
         </div>
 
         {/* Content */}
-        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto p-3 md:p-6 gap-4 md:gap-6 min-h-[450px]">
-          {/* Left: Canvas Area */}
+        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto p-2 md:p-3 gap-3 md:gap-4 min-h-[450px]">
+            {/* Left: Canvas Area */}
           <div
             className={`${
               activeMobileTab === 'preview' ? 'flex' : 'hidden'
-            } md:flex flex-[3] flex-col items-center justify-center bg-black/40 rounded-lg p-3 md:p-4 border border-[rgba(255,255,255,0.04)] relative`}
+            } md:flex flex-[3] flex-col items-center justify-center bg-black/40 rounded-lg p-2 md:p-3 border border-[rgba(255,255,255,0.04)] relative`}
           >
+            {selectedBubble && selectedBubble.tail && (
+              <div className="flex flex-wrap items-center justify-between w-full max-w-lg mb-2 px-3 py-1.5 bg-zinc-900/80 rounded-lg border border-[rgba(255,255,255,0.08)] backdrop-blur-sm text-xs">
+                <label className="inline-flex items-center gap-1.5 text-zinc-200 cursor-pointer font-medium select-none">
+                  <input
+                    type="checkbox"
+                    aria-label="しっぽ微調整モード"
+                    checked={!!selectedBubble.tail.isFineTuning}
+                    onChange={(e) => {
+                      const isChecked = e.target.checked
+                      setBubbles((prev) =>
+                        prev.map((b) =>
+                          b.id === selectedBubble.id && b.tail
+                            ? { ...b, tail: { ...b.tail, isFineTuning: isChecked } }
+                            : b
+                        )
+                      )
+                    }}
+                    className="rounded accent-blue-500"
+                  />
+                  <span>🎯 しっぽ微調整モード</span>
+                </label>
+                {selectedBubble.tail.isFineTuning && (
+                  <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 text-zinc-400">
+                    <span>基部幅:</span>
+                    <input
+                      type="range"
+                      aria-label="しっぽ基部幅"
+                      min="0.2"
+                      max="3.0"
+                      step="0.1"
+                      value={selectedBubble.tail.baseSpreadRatio ?? 1.0}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        setBubbles((prev) =>
+                          prev.map((b) =>
+                            b.id === selectedBubble.id && b.tail
+                              ? { ...b, tail: { ...b.tail, baseSpreadRatio: val } }
+                              : b
+                          )
+                        )
+                      }}
+                      className="w-16 md:w-20 accent-amber-500"
+                    />
+                    <span className="text-[10px] text-zinc-300 font-mono">
+                      {(selectedBubble.tail.baseSpreadRatio ?? 1.0).toFixed(1)}x
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBubbles((prev) =>
+                          prev.map((b) =>
+                            b.id === selectedBubble.id && b.tail
+                              ? { ...b, tail: { ...b.tail, baseAngleOffset: 0, baseSpreadRatio: 1.0 } }
+                              : b
+                          )
+                        )
+                      }}
+                      className="px-1.5 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
+                    >
+                      リセット
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {!imageObj ? (
               <div className="flex flex-col items-center gap-2 text-zinc-400">
                 <Loader2 className="animate-spin" size={28} />
@@ -1094,7 +1209,7 @@ function getLocalBubblePoint(
                 />
               </div>
             )}
-            <span className="text-[10px] text-zinc-500 mt-3 text-center">
+            <span className="text-[10px] text-zinc-500 mt-2 text-center">
               ※ダブルクリックで新規吹き出し追加 / バブル・尻尾・四隅ハンドルをドラッグして移動・サイズ変更 / 余白ドラッグでROI検出
             </span>
           </div>
@@ -1103,7 +1218,7 @@ function getLocalBubblePoint(
           <div
             className={`${
               activeMobileTab === 'controls' ? 'flex' : 'hidden'
-            } md:flex flex-[2] flex-col justify-between gap-6 md:border-l md:border-[rgba(255,255,255,0.08)] md:pl-6 overflow-y-auto`}
+            } md:flex flex-[2] flex-col justify-between gap-4 md:border-l md:border-[rgba(255,255,255,0.08)] md:pl-4 overflow-y-auto`}
           >
             <div className="space-y-4">
               {/* Mobile Resizable Mini Preview (md:hidden) */}

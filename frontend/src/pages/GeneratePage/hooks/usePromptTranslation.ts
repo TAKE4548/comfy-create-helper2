@@ -40,8 +40,8 @@ export function usePromptTranslation({ paramValues, setParamValues }: UsePromptT
 
   const executeTranslate = useCallback(
     async (customText?: string) => {
-      const textToTranslate = customText !== undefined ? customText : sourceText
-      if (!textToTranslate.trim()) {
+      const textToTranslate = typeof customText === 'string' ? customText : sourceText
+      if (!textToTranslate || !textToTranslate.trim()) {
         setTranslatedText('')
         setMeta(null)
         return

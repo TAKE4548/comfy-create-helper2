@@ -50,7 +50,7 @@ def get_cache_key(chunk: str, target_lang: str, provider: str) -> str:
 
 
 def get_translation_settings(db: Optional[Session]) -> Dict[str, Optional[str]]:
-    provider = "google_free"
+    provider = "google_cloud"
     api_key = None
     api_url = None
 
@@ -66,7 +66,11 @@ def get_translation_settings(db: Optional[Session]) -> Dict[str, Optional[str]]:
                 .all()
             )
             settings_map = {r.key: r.content for r in records}
-            provider = settings_map.get("translation_provider") or "google_free"
+            p = settings_map.get("translation_provider")
+            if p and p != "google_free":
+                provider = p
+            else:
+                provider = "google_cloud"
             api_key = settings_map.get("translation_api_key")
             api_url = settings_map.get("translation_api_url")
         except Exception as e:
@@ -77,34 +81,6 @@ def get_translation_settings(db: Optional[Session]) -> Dict[str, Optional[str]]:
         "api_key": api_key,
         "api_url": api_url,
     }
-
-
-async def translate_google_free(
-    text: str,
-    source_lang: str = "en",
-    target_lang: str = "ja",
-    client: Optional[httpx.AsyncClient] = None,
-) -> str:
-    """Google Translate Free Web Endpoint."""
-    encoded_text = urllib.parse.quote(text)
-    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={source_lang}&tl={target_lang}&dt=t&q={encoded_text}"
-
-    close_client = False
-    if client is None:
-        client = httpx.AsyncClient(timeout=10.0)
-        close_client = True
-
-    try:
-        response = await client.get(url)
-        response.raise_for_status()
-        data = response.json()
-        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
-            translated_segments = [seg[0] for seg in data[0] if seg and len(seg) > 0 and seg[0]]
-            return "".join(translated_segments)
-        return text
-    finally:
-        if close_client:
-            await client.aclose()
 
 
 async def translate_google_cloud(
@@ -220,15 +196,17 @@ async def translate_prompt(
             "cached_chunks": 0,
             "api_requested_chunks": 0,
             "billed_characters": 0,
-            "provider": provider or "google_free",
+            "provider": provider or "google_cloud",
         }
 
     # Fetch settings from DB if not explicitly provided
     if not provider:
         settings = get_translation_settings(db)
-        provider = settings["provider"] or "google_free"
+        provider = settings["provider"] or "google_cloud"
         api_key = api_key or settings["api_key"]
         api_url = api_url or settings["api_url"]
+    elif provider == "google_free":
+        provider = "google_cloud"
 
     sanitized, tokens = sanitize_and_tokenize(prompt)
 
@@ -273,33 +251,27 @@ async def translate_prompt(
 
     if missing_chunks_list:
         translated_missing: List[str] = []
-        if provider == "google_free":
-            for chunk in missing_chunks_list:
-                try:
-                    res = await translate_google_free(
-                        chunk, source_lang=source_lang, target_lang=target_lang, client=client
-                    )
-                    translated_missing.append(res)
-                except Exception as e:
-                    logger.error(f"Google free translation error for '{chunk}': {e}")
-                    translated_missing.append(chunk)
-        elif provider == "google_cloud":
+        if provider == "google_cloud":
+            if not api_key:
+                raise ValueError("Google Cloud Translation API key is not configured. Please set the API key in Settings.")
             try:
                 translated_missing = await translate_google_cloud(
                     missing_chunks_list,
-                    api_key=api_key or "",
+                    api_key=api_key,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     client=client,
                 )
             except Exception as e:
                 logger.error(f"Google Cloud translation error: {e}")
-                translated_missing = missing_chunks_list
+                raise e
         elif provider == "deepl":
+            if not api_key:
+                raise ValueError("DeepL API key is not configured. Please set the API key in Settings.")
             try:
                 translated_missing = await translate_deepl(
                     missing_chunks_list,
-                    api_key=api_key or "",
+                    api_key=api_key,
                     api_url=api_url,
                     source_lang=source_lang,
                     target_lang=target_lang,
@@ -307,7 +279,7 @@ async def translate_prompt(
                 )
             except Exception as e:
                 logger.error(f"DeepL translation error: {e}")
-                translated_missing = missing_chunks_list
+                raise e
         elif provider == "llm":
             for chunk in missing_chunks_list:
                 try:
@@ -317,9 +289,9 @@ async def translate_prompt(
                     translated_missing.append(res)
                 except Exception as e:
                     logger.error(f"LLM translation error for '{chunk}': {e}")
-                    translated_missing.append(chunk)
+                    raise e
         else:
-            translated_missing = missing_chunks_list
+            raise ValueError(f"Unsupported translation provider: {provider}")
 
         # Cache results and update chunk_translations for all target indices
         for orig_chunk, trans in zip(missing_chunks_list, translated_missing):

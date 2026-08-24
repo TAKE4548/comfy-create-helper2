@@ -53,7 +53,7 @@ vi.mock('../../api/client', () => ({
     rewrite: vi.fn(),
   },
   translateApi: {
-    translatePrompt: vi.fn().mockResolvedValue({ translated_prompt: '', meta: { total_chunks: 0, cached_chunks: 0, api_requested_chunks: 0, billed_characters: 0, provider: 'google_free' } }),
+    translatePrompt: vi.fn().mockResolvedValue({ translated_prompt: '', meta: { total_chunks: 0, cached_chunks: 0, api_requested_chunks: 0, billed_characters: 0, provider: 'google_cloud' } }),
     testConnection: vi.fn().mockResolvedValue({ success: true, sample_translation: 'テスト' }),
     getStats: vi.fn().mockResolvedValue({ cached_entries_count: 0 }),
     clearCache: vi.fn().mockResolvedValue({ message: 'OK', cleared_count: 0 }),

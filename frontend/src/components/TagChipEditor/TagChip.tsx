@@ -52,17 +52,19 @@ export const TagChip: React.FC<TagChipProps> = ({
     setEditValue(text);
   }, [text]);
 
-  // サブメニュー外クリック検知
+  // サブメニュー外クリック・タップ検知
   useEffect(() => {
     if (!isMenuOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setIsMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isMenuOpen]);
 

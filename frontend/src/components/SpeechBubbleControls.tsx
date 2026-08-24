@@ -14,7 +14,7 @@ import {
 } from '../types/speechBubble'
 import type { ServerFont, SpeechBubblePreset, SpeechTonePreset } from '../api/types'
 import { speechBubblePresetsApi, speechTonePresetsApi } from '../api/client'
-import { calculateFitBubbleDimensions } from '../utils/speechBubbleRenderer'
+import { calculateFitBubbleDimensions, flipPathPoints, getDefaultPathPoints } from '../utils/speechBubbleRenderer'
 import { STALE_TIMES } from '../constants/staleTimes'
 
 export interface SpeechBubbleControlsProps {
@@ -426,6 +426,24 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const handleDeleteMultiStroke = (id: string) => {
     const updated = (fx.multiStrokes || []).filter((layer) => layer.id !== id)
     updateEffects({ multiStrokes: updated })
+  }
+
+  const handleFlipScale = () => {
+    const currentStart = fx.scaleStart ?? 1.0
+    const currentEnd = fx.scaleEnd ?? 1.0
+    updateEffects({
+      scaleStart: currentEnd,
+      scaleEnd: currentStart,
+    })
+  }
+
+  const handleFlipPath = () => {
+    if (!bubble) return
+    const currentPreset = fx.pathPreset || 'none'
+    const defaultPts = getDefaultPathPoints(currentPreset, bubble.orientation)
+    const currentPts = fx.pathPoints && fx.pathPoints.length > 0 ? fx.pathPoints : defaultPts
+    const flipped = flipPathPoints(currentPts, bubble.orientation)
+    updateEffects({ pathPoints: flipped })
   }
 
   const shapes: { type: BubbleShapeType; label: string }[] = [
@@ -1025,8 +1043,18 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
 
             {/* 2. ダイナミックスケール & 感情揺らぎ */}
             <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
-                2. ダイナミックスケール & 感情揺らぎ
+              <div className="flex items-center justify-between text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                <span>2. ダイナミックスケール & 感情揺らぎ</span>
+                {fx.scaleCurve && fx.scaleCurve !== 'none' && (
+                  <button
+                    type="button"
+                    onClick={handleFlipScale}
+                    aria-label="スケール反転"
+                    className="px-2 py-0.5 text-[10px] font-normal rounded bg-zinc-800 hover:bg-zinc-700 text-blue-300 border border-blue-500/30 transition-colors"
+                  >
+                    スケール反転 ⇄
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1101,8 +1129,18 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
 
             {/* 3. パス・軌道レイアウト */}
             <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-              <div className="text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
-                3. パス・軌道レイアウト
+              <div className="flex items-center justify-between text-[11px] font-semibold text-blue-400 border-b border-[rgba(255,255,255,0.06)] pb-1">
+                <span>3. パス・軌道レイアウト</span>
+                {fx.pathPreset && fx.pathPreset !== 'none' && (
+                  <button
+                    type="button"
+                    onClick={handleFlipPath}
+                    aria-label="パス反転"
+                    className="px-2 py-0.5 text-[10px] font-normal rounded bg-zinc-800 hover:bg-zinc-700 text-blue-300 border border-blue-500/30 transition-colors"
+                  >
+                    パス反転 ⇄
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1482,31 +1520,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {/* 1. テキスト付きプリセット */}
-            <div className="border border-[rgba(255,255,255,0.06)] rounded bg-[#18181C]/50 overflow-hidden">
-              <button
-                type="button"
-                aria-label="テキスト付きプリセットの折り畳み切替"
-                onClick={() => updatePresetSettings({ isWithTextOpen: !presetSettings.isWithTextOpen })}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
-              >
-                <span className="font-medium flex items-center gap-1.5">
-                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithTextOpen ? '▼' : '▶'}</span>
-                  <span>💬 テキスト付き ({withTextPresets.length})</span>
-                </span>
-              </button>
-              {presetSettings.isWithTextOpen && (
-                <div className="p-2 border-t border-[rgba(255,255,255,0.04)]">
-                  {withTextPresets.length === 0 ? (
-                    <span className="text-[11px] text-zinc-500">テキスト付きプリセットはありません</span>
-                  ) : (
-                    renderPresetChips(withTextPresets)
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 2. スタイル専用（テキストなし）プリセット */}
+            {/* 1. スタイル専用（テキストなし）プリセット */}
             <div className="border border-[rgba(255,255,255,0.06)] rounded bg-[#18181C]/50 overflow-hidden">
               <button
                 type="button"
@@ -1525,6 +1539,30 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                     <span className="text-[11px] text-zinc-500">スタイル専用プリセットはありません</span>
                   ) : (
                     renderPresetChips(withoutTextPresets)
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 2. テキスト付きプリセット */}
+            <div className="border border-[rgba(255,255,255,0.06)] rounded bg-[#18181C]/50 overflow-hidden">
+              <button
+                type="button"
+                aria-label="テキスト付きプリセットの折り畳み切替"
+                onClick={() => updatePresetSettings({ isWithTextOpen: !presetSettings.isWithTextOpen })}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
+              >
+                <span className="font-medium flex items-center gap-1.5">
+                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithTextOpen ? '▼' : '▶'}</span>
+                  <span>💬 テキスト付き ({withTextPresets.length})</span>
+                </span>
+              </button>
+              {presetSettings.isWithTextOpen && (
+                <div className="p-2 border-t border-[rgba(255,255,255,0.04)]">
+                  {withTextPresets.length === 0 ? (
+                    <span className="text-[11px] text-zinc-500">テキスト付きプリセットはありません</span>
+                  ) : (
+                    renderPresetChips(withTextPresets)
                   )}
                 </div>
               )}

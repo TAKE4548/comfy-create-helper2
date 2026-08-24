@@ -25,13 +25,13 @@ def test_empty_and_whitespace_prompt():
     import asyncio
 
     res, meta = asyncio.run(
-        translation_service.translate_prompt("", source_lang="en", target_lang="ja", provider="google_free")
+        translation_service.translate_prompt("", source_lang="en", target_lang="ja", provider="google_cloud")
     )
     assert res == ""
     assert meta["total_chunks"] == 0
 
     res_ws, meta_ws = asyncio.run(
-        translation_service.translate_prompt("   \n\t  ", source_lang="en", target_lang="ja", provider="google_free")
+        translation_service.translate_prompt("   \n\t  ", source_lang="en", target_lang="ja", provider="google_cloud")
     )
     assert res_ws == ""
     assert meta_ws["total_chunks"] == 0
@@ -42,27 +42,32 @@ async def test_chunk_splitting_and_deduplication():
     translation_service.clear_cache()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
 
-    # Mock response for google free
-    async def mock_get(url):
+    # Mock response for google cloud
+    async def mock_post(url, **kwargs):
         response = MagicMock(spec=httpx.Response)
         response.status_code = 200
-        # Return mock translation based on query
-        if "1girl" in url:
-            response.json.return_value = [[["1人の女の子", "1girl", None, None, 1]]]
-        elif "masterpiece" in url:
-            response.json.return_value = [[["傑作", "masterpiece", None, None, 1]]]
-        else:
-            response.json.return_value = [[["テスト", "test", None, None, 1]]]
+        json_data = kwargs.get("json", {})
+        texts = json_data.get("q", [])
+        translations = []
+        for t in texts:
+            if "1girl" in t:
+                translations.append({"translatedText": "1人の女の子"})
+            elif "masterpiece" in t:
+                translations.append({"translatedText": "傑作"})
+            else:
+                translations.append({"translatedText": "テスト"})
+        response.json.return_value = {"data": {"translations": translations}}
         return response
 
-    mock_client.get.side_effect = mock_get
+    mock_client.post.side_effect = mock_post
 
     prompt = "1girl, masterpiece, 1girl"
     translated, meta = await translation_service.translate_prompt(
         prompt=prompt,
         source_lang="en",
         target_lang="ja",
-        provider="google_free",
+        provider="google_cloud",
+        api_key="mock",
         client=mock_client,
     )
 
@@ -75,20 +80,23 @@ async def test_chunk_splitting_and_deduplication():
 
 
 @pytest.mark.asyncio
-async def test_google_free_translation_mock():
+async def test_google_cloud_translation_mock():
     translation_service.clear_cache()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     response = MagicMock(spec=httpx.Response)
     response.status_code = 200
-    response.json.return_value = [[["青空", "blue sky", None, None, 1]]]
-    mock_client.get.return_value = response
+    response.json.return_value = {
+        "data": {"translations": [{"translatedText": "青空"}]}
+    }
+    mock_client.post.return_value = response
 
     prompt = "<lora:myshit:1.0>, blue sky, (smile:1.1)"
     translated, meta = await translation_service.translate_prompt(
         prompt=prompt,
         source_lang="en",
         target_lang="ja",
-        provider="google_free",
+        provider="google_cloud",
+        api_key="mock",
         client=mock_client,
     )
 
@@ -99,15 +107,31 @@ async def test_google_free_translation_mock():
 
 
 @pytest.mark.asyncio
+async def test_google_cloud_missing_api_key():
+    translation_service.clear_cache()
+    with pytest.raises(ValueError, match="Google Cloud Translation API key is not configured"):
+        await translation_service.translate_prompt(
+            prompt="1girl",
+            source_lang="en",
+            target_lang="ja",
+            provider="google_cloud",
+            api_key=None,
+        )
+
+
+@pytest.mark.asyncio
 async def test_connection_service():
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     response = MagicMock(spec=httpx.Response)
     response.status_code = 200
-    response.json.return_value = [[["少女、美しい空", "1girl, beautiful sky", None, None, 1]]]
-    mock_client.get.return_value = response
+    response.json.return_value = {
+        "data": {"translations": [{"translatedText": "少女、美しい空"}]}
+    }
+    mock_client.post.return_value = response
 
     success, sample, error = await translation_service.test_connection(
-        provider="google_free",
+        provider="google_cloud",
+        api_key="mock",
         client=mock_client,
     )
     assert success is True

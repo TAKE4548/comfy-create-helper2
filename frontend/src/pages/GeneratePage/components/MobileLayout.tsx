@@ -11,6 +11,8 @@ import { AppliedAssetChips } from './AppliedAssetChips'
 import { AuditPanel } from './AuditPanel'
 import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
+import { TagChipEditor } from '../../../components/TagChipEditor'
+import { PromptTranslationModal } from './PromptTranslationModal'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
@@ -104,6 +106,7 @@ export const MobileLayout = ({
     handleCreatePreset,
     isAnimaMode,
     setIsAnimaMode,
+    promptTranslation,
   } = state
 
   const [showCopyModal, setShowCopyModal] = useState(false)
@@ -214,6 +217,7 @@ export const MobileLayout = ({
   const activeSet = sets.find((s) => String(s.id) === String(activeSetId))
   const activePromptTabMapping = textMappings.find((m) => m.role === activePromptTab)
   const isCollapsed = activePromptTabMapping ? getIsRoleCollapsed(activePromptTabMapping.role!) : true
+  const isNegative = activePromptTabMapping?.role?.toLowerCase().includes('negative')
 
   return (
     <div className="flex flex-col h-full overflow-y-auto pb-36 bg-surface relative w-full">
@@ -652,7 +656,20 @@ export const MobileLayout = ({
               <span>{activePromptTabMapping.display_name} Input</span>
             </button>
             {!isCollapsed && (
-              <div className="relative">
+              <div className="relative flex items-center gap-1.5">
+                {promptTranslation && (
+                  <button
+                    type="button"
+                    onClick={() => promptTranslation.openTranslation(activePromptTabMapping.role!, paramValues[activePromptTabMapping.role!] || '')}
+                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
+                      promptTranslation.isOpen && promptTranslation.activeRole === activePromptTabMapping.role
+                        ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
+                        : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
+                    }`}
+                  >
+                    <span>翻訳</span>
+                  </button>
+                )}
                 <button type="button" id={`add-asset-btn-mobile-${activePromptTabMapping.role!}`}
                   onClick={() => setOpenAddAssetRole(openAddAssetRole === activePromptTabMapping.role ? null : activePromptTabMapping.role!)}
                   className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
@@ -674,10 +691,14 @@ export const MobileLayout = ({
           </div>
           {!isCollapsed && (
             <>
-              <textarea id={`prompt-mobile-${activePromptTabMapping.role!}`} value={paramValues[activePromptTabMapping.role!] ?? ''}
-                onChange={(e) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: e.target.value })}
+              <TagChipEditor
+                id={`prompt-mobile-${activePromptTabMapping.role!}`}
+                value={paramValues[activePromptTabMapping.role!] ?? ''}
+                onChange={(val) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: val })}
                 placeholder={`Enter ${activePromptTabMapping.display_name}…`}
-                className="w-full min-h-[100px] bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-3 py-2 text-sm text-[#E4E4E7] placeholder-zinc-650 resize-y focus:outline-none focus:border-accent-green/40" />
+                variant={isNegative ? 'negative' : 'positive'}
+                defaultTextMode={activePromptTabMapping.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
+              />
               <AppliedAssetChips
                 role={activePromptTabMapping.role!}
                 appliedAssets={appliedAssets}
@@ -839,6 +860,28 @@ export const MobileLayout = ({
             <X size={14} />
           </button>
         </div>
+      )}
+
+      {promptTranslation && (
+        <PromptTranslationModal
+          isOpen={promptTranslation.isOpen}
+          onClose={promptTranslation.closeTranslation}
+          roleDisplayName={
+            textMappings.find((m) => m.role === promptTranslation.activeRole)?.display_name ||
+            promptTranslation.activeRole ||
+            ''
+          }
+          mode={promptTranslation.mode}
+          onModeChange={promptTranslation.setMode}
+          sourceText={promptTranslation.sourceText}
+          onSourceTextChange={promptTranslation.setSourceText}
+          translatedText={promptTranslation.translatedText}
+          meta={promptTranslation.meta}
+          isTranslating={promptTranslation.isTranslating}
+          error={promptTranslation.error}
+          onTranslate={promptTranslation.executeTranslate}
+          onApply={promptTranslation.applyToPrompt}
+        />
       )}
     </div>
   )

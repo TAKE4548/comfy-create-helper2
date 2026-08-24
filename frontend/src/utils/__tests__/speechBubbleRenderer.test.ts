@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   verticalCharMap,
   getDefaultPathPoints,
+  flipPathPoints,
+  getTailBasePosition,
   layoutVerticalText,
   layoutHorizontalText,
   calculateFitFontSize,
@@ -457,12 +459,84 @@ describe('speechBubbleRenderer', () => {
     it('exports all functions on speechBubbleRenderer object', () => {
       expect(speechBubbleRenderer.drawSpeechBubble).toBeDefined()
       expect(speechBubbleRenderer.getDefaultPathPoints).toBeDefined()
+      expect(speechBubbleRenderer.flipPathPoints).toBeDefined()
       expect(speechBubbleRenderer.layoutVerticalText).toBeDefined()
       expect(speechBubbleRenderer.layoutHorizontalText).toBeDefined()
       expect(speechBubbleRenderer.calculateCharacterTransform).toBeDefined()
       expect(speechBubbleRenderer.drawMultiStrokes).toBeDefined()
       expect(speechBubbleRenderer.applyTextFill).toBeDefined()
       expect(speechBubbleRenderer.calculateFitBubbleDimensions).toBeDefined()
+    })
+
+    it('flips path points correctly for vertical and horizontal orientations (REQ-180 AC-2)', () => {
+      const vertArcPts = getDefaultPathPoints('arc', 'vertical')
+      // [{ x: 0.7, y: 0.1 }, { x: 0.3, y: 0.5 }, { x: 0.7, y: 0.9 }]
+      const flippedVert = flipPathPoints(vertArcPts, 'vertical')
+      expect(flippedVert).toEqual([
+        { x: 0.3, y: 0.1 },
+        { x: 0.7, y: 0.5 },
+        { x: 0.3, y: 0.9 },
+      ])
+
+      const horizArcPts = getDefaultPathPoints('arc', 'horizontal')
+      // [{ x: 0.1, y: 0.7 }, { x: 0.5, y: 0.3 }, { x: 0.9, y: 0.7 }]
+      const flippedHoriz = flipPathPoints(horizArcPts, 'horizontal')
+      expect(flippedHoriz).toEqual([
+        { x: 0.1, y: 0.3 },
+        { x: 0.5, y: 0.7 },
+        { x: 0.9, y: 0.3 },
+      ])
+    })
+
+    it('calculates tail base position and respects fine-tuning parameters (REQ-180 AC-1, AC-2)', () => {
+      const ovalBubble: SpeechBubble = {
+        ...baseBubble,
+        shape: 'oval',
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 100,
+        tail: {
+          x: 200,
+          y: 300,
+          isFineTuning: true,
+          baseAngleOffset: 0.2,
+          baseSpreadRatio: 1.5,
+        },
+      }
+      const pos = getTailBasePosition(ovalBubble)
+      expect(pos).toBeDefined()
+      expect(pos?.x).toBeGreaterThan(0)
+      expect(pos?.y).toBeGreaterThan(0)
+
+      // Draw bubble shape with fine tuning
+      mockCtx.ellipse.mockClear()
+      drawBubbleShape(mockCtx, ovalBubble)
+      expect(mockCtx.ellipse).toHaveBeenCalled()
+
+      // Rounded rect with fine tuning
+      const rectBubble: SpeechBubble = {
+        ...baseBubble,
+        shape: 'rounded-rect',
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 100,
+        tail: {
+          x: 200,
+          y: 300,
+          isFineTuning: true,
+          baseAngleOffset: -0.1,
+          baseSpreadRatio: 0.8,
+        },
+      }
+      const rectPos = getTailBasePosition(rectBubble)
+      expect(rectPos).toBeDefined()
+      expect(rectPos?.y).toBe(200) // bottom edge
+
+      mockCtx.lineTo.mockClear()
+      drawBubbleShape(mockCtx, rectBubble)
+      expect(mockCtx.lineTo).toHaveBeenCalled()
     })
 
     it('compensates rotation with -PI/2 for vertical orientation with pathFollowRotation', () => {

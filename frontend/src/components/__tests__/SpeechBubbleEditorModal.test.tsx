@@ -885,4 +885,65 @@ describe('SpeechBubbleEditorModal', () => {
       window.Image = OriginalImage
     }
   })
+
+  it('supports tail fine-tuning mode toggle and base spread ratio adjustment (REQ-180 AC-3, AC-4, AC-5)', async () => {
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      // The auto-detected bubble has a tail, so the fine tuning checkbox should be rendered
+      await waitFor(() => {
+        expect(screen.getByLabelText('しっぽ微調整モード')).toBeDefined()
+      })
+
+      const fineTuningToggle = screen.getByLabelText('しっぽ微調整モード') as HTMLInputElement
+      expect(fineTuningToggle.checked).toBe(false)
+
+      // Toggle ON
+      fireEvent.click(fineTuningToggle)
+      expect(fineTuningToggle.checked).toBe(true)
+
+      // The base width slider should now be rendered
+      await waitFor(() => {
+        expect(screen.getByLabelText('しっぽ基部幅')).toBeDefined()
+      })
+
+      const baseWidthSlider = screen.getByLabelText('しっぽ基部幅') as HTMLInputElement
+      expect(baseWidthSlider.value).toBe('1')
+
+      // Adjust slider
+      fireEvent.change(baseWidthSlider, { target: { value: '1.8' } })
+      expect(baseWidthSlider.value).toBe('1.8')
+
+      // Test reset button
+      const resetBtn = screen.getByRole('button', { name: 'リセット' })
+      fireEvent.click(resetBtn)
+      expect((screen.getByLabelText('しっぽ基部幅') as HTMLInputElement).value).toBe('1')
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
 })

@@ -601,6 +601,49 @@ describe('SpeechBubbleControls', () => {
     expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
   })
 
+  it('renders style-only presets section before with-text presets section in DOM order (REQ-180 AC-1)', async () => {
+    const mixedPresets: SpeechBubblePreset[] = [
+      {
+        id: 1,
+        name: 'スタイルのみA',
+        shape: 'oval',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 20,
+        text_color: '#000000',
+        background_color: '#ffffff',
+        border_color: '#000000',
+        border_width: 2,
+        sort_order: 0,
+        created_at: '2026-08-20T00:00:00Z',
+        text: null,
+      },
+      {
+        id: 2,
+        name: 'テキスト付きB',
+        shape: 'burst',
+        orientation: 'vertical',
+        font_family: 'sans-serif',
+        font_size: 24,
+        text_color: '#ff0000',
+        background_color: '#ffffff',
+        border_color: '#000000',
+        border_width: 2,
+        sort_order: 1,
+        created_at: '2026-08-20T01:00:00Z',
+        text: 'ドォォン！',
+      },
+    ]
+    vi.mocked(speechBubblePresetsApi.list).mockResolvedValue(mixedPresets)
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    await waitFor(() => {
+      const styleBtn = screen.getByLabelText('スタイル専用プリセットの折り畳み切替')
+      const textBtn = screen.getByLabelText('テキスト付きプリセットの折り畳み切替')
+      expect(styleBtn.compareDocumentPosition(textBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+  })
+
   it('sorts presets by name (asc/desc) and created date (asc/desc) with default name-asc (AC-2)', async () => {
     const unsortedPresets: SpeechBubblePreset[] = [
       {
@@ -1345,6 +1388,60 @@ describe('SpeechBubbleControls', () => {
     const hInc = screen.getByLabelText('吹き出し高さを増やす')
     fireEvent.click(hInc)
     expect(defaultProps.onUpdate).toHaveBeenCalledWith({ h: 125 })
+  })
+
+  it('handles scale flipping and path flipping in manga fx section (REQ-180 AC-1, AC-2, AC-3)', () => {
+    const onUpdateMock = vi.fn()
+    renderWithQuery(
+      <SpeechBubbleControls
+        {...defaultProps}
+        onUpdate={onUpdateMock}
+        bubble={{
+          ...mockBubble,
+          orientation: 'vertical',
+          effects: {
+            scaleCurve: 'linear',
+            scaleStart: 0.8,
+            scaleEnd: 2.0,
+            pathPreset: 'arc',
+            pathPoints: [
+              { x: 0.7, y: 0.1 },
+              { x: 0.3, y: 0.5 },
+              { x: 0.7, y: 0.9 },
+            ],
+          },
+        }}
+      />
+    )
+
+    // Open manga FX section
+    const fxToggle = screen.getByText(/漫画テキスト演出/)
+    fireEvent.click(fxToggle)
+
+    // Scale flip
+    const flipScaleBtn = screen.getByLabelText('スケール反転')
+    expect(flipScaleBtn).toBeDefined()
+    fireEvent.click(flipScaleBtn)
+    expect(onUpdateMock).toHaveBeenCalledWith({
+      effects: expect.objectContaining({
+        scaleStart: 2.0,
+        scaleEnd: 0.8,
+      }),
+    })
+
+    // Path flip
+    const flipPathBtn = screen.getByLabelText('パス反転')
+    expect(flipPathBtn).toBeDefined()
+    fireEvent.click(flipPathBtn)
+    expect(onUpdateMock).toHaveBeenCalledWith({
+      effects: expect.objectContaining({
+        pathPoints: [
+          { x: 0.3, y: 0.1 },
+          { x: 0.7, y: 0.5 },
+          { x: 0.3, y: 0.9 },
+        ],
+      }),
+    })
   })
 })
 

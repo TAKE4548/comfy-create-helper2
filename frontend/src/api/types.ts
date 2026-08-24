@@ -674,7 +674,7 @@ export interface PromptTranslateResponse {
 }
 
 export interface TranslateTestRequest {
-  provider: 'google_free' | 'google_cloud' | 'deepl' | 'llm'
+  provider: 'google_cloud' | 'deepl' | 'llm'
   api_key?: string
   api_url?: string
 }

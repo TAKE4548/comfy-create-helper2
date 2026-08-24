@@ -63,7 +63,7 @@ describe('usePromptTranslation hook', () => {
         cached_chunks: 0,
         api_requested_chunks: 2,
         billed_characters: 12,
-        provider: 'google_free',
+        provider: 'google_cloud',
       },
     }
     vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce(mockResponse)
@@ -91,6 +91,63 @@ describe('usePromptTranslation hook', () => {
     expect(paramValues.positive_prompt).toBe('1girl, masterpiece')
   })
 
+  it('should handle MouseEvent object safely when passed as customText argument', async () => {
+    const mockResponse = {
+      translated_prompt: '1人の女の子、笑顔',
+      meta: {
+        total_chunks: 2,
+        cached_chunks: 0,
+        api_requested_chunks: 2,
+        billed_characters: 12,
+        provider: 'google_cloud',
+      },
+    }
+    vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce(mockResponse)
+
+    const { result } = renderHook(() =>
+      usePromptTranslation({ paramValues, setParamValues })
+    )
+
+    act(() => {
+      result.current.openTranslation('positive_prompt', '1girl, smile')
+    })
+
+    // Simulate React passing a SyntheticEvent / MouseEvent object to onClick={onTranslate}
+    const fakeEvent = { preventDefault: vi.fn(), stopPropagation: vi.fn() }
+
+    await act(async () => {
+      await (result.current.executeTranslate as any)(fakeEvent)
+    })
+
+    expect(translateApi.translatePrompt).toHaveBeenCalledWith({
+      prompt: '1girl, smile',
+      source_lang: 'en',
+      target_lang: 'ja',
+    })
+    expect(result.current.translatedText).toBe('1人の女の子、笑顔')
+  })
+
+  it('should set error state when translateApi fails', async () => {
+    vi.mocked(translateApi.translatePrompt).mockRejectedValueOnce(
+      new Error('Google Cloud API key is not configured')
+    )
+
+    const { result } = renderHook(() =>
+      usePromptTranslation({ paramValues, setParamValues })
+    )
+
+    act(() => {
+      result.current.openTranslation('positive_prompt', '1girl, smile')
+    })
+
+    await act(async () => {
+      await result.current.executeTranslate()
+    })
+
+    expect(result.current.error).toBe('Google Cloud API key is not configured')
+    expect(result.current.isTranslating).toBe(false)
+  })
+
   it('should replace prompt value only when applyToPrompt(replace) is called', async () => {
     const mockResponse = {
       translated_prompt: '1girl, solo',
@@ -99,7 +156,7 @@ describe('usePromptTranslation hook', () => {
         cached_chunks: 1,
         api_requested_chunks: 1,
         billed_characters: 4,
-        provider: 'google_free',
+        provider: 'google_cloud',
       },
     }
     vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce(mockResponse)
@@ -134,7 +191,7 @@ describe('usePromptTranslation hook', () => {
         cached_chunks: 0,
         api_requested_chunks: 1,
         billed_characters: 2,
-        provider: 'google_free',
+        provider: 'google_cloud',
       },
     }
     vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce(mockResponse)

@@ -77,6 +77,16 @@ export function getDefaultPathPoints(
 }
 
 /**
+ * 軌道制御点を反転（縦書き: X座標ミラー 1.0 - x, 横書き: Y座標ミラー 1.0 - y）
+ */
+export function flipPathPoints(points: PathPoint[], orientation: TextOrientation): PathPoint[] {
+  return points.map((pt) => ({
+    x: orientation === 'vertical' ? Math.round((1.0 - pt.x) * 1000) / 1000 : pt.x,
+    y: orientation === 'horizontal' ? Math.round((1.0 - pt.y) * 1000) / 1000 : pt.y,
+  }))
+}
+
+/**
  * 縦書き用の文字列折り返しレイアウト
  * 改行および最大高さに応じて縦列（右から左へ並ぶ各列）配列を生成
  */
@@ -523,8 +533,9 @@ export function drawBubbleShape(
     if (bubble.tail) {
       const tx = bubble.tail.x * scaleX
       const ty = bubble.tail.y * scaleY
-      const tailAngle = Math.atan2(ty - cy, tx - cx)
-      const spread = 0.25
+      const tailAngle = Math.atan2(ty - cy, tx - cx) + (bubble.tail.isFineTuning ? (bubble.tail.baseAngleOffset ?? 0) : 0)
+      const defaultSpread = 0.25
+      const spread = bubble.tail.isFineTuning ? defaultSpread * (bubble.tail.baseSpreadRatio ?? 1.0) : defaultSpread
       const startAngle = tailAngle + spread
       const endAngle = tailAngle - spread
 
@@ -539,8 +550,11 @@ export function drawBubbleShape(
     if (bubble.tail) {
       const tx = bubble.tail.x * scaleX
       const ty = bubble.tail.y * scaleY
-      const tailAngle = Math.atan2(ty - cy, tx - cx)
-      const baseHalfWidth = Math.min(bw, bh) * 0.12
+      const tailAngle = Math.atan2(ty - cy, tx - cx) + (bubble.tail.isFineTuning ? (bubble.tail.baseAngleOffset ?? 0) : 0)
+      const defaultBaseHalfWidth = Math.min(bw, bh) * 0.12
+      const baseHalfWidth = bubble.tail.isFineTuning
+        ? defaultBaseHalfWidth * (bubble.tail.baseSpreadRatio ?? 1.0)
+        : defaultBaseHalfWidth
 
       const normAngle = (tailAngle + Math.PI * 2) % (Math.PI * 2)
       const isBottom = normAngle >= Math.PI * 0.25 && normAngle < Math.PI * 0.75
@@ -718,6 +732,63 @@ export function drawBubbleShape(
   }
 
   ctx.restore()
+}
+
+/**
+ * しっぽの本体接点（基部中心）のキャンバス座標を計算
+ */
+export function getTailBasePosition(
+  bubble: SpeechBubble,
+  scaleX: number = 1,
+  scaleY: number = 1
+): { x: number; y: number; baseAngle: number } | null {
+  if (!bubble.tail) return null
+
+  const bx = bubble.x * scaleX
+  const by = bubble.y * scaleY
+  const bw = bubble.w * scaleX
+  const bh = bubble.h * scaleY
+  const cx = bx + bw / 2
+  const cy = by + bh / 2
+  const tx = bubble.tail.x * scaleX
+  const ty = bubble.tail.y * scaleY
+
+  const baseAngle = Math.atan2(ty - cy, tx - cx) + (bubble.tail.isFineTuning ? (bubble.tail.baseAngleOffset ?? 0) : 0)
+
+  if (bubble.shape === 'oval') {
+    const rx = bw / 2
+    const ry = bh / 2
+    return {
+      x: cx + rx * Math.cos(baseAngle),
+      y: cy + ry * Math.sin(baseAngle),
+      baseAngle,
+    }
+  } else if (bubble.shape === 'rounded-rect') {
+    const normAngle = (baseAngle + Math.PI * 2) % (Math.PI * 2)
+    const isBottom = normAngle >= Math.PI * 0.25 && normAngle < Math.PI * 0.75
+    const isLeft = normAngle >= Math.PI * 0.75 && normAngle < Math.PI * 1.25
+    const isTop = normAngle >= Math.PI * 1.25 && normAngle < Math.PI * 1.75
+    const isRight = !isBottom && !isLeft && !isTop
+    const radius = Math.min(bw, bh) * 0.15
+    const defaultBaseHalfWidth = Math.min(bw, bh) * 0.12
+    const baseHalfWidth = bubble.tail.isFineTuning ? defaultBaseHalfWidth * (bubble.tail.baseSpreadRatio ?? 1.0) : defaultBaseHalfWidth
+
+    if (isTop) {
+      const midX = Math.max(bx + radius + baseHalfWidth, Math.min(bx + bw - radius - baseHalfWidth, tx))
+      return { x: midX, y: by, baseAngle }
+    } else if (isRight) {
+      const midY = Math.max(by + radius + baseHalfWidth, Math.min(by + bh - radius - baseHalfWidth, ty))
+      return { x: bx + bw, y: midY, baseAngle }
+    } else if (isBottom) {
+      const midX = Math.max(bx + radius + baseHalfWidth, Math.min(bx + bw - radius - baseHalfWidth, tx))
+      return { x: midX, y: by + bh, baseAngle }
+    } else {
+      const midY = Math.max(by + radius + baseHalfWidth, Math.min(by + bh - radius - baseHalfWidth, ty))
+      return { x: bx, y: midY, baseAngle }
+    }
+  }
+
+  return null
 }
 
 /**
@@ -960,6 +1031,29 @@ export function drawSpeechBubble(
       ctx.arc(tx, ty, 6, 0, Math.PI * 2)
       ctx.fill()
       ctx.stroke()
+
+      // 微調整モード時の本体接点（基部）ハンドル描画
+      if (bubble.tail.isFineTuning) {
+        const basePos = getTailBasePosition(bubble, scaleX, scaleY)
+        if (basePos) {
+          ctx.setLineDash([3, 3])
+          ctx.strokeStyle = '#f59e0b'
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(basePos.x, basePos.y)
+          ctx.lineTo(tx, ty)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          ctx.fillStyle = '#f59e0b'
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(basePos.x, basePos.y, 6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+        }
+      }
     }
 
     // 四隅のリサイズハンドル
@@ -1086,6 +1180,8 @@ export function calculateFitBubbleDimensions(
 export const speechBubbleRenderer = {
   verticalCharMap,
   getDefaultPathPoints,
+  flipPathPoints,
+  getTailBasePosition,
   layoutVerticalText,
   layoutHorizontalText,
   calculateCharacterTransform,
