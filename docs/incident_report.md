@@ -1,25 +1,23 @@
-# インシデントレポート: プロンプト翻訳機能の不発（TypeError発生）およびGoogle無料翻訳エンドポイントの利用規約・仕様に関する調査報告書
+# インシデントレポート: 複数プリセット・バッチ生成時におけるジョブキュー投入遅延の調査報告書
 
-## 1. 障害概要 (Overview)
+## 1. 障害・事象概要 (Overview)
 
-プロンプト翻訳機能において、モーダル上の「翻訳する」ボタンをクリックしても翻訳処理が実行されず、画面上で何も起きない現象が報告された。
-また、合わせて「無料のGoogle翻訳エンドポイント（`translate_google_free`）の利用がスクレイピングや利用規約違反に該当するのではないか」という懸念事項についての調査を行った。
+複数プリセットやバッチ数を指定して生成を実行した際、ComfyUIへのキュー投入が瞬時に終わらず、1件ずつ数秒以上かけてちまちま投入されているように見える事象についての調査を実施した。
 
 ### 観測されている事象:
-1. **「翻訳する」ボタン押下時の無反応**: モーダルを開いて「翻訳する」ボタンをクリックしても、ローディング状態にならず、APIリクエストも送信されず、エラー表示も出ない。
-2. **無料Google翻訳の仕様・規約上のリスク**: 非公式の `translate_a/single?client=gtx` エンドポイントへの依存、およびバックエンドにおけるエラー握りつぶし。
+1. **キュー登録の体感遅延**: 複数プリセット×バッチサイズ（例: 合計10〜20件）の生成を開始した際、一瞬でキュー一覧に積まれず、1件ずつ時間をかけて投入されている。
+2. **キュー投入中の負荷集中**: 1件の投入処理が完了するごとに WebSocket イベントが多発し、裏で履歴取得（`fetchHistory`）やキュー取得（`fetchQueue`）が連続して走ることで通信および処理の遅延が累積している。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
 - **再現手順**:
-  1. Generate画面を開く。
-  2. プロンプト入力欄（Positive Prompt等）の翻訳アイコンをクリックして `PromptTranslationModal` を開く。
-  3. テキストを入力、または既存のプロンプトがセットされた状態で「翻訳する」ボタンをクリックする。
+  1. Generate 画面で複数のプリセット（Presets）にチェックを入れる（またはバッチサイズを 3〜5 などに設定）。
+  2. 「Generate Sets (N)」ボタンをクリックする。
 - **観測結果**:
-  1. ボタンをクリックしてもローディング表示（スピナー）にならず、ネットワーク通信も発生せず、画面に何の変化も起きない。
-  2. ブラウザのコンソールログを確認すると `TypeError: textToTranslate.trim is not a function` が発生している。
+  1. `activeBatch` には初期プレースホルダー（`pending-...`）が即座に入るが、実際の ComfyUI `prompt_id` が確定してキューに正式登録されるまでに 1 件あたり数百ms〜数秒を要し、全件完了まで十数秒〜数十秒待たされる。
+  2. 投入と並行して ComfyUI 側で先頭ジョブの実行が開始されると、さらに進捗イベントや履歴取得リクエストが多発してキュー投入完了が引き延ばされる。
 
 ---
 
@@ -27,37 +25,40 @@
 
 | # | 対象ファイル | 該当行 / 関数 | 詳細 |
 |---|---|---|---|
-| 1 | `frontend/src/pages/GeneratePage/hooks/usePromptTranslation.ts` | L41-48 (`executeTranslate`) | `customText !== undefined` による判定を行っているため、Reactのクリックイベント（`MouseEvent` オブジェクト）が `customText` に渡され、`textToTranslate.trim()` で `TypeError` がスローされて処理が中断する。 |
-| 2 | `frontend/src/pages/GeneratePage/components/PromptTranslationModal.tsx` | L114 (`onClick={onTranslate}`) | `onClick` ハンドラに直接 `onTranslate` を渡しているため、イベントオブジェクトが引数として渡される。 |
-| 3 | `backend/app/services/translation_service.py` | L82-108 (`translate_google_free`), L278-285 (`translate_prompt`) | 非公式Webエンドポイント（`translate.googleapis.com/translate_a/single?client=gtx`）を使用しており、エラー発生時に例外をキャッチして未翻訳テキストをそのまま返す（サイレントフォールバック）。 |
+| 1 | `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` | L250-304 (`handleGenerateSets`) | 全プリセット×バッチ数のジョブを完全な直列ループ（`for ... for ... await queuePrompt`）で1件ずつ順番にネットワーク通信・完了待ちしている。 |
+| 2 | `frontend/src/store/useGenerationStore.ts` | L616-619 (`ws.onmessage` の `case 'status'`) | ComfyUIがプロンプトを受信・キューイングするたびに WebSocket で `status` イベントを送信するが、それを受信するたびに `fetchQueue()` と **`fetchHistory(100)` (最大100件の全履歴JSON取得・全件走査)** を過剰に連続発火している。 |
+| 3 | `backend/app/routers/comfy.py` | L59-79 (`queue_prompt`) | リクエストごとに `async with httpx.AsyncClient()` を生成・破棄しており、TCP接続プールが再利用されていない。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 根本原因 1: フロントエンドにおけるイベントオブジェクト（`MouseEvent`）の不正代入と例外中断（主原因）
-- `usePromptTranslation.ts` の `executeTranslate` は以下のシグネチャとなっている：
+### 根本原因 1: フロントエンドにおける完全直列逐次投入アーキテクチャ
+- `useGenerateAction.ts` の `handleGenerateSets` は、対象となる全ジョブ（プリセット数 × バッチサイズ）に対して以下のように直列に `await queuePrompt(...)` を実行している。
   ```typescript
-  const executeTranslate = useCallback(
-    async (customText?: string) => {
-      const textToTranslate = customText !== undefined ? customText : sourceText
-      if (!textToTranslate.trim()) { ... }
+  for (const setItem of checkedSets) {
+    for (let i = 0; i < setItem.batchSize; i++) {
+      promptId = await queuePrompt(wfJson, ...)
+      // promptId確定後に次のループへ進む
+    }
+  }
   ```
-- `PromptTranslationModal.tsx` ではボタンの `onClick={onTranslate}` としてバインドされている。
-- Reactの `onClick` コールバックは第1引数に `SyntheticBaseEvent`（`MouseEvent` オブジェクト）を渡すため、`customText` にオブジェクトが代入され、`customText !== undefined` が `true` と評価される。
-- 結果として `textToTranslate` に `MouseEvent` が格納され、`try` ブロックの手前で `textToTranslate.trim()` が実行されることで **`TypeError: textToTranslate.trim is not a function`** が発生し、処理が即時中断（API呼び出しやローディング設定に到達しない）する。
+- ComfyUI の `/prompt` エンドポイントは、1リクエストにつき1件のワークフローを受け取り、ノードの整合性や型チェックなどのバリデーションを実行した上で `prompt_id` を返却する（ワークフローの規模やComfyUIの負荷により1件あたり100ms〜500ms+程度を要する）。
+- これを直列ループで処理するため、ジョブ数が N 件ある場合、**N × (ネットワーク往復遅延 + ComfyUI検証時間)** の待ち時間がそのまま線形に累積する。
 
-### 根本原因 2: Google無料翻訳のスクレイピング該当性・利用規約上の位置づけ
-ユーザーから指摘のあった「無料Google翻訳がスクレイピングに当たるか」についての調査結果：
-1. **非公式エンドポイントの利用（スクレイピング・不正アクセス該当性）**:
-   - 現在実装されている `https://translate.googleapis.com/translate_a/single?client=gtx` は、Googleが外部公開している公式APIではなく、ブラウザ拡張等向けに内部利用されている非公式エンドポイントである。
-   - Googleの利用規約（ToS）では、公式に提供されていないWebエンドポイントへの自動化ツールによるアクセスやリバースエンジニアリングは禁止（いわゆる非公式スクレイピング／規約外利用）に該当する。
-   - IP制限、CAPTCHA要求、HTTP 429/403による急な遮断リスクが極めて高い。
-2. **公式な推奨代替手段**:
-   - Google翻訳を利用する場合の公式手段は **Google Cloud Translation API**（APIキー指定）である（本システムには既に `google_cloud` プロバイダが実装済み）。
-   - 無料/ローカルで利用する場合は **ローカルLLM（Ollama/LM Studio）による翻訳プロバイダ（`llm`）** や、無料枠のある **DeepL API Free**（`deepl`）が正規かつ安全な選択肢となる。
-3. **バックエンドのサイレント失敗**:
-   - 万が一Google無料エンドポイント側で429/403遮断が発生した場合でも、バックエンド（`translation_service.py` L284）がエラーを握りつぶして原文をそのまま返すため、ユーザーには「翻訳されずにスルーされた」ように見える構造になっている。
+### 根本原因 2: キュー投入毎の WebSocket `status` 受信に伴う `fetchHistory` / `fetchQueue` のストーム（負荷増幅）
+- ComfyUI はジョブがキューに追加されるたびに WebSocket で `status`（キュー残数更新）をブロードキャストする。
+- `useGenerationStore.ts` (L616-619) では、`status` を受け取るたびに無条件で以下を実行している：
+  ```typescript
+  case 'status':
+    get().fetchQueue()
+    get().fetchHistory() // GET /api/comfy/history?max_items=100 を叩き、全履歴JSONをパース・画像URL抽出
+    break
+  ```
+- 10件のジョブを連続投入すると、投入中に 10 回以上の `GET /history`（重い履歴データ）と `GET /queue` が並行して送信され、ブラウザとComfyUI間の通信帯域・コネクションおよびメインスレッドを圧迫し、直列投入の完了をさらに遅延させている。
+
+### 根本原因 3: バックエンドにおける HTTP クライアントの毎リクエスト新規生成
+- `backend/app/routers/comfy.py` の `queue_prompt` を含む各プロキシエンドポイントで `async with httpx.AsyncClient() as client:` が使われており、リクエスト毎にTCPソケットの確立と破棄が発生している。
 
 ---
 
@@ -65,20 +66,29 @@
 
 <diagnostic_check>
 - Root_Cause_Isolated: Yes
-- Classification: Type_A: Implementation Bug
+- Classification: Type_B: Specification Flaw
 - Scope_Restriction: Read-only phase. Code modification or fix proposals are strictly PROHIBITED during this turn.
 - Route: Direct to /dev-design
 </diagnostic_check>
 
-* **分類**: **Type A (Implementation Bug / 実装不具合)**
-  * フロントエンドの引数処理（イベントオブジェクトの型判定不備）による `TypeError` 実装不具合。
-  * （付帯事項）非公式Googleエンドポイントの規約リスクについては、設定画面での注意喚起や公式プロバイダ（DeepL Free / Google Cloud / Local LLM）の推奨、エラー伝搬の改善等の対応が推奨される。
+* **分類**: **Type B (Specification / Architectural Flaw - 設計・仕様起因)**（一部実装最適化の余地あり）
+  * 不具合（バグ）で処理が異常終了しているわけではなく、**「逐次直列ループによる投入」** と **「ComfyUIの1件毎の検証仕様＋WebSocket statusイベント受信時の過剰な履歴フェッチ」** が重なって発生している仕様・設計レベルのパフォーマンスボトルネックである。
 
 ---
 
-## 6. 次のステップ提案 (Next Action)
+## 6. 改善アプローチの方向性（参考）
 
-不具合の原因特定（フロントエンドのイベント引数処理の不備）およびGoogle無料翻訳の規約リスク調査が完了しました。
+1. **キュー投入の並列化 / バッチ化**:
+   - `Promise.all` または一定の並行数（concurrency pool: 例 3〜5 並列）での `queuePrompt` 実行による通信パイプライン化。
+2. **投入中の過剰フェッチ抑制（デバウンス / スロットリング）**:
+   - `isBatchSubmitting` 中は WebSocket `status` 起因の `fetchHistory` 呼び出しを一時抑制、またはデバウンス（例: 500ms〜1秒間隔）して過剰な通信ストームを防ぐ。
+3. **バックエンドの HTTP コネクションプール化**:
+   - FastAPI 側でシングルトンの `httpx.AsyncClient` を維持し、接続オーバーヘッドを削減する。
 
-バックログへの PBI 登録と修正設計（`executeTranslate` の引数保護、および翻訳プロバイダの取り扱い方針整理）を行うため、**`/dev-design` ワークフロー** への移行を提案します。
+---
+
+## 7. 次のステップ提案 (Next Action)
+
+ボトルネックのメカニズムおよび根本原因の特定が完了しました。
+仕様・設計改善に向けた PBI 登録と詳細設計を実施するため、**`/dev-design` ワークフロー** への移行を提案します。
 

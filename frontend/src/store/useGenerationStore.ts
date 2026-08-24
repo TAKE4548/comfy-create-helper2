@@ -226,6 +226,7 @@ let ws: WebSocket | null = null
 let comfyUrl: string | null = null
 let isInitializing = false
 let reconnectTimer: any = null
+let activeSubmissionPromise: Promise<string | null> | null = null
 
 export const _resetWebSocketForTesting = () => {
   if (ws) {
@@ -239,6 +240,7 @@ export const _resetWebSocketForTesting = () => {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  activeSubmissionPromise = null
 }
 
 // ─── Store ────────────────────────────────────────────────────────
@@ -613,7 +615,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             switch (type) {
               case 'status':
                 get().fetchQueue()
-                get().fetchHistory()
                 break
 
               case 'progress': {
@@ -1001,81 +1002,107 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     queuePrompt: async (workflow, metadata, options) => {
-      try {
-        const data = await comfyApi.queuePrompt({
-          prompt: workflow,
-          client_id: get().clientId
-        })
-        if (data.error) {
-          const errorMsg = typeof data.error === 'object'
-            ? (data.error.message || data.error.details || JSON.stringify(data.error))
-            : String(data.error)
-          get().setErrorToast({ message: errorMsg, type: 'error' })
-          throw new Error(errorMsg)
-        }
-        const promptId = data.prompt_id ?? null
-        if (promptId) {
-          localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
-        }
-        if (options?.isBatchIntermediate) {
-          set({
-            isGenerating: true,
-            currentPromptId: promptId,
-            activeClientId: get().clientId,
-          })
-        } else {
-          set({
-            isGenerating: true,
-            previewImage: null,
-            progress: null,
-            currentPromptId: promptId,
-            activeClientId: get().clientId,
-            currentWorkflow: workflow,
-          })
-          if (promptId) {
-            // キャッシュ保存
-            const metaKey = `prompt-surgeon-meta-${promptId}`
-            const promptMetadata = {
-              paramValues: metadata?.paramValues ?? get().paramValues,
-              appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
-              timestamp: Date.now()
-            }
-            localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+      if (options?.signal?.aborted) {
+        return null
+      }
 
-            // 古いキャッシュの自動削除 (最大200件制限) - メタデータ走査を非同期化してメインスレッドのブロックを防止
-            setTimeout(() => {
-              try {
-                const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
-                if (keys.length > 200) {
-                  const items = keys.map(k => {
-                    try {
-                      const val = JSON.parse(localStorage.getItem(k) || '{}')
-                      return { key: k, timestamp: val.timestamp || 0 }
-                    } catch {
-                      return { key: k, timestamp: 0 }
-                    }
-                  })
-                  items.sort((a, b) => a.timestamp - b.timestamp)
-                  const toDelete = items.slice(0, items.length - 200)
-                  toDelete.forEach(item => localStorage.removeItem(item.key))
-                }
-              } catch (e) {
-                console.error('Failed to prune prompt metadata:', e)
-              }
-            }, 0)
+      const execute = async (): Promise<string | null> => {
+        try {
+          const data = await comfyApi.queuePrompt({
+            prompt: workflow,
+            client_id: get().clientId
+          })
+
+          if (options?.signal?.aborted) {
+            return null
           }
-        }
-        if (!options?.skipQueueFetch) {
-          await get().fetchQueue()
-        }
-        return promptId
-      } catch (e: any) {
-        if (e?.name === 'AbortError' || options?.signal?.aborted) {
+
+          if (data.error) {
+            const errorMsg = typeof data.error === 'object'
+              ? (data.error.message || data.error.details || JSON.stringify(data.error))
+              : String(data.error)
+            get().setErrorToast({ message: errorMsg, type: 'error' })
+            throw new Error(errorMsg)
+          }
+          const promptId = data.prompt_id ?? null
+
+          if (options?.signal?.aborted) {
+            return null
+          }
+
+          if (promptId) {
+            localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+          }
+          if (options?.isBatchIntermediate) {
+            set({
+              isGenerating: true,
+              currentPromptId: promptId,
+              activeClientId: get().clientId,
+            })
+          } else {
+            set({
+              isGenerating: true,
+              previewImage: null,
+              progress: null,
+              currentPromptId: promptId,
+              activeClientId: get().clientId,
+              currentWorkflow: workflow,
+            })
+            if (promptId) {
+              // キャッシュ保存
+              const metaKey = `prompt-surgeon-meta-${promptId}`
+              const promptMetadata = {
+                paramValues: metadata?.paramValues ?? get().paramValues,
+                appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
+                timestamp: Date.now()
+              }
+              localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+
+              // 古いキャッシュの自動削除 (最大200件制限) - メタデータ走査を非同期化してメインスレッドのブロックを防止
+              setTimeout(() => {
+                try {
+                  const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'))
+                  if (keys.length > 200) {
+                    const items = keys.map(k => {
+                      try {
+                        const val = JSON.parse(localStorage.getItem(k) || '{}')
+                        return { key: k, timestamp: val.timestamp || 0 }
+                      } catch {
+                        return { key: k, timestamp: 0 }
+                      }
+                    })
+                    items.sort((a, b) => a.timestamp - b.timestamp)
+                    const toDelete = items.slice(0, items.length - 200)
+                    toDelete.forEach(item => localStorage.removeItem(item.key))
+                  }
+                } catch (e) {
+                  console.error('Failed to prune prompt metadata:', e)
+                }
+              }, 0)
+            }
+          }
+          if (!options?.skipQueueFetch && !options?.signal?.aborted) {
+            await get().fetchQueue()
+          }
+          return promptId
+        } catch (e: any) {
+          if (e?.name === 'AbortError' || options?.signal?.aborted) {
+            return null
+          }
+          console.error('Failed to queue prompt:', e)
+          get().setErrorToast({ message: e.message || 'Failed to queue prompt', type: 'error' });
           return null
         }
-        console.error('Failed to queue prompt:', e)
-        get().setErrorToast({ message: e.message || 'Failed to queue prompt', type: 'error' });
-        return null
+      }
+
+      const submissionPromise = execute()
+      activeSubmissionPromise = submissionPromise
+      try {
+        return await submissionPromise
+      } finally {
+        if (activeSubmissionPromise === submissionPromise) {
+          activeSubmissionPromise = null
+        }
       }
     },
 
@@ -1199,6 +1226,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     cancelJob: async (promptId: string): Promise<void> => {
       get().abortSubmission();
+      if (activeSubmissionPromise) {
+        try {
+          await activeSubmissionPromise;
+        } catch {}
+      }
       try {
         const isCurrentRunning = get().currentPromptId === promptId
         const isInQueueRunning = get().queueRunning.some((job) => job[1] === promptId)
@@ -1273,6 +1305,11 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     clearPendingQueue: async (): Promise<void> => {
       get().abortSubmission()
+      if (activeSubmissionPromise) {
+        try {
+          await activeSubmissionPromise;
+        } catch {}
+      }
       try {
         const pendingIds = get().queuePending.map((j) => j[1])
         // 待機キューのみ削除（interruptは呼ばない）
@@ -1297,20 +1334,37 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
     cancelAllJobs: async (): Promise<void> => {
       get().abortSubmission();
+      if (activeSubmissionPromise) {
+        try {
+          await activeSubmissionPromise;
+        } catch {}
+      }
       try {
         const runningIds = get().queueRunning.map((j) => j[1])
         const pendingIds = get().queuePending.map((j) => j[1])
         const allIds = [...runningIds, ...pendingIds]
 
         // 1. 待機キューの全クリア (interruptより先に実行し、後続ジョブの自動起動を即座に防止)
-        await comfyApi.deleteQueue({ clear: true })
+        try {
+          await comfyApi.deleteQueue({ clear: true })
+        } catch (e) {
+          console.error('Failed to clear queue in cancelAllJobs:', e)
+        }
 
         // 2. 中断 (割り込み)
-        await comfyApi.interrupt()
+        try {
+          await comfyApi.interrupt()
+        } catch (e) {
+          console.error('Failed to interrupt in cancelAllJobs:', e)
+        }
 
         // 3. 履歴からの削除
         if (allIds.length > 0) {
-          await comfyApi.deleteHistory({ delete: allIds })
+          try {
+            await comfyApi.deleteHistory({ delete: allIds })
+          } catch (e) {
+            console.error('Failed to delete history in cancelAllJobs:', e)
+          }
         }
 
         // 4. ステートリセット

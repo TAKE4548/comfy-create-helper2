@@ -378,6 +378,10 @@ async def lifespan(app: FastAPI):
         db.close()
     logger.info("Prompt Surgeon API started.")
     yield
+    try:
+        await comfy.close_comfy_client()
+    except Exception as e:
+        logger.error(f"Failed to close Comfy client: {e}")
     logger.info("Prompt Surgeon API shutting down.")
 
 

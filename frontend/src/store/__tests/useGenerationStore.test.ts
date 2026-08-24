@@ -862,4 +862,180 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
   });
 });
 
+describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () => {
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    useGenerationStore.setState({ isGenerating: false, currentPromptId: null, activeBatch: null });
+  });
 
+  it('should immediately return null and skip API call if signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} },
+      undefined,
+      { signal: controller.signal }
+    );
+
+    expect(result).toBeNull();
+    expect(comfyApi.queuePrompt).not.toHaveBeenCalled();
+    expect(useGenerationStore.getState().isGenerating).toBe(false);
+  });
+
+  it('should return null and not set isGenerating or save to localStorage if aborted before response', async () => {
+    const controller = new AbortController();
+
+    vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => {
+      // Abort during API execution
+      controller.abort();
+      return { prompt_id: 'aborted-prompt-1' };
+    });
+
+    useGenerationStore.setState({ isGenerating: false, currentPromptId: null });
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} },
+      undefined,
+      { signal: controller.signal }
+    );
+
+    expect(result).toBeNull();
+    expect(useGenerationStore.getState().isGenerating).toBe(false);
+    expect(useGenerationStore.getState().currentPromptId).toBeNull();
+    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBeNull();
+  });
+
+  it('cancelAllJobs waits for in-flight queuePrompt before calling deleteQueue and interrupt', async () => {
+    let apiCompleted = false;
+    const executionOrder: string[] = [];
+
+    vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      apiCompleted = true;
+      executionOrder.push('queuePrompt_finished');
+      return { prompt_id: 'in-flight-prompt' };
+    });
+
+    vi.mocked(comfyApi.deleteQueue).mockImplementation(async () => {
+      executionOrder.push('deleteQueue');
+      return {} as any;
+    });
+
+    vi.mocked(comfyApi.interrupt).mockImplementation(async () => {
+      executionOrder.push('interrupt');
+      return {} as any;
+    });
+
+    // Start queuePrompt in background
+    const queuePromise = useGenerationStore.getState().queuePrompt({ nodes: {} });
+
+    // While queuePrompt is in flight, invoke cancelAllJobs
+    const cancelPromise = useGenerationStore.getState().cancelAllJobs();
+
+    await Promise.all([queuePromise, cancelPromise]);
+
+    expect(apiCompleted).toBe(true);
+    expect(executionOrder).toEqual(['queuePrompt_finished', 'deleteQueue', 'interrupt']);
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.interrupt).toHaveBeenCalled();
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(false);
+    expect(state.currentPromptId).toBeNull();
+  });
+});
+
+describe('useGenerationStore REQ-181 WebSocket status event optimization', () => {
+  let createdWsList: any[] = [];
+
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    createdWsList = [];
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string | Blob | ArrayBuffer }) => void) | null = null;
+      binaryType: string = '';
+      url: string;
+
+      constructor(url: string) {
+        this.url = url;
+        createdWsList.push(this);
+      }
+
+      close() {}
+    }
+
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+
+  it('handles WS status event by calling fetchQueue and NOT calling fetchHistory', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+
+    const fetchHistorySpy = vi.spyOn(useGenerationStore.getState(), 'fetchHistory');
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    // Clear initial calls from initialize/reconcileState
+    fetchHistorySpy.mockClear();
+    fetchQueueSpy.mockClear();
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'status',
+        data: {
+          status: {
+            exec_info: { queue_remaining: 1 },
+          },
+        },
+      }),
+    });
+
+    expect(fetchQueueSpy).toHaveBeenCalledTimes(1);
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('useGenerationStore REQ-182 interrupt resilience & abort responsiveness', () => {
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    useGenerationStore.setState({ isGenerating: false, currentPromptId: null, activeBatch: null });
+  });
+
+  it('cancelAllJobs guarantees interrupt execution even if deleteQueue fails', async () => {
+    vi.mocked(comfyApi.deleteQueue).mockRejectedValueOnce(new Error('Network error on deleteQueue'));
+    vi.mocked(comfyApi.interrupt).mockResolvedValueOnce({ status: 'interrupted' });
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'run-1', {}, {}, []]],
+      queuePending: [[1, 'pend-1', {}, {}, []]],
+      isGenerating: true,
+      currentPromptId: 'run-1',
+    });
+
+    await useGenerationStore.getState().cancelAllJobs();
+
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.interrupt).toHaveBeenCalledTimes(1);
+
+    const state = useGenerationStore.getState();
+    expect(state.isGenerating).toBe(false);
+    expect(state.currentPromptId).toBeNull();
+  });
+});

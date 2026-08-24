@@ -77,6 +77,26 @@ describe('client.ts API client', () => {
       expect(result).toBeUndefined()
     })
 
+    it('should handle empty or whitespace response body and return undefined', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '',
+      })
+      globalThis.fetch = mockFetch
+
+      const result = await workflowsApi.delete(1)
+      expect(result).toBeUndefined()
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '   ',
+      })
+      const resultWhitespace = await workflowsApi.delete(1)
+      expect(resultWhitespace).toBeUndefined()
+    })
+
     it('should throw an Error on HTTP errors', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,

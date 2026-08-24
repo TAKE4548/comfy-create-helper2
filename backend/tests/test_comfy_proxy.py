@@ -11,6 +11,26 @@ class TestComfyProxyAPI(unittest.TestCase):
         self.client = TestClient(app)
         comfy_router._object_info_cache = None
 
+    def tearDown(self):
+        comfy_router._object_info_cache = None
+        if comfy_router._client is not None:
+            # Synchronously close test client if any
+            pass
+
+    def test_get_comfy_client_singleton(self):
+        comfy_router._client = None
+        client1 = comfy_router.get_comfy_client()
+        client2 = comfy_router.get_comfy_client()
+        self.assertIs(client1, client2)
+        self.assertFalse(client1.is_closed)
+
+    def test_close_comfy_client(self):
+        import asyncio
+        client = comfy_router.get_comfy_client()
+        self.assertFalse(client.is_closed)
+        asyncio.run(comfy_router.close_comfy_client())
+        self.assertIsNone(comfy_router._client)
+
     @patch("httpx.AsyncClient.get")
     def test_get_comfy_object_info_success(self, mock_get):
         mock_response = MagicMock()
