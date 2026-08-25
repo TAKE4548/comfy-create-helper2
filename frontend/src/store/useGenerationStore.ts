@@ -20,6 +20,17 @@ import { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
 // ─── Re-export helpers for backward compatibility ─────────────────
 export { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
 
+export function resolveNodeTitle(
+  workflow: Record<string, any> | null | undefined,
+  nodeId: string | null | undefined
+): string | null {
+  if (!workflow || !nodeId) return null
+  const nodeInfo = workflow[nodeId]
+  if (!nodeInfo) return null
+  return nodeInfo._meta?.title || nodeInfo.class_type || null
+}
+
+
 // ─── Type definitions ─────────────────────────────────────────────
 
 export interface BatchJob {
@@ -228,6 +239,7 @@ let comfyUrl: string | null = null
 let isInitializing = false
 let reconnectTimer: any = null
 let activeSubmissionPromise: Promise<string | null> | null = null
+let activeFetchHistoryPromise: Promise<void> | null = null
 
 export const _resetWebSocketForTesting = () => {
   if (ws) {
@@ -242,6 +254,7 @@ export const _resetWebSocketForTesting = () => {
     reconnectTimer = null
   }
   activeSubmissionPromise = null
+  activeFetchHistoryPromise = null
 }
 
 // ─── Store ────────────────────────────────────────────────────────
@@ -622,13 +635,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 const value = data.value as number
                 const max = data.max as number
                 const nodeId = data.node as string | undefined
+                const promptId = data.prompt_id as string | undefined
                 
-                let nodeName = get().currentNode?.name || ''
+                let nodeName = ''
                 if (nodeId) {
-                  const nodeInfo = get().currentWorkflow?.[nodeId]
-                  if (nodeInfo) {
-                    nodeName = nodeInfo._meta?.title || nodeInfo.class_type || 'Unknown'
+                  nodeName = resolveNodeTitle(get().currentWorkflow, nodeId) || ''
+                  if (!nodeName) {
+                    const running = get().queueRunning
+                    const activeJob = (promptId ? running.find((j: any) => j[1] === promptId) : null) || (running.length > 0 ? running[0] : null)
+                    const queueWf = activeJob?.[2]
+                    if (queueWf) {
+                      nodeName = resolveNodeTitle(queueWf, nodeId) || ''
+                      if (nodeName && !get().currentWorkflow) {
+                        set({ currentWorkflow: queueWf })
+                      }
+                    }
                   }
+                }
+                if (!nodeName) {
+                  nodeName = get().currentNode?.name || 'Unknown'
                 }
 
                 set({
@@ -671,26 +696,34 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 const nodeId = data.node !== undefined ? (data.node as string | null) : null
                 const promptId = data.prompt_id as string | undefined
                 if (nodeId) {
-                  const nodeInfo = get().currentWorkflow?.[nodeId]
-                  const nodeName = nodeInfo
-                    ? (nodeInfo._meta?.title || nodeInfo.class_type || 'Unknown')
-                    : 'Unknown'
-                  
                   const running = get().queueRunning
-                  const activeJob = running.length > 0 ? running[0] : null
+                  const activeJob = (promptId ? running.find((j: any) => j[1] === promptId) : null) || (running.length > 0 ? running[0] : null)
                   const jobClientId = activeJob?.[3]?.client_id || get().activeClientId
+
+                  // 1. Primary: queueRunning の prompt_json から解決
+                  let nodeName = activeJob?.[2] ? resolveNodeTitle(activeJob[2], nodeId) : null
+                  if (nodeName && activeJob?.[2] && !get().currentWorkflow) {
+                    set({ currentWorkflow: activeJob[2] })
+                  }
+
+                  // 2. Fallback: ローカルの currentWorkflow から解決
+                  if (!nodeName) {
+                    nodeName = resolveNodeTitle(get().currentWorkflow, nodeId)
+                  }
+
+                  const finalNodeName = nodeName || 'Unknown'
 
                   set({
                     isGenerating: true,
                     currentPromptId: promptId || get().currentPromptId,
                     activeClientId: jobClientId,
-                    currentNode: { id: nodeId, name: nodeName },
+                    currentNode: { id: nodeId, name: finalNodeName },
                     nodeProgress: {
                       value: 0,
                       max: 100,
                       percentage: 0,
                       nodeId,
-                      nodeName,
+                      nodeName: finalNodeName,
                     },
                   })
                 } else {
@@ -739,7 +772,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                       generationStartTime: isStillGenerating ? state.generationStartTime : null,
                       currentNode: isStillGenerating ? state.currentNode : null,
                       nodeProgress: isStillGenerating ? state.nodeProgress : null,
-                      currentWorkflow: isStillGenerating ? state.currentWorkflow : null,
+                      currentWorkflow: state.currentWorkflow,
                     }
                   })
                   localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
@@ -1039,6 +1072,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
               isGenerating: true,
               currentPromptId: promptId,
               activeClientId: get().clientId,
+              currentWorkflow: workflow,
             })
           } else {
             set({
@@ -1114,63 +1148,74 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     clearPreview: () => set({ previewImage: null, progress: null }),
 
     fetchHistory: async () => {
-      const resolvedUrl = resolveComfyUrl(comfyUrl)
+      if (activeFetchHistoryPromise) {
+        return activeFetchHistoryPromise
+      }
+      const execute = async () => {
+        const resolvedUrl = resolveComfyUrl(comfyUrl)
+        try {
+          const data = await comfyApi.getHistory(100)
+          const allImages: string[] = []
+          const ownImages: string[] = []
+          const clientId = get().clientId
+
+          const entries = Object.entries(data || {}) as [string, ComfyHistoryItem][]
+          const sortedEntries = entries.sort(([, itemA], [, itemB]) => {
+            const indexA = itemA?.prompt ? itemA.prompt[0] : 0
+            const indexB = itemB?.prompt ? itemB.prompt[0] : 0
+            return indexB - indexA
+          })
+
+          sortedEntries.forEach(([key, item]) => {
+            if (!item) return
+            const isOwnPrompt = item.prompt && item.prompt[3]?.client_id === clientId
+            if (item.outputs) {
+              Object.values(item.outputs).forEach((out) => {
+                if (out?.images) {
+                  out.images.forEach((img) => {
+                    const url = `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
+                    allImages.push(url)
+                    if (isOwnPrompt) {
+                      ownImages.push(url)
+                    }
+                  })
+                }
+              })
+            }
+          })
+
+          set((state) => {
+            // filterOwnSession に応じてマージ対象を選択 (OFF時は全セッション、ON時は自セッション)
+            const targetImages = state.filterOwnSession ? ownImages : allImages
+            const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 50)
+            localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
+
+            const hasNewImages = targetImages.some((img) => !state.batchImages.includes(img))
+            const nextSelected = (hasNewImages || !state.selectedImg || !mergedBatchImages.includes(state.selectedImg))
+              ? (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
+              : state.selectedImg
+
+            if (nextSelected) {
+              localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
+            } else {
+              localStorage.removeItem(LS_KEYS.SELECTED_IMG)
+            }
+
+            return {
+              comfyHistoryImages: allImages.slice(0, 50),
+              batchImages: mergedBatchImages,
+              selectedImg: nextSelected,
+            }
+          })
+        } catch (e) {
+          console.error('Failed to fetch comfy history:', e)
+        }
+      }
+      activeFetchHistoryPromise = execute()
       try {
-        const data = await comfyApi.getHistory(100)
-        const allImages: string[] = []
-        const ownImages: string[] = []
-        const clientId = get().clientId
-
-        const entries = Object.entries(data || {}) as [string, ComfyHistoryItem][]
-        const sortedEntries = entries.sort(([, itemA], [, itemB]) => {
-          const indexA = itemA?.prompt ? itemA.prompt[0] : 0
-          const indexB = itemB?.prompt ? itemB.prompt[0] : 0
-          return indexB - indexA
-        })
-
-        sortedEntries.forEach(([key, item]) => {
-          if (!item) return
-          const isOwnPrompt = item.prompt && item.prompt[3]?.client_id === clientId
-          if (item.outputs) {
-            Object.values(item.outputs).forEach((out) => {
-              if (out?.images) {
-                out.images.forEach((img) => {
-                  const url = `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
-                  allImages.push(url)
-                  if (isOwnPrompt) {
-                    ownImages.push(url)
-                  }
-                })
-              }
-            })
-          }
-        })
-
-        set((state) => {
-          // filterOwnSession に応じてマージ対象を選択 (OFF時は全セッション、ON時は自セッション)
-          const targetImages = state.filterOwnSession ? ownImages : allImages
-          const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 50)
-          localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
-
-          const hasNewImages = targetImages.some((img) => !state.batchImages.includes(img))
-          const nextSelected = (hasNewImages || !state.selectedImg || !mergedBatchImages.includes(state.selectedImg))
-            ? (mergedBatchImages.length > 0 ? mergedBatchImages[0] : null)
-            : state.selectedImg
-
-          if (nextSelected) {
-            localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
-          } else {
-            localStorage.removeItem(LS_KEYS.SELECTED_IMG)
-          }
-
-          return {
-            comfyHistoryImages: allImages.slice(0, 50),
-            batchImages: mergedBatchImages,
-            selectedImg: nextSelected,
-          }
-        })
-      } catch (e) {
-        console.error('Failed to fetch comfy history:', e)
+        await activeFetchHistoryPromise
+      } finally {
+        activeFetchHistoryPromise = null
       }
     },
 
@@ -1183,9 +1228,23 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
 
         const running = data.queue_running || []
         if (running.length > 0) {
-          const activeJobClientId = running[0][3]?.client_id || null
+          const activeJob = running[0]
+          const activeJobClientId = activeJob[3]?.client_id || null
           if (activeJobClientId) {
             set({ activeClientId: activeJobClientId })
+          }
+          if (!get().currentWorkflow && activeJob[2]) {
+            set({ currentWorkflow: activeJob[2] })
+          }
+          const currNode = get().currentNode
+          if (currNode && (currNode.name === 'Unknown' || !currNode.name) && activeJob[2]) {
+            const resolvedName = resolveNodeTitle(activeJob[2], currNode.id)
+            if (resolvedName) {
+              set({
+                currentNode: { id: currNode.id, name: resolvedName },
+                nodeProgress: get().nodeProgress ? { ...get().nodeProgress!, nodeName: resolvedName } : null,
+              })
+            }
           }
         }
 
@@ -1236,19 +1295,25 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         const isCurrentRunning = get().currentPromptId === promptId
         const isInQueueRunning = get().queueRunning.some((job) => job[1] === promptId)
         const isRunning = isCurrentRunning || isInQueueRunning
-        
-        // 1. 実行中の場合は割り込みを投げる
+
+        // 1. 楽観的ローカル更新: 待機キューから即時除外
+        set((state) => ({
+          queuePending: state.queuePending.filter((job) => job[1] !== promptId)
+        }))
+
+        // 2. 実行中の場合は割り込みを投げる
         if (isRunning) {
           await comfyApi.interrupt()
+          // 実行中ジョブのみ履歴クリーンアップ（非同期）
+          Promise.resolve(comfyApi.deleteHistory({ delete: [promptId] })).catch((e) => {
+            console.error('Failed to delete history in cancelJob:', e)
+          })
         } else {
-          // 2. 待機中の場合はキューから削除する
+          // 待機中の場合はキューから削除する（待機ジョブは history に存在しないため deleteHistory は呼ばない）
           await comfyApi.deleteQueue({ delete: [promptId] })
         }
 
-        // 3. 履歴に残らないよう削除を投げる (AC-5)
-        await comfyApi.deleteHistory({ delete: [promptId] })
-
-        // 4. 自セッションのバッチジョブ/実行中ジョブのステート更新
+        // 3. 自セッションのバッチジョブ/実行中ジョブのステート更新
         const activeBatch = get().activeBatch
         if (activeBatch && activeBatch.some((job) => job.promptId === promptId)) {
           const updatedBatch = activeBatch.map((job) =>
@@ -1298,7 +1363,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
         }
 
-        await get().fetchQueue()
+        // 注意: 末尾の await get().fetchQueue() は削除（ComfyUIの WebSocket 'status' イベントで自動同期）
       } catch (e) {
         console.error('Failed to cancel job:', e)
       }
@@ -1312,14 +1377,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         } catch {}
       }
       try {
-        const pendingIds = get().queuePending.map((j) => j[1])
-        // 待機キューのみ削除（interruptは呼ばない）
-        await comfyApi.deleteQueue({ clear: true })
-        if (pendingIds.length > 0) {
-          await comfyApi.deleteHistory({ delete: pendingIds })
-        }
+        // 1. 楽観的ローカル更新: 待機キューを即時クリア
+        set({ queuePending: [] })
 
-        // activeBatch がある場合、待機中のジョブのみ除外
+        // 2. 待機キュークリアリクエスト
+        await comfyApi.deleteQueue({ clear: true })
+
+        // 3. activeBatch がある場合、待機中のジョブのみ除外
         const activeBatch = get().activeBatch
         if (activeBatch) {
           const updatedBatch = activeBatch.filter(
@@ -1327,7 +1391,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           )
           set({ activeBatch: updatedBatch.length > 0 ? updatedBatch : null })
         }
-        await get().fetchQueue()
+        // 注意: deleteHistory(pendingIds) および await get().fetchQueue() は削除
       } catch (e) {
         console.error('Failed to clear pending queue:', e)
       }
@@ -1342,34 +1406,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       }
       try {
         const runningIds = get().queueRunning.map((j) => j[1])
-        const pendingIds = get().queuePending.map((j) => j[1])
-        const allIds = [...runningIds, ...pendingIds]
 
-        // 1. 待機キューの全クリア (interruptより先に実行し、後続ジョブの自動起動を即座に防止)
-        try {
-          await comfyApi.deleteQueue({ clear: true })
-        } catch (e) {
-          console.error('Failed to clear queue in cancelAllJobs:', e)
-        }
-
-        // 2. 中断 (割り込み)
-        try {
-          await comfyApi.interrupt()
-        } catch (e) {
-          console.error('Failed to interrupt in cancelAllJobs:', e)
-        }
-
-        // 3. 履歴からの削除
-        if (allIds.length > 0) {
-          try {
-            await comfyApi.deleteHistory({ delete: allIds })
-          } catch (e) {
-            console.error('Failed to delete history in cancelAllJobs:', e)
-          }
-        }
-
-        // 4. ステートリセット
+        // 1. 楽観的ステートリセット
         set({
+          queuePending: [],
           activeBatch: null,
           isGenerating: false,
           currentPromptId: null,
@@ -1380,8 +1420,29 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           currentWorkflow: null,
         })
         localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-        
-        await get().fetchQueue()
+
+        // 2. 待機キューの全クリア
+        try {
+          await comfyApi.deleteQueue({ clear: true })
+        } catch (e) {
+          console.error('Failed to clear queue in cancelAllJobs:', e)
+        }
+
+        // 3. 中断 (割り込み)
+        try {
+          await comfyApi.interrupt()
+        } catch (e) {
+          console.error('Failed to interrupt in cancelAllJobs:', e)
+        }
+
+        // 4. 実行中だったジョブの履歴削除（非同期）
+        if (runningIds.length > 0) {
+          Promise.resolve(comfyApi.deleteHistory({ delete: runningIds })).catch((e) => {
+            console.error('Failed to delete history in cancelAllJobs:', e)
+          })
+        }
+
+        // 注意: 末尾の await get().fetchQueue() は削除
       } catch (e) {
         console.error('Failed to cancel all jobs:', e)
       }

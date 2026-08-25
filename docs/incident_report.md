@@ -1,33 +1,28 @@
-# インシデントレポート: セリフ編集のパス軌道およびスケール変化カーブにおける不具合調査報告書
+# インシデントレポート: ComfyUI 生成繰り返しに伴うキュー投入・ジョブ削除のレスポンス遅延調査報告書
 
 ## 1. 事象概要 (Overview)
 
-セリフ編集機能の「漫画テキスト演出（MangaTextEffects）」において、パス軌道レイアウトおよびスケール変化カーブに関連する以下の3つの不具合が報告された。
+ComfyUIサーバの起動後、生成（単体生成・バッチ生成・セット一括生成）を何度か繰り返していると、以下の事象が発生することが報告された。
 
 ### 観測されている事象:
-1. **軌道タイプの縦書き不整合**: パスの軌道タイプが「S字波（wave）」「円弧（arc）」以外の時（「直線（line）」「階段（stepped）」）、セリフの文字方向が縦書き設定であっても強制的に横書き配置になってしまう。
-2. **パス軌道反転の無効**: 「パス反転 ⇄」ボタンを押下しても、軌道レイアウトの反転（ミラーリング）が画面に反映されない。
-3. **字間ギャップ・レイアウトの破綻**: パス軌道やスケール変化カーブの変化量（開始・終了倍率やカーブ形状、制御点）を調整すると、文字間の見た目のギャップが意図せず極端に詰まったり（文字同士が重なる）、広がったりして意図した調整ができない。
+1. **ジョブ削除（キューからの削除 / 実行中断）のレスポンスが顕著に遅くなる**:
+   - ジョブ管理モーダル等から待機中ジョブの削除や中断ボタンを押した際、UIが反応してキューから消えるまでに数秒〜十数秒のタイムラグが発生する。
+   - 生成回数・ジョブ完了回数が増えるにつれて、この遅延が顕著に悪化する。
+2. **キュー投入（生成開始）のレスポンス低下**:
+   - 「生成」ボタンまたは「セット一括生成」を押下後、キューに登録されて実行が開始されるまでの応答時間が徐々に悪化する。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
-- **事象1（軌道タイプの横書き化）の再現手順**:
-  1. 吹き出し編集モーダルを開き、文字方向を「縦書き」に設定する。
-  2. 漫画演出セクションを開き、軌道タイプを「直線（2制御点）」または「階段（2制御点）」に変更する。
-  3. **観測結果**: 円弧やS字では縦方向に沿っていたテキストが、直線・階段を選択した瞬間に水平（横書き）に配置される。
-
-- **事象2（パス反転の無効）の再現手順**:
-  1. 軌道タイプで「円弧」または「S字波」を選択する。
-  2. 「パス反転 ⇄」ボタンをクリックする。
-  3. **観測結果**: プレビュー上のパス形状や文字配置が一切変化しない。
-
-- **事象3（字間ギャップの変動・破綻）の再現手順**:
-  1. 通常レイアウトまたはパス軌道において、スケール変化カーブ（`linear` 等）を有効化し、開始倍率 `scaleStart` を 2.0 に上げる。
-  2. **観測結果**:
-     - 通常配置時: 先頭付近の文字が拡大されるが文字送り幅（グリッド間隔）が未拡大時の固定値であるため、文字同士が大きく重なり合う。末尾の縮小文字は極端に隙間が空く。
-     - パス軌道時: 軌道パラメータ $t \in [0, 1]$ が文字インデックス比率 $i / (N-1)$ で等分割配置されるため、ベジェ曲線の曲率による歪みや文字サイズ、字間（`letterSpacing`）が考慮されず、軌道や倍率を変えるたびに文字間隔の見た目が崩れる。
+- **再現手順**:
+  1. バックエンドおよび ComfyUI を起動する。
+  2. 生成画面からプロンプト生成（10〜30回以上、または複数セット一括生成）を複数回繰り返し実行し、履歴（History）が ComfyUI 内およびクライアント内に蓄積された状態にする。
+  3. バッチ生成または複数セット生成を投入し、キューに複数ジョブを待機（Pending）させる。
+  4. ジョブ管理モーダルを開き、待機中ジョブの「削除（ゴミ箱）」ボタンを押下する。
+  5. **観測結果**:
+     - ジョブ削除リクエストの完了までに数秒以上の待機時間が発生し、削除完了が顕著に重くなる。
+     - 生成ボタン押下時にも `queuePrompt` の完了待ちが重くなり、UIのレスポンスが全体的に低下する。
 
 ---
 
@@ -35,36 +30,33 @@
 
 | # | 対象ファイル | 該当行 / 関数 | 詳細 |
 |---|---|---|---|
-| 1 | `frontend/src/types/speechBubble.ts` | L76-79 (`DEFAULT_MANGA_EFFECTS`) | `pathPoints` の初期値が横書き用の2点 `[{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }]` で固定定義されている。 |
-| 2 | `frontend/src/components/SpeechBubbleControls.tsx` | L1151-1155 (軌道タイプ Select `onChange`) | 軌道タイプ変更時に `updateEffects({ pathPreset: val })` のみを呼び出しており、対応するプリセット・文字方向に応じたデフォルト制御点への初期化・同期が行われていない。 |
-| 3 | `frontend/src/components/SpeechBubbleControls.tsx` | L440-447 (`handleFlipPath`) | `currentPts` の取得で `fx.pathPoints.length > 0` を判定しているため、初期値の2点配列（line用）が保持された状態で arc（要3点）や wave（要4点）を反転しようとすると、2点配列のまま反転・保存されてしまい、レンダラー側で点数不足として無視される。 |
-| 4 | `frontend/src/utils/speechBubbleRenderer.ts` | L82-87 (`flipPathPoints`) | 基準線が中心（y=0.5 または x=0.5）の直線プリセットに対して反転計算（`1.0 - pt`）を行っても座標値が変わらない。 |
-| 5 | `frontend/src/utils/speechBubbleRenderer.ts` | L238-289 (`calculateCharacterTransform`) | `fx.pathPoints.length >= 2` の条件により、初期値の横書き2点配列が存在すると `line` と `stepped` は縦書き時でも横書き2点配列を採用してしまう。一方 `arc` (要3点) と `wave` (要4点) は点数不足で `defaultPts`（縦書き用）にフォールバックするため、挙動の食い違いが発生する。 |
-| 6 | `frontend/src/utils/speechBubbleRenderer.ts` | L892-950 (`drawBubbleText`) | 通常レイアウトでの文字描画において、各文字の座標をスケール考慮なしの固定 `lineHeight` / `fontSize` グリッドで計算しているため、スケール変化時に文字の重なり・過剰な空隙が発生する。 |
-| 7 | `frontend/src/utils/speechBubbleRenderer.ts` | L191, L848-852, L892-897 (`drawCharacter` & パス配置) | パス上の配置が単純なパラメータ分割 $t = i / (N - 1)$ で行われており、ベジェ曲線の弧長パラメータ化（等速移動）や文字サイズ・`letterSpacing` に応じた累積オフセット配置が組み込まれていない。また、`stepped` においては同一ステップ内の文字が同一座標に完全重複する。 |
+| 1 | `frontend/src/store/useGenerationStore.ts` | L1274-1350 (`cancelJob`) | ジョブ削除時に `deleteQueue`（または `interrupt`）、未生成ジョブに対する不要な `deleteHistory`、および `fetchQueue` の計3回の HTTP リクエストが完全直列（Sequential `await`）で実行されている。 |
+| 2 | `frontend/src/store/useGenerationStore.ts` | L1353-1380 (`clearPendingQueue`) / L1382-1434 (`cancelAllJobs`) | 待機キューの一括クリアや全ジョブ中断時にも、`deleteQueue`、`deleteHistory`、`fetchQueue` の複数 HTTP リクエストが直列に順次実行されている。 |
+| 3 | `frontend/src/store/useGenerationStore.ts` | L733, L778, L807 (`ws.onmessage`) / L1148-1207 (`fetchHistory`) | ジョブ完了時（`executing: node=null`, `executed`, `execution_complete`）に `fetchHistory`（`GET /api/comfy/history?max_items=100`）が高頻度で多重発火し、ComfyUI およびバックエンドプロキシの通信帯域・イベントループを圧迫している。 |
+| 4 | `backend/app/routers/comfy.py` | L159-175 (`get_history`), L199-218 (`manage_history`), L120-140 (`manage_queue`) | ComfyUI へのプロキシエンドポイントにおいて、単一の `httpx.AsyncClient` コネクションプールを介して通信しているが、肥大化した `/history` の送受信が並行して走ることで他リクエスト（`/queue`, `/prompt`）がブロック・遅延する。 |
+| 5 | `frontend/src/store/useGenerationStore.ts` | L1086-1115 (`queuePrompt`) | プロンプト投入ごとに `localStorage` のメタデータを走査・パース・クリーンアップする処理が走り、生成回数増加に伴いメインスレッドの処理負荷が増加する。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 原因1: パス制御点（`pathPoints`）の初期状態とプリセット切り替え時の同期不備 (事象1の要因)
-- `DEFAULT_MANGA_EFFECTS` に横書き直線用の2点 `{x: 0.1, y: 0.5}, {x: 0.9, y: 0.5}` があらかじめ格納されている。
-- ユーザーが縦書き吹き出しで軌道タイプを `line` または `stepped` にした際、レンダラー（`calculateCharacterTransform`）は `fx.pathPoints.length >= 2` を満たすと判断して横書き用の2点をそのまま適用する。
-- 一方、`arc`（3点以上要求）と `wave`（4点以上要求）は初期2点配列では条件を満たさないため、コード内のフォールバック処理で `getDefaultPathPoints('arc'/'wave', 'vertical')` が呼ばれ縦書き用の制御点が取得されていた。
-- これにより、「円弧・S字波のみ縦書きになり、直線・階段は強制的に横書きになる」という非対称な挙動が生じている。
+### 原因1: `cancelJob` における不要な `deleteHistory` 呼び出しと 3段直列 HTTP 通信のオーバーヘッド (ジョブ削除遅延の主因)
+- `frontend/src/store/useGenerationStore.ts` の `cancelJob`（L1274-1350）では、ジョブ1件の削除に対して以下の 3 つの HTTP 通信を直列 `await` で順次実行しています：
+  1. `await comfyApi.deleteQueue({ delete: [promptId] })` （実行中の場合は `interrupt`）
+  2. `await comfyApi.deleteHistory({ delete: [promptId] })`
+  3. `await get().fetchQueue()`
+- **問題点**:
+  - 待機中（Pending）のジョブは ComfyUI の実行キュー（Queue）にのみ存在し、履歴（History）には一切登録されていません。それにもかかわらず、毎回 `deleteHistory` を呼び出して ComfyUI の `/history` エンドポイントへ無駄な POST 通信と内部キューの排他ロック（Mutex Lock）アクセスを行っています。
+  - さらに、ComfyUI 側はキューの削除が行われると WebSocket 経由で `status` イベントをブロードキャストし、フロントエンド側で自動的に `fetchQueue()` が発火します。それと重複して末尾で明示的な `await get().fetchQueue()` を直列同期待ちしているため、1回の削除操作に対して合計 3 往復のネットワークラウンドトリップと ComfyUI サーバの処理待ちが累積し、顕著なレスポンス遅延を引き起こしています。
 
-### 原因2: `handleFlipPath` における制御点配列の不整合と反転ロジックの不備 (事象2の要因)
-- `SpeechBubbleControls.tsx` の `handleFlipPath` では、`fx.pathPoints` に要素が存在する場合（初期値の2点など）、現在のプリセットが必要とする点数に関わらずその2点を反転して `effects.pathPoints` に書き込む。
-- その結果、`arc` や `wave` 選択時に「2点の反転データ」が保存され、レンダラーの `length >= 3` / `length >= 4` チェックに引っかかって無視され、デフォルトの未反転データが表示され続ける。
-- また、直線（y=0.5）などの対称データに対しては単なる軸ミラーリングでは変化が生じない。
+### 原因2: 生成履歴（History）の肥大化と重複ポーリングによる ComfyUI / プロキシサーバの負荷増大 (キュー投入・削除全般の遅延要因)
+- ComfyUI は生成完了ごとに、ノード定義や実行結果を含む詳細な JSON データをインメモリの `self.prompt_queue.history` に蓄積します。
+- フロントエンドではジョブ完了に伴い、`ws.onmessage` 内で `executed`（L778）、`execution_complete`（L807）、`executing: node=null`（L733）の各タイミングで `fetchHistory()`（`GET /api/comfy/history?max_items=100`）が連続して重複発火します。
+- 生成を繰り返すにつれて ComfyUI の `/history` の JSON ペイロードサイズは数MB〜数十MBに肥大化します。ComfyUI（Python aiohttp / GIL）が巨大な JSON をシリアライズして送信する間、ComfyUI のシングルイベントループが占有され、後続の `/prompt`（キュー投入）や `/queue`（キュー削除・確認）リクエストの受付・処理がキューイングされて応答待ちが発生します。
 
-### 原因3: スケール変化およびパス軌道における文字送り・弧長計算モデルの欠落 (事象3の要因)
-1. **スケール変化時の文字送り**:
-   - `drawBubbleText` の通常配置ロジックでは、各文字の中心位置を一定間隔（等幅グリッド）で固定配置した上で、各文字の中心を原点として `ctx.scale(trans.scale, trans.scale)` を適用している。
-   - 文字が拡大されると外側に広がって隣の文字領域を侵食し（重なり）、縮小されると間隔がそのまま残るため、見た目の字間が破綻する。
-2. **パス軌道における配置**:
-   - パス上の位置決めが $t = i / (N - 1)$ で行われており、曲線の幾何学的長さ（弧長）、文字ごとの描画サイズ（スケール後の幅/高さ）、および `letterSpacing` が完全に無視されている。
-   - 階段状配置（`stepped`）では同一ステップ内の文字が同一の $t$ に割り当てられるため、文字が完全に重なってしまう。
+### 原因3: WebSocket イベントと手動フェッチの二重実行によるコネクション競合
+- キュー投入時（`queuePrompt`）やジョブ削除時（`cancelJob`）において、API 呼び出し完了直後の手動 `fetchQueue()` と、ComfyUI が WebSocket 経由で送信する `status` イベントハンドラによる `fetchQueue()` がミリ秒単位で同時に発生しています。
+- これにより、同じ `/queue` 取得リクエストがバックエンドおよび ComfyUI へ多重に送られ、ComfyUI 内部の `PromptQueue.mutex`（排他制御ロック）の競合が発生しています。
 
 ---
 
@@ -72,17 +64,17 @@
 
 <diagnostic_check>
 - Root_Cause_Isolated: Yes
-- Classification: Type_B: Specification Flaw
+- Classification: Type_A: Implementation Bug
 - Scope_Restriction: Read-only phase. Code modification or fix proposals are strictly PROHIBITED during this turn.
 - Route: Direct to /dev-design
 </diagnostic_check>
 
-* **分類**: **Type B (Specification Flaw / Design Gap - 仕様・アルゴリズム設計上の考慮不足および実装不整合)**
-  * 単なる制御点配列の参照バグ（Type A要素）にとどまらず、スケール変化に応じた可変文字送り（Proportional Char Advancement）、ベジェ曲線の弧長・字間・文字サイズを考慮したパス配置アルゴリズムの設計仕様策定が必要であるため、Type B に分類します。
+* **分類**: **Type A (Implementation Bug - 実装バグ・非効率な通信/状態更新シーケンス)**
+  * 外部仕様の変更や新機能の要件定義ではなく、フロントエンドの `useGenerationStore` における不要な API 呼び出し（未実行ジョブへの `deleteHistory`）、過剰な直列 `await` 通信、ジョブ完了時の重複 `fetchHistory` 呼び出し、および ComfyUI との通信オーケストレーションの非効率性に起因する実装上のパフォーマンス課題です。
 
 ---
 
 ## 6. 次のステップ提案 (Next Action)
 
-根本原因の特定と分類（Type B）が完了しました。
-本件の不具合を解消し、縦書き/横書きでの正常なパス配置、確実なパス反転、およびスケール変化やパス軌道時にも美しい字間を保つ配置アルゴリズムを導入するための詳細設計とタスク計画を策定するため、**`/dev-design` ワークフロー** への移行を提案します。
+根本原因の特定と分類（Type A）が完了しました。
+本不具合（ジョブ削除・キュー投入のレスポンス遅延）を解消し、生成を繰り返した後でも軽快に動作するよう改修するための設計・実装計画を策定するため、**`/dev-design` ワークフロー** への移行を提案します。

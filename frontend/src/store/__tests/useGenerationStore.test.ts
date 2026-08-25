@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { useGenerationStore, _resetWebSocketForTesting } from '../useGenerationStore';
+import { useGenerationStore, _resetWebSocketForTesting, resolveNodeTitle } from '../useGenerationStore';
 import { comfyApi } from '../../api/client';
 
 vi.mock('../../api/client', () => {
@@ -312,7 +312,7 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
     expect(state.currentPromptId).toBe('batch-prompt-id');
     expect(state.isGenerating).toBe(true);
     expect(state.previewImage).toBe('existing-preview.png');
-    expect(state.currentWorkflow).toEqual({ initial: true });
+    expect(state.currentWorkflow).toEqual({ updated: true });
     expect(localStorage.getItem('prompt-surgeon-meta-batch-prompt-id')).toBeNull();
   });
 });
@@ -336,7 +336,7 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
 
     expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
     expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1', 'pend-1'] });
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
 
     const state = useGenerationStore.getState();
     expect(state.isGenerating).toBe(false);
@@ -716,9 +716,10 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     expect(abortSpy).toHaveBeenCalled();
     expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
     expect(comfyApi.interrupt).not.toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['pending-id-1', 'pending-id-2'] });
+    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
 
     const state = useGenerationStore.getState();
+    expect(state.queuePending).toEqual([]);
     expect(state.activeBatch).toEqual([
       { promptId: 'running-id-1', setName: 'Set 1', status: 'generating' },
     ]);
@@ -746,7 +747,7 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     expect(abortSpy).toHaveBeenCalled();
     expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
     expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['running-id-1', 'pending-id-1'] });
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['running-id-1'] });
 
     const state = useGenerationStore.getState();
     expect(state.isGenerating).toBe(false);
@@ -813,6 +814,7 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
   it('fetchHistory merges new images to the beginning (front) of batchImages and calls getHistory(100)', async () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const myClientId = useGenerationStore.getState().clientId;
 
     useGenerationStore.setState({
@@ -1039,3 +1041,426 @@ describe('useGenerationStore REQ-182 interrupt resilience & abort responsiveness
     expect(state.currentPromptId).toBeNull();
   });
 });
+
+describe('useGenerationStore REQ-189 node title resolution, workflow retention, and queue fallback', () => {
+  let createdWsList: any[] = [];
+
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    createdWsList = [];
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string | Blob | ArrayBuffer }) => void) | null = null;
+      binaryType: string = '';
+      url: string;
+
+      constructor(url: string) {
+        this.url = url;
+        createdWsList.push(this);
+      }
+
+      close() {}
+    }
+
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+
+  describe('resolveNodeTitle', () => {
+    it('returns null for null or undefined workflow / nodeId', () => {
+      expect(resolveNodeTitle(null, '3')).toBeNull();
+      expect(resolveNodeTitle(undefined, '3')).toBeNull();
+      expect(resolveNodeTitle({}, null)).toBeNull();
+      expect(resolveNodeTitle({}, undefined)).toBeNull();
+    });
+
+    it('returns _meta.title if present', () => {
+      const wf = {
+        '3': { class_type: 'KSampler', _meta: { title: 'My KSampler Node' } }
+      };
+      expect(resolveNodeTitle(wf, '3')).toBe('My KSampler Node');
+    });
+
+    it('falls back to class_type if _meta.title is absent', () => {
+      const wf = {
+        '4': { class_type: 'CheckpointLoaderSimple' }
+      };
+      expect(resolveNodeTitle(wf, '4')).toBe('CheckpointLoaderSimple');
+    });
+
+    it('returns null if node ID is not in workflow', () => {
+      const wf = {
+        '4': { class_type: 'CheckpointLoaderSimple' }
+      };
+      expect(resolveNodeTitle(wf, '99')).toBeNull();
+    });
+  });
+
+  it('AC-1: preserves currentWorkflow on isBatchIntermediate queuePrompt and resolves node names in WS progress/executing', async () => {
+    const mockWorkflow = {
+      '3': { class_type: 'KSampler', _meta: { title: 'KSampler Main' } },
+      '4': { class_type: 'CheckpointLoaderSimple' }
+    };
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'batch-set-job-1' });
+
+    // intermediate queuePrompt (Sets batch generation)
+    await useGenerationStore.getState().queuePrompt(mockWorkflow, undefined, { isBatchIntermediate: true, skipQueueFetch: true });
+
+    expect(useGenerationStore.getState().currentWorkflow).toEqual(mockWorkflow);
+
+    // WS executing event for node 3
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executing',
+        data: {
+          node: '3',
+          prompt_id: 'batch-set-job-1',
+        },
+      }),
+    });
+
+    let state = useGenerationStore.getState();
+    expect(state.currentNode).toEqual({ id: '3', name: 'KSampler Main' });
+    expect(state.nodeProgress?.nodeName).toBe('KSampler Main');
+
+    // WS progress event for node 3
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'progress',
+        data: {
+          value: 10,
+          max: 20,
+          node: '3',
+          prompt_id: 'batch-set-job-1',
+        },
+      }),
+    });
+
+    state = useGenerationStore.getState();
+    expect(state.nodeProgress?.percentage).toBe(50);
+    expect(state.nodeProgress?.nodeName).toBe('KSampler Main');
+  });
+
+  it('AC-2: does not clear currentWorkflow on executed event when batch or subsequent job is running', () => {
+    const mockWorkflow = {
+      '3': { class_type: 'KSampler', _meta: { title: 'KSampler' } },
+      '9': { class_type: 'SaveImage', _meta: { title: 'Save Image Node' } }
+    };
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.setState({
+      currentWorkflow: mockWorkflow,
+      activeBatch: [
+        { promptId: 'job-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'job-2', setName: 'Set 2', status: 'pending' },
+      ],
+      isGenerating: true,
+    });
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          node: '9',
+          prompt_id: 'job-1',
+          output: {
+            images: [{ filename: 'output_1.png', subfolder: '', type: 'output' }],
+          },
+        },
+      }),
+    });
+
+    const state = useGenerationStore.getState();
+    expect(state.currentWorkflow).toEqual(mockWorkflow);
+    expect(state.isGenerating).toBe(true);
+  });
+
+  it('AC-3: resolves node title from queueRunning prompt_json fallback when currentWorkflow is null (other session / reload)', () => {
+    const queueWorkflow = {
+      '5': { class_type: 'VAEDecode', _meta: { title: 'VAE Decode Primary' } }
+    };
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.setState({
+      currentWorkflow: null,
+      currentNode: null,
+      queueRunning: [[0, 'other-session-job', queueWorkflow, { client_id: 'other-client' }, []]],
+    });
+
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    // executing event without local currentWorkflow
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executing',
+        data: {
+          node: '5',
+          prompt_id: 'other-session-job',
+        },
+      }),
+    });
+
+    let state = useGenerationStore.getState();
+    expect(state.currentNode).toEqual({ id: '5', name: 'VAE Decode Primary' });
+    expect(state.nodeProgress?.nodeName).toBe('VAE Decode Primary');
+    expect(state.currentWorkflow).toEqual(queueWorkflow);
+
+    // progress event also correctly resolves
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'progress',
+        data: {
+          value: 5,
+          max: 10,
+          node: '5',
+          prompt_id: 'other-session-job',
+        },
+      }),
+    });
+
+    state = useGenerationStore.getState();
+    expect(state.nodeProgress?.nodeName).toBe('VAE Decode Primary');
+  });
+
+  it('AC-3 (fetchQueue): auto-re-resolves Unknown currentNode and populates currentWorkflow on fetchQueue', async () => {
+    const queueWorkflow = {
+      '6': { class_type: 'CLIPTextEncode', _meta: { title: 'Positive Prompt' } }
+    };
+
+    vi.mocked(comfyApi.getQueue).mockResolvedValueOnce({
+      queue_running: [[0, 'running-job-1', queueWorkflow, { client_id: 'other-client' }, []]],
+      queue_pending: [],
+    });
+
+    useGenerationStore.setState({
+      currentWorkflow: null,
+      currentNode: { id: '6', name: 'Unknown' },
+      nodeProgress: { value: 0, max: 100, percentage: 0, nodeId: '6', nodeName: 'Unknown' },
+    });
+
+    await useGenerationStore.getState().fetchQueue();
+
+    const state = useGenerationStore.getState();
+    expect(state.currentWorkflow).toEqual(queueWorkflow);
+    expect(state.currentNode).toEqual({ id: '6', name: 'Positive Prompt' });
+    expect(state.nodeProgress?.nodeName).toBe('Positive Prompt');
+  });
+});
+
+describe('useGenerationStore REQ-190 cancel/clear communication optimization & fetchHistory deduplication', () => {
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    useGenerationStore.setState({
+      isGenerating: false,
+      currentPromptId: null,
+      activeBatch: null,
+      queueRunning: [],
+      queuePending: [],
+      filterOwnSession: false,
+      batchImages: [],
+      comfyHistoryImages: [],
+    });
+  });
+
+  it('AC-1: cancelJob for pending job optimistically removes job, calls deleteQueue, does not call deleteHistory/interrupt or fetchQueue', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'run-1', {}, {}, []]],
+      queuePending: [
+        [1, 'pend-1', {}, {}, []],
+        [2, 'pend-2', {}, {}, []],
+      ],
+      currentPromptId: 'run-1',
+      isGenerating: true,
+      activeBatch: [
+        { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'pend-1', setName: 'Set 2', status: 'pending' },
+        { promptId: 'pend-2', setName: 'Set 3', status: 'pending' },
+      ],
+    });
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().cancelJob('pend-1');
+
+    // Optimistic removal
+    expect(useGenerationStore.getState().queuePending).toEqual([
+      [2, 'pend-2', {}, {}, []],
+    ]);
+    expect(useGenerationStore.getState().activeBatch).toEqual([
+      { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+      { promptId: 'pend-1', setName: 'Set 2', status: 'failed' },
+      { promptId: 'pend-2', setName: 'Set 3', status: 'pending' },
+    ]);
+
+    // Comfy API calls
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ delete: ['pend-1'] });
+    expect(comfyApi.interrupt).not.toHaveBeenCalled();
+    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
+
+    // No trailing fetchQueue synchronous call
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+  });
+
+  it('AC-1 & AC-2: cancelJob for running job calls interrupt and deleteHistory, optimistically updates state, does not call fetchQueue', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'run-1', {}, {}, []]],
+      queuePending: [[1, 'pend-1', {}, {}, []]],
+      currentPromptId: 'run-1',
+      isGenerating: true,
+      activeBatch: [
+        { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'pend-1', setName: 'Set 2', status: 'pending' },
+      ],
+    });
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().cancelJob('run-1');
+
+    expect(comfyApi.interrupt).toHaveBeenCalled();
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
+    expect(comfyApi.deleteQueue).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    const state = useGenerationStore.getState();
+    expect(state.currentPromptId).toBeNull();
+    expect(state.activeBatch?.[0].status).toBe('failed');
+  });
+
+  it('AC-2: clearPendingQueue optimistically clears queuePending, calls deleteQueue({ clear: true }), avoids deleteHistory and fetchQueue', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'run-1', {}, {}, []]],
+      queuePending: [
+        [1, 'pend-1', {}, {}, []],
+        [2, 'pend-2', {}, {}, []],
+      ],
+      currentPromptId: 'run-1',
+      isGenerating: true,
+      activeBatch: [
+        { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+        { promptId: 'pend-1', setName: 'Set 2', status: 'pending' },
+      ],
+    });
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().clearPendingQueue();
+
+    expect(useGenerationStore.getState().queuePending).toEqual([]);
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
+    expect(comfyApi.interrupt).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+    expect(useGenerationStore.getState().activeBatch).toEqual([
+      { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+    ]);
+  });
+
+  it('AC-2: cancelAllJobs optimistically clears all queue and generation state, avoids trailing fetchQueue', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+
+    useGenerationStore.setState({
+      queueRunning: [[0, 'run-1', {}, {}, []]],
+      queuePending: [[1, 'pend-1', {}, {}, []]],
+      currentPromptId: 'run-1',
+      isGenerating: true,
+      activeClientId: 'client-1',
+      activeBatch: [{ promptId: 'run-1', setName: 'Set 1', status: 'generating' }],
+    });
+
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+
+    await useGenerationStore.getState().cancelAllJobs();
+
+    const state = useGenerationStore.getState();
+    expect(state.queuePending).toEqual([]);
+    expect(state.activeBatch).toBeNull();
+    expect(state.isGenerating).toBe(false);
+    expect(state.currentPromptId).toBeNull();
+    expect(state.activeClientId).toBeNull();
+
+    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
+    expect(comfyApi.interrupt).toHaveBeenCalled();
+    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+  });
+
+  it('AC-3: fetchHistory reuses in-flight promise when called multiple times concurrently', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    vi.mocked(comfyApi.getHistory).mockClear();
+
+    let resolveApi!: (value: any) => void;
+    const historyPromise = new Promise((resolve) => {
+      resolveApi = resolve;
+    });
+
+    vi.mocked(comfyApi.getHistory).mockImplementation(() => historyPromise as any);
+
+    // Trigger 3 parallel fetchHistory calls
+    const p1 = useGenerationStore.getState().fetchHistory();
+    const p2 = useGenerationStore.getState().fetchHistory();
+    const p3 = useGenerationStore.getState().fetchHistory();
+
+    expect(comfyApi.getHistory).toHaveBeenCalledTimes(1);
+
+    // Resolve API
+    resolveApi({
+      'prompt-100': {
+        prompt: [1, 'prompt-100', {}, { client_id: 'my-client' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: 'out-100.png', subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      },
+    });
+
+    await Promise.all([p1, p2, p3]);
+
+    expect(comfyApi.getHistory).toHaveBeenCalledTimes(1);
+    expect(useGenerationStore.getState().comfyHistoryImages.length).toBe(1);
+
+    // Subsequent call after resolution should invoke getHistory again
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce({} as any);
+    await useGenerationStore.getState().fetchHistory();
+    expect(comfyApi.getHistory).toHaveBeenCalledTimes(2);
+  });
+});
+
+
