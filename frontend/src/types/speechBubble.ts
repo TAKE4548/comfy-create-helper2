@@ -73,10 +73,7 @@ export const DEFAULT_MANGA_EFFECTS: MangaTextEffectConfig = {
   scaleEnd: 1.0,
   sizeJitter: 0,
   pathPreset: 'none',
-  pathPoints: [
-    { x: 0.1, y: 0.5 },
-    { x: 0.9, y: 0.5 },
-  ],
+  pathPoints: [],
   pathFollowRotation: false,
   pathSteppedCount: 3,
   baselineJitter: 0,

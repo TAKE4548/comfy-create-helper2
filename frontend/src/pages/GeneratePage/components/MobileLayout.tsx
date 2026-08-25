@@ -409,81 +409,6 @@ export const MobileLayout = ({
         )}
       </div>
 
-      {/* Multi-Set Tab Bar (Mobile) */}
-      {selectedWorkflowId && (
-        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-4 py-2.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                id="manage-presets-btn-mobile"
-                onClick={() => setIsPresetManagerOpen(true)}
-                className="px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
-              >
-                📑 管理
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
-              {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-                <div key={s.id} onClick={() => {
-                  const targetPreset = presets?.find(p => String(p.id) === String(s.id))
-                  if (targetPreset) handleLoadPreset(targetPreset)
-                  else setActiveSetId(s.id)
-                }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
-                    String(s.id) === String(activeSetId)
-                      ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
-                      : 'bg-surface-2 border-[rgba(255,255,255,0.04)] text-zinc-400'
-                  }`}>
-                  <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
-                  <span className="truncate max-w-[70px]">{s.name}</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)">✕</button>
-                </div>
-              ))}
-            </div>
-            <button type="button" id="add-set-btn-mobile" onClick={() => {
-              const allNames = presets?.map((p) => p.name) || []
-              setNewSetName(generateNextProfileName('Set', allNames))
-              setCopySourceId('default')
-              setShowCopyModal(true)
-            }}
-              className="flex items-center justify-center p-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 transition-all flex-shrink-0">
-              <Plus size={14} />
-            </button>
-          </div>
-
-          {activeSet && (
-            <div className="flex items-center justify-end gap-3 flex-wrap">
-              <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5 ml-auto">
-                <button
-                  type="button"
-                  id="undo-btn-mobile"
-                  onClick={() => undo?.(activeSet.id)}
-                  disabled={!canUndo}
-                  title="Undo"
-                  className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-                >
-                  ↩
-                </button>
-                <button
-                  type="button"
-                  id="redo-btn-mobile"
-                  onClick={() => redo?.(activeSet.id)}
-                  disabled={!canRedo}
-                  title="Redo"
-                  className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-                >
-                  ↪
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Thumbnail Strip */}
       {showStrip && (
         <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-2 space-y-2">
@@ -624,6 +549,78 @@ export const MobileLayout = ({
               </div>
             ) : <p className="text-[10px] text-zinc-500 py-1 italic">No snapshots available.</p>
           )}
+        </div>
+      )}
+
+      {/* Multi-Set Tab Bar (Mobile) */}
+      {selectedWorkflowId && (
+        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-4 py-2.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
+            <div className="flex items-center gap-2.5">
+              {activeSet && (
+                <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    id="undo-btn-mobile"
+                    onClick={() => undo?.(activeSet.id)}
+                    disabled={!canUndo}
+                    title="Undo"
+                    className="px-2 py-0.5 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                  >
+                    ↩
+                  </button>
+                  <button
+                    type="button"
+                    id="redo-btn-mobile"
+                    onClick={() => redo?.(activeSet.id)}
+                    disabled={!canRedo}
+                    title="Redo"
+                    className="px-2 py-0.5 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                  >
+                    ↪
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                id="manage-presets-btn-mobile"
+                onClick={() => setIsPresetManagerOpen(true)}
+                className="px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
+              >
+                📑 管理
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
+              {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
+                <div key={s.id} onClick={() => {
+                  const targetPreset = presets?.find(p => String(p.id) === String(s.id))
+                  if (targetPreset) handleLoadPreset(targetPreset)
+                  else setActiveSetId(s.id)
+                }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
+                    String(s.id) === String(activeSetId)
+                      ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
+                      : 'bg-surface-2 border-[rgba(255,255,255,0.04)] text-zinc-400'
+                  }`}>
+                  <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
+                  <span className="truncate max-w-[70px]">{s.name}</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)">✕</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" id="add-set-btn-mobile" onClick={() => {
+              const allNames = presets?.map((p) => p.name) || []
+              setNewSetName(generateNextProfileName('Set', allNames))
+              setCopySourceId('default')
+              setShowCopyModal(true)
+            }}
+              className="flex items-center justify-center p-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 transition-all flex-shrink-0">
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
       )}
 

@@ -440,8 +440,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const handleFlipPath = () => {
     if (!bubble) return
     const currentPreset = fx.pathPreset || 'none'
+    if (currentPreset === 'none') return
     const defaultPts = getDefaultPathPoints(currentPreset, bubble.orientation)
-    const currentPts = fx.pathPoints && fx.pathPoints.length > 0 ? fx.pathPoints : defaultPts
+    const requiredCount = currentPreset === 'arc' ? 3 : currentPreset === 'wave' ? 4 : (currentPreset === 'line' || currentPreset === 'stepped') ? 2 : 0
+    const currentPts = fx.pathPoints && fx.pathPoints.length >= requiredCount ? fx.pathPoints : defaultPts
     const flipped = flipPathPoints(currentPts, bubble.orientation)
     updateEffects({ pathPoints: flipped })
   }
@@ -612,7 +614,19 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               <button
                 key={o.type}
                 type="button"
-                onClick={() => onUpdate({ orientation: o.type })}
+                onClick={() => {
+                  const nextOrientation = o.type
+                  const updatePayload: Partial<SpeechBubble> = { orientation: nextOrientation }
+                  if (bubble.effects?.pathPreset && bubble.effects.pathPreset !== 'none') {
+                    const nextPts = getDefaultPathPoints(bubble.effects.pathPreset, nextOrientation)
+                    updatePayload.effects = {
+                      ...DEFAULT_MANGA_EFFECTS,
+                      ...bubble.effects,
+                      pathPoints: nextPts,
+                    }
+                  }
+                  onUpdate(updatePayload)
+                }}
                 className={`py-1 px-3 text-xs rounded border text-center transition-colors ${
                   bubble.orientation === o.type
                     ? 'bg-blue-600 text-white border-blue-500 font-semibold'
@@ -1150,7 +1164,8 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                     value={fx.pathPreset ?? 'none'}
                     onChange={(e) => {
                       const val = e.target.value as PathPresetType
-                      updateEffects({ pathPreset: val })
+                      const defaultPts = val !== 'none' ? getDefaultPathPoints(val, bubble.orientation) : []
+                      updateEffects({ pathPreset: val, pathPoints: defaultPts })
                     }}
                     className="w-full p-1 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs focus:outline-none"
                   >

@@ -142,8 +142,10 @@ describe('speechBubbleRenderer', () => {
         pathPoints: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
         pathSteppedCount: 2,
       }
-      const tStep = calculateCharacterTransform(0, 4, dummyBubble, fxStepped)
-      expect(tStep.pathPos?.x).toBeCloseTo(0.25)
+      const tStep0 = calculateCharacterTransform(0, 4, dummyBubble, fxStepped)
+      const tStep1 = calculateCharacterTransform(1, 4, dummyBubble, fxStepped)
+      expect(tStep0.pathPos?.x).toBeCloseTo(0.1)
+      expect(tStep1.pathPos?.x).toBeCloseTo(0.4)
     })
 
     it('uses vertical default path points when pathPoints is not specified for vertical text', () => {
@@ -579,6 +581,75 @@ describe('speechBubbleRenderer', () => {
       const horizDim = speechBubbleRenderer.calculateFitBubbleDimensions('Hello World', 20, 'horizontal')
       expect(horizDim.w).toBeGreaterThan(50)
       expect(horizDim.h).toBeGreaterThan(50)
+    })
+
+    it('reverses order when flipping center/straight line points (REQ-188)', () => {
+      const vertLinePts = getDefaultPathPoints('line', 'vertical')
+      const flippedVert = flipPathPoints(vertLinePts, 'vertical')
+      expect(flippedVert).toEqual([
+        { x: 0.5, y: 0.9 },
+        { x: 0.5, y: 0.1 },
+      ])
+
+      const horizLinePts = getDefaultPathPoints('line', 'horizontal')
+      const flippedHoriz = flipPathPoints(horizLinePts, 'horizontal')
+      expect(flippedHoriz).toEqual([
+        { x: 0.9, y: 0.5 },
+        { x: 0.1, y: 0.5 },
+      ])
+    })
+
+    it('maps vertical punctuation using verticalCharMap when drawing vertical path text (REQ-188)', () => {
+      mockCtx.fillText.mockClear()
+      const vertPathBubble: SpeechBubble = {
+        ...baseBubble,
+        orientation: 'vertical',
+        text: 'テストー「OK」',
+        effects: {
+          pathPreset: 'arc',
+        },
+      }
+      drawBubbleText(mockCtx, vertPathBubble)
+      const renderedChars = mockCtx.fillText.mock.calls.map((call: any[]) => call[0])
+      expect(renderedChars).toContain('｜') // 'ー' converted
+      expect(renderedChars).toContain('﹁') // '「' converted
+      expect(renderedChars).toContain('﹂') // '」' converted
+    })
+
+    it('distributes multiple characters within the same step in stepped preset (REQ-188)', () => {
+      const vertSteppedBubble: SpeechBubble = {
+        ...baseBubble,
+        orientation: 'vertical',
+        text: 'ABCD',
+        effects: {
+          pathPreset: 'stepped',
+          pathSteppedCount: 2,
+        },
+      }
+      const t0 = calculateCharacterTransform(0, 4, vertSteppedBubble)
+      const t1 = calculateCharacterTransform(1, 4, vertSteppedBubble)
+      expect(t0.pathPos).toBeDefined()
+      expect(t1.pathPos).toBeDefined()
+      // Characters 0 and 1 are both in step 0, but have different coordinates
+      expect(t0.pathPos?.x).not.toBe(t1.pathPos?.x)
+      expect(t0.pathPos?.y).not.toBe(t1.pathPos?.y)
+    })
+
+    it('applies proportional advancement when scale varies (REQ-188)', () => {
+      mockCtx.translate.mockClear()
+      const scalingBubble: SpeechBubble = {
+        ...baseBubble,
+        orientation: 'vertical',
+        text: 'ABC',
+        fontSize: 20,
+        effects: {
+          scaleCurve: 'linear',
+          scaleStart: 1.0,
+          scaleEnd: 2.0,
+        },
+      }
+      drawBubbleText(mockCtx, scalingBubble)
+      expect(mockCtx.translate).toHaveBeenCalled()
     })
   })
 })

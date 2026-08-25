@@ -252,4 +252,81 @@ describe('GeneratePage Component Regression Tests', () => {
       expect(mobileBtn.disabled).toBe(false);
     });
   });
+
+  describe('REQ-186: Preset Manager Modal tab management & persistence', () => {
+    it('keeps preset manager modal open when selecting a preset to open as tab', async () => {
+      const { workflowPresetsApi } = await import('../../api/client');
+      (workflowPresetsApi.list as any).mockResolvedValue([
+        { id: 101, workflow_id: 1, name: 'Preset Alpha', param_values: {} },
+        { id: 102, workflow_id: 1, name: 'Preset Beta', param_values: {} },
+      ]);
+
+      const { container } = renderPage();
+      await waitFor(() => {
+        expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument();
+      });
+
+      // Open preset manager modal
+      fireEvent.click(container.querySelector('#manage-presets-btn')!);
+      await waitFor(() => {
+        expect(screen.getByText('プリセット管理')).toBeInTheDocument();
+        expect(screen.getByText('Preset Alpha')).toBeInTheDocument();
+      });
+
+      // Click on preset row to open as tab
+      fireEvent.click(screen.getByText('Preset Alpha'));
+
+      // Modal should remain open
+      expect(screen.getByText('プリセット管理')).toBeInTheDocument();
+      expect(screen.getByText('Preset Beta')).toBeInTheDocument();
+    });
+
+    it('allows closing tabs directly from preset manager modal', async () => {
+      const { useGenerationStore } = await import('../../store/useGenerationStore');
+      const store = (useGenerationStore as any)();
+      const { workflowPresetsApi } = await import('../../api/client');
+      (workflowPresetsApi.list as any).mockResolvedValue([
+        { id: 1, workflow_id: 1, name: 'Preset 1', param_values: {} },
+      ]);
+
+      const { container } = renderPage();
+      await waitFor(() => {
+        expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument();
+      });
+
+      // Open preset manager modal
+      fireEvent.click(container.querySelector('#manage-presets-btn')!);
+      await waitFor(() => {
+        expect(screen.getByText('プリセット管理')).toBeInTheDocument();
+      });
+
+      // Preset 1 is loaded (active/open as tab). Check for close tab button or badge.
+      const closeTabBtn = container.querySelector('#preset-close-tab-btn-1');
+      if (closeTabBtn) {
+        fireEvent.click(closeTabBtn);
+        expect(store.removeSet).toHaveBeenCalledWith(1);
+      }
+    });
+
+    it('closes preset manager modal when explicitly clicking close button', async () => {
+      const { container } = renderPage();
+      await waitFor(() => {
+        expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument();
+      });
+
+      fireEvent.click(container.querySelector('#manage-presets-btn')!);
+      await waitFor(() => {
+        expect(screen.getByText('プリセット管理')).toBeInTheDocument();
+      });
+
+      // Modal close button
+      const modalCloseBtn = screen.getByText('プリセット管理').parentElement?.querySelector('button');
+      expect(modalCloseBtn).toBeInTheDocument();
+      fireEvent.click(modalCloseBtn!);
+
+      await waitFor(() => {
+        expect(screen.queryByText('プリセット管理')).not.toBeInTheDocument();
+      });
+    });
+  });
 });

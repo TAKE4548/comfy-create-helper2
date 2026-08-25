@@ -51,6 +51,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     activeBatch: null,
     activeSetId: 10,
     setActiveSetId: vi.fn(),
+    loadPresetData: vi.fn(),
     setSets: vi.fn(),
     queueRunning: [],
     queuePending: [],
@@ -383,17 +384,13 @@ describe('useGeneratePageState', () => {
       result.current.handleLoadPreset(preset2)
     })
 
-    expect(mockStore.setActiveSetId).toHaveBeenCalledWith(20)
-    expect(mockStore.setParamValues).toHaveBeenCalledWith(expect.objectContaining({ positive_prompt: 'dog' }))
-    expect(mockStore.setBatchSize).toHaveBeenCalledWith(2)
+    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset2, expect.anything())
 
     act(() => {
       result.current.handleLoadPreset(preset1)
     })
 
-    expect(mockStore.setActiveSetId).toHaveBeenCalledWith(10)
-    expect(mockStore.setParamValues).toHaveBeenCalledWith(expect.objectContaining({ positive_prompt: 'cat' }))
-    expect(mockStore.setBatchSize).toHaveBeenCalledWith(1)
+    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset1, expect.anything())
   })
 
   it('should handle OCC conflict (409) in updatePresetMutation (REQ-163)', async () => {

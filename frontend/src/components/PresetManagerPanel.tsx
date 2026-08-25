@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GripVertical, Pencil, Loader2, Trash2, ListChecks } from 'lucide-react';
+import { GripVertical, Pencil, Loader2, Trash2, ListChecks, X } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -23,11 +23,13 @@ export type PresetManagerPanelProps = {
   isPending?: boolean;
   sets?: SetCheckState[];
   activeSetId?: string | number | null;
+  openPresetIds?: (string | number)[];
   onToggleCheck?: (id: string | number) => void;
   onDelete?: (id: number) => void;
   onSaveOverwrite?: (id: number, name: string) => void;
   onSaveAsNew?: (name: string) => void;
   onOpenAsTab?: (id: string | number) => void;
+  onCloseTab?: (id: string | number) => void;
   onOpenSceneGenerator?: () => void;
   onBulkDelete?: (selectedIds: number[]) => void;
   onBulkEdit?: (selectedIds: number[]) => void;
@@ -40,11 +42,13 @@ export function PresetManagerPanel({
   isPending = false,
   sets,
   activeSetId,
+  openPresetIds,
   onToggleCheck,
   onDelete,
   onSaveOverwrite,
   onSaveAsNew,
   onOpenAsTab,
+  onCloseTab,
   onOpenSceneGenerator,
   onBulkDelete,
   onBulkEdit,
@@ -232,9 +236,11 @@ export function PresetManagerPanel({
                   onCancelEdit={cancelEdit}
                   isChecked={sets ? (sets.find((x) => String(x.id) === String(preset.id))?.checked ?? false) : false}
                   isActive={activeSetId !== undefined && activeSetId !== null ? String(activeSetId) === String(preset.id) : false}
+                  isOpenAsTab={openPresetIds ? openPresetIds.map(String).includes(String(preset.id)) : false}
                   onToggleCheck={onToggleCheck ? () => onToggleCheck(preset.id) : undefined}
                   onDelete={onDelete ? () => onDelete(preset.id) : undefined}
                   onOpenAsTab={onOpenAsTab ? () => onOpenAsTab(preset.id) : undefined}
+                  onCloseTab={onCloseTab ? () => onCloseTab(preset.id) : undefined}
                   bulkMode={bulkMode}
                   isBulkSelected={bulkSelectedIds.has(preset.id)}
                   onToggleBulkSelect={() => toggleBulkSelect(preset.id)}
@@ -368,9 +374,11 @@ function SortablePresetRow({
   onCancelEdit,
   isChecked,
   isActive,
+  isOpenAsTab,
   onToggleCheck,
   onDelete,
   onOpenAsTab,
+  onCloseTab,
   bulkMode = false,
   isBulkSelected = false,
   onToggleBulkSelect,
@@ -384,9 +392,11 @@ function SortablePresetRow({
   onCancelEdit: () => void;
   isChecked?: boolean;
   isActive?: boolean;
+  isOpenAsTab?: boolean;
   onToggleCheck?: () => void;
   onDelete?: () => void;
   onOpenAsTab?: () => void;
+  onCloseTab?: () => void;
   bulkMode?: boolean;
   isBulkSelected?: boolean;
   onToggleBulkSelect?: () => void;
@@ -476,11 +486,16 @@ function SortablePresetRow({
                 編集中
               </span>
             )}
+            {isOpenAsTab && !isActive && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C6FDD]/15 text-[#7C6FDD] border border-[#7C6FDD]/30 font-medium flex-shrink-0">
+                タブ表示中
+              </span>
+            )}
           </div>
         )}
       </div>
 
-      {/* Edit / Delete buttons (normal mode) or Bulk checkbox (bulk mode) */}
+      {/* Edit / Delete / Close Tab buttons (normal mode) or Bulk checkbox (bulk mode) */}
       <div className="flex items-center gap-1 flex-shrink-0">
         {bulkMode ? (
           <input
@@ -494,6 +509,20 @@ function SortablePresetRow({
         ) : (
           !isEditing && (
             <>
+              {isOpenAsTab && onCloseTab && (
+                <button
+                  type="button"
+                  id={`preset-close-tab-btn-${preset.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab();
+                  }}
+                  className="p-1 text-zinc-500 hover:text-amber-400 rounded hover:bg-amber-500/10 transition-all"
+                  title="タブを閉じる"
+                >
+                  <X size={13} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onStartEdit() }}

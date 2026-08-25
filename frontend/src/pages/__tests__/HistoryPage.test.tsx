@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoryPage } from '../HistoryPage'
 import { albumsApi, snapshotsApi, workflowsApi, lorasApi, tagSetsApi } from '../../api/client'
@@ -29,6 +29,19 @@ vi.mock('../../api/client', () => ({
     list: vi.fn().mockResolvedValue([]),
   },
 }))
+
+let capturedOnDragEnd: ((event: any) => void) | null = null
+
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>()
+  return {
+    ...actual,
+    DndContext: ({ children, onDragEnd }: any) => {
+      capturedOnDragEnd = onDragEnd
+      return <div data-testid="dnd-context">{children}</div>
+    }
+  }
+})
 
 vi.mock('../../components/SpeechBubbleEditorModal', () => ({
   SpeechBubbleEditorModal: ({ snapshot, onClose, onSaved }: any) => (
@@ -197,6 +210,335 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     // Verify albumsApi.update was called
     await waitFor(() => {
       expect(albumsApi.update).toHaveBeenCalledWith(10, { name: 'Header Renamed Album' })
+    })
+  })
+
+  it('renders snapshot cards with speech-edit, download, and delete badges always visible', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      {
+        id: 501,
+        workflow_id: 1,
+        image_path: '/images/snap501.png',
+        thumbnail_path: '/thumbs/snap501.png',
+        created_at: '2026-08-18T00:00:00Z',
+      }
+    ])
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const speechBtn = await screen.findByRole('button', { name: /セリフ編集・吹き出し追加/i })
+    const downloadLink = screen.getByRole('link', { name: /ダウンロード/i })
+    const deleteBtn = screen.getByRole('button', { name: /削除/i })
+
+    expect(speechBtn).toBeInTheDocument()
+    expect(speechBtn.id).toBe('snap-speech-edit-501')
+    expect(downloadLink).toBeInTheDocument()
+    expect(downloadLink.id).toBe('snap-download-501')
+    expect(deleteBtn).toBeInTheDocument()
+    expect(deleteBtn.id).toBe('snap-delete-501')
+  })
+
+  it('handles snapshot multi-select and bulk deletion with modal confirmation', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      { id: 1, workflow_id: 1, image_path: '/images/snap1.png', created_at: '2026-08-18T00:00:00Z' },
+      { id: 2, workflow_id: 1, image_path: '/images/snap2.png', created_at: '2026-08-18T00:00:00Z' },
+    ])
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const addAlbumBtn = await screen.findByRole('button', { name: /add to album/i })
+    fireEvent.click(addAlbumBtn)
+
+    const selectAllBtn = screen.getByRole('button', { name: /すべて選択/i })
+    fireEvent.click(selectAllBtn)
+
+    const bulkDeleteBtn = screen.getByRole('button', { name: /一括削除/i })
+    fireEvent.click(bulkDeleteBtn)
+
+    expect(screen.getByText(/スナップショットの一括削除/i)).toBeInTheDocument()
+
+    const confirmBtn = screen.getByRole('button', { name: /削除する/i })
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(snapshotsApi.delete).toHaveBeenCalledWith(1)
+      expect(snapshotsApi.delete).toHaveBeenCalledWith(2)
+    })
+  })
+
+  it('supports 2-axis sorting in album detail view (criterion and direction)', async () => {
+    const multiItemAlbum = {
+      id: 20,
+      name: 'Sort Album',
+      items: [
+        { snapshot_id: 1, sequence_order: 1, created_at: '2026-08-18T01:00:00Z', image_path: '/images/1.png' },
+        { snapshot_id: 2, sequence_order: 2, created_at: '2026-08-18T02:00:00Z', image_path: '/images/2.png' },
+      ]
+    } as unknown as Album
+    vi.mocked(albumsApi.list).mockResolvedValue([multiItemAlbum])
+    vi.mocked(albumsApi.get).mockResolvedValue(multiItemAlbum)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('Sort Album')
+    fireEvent.click(albumCard)
+
+    const customSortBtn = await screen.findByRole('button', { name: /カスタム順/i })
+    const dateSortBtn = screen.getByRole('button', { name: /登録日時/i })
+    const ascBtn = screen.getByTitle('昇順')
+    const descBtn = screen.getByTitle('降順')
+
+    expect(customSortBtn).toBeInTheDocument()
+    expect(dateSortBtn).toBeInTheDocument()
+    expect(ascBtn).toBeInTheDocument()
+    expect(descBtn).toBeInTheDocument()
+
+    fireEvent.click(dateSortBtn)
+    fireEvent.click(descBtn)
+  })
+
+  it('opens delete scope modal in album view when clicking delete badge and handles choices', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('Test Album')
+    fireEvent.click(albumCard)
+
+    const deleteBadge = await screen.findByRole('button', { name: /^削除$/i })
+    expect(deleteBadge.id).toBe('item-delete-btn-101')
+    fireEvent.click(deleteBadge)
+
+    expect(screen.getByText(/アルバムからアイテムを削除/i)).toBeInTheDocument()
+
+    const removeOnlyBtn = screen.getByText('アルバムから削除')
+    fireEvent.click(removeOnlyBtn)
+
+    await waitFor(() => {
+      expect(albumsApi.deleteItems).toHaveBeenCalledWith(10, [101])
+      expect(snapshotsApi.delete).not.toHaveBeenCalled()
+    })
+  })
+
+  it('handles "元画像ごと完全に削除" from delete scope modal in album view', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('Test Album')
+    fireEvent.click(albumCard)
+
+    const deleteBadge = await screen.findByRole('button', { name: /^削除$/i })
+    fireEvent.click(deleteBadge)
+
+    const deleteAllBtn = screen.getByText('元画像ごと完全に削除')
+    fireEvent.click(deleteAllBtn)
+
+    await waitFor(() => {
+      expect(albumsApi.deleteItems).toHaveBeenCalledWith(10, [101])
+      expect(snapshotsApi.delete).toHaveBeenCalledWith(101)
+    })
+  })
+
+  it('renders drag handles in album detail view when sorted by custom descending and hides them for date sorting', async () => {
+    const multiItemAlbum = {
+      id: 30,
+      name: 'DnD Test Album',
+      items: [
+        { snapshot_id: 101, sequence_order: 0, created_at: '2026-08-18T01:00:00Z', image_path: '/images/101.png' },
+        { snapshot_id: 102, sequence_order: 1, created_at: '2026-08-18T02:00:00Z', image_path: '/images/102.png' },
+      ]
+    } as unknown as Album
+    vi.mocked(albumsApi.list).mockResolvedValue([multiItemAlbum])
+    vi.mocked(albumsApi.get).mockResolvedValue(multiItemAlbum)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('DnD Test Album')
+    fireEvent.click(albumCard)
+
+    // Initial state: custom + asc -> handles should be visible
+    const handles = await screen.findAllByLabelText('並び替えハンドル')
+    expect(handles).toHaveLength(2)
+
+    // Switch to desc -> handles should still be visible (AC-1)
+    const descBtn = screen.getByTitle('降順')
+    fireEvent.click(descBtn)
+    expect(screen.getAllByLabelText('並び替えハンドル')).toHaveLength(2)
+
+    // Switch to date sort -> handles should NOT be visible
+    const dateSortBtn = screen.getByRole('button', { name: /登録日時/i })
+    fireEvent.click(dateSortBtn)
+    expect(screen.queryByLabelText('並び替えハンドル')).not.toBeInTheDocument()
+
+    // Switch back to custom sort -> handles should be visible again
+    const customSortBtn = screen.getByRole('button', { name: /カスタム順/i })
+    fireEvent.click(customSortBtn)
+    expect(screen.getAllByLabelText('並び替えハンドル')).toHaveLength(2)
+  })
+
+  it('handles single item drag and drop reordering in custom desc mode (reverses order payload)', async () => {
+    const multiItemAlbum = {
+      id: 30,
+      name: 'DnD Test Album',
+      items: [
+        { snapshot_id: 101, sequence_order: 0, created_at: '2026-08-18T01:00:00Z', image_path: '/images/101.png' },
+        { snapshot_id: 102, sequence_order: 1, created_at: '2026-08-18T02:00:00Z', image_path: '/images/102.png' },
+        { snapshot_id: 103, sequence_order: 2, created_at: '2026-08-18T03:00:00Z', image_path: '/images/103.png' },
+      ]
+    } as unknown as Album
+    vi.mocked(albumsApi.list).mockResolvedValue([multiItemAlbum])
+    vi.mocked(albumsApi.get).mockResolvedValue(multiItemAlbum)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('DnD Test Album')
+    fireEvent.click(albumCard)
+
+    await screen.findAllByLabelText('並び替えハンドル')
+
+    // Switch to desc (visible order on screen is 103, 102, 101)
+    const descBtn = screen.getByTitle('降順')
+    fireEvent.click(descBtn)
+
+    // Drag item 101 (at index 2 on screen) to the top (over 103 at index 0)
+    // Desired visual order: [101, 103, 102]
+    // Sequence order ascending in DB should be: [102, 103, 101] (reversed from visual order)
+    act(() => {
+      capturedOnDragEnd?.({
+        active: { id: 101 },
+        over: { id: 103 },
+      })
+    })
+
+    await waitFor(() => {
+      expect(albumsApi.updateOrder).toHaveBeenCalledWith(30, [102, 103, 101])
+    })
+  })
+
+  it('handles multi-select group drag and drop reordering in custom desc mode (reverses order payload)', async () => {
+    const multiItemAlbum = {
+      id: 30,
+      name: 'DnD Test Album',
+      items: [
+        { snapshot_id: 101, sequence_order: 0, created_at: '2026-08-18T01:00:00Z', image_path: '/images/101.png' },
+        { snapshot_id: 102, sequence_order: 1, created_at: '2026-08-18T02:00:00Z', image_path: '/images/102.png' },
+        { snapshot_id: 103, sequence_order: 2, created_at: '2026-08-18T03:00:00Z', image_path: '/images/103.png' },
+        { snapshot_id: 104, sequence_order: 3, created_at: '2026-08-18T04:00:00Z', image_path: '/images/104.png' },
+      ]
+    } as unknown as Album
+    vi.mocked(albumsApi.list).mockResolvedValue([multiItemAlbum])
+    vi.mocked(albumsApi.get).mockResolvedValue(multiItemAlbum)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('DnD Test Album')
+    fireEvent.click(albumCard)
+
+    await screen.findAllByLabelText('並び替えハンドル')
+
+    // Switch to desc (visible order on screen: 104, 103, 102, 101)
+    const descBtn = screen.getByTitle('降順')
+    fireEvent.click(descBtn)
+
+    // Enter multi-select mode
+    const selectBtn = screen.getByRole('button', { name: /選択モード/i })
+    fireEvent.click(selectBtn)
+
+    // Select items 104 and 103
+    const itemCard104 = document.getElementById('album-item-card-104')!
+    const itemCard103 = document.getElementById('album-item-card-103')!
+    expect(itemCard104).not.toBeNull()
+    expect(itemCard103).not.toBeNull()
+    fireEvent.click(itemCard104)
+    fireEvent.click(itemCard103)
+
+    // Drag selected group (active: 104) over non-selected item 101
+    // nonSelected: [102, 101], selected: [104, 103]
+    // activeIndex (0) < overIndex (3) -> insertAt = overIndexInNonSelected (1) + 1 = 2
+    // newItems: [102, 101, 104, 103]
+    // Reversed for desc: [103, 104, 101, 102]
+    act(() => {
+      capturedOnDragEnd?.({
+        active: { id: 104 },
+        over: { id: 101 },
+      })
+    })
+
+    await waitFor(() => {
+      expect(albumsApi.updateOrder).toHaveBeenCalledWith(30, [103, 104, 101, 102])
+    })
+  })
+
+  it('handles single item drag and drop reordering in custom asc mode (normal order payload)', async () => {
+    const multiItemAlbum = {
+      id: 30,
+      name: 'DnD Test Album',
+      items: [
+        { snapshot_id: 101, sequence_order: 0, created_at: '2026-08-18T01:00:00Z', image_path: '/images/101.png' },
+        { snapshot_id: 102, sequence_order: 1, created_at: '2026-08-18T02:00:00Z', image_path: '/images/102.png' },
+      ]
+    } as unknown as Album
+    vi.mocked(albumsApi.list).mockResolvedValue([multiItemAlbum])
+    vi.mocked(albumsApi.get).mockResolvedValue(multiItemAlbum)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /albums/i }))
+    const albumCard = await screen.findByText('DnD Test Album')
+    fireEvent.click(albumCard)
+
+    await screen.findAllByLabelText('並び替えハンドル')
+
+    // In asc mode: drag 101 over 102
+    // new order: [102, 101]
+    act(() => {
+      capturedOnDragEnd?.({
+        active: { id: 101 },
+        over: { id: 102 },
+      })
+    })
+
+    await waitFor(() => {
+      expect(albumsApi.updateOrder).toHaveBeenCalledWith(30, [102, 101])
     })
   })
 })

@@ -131,12 +131,15 @@ export function useGeneratePageState() {
     toggleSetChecked,
     setAllSetsChecked,
     setActiveSetId,
-    setSets,
+    loadPresetData,
     openPresetIds,
     openPreset,
     closePreset,
     fetchParamSyncGroups,
   } = store
+
+  const storeRef = useRef(store)
+  storeRef.current = store
 
   useEffect(() => { if (comfyUrl) setLocalComfyUrl(comfyUrl) }, [comfyUrl])
 
@@ -669,35 +672,25 @@ export function useGeneratePageState() {
   }
 
   const handleLoadPreset = (preset: WorkflowPreset) => {
-    if (openPresetIds && !openPresetIds.includes(preset.id)) {
-      openPreset?.(preset.id)
-    }
-    setActiveSetId(preset.id)
-
     const defaultParams = workflow ? getInitialParams(workflow) : {}
     const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
 
     lastSavedStateRef.current[preset.id] = {
       paramValues: mergedParamValues,
-      appliedAssets: preset.applied_assets,
-      batchSize: preset.batch_size,
-      seedMode: preset.seed_mode as 'random' | 'fixed',
-      seed: preset.seed,
+      appliedAssets: preset.applied_assets || {},
+      batchSize: preset.batch_size ?? 1,
+      seedMode: (preset.seed_mode as 'random' | 'fixed') || 'random',
+      seed: preset.seed !== undefined ? preset.seed : 42,
     }
 
-    setParamValues(mergedParamValues)
-    setAppliedAssets(preset.applied_assets)
-    setBatchSize(preset.batch_size)
-    setSeedMode(preset.seed_mode as 'random' | 'fixed')
-    setSeed(preset.seed)
-
-    updateActiveSet({
-      paramValues: mergedParamValues,
-      appliedAssets: preset.applied_assets,
-      batchSize: preset.batch_size,
-      seedMode: preset.seed_mode as 'random' | 'fixed',
-      seed: preset.seed
-    })
+    if (loadPresetData) {
+      loadPresetData(preset, defaultParams)
+    } else {
+      setActiveSetId(preset.id)
+      if (openPresetIds && !openPresetIds.includes(preset.id)) {
+        openPreset?.(preset.id)
+      }
+    }
     setIsPresetOpen(false)
   }
 
@@ -860,6 +853,10 @@ export function useGeneratePageState() {
       isInitialSyncRef.current = false
     }
 
+    const currentStore = storeRef.current
+    const currentActiveSetId = currentStore.activeSetId
+    const currentOpenPresetIds = currentStore.openPresetIds || []
+
     const checkedPresetsRaw = localStorage.getItem(
       `prompt-surgeon-checked-presets-${selectedWorkflowId}`
     )
@@ -882,45 +879,39 @@ export function useGeneratePageState() {
     const isFirstSync = !isInitialSyncRef.current
 
     // ── 初回 vs 通常ロードで sets 構築を切り替える ──────────────────
-    // 注意: paramValues 等はクロージャーキャプチャで参照（意図的・deps には含めない）
     let mappedSets = rawMappedSets
-    if (!isFirstSync && typeof activeSetId === 'number') {
+    if (!isFirstSync && typeof currentActiveSetId === 'number') {
       // 通常ロード: アクティブプリセットの未保存編集内容を sets に注入して保護する
       mappedSets = rawMappedSets.map(s =>
-        s.id === activeSetId
-          ? { ...s, paramValues, appliedAssets, batchSize, seedMode, seed }
+        s.id === currentActiveSetId
+          ? { ...s, paramValues: currentStore.paramValues, appliedAssets: currentStore.appliedAssets, batchSize: currentStore.batchSize, seedMode: currentStore.seedMode, seed: currentStore.seed }
           : s
       )
     }
 
-    setSets?.(mappedSets)
+    currentStore.setSets?.(mappedSets)
 
     if (presets && presets.length > 0) {
-      const safeOpenPresetIds = openPresetIds || []
       const storedActiveStr = selectedWorkflowId
         ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`)
         : null
       const matchedByStored = storedActiveStr ? presets.find(p => String(p.id) === String(storedActiveStr)) : undefined
-      const matchedByActive = activeSetId ? presets.find(p => String(p.id) === String(activeSetId)) : undefined
+      const matchedByActive = currentActiveSetId ? presets.find(p => String(p.id) === String(currentActiveSetId)) : undefined
       const matchedPreset = matchedByStored || matchedByActive
       const targetActiveId = matchedPreset
         ? matchedPreset.id
-        : safeOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(safeOpenPresetIds[0]))
-          ? safeOpenPresetIds[0]
+        : currentOpenPresetIds.length > 0 && presets.some(p => String(p.id) === String(currentOpenPresetIds[0]))
+          ? currentOpenPresetIds[0]
           : presets[0].id
       const isInvalidActive =
-        activeSetId === null || !safeOpenPresetIds.map(String).includes(String(activeSetId))
+        currentActiveSetId === null || !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))
 
       if (isFirstSync) {
         // ── 初回ロード: バックエンドを正として強制同期（クロスデバイス修正）──
         isInitialSyncRef.current = true
-        setActiveSetId(targetActiveId)
-        if (!safeOpenPresetIds.map(String).includes(String(targetActiveId))) {
-          openPreset?.(targetActiveId)
-        }
-        // lastSavedStateRef をバックエンド値で初期化してオートセーブの誤発火を防ぐ
+        const activePreset = presets.find(p => String(p.id) === String(targetActiveId))
         const activePresetData = rawMappedSets.find(s => String(s.id) === String(targetActiveId))
-        if (activePresetData) {
+        if (activePreset && activePresetData) {
           lastSavedStateRef.current[targetActiveId] = {
             paramValues: activePresetData.paramValues,
             appliedAssets: activePresetData.appliedAssets,
@@ -928,27 +919,28 @@ export function useGeneratePageState() {
             seedMode: activePresetData.seedMode,
             seed: activePresetData.seed,
           }
-          setParamValues(activePresetData.paramValues)
-          setAppliedAssets(activePresetData.appliedAssets)
-          setBatchSize(activePresetData.batchSize)
-          setSeedMode(activePresetData.seedMode)
-          setSeed(activePresetData.seed)
-          updateActiveSet({
-            paramValues: activePresetData.paramValues,
-            appliedAssets: activePresetData.appliedAssets,
-            batchSize: activePresetData.batchSize,
-            seedMode: activePresetData.seedMode,
-            seed: activePresetData.seed,
-          })
+          if (currentStore.loadPresetData) {
+            currentStore.loadPresetData(activePreset, defaultParams)
+          } else {
+            currentStore.setActiveSetId?.(targetActiveId)
+            if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
+              currentStore.openPreset?.(targetActiveId)
+            }
+          }
+        } else {
+          currentStore.setActiveSetId?.(targetActiveId)
+          if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
+            currentStore.openPreset?.(targetActiveId)
+          }
         }
-      } else if (isInvalidActive || String(activeSetId) !== String(targetActiveId)) {
-        setActiveSetId(targetActiveId)
-        if (!safeOpenPresetIds.map(String).includes(String(targetActiveId))) {
-          openPreset?.(targetActiveId)
+      } else if (isInvalidActive || String(currentActiveSetId) !== String(targetActiveId)) {
+        currentStore.setActiveSetId?.(targetActiveId)
+        if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
+          currentStore.openPreset?.(targetActiveId)
         }
       } else {
-        if (!safeOpenPresetIds.map(String).includes(String(activeSetId))) {
-          openPreset?.(activeSetId)
+        if (!currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
+          currentStore.openPreset?.(currentActiveSetId)
         }
       }
     } else if (presets && presets.length === 0) {
@@ -956,7 +948,7 @@ export function useGeneratePageState() {
         handleCreatePreset('Set 1')
       }
     }
-  }, [presets, selectedWorkflowId, setSets, activeSetId, setActiveSetId, openPresetIds, openPreset, setParamValues, setAppliedAssets, setBatchSize, setSeedMode, setSeed, updateActiveSet])
+  }, [presets, selectedWorkflowId, workflow])
 
   // Autosave when paramValues, appliedAssets, batchSize, seedMode, or seed changes
   useEffect(() => {

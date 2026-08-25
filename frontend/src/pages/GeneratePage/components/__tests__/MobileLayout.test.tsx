@@ -223,4 +223,59 @@ describe('MobileLayout - TagChipEditor Integration', () => {
 
     expect(openTranslationMock).toHaveBeenCalledWith('Main_Positive_Prompt', '1girl, masterpiece, high quality')
   })
+
+  it('renders sections in order: Thumbnail Strip (History) -> Profiles -> Prompt Input', () => {
+    const state = createMockState({
+      showStrip: true,
+      selectedWorkflowId: 1,
+      textMappings: [
+        { id: 1, role: 'Main_Positive_Prompt', display_name: 'Positive Prompt', input_type: 'string' },
+      ],
+      activePromptTab: 'Main_Positive_Prompt',
+    })
+    render(<MobileLayout state={state} />)
+
+    const historyTab = screen.getByText('履歴')
+    const profilesTitle = screen.getByText('Profiles')
+    const promptInput = screen.getByText('Positive Prompt Input')
+
+    // Verify DOM order using compareDocumentPosition
+    expect(historyTab.compareDocumentPosition(profilesTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(profilesTitle.compareDocumentPosition(promptInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renders undo/redo inline next to manage presets button and handles click', () => {
+    const undoMock = vi.fn()
+    const redoMock = vi.fn()
+    const state = createMockState({
+      selectedWorkflowId: 1,
+      sets: [{ id: 'default', name: 'Default', checked: true }],
+      activeSetId: 'default',
+      canUndo: true,
+      canRedo: true,
+      undo: undoMock,
+      redo: redoMock,
+    })
+
+    render(<MobileLayout state={state} />)
+
+    const undoBtn = screen.getByTitle('Undo')
+    const redoBtn = screen.getByTitle('Redo')
+    const manageBtn = screen.getByText('📑 管理')
+
+    // Verify buttons are not disabled
+    expect(undoBtn).not.toBeDisabled()
+    expect(redoBtn).not.toBeDisabled()
+
+    // Verify parent container shares the same flex group
+    expect(undoBtn.closest('div')?.parentElement).toBe(manageBtn.parentElement)
+
+    // Verify clicks invoke mocks with activeSet.id
+    fireEvent.click(undoBtn)
+    expect(undoMock).toHaveBeenCalledWith('default')
+
+    fireEvent.click(redoBtn)
+    expect(redoMock).toHaveBeenCalledWith('default')
+  })
 })
+

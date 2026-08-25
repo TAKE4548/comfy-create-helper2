@@ -33,7 +33,7 @@ export function GeneratePage() {
     isJobModalOpen, setIsJobModalOpen,
     isSceneGeneratorOpen, setIsSceneGeneratorOpen, paramValues, textMappings,
     sets, toggleSetChecked, handleDeletePreset, handleUpdatePreset, handleCreatePreset, activeSetId,
-    openPreset, setActiveSetId, handleLoadPreset,
+    openPreset, setActiveSetId, handleLoadPreset, openPresetIds, removeSet,
     isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen,
     isBulkEditOpen, setIsBulkEditOpen,
     bulkTargetIds, isBulkApplying,
@@ -179,6 +179,7 @@ export function GeneratePage() {
               isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
               sets={sets}
               activeSetId={activeSetId}
+              openPresetIds={openPresetIds}
               onToggleCheck={(id) => toggleSetChecked(id)}
               onDelete={(id) => handleDeletePreset(id)}
               onOpenAsTab={(id) => {
@@ -189,8 +190,8 @@ export function GeneratePage() {
                   openPreset(id);
                   setActiveSetId(id);
                 }
-                setIsPresetManagerOpen(false);
               }}
+              onCloseTab={(id) => removeSet(id)}
               onSaveOverwrite={(id, name) => handleUpdatePreset(id, name)}
               onSaveAsNew={(name) => handleCreatePreset(name)}
               onOpenSceneGenerator={() => {

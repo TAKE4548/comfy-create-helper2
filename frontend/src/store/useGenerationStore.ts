@@ -12,7 +12,7 @@
 
 import { create } from 'zustand'
 import { configApi, bypassProfilesApi, paramSyncGroupsApi, comfyApi } from '../api/client'
-import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate } from '../api/types'
+import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, WorkflowPreset } from '../api/types'
 import { resolveComfyUrl } from '../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
@@ -210,6 +210,7 @@ export interface GenerationState {
   // ─── Multi-Set Actions (New) ───────────────────────────────────
   initSets: (workflowId: number) => void
   setActiveSetId: (id: string | number) => void
+  loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>) => void
   addSet: () => void
   removeSet: (id: string | number) => void
   renameSet: (id: string | number, name: string) => void
@@ -1444,6 +1445,68 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         batchSize: targetSet.batchSize,
         seedMode: targetSet.seedMode,
         seed: targetSet.seed
+      })
+    },
+
+    loadPresetData: (preset, defaultParams) => {
+      const activeWfId = get().selectedWorkflowId
+      if (activeWfId === null) return
+
+      const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
+      const appliedAssets = preset.applied_assets || {}
+      const batchSize = preset.batch_size ?? 1
+      const seedMode = (preset.seed_mode as 'random' | 'fixed') || 'random'
+      const seed = preset.seed !== undefined ? preset.seed : 42
+
+      const openPresetIds = get().openPresetIds
+      const nextOpenPresetIds = openPresetIds.includes(preset.id)
+        ? openPresetIds
+        : [...openPresetIds, preset.id]
+
+      const updatedSets = get().sets.map((s) => {
+        if (String(s.id) === String(preset.id)) {
+          return {
+            ...s,
+            name: preset.name || s.name,
+            paramValues: mergedParamValues,
+            appliedAssets,
+            batchSize,
+            seedMode,
+            seed,
+          }
+        }
+        return s
+      })
+
+      const exists = updatedSets.some(s => String(s.id) === String(preset.id))
+      const finalSets = exists ? updatedSets : [
+        ...updatedSets,
+        {
+          id: preset.id,
+          name: preset.name,
+          paramValues: mergedParamValues,
+          appliedAssets,
+          batchSize,
+          seedMode,
+          seed,
+          checked: true
+        }
+      ]
+
+      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(preset.id))
+      if (!openPresetIds.includes(preset.id)) {
+        localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
+      }
+
+      set({
+        activeSetId: preset.id,
+        paramValues: mergedParamValues,
+        appliedAssets,
+        batchSize,
+        seedMode,
+        seed,
+        sets: finalSets,
+        openPresetIds: nextOpenPresetIds,
       })
     },
 

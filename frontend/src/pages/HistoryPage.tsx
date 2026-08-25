@@ -213,9 +213,17 @@ export function HistoryPage() {
 
   // Album Detail specific states
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null)
-  const [sortBy, setSortBy] = useState<'custom' | 'date-asc' | 'date-desc'>('custom')
+  const [albumSortCriterion, setAlbumSortCriterion] = useState<'custom' | 'date'>('custom')
+  const [albumSortDirection, setAlbumSortDirection] = useState<'asc' | 'desc'>('asc')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [activeId, setActiveId] = useState<number | null>(null)
+
+  // Delete modal states
+  const [isDeleteSnapshotsModalOpen, setIsDeleteSnapshotsModalOpen] = useState(false)
+  const [albumDeleteTarget, setAlbumDeleteTarget] = useState<{ isOpen: boolean; snapshotIds: number[] }>({
+    isOpen: false,
+    snapshotIds: [],
+  })
 
   // Album list rename & reorder states
   const [editingAlbumId, setEditingAlbumId] = useState<number | null>(null)
@@ -281,17 +289,15 @@ export function HistoryPage() {
   // Sort items based on local select
   const sortedAlbumItems = currentAlbum
     ? [...currentAlbum.items].sort((a, b) => {
-        if (sortBy === 'date-asc') {
+        if (albumSortCriterion === 'date') {
           const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
           const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateA - dateB
+          return albumSortDirection === 'asc' ? dateA - dateB : dateB - dateA
+        } else {
+          return albumSortDirection === 'asc'
+            ? a.sequence_order - b.sequence_order
+            : b.sequence_order - a.sequence_order
         }
-        if (sortBy === 'date-desc') {
-          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-          return dateB - dateA
-        }
-        return a.sequence_order - b.sequence_order
       })
     : []
 
@@ -445,7 +451,8 @@ export function HistoryPage() {
   const handleBackToAlbums = () => {
     setSelectedAlbumId(null)
     albumItemMultiSelect.exitMultiSelectMode()
-    setSortBy('custom')
+    setAlbumSortCriterion('custom')
+    setAlbumSortDirection('asc')
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -476,7 +483,8 @@ export function HistoryPage() {
         ...nonSelected.slice(insertAt)
       ]
       
-      const updatedSnapshotIds = newItems.map(item => item.snapshot_id)
+      const newSnapshotIds = newItems.map(item => item.snapshot_id)
+      const updatedSnapshotIds = albumSortDirection === 'desc' ? [...newSnapshotIds].reverse() : newSnapshotIds
       updateAlbumOrder.mutate({
         id: currentAlbum.id,
         snapshotIds: updatedSnapshotIds
@@ -490,7 +498,8 @@ export function HistoryPage() {
         const [movedItem] = newItems.splice(oldIndex, 1)
         newItems.splice(newIndex, 0, movedItem)
 
-        const updatedSnapshotIds = newItems.map(item => item.snapshot_id)
+        const newSnapshotIds = newItems.map(item => item.snapshot_id)
+        const updatedSnapshotIds = albumSortDirection === 'desc' ? [...newSnapshotIds].reverse() : newSnapshotIds
         updateAlbumOrder.mutate({
           id: currentAlbum.id,
           snapshotIds: updatedSnapshotIds
@@ -575,7 +584,7 @@ export function HistoryPage() {
         // Album Detail View
         <>
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
             <div className="flex items-center gap-3">
               <button
                 onClick={handleBackToAlbums}
@@ -656,38 +665,54 @@ export function HistoryPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              {/* Sort Selector */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {/* Sort Criterion Selector */}
               <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
                 <button
                   id="sort-custom"
-                  onClick={() => setSortBy('custom')}
+                  onClick={() => setAlbumSortCriterion('custom')}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    sortBy === 'custom' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+                    albumSortCriterion === 'custom' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
                   <SlidersHorizontal size={12} />
                   カスタム順
                 </button>
                 <button
-                  id="sort-date-asc"
-                  onClick={() => setSortBy('date-asc')}
+                  id="sort-date"
+                  onClick={() => setAlbumSortCriterion('date')}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    sortBy === 'date-asc' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+                    albumSortCriterion === 'date' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
-                  <SortAsc size={12} />
-                  古い順
+                  <Clock size={12} />
+                  登録日時
+                </button>
+              </div>
+
+              {/* Sort Direction Toggle */}
+              <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
+                <button
+                  id="sort-dir-asc"
+                  onClick={() => setAlbumSortDirection('asc')}
+                  className={`px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    albumSortDirection === 'asc' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                  title="昇順"
+                >
+                  <SortAsc size={13} />
+                  <span className="hidden sm:inline">昇順</span>
                 </button>
                 <button
-                  id="sort-date-desc"
-                  onClick={() => setSortBy('date-desc')}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                    sortBy === 'date-desc' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+                  id="sort-dir-desc"
+                  onClick={() => setAlbumSortDirection('desc')}
+                  className={`px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
+                    albumSortDirection === 'desc' ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
                   }`}
+                  title="降順"
                 >
-                  <SortDesc size={12} />
-                  新しい順
+                  <SortDesc size={13} />
+                  <span className="hidden sm:inline">降順</span>
                 </button>
               </div>
 
@@ -731,17 +756,15 @@ export function HistoryPage() {
                     id="bulk-delete-confirm-btn"
                     disabled={albumItemMultiSelect.selectedIds.size === 0 || deleteAlbumItems.isPending || isDownloading}
                     onClick={() => {
-                      if (confirm(`Remove ${albumItemMultiSelect.selectedIds.size} items from this album?`)) {
-                        deleteAlbumItems.mutate({
-                          id: selectedAlbumId!,
-                          snapshotIds: [...albumItemMultiSelect.selectedIds]
-                        })
-                      }
+                      setAlbumDeleteTarget({
+                        isOpen: true,
+                        snapshotIds: [...albumItemMultiSelect.selectedIds]
+                      })
                     }}
                     className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50 transition-all flex items-center gap-1"
                   >
                     <Trash2 size={12} />
-                    {deleteAlbumItems.isPending ? 'Removing...' : '一括削除実行'}
+                    {deleteAlbumItems.isPending ? 'Removing...' : '一括削除'}
                   </button>
                 </div>
               }
@@ -763,7 +786,7 @@ export function HistoryPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {visibleAlbumItems.map((item) => {
                     const isSelected = albumItemMultiSelect.isSelected(item.snapshot_id)
-                    const isDndEnabled = sortBy === 'custom' && !updateAlbumOrder.isPending
+                    const isDndEnabled = albumSortCriterion === 'custom' && !updateAlbumOrder.isPending
                     const longPressHandlers = albumItemMultiSelect.getLongPressHandlers(item.snapshot_id)
 
                     const renderCardContent = (touchHandleListeners?: DragHandleListeners) => (
@@ -807,23 +830,25 @@ export function HistoryPage() {
                           </div>
                         )}
 
-                        {/* Hover single delete / Drag indicator */}
+                        {/* Drag indicator */}
+                        {!albumItemMultiSelect.isMultiSelectMode && isDndEnabled && (
+                          <button
+                            type="button"
+                            className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                            style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                            onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                            onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                            {...touchHandleListeners}
+                            title="ドラッグして並び替え"
+                            aria-label="並び替えハンドル"
+                          >
+                            <GripVertical size={12} />
+                          </button>
+                        )}
+
+                        {/* Always visible action badges (Speech Edit -> Download -> Delete) */}
                         {!albumItemMultiSelect.isMultiSelectMode && (
-                          <>
-                            {isDndEnabled && (
-                              <button
-                                type="button"
-                                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
-                                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
-                                onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                                {...touchHandleListeners}
-                                title="ドラッグして並び替え"
-                                aria-label="並び替えハンドル"
-                              >
-                                <GripVertical size={12} />
-                              </button>
-                            )}
+                          <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
                             {item.image_path && (
                               <button
                                 id={`item-speech-edit-${item.snapshot_id}`}
@@ -838,7 +863,8 @@ export function HistoryPage() {
                                   })
                                 }}
                                 title="セリフ編集・吹き出し追加"
-                                className="absolute top-2 right-16 p-1.5 rounded-md bg-black/60 text-zinc-400 hover:text-accent-green opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                                aria-label="セリフ編集・吹き出し追加"
+                                className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-accent-green transition-colors shadow-sm"
                               >
                                 <MessageSquarePlus size={12} />
                               </button>
@@ -849,7 +875,9 @@ export function HistoryPage() {
                                 download
                                 id={`item-download-${item.snapshot_id}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="absolute top-2 right-9 p-1.5 rounded-md bg-black/60 text-zinc-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                                title="ダウンロード"
+                                aria-label="ダウンロード"
+                                className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white transition-colors shadow-sm"
                               >
                                 <Download size={12} />
                               </a>
@@ -857,19 +885,19 @@ export function HistoryPage() {
                             <button
                               id={`item-delete-btn-${item.snapshot_id}`}
                               onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (confirm('Remove this image from album?')) {
-                                    deleteAlbumItems.mutate({
-                                      id: selectedAlbumId!,
-                                      snapshotIds: [item.snapshot_id]
-                                    })
-                                  }
-                                }}
-                              className="absolute top-2 right-2 p-1.5 rounded-md bg-black/60 text-zinc-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                                e.stopPropagation()
+                                setAlbumDeleteTarget({
+                                  isOpen: true,
+                                  snapshotIds: [item.snapshot_id]
+                                })
+                              }}
+                              title="削除"
+                              aria-label="削除"
+                              className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-red-400 transition-colors shadow-sm"
                             >
                               <Trash2 size={12} />
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
                     )
@@ -1004,6 +1032,15 @@ export function HistoryPage() {
                   >
                     アルバムへ追加
                   </button>
+                  <button
+                    id="bulk-delete-snapshots-btn"
+                    onClick={() => setIsDeleteSnapshotsModalOpen(true)}
+                    disabled={snapshotMultiSelect.selectedIds.size === 0 || isDownloading}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50 transition-all flex items-center gap-1"
+                  >
+                    <Trash2 size={12} />
+                    一括削除
+                  </button>
                 </div>
               }
             />
@@ -1011,7 +1048,7 @@ export function HistoryPage() {
 
           {/* Workflow Filter (snapshots only) */}
           {view === 'snapshots' && (
-            <div className="flex items-center gap-3 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
               <select
                 id="history-workflow-filter"
                 value={selectedWorkflowId ?? ''}
@@ -1057,7 +1094,7 @@ export function HistoryPage() {
                     type="button"
                     onClick={() => setSortOrder(order)}
                     className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                      sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-550 hover:text-zinc-350'
+                      sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
                     }`}
                   >
                     {order === 'desc' ? '新しい順' : '古い順'}
@@ -1065,7 +1102,7 @@ export function HistoryPage() {
                 ))}
               </div>
 
-              <span className="text-xs text-zinc-600">{sortedSnapshots.length} snapshots</span>
+              <span className="text-xs text-zinc-600 ml-auto sm:ml-0">{sortedSnapshots.length} snapshots</span>
             </div>
           )}
 
@@ -1125,41 +1162,50 @@ export function HistoryPage() {
                         </div>
                       )}
 
-                      <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        {snap.image_path && (
-                          <a
-                            href={snap.image_path}
-                            download
-                            id={`snap-download-${snap.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-md bg-surface/80 text-zinc-300 hover:text-white"
-                          >
-                            <Download size={12} />
-                          </a>
-                        )}
-                        {snap.image_path && !snapshotMultiSelect.isMultiSelectMode && (
-                          <button
-                            id={`snap-speech-edit-${snap.id}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setSelectedForSpeech(snap)
-                            }}
-                            title="セリフ編集・吹き出し追加"
-                            className="p-1.5 rounded-md bg-surface/80 text-zinc-400 hover:text-accent-green"
-                          >
-                            <MessageSquarePlus size={12} />
-                          </button>
-                        )}
-                        {!snapshotMultiSelect.isMultiSelectMode && (
+                      {/* Always visible action badges (Speech Edit -> Download -> Delete) */}
+                      {!snapshotMultiSelect.isMultiSelectMode && (
+                        <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
+                          {snap.image_path && (
+                            <button
+                              id={`snap-speech-edit-${snap.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedForSpeech(snap)
+                              }}
+                              title="セリフ編集・吹き出し追加"
+                              aria-label="セリフ編集・吹き出し追加"
+                              className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-accent-green transition-colors shadow-sm"
+                            >
+                              <MessageSquarePlus size={12} />
+                            </button>
+                          )}
+                          {snap.image_path && (
+                            <a
+                              href={snap.image_path}
+                              download
+                              id={`snap-download-${snap.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              title="ダウンロード"
+                              aria-label="ダウンロード"
+                              className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white transition-colors shadow-sm"
+                            >
+                              <Download size={12} />
+                            </a>
+                          )}
                           <button
                             id={`snap-delete-${snap.id}`}
-                            onClick={(e) => { e.stopPropagation(); if (confirm('Delete snapshot?')) deleteSnapshot.mutate(snap.id) }}
-                            className="p-1.5 rounded-md bg-surface/80 text-zinc-400 hover:text-red-400"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (confirm('Delete snapshot?')) deleteSnapshot.mutate(snap.id)
+                            }}
+                            title="削除"
+                            aria-label="削除"
+                            className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-red-400 transition-colors shadow-sm"
                           >
                             <Trash2 size={12} />
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <p className="text-xs text-zinc-300">
                           {new Date(snap.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1372,6 +1418,104 @@ export function HistoryPage() {
             qc.invalidateQueries({ queryKey: ['albums'] })
           }}
         />
+      )}
+
+      {/* 履歴スナップショット一括削除確認モーダル */}
+      {isDeleteSnapshotsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 animate-scale-in">
+            <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2">
+              <Trash2 size={16} />
+              スナップショットの一括削除
+            </h3>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              選択した <span className="font-bold text-white">{snapshotMultiSelect.selectedIds.size}</span> 件のスナップショットおよび画像ファイルを完全に削除します。<br />
+              この操作は取り消せません。本当によろしいですか？
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleteSnapshotsModalOpen(false)}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                id="confirm-bulk-delete-btn"
+                onClick={async () => {
+                  const ids = [...snapshotMultiSelect.selectedIds]
+                  await Promise.all(ids.map(id => snapshotsApi.delete(id)))
+                  qc.invalidateQueries({ queryKey: ['snapshots'] })
+                  qc.invalidateQueries({ queryKey: ['albums'] })
+                  setIsDeleteSnapshotsModalOpen(false)
+                  snapshotMultiSelect.exitMultiSelectMode()
+                }}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-lg transition-all"
+              >
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* アルバム削除スコープ選択モーダル */}
+      {albumDeleteTarget.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 animate-scale-in">
+            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+              <Trash2 size={16} className="text-red-400" />
+              アルバムからアイテムを削除
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              {albumDeleteTarget.snapshotIds.length} 件のアイテムの削除方法を選択してください。
+            </p>
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                id="album-remove-only-btn"
+                onClick={async () => {
+                  await albumsApi.deleteItems(selectedAlbumId!, albumDeleteTarget.snapshotIds)
+                  qc.invalidateQueries({ queryKey: ['albums'] })
+                  qc.invalidateQueries({ queryKey: ['album', selectedAlbumId] })
+                  setAlbumDeleteTarget({ isOpen: false, snapshotIds: [] })
+                  albumItemMultiSelect.exitMultiSelectMode()
+                }}
+                className="w-full text-left p-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 hover:bg-white/5 transition-all group"
+              >
+                <div className="text-xs font-semibold text-zinc-200 group-hover:text-white">アルバムから削除</div>
+                <div className="text-[11px] text-zinc-500 mt-0.5">アルバムの登録のみ解除し、履歴（元画像）には残します。</div>
+              </button>
+              <button
+                type="button"
+                id="album-delete-all-btn"
+                onClick={async () => {
+                  await albumsApi.deleteItems(selectedAlbumId!, albumDeleteTarget.snapshotIds)
+                  await Promise.all(albumDeleteTarget.snapshotIds.map(id => snapshotsApi.delete(id)))
+                  qc.invalidateQueries({ queryKey: ['snapshots'] })
+                  qc.invalidateQueries({ queryKey: ['albums'] })
+                  qc.invalidateQueries({ queryKey: ['album', selectedAlbumId] })
+                  setAlbumDeleteTarget({ isOpen: false, snapshotIds: [] })
+                  albumItemMultiSelect.exitMultiSelectMode()
+                }}
+                className="w-full text-left p-3 rounded-lg border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 transition-all group"
+              >
+                <div className="text-xs font-semibold text-red-300 group-hover:text-red-200">元画像ごと完全に削除</div>
+                <div className="text-[11px] text-red-400/70 mt-0.5">アルバムから解除し、履歴および元画像データも完全に削除します。</div>
+              </button>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setAlbumDeleteTarget({ isOpen: false, snapshotIds: [] })}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

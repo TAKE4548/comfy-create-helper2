@@ -510,7 +510,7 @@ describe('SpeechBubbleControls', () => {
       {
         id: 102,
         name: '共有スタイル',
-        shape: 'rectangle',
+        shape: 'rounded-rect',
         orientation: 'horizontal',
         font_family: 'sans-serif',
         font_size: 22,
@@ -534,7 +534,7 @@ describe('SpeechBubbleControls', () => {
     fireEvent.click(screen.getByText('共有スタイル (横)'))
     expect(defaultProps.onUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        shape: 'rectangle',
+        shape: 'rounded-rect',
         orientation: 'horizontal',
         fontSize: 22,
       })
@@ -815,7 +815,7 @@ describe('SpeechBubbleControls', () => {
       {
         id: 2,
         name: '横書きプリセット',
-        shape: 'rectangle',
+        shape: 'rounded-rect',
         orientation: 'horizontal',
         font_family: 'sans-serif',
         font_size: 20,
@@ -1433,6 +1433,117 @@ describe('SpeechBubbleControls', () => {
     const flipPathBtn = screen.getByLabelText('パス反転')
     expect(flipPathBtn).toBeDefined()
     fireEvent.click(flipPathBtn)
+    expect(onUpdateMock).toHaveBeenCalledWith({
+      effects: expect.objectContaining({
+        pathPoints: [
+          { x: 0.3, y: 0.1 },
+          { x: 0.7, y: 0.5 },
+          { x: 0.3, y: 0.9 },
+        ],
+      }),
+    })
+  })
+
+  it('synchronizes default pathPoints when pathPreset or orientation changes (REQ-188)', () => {
+    const onUpdateMock = vi.fn()
+    const { rerender } = renderWithQuery(
+      <SpeechBubbleControls
+        {...defaultProps}
+        onUpdate={onUpdateMock}
+        bubble={{
+          ...mockBubble,
+          orientation: 'vertical',
+          effects: {
+            pathPreset: 'none',
+            pathPoints: [],
+          },
+        }}
+      />
+    )
+
+    // Open manga FX section
+    fireEvent.click(screen.getByText(/漫画テキスト演出/))
+
+    // Select 'arc' path preset
+    const presetSelect = screen.getByLabelText('軌道タイプ')
+    fireEvent.change(presetSelect, { target: { value: 'arc' } })
+
+    expect(onUpdateMock).toHaveBeenCalledWith({
+      effects: expect.objectContaining({
+        pathPreset: 'arc',
+        pathPoints: [
+          { x: 0.7, y: 0.1 },
+          { x: 0.3, y: 0.5 },
+          { x: 0.7, y: 0.9 },
+        ],
+      }),
+    })
+
+    // Rerender with active path preset
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <SpeechBubbleControls
+          {...defaultProps}
+          onUpdate={onUpdateMock}
+          bubble={{
+            ...mockBubble,
+            orientation: 'vertical',
+            effects: {
+              pathPreset: 'arc',
+              pathPoints: [
+                { x: 0.7, y: 0.1 },
+                { x: 0.3, y: 0.5 },
+                { x: 0.7, y: 0.9 },
+              ],
+            },
+          }}
+        />
+      </QueryClientProvider>
+    )
+
+    // Change orientation to horizontal
+    const quickAdjust = screen.getByTestId('quick-adjust-section')
+    const horizBtn = within(quickAdjust).getByText('横書き')
+    fireEvent.click(horizBtn)
+
+    expect(onUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orientation: 'horizontal',
+        effects: expect.objectContaining({
+          pathPoints: [
+            { x: 0.1, y: 0.7 },
+            { x: 0.5, y: 0.3 },
+            { x: 0.9, y: 0.7 },
+          ],
+        }),
+      })
+    )
+  })
+
+  it('falls back to default path points before flipping if pathPoints is empty (REQ-188)', () => {
+    const onUpdateMock = vi.fn()
+    renderWithQuery(
+      <SpeechBubbleControls
+        {...defaultProps}
+        onUpdate={onUpdateMock}
+        bubble={{
+          ...mockBubble,
+          orientation: 'vertical',
+          effects: {
+            pathPreset: 'arc',
+            pathPoints: [],
+          },
+        }}
+      />
+    )
+
+    // Open manga FX section
+    fireEvent.click(screen.getByText(/漫画テキスト演出/))
+
+    // Flip path
+    const flipPathBtn = screen.getByLabelText('パス反転')
+    fireEvent.click(flipPathBtn)
+
     expect(onUpdateMock).toHaveBeenCalledWith({
       effects: expect.objectContaining({
         pathPoints: [

@@ -19,9 +19,9 @@ export function MultiSelectToolbar({
   actions,
 }: MultiSelectToolbarProps) {
   return (
-    <div className="w-full bg-[#3ECF8E]/10 border-b border-[#3ECF8E]/30 px-6 py-3 flex items-center justify-between animate-slide-down shadow-md z-40">
+    <div className="w-full bg-[#3ECF8E]/10 border-b border-[#3ECF8E]/30 px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-3 animate-slide-down shadow-md z-40">
       {/* Left section: Counts and toggle buttons */}
-      <div className="flex items-center gap-6">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-6">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-[#3ECF8E] animate-pulse"></span>
           <span className="text-sm font-semibold text-[#3ECF8E] uppercase tracking-wider">
@@ -32,7 +32,7 @@ export function MultiSelectToolbar({
           </span>
         </div>
 
-        <div className="h-4 w-px bg-[rgba(255,255,255,0.15)]"></div>
+        <div className="hidden sm:block h-4 w-px bg-[rgba(255,255,255,0.15)]"></div>
 
         <div className="flex items-center gap-3">
           <button
@@ -54,14 +54,14 @@ export function MultiSelectToolbar({
       </div>
 
       {/* Right section: Context actions and exit */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4 ml-auto sm:ml-0">
         {actions && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {actions}
           </div>
         )}
 
-        <div className="h-4 w-px bg-[rgba(255,255,255,0.15)]"></div>
+        <div className="hidden sm:block h-4 w-px bg-[rgba(255,255,255,0.15)]"></div>
 
         <button
           onClick={onExitMode}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -39,11 +39,13 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   placeholder = 'Add tag...',
   defaultTextMode = false,
 }) => {
-  const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(parseToChips(value));
+  const initialChips = useMemo(() => parseToChips(value), []);
+  const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(initialChips);
   const [isTextMode, setIsTextMode] = useState(defaultTextMode);
   const [textValue, setTextValue] = useState('');
   const [inputValue, setInputValue] = useState('');
 
+  const isExternalUpdateRef = useRef(false);
   const prevChipsString = useRef(value);
 
   // `@dnd-kit` センサーの設定
@@ -67,6 +69,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   // 外部から value プロップスが更新されたら同期する
   useEffect(() => {
     if (value !== prevChipsString.current) {
+      isExternalUpdateRef.current = true;
       const newChips = parseToChips(value);
       setChips(newChips, false);
       prevChipsString.current = value;
@@ -86,6 +89,10 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   // 内部のチップステートが変わったら外部へ通知
   useEffect(() => {
+    if (isExternalUpdateRef.current) {
+      isExternalUpdateRef.current = false;
+      return;
+    }
     const newStr = chipsToString(state);
     if (newStr !== value) {
       prevChipsString.current = newStr;

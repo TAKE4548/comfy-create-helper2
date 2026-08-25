@@ -80,10 +80,15 @@ export function getDefaultPathPoints(
  * 軌道制御点を反転（縦書き: X座標ミラー 1.0 - x, 横書き: Y座標ミラー 1.0 - y）
  */
 export function flipPathPoints(points: PathPoint[], orientation: TextOrientation): PathPoint[] {
-  return points.map((pt) => ({
+  const mirrored = points.map((pt) => ({
     x: orientation === 'vertical' ? Math.round((1.0 - pt.x) * 1000) / 1000 : pt.x,
     y: orientation === 'horizontal' ? Math.round((1.0 - pt.y) * 1000) / 1000 : pt.y,
   }))
+  const isUnchanged = mirrored.every((pt, idx) => pt.x === points[idx]?.x && pt.y === points[idx]?.y)
+  if (isUnchanged) {
+    return [...points].reverse()
+  }
+  return mirrored
 }
 
 /**
@@ -280,7 +285,22 @@ export function calculateCharacterTransform(
       const stepIdx = Math.min(steps - 1, Math.floor(t * steps))
       const p0 = pts[0]
       const p1 = pts[1] || pts[0]
-      const stepT = (stepIdx + 0.5) / steps
+
+      const indicesInThisStep: number[] = []
+      for (let j = 0; j < totalChars; j++) {
+        const tj = totalChars > 1 ? j / (totalChars - 1) : 0.5
+        const sIdx = Math.min(steps - 1, Math.floor(tj * steps))
+        if (sIdx === stepIdx) {
+          indicesInThisStep.push(j)
+        }
+      }
+      const posInStep = indicesInThisStep.indexOf(charIndex)
+      const countInStep = indicesInThisStep.length
+      let subT = 0.5
+      if (countInStep > 1 && posInStep !== -1) {
+        subT = 0.2 + 0.6 * (posInStep / (countInStep - 1))
+      }
+      const stepT = (stepIdx + subT) / steps
       px = p0.x + (p1.x - p0.x) * stepT
       py = p0.y + (p1.y - p0.y) * stepT
       dx = p1.x - p0.x
@@ -791,6 +811,102 @@ export function getTailBasePosition(
   return null
 }
 
+interface SampledPathPoint {
+  t: number
+  x: number
+  y: number
+  dx: number
+  dy: number
+  cumLength: number
+}
+
+function sampleCurveArcLength(
+  preset: PathPresetType,
+  points: PathPoint[],
+  bw: number,
+  bh: number,
+  samples = 200
+): { totalLength: number; evaluateDistance: (d: number) => { x: number; y: number; tangentAngle: number } } {
+  const sampled: SampledPathPoint[] = []
+  let cum = 0
+
+  const evaluateT = (t: number): { x: number; y: number; dx: number; dy: number } => {
+    let px = 0
+    let py = 0
+    let dx = 1
+    let dy = 0
+    if (preset === 'line') {
+      const p0 = points[0]
+      const p1 = points[1] || points[0]
+      px = p0.x + (p1.x - p0.x) * t
+      py = p0.y + (p1.y - p0.y) * t
+      dx = p1.x - p0.x
+      dy = p1.y - p0.y
+    } else if (preset === 'arc') {
+      const p0 = points[0]
+      const p1 = points[1] || points[0]
+      const p2 = points[2] || points[1] || points[0]
+      const it = 1 - t
+      px = it * it * p0.x + 2 * it * t * p1.x + t * t * p2.x
+      py = it * it * p0.y + 2 * it * t * p1.y + t * t * p2.y
+      dx = 2 * it * (p1.x - p0.x) + 2 * t * (p2.x - p1.x)
+      dy = 2 * it * (p1.y - p0.y) + 2 * t * (p2.y - p1.y)
+    } else if (preset === 'wave') {
+      const p0 = points[0]
+      const p1 = points[1] || points[0]
+      const p2 = points[2] || points[1] || points[0]
+      const p3 = points[3] || points[2] || points[1] || points[0]
+      const it = 1 - t
+      px = it * it * it * p0.x + 3 * it * it * t * p1.x + 3 * it * t * t * p2.x + t * t * t * p3.x
+      py = it * it * it * p0.y + 3 * it * it * t * p1.y + 3 * it * t * t * p2.y + t * t * t * p3.y
+      dx = 3 * it * it * (p1.x - p0.x) + 6 * it * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x)
+      dy = 3 * it * it * (p1.y - p0.y) + 6 * it * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y)
+    }
+    return { x: px, y: py, dx, dy }
+  }
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples
+    const pt = evaluateT(t)
+    if (i > 0) {
+      const prev = sampled[i - 1]
+      const segDist = Math.hypot((pt.x - prev.x) * bw, (pt.y - prev.y) * bh)
+      cum += segDist
+    }
+    sampled.push({ t, x: pt.x, y: pt.y, dx: pt.dx, dy: pt.dy, cumLength: cum })
+  }
+
+  const totalLength = cum
+
+  const evaluateDistance = (d: number) => {
+    if (totalLength === 0 || sampled.length === 0) {
+      const pt = evaluateT(0.5)
+      return { x: pt.x, y: pt.y, tangentAngle: Math.atan2(pt.dy, pt.dx) }
+    }
+    const clampedD = Math.max(0, Math.min(totalLength, d))
+    let low = 0
+    let high = sampled.length - 1
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2)
+      if (sampled[mid].cumLength < clampedD) {
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+    const idx = Math.max(1, Math.min(sampled.length - 1, low))
+    const pPrev = sampled[idx - 1]
+    const pNext = sampled[idx]
+    const segLen = pNext.cumLength - pPrev.cumLength
+    const frac = segLen > 0 ? (clampedD - pPrev.cumLength) / segLen : 0
+    const interpT = pPrev.t + (pNext.t - pPrev.t) * frac
+    const pt = evaluateT(interpT)
+    return { x: pt.x, y: pt.y, tangentAngle: Math.atan2(pt.dy, pt.dx) }
+  }
+
+  return { totalLength, evaluateDistance }
+}
+
 /**
  * 吹き出し内のテキストを描画（漫画テキスト演出パラメータ対応）
  */
@@ -838,16 +954,18 @@ export function drawBubbleText(
     anchorY: number,
     charIdxInSeq: number,
     totalSeqChars: number,
-    globalIdx: number
+    globalIdx: number,
+    customPathPos?: { x: number; y: number; tangentAngle: number }
   ) => {
     const trans = calculateCharacterTransform(charIdxInSeq, totalSeqChars, bubble, fx, globalIdx)
+    const pathPos = customPathPos || trans.pathPos
 
     let targetX = anchorX + trans.offsetX
     let targetY = anchorY + trans.offsetY
 
-    if (fx?.pathPreset && fx.pathPreset !== 'none' && trans.pathPos) {
-      targetX = bx + trans.pathPos.x * bw + trans.offsetX
-      targetY = by + trans.pathPos.y * bh + trans.offsetY
+    if (fx?.pathPreset && fx.pathPreset !== 'none' && pathPos) {
+      targetX = bx + pathPos.x * bw + trans.offsetX
+      targetY = by + pathPos.y * bh + trans.offsetY
     }
 
     ctx.save()
@@ -859,11 +977,11 @@ export function drawBubbleText(
     }
 
     let rot = trans.rotateRad
-    if (fx?.pathFollowRotation && trans.pathPos) {
+    if (fx?.pathFollowRotation && pathPos) {
       if (bubble.orientation === 'vertical') {
-        rot += (trans.pathPos.tangentAngle - Math.PI / 2)
+        rot += (pathPos.tangentAngle - Math.PI / 2)
       } else {
-        rot += trans.pathPos.tangentAngle
+        rot += pathPos.tangentAngle
       }
     }
     if (rot !== 0) {
@@ -890,17 +1008,55 @@ export function drawBubbleText(
 
   // パス配置が指定されている場合
   if (fx?.pathPreset && fx.pathPreset !== 'none') {
-    const rawChars = Array.from(bubble.text.replace(/\n/g, ''))
-    const totalChars = rawChars.length
-    rawChars.forEach((ch, idx) => {
-      drawCharacter(ch, cx, cy, idx, totalChars, idx)
-    })
+    const isVertical = bubble.orientation === 'vertical'
+    const mappedText = isVertical
+      ? Array.from(bubble.text.replace(/\n/g, '')).map((ch) => verticalCharMap[ch] || ch)
+      : Array.from(bubble.text.replace(/\n/g, ''))
+    const totalChars = mappedText.length
+
+    if (fx.pathPreset === 'stepped') {
+      mappedText.forEach((ch, idx) => {
+        drawCharacter(ch, cx, cy, idx, totalChars, idx)
+      })
+    } else {
+      const defaultPts = getDefaultPathPoints(fx.pathPreset, bubble.orientation)
+      const requiredCount = fx.pathPreset === 'arc' ? 3 : fx.pathPreset === 'wave' ? 4 : 2
+      const pts = fx.pathPoints && fx.pathPoints.length >= requiredCount ? fx.pathPoints : defaultPts
+      const sampler = sampleCurveArcLength(fx.pathPreset, pts, bw, bh)
+      const letterSpacing = fx.letterSpacing ?? 0
+
+      // Calculate each character's scale and width contribution
+      const scales = mappedText.map((_, i) =>
+        calculateCharacterTransform(i, totalChars, bubble, fx, i).scale
+      )
+      const distances: number[] = [0]
+      for (let i = 0; i < totalChars - 1; i++) {
+        const step = ((scales[i] + scales[i + 1]) / 2) * fontSize + letterSpacing
+        distances.push(distances[i] + step)
+      }
+      const totalTextLen = distances[totalChars - 1] || 0
+
+      let startD = 0
+      let scaleFactor = 1
+      if (totalChars === 1) {
+        startD = sampler.totalLength / 2
+      } else if (totalTextLen <= sampler.totalLength && sampler.totalLength > 0) {
+        startD = (sampler.totalLength - totalTextLen) / 2
+      } else if (sampler.totalLength > 0 && totalTextLen > 0) {
+        scaleFactor = sampler.totalLength / totalTextLen
+      }
+
+      mappedText.forEach((ch, idx) => {
+        const targetD = startD + distances[idx] * scaleFactor
+        const pos = sampler.evaluateDistance(targetD)
+        drawCharacter(ch, cx, cy, idx, totalChars, idx, pos)
+      })
+    }
   } else if (bubble.orientation === 'vertical') {
     const availH = bh * 0.8
     const columns = layoutVerticalText(bubble.text, fontSize, availH)
     const letterSpacing = fx?.letterSpacing ?? 0
     const lineHeightRatio = fx?.lineHeightRatio ?? 1.15
-    const lineHeight = fontSize * lineHeightRatio + letterSpacing
     const colStep = fontSize * 1.3 + letterSpacing
     const totalW = (columns.length - 1) * colStep
     const startX = cx + totalW / 2
@@ -909,12 +1065,23 @@ export function drawBubbleText(
     columns.forEach((col, colIdx) => {
       const currentX = startX - colIdx * colStep
       const chars = Array.from(col)
-      const totalColH = (chars.length - 1) * lineHeight
+      const n = chars.length
+
+      const scales = chars.map((_, i) =>
+        calculateCharacterTransform(i, n, bubble, fx, globalCharIdx + i).scale
+      )
+
+      const yOffsets: number[] = [0]
+      for (let i = 0; i < n - 1; i++) {
+        const step = ((scales[i] + scales[i + 1]) / 2) * (fontSize * lineHeightRatio) + letterSpacing
+        yOffsets.push(yOffsets[i] + step)
+      }
+      const totalColH = yOffsets[n - 1] || 0
       const startY = cy - totalColH / 2
 
       chars.forEach((char, charIdx) => {
-        const currentY = startY + charIdx * lineHeight
-        drawCharacter(char, currentX, currentY, charIdx, chars.length, globalCharIdx)
+        const currentY = startY + yOffsets[charIdx]
+        drawCharacter(char, currentX, currentY, charIdx, n, globalCharIdx)
         globalCharIdx++
       })
     })
@@ -931,23 +1098,25 @@ export function drawBubbleText(
     lines.forEach((line, lineIdx) => {
       const currentY = startY + lineIdx * lineHeight
       const chars = Array.from(line)
+      const n = chars.length
 
-      if (letterSpacing > 0) {
-        const totalLineW = (chars.length - 1) * (fontSize + letterSpacing)
-        const startX = cx - totalLineW / 2
-        chars.forEach((char, charIdx) => {
-          const currentX = startX + charIdx * (fontSize + letterSpacing)
-          drawCharacter(char, currentX, currentY, charIdx, chars.length, globalCharIdx)
-          globalCharIdx++
-        })
-      } else {
-        const startX = cx - ((chars.length - 1) * fontSize) / 2
-        chars.forEach((char, charIdx) => {
-          const currentX = chars.length === 1 ? cx : startX + charIdx * fontSize
-          drawCharacter(char, currentX, currentY, charIdx, chars.length, globalCharIdx)
-          globalCharIdx++
-        })
+      const scales = chars.map((_, i) =>
+        calculateCharacterTransform(i, n, bubble, fx, globalCharIdx + i).scale
+      )
+
+      const xOffsets: number[] = [0]
+      for (let i = 0; i < n - 1; i++) {
+        const step = ((scales[i] + scales[i + 1]) / 2) * fontSize + letterSpacing
+        xOffsets.push(xOffsets[i] + step)
       }
+      const totalLineW = xOffsets[n - 1] || 0
+      const startX = cx - totalLineW / 2
+
+      chars.forEach((char, charIdx) => {
+        const currentX = startX + xOffsets[charIdx]
+        drawCharacter(char, currentX, currentY, charIdx, n, globalCharIdx)
+        globalCharIdx++
+      })
     })
   }
 

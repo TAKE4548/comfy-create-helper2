@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Settings, Plus, ChevronRight, ChevronDown,
@@ -19,6 +19,56 @@ import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
 import { PromptTranslationModal } from './PromptTranslationModal'
 import { generateNextProfileName } from '../../../utils/profileUtils'
+
+interface SetTabItemProps {
+  id: string | number
+  name: string
+  checked: boolean
+  isActive: boolean
+  onClick: () => void
+  onToggleCheck: () => void
+  onRemove: () => void
+}
+
+const SetTabItem = memo(function SetTabItem({
+  name,
+  checked,
+  isActive,
+  onClick,
+  onToggleCheck,
+  onRemove,
+}: SetTabItemProps) {
+  return (
+    <div
+      onClick={onClick}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
+        isActive
+          ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
+          : 'bg-surface-2 border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-400'
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggleCheck}
+        onClick={(e) => e.stopPropagation()}
+        className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
+      />
+      <span className="truncate max-w-[80px]">{name}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove()
+        }}
+        className="text-zinc-500 hover:text-red-400 ml-1"
+        title="タブを閉じる (DBからは削除されません)"
+      >
+        ✕
+      </button>
+    </div>
+  )
+})
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -393,22 +443,24 @@ export const DesktopLayout = ({
       {selectedWorkflowId && (
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
           <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
-            {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-              <div key={s.id} onClick={() => {
-                const targetPreset = presets?.find(p => String(p.id) === String(s.id))
-                if (targetPreset) handleLoadPreset(targetPreset)
-                else setActiveSetId(s.id)
-              }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
-                  String(s.id) === String(activeSetId)
-                    ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
-                    : 'bg-surface-2 border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-400'
-                }`}>
-                <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />
-                <span className="truncate max-w-[80px]">{s.name}</span>
-                <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-1" title="タブを閉じる (DBからは削除されません)">✕</button>
-              </div>
-            ))}
+            {sets
+              .filter((s) => (openPresetIds || []).map(String).includes(String(s.id)))
+              .map((s) => (
+                <SetTabItem
+                  key={s.id}
+                  id={s.id}
+                  name={s.name}
+                  checked={s.checked}
+                  isActive={String(s.id) === String(activeSetId)}
+                  onClick={() => {
+                    const targetPreset = presets?.find((p) => String(p.id) === String(s.id))
+                    if (targetPreset) handleLoadPreset(targetPreset)
+                    else setActiveSetId(s.id)
+                  }}
+                  onToggleCheck={() => toggleSetChecked(s.id)}
+                  onRemove={() => removeSet(s.id)}
+                />
+              ))}
           </div>
           <div className="flex gap-2">
             <button type="button" id="add-set-btn" onClick={() => {
