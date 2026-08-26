@@ -594,7 +594,8 @@ export const DesktopLayout = ({
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'}
-                    defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined} />
+                    defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
+                    isAnimaMode={isAnimaMode} />
                   <AppliedAssetChips
                     role={m.role!}
                     appliedAssets={appliedAssets}

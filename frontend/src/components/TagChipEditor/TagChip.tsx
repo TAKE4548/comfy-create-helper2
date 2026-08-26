@@ -8,6 +8,7 @@ export interface TagChipProps {
   id: string;
   text: string;
   enabled: boolean;
+  isAnimaMode?: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, text: string) => void;
@@ -18,6 +19,7 @@ export const TagChip: React.FC<TagChipProps> = ({
   id,
   text,
   enabled,
+  isAnimaMode = false,
   onToggle,
   onDelete,
   onEdit,
@@ -307,7 +309,7 @@ export const TagChip: React.FC<TagChipProps> = ({
               <span>強度 (Weight)</span>
               <input
                 type="number"
-                step="0.1"
+                step={isAnimaMode ? '0.5' : '0.1'}
                 value={weightInput}
                 onChange={handleDirectWeightChange}
                 onBlur={handleWeightSubmit}
@@ -318,34 +320,29 @@ export const TagChip: React.FC<TagChipProps> = ({
 
             {/* ステップ増減ボタン */}
             <div className="grid grid-cols-4 gap-1">
-              <button
-                type="button"
-                onClick={() => handleStepWeight(-1.0)}
-                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
-              >
-                -1.0
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStepWeight(-0.1)}
-                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
-              >
-                -0.1
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStepWeight(0.1)}
-                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
-              >
-                +0.1
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStepWeight(1.0)}
-                className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
-              >
-                +1.0
-              </button>
+              {(isAnimaMode
+                ? [
+                    { delta: -1.0, label: '-1.0' },
+                    { delta: -0.5, label: '-0.5' },
+                    { delta: 0.5, label: '+0.5' },
+                    { delta: 1.0, label: '+1.0' },
+                  ]
+                : [
+                    { delta: -0.3, label: '-0.3' },
+                    { delta: -0.1, label: '-0.1' },
+                    { delta: 0.1, label: '+0.1' },
+                    { delta: 0.3, label: '+0.3' },
+                  ]
+              ).map(({ delta, label }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => handleStepWeight(delta)}
+                  className="px-1.5 py-1 bg-[#1F1F25] hover:bg-zinc-700 text-[#E4E4E7] rounded border border-[rgba(255,255,255,0.05)] text-center transition-colors font-mono"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         </div>

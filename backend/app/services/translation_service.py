@@ -171,12 +171,36 @@ async def translate_llm(
     """Local LLM translation using existing call_llm service."""
     from app.services.llm_request import call_llm
 
-    prompt = (
+    system_prompt = (
+        f"You are a professional prompt translator for AI image generation. "
         f"Translate the following stable diffusion prompt from {source_lang} to {target_lang}. "
-        f"Preserve all tokens like __TOKEN_0__, commas, and structure. Output ONLY the translated prompt without explanations.\n\n"
-        f"Input:\n{text}"
+        f"Preserve all tokens like __TOKEN_0__, commas, and structure. Output ONLY the translated prompt without explanations."
     )
-    result = await call_llm(prompt, db=db)
+    model = None
+    llm_params = None
+    if db:
+        try:
+            from app import models
+            import json
+            model_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "translation_model").first()
+            if model_record and model_record.content and model_record.content.strip():
+                model = model_record.content
+            params_record = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == "llm_params_translation").first()
+            if params_record and params_record.content:
+                try:
+                    llm_params = json.loads(params_record.content)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to fetch translation LLM settings from DB: {e}")
+
+    result = await call_llm(
+        system_prompt=system_prompt,
+        user_prompt=text,
+        model=model,
+        llm_params=llm_params,
+        timeout=60.0,
+    )
     return result.strip() if result else text
 
 

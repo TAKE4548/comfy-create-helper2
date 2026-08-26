@@ -1,14 +1,14 @@
 ---
 id: REQ-060-FIX
 title: "マッピング確認UIにおける候補ドロップダウン表示不具合の修正"
-status: in-progress
+status: done
 tags: []
 ---
 
 ### REQ-060-FIX: マッピング確認UIにおける候補ドロップダウン表示不具合の修正
 
 - **Type**: defect
-- **Status**: in-progress
+- **Status**: done (2026-08-26)
 - **Current step**: none
 - **Priority**: P1
 - **Surface**: req060の反映で、マッピングマスタの項目毎の入力欄ができたが、直接入力しかできずマッピングした候補のドロップダウンになっていない。

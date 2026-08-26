@@ -29,6 +29,7 @@ const StatefulTagChipEditor = (props: any) => {
       }}
       placeholder={props.placeholder}
       id={props.id}
+      isAnimaMode={props.isAnimaMode}
     />
   );
 };
@@ -296,5 +297,33 @@ describe('TagChipEditor', () => {
     });
 
     expect(mockOnChange).not.toHaveBeenCalled();
+  });
+
+  it('propagates isAnimaMode to child TagChip components dynamically', () => {
+    const { rerender } = render(
+      <StatefulTagChipEditor
+        initialValue="masterpiece"
+        onChange={mockOnChange}
+        isAnimaMode={false}
+      />
+    );
+
+    fireEvent.click(screen.getByText('masterpiece'));
+    expect(screen.getByRole('button', { name: '-0.3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+0.3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+0.5' })).not.toBeInTheDocument();
+
+    // Dynamically switch to Anima mode
+    rerender(
+      <StatefulTagChipEditor
+        initialValue="masterpiece"
+        onChange={mockOnChange}
+        isAnimaMode={true}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '-0.5' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+0.5' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+0.3' })).not.toBeInTheDocument();
   });
 });

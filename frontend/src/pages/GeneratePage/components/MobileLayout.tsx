@@ -695,6 +695,7 @@ export const MobileLayout = ({
                 placeholder={`Enter ${activePromptTabMapping.display_name}…`}
                 variant={isNegative ? 'negative' : 'positive'}
                 defaultTextMode={activePromptTabMapping.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
+                isAnimaMode={isAnimaMode}
               />
               <AppliedAssetChips
                 role={activePromptTabMapping.role!}

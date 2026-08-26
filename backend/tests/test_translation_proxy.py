@@ -137,3 +137,45 @@ async def test_connection_service():
     assert success is True
     assert "少女" in sample
     assert error is None
+
+
+@pytest.mark.asyncio
+async def test_llm_translation_mock():
+    translation_service.clear_cache()
+    from unittest.mock import patch
+
+    with patch("app.services.llm_request.call_llm", new_callable=AsyncMock) as mock_call_llm:
+        mock_call_llm.return_value = "1人の女の子"
+
+        prompt = "1girl"
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang="en",
+            target_lang="ja",
+            provider="llm",
+        )
+
+        assert translated == "1人の女の子"
+        assert meta["provider"] == "llm"
+        mock_call_llm.assert_called_once()
+        kwargs = mock_call_llm.call_args.kwargs
+        assert "user_prompt" in kwargs
+        assert kwargs["user_prompt"] == "1girl"
+        assert "system_prompt" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_connection_service_llm():
+    translation_service.clear_cache()
+    from unittest.mock import patch
+
+    with patch("app.services.llm_request.call_llm", new_callable=AsyncMock) as mock_call_llm:
+        mock_call_llm.return_value = "1人の女の子"
+
+        success, sample, error = await translation_service.test_connection(
+            provider="llm",
+        )
+        assert success is True
+        assert sample != ""
+        assert error is None
+

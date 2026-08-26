@@ -159,12 +159,13 @@ describe('TagChip', () => {
     expect(mockOnToggle).toHaveBeenCalledWith('1');
   });
 
-  it('adjusts weight using step buttons in submenu', () => {
+  it('adjusts weight using step buttons in standard mode ([-0.3, -0.1, +0.1, +0.3])', () => {
     render(
       <TagChip
         id="1"
         text="1girl"
         enabled={true}
+        isAnimaMode={false}
         onEdit={mockOnEdit}
         onDelete={mockOnDelete}
         onToggle={mockOnToggle}
@@ -173,10 +174,63 @@ describe('TagChip', () => {
     );
 
     fireEvent.click(screen.getByText('1girl'));
+    expect(screen.getByRole('button', { name: '-0.3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '-0.1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+0.1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+0.3' })).toBeInTheDocument();
+
+    const plusPointThree = screen.getByRole('button', { name: '+0.3' });
+    fireEvent.click(plusPointThree);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.3)');
+
     const plusPointOne = screen.getByRole('button', { name: '+0.1' });
     fireEvent.click(plusPointOne);
-
     expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.1)');
+
+    const minusPointOne = screen.getByRole('button', { name: '-0.1' });
+    fireEvent.click(minusPointOne);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.9)');
+
+    const minusPointThree = screen.getByRole('button', { name: '-0.3' });
+    fireEvent.click(minusPointThree);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.7)');
+  });
+
+  it('adjusts weight using step buttons in anima mode ([-1.0, -0.5, +0.5, +1.0])', () => {
+    render(
+      <TagChip
+        id="1"
+        text="1girl"
+        enabled={true}
+        isAnimaMode={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('1girl'));
+    expect(screen.getByRole('button', { name: '-1.0' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '-0.5' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+0.5' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+1.0' })).toBeInTheDocument();
+
+    const plusPointFive = screen.getByRole('button', { name: '+0.5' });
+    fireEvent.click(plusPointFive);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.5)');
+
+    const plusOne = screen.getByRole('button', { name: '+1.0' });
+    fireEvent.click(plusOne);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:2)');
+
+    const minusPointFive = screen.getByRole('button', { name: '-0.5' });
+    fireEvent.click(minusPointFive);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.5)');
+
+    const minusOne = screen.getByRole('button', { name: '-1.0' });
+    fireEvent.click(minusOne);
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0)');
   });
 
   it('adjusts weight by direct number input in submenu', () => {

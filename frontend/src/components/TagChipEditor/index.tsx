@@ -30,6 +30,7 @@ interface TagChipEditorProps {
   placeholder?: string;
   variant?: string;
   defaultTextMode?: boolean;
+  isAnimaMode?: boolean;
 }
 
 export const TagChipEditor: React.FC<TagChipEditorProps> = ({
@@ -38,6 +39,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   onChange,
   placeholder = 'Add tag...',
   defaultTextMode = false,
+  isAnimaMode = false,
 }) => {
   const initialChips = useMemo(() => parseToChips(value), []);
   const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(initialChips);
@@ -312,6 +314,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
                     id={chip.id}
                     text={chip.text}
                     enabled={chip.enabled}
+                    isAnimaMode={isAnimaMode}
                     onToggle={handleToggle}
                     onDelete={handleDelete}
                     onEdit={handleEdit}
