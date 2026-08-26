@@ -340,6 +340,21 @@ LLM_PROMPT_SEEDS = [
         "content": '{"temperature": 0.2, "top_p": 1.0, "max_tokens": 1000, "presence_penalty": 0.0, "frequency_penalty": 0.0}'
     },
     {
+        "key": "translation_provider",
+        "description": "翻訳プロバイダー (google_cloud, deepl, llm)",
+        "content": "google_cloud"
+    },
+    {
+        "key": "translation_api_key",
+        "description": "翻訳プロバイダー用APIキー",
+        "content": ""
+    },
+    {
+        "key": "translation_api_url",
+        "description": "翻訳プロバイダー用カスタムAPIエンドポイントURL",
+        "content": ""
+    },
+    {
         "key": "llm_params_scene_generate",
         "description": "Scene Generator用LLM詳細パラメータ",
         "content": '{"temperature": 0.2, "top_p": 1.0, "max_tokens": 1000, "presence_penalty": 0.0, "frequency_penalty": 0.0}'

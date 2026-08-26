@@ -1,23 +1,19 @@
-# インシデントレポート: LLMプロバイダー選択時の翻訳疎通テスト・プロンプト翻訳エラー
+# インシデントレポート: 翻訳プロバイダー設定の保存失敗
 
 ## 1. 事象概要 (Overview)
-翻訳機能においてプロバイダーを `LLM` に設定して疎通テスト（`POST /api/translate/test`）またはプロンプト翻訳（`POST /api/translate/prompt`）を実行すると、バックエンドで以下のエラーが発生し、テストおよび翻訳処理が失敗する。
-
-```text
-TypeError: call_llm() got an unexpected keyword argument 'db'
-```
+設定画面の翻訳設定（`TranslationSettingsSection`）において、翻訳プロバイダー（Google Cloud / DeepL / ローカルLLM）や APIキー、API URL を変更して「設定を保存」ボタンを押下しても設定が保存されない。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
 - **再現手順**:
-  1. 翻訳設定（または API リクエスト）で `provider` を `"llm"` に指定する。
-  2. `POST /api/translate/test` を実行する。
-  3. `translation_service.py` の `test_connection` -> `translate_prompt` -> `translate_llm` が呼び出される。
+  1. 設定画面（Settings）の「プロンプト翻訳設定」を開く。
+  2. 翻訳プロバイダーを別のプロバイダー（例: `ローカルLLM`）に変更する。
+  3. 「設定を保存」ボタンをクリックする。
+  4. 画面をリロードすると元の設定に戻っており、保存が反映されていない。
 - **観測結果**:
-  - `translation_service.py: L179` にて `await call_llm(prompt, db=db)` が実行される。
-  - `call_llm` が `db` 引数を受け付けず、また `user_prompt` の必須引数が渡されていないため、`TypeError` がスローされ接続テストが `success: false`（error: `call_llm() got an unexpected keyword argument 'db'`）となる。
+  - `PUT /api/llm-prompts/{key}` に対し、422 Unprocessable Entity または 404 Not Found が返却され保存に失敗する。
 
 ---
 
@@ -25,37 +21,32 @@ TypeError: call_llm() got an unexpected keyword argument 'db'
 
 | # | 対象ファイル | 該当行 / 関数 | 詳細 |
 |---|---|---|---|
-| 1 | `backend/app/services/translation_service.py` | L165-L181 (`translate_llm`) | `call_llm` のシグネチャと異なる引数（単一 prompt、未対応の `db=db`）で呼び出している。 |
-| 2 | `backend/app/services/llm_request.py` | L10 (`call_llm`) | `async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 180.0, model: str = None, llm_params: dict = None) -> str:` の定義。 |
+| 1 | `frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx` | L73-L79 (`saveSettingsMutation`) | `llmPromptsApi.update` にオブジェクト（`{ content: ... }`）ではなく文字列を直接渡しているため 422 エラーが発生。 |
+| 2 | `backend/app/routers/llm_prompts.py` | L70-L82 (`update_llm_prompt`) | キー未存在時に 404 Not Found を返す（アップサート未対応）。 |
+| 3 | `backend/app/seed_data.py` | L295-L377 (`LLM_PROMPT_SEEDS`) | `translation_provider` などの初期シードデータが未登録。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-`backend/app/services/translation_service.py` (L165-L181) の `translate_llm` では以下のように記述されていました：
+### (1) フロントエンドのペイロード形式不整合 (主因)
+`frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx` において、`llmPromptsApi.update` の呼び出しが以下のようになっています：
 
-```python
-async def translate_llm(
-    text: str,
-    source_lang: str = "en",
-    target_lang: str = "ja",
-    db: Optional[Session] = None,
-) -> str:
-    """Local LLM translation using existing call_llm service."""
-    from app.services.llm_request import call_llm
-
-    prompt = (
-        f"Translate the following stable diffusion prompt from {source_lang} to {target_lang}. "
-        f"Preserve all tokens like __TOKEN_0__, commas, and structure. Output ONLY the translated prompt without explanations.\n\n"
-        f"Input:\n{text}"
-    )
-    result = await call_llm(prompt, db=db)
-    return result.strip() if result else text
+```typescript
+// TranslationSettingsSection.tsx
+await Promise.all([
+  llmPromptsApi.update('translation_provider', provider),
+  llmPromptsApi.update('translation_api_key', apiKey),
+  llmPromptsApi.update('translation_api_url', apiUrl),
+])
 ```
 
-1. `call_llm` は `system_prompt` と `user_prompt` の 2 つの位置引数を要求するシグネチャですが、上記では単一の `prompt` のみが第 1 引数として渡されていました。
-2. `call_llm` は `db` キーワード引数を受け付けない設計となっていますが、呼び出し側で `db=db` を渡していました。
-3. これにより Python の引数検証で `TypeError: call_llm() got an unexpected keyword argument 'db'` が発生していました。
+`llmPromptsApi.update` は `PUT /api/llm-prompts/{key}` に渡されたデータをそのまま JSON シリアライズして送信します。
+バックエンドは `LlmPromptUpdate`（`{ content: string, description?: string }`）を要求するため、文字列がそのまま渡されると 422 Unprocessable Entity となります。
+
+### (2) バックエンドのキー未登録時の 404 エラー
+`backend/app/routers/llm_prompts.py` の `update_llm_prompt` では、対象キーが DB に存在しない場合に 404 を返します。
+`seed_data.py` に `translation_provider` / `translation_api_key` / `translation_api_url` の初期レコードが定義されていないため、未登録状態の環境では 404 エラーとなります。
 
 ---
 
@@ -69,12 +60,12 @@ async def translate_llm(
 </diagnostic_check>
 
 * **分類**: **Type A (Implementation Bug - 実装バグ)**
-  * 関数インターフェース定義と呼び出しコードの引数不整合による実装上のバグです。
+  * API ペイロード形式の不整合および初期データ・アップサート処理の不足による実装バグです。
 
 ---
 
 ## 6. バックログ登録とルーティング (Backlog Registration & Routing)
 
-- **登録 PBI**: `docs/backlog/pbi/active/REQ-192.md`
-- **タイトル**: `LLMプロバイダー選択時の翻訳疎通テスト・プロンプト翻訳エラー修正`
-- **次のワークフロー**: `/dev-design REQ-192`
+- **登録 PBI**: `docs/backlog/pbi/active/REQ-193.md`
+- **タイトル**: `翻訳設定（プロバイダー・APIキー・URL）の保存不具合修正`
+- **次のワークフロー**: `/dev-design REQ-193`

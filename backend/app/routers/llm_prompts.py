@@ -71,11 +71,18 @@ def update_current_model(payload: CurrentModelUpdate, db: Session = Depends(get_
 def update_llm_prompt(key: str, payload: schemas.LlmPromptUpdate, db: Session = Depends(get_db)):
     prompt = db.query(models.LlmPrompt).filter(models.LlmPrompt.key == key).first()
     if not prompt:
-        raise HTTPException(status_code=404, detail=f"LLM prompt key '{key}' not found")
-    prompt.content = payload.content
-    if payload.description is not None:
-        prompt.description = payload.description
-    prompt.updated_at = datetime.utcnow()
+        prompt = models.LlmPrompt(
+            key=key,
+            content=payload.content,
+            description=payload.description or f"Setting for {key}",
+            updated_at=datetime.utcnow(),
+        )
+        db.add(prompt)
+    else:
+        prompt.content = payload.content
+        if payload.description is not None:
+            prompt.description = payload.description
+        prompt.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(prompt)
     return prompt

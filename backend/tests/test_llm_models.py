@@ -128,5 +128,26 @@ async def test_call_llm_override():
         mock_client.post.assert_called_once()
         call_args = mock_client.post.call_args
         assert call_args is not None
-        payload = call_args[1]["json"]
-        assert payload["model"] == "override-model-name"
+        assert call_args.kwargs["json"]["model"] == "override-model-name"
+
+
+def test_update_llm_prompt_upsert():
+    # PUT non-existing key should create it (upsert)
+    response = client.put(
+        "/api/llm-prompts/translation_provider",
+        json={"content": "llm", "description": "LLM Translation"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["key"] == "translation_provider"
+    assert data["content"] == "llm"
+
+    # PUT again to update existing key
+    response2 = client.put(
+        "/api/llm-prompts/translation_provider",
+        json={"content": "deepl"}
+    )
+    assert response2.status_code == 200
+    data2 = response2.json()
+    assert data2["key"] == "translation_provider"
+    assert data2["content"] == "deepl"

@@ -72,9 +72,9 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
       await Promise.all([
-        llmPromptsApi.update('translation_provider', provider),
-        llmPromptsApi.update('translation_api_key', apiKey),
-        llmPromptsApi.update('translation_api_url', apiUrl),
+        llmPromptsApi.update('translation_provider', { content: provider }),
+        llmPromptsApi.update('translation_api_key', { content: apiKey }),
+        llmPromptsApi.update('translation_api_url', { content: apiUrl }),
       ])
     },
     onSuccess: () => {
