@@ -798,6 +798,8 @@ export function HistoryPage() {
                         onMouseLeave={longPressHandlers.onMouseLeave}
                         onTouchStart={longPressHandlers.onTouchStart}
                         onTouchEnd={longPressHandlers.onTouchEnd}
+                        onContextMenu={(e: React.MouseEvent) => e.preventDefault()}
+                        style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', userSelect: 'none' }}
                         className={`group aspect-square bg-surface-2 border rounded-xl overflow-hidden relative flex items-center justify-center transition-all cursor-pointer select-none ${
                           isSelected
                             ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30 bg-surface-2'
@@ -1122,7 +1124,9 @@ export function HistoryPage() {
                       onMouseLeave={longPressHandlers.onMouseLeave}
                       onTouchStart={longPressHandlers.onTouchStart}
                       onTouchEnd={longPressHandlers.onTouchEnd}
-                      className={`group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                      onContextMenu={(e: React.MouseEvent) => e.preventDefault()}
+                      style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                      className={`group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer select-none ${
                         snapshotMultiSelect.isMultiSelectMode && isSelected
                           ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30 bg-surface-2'
                           : isModalPreviewOpen && sortedSnapshots && sortedSnapshots[modalPreviewIndex]?.id === snap.id
@@ -1141,7 +1145,7 @@ export function HistoryPage() {
                     >
                       <div className="aspect-square bg-surface-2">
                         {snap.image_path || snap.thumbnail_path ? (
-                          <img src={snap.thumbnail_path || snap.image_path!} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover" />
+                          <img src={snap.thumbnail_path || snap.image_path!} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover pointer-events-none" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-600">
                             <ImageOff size={20} strokeWidth={1} />

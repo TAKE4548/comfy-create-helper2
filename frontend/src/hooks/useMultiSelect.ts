@@ -21,6 +21,7 @@ export interface UseMultiSelectReturn<ID extends number | string = number> {
     onMouseLeave: () => void;
     onTouchStart: (e: React.TouchEvent) => void;
     onTouchEnd: () => void;
+    onContextMenu?: (e: React.MouseEvent) => void;
   };
 }
 
@@ -31,6 +32,7 @@ export function useMultiSelect<ID extends number | string = number, T extends { 
   const [selectedIds, setSelectedIds] = useState<Set<ID>>(new Set());
   const lastSelectedIdRef = useRef<ID | null>(null);
   const isDraggingRef = useRef(false);
+  const justLongPressedRef = useRef(false);
 
   const enterMultiSelectMode = useCallback((firstId?: ID) => {
     setIsMultiSelectMode(true);
@@ -60,6 +62,11 @@ export function useMultiSelect<ID extends number | string = number, T extends { 
 
   const handleItemClick = useCallback(
     (id: ID, event: React.MouseEvent) => {
+      // Ignore click event if it was triggered immediately after a successful long-press
+      if (justLongPressedRef.current) {
+        return;
+      }
+
       if (!isMultiSelectMode) {
         if (event.ctrlKey || event.metaKey || event.shiftKey) {
           const prevLastSelected = lastSelectedIdRef.current;
@@ -147,9 +154,10 @@ export function useMultiSelect<ID extends number | string = number, T extends { 
         const diffY = currentY - startY;
         const distance = Math.sqrt(diffX * diffX + diffY * diffY);
 
-        // Cancel long press if moved more than 5px (threshold for drag vs hold)
+        // Cancel long press if moved more than threshold (15px for touch to tolerate finger jitter, 8px for mouse)
         // and transition to active dragging state to block any future triggers.
-        if (distance >= 5) {
+        const MOVE_THRESHOLD = 'touches' in e ? 15 : 8;
+        if (distance >= MOVE_THRESHOLD) {
           isDraggingRef.current = true;
           if (timer) {
             clearTimeout(timer);
@@ -207,8 +215,12 @@ export function useMultiSelect<ID extends number | string = number, T extends { 
         const parsed = stored !== null ? parseFloat(stored) : NaN;
         const delay = !isNaN(parsed) ? parsed * 1000 : 800;
         timer = setTimeout(() => {
+          justLongPressedRef.current = true;
           enterMultiSelectMode(id);
           globalClear(); // Clean up listeners on successful activation
+          setTimeout(() => {
+            justLongPressedRef.current = false;
+          }, 400);
         }, delay);
       };
 
@@ -218,6 +230,7 @@ export function useMultiSelect<ID extends number | string = number, T extends { 
         onMouseLeave: globalClear,
         onTouchStart: start,
         onTouchEnd: globalClear,
+        onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
       };
     },
     [enterMultiSelectMode]
