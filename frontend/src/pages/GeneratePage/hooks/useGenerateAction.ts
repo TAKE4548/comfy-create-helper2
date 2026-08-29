@@ -8,6 +8,7 @@ import type { BatchJob } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 import { applyBypass } from '../../../utils/bypassUtils'
 import { getInitialParams } from './useWorkflowParams'
+import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 
 export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInfo: any = {}) {
   const {
@@ -193,7 +194,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
         await queuePrompt(
           wfJson,
           { paramValues: syncedParamValues, appliedAssets },
-          { signal: abortController.signal }
+          { signal: abortController.signal, skipQueueFetch: true }
         )
         if (abortController.signal.aborted) {
           return
@@ -201,6 +202,9 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       }
     } finally {
       setIsBatchSubmitting?.(false)
+      if (!abortController.signal.aborted) {
+        await fetchQueue?.()
+      }
     }
   }
 
@@ -233,9 +237,6 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     const existingActiveBatch = activeBatch ? [...activeBatch] : []
     const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
     setActiveBatch([...currentBatch])
-
-    const mappingsJson = localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}'
-    const mappings = JSON.parse(mappingsJson)
 
     const activeBypassNodeIds = Array.from(
       new Set(
@@ -283,7 +284,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
           }
 
           if (promptId) {
-            mappings[promptId] = setItem.name
+            promptToSetMapCache.setMapping(promptId, setItem.name)
             currentBatch[currentIdx] = {
               ...currentBatch[currentIdx],
               promptId,
@@ -304,7 +305,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       }
     } finally {
       setIsBatchSubmitting?.(false)
-      localStorage.setItem('prompt-surgeon-prompt-to-set-map', JSON.stringify(mappings))
+      promptToSetMapCache.saveToStorage()
 
       // キャンセル中断時は setActiveBatch 上書きと fetchQueue を抑止
       if (!abortController.signal.aborted) {

@@ -132,7 +132,7 @@ class TestComfyProxyAPI(unittest.TestCase):
         res = self.client.get("/api/comfy/history")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json(), {"prompt-1": {"outputs": {}}})
-        mock_get.assert_called_once_with(f"{comfy_router.settings.comfy_url}/history", params={"max_items": 100}, timeout=15.0)
+        mock_get.assert_called_once_with(f"{comfy_router.settings.comfy_url}/history", params={"max_items": 200}, timeout=15.0)
 
     @patch("httpx.AsyncClient.get")
     def test_get_history_proxy_with_max_items(self, mock_get):

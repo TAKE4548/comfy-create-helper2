@@ -5,7 +5,7 @@ interface ImageCropperProps {
   imageSrc: string; // クロップ対象の画像データ（DataURL等）
   onCropComplete: (croppedBlob: Blob) => void;
   onCancel: () => void;
-  aspectRatio?: number; // 例: 1 (1:1)
+  aspectRatio?: number; // 例: 0.75 (3:4)
 }
 
 interface Area {
@@ -66,7 +66,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   imageSrc,
   onCropComplete,
   onCancel,
-  aspectRatio = 1,
+  aspectRatio = 3 / 4,
 }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);

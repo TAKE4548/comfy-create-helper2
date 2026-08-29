@@ -13,6 +13,7 @@ import { useWorkflowUpload } from './useWorkflowUpload'
 import { useMultiSelect } from '../../../hooks/useMultiSelect'
 import { usePromptTranslation } from './usePromptTranslation'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 
 export interface SnapshotSummaryWithParams {
   id: number
@@ -189,6 +190,19 @@ export function useGeneratePageState() {
     queryFn: () => workflowPresetsApi.list(selectedWorkflowId!) as Promise<WorkflowPreset[]>,
     enabled: !!selectedWorkflowId,
   })
+  const presetUpdatedAtRef = useRef<Record<number, string>>({})
+
+  // presets クエリ取得時に ref を同期
+  useEffect(() => {
+    if (presets) {
+      presets.forEach(p => {
+        if (p.updated_at) {
+          presetUpdatedAtRef.current[p.id] = p.updated_at
+        }
+      })
+    }
+  }, [presets])
+
   const { data: comfyObjectInfo } = useQuery({
     queryKey: ['comfy-object-info'],
     queryFn: () => comfyApi.getObjectInfo(),
@@ -227,15 +241,7 @@ export function useGeneratePageState() {
   }, [displayImages, sortOrder])
   
   const getSetNameForImage = (imgUrl: string) => {
-    try {
-      const url = new URL(imgUrl)
-      const promptId = url.searchParams.get('t')
-      if (promptId) {
-        const mappings = JSON.parse(localStorage.getItem('prompt-surgeon-prompt-to-set-map') || '{}')
-        return mappings[promptId] || null
-      }
-    } catch {}
-    return null
+    return promptToSetMapCache.getSetNameForUrl(imgUrl)
   }
 
   const sortedSnapshots = useMemo(() => {
@@ -400,11 +406,19 @@ export function useGeneratePageState() {
       seed: args.seed !== undefined ? args.seed : seed,
       base_updated_at: args.base_updated_at,
     }),
-    onSuccess: () => {
+    onSuccess: (updatedPreset) => {
+      if (updatedPreset?.id) {
+        presetUpdatedAtRef.current[updatedPreset.id] = updatedPreset.updated_at
+        qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
+          if (!old) return old
+          return old.map(p => p.id === updatedPreset.id ? updatedPreset : p)
+        })
+      }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
-    onError: (err: any) => {
+    onError: (err: any, variables) => {
       if (err?.message?.includes('409') || err?.status === 409) {
+        delete lastSavedStateRef.current[variables.id]
         qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
       }
     }
@@ -464,11 +478,12 @@ export function useGeneratePageState() {
   }
 
   const handleBulkEditApply = async (payload: import('../../../components/ProfileBulkEditModal').BulkEditPayload) => {
-    if (!presets || bulkTargetIds.length === 0) return
+    const latestPresets = qc.getQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId]) || presets
+    if (!latestPresets || bulkTargetIds.length === 0) return
     setIsBulkApplying(true)
     try {
-      const selectedPresets = presets.filter(p => bulkTargetIds.includes(p.id))
-      await Promise.all(selectedPresets.map(async preset => {
+      const selectedPresets = latestPresets.filter(p => bulkTargetIds.includes(p.id))
+      const updatedResults = await Promise.all(selectedPresets.map(async preset => {
         let newParamValues = { ...preset.param_values }
         let newAppliedAssets = { ...preset.applied_assets }
         let newBatchSize = preset.batch_size
@@ -559,14 +574,25 @@ export function useGeneratePageState() {
           }
         }
 
-        await workflowPresetsApi.update(preset.id, {
+        const res = await workflowPresetsApi.update(preset.id, {
           param_values: newParamValues,
           applied_assets: newAppliedAssets,
           batch_size: newBatchSize,
         })
 
+        if (res?.id) {
+          presetUpdatedAtRef.current[res.id] = res.updated_at
+        }
+
         // If the updated preset is currently active, sync local state immediately
         if (String(preset.id) === String(activeSetId)) {
+          lastSavedStateRef.current[preset.id] = {
+            paramValues: newParamValues,
+            appliedAssets: newAppliedAssets,
+            batchSize: newBatchSize ?? 1,
+            seedMode: (preset.seed_mode as 'random' | 'fixed') || 'random',
+            seed: preset.seed !== undefined ? preset.seed : 42,
+          }
           setParamValues(newParamValues)
           setAppliedAssets(newAppliedAssets)
           if (newBatchSize !== undefined) {
@@ -578,7 +604,17 @@ export function useGeneratePageState() {
             batchSize: newBatchSize,
           })
         }
+
+        return res
       }))
+
+      // クエリキャッシュの即時一括更新
+      qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
+        if (!old) return old
+        const resultMap = new Map(updatedResults.map(p => [p.id, p]))
+        return old.map(p => resultMap.get(p.id) ?? p)
+      })
+
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
       setIsBulkEditOpen(false)
       setBulkTargetIds([])
@@ -976,6 +1012,9 @@ export function useGeneratePageState() {
         return
       }
 
+      // 送信直前の瞬間に Ref から最新のタイムスタンプを取得
+      const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
+
       if (currentLastSaved) {
         const hist = getHistory(activeSetId)
         hist.past.push(currentLastSaved)
@@ -992,7 +1031,7 @@ export function useGeneratePageState() {
         batch_size: currentState.batchSize,
         seed_mode: currentState.seedMode,
         seed: currentState.seed,
-        base_updated_at: activePreset.updated_at,
+        base_updated_at: latestBaseUpdatedAt,
       })
     }, 1000)
 

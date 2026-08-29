@@ -25,6 +25,7 @@ import {
   type LoraFormState,
 } from '../components/LoraModals'
 import { ImageCropper } from '../components/ImageCropper'
+import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
@@ -122,6 +123,7 @@ export function LoRAsPage() {
   const [copiedTriggerSetId, setCopiedTriggerSetId] = useState<number | null>(null)
   const [form, setForm] = useState<LoraFormState>(EMPTY_FORM)
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
+  const { aspectRatioStyle, numericRatio } = useThumbnailAspectRatio()
 
   const { data: categories } = useQuery({
     queryKey: ['lora-categories'],
@@ -300,7 +302,7 @@ export function LoRAsPage() {
     const catName = categories?.find((c) => c.id === lora.category_id)?.name
     return (
       <div className="rounded-xl border border-[rgba(255,255,255,0.12)] bg-[#1F1F25] overflow-hidden flex flex-col justify-between h-full min-h-[300px] w-[200px]">
-        <div className="relative aspect-square w-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+        <div className="relative w-full bg-zinc-800 flex items-center justify-center text-zinc-500 overflow-hidden" style={aspectRatioStyle}>
           {lora.thumbnail_path ? (
             <img src={lora.thumbnail_path} alt={lora.model_name} className="w-full h-full object-cover" />
           ) : (
@@ -458,7 +460,7 @@ export function LoRAsPage() {
                       {!isMultiSelectMode && isDndActive && (
                         <button
                           type="button"
-                          className="absolute top-2 right-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                          className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
                           style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
                           onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                           onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
@@ -474,15 +476,16 @@ export function LoRAsPage() {
                         thumbnailPath={lora.thumbnail_path}
                         snapshotPaths={lora.snapshot_paths}
                         alt={lora.model_name}
-                        className="aspect-square w-full"
+                        className="w-full"
+                        style={aspectRatioStyle}
                       >
                         <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
-                          className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
+                          className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                           <Pencil size={13} />
                         </button>
                         <button id={`lora-delete-${lora.id}`}
                           onClick={(e) => { e.stopPropagation(); if (confirm('Delete this LoRA?')) deleteLora.mutate(lora.id) }}
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+                          className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
                           <Trash2 size={13} />
                         </button>
                       </ImageCarousel>
@@ -609,6 +612,7 @@ export function LoRAsPage() {
       {cropImageSrc && (
         <ImageCropper
           imageSrc={cropImageSrc}
+          aspectRatio={numericRatio}
           onCropComplete={handleCropComplete}
           onCancel={() => setCropImageSrc(null)}
         />

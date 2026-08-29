@@ -637,4 +637,22 @@ describe('useGenerateAction', () => {
       expect(finalBatch[3].promptId).toBe('new-prompt-2');
     });
   });
+
+  describe('REQ-195-T2 single batch queuePrompt optimization', () => {
+    it('handleGenerate passes skipQueueFetch: true to queuePrompt and calls fetchQueue once in finally', async () => {
+      mockStore.batchSize = 3;
+      mockStore.queuePrompt.mockResolvedValue('prompt-id');
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      await handleGenerate();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
+      for (let i = 0; i < 3; i++) {
+        expect(mockStore.queuePrompt.mock.calls[i][2]).toMatchObject({
+          skipQueueFetch: true,
+        });
+      }
+      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
+    });
+  });
 });

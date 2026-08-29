@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGenerationStore, _resetWebSocketForTesting, resolveNodeTitle } from '../useGenerationStore';
 import { comfyApi } from '../../api/client';
 
@@ -537,7 +537,7 @@ describe('useGenerationStore REQ-164 multi-session WebSocket, history sync, and 
     });
   });
 
-  it('Test 2: handles WS executing (node: null) by clearing currentNode and calling fetchHistory and fetchQueue', () => {
+  it('Test 2: handles WS executing (node: null) by clearing currentNode without redundant fetchHistory or fetchQueue', () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.setState({
       currentNode: { id: '3', name: 'KSampler' },
@@ -548,6 +548,9 @@ describe('useGenerationStore REQ-164 multi-session WebSocket, history sync, and 
     const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
 
     useGenerationStore.getState().initialize();
+    fetchHistorySpy.mockClear();
+    fetchQueueSpy.mockClear();
+
     const wsInstance = createdWsList[0];
     expect(wsInstance).toBeDefined();
 
@@ -564,8 +567,8 @@ describe('useGenerationStore REQ-164 multi-session WebSocket, history sync, and 
     const state = useGenerationStore.getState();
     expect(state.currentNode).toBeNull();
     expect(state.nodeProgress).toBeNull();
-    expect(fetchHistorySpy).toHaveBeenCalled();
-    expect(fetchQueueSpy).toHaveBeenCalled();
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
   });
 
   it('Test 3: reconcileState and initialize load all sessions history and queue without early return', async () => {
@@ -811,7 +814,7 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
     });
   });
 
-  it('fetchHistory merges new images to the beginning (front) of batchImages and calls getHistory(100)', async () => {
+  it('fetchHistory merges new images to the beginning (front) of batchImages and calls getHistory(200)', async () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -839,7 +842,7 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
 
     await useGenerationStore.getState().fetchHistory();
 
-    expect(comfyApi.getHistory).toHaveBeenCalledWith(100);
+    expect(comfyApi.getHistory).toHaveBeenCalledWith(200);
     const state = useGenerationStore.getState();
     expect(state.batchImages).toHaveLength(2);
     expect(state.batchImages[0]).toContain('new-image.png');
@@ -1460,6 +1463,184 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
     vi.mocked(comfyApi.getHistory).mockResolvedValueOnce({} as any);
     await useGenerationStore.getState().fetchHistory();
     expect(comfyApi.getHistory).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items), redundant request elimination & blob cleanup', () => {
+  let createdWsList: any[] = [];
+  const originalCreateObjectURL = globalThis.URL.createObjectURL;
+  const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    _resetWebSocketForTesting();
+    createdWsList = [];
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string | Blob | ArrayBuffer }) => void) | null = null;
+      binaryType: string = '';
+      url: string;
+
+      constructor(url: string) {
+        this.url = url;
+        createdWsList.push(this);
+      }
+
+      close() {}
+    }
+
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+
+    if (!globalThis.URL.createObjectURL) {
+      globalThis.URL.createObjectURL = vi.fn();
+    }
+    if (!globalThis.URL.revokeObjectURL) {
+      globalThis.URL.revokeObjectURL = vi.fn();
+    }
+  });
+
+  afterEach(() => {
+    globalThis.URL.createObjectURL = originalCreateObjectURL;
+    globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it('AC-1 & AC-8: fetchHistory requests 200 items and preserves up to 200 images', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const mockHistoryData: Record<string, any> = {};
+    for (let i = 1; i <= 210; i++) {
+      mockHistoryData[`prompt-${i}`] = {
+        prompt: [i, `prompt-${i}`, {}, { client_id: 'other-client' }, []],
+        outputs: {
+          '9': {
+            images: [{ filename: `img-${i}.png`, subfolder: '', type: 'output' }],
+          },
+        },
+        status: { completed: true },
+      };
+    }
+
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce(mockHistoryData);
+
+    await useGenerationStore.getState().fetchHistory();
+
+    expect(comfyApi.getHistory).toHaveBeenCalledWith(200);
+    const state = useGenerationStore.getState();
+    expect(state.comfyHistoryImages.length).toBe(200);
+    expect(state.batchImages.length).toBe(200);
+  });
+
+  it('AC-2 & AC-3: WebSocket events do NOT trigger redundant fetchHistory or fetchQueue', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    const fetchHistorySpy = vi.spyOn(useGenerationStore.getState(), 'fetchHistory');
+    const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
+    fetchHistorySpy.mockClear();
+    fetchQueueSpy.mockClear();
+
+    // 1. execution_start
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'execution_start',
+        data: { prompt_id: 'test-prompt-1' },
+      }),
+    });
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    // 2. executing (node: null)
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executing',
+        data: { node: null, prompt_id: 'test-prompt-1' },
+      }),
+    });
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    // 3. executed
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          prompt_id: 'test-prompt-1',
+          output: { images: [{ filename: 'out1.png', subfolder: '', type: 'output' }] },
+        },
+      }),
+    });
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    // 4. execution_complete
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'execution_complete',
+        data: { prompt_id: 'test-prompt-1' },
+      }),
+    });
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+
+    // 5. execution_error
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'execution_error',
+        data: { prompt_id: 'test-prompt-error' },
+      }),
+    });
+    expect(fetchHistorySpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).not.toHaveBeenCalled();
+  });
+
+  it('AC-5: blob objectURL is properly revoked when receiving new blob, clearing preview, or setting selected image', () => {
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL')
+      .mockReturnValueOnce('blob:http://localhost/first-blob')
+      .mockReturnValueOnce('blob:http://localhost/second-blob');
+
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    const wsInstance = createdWsList[0];
+    expect(wsInstance).toBeDefined();
+
+    // First blob message
+    const blob1 = new Blob(['preview1'], { type: 'image/png' });
+    wsInstance.onmessage?.({ data: blob1 });
+    expect(useGenerationStore.getState().previewImage).toBe('blob:http://localhost/first-blob');
+    expect(revokeObjectURLSpy).not.toHaveBeenCalled();
+
+    // Second blob message -> should revoke previous blob
+    const blob2 = new Blob(['preview2'], { type: 'image/png' });
+    wsInstance.onmessage?.({ data: blob2 });
+    expect(useGenerationStore.getState().previewImage).toBe('blob:http://localhost/second-blob');
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/first-blob');
+
+    // clearPreview -> should revoke current blob
+    useGenerationStore.getState().clearPreview();
+    expect(useGenerationStore.getState().previewImage).toBeNull();
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/second-blob');
+
+    // Set blob again and call setSelectedImg
+    useGenerationStore.setState({ previewImage: 'blob:http://localhost/third-blob' });
+    useGenerationStore.getState().setSelectedImg('http://localhost:8188/view?filename=img.png');
+    expect(useGenerationStore.getState().previewImage).toBeNull();
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/third-blob');
+
+    revokeObjectURLSpy.mockRestore();
+    createObjectURLSpy.mockRestore();
   });
 });
 

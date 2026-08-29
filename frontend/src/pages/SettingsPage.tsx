@@ -28,6 +28,7 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import { WorkflowManageModal } from '../components/WorkflowManageModal'
 import { PresetManagerPanel } from '../components/PresetManagerPanel'
 import { BaseModelSection } from './SettingsPage/components/BaseModelSection'
+import { ThumbnailSettingsSection } from './SettingsPage/components/ThumbnailSettingsSection'
 import { TranslationSettingsSection } from './SettingsPage/components/TranslationSettingsSection'
 import { ParamTypeMasterModal } from '../components/ParamTypeMasterModal'
 
@@ -1361,6 +1362,11 @@ export function SettingsPage() {
               )}
             </div>
           )}
+        </section>
+
+        {/* Thumbnail Aspect Ratio Settings */}
+        <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+          <ThumbnailSettingsSection />
         </section>
 
         {/* Base Model Settings */}

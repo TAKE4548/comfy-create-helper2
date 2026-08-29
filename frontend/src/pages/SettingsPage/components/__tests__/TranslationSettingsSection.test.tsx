@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TranslationSettingsSection } from '../TranslationSettingsSection'
-import { llmPromptsApi, translateApi } from '../../../../api/client'
+import { llmPromptsApi } from '../../../../api/client'
 
 vi.mock('../../../../api/client', () => ({
   llmPromptsApi: {

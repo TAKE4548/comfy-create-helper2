@@ -4,6 +4,7 @@ import { X, Image as ImageIcon, Loader2, ArrowLeft, BookOpen, Layers } from 'luc
 
 import { snapshotsApi, workflowsApi, lorasApi, tagSetsApi, albumsApi } from '../api/client'
 import { STALE_TIMES } from '../constants/staleTimes'
+import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 import type { SnapshotSummary, WorkflowSummary, Lora, TagSet, Album } from '../api/types'
 
 export interface BaseImageOption {
@@ -28,6 +29,7 @@ export function BaseImageSelectModal({
   onClose,
   onSelect,
 }: BaseImageSelectModalProps) {
+  const { aspectRatioStyle } = useThumbnailAspectRatio()
   // Tab State
   const [activeTab, setActiveTab] = useState<'snapshots' | 'albums'>('snapshots')
 
@@ -315,7 +317,8 @@ export function BaseImageSelectModal({
                         key={s.id}
                         type="button"
                         onClick={() => onSelect(s)}
-                        className={`group relative rounded-lg overflow-hidden border transition-all text-left aspect-square bg-zinc-900 flex flex-col ${
+                        style={aspectRatioStyle}
+                        className={`group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
                           s.id === currentSnapshotId
                             ? 'border-accent-green ring-2 ring-accent-green/30'
                             : 'border-white/10 hover:border-white/30'
@@ -473,7 +476,8 @@ export function BaseImageSelectModal({
                                 thumbnail_path: item.thumbnail_path,
                               })
                             }
-                            className={`group relative rounded-lg overflow-hidden border transition-all text-left aspect-square bg-zinc-900 flex flex-col ${
+                            style={aspectRatioStyle}
+                            className={`group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
                               item.snapshot_id === currentSnapshotId
                                 ? 'border-accent-green ring-2 ring-accent-green/30'
                                 : 'border-white/10 hover:border-white/30'

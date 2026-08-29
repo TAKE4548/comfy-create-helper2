@@ -26,6 +26,7 @@ import { SpeechBubbleEditorModal } from '../components/SpeechBubbleEditorModal'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
+import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
 // DnD Kit Imports
 import {
@@ -110,6 +111,7 @@ function SortableItem({
 
 export function HistoryPage() {
   const qc = useQueryClient()
+  const { aspectRatioStyle } = useThumbnailAspectRatio()
   const [view, setView] = useState<'snapshots' | 'albums'>('snapshots')
   const [isDownloading, setIsDownloading] = useState(false)
 
@@ -799,8 +801,8 @@ export function HistoryPage() {
                         onTouchStart={longPressHandlers.onTouchStart}
                         onTouchEnd={longPressHandlers.onTouchEnd}
                         onContextMenu={(e: React.MouseEvent) => e.preventDefault()}
-                        style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                        className={`group aspect-square bg-surface-2 border rounded-xl overflow-hidden relative flex items-center justify-center transition-all cursor-pointer select-none ${
+                        style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', userSelect: 'none', ...aspectRatioStyle }}
+                        className={`group bg-surface-2 border rounded-xl overflow-hidden relative flex items-center justify-center transition-all cursor-pointer select-none w-full ${
                           isSelected
                             ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30 bg-surface-2'
                             : 'border-transparent hover:border-zinc-700'
@@ -905,7 +907,7 @@ export function HistoryPage() {
                     )
 
                     return (
-                      <div key={item.snapshot_id} className="aspect-square">
+                      <div key={item.snapshot_id} className="w-full" style={aspectRatioStyle}>
                         {isDndEnabled ? (
                           <SortableItem id={item.snapshot_id}>
                             {({ listeners }) => renderCardContent(listeners)}
@@ -1143,7 +1145,7 @@ export function HistoryPage() {
                         }
                       }}
                     >
-                      <div className="aspect-square bg-surface-2">
+                      <div className="bg-surface-2 w-full" style={aspectRatioStyle}>
                         {snap.image_path || snap.thumbnail_path ? (
                           <img src={snap.thumbnail_path || snap.image_path!} alt={`Snapshot ${snap.id}`} loading="lazy" className="w-full h-full object-cover pointer-events-none" />
                         ) : (

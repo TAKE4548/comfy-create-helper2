@@ -423,5 +423,41 @@ class TestPresetOCC(unittest.TestCase):
         self.db.refresh(preset)
         assert preset.name == "Preset OCC 3"
 
+    def test_preset_update_with_submillisecond_tolerance(self):
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset OCC Tol",
+            param_values='{"positive_prompt": "cat"}',
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+        self.db.refresh(preset)
+
+        # Microsecond roundoff simulated (5ms older than db_updated_at)
+        from datetime import timedelta
+        slight_past_time = (preset.updated_at - timedelta(milliseconds=5)).isoformat()
+        payload = {
+            "name": "Preset OCC Tol Updated",
+            "base_updated_at": slight_past_time,
+        }
+        response = self.client.put(f"/api/workflow-presets/{preset.id}", json=payload)
+        assert response.status_code == 200
+        assert response.json()["name"] == "Preset OCC Tol Updated"
+
+        # Significantly older (50ms older than db_updated_at) -> 409
+        self.db.refresh(preset)
+        older_time = (preset.updated_at - timedelta(milliseconds=50)).isoformat()
+        conflict_payload = {
+            "name": "Conflict Attempt",
+            "base_updated_at": older_time,
+        }
+        res_conflict = self.client.put(f"/api/workflow-presets/{preset.id}", json=conflict_payload)
+        assert res_conflict.status_code == 409
+
+
 
 

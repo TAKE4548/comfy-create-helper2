@@ -618,7 +618,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
         ws.onmessage = (event) => {
           if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
             const blob = event.data instanceof Blob ? event.data : new Blob([event.data])
-            set({ previewImage: URL.createObjectURL(blob) })
+            const prevUrl = get().previewImage
+            if (prevUrl && prevUrl.startsWith('blob:')) {
+              try { URL.revokeObjectURL(prevUrl) } catch {}
+            }
+            const nextUrl = URL.createObjectURL(blob)
+            set({ previewImage: nextUrl })
             return
           }
           try {
@@ -688,7 +693,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   currentNode: null,
                   nodeProgress: null,
                 })
-                get().fetchQueue()
                 break
               }
 
@@ -732,8 +736,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                     currentNode: null,
                     nodeProgress: null,
                   })
-                  get().fetchHistory()
-                  get().fetchQueue()
                 }
                 break
               }
@@ -752,8 +754,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   )
                   const firstUrl = newUrls[0]
                   set((state) => {
+                    const prevUrl = state.previewImage
+                    if (prevUrl && prevUrl.startsWith('blob:')) {
+                      try { URL.revokeObjectURL(prevUrl) } catch {}
+                    }
                     const nextImages = [...newUrls, ...state.batchImages.filter((x) => !newUrls.includes(x))].slice(0, 8)
-                    const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 50)
+                    const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
                     localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
                     localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
                     
@@ -776,11 +782,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                     }
                   })
                   localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-                  setTimeout(() => {
-                    get().fetchHistory()
-                  }, 500)
                 }
-                get().fetchQueue()
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'executed', promptId } }))
                 break
               }
@@ -794,6 +796,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                 const isStillGenerating = activeBatch
                   ? !activeBatch.every((job) => job.status === 'completed' || job.status === 'failed')
                   : false
+                const prevUrl = get().previewImage
+                if (prevUrl && prevUrl.startsWith('blob:')) {
+                  try { URL.revokeObjectURL(prevUrl) } catch {}
+                }
                 set({
                   isGenerating: isStillGenerating,
                   progress: isStillGenerating ? get().progress : { value: 1, max: 1, percentage: 100 },
@@ -805,10 +811,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   currentWorkflow: isStillGenerating ? get().currentWorkflow : null,
                 })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-                setTimeout(() => {
-                  get().fetchHistory()
-                }, 500)
-                get().fetchQueue()
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_complete', promptId } }))
                 break
               }
@@ -833,7 +835,6 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
                   currentWorkflow: isStillGenerating ? get().currentWorkflow : null,
                 })
                 localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-                get().fetchQueue()
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'execution_error', promptId } }))
                 break
               }
@@ -1027,6 +1028,10 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
     },
 
     setSelectedImg: (img) => {
+      const prevUrl = get().previewImage
+      if (prevUrl && prevUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(prevUrl) } catch {}
+      }
       set({ selectedImg: img, previewImage: null })
       if (img && !img.startsWith('blob:')) {
         localStorage.setItem(LS_KEYS.SELECTED_IMG, img)
@@ -1145,7 +1150,13 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       await get().cancelAllJobs()
     },
 
-    clearPreview: () => set({ previewImage: null, progress: null }),
+    clearPreview: () => {
+      const prevUrl = get().previewImage
+      if (prevUrl && prevUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(prevUrl) } catch {}
+      }
+      set({ previewImage: null, progress: null })
+    },
 
     fetchHistory: async () => {
       if (activeFetchHistoryPromise) {
@@ -1154,7 +1165,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
       const execute = async () => {
         const resolvedUrl = resolveComfyUrl(comfyUrl)
         try {
-          const data = await comfyApi.getHistory(100)
+          const data = await comfyApi.getHistory(200)
           const allImages: string[] = []
           const ownImages: string[] = []
           const clientId = get().clientId
@@ -1187,8 +1198,8 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
           set((state) => {
             // filterOwnSession に応じてマージ対象を選択 (OFF時は全セッション、ON時は自セッション)
             const targetImages = state.filterOwnSession ? ownImages : allImages
-            const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 50)
-            localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages))
+            const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 200)
+            localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages.slice(0, 50)))
 
             const hasNewImages = targetImages.some((img) => !state.batchImages.includes(img))
             const nextSelected = (hasNewImages || !state.selectedImg || !mergedBatchImages.includes(state.selectedImg))
@@ -1202,7 +1213,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => {
             }
 
             return {
-              comfyHistoryImages: allImages.slice(0, 50),
+              comfyHistoryImages: allImages.slice(0, 200),
               batchImages: mergedBatchImages,
               selectedImg: nextSelected,
             }

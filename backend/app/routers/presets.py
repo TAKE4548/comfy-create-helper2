@@ -83,7 +83,8 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
     if payload.base_updated_at is not None and preset.updated_at is not None:
         db_updated_at = preset.updated_at.replace(tzinfo=None) if preset.updated_at.tzinfo else preset.updated_at
         base_updated_at = payload.base_updated_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.base_updated_at.tzinfo else payload.base_updated_at
-        if db_updated_at > base_updated_at:
+        # 10ms (0.01秒) 以上の有意な差がある場合のみ 409 Conflict を送出
+        if (db_updated_at - base_updated_at).total_seconds() > 0.01:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Preset was updated by another session. Please reload to get the latest changes."

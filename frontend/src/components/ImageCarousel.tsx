@@ -6,6 +6,7 @@ interface ImageCarouselProps {
   snapshotPaths?: string[] | null
   alt: string
   className?: string
+  style?: React.CSSProperties
   children?: React.ReactNode
 }
 
@@ -14,6 +15,7 @@ export function ImageCarousel({
   snapshotPaths,
   alt,
   className = '',
+  style,
   children,
 }: ImageCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0)
@@ -33,7 +35,10 @@ export function ImageCarousel({
 
   if (images.length === 0) {
     return (
-      <div className={`bg-surface-2 flex flex-col items-center justify-center text-zinc-600 relative overflow-hidden ${className}`}>
+      <div
+        className={`bg-surface-2 flex flex-col items-center justify-center text-zinc-600 relative overflow-hidden ${className}`}
+        style={style}
+      >
         <ImageOff size={28} strokeWidth={1} />
         <span className="text-[10px] mt-1">No Preview</span>
         {children}
@@ -44,6 +49,7 @@ export function ImageCarousel({
   return (
     <div
       className={`relative overflow-hidden group ${className}`}
+      style={style}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={handleMouseLeave}
     >

@@ -157,7 +157,7 @@ async def interrupt_execution():
 
 
 @router.get("/history")
-async def get_history(max_items: Optional[int] = Query(default=100, ge=1, le=1000)):
+async def get_history(max_items: Optional[int] = Query(default=200, ge=1, le=1000)):
     """
     ComfyUI の /history を取得する。
     """

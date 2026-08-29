@@ -10,6 +10,7 @@ import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
 import { InlineCategorySelect } from './InlineCategorySelect'
 import TagChipEditor from './TagChipEditor'
 import { ImageCropper } from './ImageCropper'
+import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
 // ─── Form type shared between register and edit ────────────────
 export type LoraFormState = Omit<LoraCreate, 'trigger_word_sets'> & {
@@ -258,6 +259,15 @@ function LoraFormFields({
           >
             画像をアップロード
           </button>
+          {form.thumbnail_path && (
+            <button
+              type="button"
+              onClick={() => onUploadImage(form.thumbnail_path!)}
+              className="px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-300 text-xs font-medium hover:text-zinc-100 hover:bg-surface-3 transition-all"
+            >
+              クロップ調整
+            </button>
+          )}
         </div>
       </div>
       <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 space-y-3">
@@ -374,6 +384,7 @@ export function LoraDetailModal({
     queryFn: baseModelsApi.list,
   })
   
+  const { aspectRatioStyle, numericRatio } = useThumbnailAspectRatio()
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
 
   const catName = categories?.find((c) => c.id === lora.category_id)?.name || 'None'
@@ -472,7 +483,7 @@ export function LoraDetailModal({
           {/* Left Side: Images Preview */}
           <div className="p-6 flex flex-col h-full overflow-hidden">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block mb-2">Preview & Cover Image</span>
-            <div className="aspect-square bg-zinc-950 rounded-xl overflow-hidden relative flex items-center justify-center border border-[rgba(255,255,255,0.08)] flex-shrink-0 group">
+            <div className="bg-zinc-950 rounded-xl overflow-hidden relative flex items-center justify-center border border-[rgba(255,255,255,0.08)] flex-shrink-0 group w-full" style={aspectRatioStyle}>
               {activeImage ? (
                 <>
                   <img src={activeImage} alt="Preview" className="w-full h-full object-cover" />
@@ -668,6 +679,7 @@ export function LoraDetailModal({
       {cropImageSrc && (
         <ImageCropper
           imageSrc={cropImageSrc}
+          aspectRatio={numericRatio}
           onCropComplete={handleCropComplete}
           onCancel={() => setCropImageSrc(null)}
         />

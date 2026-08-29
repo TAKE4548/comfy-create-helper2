@@ -465,6 +465,78 @@ describe('useGeneratePageState', () => {
       expect(result.current.displayImages).toEqual(['own1.png'])
     })
   })
+
+  describe('REQ-198: React Query cache sync and OCC timestamp updates', () => {
+    it('should update query cache and presetUpdatedAtRef on updatePresetMutation success', async () => {
+      const updatedPreset: WorkflowPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1 Updated',
+        param_values: { prompt: 'new' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce(updatedPreset)
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await act(async () => {
+        await result.current.updatePresetMutation.mutateAsync({
+          id: 10,
+          name: 'Preset 1 Updated',
+          param_values: { prompt: 'new' },
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        name: 'Preset 1 Updated',
+      }))
+    })
+
+    it('should update query cache immediately in handleBulkEditApply', async () => {
+      const mockUpdated = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: 'bulk updated' },
+        applied_assets: {},
+        batch_size: 2,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:05:00Z',
+      }
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce(mockUpdated)
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [{ op: 'overwrite', value: 'bulk updated', fields: ['positive_prompt'] }],
+          batchSize: 2,
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        batch_size: 2,
+      }))
+    })
+  })
 })
+
 
 
