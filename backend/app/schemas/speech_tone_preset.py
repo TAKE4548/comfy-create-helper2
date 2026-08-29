@@ -34,6 +34,10 @@ class SpeechToneRewriteRequest(BaseModel):
     preset_id: Optional[int] = None
     model: Optional[str] = None
     llm_params: Optional[dict[str, Any]] = None
+    snapshot_id: Optional[int] = None
+    image_path: Optional[str] = None
+    include_image: Optional[bool] = False
+    scene_hint: Optional[str] = None
 
 
 class SpeechToneRewriteResponse(BaseModel):

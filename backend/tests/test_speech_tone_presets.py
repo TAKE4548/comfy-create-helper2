@@ -207,3 +207,53 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
         self.assertEqual(res.status_code, 500)
         self.assertIn('LLM connection timeout', res.json()['detail'])
+
+    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
+    def test_rewrite_speech_with_scene_hint(self, mock_call_llm):
+        mock_call_llm.return_value = '「ふん、別に待ってなんか…ないわよ」'
+
+        payload = {
+            'text': '待ってたよ',
+            'tone_prompt': 'ツンデレ',
+            'scene_hint': '照れながら頬を染めている状況',
+        }
+        res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {'rewritten_text': 'ふん、別に待ってなんか…ないわよ'})
+        mock_call_llm.assert_called_once()
+        user_prompt = mock_call_llm.call_args.kwargs['user_prompt']
+        self.assertIn('【場面の状況・ヒント】\n照れながら頬を染めている状況', user_prompt)
+
+    @patch('app.routers.speech_tone_presets.load_image_as_base64')
+    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
+    def test_rewrite_speech_with_image_multimodal(self, mock_call_llm, mock_load_image):
+        mock_load_image.return_value = 'dummybase64string'
+        mock_call_llm.return_value = '「な、何見てるのよ！」'
+
+        # Create dummy workflow and snapshot in DB
+        db = TestingSessionLocal()
+        wf = models.Workflow(name='Test Workflow', json_body='{}')
+        db.add(wf)
+        db.commit()
+        db.refresh(wf)
+        snap = models.Snapshot(workflow_id=wf.id, params='{}', image_path='snapshots/test.png')
+        db.add(snap)
+        db.commit()
+        db.refresh(snap)
+        snapshot_id = snap.id
+        db.close()
+
+        with patch('pathlib.Path.exists', return_value=True):
+            payload = {
+                'text': '何見てるの',
+                'tone_prompt': 'ツンデレ',
+                'snapshot_id': snapshot_id,
+                'include_image': True,
+            }
+            res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json(), {'rewritten_text': 'な、何見てるのよ！'})
+            mock_call_llm.assert_called_once()
+            call_kwargs = mock_call_llm.call_args.kwargs
+            self.assertEqual(call_kwargs['image_data'], 'dummybase64string')
+            self.assertIn('※画像が添付されています', call_kwargs['user_prompt'])

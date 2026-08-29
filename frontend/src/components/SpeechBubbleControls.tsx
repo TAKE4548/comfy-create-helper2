@@ -23,6 +23,8 @@ export interface SpeechBubbleControlsProps {
   fontList: ServerFont[]
   isFontLoading: boolean
   isDrafting: boolean
+  snapshotId?: number
+  imagePath?: string
   onUpdate: (updated: Partial<SpeechBubble>) => void
   onDelete: () => void
   onDuplicate?: () => void
@@ -103,6 +105,8 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   fontList,
   isFontLoading,
   isDrafting,
+  snapshotId,
+  imagePath,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -166,6 +170,8 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
   const [isToneSectionOpen, setIsToneSectionOpen] = useState(false)
   const [selectedTonePresetId, setSelectedTonePresetId] = useState<number | null>(null)
   const [customTonePrompt, setCustomTonePrompt] = useState('')
+  const [includeImageInRewrite, setIncludeImageInRewrite] = useState(true)
+  const [sceneHint, setSceneHint] = useState('')
   const [isRewriting, setIsRewriting] = useState(false)
   const [rewriteError, setRewriteError] = useState<string | null>(null)
   const [rewriteResult, setRewriteResult] = useState<{ original: string; rewritten: string } | null>(null)
@@ -311,6 +317,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
         text: bubble.text,
         tone_prompt: promptToSend,
         preset_id: selectedTonePresetId || undefined,
+        snapshot_id: snapshotId,
+        image_path: imagePath,
+        include_image: includeImageInRewrite,
+        scene_hint: sceneHint.trim() || undefined,
       })
       setRewriteResult({
         original: bubble.text,
@@ -865,6 +875,31 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                 placeholder="口調の指示を入力（例: お嬢様言葉で「〜ですわ」を語尾につけて）..."
                 rows={2}
                 className="w-full p-1.5 border border-[rgba(255,255,255,0.12)] rounded bg-[#1F1F25] text-zinc-100 text-xs placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            {/* 場面ヒント & 画像参照設定 */}
+            <div className="space-y-1.5 pt-1 border-t border-[rgba(255,255,255,0.06)]">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium text-zinc-300">場面ヒント・状況説明 (任意)</label>
+                <label className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includeImageInRewrite}
+                    onChange={(e) => setIncludeImageInRewrite(e.target.checked)}
+                    className="rounded bg-zinc-800 border-zinc-700 text-purple-500 focus:ring-0 text-xs"
+                    data-testid="tone-rewrite-include-image"
+                  />
+                  <span>画像を参照する (Vision)</span>
+                </label>
+              </div>
+              <textarea
+                value={sceneHint}
+                onChange={(e) => setSceneHint(e.target.value)}
+                placeholder="例: 照れながら強がっている、敵に追い詰められて焦っている、囁いている など"
+                rows={2}
+                className="w-full text-xs bg-[#121216] border border-zinc-700/60 rounded px-2 py-1.5 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-purple-500/80 resize-none"
+                data-testid="tone-rewrite-scene-hint"
               />
             </div>
 

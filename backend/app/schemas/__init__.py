@@ -126,6 +126,13 @@ from app.schemas.speech_tone_preset import (
     SpeechToneRewriteResponse,
 )
 
+from app.schemas.speech_batch import (
+    SpeechBatchJobItemCreate,
+    SpeechBatchJobCreate,
+    SpeechBatchJobItemRead,
+    SpeechBatchJobRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -164,6 +171,8 @@ __all__ = [
     # SpeechTonePreset
     "SpeechTonePresetBase", "SpeechTonePresetCreate", "SpeechTonePresetUpdate", "SpeechTonePresetRead",
     "SpeechToneRewriteRequest", "SpeechToneRewriteResponse",
+    # SpeechBatch
+    "SpeechBatchJobItemCreate", "SpeechBatchJobCreate", "SpeechBatchJobItemRead", "SpeechBatchJobRead",
 ]
 
 

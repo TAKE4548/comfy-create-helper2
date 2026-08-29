@@ -1263,6 +1263,8 @@ function getLocalBubblePoint(
                 fontList={fontList}
                 isFontLoading={isFontLoading}
                 isDrafting={isDrafting}
+                snapshotId={currentSourceSnapshotId}
+                imagePath={currentImageUrl}
                 onUpdate={(updated) => {
                   if (!selectedBubbleId) return
                   setBubbles((prev) =>

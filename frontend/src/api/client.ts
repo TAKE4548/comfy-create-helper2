@@ -1,8 +1,8 @@
-/**
+﻿/**
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode } from './types'
+import type { SpeechBatchJob, SpeechBatchJobCreate, MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode } from './types'
 export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode }
 
 
@@ -38,7 +38,7 @@ async function request<T>(
   return undefined as T
 }
 
-// ─── Workflows ──────────────────────────────────────────────────
+// 笏笏笏 Workflows 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const workflowsApi = {
   list: () => request<WorkflowSummary[]>('/workflows'),
   get: (id: number) => request<Workflow>(`/workflows/${id}`),
@@ -49,7 +49,7 @@ export const workflowsApi = {
   scan: (json_body: unknown) => request('/workflows/scan', { method: 'POST', body: JSON.stringify({ json_body }) }),
 }
 
-// ─── Mapping Masters ────────────────────────────────────────────
+// 笏笏笏 Mapping Masters 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const mappingMastersApi = {
   list: () => request('/mapping-masters'),
   create: (data: unknown) => request('/mapping-masters', { method: 'POST', body: JSON.stringify(data) }),
@@ -59,7 +59,7 @@ export const mappingMastersApi = {
   reorder: (ordered_ids: number[]) => request('/mapping-masters/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
-// ─── Snapshots ──────────────────────────────────────────────────
+// 笏笏笏 Snapshots 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const snapshotsApi = {
   list: (workflowIdOrParams?: number | { workflow_id?: number; lora_id?: number; tag_set_id?: number }) => {
     const query = new URLSearchParams()
@@ -108,7 +108,7 @@ export const snapshotsApi = {
   },
 }
 
-// ─── Albums ─────────────────────────────────────────────────────
+// 笏笏笏 Albums 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const albumsApi = {
   list: () => request<Album[]>('/albums'),
   get: (id: number) => request<Album>(`/albums/${id}`),
@@ -127,7 +127,7 @@ export const albumsApi = {
 }
 
 
-// ─── LoRAs ──────────────────────────────────────────────────────
+// 笏笏笏 LoRAs 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const lorasApi = {
   list: (category_id?: number, base_model_ids?: string) => {
     const params = new URLSearchParams()
@@ -143,7 +143,7 @@ export const lorasApi = {
   reorder: (ordered_ids: number[]) => request<void>('/loras/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
-// ─── Tag Sets ───────────────────────────────────────────────────
+// 笏笏笏 Tag Sets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const tagSetsApi = {
   list: (category_id?: number, base_model_ids?: string) => {
     const params = new URLSearchParams()
@@ -158,7 +158,7 @@ export const tagSetsApi = {
   reorder: (ordered_ids: number[]) => request<void>('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
 }
 
-// ─── Categories ─────────────────────────────────────────────────
+// 笏笏笏 Categories 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const loraCategoriesApi = {
   list: () => request<Category[]>('/lora-categories'),
   create: (name: string) => request<Category>('/lora-categories', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -173,12 +173,12 @@ export const tagsetCategoriesApi = {
   delete: (id: number) => request<void>(`/tagset-categories/${id}`, { method: 'DELETE' }),
 }
 
-// ─── LLM Audit ──────────────────────────────────────────────────
+// 笏笏笏 LLM Audit 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const auditApi = {
   run: (data: unknown) => request('/audit', { method: 'POST', body: JSON.stringify(data) }),
 }
 
-// ─── LLM Prompts ────────────────────────────────────────────────
+// 笏笏笏 LLM Prompts 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const llmPromptsApi = {
   list: () => request<LlmPrompt[]>('/llm-prompts'),
   update: (key: string, data: unknown) => request<LlmPrompt>(`/llm-prompts/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -206,18 +206,18 @@ export const llmPromptsApi = {
     }),
 }
 
-// ─── Config ─────────────────────────────────────────────────────
+// 笏笏笏 Config 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const configApi = {
   get: () => request<{ comfy_url: string }>('/config'),
 }
 
-// ─── Fonts ──────────────────────────────────────────────────────
+// 笏笏笏 Fonts 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const fontsApi = {
   list: () => request<ServerFont[]>('/fonts'),
 }
 
 
-// ─── Workflow Presets ───────────────────────────────────────────
+// 笏笏笏 Workflow Presets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const workflowPresetsApi = {
   list: (workflow_id?: number) =>
     request<WorkflowPreset[]>(`/workflow-presets${workflow_id ? `?workflow_id=${workflow_id}` : ''}`),
@@ -233,7 +233,7 @@ export const workflowPresetsApi = {
     request<void>('/workflow-presets/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 }
 
-// ─── Bypass Profiles ───────────────────────────────────────────
+// 笏笏笏 Bypass Profiles 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const bypassProfilesApi = {
   list: (workflow_id: number) =>
     request<BypassProfile[]>(`/workflows/${workflow_id}/bypass-profiles`),
@@ -245,7 +245,7 @@ export const bypassProfilesApi = {
     request<void>(`/bypass-profiles/${id}`, { method: 'DELETE' }),
 }
 
-// ─── Param Sync Groups ─────────────────────────────────────────
+// 笏笏笏 Param Sync Groups 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const paramSyncGroupsApi = {
   list: (workflow_id: number) =>
     request<ParamSyncGroup[]>(`/workflows/${workflow_id}/param-sync-groups`),
@@ -257,7 +257,7 @@ export const paramSyncGroupsApi = {
     request<void>(`/param-sync-groups/${id}`, { method: 'DELETE' }),
 }
 
-// ─── Base Models ───────────────────────────────────────────────
+// 笏笏笏 Base Models 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const baseModelsApi = {
   list: () => request<BaseModel[]>('/base-models'),
   create: (data: BaseModelCreate) => request<BaseModel>('/base-models', { method: 'POST', body: JSON.stringify(data) }),
@@ -265,7 +265,7 @@ export const baseModelsApi = {
   delete: (id: number) => request<void>(`/base-models/${id}`, { method: 'DELETE' }),
 }
 
-// ─── Checkpoint Mappings ───────────────────────────────────────
+// 笏笏笏 Checkpoint Mappings 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const checkpointMappingsApi = {
   list: () => request<CheckpointMapping[]>('/checkpoint-mappings'),
   create: (data: CheckpointMappingCreate) => request<CheckpointMapping>('/checkpoint-mappings', { method: 'POST', body: JSON.stringify(data) }),
@@ -273,7 +273,7 @@ export const checkpointMappingsApi = {
   getComfyCheckpoints: () => request<string[]>('/comfy/checkpoints'),
 }
 
-// ─── ParamTypeMaster ─────────────────────────────────────────────
+// 笏笏笏 ParamTypeMaster 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const paramTypeMastersApi = {
   list: () => request<ParamTypeMaster[]>('/param-type-masters'),
   create: (data: ParamTypeMasterCreate) =>
@@ -283,7 +283,7 @@ export const paramTypeMastersApi = {
   delete: (id: number) => request<void>(`/param-type-masters/${id}`, { method: 'DELETE' }),
 }
 
-// ─── Speech Bubble Presets ───────────────────────────────────────
+// 笏笏笏 Speech Bubble Presets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const speechBubblePresetsApi = {
   list: () => request<SpeechBubblePreset[]>('/speech-bubble-presets'),
   create: (data: SpeechBubblePresetCreate) =>
@@ -302,7 +302,7 @@ export const speechBubblePresetsApi = {
     }),
 }
 
-// ─── Speech Tone Presets ─────────────────────────────────────────
+// 笏笏笏 Speech Tone Presets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const speechTonePresetsApi = {
   list: () => request<SpeechTonePreset[]>('/speech-tone-presets'),
   create: (data: SpeechTonePresetCreate) =>
@@ -326,7 +326,7 @@ export const speechTonePresetsApi = {
     }),
 }
 
-// ─── ComfyUI Proxy API ───────────────────────────────────────────
+// 笏笏笏 ComfyUI Proxy API 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const comfyApi = {
   getObjectInfo: (classType?: string) =>
     classType
@@ -349,7 +349,7 @@ export const comfyApi = {
     request('/comfy/history', { method: 'POST', body: JSON.stringify(data) }),
 }
 
-// ─── Translation Proxy API ───────────────────────────────────────
+// 笏笏笏 Translation Proxy API 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const translateApi = {
   translatePrompt: (data: PromptTranslateRequest) =>
     request<PromptTranslateResponse>('/translate/prompt', {
@@ -369,3 +369,27 @@ export const translateApi = {
     }),
 }
 
+// ─── Speech Batch Rewrite ─────────────────────────────────────────
+export const speechBatchApi = {
+  createJob: (data: SpeechBatchJobCreate) =>
+    request<SpeechBatchJob>('/speech-batch/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getJob: (jobId: string) =>
+    request<SpeechBatchJob>(`/speech-batch/jobs/${jobId}`),
+  getActiveJob: () =>
+    request<SpeechBatchJob | null>('/speech-batch/jobs/active'),
+  cancelJob: (jobId: string) =>
+    request<SpeechBatchJob>(`/speech-batch/jobs/${jobId}/cancel`, {
+      method: 'POST',
+    }),
+  cancelItem: (jobId: string, itemId: string) =>
+    request<SpeechBatchJob>(`/speech-batch/jobs/${jobId}/items/${itemId}/cancel`, {
+      method: 'POST',
+    }),
+  retryItem: (jobId: string, itemId: string) =>
+    request<SpeechBatchJob>(`/speech-batch/jobs/${jobId}/items/${itemId}/retry`, {
+      method: 'POST',
+    }),
+}

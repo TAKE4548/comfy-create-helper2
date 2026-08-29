@@ -944,12 +944,54 @@ describe('SpeechBubbleControls', () => {
         text: 'こんにちは',
         tone_prompt: 'ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。',
         preset_id: 10,
+        snapshot_id: undefined,
+        image_path: undefined,
+        include_image: true,
+        scene_hint: undefined,
       })
       const preview = screen.getByTestId('tone-rewrite-preview')
       expect(within(preview).getByText('こんにちは')).toBeDefined()
       expect(within(preview).getByText('べ、別に用事があるわけじゃないんだからね！')).toBeDefined()
     })
+  })
 
+  it('executes rewrite with scene hint and snapshotId/imagePath', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockResolvedValue({
+      rewritten_text: 'べ、別に照れてなんかないんだからね！',
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} snapshotId={5} imagePath="snapshots/test5.png" />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tone-rewrite-scene-hint')).toBeDefined()
+    })
+
+    // Set scene hint
+    fireEvent.change(screen.getByTestId('tone-rewrite-scene-hint'), {
+      target: { value: '照れながら強がっている' },
+    })
+
+    // Select preset
+    fireEvent.change(screen.getByLabelText('口調プリセット選択'), { target: { value: '10' } })
+
+    // Uncheck include image
+    fireEvent.click(screen.getByTestId('tone-rewrite-include-image'))
+
+    // Click rewrite
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(speechTonePresetsApi.rewrite).toHaveBeenCalledWith({
+        text: 'こんにちは',
+        tone_prompt: 'ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。',
+        preset_id: 10,
+        snapshot_id: 5,
+        image_path: 'snapshots/test5.png',
+        include_image: false,
+        scene_hint: '照れながら強がっている',
+      })
+    })
   })
 
   it('applies rewritten text to bubble on clicking apply button', async () => {

@@ -1,4 +1,4 @@
-"""FastAPI application entry point."""
+﻿"""FastAPI application entry point."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -18,7 +18,7 @@ from app.routers import (
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
     speech_bubble_presets, speech_tone_presets,
-    translate,
+    translate, speech_batch,
 )
 
 
@@ -422,6 +422,7 @@ app.include_router(param_sync_groups.router)
 app.include_router(speech_bubble_presets.router)
 app.include_router(speech_tone_presets.router)
 app.include_router(translate.router)
+app.include_router(speech_batch.router)
 
 
 

@@ -1,9 +1,13 @@
-"""Speech Tone Preset CRUD and LLM Rewrite router."""
+from pathlib import Path
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.config import settings
 from app import models, schemas
-from app.services.llm_request import call_llm
+from app.services.llm_request import call_llm, load_image_as_base64
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/speech-tone-presets", tags=["speech-tone-presets"])
 
@@ -83,14 +87,51 @@ async def rewrite_speech(payload: schemas.SpeechToneRewriteRequest, db: Session 
         "2. 指定された口調、語尾、一人称・二人称、キャラクターの性格ニュアンスを的確に反映すること。\n"
         "3. 出力は書き換えたセリフのみを返してください。挨拶、前置き、引用符（「」等）、解説は一切含めないでください。"
     )
-    user_prompt = f"【口調・キャラクター設定】\n{tone_prompt}\n\n【元のセリフ】\n{payload.text}"
+
+    user_prompt_parts = [
+        f"【口調・キャラクター設定】\n{tone_prompt}",
+        f"【元のセリフ】\n{payload.text}"
+    ]
+
+    if payload.scene_hint and payload.scene_hint.strip():
+        user_prompt_parts.append(f"【場面の状況・ヒント】\n{payload.scene_hint.strip()}")
+
+    image_b64 = None
+    if payload.include_image:
+        image_file_path = None
+        if payload.image_path:
+            filename = payload.image_path.split("/")[-1]
+            candidate = Path(settings.snapshot_path) / filename
+            if candidate.exists():
+                image_file_path = candidate
+            elif Path(payload.image_path).exists():
+                image_file_path = Path(payload.image_path)
+        elif payload.snapshot_id:
+            s = db.query(models.Snapshot).filter(models.Snapshot.id == payload.snapshot_id).first()
+            if s and s.image_path:
+                filename = s.image_path.split("/")[-1]
+                candidate = Path(settings.snapshot_path) / filename
+                if candidate.exists():
+                    image_file_path = candidate
+
+        if image_file_path:
+            try:
+                image_b64 = load_image_as_base64(image_file_path)
+                user_prompt_parts.append(
+                    "※画像が添付されています。画像内のキャラクターの表情、視線、シチュエーション、場面の雰囲気を読み取って、その状況に最も適した感情・トーン・ニュアンスをセリフに反映してください。"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load image for multimodal rewrite: {e}")
+
+    user_prompt = "\n\n".join(user_prompt_parts)
 
     try:
         res = await call_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=payload.model,
-            llm_params=payload.llm_params
+            llm_params=payload.llm_params,
+            image_data=image_b64,
         )
         return schemas.SpeechToneRewriteResponse(rewritten_text=res.strip().strip('"').strip('「').strip('」'))
     except Exception as e:

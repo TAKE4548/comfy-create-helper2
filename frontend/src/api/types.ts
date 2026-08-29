@@ -5,7 +5,7 @@
 
 import type { BubbleShapeType, MangaTextEffectConfig, TextOrientation } from '../types/speechBubble'
 
-// ─── MappingMaster ─────────────────────────────────────────────
+// 笏笏笏 MappingMaster 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface MappingMaster {
   id: number
@@ -33,7 +33,7 @@ export interface MappingMasterUsage {
   node_id: string
 }
 
-// ─── Workflow ───────────────────────────────────────────────────
+// 笏笏笏 Workflow 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface WorkflowMapping {
   id: number
@@ -77,7 +77,7 @@ export interface WorkflowUpdate {
 }
 
 
-// ─── Workflow Scan ──────────────────────────────────────────────
+// 笏笏笏 Workflow Scan 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface ScanMatchedItem {
   master_id: number
@@ -102,7 +102,7 @@ export interface ScanResult {
   warnings: ScanWarningItem[]
 }
 
-// ─── Snapshot ───────────────────────────────────────────────────
+// 笏笏笏 Snapshot 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SnapshotLoraCreate {
   lora_id: number
@@ -185,7 +185,7 @@ export interface SpeechDraftResponse {
 }
 
 
-// ─── Album ──────────────────────────────────────────────────────
+// 笏笏笏 Album 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface AlbumItem {
   snapshot_id: number
@@ -227,12 +227,12 @@ export interface AlbumReorder {
   ordered_ids: number[]
 }
 
-// ─── Config ─────────────────────────────────────────────────────
+// 笏笏笏 Config 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export interface AppConfig {
   comfy_url: string
 }
 
-// ─── Category ───────────────────────────────────────────────────
+// 笏笏笏 Category 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface Category {
   id: number
@@ -240,7 +240,7 @@ export interface Category {
   sort_order: number
 }
 
-// ─── LoRA ───────────────────────────────────────────────────────
+// 笏笏笏 LoRA 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface TriggerWordSet {
   id: number
@@ -284,7 +284,7 @@ export interface LoraCreate {
   target_base_model_ids?: number[]
 }
 
-// ─── TagSet ─────────────────────────────────────────────────────
+// 笏笏笏 TagSet 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface TagSubset {
   id: number
@@ -322,7 +322,7 @@ export interface TagSetCreate {
   target_base_model_ids?: number[]
 }
 
-// ─── LLM Audit ──────────────────────────────────────────────────
+// 笏笏笏 LLM Audit 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface AuditRequest {
   audit_types: ('interference' | 'vocabulary' | 'physical')[]
@@ -354,7 +354,7 @@ export interface AuditResult {
   physical?: PhysicalResult
 }
 
-// ─── LLM Prompts ────────────────────────────────────────────────
+// 笏笏笏 LLM Prompts 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface LlmPrompt {
   id: number
@@ -364,7 +364,7 @@ export interface LlmPrompt {
   updated_at: string
 }
 
-// ─── Preset ─────────────────────────────────────────────────────
+// 笏笏笏 Preset 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface WorkflowPreset {
   id: number
@@ -423,27 +423,24 @@ export interface TagSetReorder {
 }
 
 
-// ─── Scene Generator ─────────────────────────────────────────────
+// 笏笏笏 Scene Generator 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SceneItem {
-  id: string        // crypto.randomUUID() で生成
-  summary: string   // ユーザーが入力する日本語の概要
-  name?: string
+  id: string        // crypto.randomUUID() 縺ｧ逕滓・
+  summary: string   // 繝ｦ繝ｼ繧ｶ繝ｼ縺悟・蜉帙☆繧区律譛ｬ隱槭・讎りｦ・  name?: string
 }
 
 export interface SceneGenerateRequest {
-  target_fields: string[]                 // 選択されたフィールドの role 名リスト
-  base_params: Record<string, string>     // フィールド名 → 現在の値（文脈情報）
-  scenes: { id: string; summary: string }[]
+  target_fields: string[]                 // 驕ｸ謚槭＆繧後◆繝輔ぅ繝ｼ繝ｫ繝峨・ role 蜷阪Μ繧ｹ繝・  base_params: Record<string, string>     // 繝輔ぅ繝ｼ繝ｫ繝牙錐 竊・迴ｾ蝨ｨ縺ｮ蛟､・域枚閼域ュ蝣ｱ・・  scenes: { id: string; summary: string }[]
   anima_mode?: boolean
 }
 
 export interface SceneDiffParams {
   scene_id: string
-  diff_params: Record<string, string>     // フィールド名 → LLMが生成した英語プロンプト
+  diff_params: Record<string, string>     // 繝輔ぅ繝ｼ繝ｫ繝牙錐 竊・LLM縺檎函謌舌＠縺溯恭隱槭・繝ｭ繝ｳ繝励ヨ
 }
 
-// ─── BypassProfile ───────────────────────────────────────────────
+// 笏笏笏 BypassProfile 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface BypassProfile {
   id: number
@@ -466,7 +463,7 @@ export interface BypassProfileUpdate {
 }
 
 
-// ─── ParamSyncGroup ──────────────────────────────────────────────
+// 笏笏笏 ParamSyncGroup 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface ParamSyncGroup {
   id: number
@@ -494,7 +491,7 @@ export interface ParamSyncGroupUpdate {
 
 
 
-// ─── BaseModel & CheckpointMapping ──────────────────────────────
+// 笏笏笏 BaseModel & CheckpointMapping 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface BaseModel {
   id: number
@@ -521,14 +518,14 @@ export interface CheckpointMappingCreate {
   base_model_id: number
 }
 
-// ─── ServerFont ─────────────────────────────────────────────────
+// 笏笏笏 ServerFont 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface ServerFont {
   name: string
   file_name: string
 }
 
-// ─── ParamTypeMaster ─────────────────────────────────────────────
+// 笏笏笏 ParamTypeMaster 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface ParamTypeMaster {
   id: number
@@ -550,12 +547,10 @@ export interface ParamTypeMasterCreate {
   step?: number
 }
 
-// ─── ComfyUI Object Info ─────────────────────────────────────────
+// 笏笏笏 ComfyUI Object Info 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 /**
- * ComfyUI /object_info/{class_type} のレスポンス。
- * キーはclass_type名、値はノード定義。
- * input.required の各エントリ:
+ * ComfyUI /object_info/{class_type} 縺ｮ繝ｬ繧ｹ繝昴Φ繧ｹ縲・ * 繧ｭ繝ｼ縺ｯclass_type蜷阪∝､縺ｯ繝弱・繝牙ｮ夂ｾｩ縲・ * input.required 縺ｮ蜷・お繝ｳ繝医Μ:
  *   - combo: [string[], {}]
  *   - INT/FLOAT: ["INT"|"FLOAT", {min?, max?, default?, step?}]
  */
@@ -566,7 +561,7 @@ export type ComfyObjectInfo = Record<string, {
   }
 }>
 
-// ─── SpeechBubblePreset ──────────────────────────────────────────
+// 笏笏笏 SpeechBubblePreset 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SpeechBubblePreset {
   id: number
@@ -615,7 +610,7 @@ export interface SpeechBubblePresetUpdate {
   text?: string | null
 }
 
-// ─── SpeechTonePreset ────────────────────────────────────────────
+// 笏笏笏 SpeechTonePreset 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SpeechTonePreset {
   id: number
@@ -646,13 +641,17 @@ export interface SpeechToneRewriteRequest {
   preset_id?: number
   model?: string
   llm_params?: Record<string, any>
+  snapshot_id?: number
+  image_path?: string
+  include_image?: boolean
+  scene_hint?: string
 }
 
 export interface SpeechToneRewriteResponse {
   rewritten_text: string
 }
 
-// ─── Translation Types ──────────────────────────────────────────
+// 笏笏笏 Translation Types 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface PromptTranslateRequest {
   prompt: string
@@ -692,3 +691,53 @@ export type TranslationMode = 'en_to_ja' | 'ja_to_en'
 
 
 
+
+// ─── Speech Batch Rewrite ─────────────────────────────────────────
+
+export type SpeechBatchJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+export type SpeechBatchItemStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+
+export interface SpeechBatchJobItemCreate {
+  id: string // e.g. ${snapshotId}_${bubbleId}
+  snapshot_id: number
+  bubble_id: string
+  bubble_index: number
+  text: string
+  scene_hint?: string
+  include_image?: boolean
+  image_path?: string
+}
+
+export interface SpeechBatchJobCreate {
+  preset_id?: number | null
+  tone_prompt?: string | null
+  model?: string | null
+  items: SpeechBatchJobItemCreate[]
+}
+
+export interface SpeechBatchJobItem {
+  id: string
+  snapshot_id: number
+  bubble_id: string
+  bubble_index: number
+  original_text: string
+  rewritten_text?: string | null
+  status: SpeechBatchItemStatus
+  error?: string | null
+  scene_hint?: string
+  include_image?: boolean
+  image_path?: string
+}
+
+export interface SpeechBatchJob {
+  job_id: string
+  preset_id?: number | null
+  tone_prompt?: string | null
+  model?: string | null
+  status: SpeechBatchJobStatus
+  total_count: number
+  completed_count: number
+  failed_count: number
+  created_at: string
+  items: SpeechBatchJobItem[]
+}
