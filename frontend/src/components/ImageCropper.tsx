@@ -94,8 +94,19 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="relative flex flex-col w-full max-w-lg h-[500px] bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+    <div
+      className="fixed inset-0 z-[200] flex flex-col items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <div
+        className="relative flex flex-col w-full max-w-lg h-[500px] bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
           <h3 className="text-lg font-semibold text-slate-100">
