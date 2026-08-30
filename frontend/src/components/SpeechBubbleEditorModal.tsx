@@ -14,7 +14,6 @@ import {
 } from '../types/speechBubble'
 import {
   drawSpeechBubble,
-  getTailBasePosition,
   clampTailApexOutsideBubble,
   getTailContactPositions,
 } from '../utils/speechBubbleRenderer'
