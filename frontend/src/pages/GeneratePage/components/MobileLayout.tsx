@@ -696,6 +696,7 @@ export const MobileLayout = ({
                 variant={isNegative ? 'negative' : 'positive'}
                 defaultTextMode={activePromptTabMapping.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
                 isAnimaMode={isAnimaMode}
+                onTextModeToggle={() => setRoleCollapsed(activePromptTabMapping.role!, false)}
               />
               <AppliedAssetChips
                 role={activePromptTabMapping.role!}

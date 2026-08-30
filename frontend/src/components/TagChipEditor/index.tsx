@@ -31,6 +31,7 @@ interface TagChipEditorProps {
   variant?: string;
   defaultTextMode?: boolean;
   isAnimaMode?: boolean;
+  onTextModeToggle?: (isTextMode: boolean) => void;
 }
 
 export const TagChipEditor: React.FC<TagChipEditorProps> = ({
@@ -40,6 +41,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   placeholder = 'Add tag...',
   defaultTextMode = false,
   isAnimaMode = false,
+  onTextModeToggle,
 }) => {
   const initialChips = useMemo(() => parseToChips(value), []);
   const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(initialChips);
@@ -169,6 +171,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   const handleSwitchToTextMode = () => {
     setTextValue(chipsToString(state));
     setIsTextMode(true);
+    onTextModeToggle?.(true);
     if (id) {
       window.dispatchEvent(
         new CustomEvent('tag-chip-editor:text-mode-toggle', {
@@ -182,6 +185,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     const newChips = parseToChips(textValue);
     setChips(newChips, true); // 編集確定したテキストを履歴に積む
     setIsTextMode(false);
+    onTextModeToggle?.(false);
     if (id) {
       window.dispatchEvent(
         new CustomEvent('tag-chip-editor:text-mode-toggle', {

@@ -595,7 +595,8 @@ export const DesktopLayout = ({
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'}
                     defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
-                    isAnimaMode={isAnimaMode} />
+                    isAnimaMode={isAnimaMode}
+                    onTextModeToggle={() => setRoleCollapsed(m.role!, false)} />
                   <AppliedAssetChips
                     role={m.role!}
                     appliedAssets={appliedAssets}
