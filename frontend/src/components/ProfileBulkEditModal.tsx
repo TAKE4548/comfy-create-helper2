@@ -1,14 +1,28 @@
 import { useState } from 'react';
 import { X, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react';
-import type { WorkflowPreset, MappingMaster, Lora, TagSet } from '../api/types';
+import type { WorkflowPreset, MappingMaster, Lora, TagSet, ParamTypeMaster } from '../api/types';
 import type { AppliedAsset } from '../store/useGenerationStore';
 import { SearchableLoraSelect } from './SearchableLoraSelect';
 import { LoraStackEditor } from './LoraStackEditor';
 import { AddAssetModal } from '../pages/GeneratePage/components/AddAssetModal';
+import { TagChipInput } from './TagChipInput';
 
 // ─── Types ──────────────────────────────────────────────────────
 
-export type PromptOpType = 'search_replace' | 'overwrite' | 'prefix' | 'suffix';
+export type PromptOpType = 'search_replace' | 'overwrite' | 'prefix' | 'suffix' | 'remove_tags';
+
+export interface CommonTagOp {
+  originalBase: string;       // 元のタグベース名 (小文字比較用)
+  newFormattedTag: string;   // 変更後のタグ文字列 (例: "(1girl:1.2)", "1boy")
+  action: 'update' | 'remove'; // 'update' (変更反映) または 'remove' (除外/削除)
+}
+
+export interface CommonTagItem {
+  id: string;
+  originalBase: string;
+  text: string;
+  enabled: boolean;
+}
 
 export interface PromptOp {
   op: PromptOpType;
@@ -17,6 +31,8 @@ export interface PromptOp {
   find?: string;
   replace?: string;
   value?: string;
+  tags?: string[];
+  commonTagOps?: CommonTagOp[];
 }
 
 export interface LoraOp {
@@ -44,6 +60,7 @@ export interface ProfileBulkEditModalProps {
   onClose: () => void;
   selectedPresets: WorkflowPreset[];
   mappingMasters: MappingMaster[];
+  paramTypeMasters?: ParamTypeMaster[];
   loras: Lora[];
   tagSets?: TagSet[];
   comfyObjectInfo?: Record<string, any>;
@@ -60,7 +77,85 @@ const PROMPT_OP_LABELS: Record<PromptOpType, string> = {
   overwrite: '全置換（上書き）',
   prefix: '先頭に追加',
   suffix: '末尾に追加',
+  remove_tags: '共通タグ編集・削除',
 };
+
+export function parseTagWeight(tag: string): { base: string; weight: number | null; isParenthesized: boolean } {
+  const trimmed = tag.trim();
+  // e.g. (tag:1.2) or (tag)
+  const weightedMatch = trimmed.match(/^\((.+?):([0-9.]+)\)$/);
+  if (weightedMatch) {
+    return {
+      base: weightedMatch[1].trim(),
+      weight: parseFloat(weightedMatch[2]),
+      isParenthesized: true,
+    };
+  }
+  const parenMatch = trimmed.match(/^\((.+?)\)$/);
+  if (parenMatch) {
+    return {
+      base: parenMatch[1].trim(),
+      weight: null,
+      isParenthesized: true,
+    };
+  }
+  return {
+    base: trimmed,
+    weight: null,
+    isParenthesized: false,
+  };
+}
+
+export function formatTagWithWeight(base: string, weight: number | null): string {
+  if (weight === null || isNaN(weight) || weight === 1.0) {
+    return base;
+  }
+  return `(${base}:${weight})`;
+}
+
+// 選択中プリセットおよび選択された対象プロンプトロールから共通するタグを抽出する純粋関数
+export function computeCommonTags(
+  presets: WorkflowPreset[],
+  targetRoles: string[]
+): string[] {
+  if (presets.length === 0 || targetRoles.length === 0) return [];
+
+  // 各プリセットについて、選択された対象ロール内のタグを抽出して (base名小文字 -> 元の文字列表現) Map 化
+  const presetTagMaps: Map<string, string>[] = presets.map((preset) => {
+    const map = new Map<string, string>();
+    targetRoles.forEach((role) => {
+      const val = preset.param_values?.[role];
+      if (typeof val === 'string' && val.trim()) {
+        val
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .forEach((t) => {
+            const { base } = parseTagWeight(t);
+            const lowerBase = base.toLowerCase();
+            if (!map.has(lowerBase)) {
+              map.set(lowerBase, t);
+            }
+          });
+      }
+    });
+    return map;
+  });
+
+  // 全てのプリセットに含まれるタグ（積集合）を算出
+  const firstMap = presetTagMaps[0];
+  if (!firstMap) return [];
+  const common: string[] = [];
+
+  firstMap.forEach((originalRepresentation, lowerBase) => {
+    const isCommonInAll = presetTagMaps.every((map) => map.has(lowerBase));
+    if (isCommonInAll) {
+      common.push(originalRepresentation);
+    }
+  });
+
+  return common;
+}
 
 // ─── Component ──────────────────────────────────────────────────
 
@@ -69,6 +164,7 @@ export function ProfileBulkEditModal({
   onClose,
   selectedPresets,
   mappingMasters,
+  paramTypeMasters = [],
   loras,
   tagSets = [],
   comfyObjectInfo,
@@ -84,9 +180,14 @@ export function ProfileBulkEditModal({
   const [promptValue, setPromptValue] = useState('');
   const [promptTargetAll, setPromptTargetAll] = useState(true);
   const [promptTargetFields, setPromptTargetFields] = useState<Set<string>>(new Set());
+  const [tagsToRemove, setTagsToRemove] = useState<Set<string>>(new Set());
+  const [commonTagItems, setCommonTagItems] = useState<CommonTagItem[]>([]);
+  const [lastCommonTagsKey, setLastCommonTagsKey] = useState<string>('');
 
   // Params tab state
+  const [enabledParams, setEnabledParams] = useState<Set<string>>(new Set());
   const [paramPatch, setParamPatch] = useState<Record<string, string>>({});
+  const [batchSizeEnabled, setBatchSizeEnabled] = useState(false);
   const [batchSizeInput, setBatchSizeInput] = useState('');
 
   // LoRA / Asset tab state
@@ -123,6 +224,38 @@ export function ProfileBulkEditModal({
   );
   const loraRoles = mappingMasters.filter(m => m.input_type === 'lora_stack');
   const allAssetTargetRoles = mappingMasters.filter(m => m.input_type === 'textarea' || m.input_type === 'lora_stack');
+
+  const effectivePromptRoles = promptTargetAll ? textareaRoles.map(m => m.role) : Array.from(promptTargetFields);
+  const computedCommonTags = computeCommonTags(selectedPresets, effectivePromptRoles);
+
+  // Sync commonTagItems when computedCommonTags change
+  const currentKey = computedCommonTags.join('|||');
+  if (currentKey !== lastCommonTagsKey) {
+    setLastCommonTagsKey(currentKey);
+    setCommonTagItems(
+      computedCommonTags.map((tag, idx) => {
+        const { base } = parseTagWeight(tag);
+        return {
+          id: `common-tag-${idx}-${base}`,
+          originalBase: base.toLowerCase(),
+          text: tag,
+          enabled: true,
+        };
+      })
+    );
+  }
+
+  const toggleTagToRemove = (tag: string) => {
+    setTagsToRemove(prev => {
+      const next = new Set(prev);
+      if (next.has(tag)) {
+        next.delete(tag);
+      } else {
+        next.add(tag);
+      }
+      return next;
+    });
+  };
 
   const handleAddAppliedAsset = (role: string, assetData: Omit<AppliedAsset, 'id' | 'enabled'>) => {
     const asset: AppliedAsset = {
@@ -183,6 +316,18 @@ export function ProfileBulkEditModal({
     });
   };
 
+  const toggleParamEnabled = (role: string) => {
+    setEnabledParams(prev => {
+      const next = new Set(prev);
+      if (next.has(role)) {
+        next.delete(role);
+      } else {
+        next.add(role);
+      }
+      return next;
+    });
+  };
+
   // ── Build payload ──
   const buildPayload = (): BulkEditPayload | null => {
     const payload: BulkEditPayload = {};
@@ -192,6 +337,54 @@ export function ProfileBulkEditModal({
     if (promptOp === 'search_replace') {
       if (promptFindText) {
         payload.promptOps = [{ op: 'search_replace', fields: targetFields, find: promptFindText, replace: promptReplaceText }];
+      }
+    } else if (promptOp === 'remove_tags') {
+      const ops: CommonTagOp[] = [];
+      const legacyRemovedTags: string[] = [];
+
+      commonTagItems.forEach(item => {
+        const isRemoved = !item.enabled || tagsToRemove.has(item.text) || tagsToRemove.has(item.originalBase);
+        if (isRemoved) {
+          ops.push({
+            originalBase: item.originalBase,
+            newFormattedTag: item.text,
+            action: 'remove',
+          });
+          legacyRemovedTags.push(item.text);
+        } else {
+          // If enabled, check if modified or keep as updated
+          ops.push({
+            originalBase: item.originalBase,
+            newFormattedTag: item.text,
+            action: 'update',
+          });
+        }
+      });
+
+      // tagsToRemove に直接入っているタグも追加（後方互換）
+      tagsToRemove.forEach(tag => {
+        const { base } = parseTagWeight(tag);
+        const lowerBase = base.toLowerCase();
+        if (!ops.some(o => o.originalBase === lowerBase)) {
+          ops.push({
+            originalBase: lowerBase,
+            newFormattedTag: tag,
+            action: 'remove',
+          });
+          if (!legacyRemovedTags.includes(tag)) {
+            legacyRemovedTags.push(tag);
+          }
+        }
+      });
+
+      const hasModifications = ops.some(o => o.action === 'remove' || o.action === 'update');
+      if (hasModifications || legacyRemovedTags.length > 0) {
+        payload.promptOps = [{
+          op: 'remove_tags',
+          fields: targetFields,
+          tags: legacyRemovedTags.length > 0 ? legacyRemovedTags : Array.from(tagsToRemove),
+          commonTagOps: ops,
+        }];
       }
     } else {
       if (promptValue) {
@@ -204,11 +397,15 @@ export function ProfileBulkEditModal({
       payload.assetOps = assetOps;
     }
 
-    // 3. Param patch
+    // 3. Param patch (only include explicitly enabled params)
     const filteredParams: Record<string, string> = {};
-    Object.entries(paramPatch).forEach(([k, v]) => { if (v !== '') filteredParams[k] = v; });
+    enabledParams.forEach((role) => {
+      if (paramPatch[role] !== undefined && paramPatch[role] !== '') {
+        filteredParams[role] = paramPatch[role];
+      }
+    });
     if (Object.keys(filteredParams).length > 0) payload.paramPatch = filteredParams;
-    if (batchSizeInput !== '') {
+    if (batchSizeEnabled && batchSizeInput !== '') {
       const n = parseInt(batchSizeInput, 10);
       if (!isNaN(n) && n > 0) payload.batchSize = n;
     }
@@ -374,7 +571,7 @@ export function ProfileBulkEditModal({
                       type="text"
                       value={promptFindText}
                       onChange={e => setPromptFindText(e.target.value)}
-                      placeholder="例: <lora:characterA:1.0>"
+                      placeholder="例: <lora:characterA:1.0> またはタグ名"
                       className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
                     />
                   </div>
@@ -393,13 +590,130 @@ export function ProfileBulkEditModal({
                         <Plus size={12} /> アセットを追加
                       </button>
                     </div>
-                    <input
-                      type="text"
+                    <TagChipInput
                       value={promptReplaceText}
-                      onChange={e => setPromptReplaceText(e.target.value)}
-                      placeholder="例: <lora:characterB:1.0>（空欄で削除）"
-                      className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                      onChange={setPromptReplaceText}
+                      placeholder="置換後タグを入力（空欄で削除、カンマで確定）..."
                     />
+                  </div>
+                </div>
+              ) : promptOp === 'remove_tags' ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        共通タグの編集・強度調整・削除
+                      </label>
+                      {tagsToRemove.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTagsToRemove(new Set())}
+                          className="text-[11px] text-gray-400 hover:text-white"
+                        >
+                          選択解除
+                        </button>
+                      )}
+                    </div>
+                    {commonTagItems.length === 0 ? (
+                      <div className="p-3 bg-[#1F1F25] border border-[rgba(255,255,255,0.06)] rounded-lg text-xs text-gray-500 text-center">
+                        選択されたプリセットの対象フィールドに共通するタグは見つかりませんでした。
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 p-3 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg max-h-48 overflow-y-auto">
+                        {commonTagItems.map((item, idx) => {
+                          const isRemoved = !item.enabled || tagsToRemove.has(item.text) || tagsToRemove.has(item.originalBase);
+                          return (
+                            <div
+                              key={item.id || idx}
+                              className={`group inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono transition-all border ${
+                                isRemoved
+                                  ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 line-through opacity-60'
+                                  : 'bg-zinc-800 border-[rgba(255,255,255,0.08)] text-zinc-200 hover:border-zinc-500'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (tagsToRemove.has(item.text) || tagsToRemove.has(item.originalBase)) {
+                                    setTagsToRemove(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(item.text);
+                                      next.delete(item.originalBase);
+                                      return next;
+                                    });
+                                  }
+                                  setCommonTagItems(prev =>
+                                    prev.map(it => it.id === item.id ? { ...it, enabled: !it.enabled } : it)
+                                  );
+                                }}
+                                className="cursor-pointer select-none text-left"
+                                title="クリックで有効/削除切替"
+                              >
+                                {item.text}
+                              </button>
+                              <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                                <button
+                                  type="button"
+                                  title="強度変更 (-0.1)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const parsed = parseTagWeight(item.text);
+                                    const currentWeight = parsed.weight ?? 1.0;
+                                    const newWeight = Math.max(0.1, Math.round((currentWeight - 0.1) * 10) / 10);
+                                    const newText = formatTagWithWeight(parsed.base, newWeight);
+                                    setCommonTagItems(prev =>
+                                      prev.map(it => it.id === item.id ? { ...it, text: newText } : it)
+                                    );
+                                  }}
+                                  className="w-4 h-4 flex items-center justify-center rounded bg-black/40 hover:bg-black/80 text-[10px] text-gray-300 hover:text-white"
+                                >
+                                  -
+                                </button>
+                                <button
+                                  type="button"
+                                  title="強度変更 (+0.1)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const parsed = parseTagWeight(item.text);
+                                    const currentWeight = parsed.weight ?? 1.0;
+                                    const newWeight = Math.round((currentWeight + 0.1) * 10) / 10;
+                                    const newText = formatTagWithWeight(parsed.base, newWeight);
+                                    setCommonTagItems(prev =>
+                                      prev.map(it => it.id === item.id ? { ...it, text: newText } : it)
+                                    );
+                                  }}
+                                  className="w-4 h-4 flex items-center justify-center rounded bg-black/40 hover:bg-black/80 text-[10px] text-gray-300 hover:text-white"
+                                >
+                                  +
+                                </button>
+                                <button
+                                  type="button"
+                                  title="タグ削除"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleTagToRemove(item.text);
+                                  }}
+                                  className="p-0.5 rounded hover:bg-rose-500/30 text-gray-400 hover:text-rose-300"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(() => {
+                      const disabledCount = commonTagItems.filter(
+                        it => !it.enabled || tagsToRemove.has(it.text) || tagsToRemove.has(it.originalBase)
+                      ).length;
+                      const totalCount = Math.max(disabledCount, tagsToRemove.size);
+                      return totalCount > 0 ? (
+                        <p className="text-[11px] text-rose-400 font-medium">
+                          ※ {totalCount} 個のタグが対象プリセットから削除されます。
+                        </p>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               ) : (
@@ -420,12 +734,10 @@ export function ProfileBulkEditModal({
                       <Plus size={12} /> アセットを追加
                     </button>
                   </div>
-                  <textarea
+                  <TagChipInput
                     value={promptValue}
-                    onChange={e => setPromptValue(e.target.value)}
-                    rows={3}
-                    placeholder="テキストを入力..."
-                    className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors resize-none"
+                    onChange={setPromptValue}
+                    placeholder="タグを入力（カンマまたはEnterで確定）..."
                   />
                 </div>
               )}
@@ -517,50 +829,168 @@ export function ProfileBulkEditModal({
                   );
                 }
 
+                const isEnabled = enabledParams.has(m.role);
+                const customType = paramTypeMasters?.find(ptm => ptm.name === m.input_type);
                 const samplerOpts = m.input_type === 'select_sampler' ? getSamplerOptions() : [];
                 const schedulerOpts = m.input_type === 'select_scheduler' ? getSchedulerOptions() : [];
-                const selectOpts = m.input_type === 'select' ? [] : samplerOpts.length > 0 ? samplerOpts : schedulerOpts;
 
                 return (
-                  <div key={m.role} className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">{m.display_name}</label>
-                    {selectOpts.length > 0 ? (
-                      <select
-                        value={paramPatch[m.role] ?? ''}
-                        onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
-                      >
-                        <option value="">（変更しない）</option>
-                        {selectOpts.map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={m.input_type === 'int' || m.input_type === 'float' ? 'number' : 'text'}
-                        step={m.input_type === 'float' ? '0.1' : '1'}
-                        value={paramPatch[m.role] ?? ''}
-                        onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
-                        placeholder="変更しない"
-                        className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
-                      />
-                    )}
+                  <div key={m.role} className="p-3 bg-[#1F1F25]/60 border border-[rgba(255,255,255,0.06)] rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isEnabled}
+                          onChange={() => toggleParamEnabled(m.role)}
+                          className="w-3.5 h-3.5 rounded accent-[#3ECF8E]"
+                        />
+                        <span className={`text-xs font-semibold uppercase tracking-wider transition-colors ${isEnabled ? 'text-white' : 'text-gray-400'}`}>
+                          {m.display_name}
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-gray-500 font-mono">{m.input_type}</span>
+                    </div>
+
+                    <div className={!isEnabled ? 'opacity-40 pointer-events-none' : ''}>
+                      {m.input_type === 'select_sampler' ? (
+                        <select
+                          disabled={!isEnabled}
+                          value={paramPatch[m.role] ?? ''}
+                          onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
+                          className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                        >
+                          <option value="">サンプラーを選択…</option>
+                          {samplerOpts.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : m.input_type === 'select_scheduler' ? (
+                        <select
+                          disabled={!isEnabled}
+                          value={paramPatch[m.role] ?? ''}
+                          onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
+                          className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                        >
+                          <option value="">スケジューラーを選択…</option>
+                          {schedulerOpts.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : m.input_type === 'boolean' ? (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={!isEnabled}
+                            onClick={() => {
+                              const currentVal = paramPatch[m.role] === 'true';
+                              setParamPatch(prev => ({ ...prev, [m.role]: currentVal ? 'false' : 'true' }));
+                            }}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              paramPatch[m.role] === 'true' ? 'bg-[#3ECF8E]' : 'bg-zinc-700'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                paramPatch[m.role] === 'true' ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <span className="text-xs text-gray-300">
+                            {paramPatch[m.role] === 'true' ? 'True (有効)' : 'False (無効)'}
+                          </span>
+                        </div>
+                      ) : customType ? (
+                        customType.widget_type === 'select' && customType.combo_options ? (
+                          <select
+                            disabled={!isEnabled}
+                            value={paramPatch[m.role] ?? ''}
+                            onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
+                            className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                          >
+                            <option value="">選択してください…</option>
+                            {customType.combo_options.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : customType.widget_type === 'boolean' ? (
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              disabled={!isEnabled}
+                              onClick={() => {
+                                const currentVal = paramPatch[m.role] === 'true';
+                                setParamPatch(prev => ({ ...prev, [m.role]: currentVal ? 'false' : 'true' }));
+                              }}
+                              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                paramPatch[m.role] === 'true' ? 'bg-[#3ECF8E]' : 'bg-zinc-700'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                  paramPatch[m.role] === 'true' ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                            <span className="text-xs text-gray-300">
+                              {paramPatch[m.role] === 'true' ? 'True (有効)' : 'False (無効)'}
+                            </span>
+                          </div>
+                        ) : (
+                          <input
+                            type={customType.widget_type === 'textarea' ? 'text' : 'number'}
+                            disabled={!isEnabled}
+                            value={paramPatch[m.role] ?? ''}
+                            onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
+                            min={customType.min_value ?? undefined}
+                            max={customType.max_value ?? undefined}
+                            step={customType.step ?? (customType.widget_type === 'float' ? 0.01 : 1)}
+                            placeholder="値を入力"
+                            className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                          />
+                        )
+                      ) : (
+                        <input
+                          type={m.input_type === 'int' || m.input_type === 'float' ? 'number' : 'text'}
+                          disabled={!isEnabled}
+                          step={m.input_type === 'float' ? '0.1' : '1'}
+                          value={paramPatch[m.role] ?? ''}
+                          onChange={e => setParamPatch(prev => ({ ...prev, [m.role]: e.target.value }))}
+                          placeholder="値を入力"
+                          className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                        />
+                      )}
+                    </div>
                   </div>
                 );
               })}
 
               {/* Batch size (dedicated column) */}
-              <div className="space-y-1.5 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">バッチ数（Batch Size）</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={batchSizeInput}
-                  onChange={e => setBatchSizeInput(e.target.value)}
-                  placeholder="変更しない"
-                  className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
-                />
+              <div className="p-3 bg-[#1F1F25]/60 border border-[rgba(255,255,255,0.06)] rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={batchSizeEnabled}
+                      onChange={e => setBatchSizeEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-[#3ECF8E]"
+                    />
+                    <span className={`text-xs font-semibold uppercase tracking-wider transition-colors ${batchSizeEnabled ? 'text-white' : 'text-gray-400'}`}>
+                      バッチ数（Batch Size）
+                    </span>
+                  </label>
+                </div>
+                <div className={!batchSizeEnabled ? 'opacity-40 pointer-events-none' : ''}>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    disabled={!batchSizeEnabled}
+                    value={batchSizeInput}
+                    onChange={e => setBatchSizeInput(e.target.value)}
+                    placeholder="バッチ数を入力"
+                    className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
+                  />
+                </div>
               </div>
             </div>
           )}

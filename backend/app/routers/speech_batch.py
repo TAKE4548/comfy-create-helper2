@@ -11,6 +11,11 @@ from app.database import get_db, SessionLocal
 from app import models, schemas
 from app.services.llm_request import call_llm, load_image_as_base64
 
+from app.services.speech_parser import (
+    get_effective_speech_rewrite_system_prompt,
+    call_llm_with_structured_dialogue,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/speech-batch", tags=["speech-batch"])
@@ -18,16 +23,14 @@ router = APIRouter(prefix="/api/speech-batch", tags=["speech-batch"])
 _batch_jobs: dict[str, schemas.SpeechBatchJobRead] = {}
 _job_tasks: dict[str, asyncio.Task] = {}
 
-SYSTEM_PROMPT = (
-    "あなたはセリフの言い回しや口調を変換する専門家です。\n"
-    "元のセリフの意味、状況、感情、意図は一切変えずに、指定された口調・話し方・キャラクター特徴に合わせて自然なセリフに書き換えてください。\n\n"
-    "【ルール】\n"
-    "1. セリフの意味内容・文脈・伝達したい情報は忠実に維持すること。\n"
-    "2. 指定された口調、語尾、一人称・二人称、キャラクターの性格ニュアンスを的確に反映すること。\n"
-    "3. 出力は書き換えたセリフのみを返してください。挨拶、前置き、引用符（「」等）、解説は一切含めないでください。"
-)
 
 async def _process_single_item(item: schemas.SpeechBatchJobItemRead, tone_prompt: str, model: Optional[str], llm_params: Optional[dict]):
+    db = SessionLocal()
+    try:
+        system_prompt = get_effective_speech_rewrite_system_prompt(db)
+    finally:
+        db.close()
+
     user_prompt_parts = [
         f"【口調・キャラクター設定】\n{tone_prompt}",
         f"【元のセリフ】\n{item.original_text}"
@@ -35,6 +38,14 @@ async def _process_single_item(item: schemas.SpeechBatchJobItemRead, tone_prompt
 
     if item.scene_hint and item.scene_hint.strip():
         user_prompt_parts.append(f"【場面の状況・ヒント】\n{item.scene_hint.strip()}")
+
+    if item.revision_instruction and item.revision_instruction.strip():
+        user_prompt_parts.append(
+            "【前回の変換結果に対する修正指示・ダメ出し】\n"
+            + (f"直前の変換結果: {item.previous_rewritten_text}\n" if item.previous_rewritten_text else "")
+            + f"修正指示・不満点: {item.revision_instruction.strip()}\n"
+            + "※直前の変換結果で指摘された不満点・修正指示を忠実に反映し、同じ不満点が生じないよう改善したセリフに書き換えてください。"
+        )
 
     image_b64 = None
     if item.include_image:
@@ -69,14 +80,17 @@ async def _process_single_item(item: schemas.SpeechBatchJobItemRead, tone_prompt
 
     user_prompt = "\n\n".join(user_prompt_parts)
 
-    res = await call_llm(
-        system_prompt=SYSTEM_PROMPT,
+    dialogue, interp, reasoning = await call_llm_with_structured_dialogue(
+        system_prompt=system_prompt,
         user_prompt=user_prompt,
         model=model,
         llm_params=llm_params,
-        image_data=image_b64
+        image_data=image_b64,
     )
-    return res.strip().strip('"').strip('「').strip('」')
+    item.rewritten_text = dialogue
+    item.scene_interpretation = interp
+    item.reasoning = reasoning
+
 
 async def run_batch_job(job_id: str):
     job = _batch_jobs.get(job_id)
@@ -104,8 +118,7 @@ async def run_batch_job(job_id: str):
                 continue
             item.status = "processing"
             try:
-                rewritten = await _process_single_item(item, tone_prompt, job.model, None)
-                item.rewritten_text = rewritten
+                await _process_single_item(item, tone_prompt, job.model, None)
                 item.status = "completed"
                 item.error = None
                 job.completed_count += 1
@@ -206,13 +219,25 @@ async def cancel_batch_item(job_id: str, item_id: str):
     return job
 
 @router.post("/jobs/{job_id}/items/{item_id}/retry", response_model=schemas.SpeechBatchJobRead)
-async def retry_batch_item(job_id: str, item_id: str):
+async def retry_batch_item(
+    job_id: str,
+    item_id: str,
+    payload: Optional[schemas.SpeechBatchItemRetryRequest] = None,
+):
     job = _batch_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch job not found")
     found = False
     for item in job.items:
         if item.id == item_id:
+            if payload:
+                if payload.revision_instruction is not None:
+                    item.previous_rewritten_text = item.rewritten_text
+                    item.revision_instruction = payload.revision_instruction
+                if payload.scene_hint is not None:
+                    item.scene_hint = payload.scene_hint
+                if payload.include_image is not None:
+                    item.include_image = payload.include_image
             item.status = "pending"
             item.error = None
             found = True
@@ -227,3 +252,4 @@ async def retry_batch_item(job_id: str, item_id: str):
     if not task or task.done():
         _job_tasks[job_id] = asyncio.create_task(run_batch_job(job_id))
     return job
+

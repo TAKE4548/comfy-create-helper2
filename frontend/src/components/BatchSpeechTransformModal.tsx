@@ -59,6 +59,8 @@ export function BatchSpeechTransformModal({
   const [newAlbumName, setNewAlbumName] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number } | null>(null)
+  const [itemRevisionInstructions, setItemRevisionInstructions] = useState<Record<string, string>>({})
+  const [expandedThinkingItems, setExpandedThinkingItems] = useState<Record<string, boolean>>({})
 
   const { data: workflows } = useQuery({ queryKey: ['workflows'], queryFn: () => workflowsApi.list(), enabled: isOpen })
   const { data: albums } = useQuery({ queryKey: ['albums'], queryFn: () => albumsApi.list(), enabled: isOpen })
@@ -208,8 +210,11 @@ export function BatchSpeechTransformModal({
 
   const handleRetryItem = async (itemId: string) => {
     if (!activeJobId) return
+    const instruction = itemRevisionInstructions[itemId]?.trim()
     try {
-      await speechBatchApi.retryItem(activeJobId, itemId)
+      await speechBatchApi.retryItem(activeJobId, itemId, {
+        revision_instruction: instruction || undefined,
+      })
       refetchJob()
     } catch (err: any) {
       alert('再生成の開始に失敗しました: ' + (err.message || err))
@@ -676,6 +681,49 @@ export function BatchSpeechTransformModal({
                                     className="w-full text-xs bg-transparent border-0 p-0 text-zinc-200 focus:outline-none resize-none leading-relaxed"
                                     placeholder={!activeJob ? '一括変換を開始すると生成されます' : jobItem?.status === 'processing' ? 'AIが変換しています...' : '変換テキスト...'}
                                   />
+
+                                  {(jobItem?.scene_interpretation || jobItem?.reasoning) && (
+                                    <div className="mt-2 border border-[#7C6FDD]/30 rounded bg-[#7C6FDD]/10 p-2 space-y-1" data-testid={`batch-item-thinking-${itemId}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedThinkingItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }))}
+                                        className="flex items-center justify-between w-full text-[10px] font-medium text-[#7C6FDD] hover:text-[#9B8FF0]"
+                                      >
+                                        <span>💡 AI解釈・思考過程</span>
+                                        <span>{expandedThinkingItems[itemId] ? '▲ 閉じる' : '▼ 表示'}</span>
+                                      </button>
+                                      {expandedThinkingItems[itemId] && (
+                                        <div className="text-[10px] text-zinc-300 space-y-1 pt-1 border-t border-[#7C6FDD]/20">
+                                          {jobItem.scene_interpretation && (
+                                            <div>
+                                              <span className="text-zinc-500 font-bold block">【場面解釈】</span>
+                                              <p className="whitespace-pre-wrap">{jobItem.scene_interpretation}</p>
+                                            </div>
+                                          )}
+                                          {jobItem.reasoning && (
+                                            <div>
+                                              <span className="text-zinc-500 font-bold block">【思考・言葉選び】</span>
+                                              <p className="whitespace-pre-wrap">{jobItem.reasoning}</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {activeJob && (
+                                    <div className="mt-2 pt-1.5 border-t border-[rgba(255,255,255,0.06)]">
+                                      <input
+                                        type="text"
+                                        id={`retry-instruction-${itemId}`}
+                                        data-testid={`retry-instruction-${itemId}`}
+                                        placeholder="修正指示・ダメ出し（例: もっと怒った感じで）..."
+                                        value={itemRevisionInstructions[itemId] || ''}
+                                        onChange={(e) => setItemRevisionInstructions((prev) => ({ ...prev, [itemId]: e.target.value }))}
+                                        className="w-full text-[11px] bg-[#121216] border border-zinc-700/60 rounded px-2 py-1 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-[#7C6FDD]"
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -683,9 +731,10 @@ export function BatchSpeechTransformModal({
                                 <div className="flex md:flex-col items-center gap-1.5 shrink-0 self-center md:self-start">
                                   <button
                                     id={`retry-speech-item-${itemId}`}
+                                    data-testid={`retry-speech-item-${itemId}`}
                                     onClick={() => handleRetryItem(itemId)}
                                     disabled={jobItem?.status === 'processing'}
-                                    title="このセリフのみ再生成"
+                                    title="このセリフのみ再生成（修正指示があれば反映）"
                                     className="p-2 rounded-lg bg-surface hover:bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] transition-all disabled:opacity-50"
                                   >
                                     <RefreshCw size={13} />
@@ -693,6 +742,7 @@ export function BatchSpeechTransformModal({
                                   {(jobItem?.status === 'pending' || jobItem?.status === 'processing') && (
                                     <button
                                       id={`cancel-speech-item-${itemId}`}
+                                      data-testid={`cancel-speech-item-${itemId}`}
                                       onClick={() => handleCancelItem(itemId)}
                                       title="キャンセル"
                                       className="p-2 rounded-lg bg-surface hover:bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-red-400 transition-all"

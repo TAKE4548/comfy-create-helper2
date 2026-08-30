@@ -886,7 +886,7 @@ describe('SpeechBubbleEditorModal', () => {
     }
   })
 
-  it('supports tail fine-tuning mode toggle and base spread ratio adjustment (REQ-180 AC-3, AC-4, AC-5)', async () => {
+  it('supports tail fine-tuning mode toggle and contact reset (REQ-206 T2)', async () => {
     const OriginalImage = window.Image
     class MockLoadedImage {
       src = ''
@@ -926,22 +926,95 @@ describe('SpeechBubbleEditorModal', () => {
       fireEvent.click(fineTuningToggle)
       expect(fineTuningToggle.checked).toBe(true)
 
-      // The base width slider should now be rendered
+      // The fine-tuning guide text and reset button should now be rendered
       await waitFor(() => {
-        expect(screen.getByLabelText('しっぽ基部幅')).toBeDefined()
+        expect(screen.getByText(/橙色の2接点をドラッグして配置/)).toBeDefined()
       })
 
-      const baseWidthSlider = screen.getByLabelText('しっぽ基部幅') as HTMLInputElement
-      expect(baseWidthSlider.value).toBe('1')
-
-      // Adjust slider
-      fireEvent.change(baseWidthSlider, { target: { value: '1.8' } })
-      expect(baseWidthSlider.value).toBe('1.8')
-
       // Test reset button
-      const resetBtn = screen.getByRole('button', { name: 'リセット' })
+      const resetBtn = screen.getByRole('button', { name: /接点初期化/ })
+      expect(resetBtn).toBeDefined()
       fireEvent.click(resetBtn)
-      expect((screen.getByLabelText('しっぽ基部幅') as HTMLInputElement).value).toBe('1')
+    } finally {
+      window.Image = OriginalImage
+    }
+  })
+
+  it('preserves full tail properties when moving or duplicating bubble (REQ-206 T2)', async () => {
+    vi.mocked(snapshotsApi.get).mockResolvedValueOnce({
+      id: 1,
+      workflow_id: 1,
+      image_path: '/composed-image.png',
+      params: {
+        speech_bubbles: [
+          {
+            id: 'saved-bubble-1',
+            x: 50,
+            y: 50,
+            w: 100,
+            h: 80,
+            text: 'テスト',
+            shape: 'oval',
+            orientation: 'vertical',
+            fontFamily: 'sans-serif',
+            fontSize: 16,
+            textColor: 'rgba(0, 0, 0, 1)',
+            backgroundColor: 'rgba(255, 255, 255, 1)',
+            borderColor: 'rgba(0, 0, 0, 1)',
+            borderWidth: 2,
+            tail: {
+              x: 30,
+              y: 150,
+              baseAngle1: 0.5,
+              baseAngle2: 1.2,
+              isFineTuning: true,
+            },
+          }
+        ],
+      },
+    } as any)
+
+    const OriginalImage = window.Image
+    class MockLoadedImage {
+      src = ''
+      naturalWidth = 500
+      naturalHeight = 500
+      onload: (() => void) | null = null
+      constructor() {
+        setTimeout(() => {
+          if (this.onload) this.onload()
+        }, 0)
+      }
+    }
+    window.Image = MockLoadedImage as any
+
+    try {
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.get).toHaveBeenCalledWith(1)
+      })
+
+      // Duplicate bubble
+      const dupBtn = await screen.findByText('📋 この吹き出しを複製')
+      fireEvent.click(dupBtn)
+
+      // Bubble count should be 2
+      await waitFor(() => {
+        expect(screen.getByTestId('speech-bubble-save-btn').textContent).toContain('(2)')
+      })
+
+      // Canvas dragging move bubble
+      const canvas = document.querySelector('canvas')!
+      fireEvent.mouseDown(canvas, { clientX: 70, clientY: 70 })
+      fireEvent.mouseMove(canvas, { clientX: 90, clientY: 90 })
+      fireEvent.mouseUp(canvas)
     } finally {
       window.Image = OriginalImage
     }

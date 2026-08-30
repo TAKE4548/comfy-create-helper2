@@ -645,10 +645,14 @@ export interface SpeechToneRewriteRequest {
   image_path?: string
   include_image?: boolean
   scene_hint?: string
+  previous_rewritten_text?: string
+  revision_instruction?: string
 }
 
 export interface SpeechToneRewriteResponse {
   rewritten_text: string
+  scene_interpretation?: string | null
+  reasoning?: string | null
 }
 
 // 笏笏笏 Translation Types 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -715,6 +719,12 @@ export interface SpeechBatchJobCreate {
   items: SpeechBatchJobItemCreate[]
 }
 
+export interface SpeechBatchItemRetryRequest {
+  revision_instruction?: string
+  scene_hint?: string
+  include_image?: boolean
+}
+
 export interface SpeechBatchJobItem {
   id: string
   snapshot_id: number
@@ -722,6 +732,10 @@ export interface SpeechBatchJobItem {
   bubble_index: number
   original_text: string
   rewritten_text?: string | null
+  scene_interpretation?: string | null
+  reasoning?: string | null
+  previous_rewritten_text?: string | null
+  revision_instruction?: string | null
   status: SpeechBatchItemStatus
   error?: string | null
   scene_hint?: string

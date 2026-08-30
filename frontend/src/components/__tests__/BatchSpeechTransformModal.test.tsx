@@ -273,13 +273,117 @@ describe('BatchSpeechTransformModal', () => {
     fireEvent.click(retryBtn)
 
     await waitFor(() => {
-      expect(speechBatchApi.retryItem).toHaveBeenCalledWith('job-123', '1_b1')
+      expect(speechBatchApi.retryItem).toHaveBeenCalledWith('job-123', '1_b1', { revision_instruction: undefined })
     })
 
     // Inline edit
     const textarea = document.getElementById('speech-batch-text-1_b1') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'ごきげんよう！' } })
     expect(textarea.value).toBe('ごきげんよう！')
+  })
+
+  it('displays thinking process accordion and toggles open/close for batch items', async () => {
+    const jobWithThinking = {
+      job_id: 'job-123',
+      status: 'completed',
+      preset_id: 1,
+      tone_prompt: '「〜ですわ」口調',
+      total_count: 1,
+      completed_count: 1,
+      failed_count: 0,
+      created_at: '2026-08-30T00:00:00Z',
+      updated_at: '2026-08-30T00:00:00Z',
+      items: [
+        {
+          id: '1_b1',
+          snapshot_id: 1,
+          bubble_id: 'b1',
+          bubble_index: 0,
+          original_text: 'おはようございます',
+          rewritten_text: 'ごきげんよう、皆様ですわ',
+          scene_interpretation: '朝の爽やかな日差しの中での挨拶',
+          reasoning: '高貴なお嬢様らしさを出すため「ごきげんよう」に変更',
+          status: 'completed',
+          error_message: null,
+        },
+      ],
+    }
+    localStorage.setItem('prompt-surgeon-active-speech-batch-job-id', 'job-123')
+    vi.mocked(speechBatchApi.getJob).mockResolvedValue(jobWithThinking as any)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BatchSpeechTransformModal isOpen={true} onClose={vi.fn()} />
+      </QueryClientProvider>
+    )
+
+    await screen.findByText('ごきげんよう、皆様ですわ')
+
+    const thinkingSection = screen.getByTestId('batch-item-thinking-1_b1')
+    expect(thinkingSection).toBeInTheDocument()
+
+    // Initially collapsed
+    expect(screen.queryByText('朝の爽やかな日差しの中での挨拶')).not.toBeInTheDocument()
+
+    // Toggle open
+    fireEvent.click(screen.getByText(/AI解釈・思考過程/))
+    expect(screen.getByText('朝の爽やかな日差しの中での挨拶')).toBeInTheDocument()
+    expect(screen.getByText('高貴なお嬢様らしさを出すため「ごきげんよう」に変更')).toBeInTheDocument()
+
+    // Toggle close
+    fireEvent.click(screen.getByText(/AI解釈・思考過程/))
+    expect(screen.queryByText('朝の爽やかな日差しの中での挨拶')).not.toBeInTheDocument()
+  })
+
+  it('sends revision instruction when retrying batch item with feedback', async () => {
+    const completedJob = {
+      job_id: 'job-123',
+      status: 'completed',
+      preset_id: 1,
+      tone_prompt: '「〜ですわ」口調',
+      total_count: 1,
+      completed_count: 1,
+      failed_count: 0,
+      created_at: '2026-08-30T00:00:00Z',
+      updated_at: '2026-08-30T00:00:00Z',
+      items: [
+        {
+          id: '1_b1',
+          snapshot_id: 1,
+          bubble_id: 'b1',
+          bubble_index: 0,
+          original_text: 'おはようございます',
+          rewritten_text: 'ごきげんよう、皆様ですわ',
+          status: 'completed',
+          error_message: null,
+        },
+      ],
+    }
+    localStorage.setItem('prompt-surgeon-active-speech-batch-job-id', 'job-123')
+    vi.mocked(speechBatchApi.getJob).mockResolvedValue(completedJob as any)
+    vi.mocked(speechBatchApi.retryItem).mockResolvedValue(completedJob as any)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BatchSpeechTransformModal isOpen={true} onClose={vi.fn()} />
+      </QueryClientProvider>
+    )
+
+    await screen.findByText('ごきげんよう、皆様ですわ')
+
+    // Enter revision instruction
+    const revisionInput = screen.getByTestId('retry-instruction-1_b1')
+    fireEvent.change(revisionInput, { target: { value: 'もっとテンション高く挨拶して' } })
+
+    // Click retry item button
+    const retryBtn = screen.getByTestId('retry-speech-item-1_b1')
+    fireEvent.click(retryBtn)
+
+    await waitFor(() => {
+      expect(speechBatchApi.retryItem).toHaveBeenCalledWith('job-123', '1_b1', {
+        revision_instruction: 'もっとテンション高く挨拶して',
+      })
+    })
   })
 })
 

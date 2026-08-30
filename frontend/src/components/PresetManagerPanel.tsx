@@ -13,6 +13,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import type { WorkflowPreset } from '../api/types';
 import { MultiSelectToolbar } from './MultiSelectToolbar';
+import { useMultiSelect } from '../hooks/useMultiSelect';
 
 type SetCheckState = { id: string | number; checked: boolean };
 
@@ -72,25 +73,18 @@ export function PresetManagerPanel({
     })
   );
 
-  // Bulk operation state (separate from generation "checked" state)
-  const [bulkMode, setBulkMode] = useState(false);
-  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<number>>(new Set());
+  // Bulk operation state managed via useMultiSelect
+  const multiSelect = useMultiSelect<number>({ items: localPresets });
+  const bulkMode = multiSelect.isMultiSelectMode;
+  const bulkSelectedIds = multiSelect.selectedIds;
 
   const toggleBulkMode = () => {
-    setBulkMode(prev => !prev);
-    setBulkSelectedIds(new Set());
+    if (bulkMode) {
+      multiSelect.exitMultiSelectMode();
+    } else {
+      multiSelect.enterMultiSelectMode();
+    }
   };
-
-  const toggleBulkSelect = (id: number) => {
-    setBulkSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => setBulkSelectedIds(new Set(localPresets.map(p => p.id)));
-  const clearSelection = () => setBulkSelectedIds(new Set());
 
   // Sync with presets prop
   useEffect(() => {
@@ -186,8 +180,8 @@ export function PresetManagerPanel({
         <MultiSelectToolbar
           selectedCount={bulkSelectedIds.size}
           totalCount={localPresets.length}
-          onSelectAll={selectAll}
-          onClearSelection={clearSelection}
+          onSelectAll={multiSelect.selectAll}
+          onClearSelection={multiSelect.clearSelection}
           onExitMode={toggleBulkMode}
           actions={
             <>
@@ -242,8 +236,18 @@ export function PresetManagerPanel({
                   onOpenAsTab={onOpenAsTab ? () => onOpenAsTab(preset.id) : undefined}
                   onCloseTab={onCloseTab ? () => onCloseTab(preset.id) : undefined}
                   bulkMode={bulkMode}
-                  isBulkSelected={bulkSelectedIds.has(preset.id)}
-                  onToggleBulkSelect={() => toggleBulkSelect(preset.id)}
+                  isBulkSelected={multiSelect.isSelected(preset.id)}
+                  onRowClick={(e: React.MouseEvent) => {
+                    if (bulkMode) {
+                      multiSelect.handleItemClick(preset.id, e);
+                    } else if (!editingId && onOpenAsTab) {
+                      onOpenAsTab(preset.id);
+                    }
+                  }}
+                  onCheckboxClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    multiSelect.handleItemClick(preset.id, e);
+                  }}
                 />
               ))}
             </div>
@@ -381,7 +385,8 @@ function SortablePresetRow({
   onCloseTab,
   bulkMode = false,
   isBulkSelected = false,
-  onToggleBulkSelect,
+  onRowClick,
+  onCheckboxClick,
 }: {
   preset: WorkflowPreset;
   isEditing: boolean;
@@ -399,7 +404,8 @@ function SortablePresetRow({
   onCloseTab?: () => void;
   bulkMode?: boolean;
   isBulkSelected?: boolean;
-  onToggleBulkSelect?: () => void;
+  onRowClick?: (e: React.MouseEvent) => void;
+  onCheckboxClick?: (e: React.MouseEvent) => void;
 }) {
   const {
     attributes,
@@ -421,9 +427,8 @@ function SortablePresetRow({
     <div
       ref={setNodeRef}
       style={style}
-      onClick={() => {
-        if (bulkMode && onToggleBulkSelect) { onToggleBulkSelect(); return; }
-        if (!isEditing && onOpenAsTab) onOpenAsTab();
+      onClick={(e) => {
+        onRowClick?.(e);
       }}
       className={`flex items-center gap-3 px-3 py-2 bg-surface-2 border rounded-lg transition-all cursor-pointer ${
         bulkMode && isBulkSelected
@@ -502,8 +507,8 @@ function SortablePresetRow({
             type="checkbox"
             id={`preset-bulk-check-${preset.id}`}
             checked={isBulkSelected}
-            onChange={e => { e.stopPropagation(); if (onToggleBulkSelect) onToggleBulkSelect(); }}
-            onClick={e => e.stopPropagation()}
+            onChange={() => {}}
+            onClick={(e) => onCheckboxClick?.(e)}
             className="w-4 h-4 rounded accent-accent-green cursor-pointer"
           />
         ) : (

@@ -131,6 +131,7 @@ from app.schemas.speech_batch import (
     SpeechBatchJobCreate,
     SpeechBatchJobItemRead,
     SpeechBatchJobRead,
+    SpeechBatchItemRetryRequest,
 )
 
 __all__ = [
@@ -173,7 +174,9 @@ __all__ = [
     "SpeechToneRewriteRequest", "SpeechToneRewriteResponse",
     # SpeechBatch
     "SpeechBatchJobItemCreate", "SpeechBatchJobCreate", "SpeechBatchJobItemRead", "SpeechBatchJobRead",
+    "SpeechBatchItemRetryRequest",
 ]
+
 
 
 

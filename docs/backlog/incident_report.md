@@ -1,91 +1,74 @@
 # 障害調査報告書 (Incident Report)
 
 ## 1. 障害概要
-LoRA管理・タグセット管理画面において、以下の4件のUI/UXおよび機能不整合の不具合が発生している。
+セリフ編集（吹き出し編集）機能におけるしっぽ（Tail）の挙動および微調整機能に関して、以下の3点の課題・不具合が確認された。
 
-1. **モバイルモードでの編集モーダル操作不能**: モバイル表示時、編集モーダルの保存・キャンセルボタンが下部ナビゲーションバーに被り、操作できない。
-2. **編集モーダルの項目不整合・欠落**: サムネイル上の編集アイコンから開く編集モーダルと、詳細モーダル内の「Edit」から遷移する編集画面で実装が異なり、詳細モーダル経由の方で対象ベースモデルやサブセット（バリエーション）などの編集項目が欠落している。
-3. **モバイルでのサムネ上アイコン視認不可**: サムネイル上の編集・削除アイコンが `group-hover` による表示制御となっているため、タッチ操作（モバイル）時に非表示のまま手探りでタップする必要がある（またドラッグハンドルとの位置競合もある）。
-4. **カバーサムネ設定時の候補画像サムネイル非表示**: タグセットの編集モーダル（`LocalTagSetEditModal`）に候補サムネイル一覧が存在せず画像送りでしか選択できない。また詳細モーダル（`LoraDetailModal` / `TagSetDetailModal`）でもモバイル表示時にレイアウト崩れ・領域圧迫により候補サムネイル一覧が見切れる/表示されない。
+1. **吹き出し移動時のしっぽ詳細設定消失**: 吹き出し本体をドラッグ移動した際、しっぽの微調整設定（`isFineTuning`, `baseAngleOffset`, `baseSpreadRatio` 等）がリセット（無効化）されてしまう。
+2. **頂点・接点の吹き出し内部侵入による描画崩壊**: しっぽの先端（頂点）や接点を吹き出しの内部までドラッグ移動できてしまい、パスが自己交差して吹き出しの形状や枠線が破綻・崩壊する。
+3. **接点調整の仕様改善要望（1点＋幅から2点独立操作へ）**: 現在のしっぽ接点調整は「中心角オフセット（1点）＋幅倍率（スライダー）」となっているが、吹き出し外周上の2か所の接点をそれぞれ個別にドラッグ・調整できる方が直感的で操作しやすい。
 
 ---
 
 ## 2. 再現手順
 
-### 事象 1 (モバイル下部メニュー被り)
-1. スマートフォン実機またはブラウザのレスポンシブモード（幅 < 1024px）でアプリを開く。
-2. 「Tags」または「LoRAs」画面を開く。
-3. タグセットまたはLoRAの編集モーダルを開く。
-4. モーダル下部の「保存（Save Changes）」および「キャンセル（Cancel）」ボタンが画面最下部のモバイルナビゲーションバーの背面に隠れ、押下できない。
+### 事象 1 (吹き出し移動によるしっぽ微調整設定の消失)
+1. セリフ編集モーダルを開き、しっぽ付き吹き出しを選択する。
+2. 「🎯 しっぽ微調整モード」をONにし、基部幅スライダーや基部接点ハンドルをドラッグして微調整を行う。
+3. 吹き出し本体をドラッグしてキャンバス上で移動させる。
+4. **結果**: `tail` オブジェクトが `{ x, y }` のみで再生成され、`isFineTuning` やオフセット・幅倍率のプロパティが欠落して初期状態（微調整OFF）に戻る。
 
-### 事象 2 (編集項目の欠落・不整合)
-1. 「Tags」画面で登録済みタグセットカードをクリックして「詳細モーダル（TagSetDetailModal）」を開く。
-2. 右下の「Edit」ボタンを押下して編集モードに入る。
-3. サムネイル上のペンアイコンから開いた編集モーダル（`LocalTagSetEditModal`）と比較すると、「Target Base Models」および「Subsets（バリエーション）」の入力・編集欄が存在しない。
+### 事象 2 (しっぽ先端・接点の内部侵入による描画破綻)
+1. セリフ編集モーダルでしっぽ先端ハンドル（青丸）または接点ハンドル（橙丸）をドラッグする。
+2. ハンドルを吹き出しの外周を越えて吹き出しの中心・内部に向かってドラッグする。
+3. **結果**: 頂点座標のクランプや進入制限がないため、`ctx.ellipse` / `ctx.roundRect` の結合パスが自己交差し、吹き出しの塗りや枠線が反転・欠落する。
 
-### 事象 3 (サムネ上操作アイコンのモバイル視認不可)
-1. モバイルモードで「LoRAs」または「Tags」画面を開く。
-2. カードのサムネイル部分を確認する。
-3. 編集（Pencil）・削除（Trash2）ボタンが透明（`opacity-0`）のままで表示されず、タップするまで視認できない。
-
-### 事象 4 (候補サムネイル一覧の欠落・不可視)
-1. 「Tags」画面でサムネイル上のペンアイコンからタグセット編集モーダルを開く。
-2. スナップショット画像が複数存在しても、候補画像グリッドが表示されず、左右の矢印送りでしか画像を選択できない。
-3. また、詳細モーダルをモバイル画面で開いた際にも、メインプレビューに縦幅が圧迫され、候補サムネイル一覧（Related Snapshots）が見えなくなる。
+### 事象 3 (接点調整の操作性)
+1. 現行仕様では接点ハンドルが1点（中心角度）のみであり、接点の幅はモーダル上部のスライダー（`baseSpreadRatio`）でしか変更できない。
+2. 左右または上下の接点を非対称に広げたり、外周に沿って各接点を直感的にドラッグ配置することができない。
 
 ---
 
 ## 3. 根本原因 (Root Cause Analysis)
 
-### 1. モバイルモードでの編集モーダル操作不能
+### 1. 吹き出し移動時のしっぽ詳細設定消失
 - **該当箇所**: 
-  - `frontend/src/pages/TagsPage.tsx:L816, L880` (`LocalTagSetCreateModal`, `LocalTagSetEditModal`)
-  - `frontend/src/components/layout/AppShell.tsx:L115`
-  - `frontend/src/index.css:L138-L150`
+  - `frontend/src/components/SpeechBubbleEditorModal.tsx:L654-L665`
+  - `frontend/src/components/SpeechBubbleEditorModal.tsx:L350-L356` (`handleDuplicateBubble`)
 - **原因**: 
-  - `TagsPage.tsx` 内の独自モーダルコンテナに `fixed inset-0 ... z-50 p-4` が指定されている。
-  - モバイルボトムナビゲーション（`AppShell.tsx`）も `z-50` (`--z-mobile-nav: 50`) であり、DOM上でモーダルより後にレンダリングされるため、ナビゲーションバーがモーダルより前面に重なって表示される。
-  - また、共通クラス `.modal-backdrop`（`z-index: 100` かつ `padding-bottom: calc(var(--mobile-nav-height) + ...)`）が適用されておらず、モーダル全体のスクロール構造もモバイルビューに適合していない。
+  - `SpeechBubbleEditorModal.tsx` のドラッグ移動処理（`draggingState.type === 'bubble'`）において、移動後の bubble オブジェクト生成時に `tail: initB.tail ? { x: initB.tail.x + dx, y: initB.tail.y + dy } : undefined` と記述されている。
+  - スプレッド演算子（`...initB.tail`）が使用されていないため、`isFineTuning`, `baseAngleOffset`, `baseSpreadRatio` などの詳細パラメータがすべて破棄されている。複製処理（`handleDuplicateBubble`）も同様。
 
-### 2. 編集モーダルの項目不整合・欠落
+### 2. 頂点・接点の吹き出し内部侵入による描画崩壊
 - **該当箇所**: 
-  - `frontend/src/pages/TagsPage.tsx:L276-L290, L502-L506, L586-L596, L834-L981`
-  - `frontend/src/components/TagSetModals.tsx:L286-L578`
+  - `frontend/src/components/SpeechBubbleEditorModal.tsx:L666-L695` (`handleMouseMove`)
+  - `frontend/src/utils/speechBubbleRenderer.ts:L553-L623` (`drawBubbleShape`)
 - **原因**: 
-  - タグセット編集に関して、サムネイルペンアイコン用（`TagsPage.tsx` 内ローカルの `LocalTagSetEditModal` / `LocalTagSetFormFields`）と詳細モーダル用（`TagSetModals.tsx` 内の `TagSetDetailModal`）でコンポーネントが二重実装・乖離している。
-  - `TagSetDetailModal` 内のインライン編集フォーム（L454-L513）において、`target_base_model_ids` および `subsets` のフォーム入力コンポーネントが実装漏れとなっている。
+  - マウスドラッグ時の座標計算において、しっぽ先端（頂点）および接点が吹き出し外周（バウンディングボックス／楕円半径）より内側に入らないようにするクランプ（幾何的進入制限）が存在しない。
+  - レンダラー側（`drawBubbleShape`）でも先端が内部にある場合のフォールバックや交差補正がないため、楕円・角丸の境界線と先端を結ぶパスが自己交差し描画が崩壊する。
 
-### 3. サムネ上操作アイコンのモバイル視認不可
+### 3. 接点調整のデータ構造とUI仕様
 - **該当箇所**: 
-  - `frontend/src/pages/LoRAsPage.tsx:L479-L487, L458-L471`
-  - `frontend/src/pages/TagsPage.tsx:L502-L511, L480-L494`
+  - `frontend/src/types/speechBubble.ts:L92-L98` (`BubbleTail` インターフェース)
+  - `frontend/src/utils/speechBubbleRenderer.ts:L760-L809` (`getTailBasePosition`)
+  - `frontend/src/components/SpeechBubbleEditorModal.tsx:L1144-L1185`
 - **原因**: 
-  - サムネイル上の編集・削除ボタンに `opacity-0 group-hover:opacity-100` が指定されており、ホバー操作が存在しないタッチデバイス環境では常時 `opacity-0`（透明）となる。
-  - さらに、ドラッグ並び替え用ハンドル（`GripVertical`）が同じ `top-2 right-2` に配置されており、モバイル表示時のアイコン配置とタップ領域が競合している。
-
-### 4. カバーサムネ設定時の候補画像サムネイル非表示
-- **該当箇所**: 
-  - `frontend/src/pages/TagsPage.tsx:L887-L969` (`LocalTagSetEditModal`)
-  - `frontend/src/components/TagSetModals.tsx:L384-L450, L382` (`TagSetDetailModal`)
-  - `frontend/src/components/LoraModals.tsx:L471-L580` (`LoraDetailModal`)
-- **原因**: 
-  - `TagsPage.tsx` の `LocalTagSetEditModal` 側に `Related Snapshots` の候補サムネイルグリッドがそもそも記述されておらず欠落している。
-  - `TagSetDetailModal` および `LoraDetailModal` において、モバイル等の小画面時に親コンテナの `grid-cols-1 overflow-hidden` とメインプレビュー（`aspect-square`）の高さにより、下部の候補サムネイル一覧領域が圧迫・切断されるレイアウト構造になっている。
+  - `BubbleTail` のデータモデルが `baseAngleOffset`（中心角度1点）と `baseSpreadRatio`（幅倍率）で設計されているため、キャンバス上には1つの接点ハンドルしか描画・制御できない。
+  - 2か所の接点を外周上で独立制御するには、データ構造（2つの接点位置／角度）の拡張と、キャンバス上の2つの接点ハンドルの描画・ドラッグ制御への改修が必要。
 
 ---
 
 ## 4. 障害分類
-- **分類**: **Type A (Implementation Bug - 実装不具合)**
-- **判定理由**: 仕様変更や設計不備ではなく、コンポーネントの二重実装・フィールド実装漏れ、CSS/z-indexおよびレスポンシブレイアウトの設計不足による実装バグであるため。
+- **分類**: **Type B (Specification & UI/UX Enhancement / 一部 Type A 実装不具合を含む複合事象)**
+- **判定理由**:
+  - 事象1（プロパティ消失）は明らかな実装不具合（Type A）ですが、事象2（外周進入防止制限の幾何計算・仕様策定）および事象3（1点＋幅から2接点独立操作へのデータモデルおよびUI操作仕様の変更）は設計・仕様拡張（Type B）に該当するため。
 
 ---
 
 ## 5. 対策方針 (概要)
-1. **モーダル共通化とz-index/パディングの是正**:
-   - `TagsPage.tsx` 内の重複モーダル（`LocalTagSet*`）を廃止・統一し、共通の `modal-backdrop`（`z-index: 100`）およびモバイルパディングを適用する。
-2. **編集フォーム項目の統合**:
-   - `TagSetModals.tsx` のフォーム定義を一元化し、詳細モーダルからの編集でも `target_base_model_ids` と `subsets` を含む全項目を確実に編集可能にする。
-3. **モバイル対応アイコン表示とレイアウト調整**:
-   - タッチデバイス・モバイル表示（`lg:` プレフィックス等の活用）でアイコンを常時視認可能にし、ドラッグハンドルとの配置重複を解消する。
-4. **候補画像サムネイルグリッドの統合とスクロール対応**:
-   - 編集・詳細モーダル両方でスナップショット一覧（`Related Snapshots`）を共通表示し、モバイル環境でもプレビューとサムネイル一覧が適切にスクロール・選択できるようにする。
+1. **しっぽプロパティの保持**:
+   - `SpeechBubbleEditorModal.tsx` の移動・複製処理で `tail: initB.tail ? { ...initB.tail, x: initB.tail.x + dx, y: initB.tail.y + dy } : undefined` とし、詳細プロパティを完全保持する。
+2. **頂点・接点の内側入り込み防止ガード**:
+   - しっぽ頂点ドラッグ時、吹き出し中心からの距離・角度を判定し、吹き出し外周（楕円の外周または角丸矩形の境界）から一定以上の外側領域にクランプする。
+   - レンダラー側でも安全策として先端が外周内部に入らない幾何計算を適用する。
+3. **2点独立接点調整の導入**:
+   - `BubbleTail` に2つの接点を表すプロパティ（例: `baseAngle1`, `baseAngle2` または相対外周位置）を持たせ、後方互換性を保ちながら2つの接点ハンドルをキャンバス上に描画・個別ドラッグ可能にする。

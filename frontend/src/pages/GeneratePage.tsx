@@ -275,6 +275,7 @@ export function GeneratePage() {
           title_patterns: null,
           sort_order: 0,
         })) ?? []}
+        paramTypeMasters={state.paramTypeMasters}
         loras={loras ?? []}
         tagSets={tagSets ?? []}
         onApply={handleBulkEditApply}

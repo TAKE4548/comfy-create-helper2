@@ -535,6 +535,105 @@ describe('useGeneratePageState', () => {
         batch_size: 2,
       }))
     })
+
+    it('should correctly remove specified tags on remove_tags operation in handleBulkEditApply', async () => {
+      const mockPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: 'masterpiece, 1girl, solo, smile' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([mockPreset])
+
+      const mockUpdated = {
+        ...mockPreset,
+        param_values: { positive_prompt: '1girl, smile' },
+        updated_at: '2026-08-29T12:05:00Z',
+      }
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce(mockUpdated)
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [{ op: 'remove_tags', fields: ['positive_prompt'], tags: ['masterpiece', 'solo'] }],
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        param_values: expect.objectContaining({
+          positive_prompt: '1girl, smile',
+        }),
+      }))
+    })
+
+    it('should correctly update and remove tags with commonTagOps in handleBulkEditApply (REQ-202)', async () => {
+      const mockPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: '(masterpiece:1.2), 1girl, solo, smile' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([mockPreset])
+
+      const mockUpdated = {
+        ...mockPreset,
+        param_values: { positive_prompt: '1girl, (solo:1.3), smile' },
+        updated_at: '2026-08-29T12:05:00Z',
+      }
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce(mockUpdated)
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [
+            {
+              op: 'remove_tags',
+              fields: ['positive_prompt'],
+              commonTagOps: [
+                { originalBase: 'masterpiece', newFormattedTag: 'masterpiece', action: 'remove' },
+                { originalBase: 'solo', newFormattedTag: '(solo:1.3)', action: 'update' },
+              ],
+            },
+          ],
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        param_values: expect.objectContaining({
+          positive_prompt: '1girl, (solo:1.3), smile',
+        }),
+      }))
+    })
   })
 })
 

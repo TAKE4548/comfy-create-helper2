@@ -12,7 +12,12 @@ import {
   loadLastUsedBubbleStyle,
   saveLastUsedBubbleStyle,
 } from '../types/speechBubble'
-import { drawSpeechBubble, getTailBasePosition } from '../utils/speechBubbleRenderer'
+import {
+  drawSpeechBubble,
+  getTailBasePosition,
+  clampTailApexOutsideBubble,
+  getTailContactPositions,
+} from '../utils/speechBubbleRenderer'
 import { SpeechBubbleControls } from './SpeechBubbleControls'
 import { BaseImageSelectModal, type BaseImageOption } from './BaseImageSelectModal'
 import { LS_KEYS } from '../utils/localStorageKeys'
@@ -91,7 +96,7 @@ export function SpeechBubbleEditorModal({
   // Canvas interaction state
   const [draggingState, setDraggingState] = useState<{
     bubbleId: string
-    type: 'bubble' | 'tail' | 'tail-base' | 'resize' | 'rotate'
+    type: 'bubble' | 'tail' | 'tail-base-1' | 'tail-base-2' | 'resize' | 'rotate'
     handle?: 'nw' | 'ne' | 'se' | 'sw'
     startX: number
     startY: number
@@ -352,7 +357,13 @@ export function SpeechBubbleEditorModal({
       id: `bubble-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       x: source.x + offset,
       y: source.y + offset,
-      tail: source.tail ? { x: source.tail.x + offset, y: source.tail.y + offset } : undefined,
+      tail: source.tail
+        ? {
+            ...source.tail,
+            x: source.tail.x + offset,
+            y: source.tail.y + offset,
+          }
+        : undefined,
     }
 
     setBubbles((prev) => [...prev, newBubble])
@@ -560,18 +571,30 @@ function getLocalBubblePoint(
         }
       }
 
-      // Check tail base handle if fine tuning
+      // Check tail base handles if fine tuning
       if (activeBubble.tail && activeBubble.tail.isFineTuning) {
-        const basePos = getTailBasePosition(activeBubble, scaleX, scaleY)
-        if (basePos && Math.hypot(localPt.x - basePos.x, localPt.y - basePos.y) <= 12) {
-          setDraggingState({
-            type: 'tail-base',
-            bubbleId: activeBubble.id,
-            startX: x,
-            startY: y,
-            initialBubble: { ...activeBubble },
-          })
-          return
+        const contacts = getTailContactPositions(activeBubble, scaleX, scaleY)
+        if (contacts) {
+          if (Math.hypot(localPt.x - contacts.p1.x, localPt.y - contacts.p1.y) <= 12) {
+            setDraggingState({
+              type: 'tail-base-1',
+              bubbleId: activeBubble.id,
+              startX: x,
+              startY: y,
+              initialBubble: { ...activeBubble },
+            })
+            return
+          }
+          if (Math.hypot(localPt.x - contacts.p2.x, localPt.y - contacts.p2.y) <= 12) {
+            setDraggingState({
+              type: 'tail-base-2',
+              bubbleId: activeBubble.id,
+              startX: x,
+              startY: y,
+              initialBubble: { ...activeBubble },
+            })
+            return
+          }
         }
       }
 
@@ -659,28 +682,28 @@ function getLocalBubblePoint(
               ...b,
               x: initB.x + dx,
               y: initB.y + dy,
-              tail: initB.tail ? { x: initB.tail.x + dx, y: initB.tail.y + dy } : undefined
+              tail: initB.tail
+                ? {
+                    ...initB.tail,
+                    x: initB.tail.x + dx,
+                    y: initB.tail.y + dy,
+                  }
+                : undefined,
             }
           })
         )
       } else if (draggingState.type === 'tail') {
-        const tx = Math.round(x / scaleX)
-        const ty = Math.round(y / scaleY)
+        const rawTx = Math.round(x / scaleX)
+        const rawTy = Math.round(y / scaleY)
+        const clamped = clampTailApexOutsideBubble(initB, rawTx, rawTy)
         setBubbles((prev) =>
-          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, tail: { ...b.tail, x: tx, y: ty } } : b))
+          prev.map((b) => (b.id === draggingState.bubbleId ? { ...b, tail: { ...b.tail, x: clamped.x, y: clamped.y } } : b))
         )
-      } else if (draggingState.type === 'tail-base') {
+      } else if (draggingState.type === 'tail-base-1') {
         const localPt = getLocalBubblePoint(x, y, initB, scaleX, scaleY)
         const cx = (initB.x + initB.w / 2) * scaleX
         const cy = (initB.y + initB.h / 2) * scaleY
-        const tx = (initB.tail?.x ?? initB.x) * scaleX
-        const ty = (initB.tail?.y ?? initB.y) * scaleY
-        const currentAngle = Math.atan2(localPt.y - cy, localPt.x - cx)
-        const defaultAngle = Math.atan2(ty - cy, tx - cx)
-        let offset = currentAngle - defaultAngle
-        while (offset > Math.PI) offset -= 2 * Math.PI
-        while (offset < -Math.PI) offset += 2 * Math.PI
-
+        const angle = Math.atan2(localPt.y - cy, localPt.x - cx)
         setBubbles((prev) =>
           prev.map((b) => {
             if (b.id !== draggingState.bubbleId || !b.tail) return b
@@ -688,7 +711,24 @@ function getLocalBubblePoint(
               ...b,
               tail: {
                 ...b.tail,
-                baseAngleOffset: Math.round(offset * 1000) / 1000,
+                baseAngle1: Math.round(angle * 1000) / 1000,
+              },
+            }
+          })
+        )
+      } else if (draggingState.type === 'tail-base-2') {
+        const localPt = getLocalBubblePoint(x, y, initB, scaleX, scaleY)
+        const cx = (initB.x + initB.w / 2) * scaleX
+        const cy = (initB.y + initB.h / 2) * scaleY
+        const angle = Math.atan2(localPt.y - cy, localPt.x - cx)
+        setBubbles((prev) =>
+          prev.map((b) => {
+            if (b.id !== draggingState.bubbleId || !b.tail) return b
+            return {
+              ...b,
+              tail: {
+                ...b.tail,
+                baseAngle2: Math.round(angle * 1000) / 1000,
               },
             }
           })
@@ -778,8 +818,11 @@ function getLocalBubblePoint(
         activeBubble.tail &&
         activeBubble.tail.isFineTuning &&
         (() => {
-          const basePos = getTailBasePosition(activeBubble, scaleX, scaleY)
-          return basePos && Math.hypot(localPt.x - basePos.x, localPt.y - basePos.y) <= 12
+          const contacts = getTailContactPositions(activeBubble, scaleX, scaleY)
+          return contacts && (
+            Math.hypot(localPt.x - contacts.p1.x, localPt.y - contacts.p1.y) <= 12 ||
+            Math.hypot(localPt.x - contacts.p2.x, localPt.y - contacts.p2.y) <= 12
+          )
         })()
       ) {
         setCursorStyle('pointer')
@@ -1143,43 +1186,30 @@ function getLocalBubblePoint(
                 </label>
                 {selectedBubble.tail.isFineTuning && (
                   <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 text-zinc-400">
-                    <span>基部幅:</span>
-                    <input
-                      type="range"
-                      aria-label="しっぽ基部幅"
-                      min="0.2"
-                      max="3.0"
-                      step="0.1"
-                      value={selectedBubble.tail.baseSpreadRatio ?? 1.0}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        setBubbles((prev) =>
-                          prev.map((b) =>
-                            b.id === selectedBubble.id && b.tail
-                              ? { ...b, tail: { ...b.tail, baseSpreadRatio: val } }
-                              : b
-                          )
-                        )
-                      }}
-                      className="w-16 md:w-20 accent-amber-500"
-                    />
-                    <span className="text-[10px] text-zinc-300 font-mono">
-                      {(selectedBubble.tail.baseSpreadRatio ?? 1.0).toFixed(1)}x
-                    </span>
+                    <span className="text-[11px] text-zinc-300">💡 橙色の2接点をドラッグして配置</span>
                     <button
                       type="button"
                       onClick={() => {
                         setBubbles((prev) =>
                           prev.map((b) =>
                             b.id === selectedBubble.id && b.tail
-                              ? { ...b, tail: { ...b.tail, baseAngleOffset: 0, baseSpreadRatio: 1.0 } }
+                              ? {
+                                  ...b,
+                                  tail: {
+                                    ...b.tail,
+                                    baseAngle1: undefined,
+                                    baseAngle2: undefined,
+                                    baseAngleOffset: 0,
+                                    baseSpreadRatio: 1.0,
+                                  },
+                                }
                               : b
                           )
                         )
                       }}
-                      className="px-1.5 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
+                      className="px-2 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
                     >
-                      リセット
+                      🔄 接点初期化
                     </button>
                   </div>
                 )}

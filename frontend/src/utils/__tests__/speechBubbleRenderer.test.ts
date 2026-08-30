@@ -3,6 +3,8 @@ import {
   verticalCharMap,
   getDefaultPathPoints,
   flipPathPoints,
+  clampTailApexOutsideBubble,
+  getTailContactPositions,
   getTailBasePosition,
   layoutVerticalText,
   layoutHorizontalText,
@@ -650,6 +652,101 @@ describe('speechBubbleRenderer', () => {
       }
       drawBubbleText(mockCtx, scalingBubble)
       expect(mockCtx.translate).toHaveBeenCalled()
+    })
+
+    it('clamps tail apex outside bubble boundary (REQ-206 T1)', () => {
+      const bubble: SpeechBubble = {
+        ...baseBubble,
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 100,
+        shape: 'oval',
+      }
+      // Inside center (200, 150)
+      const clampedInside = clampTailApexOutsideBubble(bubble, 200, 150)
+      expect(clampedInside.x).toBe(200)
+      expect(clampedInside.y).toBeGreaterThan(150 + 50 * 1.0) // clamped outside bottom
+
+      // Far outside (300, 300)
+      const unchanged = clampTailApexOutsideBubble(bubble, 300, 300)
+      expect(unchanged.x).toBe(300)
+      expect(unchanged.y).toBe(300)
+
+      // Inside rounded-rect
+      const rectBubble: SpeechBubble = { ...bubble, shape: 'rounded-rect' }
+      const clampedRect = clampTailApexOutsideBubble(rectBubble, 200, 150)
+      expect(clampedRect.y).toBeGreaterThanOrEqual(150 + 50 * 1.05)
+    })
+
+    it('calculates 2 contact positions independently and supports legacy options (REQ-206 T1)', () => {
+      const ovalBubble: SpeechBubble = {
+        ...baseBubble,
+        shape: 'oval',
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 100,
+        tail: {
+          x: 200,
+          y: 300,
+          baseAngle1: Math.PI * 0.4,
+          baseAngle2: Math.PI * 0.6,
+        },
+      }
+      const contacts = getTailContactPositions(ovalBubble)
+      expect(contacts).not.toBeNull()
+      expect(contacts?.p1.angle).toBeCloseTo(Math.PI * 0.4)
+      expect(contacts?.p2.angle).toBeCloseTo(Math.PI * 0.6)
+      // cx = 200, cy = 150, rx = 100, ry = 50
+      expect(contacts?.p1.x).toBeCloseTo(200 + 100 * Math.cos(Math.PI * 0.4))
+      expect(contacts?.p1.y).toBeCloseTo(150 + 50 * Math.sin(Math.PI * 0.4))
+
+      // Legacy fallback with baseAngleOffset and baseSpreadRatio
+      const legacyBubble: SpeechBubble = {
+        ...ovalBubble,
+        tail: {
+          x: 200,
+          y: 300,
+          baseAngleOffset: 0.1,
+          baseSpreadRatio: 2.0,
+        },
+      }
+      const legacyContacts = getTailContactPositions(legacyBubble)
+      expect(legacyContacts).not.toBeNull()
+      // default tail angle for (200, 300) from (200, 150) is Math.PI / 2
+      // default spread = 0.25 * 2.0 = 0.5
+      // angle1 = PI/2 + 0.1 - 0.5
+      // angle2 = PI/2 + 0.1 + 0.5
+      expect(legacyContacts?.p1.angle).toBeCloseTo(Math.PI / 2 + 0.1 - 0.5)
+      expect(legacyContacts?.p2.angle).toBeCloseTo(Math.PI / 2 + 0.1 + 0.5)
+
+      // Returns null when tail is undefined
+      expect(getTailContactPositions({ ...baseBubble, tail: undefined })).toBeNull()
+    })
+
+    it('draws 2 contact handles in fine-tuning mode (REQ-206 T1)', () => {
+      const fineTuningBubble: SpeechBubble = {
+        ...baseBubble,
+        shape: 'oval',
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 100,
+        tail: {
+          x: 200,
+          y: 300,
+          isFineTuning: true,
+          baseAngle1: 1.0,
+          baseAngle2: 2.0,
+        },
+      }
+      mockCtx.arc.mockClear()
+      drawSpeechBubble(mockCtx, fineTuningBubble, true)
+      // Rot handle + tail apex handle + 2 contact handles = at least 4 arcs
+      expect(mockCtx.arc.mock.calls.length).toBeGreaterThanOrEqual(4)
+      expect(mockCtx.moveTo).toHaveBeenCalled()
+      expect(mockCtx.lineTo).toHaveBeenCalled()
     })
   })
 })

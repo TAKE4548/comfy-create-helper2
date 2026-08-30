@@ -505,6 +505,43 @@ export function useGeneratePageState() {
                 newParamValues[field] = op.value! + current
               } else if (op.op === 'suffix') {
                 newParamValues[field] = current + op.value!
+              } else if (op.op === 'remove_tags') {
+                if (op.commonTagOps && op.commonTagOps.length > 0) {
+                  const removeMap = new Map<string, string>() // lowerBase -> action
+                  const updateMap = new Map<string, string>() // lowerBase -> newFormattedTag
+                  for (const cOp of op.commonTagOps) {
+                    if (cOp.action === 'remove') {
+                      removeMap.set(cOp.originalBase.toLowerCase(), 'remove')
+                    } else if (cOp.action === 'update') {
+                      updateMap.set(cOp.originalBase.toLowerCase(), cOp.newFormattedTag)
+                    }
+                  }
+
+                  const currentTags = current.split(',').map((t) => t.trim()).filter(Boolean)
+                  const updatedTags: string[] = []
+                  for (const tag of currentTags) {
+                    // Extract base name ignoring weight
+                    const weightMatch = tag.match(/^\((.+?):[0-9.]+\)$/)
+                    const parenMatch = tag.match(/^\((.+?)\)$/)
+                    const base = (weightMatch ? weightMatch[1] : parenMatch ? parenMatch[1] : tag).trim().toLowerCase()
+
+                    if (removeMap.has(base)) {
+                      // skip removed tag
+                      continue
+                    }
+                    if (updateMap.has(base)) {
+                      updatedTags.push(updateMap.get(base)!)
+                    } else {
+                      updatedTags.push(tag)
+                    }
+                  }
+                  newParamValues[field] = updatedTags.join(', ')
+                } else if (op.tags && op.tags.length > 0) {
+                  const tagsToRemoveSet = new Set(op.tags.map((t) => t.trim().toLowerCase()))
+                  const currentTags = current.split(',').map((t) => t.trim()).filter(Boolean)
+                  const filteredTags = currentTags.filter((t) => !tagsToRemoveSet.has(t.toLowerCase()))
+                  newParamValues[field] = filteredTags.join(', ')
+                }
               }
             }
           }

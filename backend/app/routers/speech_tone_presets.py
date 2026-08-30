@@ -67,6 +67,12 @@ def delete_speech_tone_preset(preset_id: int, db: Session = Depends(get_db)):
     return None
 
 
+from app.services.speech_parser import (
+    get_effective_speech_rewrite_system_prompt,
+    call_llm_with_structured_dialogue,
+)
+
+
 @router.post("/rewrite", response_model=schemas.SpeechToneRewriteResponse)
 async def rewrite_speech(payload: schemas.SpeechToneRewriteRequest, db: Session = Depends(get_db)):
     if not payload.text or not payload.text.strip():
@@ -79,14 +85,7 @@ async def rewrite_speech(payload: schemas.SpeechToneRewriteRequest, db: Session 
     if not tone_prompt or not tone_prompt.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tone prompt or valid preset_id is required")
 
-    system_prompt = (
-        "あなたはセリフの言い回しや口調を変換する専門家です。\n"
-        "元のセリフの意味、状況、感情、意図は一切変えずに、指定された口調・話し方・キャラクター特徴に合わせて自然なセリフに書き換えてください。\n\n"
-        "【ルール】\n"
-        "1. セリフの意味内容・文脈・伝達したい情報は忠実に維持すること。\n"
-        "2. 指定された口調、語尾、一人称・二人称、キャラクターの性格ニュアンスを的確に反映すること。\n"
-        "3. 出力は書き換えたセリフのみを返してください。挨拶、前置き、引用符（「」等）、解説は一切含めないでください。"
-    )
+    system_prompt = get_effective_speech_rewrite_system_prompt(db)
 
     user_prompt_parts = [
         f"【口調・キャラクター設定】\n{tone_prompt}",
@@ -95,6 +94,14 @@ async def rewrite_speech(payload: schemas.SpeechToneRewriteRequest, db: Session 
 
     if payload.scene_hint and payload.scene_hint.strip():
         user_prompt_parts.append(f"【場面の状況・ヒント】\n{payload.scene_hint.strip()}")
+
+    if payload.revision_instruction and payload.revision_instruction.strip():
+        user_prompt_parts.append(
+            "【前回の変換結果に対する修正指示・ダメ出し】\n"
+            + (f"直前の変換結果: {payload.previous_rewritten_text}\n" if payload.previous_rewritten_text else "")
+            + f"修正指示・不満点: {payload.revision_instruction.strip()}\n"
+            + "※直前の変換結果で指摘された不満点・修正指示を忠実に反映し、同じ不満点が生じないよう改善したセリフに書き換えてください。"
+        )
 
     image_b64 = None
     if payload.include_image:
@@ -126,13 +133,18 @@ async def rewrite_speech(payload: schemas.SpeechToneRewriteRequest, db: Session 
     user_prompt = "\n\n".join(user_prompt_parts)
 
     try:
-        res = await call_llm(
+        dialogue, interp, reasoning = await call_llm_with_structured_dialogue(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=payload.model,
             llm_params=payload.llm_params,
             image_data=image_b64,
         )
-        return schemas.SpeechToneRewriteResponse(rewritten_text=res.strip().strip('"').strip('「').strip('」'))
+        return schemas.SpeechToneRewriteResponse(
+            rewritten_text=dialogue,
+            scene_interpretation=interp,
+            reasoning=reasoning,
+        )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+

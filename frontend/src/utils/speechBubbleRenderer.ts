@@ -521,6 +521,122 @@ export function calculateFitFontSize(
 }
 
 /**
+ * 吹き出し本体内部へしっぽ先端が入り込まないよう、外周外側にクランプする
+ */
+export function clampTailApexOutsideBubble(
+  bubble: SpeechBubble,
+  tx: number,
+  ty: number
+): { x: number; y: number } {
+  const cx = bubble.x + bubble.w / 2
+  const cy = bubble.y + bubble.h / 2
+  const rx = Math.max(1, bubble.w / 2)
+  const ry = Math.max(1, bubble.h / 2)
+  const dx = tx - cx
+  const dy = ty - cy
+
+  if (bubble.shape === 'oval' || bubble.shape === 'burst' || bubble.shape === 'cloud') {
+    const normDistSq = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+    if (normDistSq < 1.05 * 1.05) {
+      const dist = Math.sqrt(normDistSq)
+      const factor = dist > 0.001 ? 1.05 / dist : 1.05
+      return {
+        x: cx + dx * factor,
+        y: cy + (dist > 0.001 ? dy * factor : ry * 1.05),
+      }
+    }
+  } else if (bubble.shape === 'rounded-rect') {
+    const hw = rx
+    const hh = ry
+    const normX = Math.abs(dx) / hw
+    const normY = Math.abs(dy) / hh
+    const maxNorm = Math.max(normX, normY)
+    if (maxNorm < 1.05) {
+      const factor = maxNorm > 0.001 ? 1.05 / maxNorm : 1.05
+      return {
+        x: cx + dx * factor,
+        y: cy + (maxNorm > 0.001 ? dy * factor : hh * 1.05),
+      }
+    }
+  }
+  return { x: tx, y: ty }
+}
+
+export interface TailContactPoint {
+  x: number
+  y: number
+  angle: number
+}
+
+/**
+ * 吹き出し本体と尻尾の2つの外周接点座標を計算
+ */
+export function getTailContactPositions(
+  bubble: SpeechBubble,
+  scaleX: number = 1,
+  scaleY: number = 1
+): { p1: TailContactPoint; p2: TailContactPoint } | null {
+  if (!bubble.tail) return null
+
+  const bx = bubble.x * scaleX
+  const by = bubble.y * scaleY
+  const bw = bubble.w * scaleX
+  const bh = bubble.h * scaleY
+  const cx = bx + bw / 2
+  const cy = by + bh / 2
+  const tx = bubble.tail.x * scaleX
+  const ty = bubble.tail.y * scaleY
+
+  const defaultTailAngle = Math.atan2(ty - cy, tx - cx)
+  const defaultSpread = 0.25
+
+  let angle1: number
+  let angle2: number
+
+  if (bubble.tail.baseAngle1 !== undefined && bubble.tail.baseAngle2 !== undefined) {
+    angle1 = bubble.tail.baseAngle1
+    angle2 = bubble.tail.baseAngle2
+  } else if (bubble.tail.baseAngleOffset !== undefined || bubble.tail.baseSpreadRatio !== undefined) {
+    const offset = bubble.tail.baseAngleOffset ?? 0
+    const spread = defaultSpread * (bubble.tail.baseSpreadRatio ?? 1.0)
+    angle1 = defaultTailAngle + offset - spread
+    angle2 = defaultTailAngle + offset + spread
+  } else {
+    angle1 = defaultTailAngle - defaultSpread
+    angle2 = defaultTailAngle + defaultSpread
+  }
+
+  const rx = bw / 2
+  const ry = bh / 2
+
+  if (bubble.shape === 'oval' || bubble.shape === 'burst' || bubble.shape === 'cloud') {
+    return {
+      p1: { x: cx + rx * Math.cos(angle1), y: cy + ry * Math.sin(angle1), angle: angle1 },
+      p2: { x: cx + rx * Math.cos(angle2), y: cy + ry * Math.sin(angle2), angle: angle2 },
+    }
+  } else if (bubble.shape === 'rounded-rect') {
+    const getRectPoint = (angle: number): { x: number; y: number } => {
+      const cos = Math.cos(angle)
+      const sin = Math.sin(angle)
+      const tX = cos !== 0 ? (cos > 0 ? rx / cos : -rx / cos) : Infinity
+      const tY = sin !== 0 ? (sin > 0 ? ry / sin : -ry / sin) : Infinity
+      const t = Math.min(Math.abs(tX), Math.abs(tY))
+      return {
+        x: Math.max(bx, Math.min(bx + bw, cx + cos * t)),
+        y: Math.max(by, Math.min(by + bh, cy + sin * t)),
+      }
+    }
+    const pt1 = getRectPoint(angle1)
+    const pt2 = getRectPoint(angle2)
+    return {
+      p1: { x: pt1.x, y: pt1.y, angle: angle1 },
+      p2: { x: pt2.x, y: pt2.y, angle: angle2 },
+    }
+  }
+  return null
+}
+
+/**
  * 吹き出しの背景形状を描画
  */
 export function drawBubbleShape(
@@ -551,25 +667,32 @@ export function drawBubbleShape(
 
   if (bubble.shape === 'oval') {
     if (bubble.tail) {
-      const tx = bubble.tail.x * scaleX
-      const ty = bubble.tail.y * scaleY
-      const tailAngle = Math.atan2(ty - cy, tx - cx) + (bubble.tail.isFineTuning ? (bubble.tail.baseAngleOffset ?? 0) : 0)
-      const defaultSpread = 0.25
-      const spread = bubble.tail.isFineTuning ? defaultSpread * (bubble.tail.baseSpreadRatio ?? 1.0) : defaultSpread
-      const startAngle = tailAngle + spread
-      const endAngle = tailAngle - spread
+      const contacts = getTailContactPositions(bubble, scaleX, scaleY)
+      if (contacts) {
+        const clampedApex = clampTailApexOutsideBubble(bubble, bubble.tail.x, bubble.tail.y)
+        const tx = clampedApex.x * scaleX
+        const ty = clampedApex.y * scaleY
+        const { angle1, angle2 } = { angle1: contacts.p1.angle, angle2: contacts.p2.angle }
 
-      ctx.ellipse(cx, cy, rx, ry, 0, startAngle, endAngle + (endAngle < startAngle ? Math.PI * 2 : 0))
-      ctx.lineTo(tx, ty)
-      ctx.closePath()
+        let diff = (angle1 - angle2) % (Math.PI * 2)
+        if (diff < 0) diff += Math.PI * 2
+        if (diff < 0.1) diff = Math.PI * 2 - 0.1
+
+        ctx.ellipse(cx, cy, rx, ry, 0, angle2, angle2 + diff)
+        ctx.lineTo(tx, ty)
+        ctx.closePath()
+      } else {
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+      }
     } else {
       ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
     }
   } else if (bubble.shape === 'rounded-rect') {
     const radius = Math.min(bw, bh) * 0.15
     if (bubble.tail) {
-      const tx = bubble.tail.x * scaleX
-      const ty = bubble.tail.y * scaleY
+      const clampedApex = clampTailApexOutsideBubble(bubble, bubble.tail.x, bubble.tail.y)
+      const tx = clampedApex.x * scaleX
+      const ty = clampedApex.y * scaleY
       const tailAngle = Math.atan2(ty - cy, tx - cx) + (bubble.tail.isFineTuning ? (bubble.tail.baseAngleOffset ?? 0) : 0)
       const defaultBaseHalfWidth = Math.min(bw, bh) * 0.12
       const baseHalfWidth = bubble.tail.isFineTuning
@@ -1189,8 +1312,9 @@ export function drawSpeechBubble(
 
     // 尻尾ハンドル
     if (bubble.tail) {
-      const tx = bubble.tail.x * scaleX
-      const ty = bubble.tail.y * scaleY
+      const clampedApex = clampTailApexOutsideBubble(bubble, bubble.tail.x, bubble.tail.y)
+      const tx = clampedApex.x * scaleX
+      const ty = clampedApex.y * scaleY
 
       ctx.setLineDash([])
       ctx.fillStyle = '#3b82f6'
@@ -1201,15 +1325,17 @@ export function drawSpeechBubble(
       ctx.fill()
       ctx.stroke()
 
-      // 微調整モード時の本体接点（基部）ハンドル描画
+      // 微調整モード時の2接点ハンドル描画
       if (bubble.tail.isFineTuning) {
-        const basePos = getTailBasePosition(bubble, scaleX, scaleY)
-        if (basePos) {
+        const contacts = getTailContactPositions(bubble, scaleX, scaleY)
+        if (contacts) {
           ctx.setLineDash([3, 3])
           ctx.strokeStyle = '#f59e0b'
           ctx.lineWidth = 1.5
           ctx.beginPath()
-          ctx.moveTo(basePos.x, basePos.y)
+          ctx.moveTo(contacts.p1.x, contacts.p1.y)
+          ctx.lineTo(tx, ty)
+          ctx.moveTo(contacts.p2.x, contacts.p2.y)
           ctx.lineTo(tx, ty)
           ctx.stroke()
           ctx.setLineDash([])
@@ -1217,8 +1343,14 @@ export function drawSpeechBubble(
           ctx.fillStyle = '#f59e0b'
           ctx.strokeStyle = '#ffffff'
           ctx.lineWidth = 2
+
           ctx.beginPath()
-          ctx.arc(basePos.x, basePos.y, 6, 0, Math.PI * 2)
+          ctx.arc(contacts.p1.x, contacts.p1.y, 6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+
+          ctx.beginPath()
+          ctx.arc(contacts.p2.x, contacts.p2.y, 6, 0, Math.PI * 2)
           ctx.fill()
           ctx.stroke()
         }
@@ -1350,6 +1482,8 @@ export const speechBubbleRenderer = {
   verticalCharMap,
   getDefaultPathPoints,
   flipPathPoints,
+  clampTailApexOutsideBubble,
+  getTailContactPositions,
   getTailBasePosition,
   layoutVerticalText,
   layoutHorizontalText,

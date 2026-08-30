@@ -1067,6 +1067,93 @@ describe('SpeechBubbleControls', () => {
     })
   })
 
+  it('displays thinking process accordion and toggles open/close', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite).mockResolvedValue({
+      rewritten_text: 'べ、別にあんたのためじゃないんだからね！',
+      scene_interpretation: '夕暮れの校舎裏で照れ隠しをしている状況',
+      reasoning: '好意を隠すためにツンツンした態度を強調した',
+    })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByText('ツンデレ風')).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByLabelText('口調プリセット選択'), { target: { value: '10' } })
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')).toBeDefined()
+    })
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tone-rewrite-thinking')).toBeDefined()
+    })
+
+    // Initially collapsed
+    expect(screen.queryByText('夕暮れの校舎裏で照れ隠しをしている状況')).toBeNull()
+
+    // Toggle open
+    fireEvent.click(screen.getByText(/AIの解釈・思考過程/))
+    expect(screen.getByText('夕暮れの校舎裏で照れ隠しをしている状況')).toBeDefined()
+    expect(screen.getByText('好意を隠すためにツンツンした態度を強調した')).toBeDefined()
+
+    // Toggle close
+    fireEvent.click(screen.getByText(/AIの解釈・思考過程/))
+    expect(screen.queryByText('夕暮れの校舎裏で照れ隠しをしている状況')).toBeNull()
+  })
+
+  it('supports revision feedback instruction and regenerates with feedback', async () => {
+    vi.mocked(speechTonePresetsApi.rewrite)
+      .mockResolvedValueOnce({
+        rewritten_text: 'べ、別に心配してないわよ。',
+        scene_interpretation: '少しそっけない態度',
+        reasoning: '軽めのツンデレ表現',
+      })
+      .mockResolvedValueOnce({
+        rewritten_text: 'べ、別にあなたのことなんて1ミリも心配してないんだからね！勘違いしないでよね！',
+        scene_interpretation: 'さらに強がっている態度',
+        reasoning: 'より強い否定とテンプレツンデレ語尾の追加',
+      })
+
+    renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
+    fireEvent.click(screen.getByText(/セリフ口調変換/))
+
+    await waitFor(() => {
+      expect(screen.getByText('ツンデレ風')).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByLabelText('口調プリセット選択'), { target: { value: '10' } })
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')).toBeDefined()
+    })
+    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+
+    await waitFor(() => {
+      expect(screen.getByText('べ、別に心配してないわよ。')).toBeDefined()
+    })
+
+    // Enter revision instruction
+    const revisionInput = screen.getByTestId('tone-rewrite-revision-input')
+    fireEvent.change(revisionInput, { target: { value: 'もっと激しく強がって否定して' } })
+
+    // Click retry feedback button
+    const feedbackRetryBtn = screen.getByTestId('tone-rewrite-retry-feedback')
+    fireEvent.click(feedbackRetryBtn)
+
+    await waitFor(() => {
+      expect(speechTonePresetsApi.rewrite).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          text: 'こんにちは',
+          previous_rewritten_text: 'べ、別に心配してないわよ。',
+          revision_instruction: 'もっと激しく強がって否定して',
+        })
+      )
+      expect(screen.getByText('べ、別にあなたのことなんて1ミリも心配してないんだからね！勘違いしないでよね！')).toBeDefined()
+    })
+  })
+
   it('saves custom tone prompt as a new preset', async () => {
     const newTonePreset: SpeechTonePreset = {
       id: 12,

@@ -19,6 +19,12 @@ class SpeechBatchJobCreate(BaseModel):
     llm_params: Optional[dict[str, Any]] = None
     items: list[SpeechBatchJobItemCreate]
 
+class SpeechBatchItemRetryRequest(BaseModel):
+    revision_instruction: Optional[str] = None
+    scene_hint: Optional[str] = None
+    include_image: Optional[bool] = None
+
+
 class SpeechBatchJobItemRead(BaseModel):
     id: str
     snapshot_id: int
@@ -26,11 +32,16 @@ class SpeechBatchJobItemRead(BaseModel):
     bubble_index: int
     original_text: str
     rewritten_text: Optional[str] = None
+    scene_interpretation: Optional[str] = None
+    reasoning: Optional[str] = None
+    previous_rewritten_text: Optional[str] = None
+    revision_instruction: Optional[str] = None
     status: str = "pending"  # pending | processing | completed | failed | cancelled
     error: Optional[str] = None
     scene_hint: Optional[str] = None
     include_image: Optional[bool] = True
     image_path: Optional[str] = None
+
 
 class SpeechBatchJobRead(BaseModel):
     job_id: str

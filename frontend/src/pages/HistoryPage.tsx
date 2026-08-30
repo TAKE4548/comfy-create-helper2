@@ -16,13 +16,15 @@ import {
   MessageSquarePlus,
   Edit2,
   X,
-  GripVertical
+  GripVertical,
+  Sparkles,
 } from 'lucide-react'
-import { snapshotsApi, albumsApi, workflowsApi, lorasApi, tagSetsApi } from '../api/client'
+import { snapshotsApi, albumsApi, workflowsApi, lorasApi, tagSetsApi, speechBatchApi } from '../api/client'
 import type { SnapshotSummary, Album, Lora, TagSet } from '../api/types'
 import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 import { SpeechBubbleEditorModal } from '../components/SpeechBubbleEditorModal'
+import { BatchSpeechTransformModal } from '../components/BatchSpeechTransformModal'
 
 import { useMultiSelect } from '../hooks/useMultiSelect'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
@@ -212,6 +214,16 @@ export function HistoryPage() {
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
   const [selectedForSpeech, setSelectedForSpeech] = useState<SnapshotSummary | null>(null)
+  const [isBatchSpeechModalOpen, setIsBatchSpeechModalOpen] = useState(false)
+
+  const { data: activeBatchJob } = useQuery({
+    queryKey: ['speech-batch-active-job'],
+    queryFn: () => speechBatchApi.getActiveJob(),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'processing' || status === 'pending' ? 1500 : 5000
+    }
+  })
 
   // Album Detail specific states
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null)
@@ -976,6 +988,18 @@ export function HistoryPage() {
               History
             </h1>
             <div className="flex items-center gap-2">
+              <button
+                id="open-batch-speech-modal-btn"
+                onClick={() => setIsBatchSpeechModalOpen(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-[#7C6FDD] hover:text-[#9084e6] hover:bg-[#7C6FDD]/10 transition-all font-medium"
+              >
+                <Sparkles size={13} />
+                セリフ一括変換
+                {activeBatchJob && (activeBatchJob.status === 'processing' || activeBatchJob.status === 'pending') && (
+                  <span className="ml-1 w-2 h-2 rounded-full bg-[#7C6FDD] animate-ping" />
+                )}
+              </button>
+
               {!snapshotMultiSelect.isMultiSelectMode && view === 'snapshots' && (
                 <button
                   id="start-create-album"
@@ -1425,6 +1449,18 @@ export function HistoryPage() {
           }}
         />
       )}
+
+      <BatchSpeechTransformModal
+        isOpen={isBatchSpeechModalOpen}
+        onClose={() => setIsBatchSpeechModalOpen(false)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['snapshots'] })
+          if (selectedAlbumId !== null) {
+            qc.invalidateQueries({ queryKey: ['album', selectedAlbumId] })
+          }
+          qc.invalidateQueries({ queryKey: ['albums'] })
+        }}
+      />
 
       {/* 履歴スナップショット一括削除確認モーダル */}
       {isDeleteSnapshotsModalOpen && (

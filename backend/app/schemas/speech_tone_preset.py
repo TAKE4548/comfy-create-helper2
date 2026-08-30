@@ -38,7 +38,11 @@ class SpeechToneRewriteRequest(BaseModel):
     image_path: Optional[str] = None
     include_image: Optional[bool] = False
     scene_hint: Optional[str] = None
+    previous_rewritten_text: Optional[str] = None
+    revision_instruction: Optional[str] = None
 
 
 class SpeechToneRewriteResponse(BaseModel):
     rewritten_text: str
+    scene_interpretation: Optional[str] = None
+    reasoning: Optional[str] = None

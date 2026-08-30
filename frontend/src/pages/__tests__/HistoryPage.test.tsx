@@ -28,6 +28,10 @@ vi.mock('../../api/client', () => ({
   tagSetsApi: {
     list: vi.fn().mockResolvedValue([]),
   },
+  speechBatchApi: {
+    getActiveJob: vi.fn().mockResolvedValue(null),
+    getJob: vi.fn().mockResolvedValue(null),
+  },
 }))
 
 let capturedOnDragEnd: ((event: any) => void) | null = null
@@ -50,6 +54,17 @@ vi.mock('../../components/SpeechBubbleEditorModal', () => ({
       <button data-testid="modal-save-btn" onClick={() => onSaved()}>Save</button>
       <button data-testid="modal-close-btn" onClick={() => onClose()}>Close</button>
     </div>
+  )
+}))
+
+vi.mock('../../components/BatchSpeechTransformModal', () => ({
+  BatchSpeechTransformModal: ({ isOpen, onClose, onSaved }: any) => (
+    isOpen ? (
+      <div data-testid="batch-speech-transform-modal">
+        <button data-testid="batch-modal-save-btn" onClick={() => onSaved?.()}>Save Batch</button>
+        <button data-testid="batch-modal-close-btn" onClick={() => onClose()}>Close Batch</button>
+      </div>
+    ) : null
   )
 }))
 
@@ -540,5 +555,28 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     await waitFor(() => {
       expect(albumsApi.updateOrder).toHaveBeenCalledWith(30, [102, 101])
     })
+  })
+
+  it('renders セリフ一括変換 button and opens BatchSpeechTransformModal when clicked', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const batchBtn = await screen.findByRole('button', { name: /セリフ一括変換/i })
+    expect(batchBtn).toBeInTheDocument()
+
+    expect(screen.queryByTestId('batch-speech-transform-modal')).not.toBeInTheDocument()
+
+    fireEvent.click(batchBtn)
+
+    expect(screen.getByTestId('batch-speech-transform-modal')).toBeInTheDocument()
+
+    // Test close
+    const closeBtn = screen.getByTestId('batch-modal-close-btn')
+    fireEvent.click(closeBtn)
+
+    expect(screen.queryByTestId('batch-speech-transform-modal')).not.toBeInTheDocument()
   })
 })

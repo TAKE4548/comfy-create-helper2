@@ -145,9 +145,9 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         res = self.client.delete('/api/speech-tone-presets/9999')
         self.assertEqual(res.status_code, 404)
 
-    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
+    @patch('app.services.speech_parser.call_llm', new_callable=AsyncMock)
     def test_rewrite_speech_with_custom_prompt(self, mock_call_llm):
-        mock_call_llm.return_value = '「べ、別にあなたのことなんて心配してないんだからね！」'
+        mock_call_llm.return_value = '<dialogue>べ、別にあなたのことなんて心配してないんだからね！</dialogue>'
 
         payload = {
             'text': '大丈夫？無理しないでね。',
@@ -155,15 +155,20 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         }
         res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {'rewritten_text': 'べ、別にあなたのことなんて心配してないんだからね！'})
+        data = res.json()
+        self.assertEqual(data['rewritten_text'], 'べ、別にあなたのことなんて心配してないんだからね！')
         mock_call_llm.assert_called_once()
         call_kwargs = mock_call_llm.call_args.kwargs
         self.assertIn('ツンデレな口調', call_kwargs['user_prompt'])
         self.assertIn('大丈夫？無理しないでね。', call_kwargs['user_prompt'])
 
-    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
-    def test_rewrite_speech_with_preset_id(self, mock_call_llm):
-        mock_call_llm.return_value = '「お茶の時間ですわ！」'
+    @patch('app.services.speech_parser.call_llm', new_callable=AsyncMock)
+    def test_rewrite_speech_with_preset_id_and_structured_tags(self, mock_call_llm):
+        mock_call_llm.return_value = (
+            '<interpretation>穏やかな昼下がり</interpretation>\n'
+            '<reasoning>上品さを強調</reasoning>\n'
+            '<dialogue>お茶の時間ですわ！</dialogue>'
+        )
 
         res_create = self.client.post('/api/speech-tone-presets', json={'name': 'お嬢様', 'prompt': '上品なお嬢様言葉'})
         preset_id = res_create.json()['id']
@@ -174,7 +179,10 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         }
         res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {'rewritten_text': 'お茶の時間ですわ！'})
+        data = res.json()
+        self.assertEqual(data['rewritten_text'], 'お茶の時間ですわ！')
+        self.assertEqual(data['scene_interpretation'], '穏やかな昼下がり')
+        self.assertEqual(data['reasoning'], '上品さを強調')
         mock_call_llm.assert_called_once()
         call_kwargs = mock_call_llm.call_args.kwargs
         self.assertIn('上品なお嬢様言葉', call_kwargs['user_prompt'])
@@ -196,7 +204,7 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('Tone prompt or valid preset_id is required', res.json()['detail'])
 
-    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
+    @patch('app.services.speech_parser.call_llm', new_callable=AsyncMock)
     def test_rewrite_speech_llm_error_returns_500(self, mock_call_llm):
         mock_call_llm.side_effect = Exception('LLM connection timeout')
 
@@ -208,27 +216,32 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
         self.assertEqual(res.status_code, 500)
         self.assertIn('LLM connection timeout', res.json()['detail'])
 
-    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
-    def test_rewrite_speech_with_scene_hint(self, mock_call_llm):
-        mock_call_llm.return_value = '「ふん、別に待ってなんか…ないわよ」'
+    @patch('app.services.speech_parser.call_llm', new_callable=AsyncMock)
+    def test_rewrite_speech_with_scene_hint_and_revision(self, mock_call_llm):
+        mock_call_llm.return_value = '<dialogue>ふん、別に待ってなんか…ないわよ</dialogue>'
 
         payload = {
             'text': '待ってたよ',
             'tone_prompt': 'ツンデレ',
             'scene_hint': '照れながら頬を染めている状況',
+            'previous_rewritten_text': '待ってたわよ',
+            'revision_instruction': 'もっと素直じゃない態度を強調して',
         }
         res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {'rewritten_text': 'ふん、別に待ってなんか…ないわよ'})
+        self.assertEqual(res.json()['rewritten_text'], 'ふん、別に待ってなんか…ないわよ')
         mock_call_llm.assert_called_once()
         user_prompt = mock_call_llm.call_args.kwargs['user_prompt']
         self.assertIn('【場面の状況・ヒント】\n照れながら頬を染めている状況', user_prompt)
+        self.assertIn('【前回の変換結果に対する修正指示・ダメ出し】', user_prompt)
+        self.assertIn('もっと素直じゃない態度を強調して', user_prompt)
+        self.assertIn('待ってたわよ', user_prompt)
 
     @patch('app.routers.speech_tone_presets.load_image_as_base64')
-    @patch('app.routers.speech_tone_presets.call_llm', new_callable=AsyncMock)
+    @patch('app.services.speech_parser.call_llm', new_callable=AsyncMock)
     def test_rewrite_speech_with_image_multimodal(self, mock_call_llm, mock_load_image):
         mock_load_image.return_value = 'dummybase64string'
-        mock_call_llm.return_value = '「な、何見てるのよ！」'
+        mock_call_llm.return_value = '<dialogue>な、何見てるのよ！</dialogue>'
 
         # Create dummy workflow and snapshot in DB
         db = TestingSessionLocal()
@@ -252,8 +265,9 @@ class TestSpeechTonePresetsAPI(unittest.TestCase):
             }
             res = self.client.post('/api/speech-tone-presets/rewrite', json=payload)
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {'rewritten_text': 'な、何見てるのよ！'})
+            self.assertEqual(res.json()['rewritten_text'], 'な、何見てるのよ！')
             mock_call_llm.assert_called_once()
             call_kwargs = mock_call_llm.call_args.kwargs
             self.assertEqual(call_kwargs['image_data'], 'dummybase64string')
             self.assertIn('※画像が添付されています', call_kwargs['user_prompt'])
+

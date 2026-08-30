@@ -178,6 +178,7 @@ const PROMPT_LABELS: Record<string, string> = {
   translation_en_to_ja: '翻訳システムプロンプト (英 -> 日)',
   speech_draft_vlm_prompt: 'セリフ下書き: VLM システムプロンプト',
   speech_draft_llm_prompt: 'セリフ下書き: LLM システムプロンプト',
+  speech_rewrite_system_prompt: 'セリフ口調変換: システムプロンプト',
 }
 
 export interface LlmParams {

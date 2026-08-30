@@ -9,8 +9,12 @@ client = TestClient(app)
 
 @pytest.mark.asyncio
 async def test_speech_batch_lifecycle():
-    with patch("app.routers.speech_batch.call_llm", new_callable=AsyncMock) as mock_call_llm:
-        mock_call_llm.return_value = "変換後のセリフ"
+    with patch("app.services.speech_parser.call_llm", new_callable=AsyncMock) as mock_call_llm:
+        mock_call_llm.return_value = (
+            "<interpretation>親しい挨拶</interpretation>\n"
+            "<reasoning>親密さを付加</reasoning>\n"
+            "<dialogue>変換後のセリフ</dialogue>"
+        )
         
         payload = {
             "tone_prompt": "ツンデレ風に",
@@ -48,22 +52,30 @@ async def test_speech_batch_lifecycle():
         assert data["status"] == "completed"
         assert data["completed_count"] == 2
         assert data["items"][0]["rewritten_text"] == "変換後のセリフ"
+        assert data["items"][0]["scene_interpretation"] == "親しい挨拶"
+        assert data["items"][0]["reasoning"] == "親密さを付加"
         assert data["items"][1]["rewritten_text"] == "変換後のセリフ"
         
-        # Test retry item
-        res = client.post(f"/api/speech-batch/jobs/{job_id}/items/1_b1/retry")
+        # Test retry item with revision_instruction
+        retry_payload = {
+            "revision_instruction": "もっと怒った感じで",
+        }
+        res = client.post(f"/api/speech-batch/jobs/{job_id}/items/1_b1/retry", json=retry_payload)
         assert res.status_code == 200
         await asyncio.sleep(0.2)
         res = client.get(f"/api/speech-batch/jobs/{job_id}")
         data = res.json()
         assert data["status"] == "completed"
+        assert data["items"][0]["revision_instruction"] == "もっと怒った感じで"
+        assert data["items"][0]["previous_rewritten_text"] == "変換後のセリフ"
+
 
 @pytest.mark.asyncio
 async def test_speech_batch_with_scene_hint_and_image():
     with patch("app.routers.speech_batch.load_image_as_base64", return_value="dummybase64"), \
-         patch("app.routers.speech_batch.call_llm", new_callable=AsyncMock) as mock_call_llm, \
+         patch("app.services.speech_parser.call_llm", new_callable=AsyncMock) as mock_call_llm, \
          patch("pathlib.Path.exists", return_value=True):
-        mock_call_llm.return_value = "変換後のマルチモーダルセリフ"
+        mock_call_llm.return_value = "<dialogue>変換後のマルチモーダルセリフ</dialogue>"
 
         payload = {
             "tone_prompt": "ツンデレ風に",
@@ -101,3 +113,4 @@ async def test_speech_batch_with_scene_hint_and_image():
         assert call_kwargs["image_data"] == "dummybase64"
         assert "【場面の状況・ヒント】\n照れながら視線を逸らす" in call_kwargs["user_prompt"]
         assert "※画像が添付されています" in call_kwargs["user_prompt"]
+
