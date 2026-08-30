@@ -7,7 +7,7 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { BatchJob } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 import { applyBypass } from '../../../utils/bypassUtils'
-import { getInitialParams } from './useWorkflowParams'
+import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
 import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 
 export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInfo: any = {}) {
@@ -28,126 +28,6 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     fetchQueue,
     setErrorToast,
   } = useGenerationStore()
-
-  const injectParams = (
-    wfJson: Record<string, unknown>,
-    paramValuesInput: Record<string, string>,
-    seedMode: 'random' | 'fixed',
-    seed: number,
-    index: number
-  ) => {
-    if (!workflow) return
-
-    const defaultParams = getInitialParams(workflow)
-    const paramValues = { ...defaultParams, ...paramValuesInput }
-
-    // Inject paramValues into workflow JSON nodes
-    workflow.mappings.forEach((m) => {
-      if (!m.role || !m.param_name) return
-      const node = wfJson[m.node_id] as Record<string, unknown> | undefined
-      if (!node) return
-      const inputs = node.inputs as Record<string, unknown>
-      if (!inputs) return
-
-      if (m.input_type === 'lora_stack') {
-        const loraCount = parseInt(paramValues[`${m.role}_lora_count`] || '0', 10)
-        const isEasyLoraStack =
-          inputs['num_loras'] !== undefined ||
-          inputs['lora_1_name'] !== undefined ||
-          (node as any)?.class_type === 'easy loraStack'
-
-        if (isEasyLoraStack) {
-          inputs['num_loras'] = loraCount
-          for (let idx = 1; idx <= loraCount; idx++) {
-            inputs[`lora_${idx}_name`] = paramValues[`${m.role}_lora_name_${idx}`] || 'None'
-            inputs[`lora_${idx}_strength`] = parseFloat(paramValues[`${m.role}_lora_wt_${idx}`] || '0.0')
-            inputs[`lora_${idx}_model_strength`] = parseFloat(paramValues[`${m.role}_model_str_${idx}`] || '1.0')
-            inputs[`lora_${idx}_clip_strength`] = parseFloat(paramValues[`${m.role}_clip_str_${idx}`] || '1.0')
-          }
-          // Reset unused slots
-          for (let idx = loraCount + 1; idx <= 10; idx++) {
-            if (inputs[`lora_${idx}_name`] !== undefined) {
-              inputs[`lora_${idx}_name`] = 'None'
-              inputs[`lora_${idx}_strength`] = 1.0
-              inputs[`lora_${idx}_model_strength`] = 1.0
-              inputs[`lora_${idx}_clip_strength`] = 1.0
-            }
-          }
-          // Clean up standard keys
-          delete inputs['lora_count']
-          Object.keys(inputs).forEach((k) => {
-            if (k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)) {
-              delete inputs[k]
-            }
-          })
-        } else {
-          // Standard loraStack: dynamically write slots 1..N
-          inputs['lora_count'] = loraCount
-          for (let idx = 1; idx <= loraCount; idx++) {
-            inputs[`lora_name_${idx}`] = paramValues[`${m.role}_lora_name_${idx}`] || ''
-            inputs[`lora_wt_${idx}`] = parseFloat(paramValues[`${m.role}_lora_wt_${idx}`] || '0.0')
-            inputs[`model_str_${idx}`] = parseFloat(paramValues[`${m.role}_model_str_${idx}`] || '1.0')
-            inputs[`clip_str_${idx}`] = parseFloat(paramValues[`${m.role}_clip_str_${idx}`] || '1.0')
-          }
-          // Remove keys exceeding loraCount
-          Object.keys(inputs).forEach((k) => {
-            const match = k.match(/^(lora_name|lora_wt|model_str|clip_str)_(\d+)$/)
-            if (match) {
-              const idx = parseInt(match[2], 10)
-              if (idx > loraCount) {
-                delete inputs[k]
-              }
-            }
-          })
-          // Clean up easy loraStack keys
-          delete inputs['num_loras']
-          Object.keys(inputs).forEach((k) => {
-            if (k.match(/^lora_(\d+)_(name|strength|model_strength|clip_strength)$/)) {
-              delete inputs[k]
-            }
-          })
-        }
-      } else {
-        const rawVal = paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
-        let val: string | number | boolean = ''
-        if (m.input_type === 'int') {
-          val = parseInt(rawVal || '0', 10)
-        } else if (m.input_type === 'float') {
-          val = parseFloat(rawVal || '0.0')
-        } else if (m.input_type === 'boolean') {
-          val = rawVal === 'true' || rawVal === '1'
-        } else {
-          val = rawVal !== undefined ? rawVal : ''
-        }
-
-        if (inputs[m.param_name] !== undefined) {
-          inputs[m.param_name] = val
-        } else if (inputs['value'] !== undefined) {
-          inputs['value'] = val
-        } else {
-          inputs[m.param_name] = val
-        }
-      }
-    })
-
-    // Inject seed for Sampler_Seed role
-    const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
-    if (seedNode) {
-      const node = wfJson[seedNode.node_id] as Record<string, unknown> | undefined
-      if (node) {
-        const inputs = node.inputs as Record<string, unknown>
-        let seedKey: string
-        if (seedNode.param_name !== null && seedNode.param_name !== undefined && inputs[seedNode.param_name] !== undefined) {
-          seedKey = seedNode.param_name
-        } else if (inputs['value'] !== undefined) {
-          seedKey = 'value'
-        } else {
-          seedKey = seedNode.param_name || 'seed'
-        }
-        inputs[seedKey] = seedMode === 'random' ? Math.floor(Math.random() * 2 ** 32) : seed + index
-      }
-    }
-  }
 
   const applyParamSync = (paramValues: Record<string, string>): Record<string, string> => {
     const activeGroups = (paramSyncGroups || []).filter((g) => g.is_enabled)
@@ -186,8 +66,16 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
         if (abortController.signal.aborted) {
           return
         }
-        let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-        injectParams(wfJson, syncedParamValues, currentSeedMode, currentSeed, i)
+        let wfJson = injectWorkflowParams({
+          workflow,
+          paramValues: syncedParamValues,
+          seedOptions: {
+            seedMode: currentSeedMode,
+            seed: currentSeed,
+            index: i,
+          },
+          cloneJson: true,
+        })
         if (activeBypassNodeIds.length > 0) {
           wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
         }
@@ -257,8 +145,16 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
             return
           }
 
-          let wfJson = JSON.parse(JSON.stringify(workflow.json_body)) as Record<string, unknown>
-          injectParams(wfJson, syncedParamValues, setItem.seedMode, setItem.seed, i)
+          let wfJson = injectWorkflowParams({
+            workflow,
+            paramValues: syncedParamValues,
+            seedOptions: {
+              seedMode: setItem.seedMode,
+              seed: setItem.seed,
+              index: i,
+            },
+            cloneJson: true,
+          })
           if (activeBypassNodeIds.length > 0) {
             wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
           }

@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 def _get_current_model() -> str | None:
-    from app.database import SessionLocal
+    from app.database import get_db_context
     from app.models import LlmPrompt
     try:
-        with SessionLocal() as db:
+        with get_db_context() as db:
             record = db.query(LlmPrompt).filter(LlmPrompt.key == "llm_model").first()
             if record and record.content:
                 return record.content
@@ -25,11 +25,11 @@ def _get_current_model() -> str | None:
 
 
 def _get_llm_params(key: str) -> dict | None:
-    from app.database import SessionLocal
+    from app.database import get_db_context
     from app.models import LlmPrompt
     import json
     try:
-        with SessionLocal() as db:
+        with get_db_context() as db:
             record = db.query(LlmPrompt).filter(LlmPrompt.key == key).first()
             if record and record.content:
                 return json.loads(record.content)

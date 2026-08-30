@@ -11,7 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from app.database import SessionLocal
 from app import models
 from app.config import settings
-from app.main import run_migrations
+from app.migrations import run_migrations
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
