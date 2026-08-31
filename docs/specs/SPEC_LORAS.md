@@ -1,8 +1,8 @@
 # Prompt Surgeon — LoRAs ページ仕様書 (SPEC_LORAS)
 
-**バージョン**: 1.0  
-**最終更新**: 2026-06-13  
-**実装ファイル**: `frontend/src/pages/LoRAsPage.tsx`（現行 569行 ← 🟡 リファクタリング対象）
+**バージョン**: 2.0  
+**最終更新**: 2026-09-01  
+**実装ファイル**: `frontend/src/pages/LoRAsPage.tsx`（`LoraModals.tsx`, `CategoryManagerModal.tsx` 等の分割構成）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
 
@@ -10,8 +10,8 @@
 
 ## 1. 概要
 
-ComfyUI で使用可能な LoRA モデルのメタ情報・トリガーワードセットを管理するページ。  
-ライブラリ管理（CRUD）に特化し、ワークフロー依存の有効/無効化はここでは行わない（Generate ページのアセットパネルで実施）。
+ComfyUI で使用可能な LoRA モデルのメタ情報・BaseModel紐付け・トリガーワードセットを管理するページ。  
+ライブラリ管理（CRUD）に特化し、ワークフロー依存の有効/無効化は Generate ページのアセットパネルで実施する。
 
 ---
 
@@ -19,31 +19,33 @@ ComfyUI で使用可能な LoRA モデルのメタ情報・トリガーワード
 
 | 機能 | 説明 |
 |---|---|
-| LoRA 一覧表示 | Grid 表示。検索・カテゴリフィルタ対応 |
-| LoRA 登録 | メタ情報・カテゴリ・推奨強度・トリガーワードセットを登録（ComfyUI 内のファイルパス自動補完サジェストに対応） |
-| LoRA 編集 | 登録済み LoRA のメタ情報更新 |
+| LoRA 一覧表示 | Grid 表示。検索・カテゴリフィルタ・BaseModel フィルタ対応 |
+| LoRA 登録 | メタ情報・カテゴリ・BaseModel・推奨強度・トリガーワードセットを登録（ComfyUI 内ファイルパス自動補完対応） |
+| LoRA 編集 | 登録済み LoRA のメタ情報・BaseModel 紐付け更新 |
 | LoRA 削除 | 登録済み LoRA の削除 |
+| サムネイル切り抜き | `ImageCropper` による自由なアスペクト比でのサムネイル画像切り抜き・登録 |
 | トリガーワードセット管理 | 1つの LoRA に複数のトリガーワードセットを登録（例: 素体系・服装A・服装B） |
-| カテゴリフィルタ | カテゴリ別にフィルタリング |
-| LoRA 複数選択 | `Ctrl + クリック` / `Shift + クリック` / 長押しによる複数選択モード、ドラッグ＆ドロップでの一括順序変更 (reorder)、およびカテゴリ・推奨強度の「一括編集」に対応 |
+| カテゴリ管理 | ページ内から直接カテゴリマスタの追加・編集・削除モーダル（`CategoryManagerModal`）を起動 |
+| LoRA 複数選択 | `Ctrl + クリック` / `Shift + クリック` / 長押しによる複数選択、D&Dでの一括並び替え (`reorder`)、およびカテゴリ・推奨強度・BaseModelの「一括編集」に対応 |
 
 ---
 
 ## 3. レイアウト
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ [検索バー] [カテゴリフィルタ] [Register Model ボタン]        │
-├─────────────────────────────────────────────────────────────┤
-│  LoRA カード グリッド                                        │
-│  ┌──────────────────┐  ┌──────────────────┐                 │
-│  │ [サムネイル]      │  │ [サムネイル]      │                 │
-│  │ LoRA 名          │  │ LoRA 名          │                 │
-│  │ [カテゴリバッジ]  │  │ [カテゴリバッジ]  │                 │
-│  │ トリガーワード    │  │ トリガーワード    │                 │
-│  │ 推奨強度: 0.8    │  │ 推奨強度: 0.6〜1 │                 │
-│  └──────────────────┘  └──────────────────┘                 │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│ [検索バー] [カテゴリフィルタ] [BaseModelフィルタ] [Register Model ボタン] │
+├─────────────────────────────────────────────────────────────────────────┤
+│  LoRA カード グリッド（D&D 並び替え対応）                                │
+│  ┌──────────────────┐  ┌──────────────────┐                             │
+│  │ [サムネイル/Crop] │  │ [サムネイル/Crop] │                             │
+│  │ LoRA 名          │  │ LoRA 名          │                             │
+│  │ [カテゴリバッジ]  │  │ [カテゴリバッジ]  │                             │
+│  │ [BaseModelバッジ]│  │ [BaseModelバッジ]│                             │
+│  │ トリガーワード    │  │ トリガーワード    │                             │
+│  │ 推奨強度: 0.8    │  │ 推奨強度: 0.6〜1 │                             │
+│  └──────────────────┘  └──────────────────┘                             │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -52,10 +54,11 @@ ComfyUI で使用可能な LoRA モデルのメタ情報・トリガーワード
 
 | 要素 | 仕様 |
 |---|---|
-| サムネイル | サムネイル画像がない場合は `ImageIcon` + "No Preview" プレースホルダー |
+| サムネイル | 登録画像を表示。ない場合は `ImageIcon` プレースホルダー。アスペクト比設定連動 |
 | カテゴリバッジ | カテゴリマスタから選択した値をバッジ表示 |
-| トリガーワード | ホバー時にコピーボタン表示 |
-| 推奨強度 | 下限〜上限（例: `0.6 ~ 1.0`）または単一値（例: `0.8`）。未設定も許容 |
+| BaseModel バッジ | 紐付けられているベースモデル名（SDXL, Pony 等）を表示 |
+| トリガーワード | ホバー時にワンクリックコピーボタン表示 |
+| 推奨強度 | 下限〜上限（例: `0.6 ~ 1.0`）または単一値（例: `0.8`） |
 | ファイルパス | フォルダアイコンをホバーで ComfyUI 側のファイルパスをツールチップ表示 |
 
 ---
@@ -84,6 +87,9 @@ interface Lora {
   recommended_strength_min?: number;
   recommended_strength_max?: number;
   thumbnail_path?: string;
+  sort_order: number;
+  base_models?: BaseModel[];
+  target_base_model_ids?: number[];
   trigger_word_sets?: TriggerWordSet[];
 }
 
@@ -97,15 +103,10 @@ interface TriggerWordSet {
 
 ---
 
-## 7. カテゴリマスタ
+## 7. カテゴリマスタ & BaseModel マスタ
 
-初期シードデータ:
-- `キャラクター系`
-- `ポーズ再現系`
-- `スタイル系`
-- `コンセプト系`
-
-LoRA カテゴリはマスタから選択。設定ページでの追加/削除も可能。
+- **カテゴリ初期シード**: `キャラクター系`, `ポーズ再現系`, `スタイル系`, `コンセプト系`
+- **BaseModel**: SD1.5, SDXL, Pony, Illustrious, Flux 等のマスタと関連付け可能。
 
 ---
 
@@ -115,30 +116,17 @@ LoRA カテゴリはマスタから選択。設定ページでの追加/削除�
 |---|---|
 | LoRA 一覧 | `GET /api/loras` |
 | LoRA 登録 | `POST /api/loras` |
-| LoRA 更新 | `PATCH /api/loras/{id}` |
+| LoRA 更新 | `PUT /api/loras/{id}` |
 | LoRA 削除 | `DELETE /api/loras/{id}` |
 | LoRA 並び替え | `PUT /api/loras/reorder` |
 | トリガーワードセット一覧 | `GET /api/loras/{id}/trigger-word-sets` |
 | トリガーワードセット登録 | `POST /api/loras/{id}/trigger-word-sets` |
-| トリガーワードセット更新 | `PATCH /api/loras/{id}/trigger-word-sets/{set_id}` |
+| トリガーワードセット更新 | `PUT /api/loras/{id}/trigger-word-sets/{set_id}` |
 | トリガーワードセット削除 | `DELETE /api/loras/{id}/trigger-word-sets/{set_id}` |
-| カテゴリ一覧 | `GET /api/lora-categories` |
+| カテゴリ一覧・管理 | `GET/POST/PUT/DELETE /api/lora-categories` |
+| ベースモデル一覧 | `GET /api/base-models` |
 | ComfyUI 内 LoRA モデル取得 | `GET /api/loras/comfy-models` |
 
 ---
 
-## 9. リファクタリング計画
-
-現行 569行。hooks + sub-components に分割して各ファイル ~200行以内に収める。
-
-```
-pages/LoRAsPage/（分割後）
-  index.tsx                   ← リスト表示・フィルタリングのみ（~150行）
-  hooks/
-    useLoraList.ts            ← 一覧取得・フィルタロジック
-    useLoraForm.ts            ← 登録・編集フォーム状態管理
-  components/
-    LoraCard.tsx              ← カード1件のUI
-    LoraFormModal.tsx         ← 登録・編集モーダル
-    TriggerWordSetEditor.tsx  ← トリガーワードセット管理UI
-```
+*本ドキュメントは現行の LoRAsPage 実装に準拠した正本です。*

@@ -1,8 +1,8 @@
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 1.0  
-**最終更新**: 2026-06-13  
-**実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（現行 559行 ← 🟡 リファクタリング対象）
+**バージョン**: 2.0  
+**最終更新**: 2026-09-01  
+**実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
 
@@ -10,83 +10,128 @@
 
 ## 1. 概要
 
-アプリケーション全体の基本設定を管理するページ。  
-ノードマッピングマスタの編集・ワークフローの削除を主要機能とする。
+アプリケーション全体の基本設定、LLM モデル・パラメータ、プロンプト翻訳、フキダシ検出、口調プリセット、BaseModel・チェックポイントマッピング、ノードマッピングマスタ、ワークフロー、接続状態を一元管理するページ。
 
 ---
 
-## 2. 機能一覧
+## 2. 機能一覧（設定セクション群）
 
-| 機能 | 説明 |
+| セクション | 説明 |
 |---|---|
-| マッピングマスタ一覧 | 登録済みの MappingMaster を一覧表示 |
-| マッピングマスタ編集 | role / expected_class_types / param_name / input_type / display_name / title_patterns を編集 |
-| マッピングマスタ登録 | 新規 MappingMaster の追加 |
-| マッピングマスタ削除 | 既存 MappingMaster の削除 |
-| マッピングマスタ複数選択 | `Ctrl + クリック` / `Shift + クリック` / 長押しによる複数選択、ドラッグ＆ドロップでの一括順序変更 (reorder)、および Param Name と Input Type の「一括編集」に対応 |
-| ワークフロー一覧 | 登録済みワークフローを一覧表示 |
-| ワークフロー削除 | 登録済みワークフローの削除 |
-| LLM プロンプト編集 | LLM 監査用システムプロンプト（`llm_prompts` テーブル）の確認・更新 |
-| 接続ステータス確認 (Connections) | FastAPI Backend および ComfyUI への接続状態をリアルタイムで確認 |
+| **LLM 設定** | 使用する LLM モデル（ローカル/外部）の選択、システムプロンプト編集、詳細パラメータ（Temperature、Top-P、MaxTokens 等）の調整 |
+| **翻訳設定** | プロンプト翻訳機能のプロバイダー設定（Google Cloud / DeepL / LLM）、APIキー、デバウンス時間、キャッシュクリア、翻訳統計確認 |
+| **フキダシ検出設定** | 画像内のフキダシ自動検出パラメータ（最小面積 `min_area`、輝度閾値 `min_brightness`）の調整 |
+| **セリフ口調プリセット** | キャラクター性に応じた口調変換プリセット（ツンデレ、お嬢様、敬語等）の CRUD とリアルタイム書き換えテスト |
+| **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理 |
+| **サムネイル表示設定** | アプリケーション全体でのサムネイル表示アスペクト比（1:1 正方形, 3:4 縦長, 4:3 横長, 16:9 ワイド等）の切り替え |
+| **Base Model 設定** | ベースモデル（SD1.5, SDXL, Pony, Illustrious, Flux 等）の定義と、ComfyUI チェックポイントファイル（.safetensors）との自動マッピング管理 |
+| **操作・ワークフロー・接続** | 複数選択モード起動の長押し時間設定、ワークフロー一覧・削除、FastAPI / ComfyUI のリアルタイム接続ステータス確認 |
 
 ---
 
-## 3. レイアウト
+## 3. レイアウト（折り畳みアコーディオン構成）
 
-セクション別タブまたはアコーディオン構成。
+各セクションの開閉状態は `localStorage` キー `prompt-surgeon-settings-sections-expanded` に永続化される。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Settings                                                │
 ├─────────────────────────────────────────────────────────┤
-│  [ノードマッピングマスタ] タブ                            │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │ role            │ input_type │ display_name │ ✏ │   │
-│  │ Main_Positive.. │ textarea   │ Main prompt  │ 🗑 │   │
-│  └─────────────────────────────────────────────────┘    │
-│  [+ 新規マスタ追加]                                      │
+│ ▼ LLM Model, Prompts & Params                           │
+│   - モデル選択ドロップダウン                            │
+│   - システムプロンプト編集（audit, scene_generate 等）  │
+│   - 詳細パラメータスライダー                            │
 ├─────────────────────────────────────────────────────────┤
-│  [ワークフロー管理] タブ                                  │
-│  ┌─────────────────────────────────┐                    │
-│  │ portrait_v3        2026-06-01  🗑│                    │
-│  └─────────────────────────────────┘                    │
+│ ▼ Translation Settings                                  │
+│   - プロバイダー選択 / API Key / キャッシュ統計         │
 ├─────────────────────────────────────────────────────────┤
-│  [LLM プロンプト] タブ                                    │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │ key: audit_interference                         │    │
-│  │ description: 干渉タグ診断用（SDXL/汎用）          │    │
-│  │ [content textarea]                              │    │
-│  │ [Save]                                          │    │
-│  └─────────────────────────────────────────────────┘    │
+│ ▼ Bubble Detection Parameters                           │
+│   - 検出感度・二値化パラメータ                          │
+├─────────────────────────────────────────────────────────┤
+│ ▼ Speech Tone Presets                                   │
+│   - 口調プリセット一覧 / 新規作成 / 口調書き換えテスト  │
+├─────────────────────────────────────────────────────────┤
+│ ▼ Mapping Masters & Param Types                         │
+│   - ノードマッピングマスタ一覧 / 編集 / D&D並び替え      │
+│   - パラメータ型マスタ管理モーダル                      │
+├─────────────────────────────────────────────────────────┤
+│ ▼ Thumbnail Aspect Ratio Settings                       │
+│   - 表示比率ラジオボタングループ                        │
+├─────────────────────────────────────────────────────────┤
+│ ▼ Base Model Settings                                   │
+│   - BaseModel 定義 / チェックポイントマッピングテーブル │
+├─────────────────────────────────────────────────────────┤
+│ ▼ Long Press, Workflows & Connections                   │
+│   - 長押し判定ミリ秒入力                                │
+│   - ワークフロー削除一覧                                │
+│   - バックエンド & ComfyUI 接続ステータスインジケータ   │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. MappingMaster データモデル
+## 4. データモデル
+
+### 4-1. MappingMaster & ParamTypeMaster
 
 ```typescript
 interface MappingMaster {
   id: number;
-  role: string;                        // 役割識別子（例: "Main_Positive_Prompt"）
-  expected_class_types: string[];      // 対応する ComfyUI ノードクラス
-  param_name: string;                  // ノードの入力パラメータ名
-  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler';
-  display_name: string;                // フロントエンド表示名
-  title_patterns: string[];            // 自動マッピング時のノードタイトルマッチパターン
+  role: string;
+  expected_class_types: string[];
+  param_name: string;
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean';
+  display_name: string;
+  title_patterns: string[];
+  sort_order: number;
+}
+
+interface ParamTypeMaster {
+  id: number;
+  name: string;
+  widget_type: 'select' | 'int' | 'float' | 'textarea' | 'boolean';
+  combo_options?: string[]; // select 時の選択肢配列
+  min_value?: number;
+  max_value?: number;
+  step?: number;
 }
 ```
 
-プリセット一覧は [SPEC_SUMMARY.md §6](./SPEC_SUMMARY.md#6-db-設計sqlite) を参照。
+### 4-2. BaseModel & CheckpointMapping
+
+```typescript
+interface BaseModel {
+  id: number;
+  name: string;
+  description?: string;
+}
+
+interface CheckpointMapping {
+  id: number;
+  checkpoint_name: string;
+  base_model_id: number;
+  base_model?: BaseModel;
+}
+```
+
+### 4-3. SpeechTonePreset
+
+```typescript
+interface SpeechTonePreset {
+  id: number;
+  name: string;
+  prompt: string;
+  description?: string;
+  sort_order: number;
+}
+```
 
 ---
 
 ## 5. 接続ステータス (Connections)
 
-アプリケーションが依存する外部サービスの稼働状況を表示する。
-
-- **FastAPI Backend**: フロントエンドが稼働しているオリジンの `/health` エンドポイントへリクエストを送信し、疎通を確認する。
-- **ComfyUI**: 設定されている ComfyUI URL（WebSocket接続用URL）のヘルティネスを確認する。
+- **FastAPI Backend**: フロントエンドが稼働しているオリジンの `/api/config` または `/health` へリクエストを送信して疎通確認。
+- **ComfyUI**: 設定されている ComfyUI URL（WebSocket / REST）の稼働状態をリアルタイム確認。
 
 ---
 
@@ -94,28 +139,34 @@ interface MappingMaster {
 
 | 操作 | エンドポイント |
 |---|---|
-| マッピングマスタ一覧 | `GET /api/mapping-masters` |
-| マッピングマスタ登録 | `POST /api/mapping-masters` |
-| マッピングマスタ更新 | `PUT /api/mapping-masters/{id}` |
-| マッピングマスタ削除 | `DELETE /api/mapping-masters/{id}` |
-| マッピングマスタ並び替え | `PUT /api/mapping-masters/reorder` |
-| ワークフロー一覧 | `GET /api/workflows` |
-| ワークフロー削除 | `DELETE /api/workflows/{id}` |
-| LLM プロンプト一覧 | `GET /api/llm-prompts` |
-| LLM プロンプト更新 | `PATCH /api/llm-prompts/{key}` |
+| マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters`, `PUT /reorder` |
+| パラメータ型マスタ一覧・管理 | `GET/POST/PUT/DELETE /api/param-type-masters` |
+| ベースモデル一覧・管理 | `GET/POST/PUT/DELETE /api/base-models` |
+| チェックポイントマッピング一覧・管理 | `GET/POST/DELETE /api/checkpoint-mappings`, `GET /api/comfy/checkpoints` |
+| ワークフロー一覧・削除 | `GET/DELETE /api/workflows` |
+| LLM プロンプト一覧・更新 | `GET/PUT /api/llm-prompts/{key}` |
+| LLM モデル一覧取得・現在モデル切替 | `GET /api/llm-prompts/models`, `GET/PUT /api/llm-prompts/current-model` |
+| 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` |
+| セリフ口調プリセット一覧・管理・テスト | `GET/POST/PUT/DELETE /api/speech-tone-presets`, `POST /rewrite` |
 
 ---
 
-## 7. リファクタリング計画
-
-現行 559行。セクション単位で sub-components に分割して各ファイル ~200行以内に収める。
+## 7. コンポーネント構成
 
 ```
-pages/SettingsPage/（分割後）
-  index.tsx                       ← タブ/セクション切り替えのみ（~80行）
+pages/SettingsPage/
+  index.tsx                      — メインページ・セクション開閉状態管理
   components/
-    MappingMasterSection.tsx      ← マッピングマスタ一覧・編集UI（~150行）
-    MappingMasterFormModal.tsx    ← 登録・編集フォームモーダル（~150行）
-    WorkflowSection.tsx           ← ワークフロー一覧・削除UI（~80行）
-    LlmPromptSection.tsx          ← LLM プロンプト編集UI（~100行）
+    LlmSettingsSection.tsx       — LLM モデル選択・プロンプト・パラメータ
+    TranslationSettingsSection.tsx — プロンプト翻訳設定・統計・テスト
+    BubbleDetectionSection.tsx   — フキダシ自動検出パラメータ
+    SpeechToneSection.tsx        — 口調プリセット管理 & 書き換えテスト
+    MappingMasterSection.tsx     — マッピングマスタ & パラメータ型マスタ
+    BaseModelSection.tsx         — BaseModel & Checkpoint マッピング
+    ThumbnailSettingsSection.tsx — サムネイル表示アスペクト比
+    WorkflowConnectionSection.tsx— 長押し設定、ワークフロー削除、接続確認
 ```
+
+---
+
+*本ドキュメントは現行の SettingsPage 実装に準拠した正本です。*

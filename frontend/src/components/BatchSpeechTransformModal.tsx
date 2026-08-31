@@ -4,6 +4,7 @@ import {
   X, Sparkles, RefreshCw, Ban, Undo, Save, CheckSquare, Square,
   MessageSquare, AlertCircle, CheckCircle2, Loader2, Filter
 } from 'lucide-react'
+import { Modal } from './common/Modal'
 import {
   snapshotsApi, speechTonePresetsApi, speechBatchApi,
   albumsApi, workflowsApi, fontsApi
@@ -337,8 +338,13 @@ export function BatchSpeechTransformModal({
   const selectedCount = bubbleItems.filter((i) => selectedItemsMap[i.key]).length
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fade-in">
-      <div className="bg-[#121316] border border-[rgba(255,255,255,0.1)] rounded-2xl w-full max-w-5xl h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="5xl"
+      dialogClassName="h-full max-h-[88vh] lg:h-[88vh]"
+    >
+      <div className="flex flex-col h-full overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
           <div className="flex items-center gap-3">
@@ -513,9 +519,9 @@ export function BatchSpeechTransformModal({
               )}
             </div>
 
-            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/50 flex items-center justify-between">
+            <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/50 flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-zinc-400">選択中: <strong className="text-zinc-200">{selectedCount}</strong> 件のセリフ</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all">キャンセル</button>
                 <button
                   id="start-batch-speech-btn"
@@ -850,7 +856,7 @@ export function BatchSpeechTransformModal({
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   )
 }
 

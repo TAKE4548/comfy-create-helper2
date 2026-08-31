@@ -23,6 +23,7 @@ import { useBulkDownload } from './HistoryPage/hooks/useBulkDownload'
 import { useAlbumOperations } from './HistoryPage/hooks/useAlbumOperations'
 import { AlbumListView } from './HistoryPage/components/AlbumListView'
 import { AlbumDetailView } from './HistoryPage/components/AlbumDetailView'
+import { PageHeader } from '../components/common/PageHeader'
 
 export function HistoryPage() {
   const qc = useQueryClient()
@@ -306,54 +307,54 @@ export function HistoryPage() {
       ) : (
         <>
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
-            <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-              <Clock size={17} className="text-zinc-400" />
-              History
-            </h1>
-            <div className="flex items-center gap-2">
-              <button
-                id="open-batch-speech-modal-btn"
-                onClick={() => setIsBatchSpeechModalOpen(true)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-[#7C6FDD] hover:text-[#9084e6] hover:bg-[#7C6FDD]/10 transition-all font-medium"
-              >
-                <Sparkles size={13} />
-                セリフ一括変換
-                {activeBatchJob &&
-                  (activeBatchJob.status === 'processing' || activeBatchJob.status === 'pending') && (
-                    <span className="ml-1 w-2 h-2 rounded-full bg-[#7C6FDD] animate-ping" />
-                  )}
-              </button>
-
-              {!snapshotMultiSelect.isMultiSelectMode && view === 'snapshots' && (
+          <PageHeader
+            title="History"
+            icon={Clock}
+            actions={
+              <>
                 <button
-                  id="start-create-album"
-                  onClick={() => snapshotMultiSelect.enterMultiSelectMode()}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all"
+                  id="open-batch-speech-modal-btn"
+                  onClick={() => setIsBatchSpeechModalOpen(true)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-[#7C6FDD] hover:text-[#9084e6] hover:bg-[#7C6FDD]/10 transition-all font-medium whitespace-nowrap"
                 >
-                  <BookOpen size={13} />
-                  Add to Album
+                  <Sparkles size={13} />
+                  <span>セリフ一括変換</span>
+                  {activeBatchJob &&
+                    (activeBatchJob.status === 'processing' || activeBatchJob.status === 'pending') && (
+                      <span className="ml-1 w-2 h-2 rounded-full bg-[#7C6FDD] animate-ping" />
+                    )}
                 </button>
-              )}
-              {/* View Toggle */}
-              <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
-                {(['snapshots', 'albums'] as const).map((v) => (
+
+                {!snapshotMultiSelect.isMultiSelectMode && view === 'snapshots' && (
                   <button
-                    key={v}
-                    id={`view-${v}`}
-                    onClick={() => setView(v)}
-                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                      view === v
-                        ? 'bg-surface-2 text-zinc-200'
-                        : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
+                    id="start-create-album"
+                    onClick={() => snapshotMultiSelect.enterMultiSelectMode()}
+                    className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all whitespace-nowrap"
                   >
-                    {v === 'snapshots' ? 'Snapshots' : 'Albums'}
+                    <BookOpen size={13} />
+                    <span>Add to Album</span>
                   </button>
-                ))}
-              </div>
-            </div>
-          </div>
+                )}
+                {/* View Toggle */}
+                <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] flex-shrink-0">
+                  {(['snapshots', 'albums'] as const).map((v) => (
+                    <button
+                      key={v}
+                      id={`view-${v}`}
+                      onClick={() => setView(v)}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-colors ${
+                        view === v
+                          ? 'bg-surface-2 text-zinc-200'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {v === 'snapshots' ? 'Snapshots' : 'Albums'}
+                    </button>
+                  ))}
+                </div>
+              </>
+            }
+          />
 
           {/* MultiSelectToolbar for Snapshot List */}
           {snapshotMultiSelect.isMultiSelectMode && (
