@@ -1,6 +1,6 @@
 # Prompt Surgeon — History ページ仕様書 (SPEC_HISTORY)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
 **実装ファイル**: `frontend/src/pages/HistoryPage.tsx`（`AlbumListView`, `AlbumDetailView`, `hooks` 分割構成）
 
@@ -11,7 +11,7 @@
 ## 1. 概要
 
 保存済みスナップショットの一覧表示・アルバム管理・フキダシ編集・一括漫画化バッチ処理を提供するページ。  
-ワークフロー・LoRA・TagSet による柔軟な絞り込みと、画像へのセリフ装飾合成、派生スナップショットの管理を行う。
+ワークフロー・LoRA・TagSet による柔軟な絞り込みと、画像へのセリフ装飾合成、派生スナップショットの系譜管理を行う。
 
 ---
 
@@ -19,12 +19,12 @@
 
 | 機能 | 説明 |
 |---|---|
-| スナップショット一覧 | 保存済みスナップショットをグリッド表示（新しい順・古い順ソート、遅延読み込み対応） |
-| 複合フィルタ | ワークフロー、使用 LoRA、使用 TagSet による絞り込み |
-| フキダシ・セリフ編集 | スナップショットにフキダシ・セリフ・漫画エフェクトを合成して新規派生保存 |
+| スナップショット一覧 | 保存済みスナップショットをグリッド表示（新しい順・古い順ソート、50件単位の無限スクロール・遅延ロード） |
+| 複合フィルタ | ワークフロー、使用 LoRA、使用 TagSet による **AND 結合** 絞り込み（一致 0 件時は Empty State とフィルタ解除ボタンを表示） |
+| フキダシ・セリフ編集 | スナップショットにフキダシ・セリフ・漫画エフェクトを合成して新規派生保存（元画像は非破壊保持） |
 | 漫画化一括バッチ | 複数画像を選択し、LLM によるセリフ自動生成とフキダシ合成をバックグラウンド実行 |
 | アルバム作成・管理 | スナップショットを選択してアルバム生成。複数選択・一括追加に対応 |
-| アルバム並び替え | D&D によるカスタム順変更・保存。複数選択時のグループ移動に対応 |
+| アルバム並び替え | D&D によるカスタム順変更・保存（`PUT /api/albums/{id}/order`）。複数選択時のグループ移動に対応 |
 | アルバム内自動ソート | カスタム順、古い順、新しい順で表示切替 |
 | アルバム一括編集・削除 | `MultiSelectToolbar` による複数選択、一括削除 |
 | 一括ダウンロード | 選択したスナップショット画像の一括ダウンロード（ZIP / 個別） |
@@ -41,7 +41,7 @@
 ├────────────────────────────────────────────────────────────────────────┤
 │  [スナップショット] / [アルバム] タブ切替                                │
 │  ┌────┐ ┌────┐ ┌────┐ ┌────┐                                          │
-│  │画像│ │画像│ │画像│ │画像│ ...（無限スクロール・遅延ロード）         │
+│  │画像│ │画像│ │画像│ │画像│ ...（無限スクロール・50件ずつ遅延ロード）   │
 │  └────┘ └────┘ └────┘ └────┘                                          │
 │                                                                        │
 │  [選択したものをアルバムへ] [一括漫画化バッチ] [一括ダウンロード]        │
@@ -58,7 +58,7 @@
 - **LoRA Stack の自動検出・テーブル表示**: フラットキー（`${role}_lora_count`, `${role}_lora_name_X` 等）を自動解析してグループ表示。
 - **完全全画面プレビュー (REQ-078)**: 3秒操作なしでオーバーレイ自動非表示、Esc/✕/再タップでモーダルと同期クローズ。
 
-### 4-2. フキダシ・セリフ編集 (`components/SpeechBubbleEditorModal.tsx`)
+### 4-2. フキダシ・セリフ編集 & 派生スナップショット (`components/SpeechBubbleEditorModal.tsx`)
 
 スナップショット個別に対してリッチなセリフ合成を行うモーダル。
 - **フキダシ形状**: オーバル（楕円）、雲型、トゲトゲ（叫び・強調）、四角形
@@ -66,7 +66,10 @@
 - **漫画風エフェクト (`SpeechBubbleMangaFxControls.tsx`)**: 集中線、効果線、スクリーントーン風背景
 - **セリフ口調変換 (`SpeechBubbleToneControls.tsx`)**: LLM を用いた口調変換（ツンデレ、お嬢様、敬語等、`POST /api/speech-tone-presets/rewrite`）
 - **フキダシ自動検出**: OpenCV による画像内フキダシ領域・ROI の自動検出 (`POST /api/snapshots/{id}/detect-bubble`)
-- **派生保存**: 合成後の画像を新規スナップショットとして保存し、`source_snapshot_id` で元スナップショットと系譜を紐付け。
+- **派生スナップショットの系譜管理 (Lineage)**:
+  - 元の生成画像（親スナップショット）はそのまま非破壊で保持し、セリフ合成後の画像を**新しいスナップショット**として保存する。
+  - 新規スナップショットの `source_snapshot_id` に親スナップショットの ID を記録し、派生元を追跡可能にする。
+  - 親スナップショットが削除された場合は、DB の外部キー制約（`ondelete="SET NULL"`）により `source_snapshot_id` が `null` となり、派生画像は独立して安全に維持される。
 
 ### 4-3. 漫画化一括バッチ処理 (`components/BatchSpeechTransformModal.tsx`)
 
@@ -84,7 +87,7 @@
 - `AlbumDetailView.tsx`: アルバム内スナップショットのグリッド表示、カスタム並び替え（D&D）、一括削除
 
 ### 5-2. 並び替え & 一括操作
-- **D&D並び替え**: `MouseSensor`（8px移動）/ `TouchSensor`（500ms長押し）による誤動作防止。確定後に `PUT /api/albums/{id}/order` で保存。
+- **D&D並び替え**: `MouseSensor`（8px移動）/ `TouchSensor`（500ms長押し）による誤動作防止。確定後に `PUT /api/albums/{id}/order`（ペイロード: `{ "ordered_ids": number[] }`）で保存。
 - **複数選択グループ移動**: `MultiSelectToolbar` 連携により、選択アイテムを順序維持で一括移動。
 - **一括削除**: `POST /api/albums/{id}/items/delete` でアルバムからの一括削除。
 
@@ -92,20 +95,20 @@
 
 ## 6. API 呼び出し
 
-| 操作 | エンドポイント |
-|---|---|
-| スナップショット一覧 | `GET /api/snapshots?workflow_id={id}&lora_id={id}&tag_set_id={id}` |
-| スナップショット詳細 | `GET /api/snapshots/{id}` |
-| スナップショット削除 | `DELETE /api/snapshots/{id}` |
-| フキダシ自動検出 | `POST /api/snapshots/{id}/detect-bubble` |
-| アルバム一覧 | `GET /api/albums` |
-| アルバム作成 | `POST /api/albums` |
-| アルバム表示順更新 | `PUT /api/albums/{id}/order` |
-| アルバム並び替え | `PUT /api/albums/reorder` |
-| アルバムアイテム一括削除 | `POST /api/albums/{id}/items/delete` |
-| 漫画化バッチジョブ登録 | `POST /api/speech-batch/jobs` |
-| 漫画化アクティブジョブ取得 | `GET /api/speech-batch/jobs/active` |
-| 口調書き換え実行 | `POST /api/speech-tone-presets/rewrite` |
+| 操作 | エンドポイント | ペイロード / パラメータ |
+|---|---|---|
+| スナップショット一覧 | `GET /api/snapshots` | `?workflow_id={id}&lora_id={id}&tag_set_id={id}&limit=50&offset=0` |
+| スナップショット詳細 | `GET /api/snapshots/{id}` | |
+| スナップショット削除 | `DELETE /api/snapshots/{id}` | |
+| フキダシ自動検出 | `POST /api/snapshots/{id}/detect-bubble` | |
+| アルバム一覧 | `GET /api/albums` | |
+| アルバム作成 | `POST /api/albums` | `{ "name": string, "snapshot_ids": number[] }` |
+| アルバム表示順更新 | `PUT /api/albums/{id}/order` | `{ "ordered_ids": number[] }` |
+| アルバム並び替え | `PUT /api/albums/reorder` | `{ "ordered_ids": number[] }` |
+| アルバムアイテム一括削除 | `POST /api/albums/{id}/items/delete` | `{ "snapshot_ids": number[] }` |
+| 漫画化バッチジョブ登録 | `POST /api/speech-batch/jobs` | |
+| 漫画化アクティブジョブ取得 | `GET /api/speech-batch/jobs/active` | |
+| 口調書き換え実行 | `POST /api/speech-tone-presets/rewrite` | `{ "text": string, "prompt": string }` |
 
 ---
 

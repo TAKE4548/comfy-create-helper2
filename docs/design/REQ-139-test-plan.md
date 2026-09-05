@@ -4,7 +4,7 @@
 - **コマンド**: 
 pm test src/components/__tests__/AddSnapshotToAlbumModal.test.tsx (frontend)
 - **期待値**: 全テストケース PASS。
-  - テストケース1: storageKey 未指定時、デフォルトの初期値（llowNone ? '' : 'new'）となること。
+  - テストケース1: storageKey 未指定時、デフォルトの初期値（allowNone ? '' : 'new'）となること。
   - テストケース2: storageKey に保存されたアルバムIDが存在する場合、モーダル起動時にそのアルバムが初期選択されること。
   - テストケース3: storageKey に保存されたアルバムIDが取得アルバム一覧に存在しない場合、安全に未選択（またはデフォルト）にフォールバックすること。
   - テストケース4: 保存確定時（handleConfirm）に選択アルバムIDまたは未選択状態が storageKey に保存されること。

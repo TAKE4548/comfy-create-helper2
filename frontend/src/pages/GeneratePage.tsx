@@ -1,3 +1,4 @@
+import React from 'react'
 import { X, AlertTriangle, Loader2 } from 'lucide-react'
 import { useGeneratePageState } from './GeneratePage/hooks/useGeneratePageState'
 import { DesktopLayout } from './GeneratePage/components/DesktopLayout'
@@ -13,6 +14,48 @@ import { JobManagementModal } from '../components/JobManagementModal'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 import { SceneGeneratorModal } from '../components/SceneGeneratorModal'
 import { LS_KEYS } from '../utils/localStorageKeys'
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+export class GeneratePageErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('GeneratePage error caught by boundary:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-300">
+          <div className="bg-[#1F1F25] border border-red-500/30 rounded-xl p-6 max-w-md space-y-4">
+            <h2 className="text-lg font-semibold text-red-400">画面の表示中にエラーが発生しました</h2>
+            <p className="text-xs text-zinc-400 font-mono text-left bg-black/40 p-3 rounded overflow-auto max-h-32">
+              {this.state.error?.message || 'Unknown error'}
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-[#7C6FDD] text-white rounded-lg text-sm hover:brightness-110 transition-all"
+            >
+              再読み込み
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function GeneratePage() {
   const state = useGeneratePageState()
@@ -46,11 +89,13 @@ export function GeneratePage() {
 
   return (
     <>
-      {isMobile ? (
-        <MobileLayout state={state} />
-      ) : (
-        <DesktopLayout state={state} />
-      )}
+      <GeneratePageErrorBoundary>
+        {isMobile ? (
+          <MobileLayout state={state} />
+        ) : (
+          <DesktopLayout state={state} />
+        )}
+      </GeneratePageErrorBoundary>
 
       {/* Modals & Overlays */}
       {rescanOpen && workflow && (

@@ -49,3 +49,34 @@ export function addAssetToPrompt(
   if (!currentVal) return toAddStr;
   return `${currentVal}, ${toAddStr}`;
 }
+
+/**
+ * Trims leading/trailing commas and whitespace from a prompt snippet.
+ */
+function cleanPromptSnippet(str: string): string {
+  if (!str) return ''
+  return str.trim().replace(/^[\s,]+|[\s,]+$/g, '').trim()
+}
+
+/**
+ * Prepends a prefix string to an existing prompt with proper comma delimiter.
+ */
+export function prependToPrompt(prompt: string, prefix: string): string {
+  const cleanPrefix = cleanPromptSnippet(prefix)
+  const cleanExisting = cleanPromptSnippet(prompt)
+  if (!cleanPrefix) return cleanExisting
+  if (!cleanExisting) return cleanPrefix
+  return `${cleanPrefix}, ${cleanExisting}`
+}
+
+/**
+ * Appends a suffix string to an existing prompt with proper comma delimiter.
+ */
+export function appendToPrompt(prompt: string, suffix: string): string {
+  const cleanSuffix = cleanPromptSnippet(suffix)
+  const cleanExisting = cleanPromptSnippet(prompt)
+  if (!cleanSuffix) return cleanExisting
+  if (!cleanExisting) return cleanSuffix
+  return `${cleanExisting}, ${cleanSuffix}`
+}
+

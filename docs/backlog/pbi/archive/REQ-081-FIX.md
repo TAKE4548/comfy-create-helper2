@@ -1,14 +1,16 @@
 ---
 id: REQ-081-FIX
-title: "ワークフローアップロード時のスマートノードマッピング（一意判定）の漏れ修正"
 status: done
-tags: [defect, workflow]
+tags:
+- defect
+- workflow
+title: ワークフローアップロード時のスマートノードマッピング（一意判定）の漏れ修正
 ---
 
 ### REQ-081-FIX: ワークフローアップロード時のスマートノードマッピング（一意判定）の漏れ修正
 
 - **Type**: defect
-- **Status**: done (2026-08-26)
+- **Status**: done (2026-08-30)
 - **Current step**: none
 - **Priority**: P1
 - **Surface**: /triage 081で実施したマッピング時にノードタイプで複数候補があっても、タイトルまで含めてみると一意に決められるやつが出来てないように見える

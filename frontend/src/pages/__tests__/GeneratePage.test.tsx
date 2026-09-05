@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { GeneratePage } from '../GeneratePage';
+import { GeneratePage, GeneratePageErrorBoundary } from '../GeneratePage';
 
 // Mock client api
 vi.mock('../../api/client', () => ({
@@ -328,5 +328,25 @@ describe('GeneratePage Component Regression Tests', () => {
         expect(screen.queryByText('プリセット管理')).not.toBeInTheDocument();
       });
     });
+
+    it('renders error boundary fallback UI when a child component throws an error', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const ProblemChild = () => {
+        throw new Error('Test crash in layout');
+      };
+
+      render(
+        <GeneratePageErrorBoundary>
+          <ProblemChild />
+        </GeneratePageErrorBoundary>
+      );
+
+      expect(screen.getByText('画面の表示中にエラーが発生しました')).toBeInTheDocument();
+      expect(screen.getByText('Test crash in layout')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '再読み込み' })).toBeInTheDocument();
+
+      consoleErrorSpy.mockRestore();
+    });
   });
 });
+

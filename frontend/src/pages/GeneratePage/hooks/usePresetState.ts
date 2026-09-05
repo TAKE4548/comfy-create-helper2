@@ -6,6 +6,7 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { getInitialParams } from './useWorkflowParams'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { prependToPrompt, appendToPrompt } from '../../../utils/promptUtils'
 
 export interface HistoryState {
   paramValues: Record<string, string>
@@ -227,9 +228,9 @@ export function usePresetState({
                   newParamValues[field] = op.value!
                   delete newAppliedAssets[field]
                 } else if (op.op === 'prefix') {
-                  newParamValues[field] = op.value! + current
+                  newParamValues[field] = prependToPrompt(current, op.value ?? '')
                 } else if (op.op === 'suffix') {
-                  newParamValues[field] = current + op.value!
+                  newParamValues[field] = appendToPrompt(current, op.value ?? '')
                 } else if (op.op === 'remove_tags') {
                   if (op.commonTagOps && op.commonTagOps.length > 0) {
                     const removeMap = new Map<string, string>()

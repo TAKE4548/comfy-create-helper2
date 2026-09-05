@@ -1,6 +1,6 @@
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
@@ -22,7 +22,7 @@
 | **翻訳設定** | プロンプト翻訳機能のプロバイダー設定（Google Cloud / DeepL / LLM）、APIキー、デバウンス時間、キャッシュクリア、翻訳統計確認 |
 | **フキダシ検出設定** | 画像内のフキダシ自動検出パラメータ（最小面積 `min_area`、輝度閾値 `min_brightness`）の調整 |
 | **セリフ口調プリセット** | キャラクター性に応じた口調変換プリセット（ツンデレ、お嬢様、敬語等）の CRUD とリアルタイム書き換えテスト |
-| **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理 |
+| **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D、`PUT /reorder`）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理 |
 | **サムネイル表示設定** | アプリケーション全体でのサムネイル表示アスペクト比（1:1 正方形, 3:4 縦長, 4:3 横長, 16:9 ワイド等）の切り替え |
 | **Base Model 設定** | ベースモデル（SD1.5, SDXL, Pony, Illustrious, Flux 等）の定義と、ComfyUI チェックポイントファイル（.safetensors）との自動マッピング管理 |
 | **操作・ワークフロー・接続** | 複数選択モード起動の長押し時間設定、ワークフロー一覧・削除、FastAPI / ComfyUI のリアルタイム接続ステータス確認 |
@@ -73,6 +73,8 @@
 ## 4. データモデル
 
 ### 4-1. MappingMaster & ParamTypeMaster
+
+`input_type` のうち `select_sampler` および `select_scheduler` は、ComfyUI の `/object_info` から最新のサンプラ・スケジューラ一覧を動的取得する（オフライン時は定数フォールバック）。
 
 ```typescript
 interface MappingMaster {
@@ -130,24 +132,26 @@ interface SpeechTonePreset {
 
 ## 5. 接続ステータス (Connections)
 
-- **FastAPI Backend**: フロントエンドが稼働しているオリジンの `/api/config` または `/health` へリクエストを送信して疎通確認。
+- **FastAPI Backend**: フロントエンドが稼働しているオリジンの `/api/config` へリクエストを送信して疎通確認（タイムアウト: 5000ms、4xx/5xx は切断判定）。
 - **ComfyUI**: 設定されている ComfyUI URL（WebSocket / REST）の稼働状態をリアルタイム確認。
 
 ---
 
 ## 6. API 呼び出し
 
-| 操作 | エンドポイント |
-|---|---|
-| マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters`, `PUT /reorder` |
-| パラメータ型マスタ一覧・管理 | `GET/POST/PUT/DELETE /api/param-type-masters` |
-| ベースモデル一覧・管理 | `GET/POST/PUT/DELETE /api/base-models` |
-| チェックポイントマッピング一覧・管理 | `GET/POST/DELETE /api/checkpoint-mappings`, `GET /api/comfy/checkpoints` |
-| ワークフロー一覧・削除 | `GET/DELETE /api/workflows` |
-| LLM プロンプト一覧・更新 | `GET/PUT /api/llm-prompts/{key}` |
-| LLM モデル一覧取得・現在モデル切替 | `GET /api/llm-prompts/models`, `GET/PUT /api/llm-prompts/current-model` |
-| 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` |
-| セリフ口調プリセット一覧・管理・テスト | `GET/POST/PUT/DELETE /api/speech-tone-presets`, `POST /rewrite` |
+| 操作 | エンドポイント | ペイロード / パラメータ |
+|---|---|---|
+| マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters` | `{ "role": string, ... }` |
+| マッピングマスタ並び替え | `PUT /api/mapping-masters/reorder` | `{ "item_ids": number[] }` |
+| パラメータ型マスタ一覧・管理 | `GET/POST/PUT/DELETE /api/param-type-masters` | |
+| ベースモデル一覧・管理 | `GET/POST/PUT/DELETE /api/base-models` | |
+| チェックポイントマッピング一覧・管理 | `GET/POST/DELETE /api/checkpoint-mappings` | `GET /api/comfy/checkpoints` |
+| ワークフロー一覧・削除 | `GET/DELETE /api/workflows` | |
+| LLM プロンプト一覧・更新 | `GET/PUT /api/llm-prompts/{key}` | |
+| LLM モデル一覧取得・現在モデル切替 | `GET /api/llm-prompts/models`, `GET/PUT /api/llm-prompts/current-model` | |
+| 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` | |
+| セリフ口調プリセット一覧・管理・テスト | `GET/POST/PUT/DELETE /api/speech-tone-presets` | `POST /rewrite` |
+| セリフ口調プリセット並び替え | `PUT /api/speech-tone-presets/reorder` | `{ "ordered_ids": number[] }` |
 
 ---
 

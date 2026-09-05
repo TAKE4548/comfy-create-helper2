@@ -1,6 +1,6 @@
 # Prompt Surgeon — LoRAs ページ仕様書 (SPEC_LORAS)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
 **実装ファイル**: `frontend/src/pages/LoRAsPage.tsx`（`LoraModals.tsx`, `CategoryManagerModal.tsx` 等の分割構成）
 
@@ -58,7 +58,7 @@ ComfyUI で使用可能な LoRA モデルのメタ情報・BaseModel紐付け・
 | カテゴリバッジ | カテゴリマスタから選択した値をバッジ表示 |
 | BaseModel バッジ | 紐付けられているベースモデル名（SDXL, Pony 等）を表示 |
 | トリガーワード | ホバー時にワンクリックコピーボタン表示 |
-| 推奨強度 | 下限〜上限（例: `0.6 ~ 1.0`）または単一値（例: `0.8`） |
+| 推奨強度 | 下限〜上限（例: `0.6 ~ 1.0`）または単一値（例: `0.8`。単一値指定時は `min` / `max` の双方に同値が保存される） |
 | ファイルパス | フォルダアイコンをホバーで ComfyUI 側のファイルパスをツールチップ表示 |
 
 ---
@@ -71,6 +71,7 @@ ComfyUI で使用可能な LoRA モデルのメタ情報・BaseModel紐付け・
   - `File Path` 入力欄にフォーカスまたは文字入力した際、バックエンドAPI（`/api/loras/comfy-models`）から取得した ComfyUI 側の全 LoRA ファイルパス（フォルダ構成を含む相対パス）の一覧がドロップダウン形式でサジェスト表示される。
   - すでに Prompt Surgeon 内に登録済みのファイルパスには「登録済み」バッジが表示され、重複登録できないよう選択が無効化される。
   - リストからパスを選択すると、`File Path` と `Model Name`（ファイルパスの末尾ファイル名から拡張子を除いたもの）が自動的に入力される。
+  - ComfyUI オフライン時はエラー通知を表示し、手動によるファイルパス入力を許可する。
 
 ---
 
@@ -88,8 +89,8 @@ interface Lora {
   recommended_strength_max?: number;
   thumbnail_path?: string;
   sort_order: number;
-  base_models?: BaseModel[];
-  target_base_model_ids?: number[];
+  base_models?: BaseModel[];     // GET 取得時に展開される BaseModel オブジェクト配列
+  target_base_model_ids?: number[]; // POST/PUT 登録・更新時に送信する BaseModel ID 配列
   trigger_word_sets?: TriggerWordSet[];
 }
 
@@ -112,20 +113,20 @@ interface TriggerWordSet {
 
 ## 8. API 呼び出し
 
-| 操作 | エンドポイント |
-|---|---|
-| LoRA 一覧 | `GET /api/loras` |
-| LoRA 登録 | `POST /api/loras` |
-| LoRA 更新 | `PUT /api/loras/{id}` |
-| LoRA 削除 | `DELETE /api/loras/{id}` |
-| LoRA 並び替え | `PUT /api/loras/reorder` |
-| トリガーワードセット一覧 | `GET /api/loras/{id}/trigger-word-sets` |
-| トリガーワードセット登録 | `POST /api/loras/{id}/trigger-word-sets` |
-| トリガーワードセット更新 | `PUT /api/loras/{id}/trigger-word-sets/{set_id}` |
-| トリガーワードセット削除 | `DELETE /api/loras/{id}/trigger-word-sets/{set_id}` |
-| カテゴリ一覧・管理 | `GET/POST/PUT/DELETE /api/lora-categories` |
-| ベースモデル一覧 | `GET /api/base-models` |
-| ComfyUI 内 LoRA モデル取得 | `GET /api/loras/comfy-models` |
+| 操作 | エンドポイント | ペイロード / パラメータ |
+|---|---|---|
+| LoRA 一覧 | `GET /api/loras` | `?category_id={id}&base_model_id={id}&search={kw}` |
+| LoRA 登録 | `POST /api/loras` | `{ "model_name": string, "target_base_model_ids": number[], ... }` |
+| LoRA 更新 | `PUT /api/loras/{id}` | `{ "model_name": string, "target_base_model_ids": number[], ... }` |
+| LoRA 削除 | `DELETE /api/loras/{id}` | |
+| LoRA 並び替え | `PUT /api/loras/reorder` | `{ "ordered_ids": number[] }` |
+| トリガーワードセット一覧 | `GET /api/loras/{id}/trigger-word-sets` | |
+| トリガーワードセット登録 | `POST /api/loras/{id}/trigger-word-sets` | `{ "name": string, "words": string[] }` |
+| トリガーワードセット更新 | `PUT /api/loras/{id}/trigger-word-sets/{set_id}` | `{ "name": string, "words": string[] }` |
+| トリガーワードセット削除 | `DELETE /api/loras/{id}/trigger-word-sets/{set_id}` | |
+| カテゴリ一覧・管理 | `GET/POST/PUT/DELETE /api/lora-categories` | |
+| ベースモデル一覧 | `GET /api/base-models` | |
+| ComfyUI 内 LoRA モデル取得 | `GET /api/loras/comfy-models` | |
 
 ---
 

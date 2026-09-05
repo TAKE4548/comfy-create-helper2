@@ -634,6 +634,102 @@ describe('useGeneratePageState', () => {
         }),
       }))
     })
+
+    it('should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply (REQ-218)', async () => {
+      const mockPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: '1girl, blue eyes' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([mockPreset])
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce({
+        ...mockPreset,
+        param_values: { positive_prompt: 'masterpiece, best quality, 1girl, blue eyes' },
+      })
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [
+            {
+              op: 'prefix',
+              fields: ['positive_prompt'],
+              value: ' , masterpiece, best quality, ',
+            },
+          ],
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        param_values: expect.objectContaining({
+          positive_prompt: 'masterpiece, best quality, 1girl, blue eyes',
+        }),
+      }))
+    })
+
+    it('should correctly append suffix with normalized comma delimiter in handleBulkEditApply (REQ-218)', async () => {
+      const mockPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: 'masterpiece, best quality' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([mockPreset])
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce({
+        ...mockPreset,
+        param_values: { positive_prompt: 'masterpiece, best quality, 1girl, blue eyes' },
+      })
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [
+            {
+              op: 'suffix',
+              fields: ['positive_prompt'],
+              value: ' , 1girl, blue eyes, ',
+            },
+          ],
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(10, expect.objectContaining({
+        param_values: expect.objectContaining({
+          positive_prompt: 'masterpiece, best quality, 1girl, blue eyes',
+        }),
+      }))
+    })
   })
 })
 

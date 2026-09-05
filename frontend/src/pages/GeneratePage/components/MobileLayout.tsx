@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Loader2, Settings, ImageOff, Download, CheckSquare, Square, Plus,
@@ -128,6 +128,10 @@ export const MobileLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+
+  const handleChipsChange = useCallback((role: string, chips: any) => {
+    setPromptChips(role, chips)
+  }, [setPromptChips])
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
@@ -700,11 +704,11 @@ export const MobileLayout = ({
           {!isCollapsed && (
             <>
               <TagChipEditor
-                key={activePromptTabMapping.role!}
+                key={`${activeSetId}-${activePromptTabMapping.role!}`}
                 id={`prompt-mobile-${activePromptTabMapping.role!}`}
                 value={paramValues[activePromptTabMapping.role!] ?? ''}
                 chips={promptChips?.[activePromptTabMapping.role!]}
-                onChipsChange={(chips) => setPromptChips(activePromptTabMapping.role!, chips)}
+                onChipsChange={(chips) => handleChipsChange(activePromptTabMapping.role!, chips)}
                 onChange={(val) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: val })}
                 placeholder={`Enter ${activePromptTabMapping.display_name}…`}
                 variant={isNegative ? 'negative' : 'positive'}

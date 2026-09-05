@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react'
+import React, { useState, useEffect, useCallback, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Settings, Plus, ChevronRight, ChevronDown,
@@ -180,6 +180,10 @@ export const DesktopLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+
+  const handleChipsChange = useCallback((role: string, chips: any) => {
+    setPromptChips(role, chips)
+  }, [setPromptChips])
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
@@ -602,11 +606,11 @@ export const DesktopLayout = ({
               {!isCollapsed && (
                 <>
                   <TagChipEditor
-                    key={m.role!}
+                    key={`${activeSetId}-${m.role!}`}
                     id={`prompt-${m.role!}`}
                     value={paramValues[m.role!] ?? ''}
                     chips={promptChips?.[m.role!]}
-                    onChipsChange={(chips) => setPromptChips(m.role!, chips)}
+                    onChipsChange={(chips) => handleChipsChange(m.role!, chips)}
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'}

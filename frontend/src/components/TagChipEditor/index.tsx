@@ -82,10 +82,24 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     if (chipsProp !== undefined) {
       if (chipsProp !== prevChipsProp.current) {
         prevChipsProp.current = chipsProp;
+        prevChipsString.current = chipsToString(chipsProp);
         isExternalUpdateRef.current = true;
         setChips(chipsProp, false);
         if (isTextMode) {
           setTextValue(chipsToString(chipsProp));
+        }
+      } else if (
+        value &&
+        value !== prevChipsString.current &&
+        value !== chipsToString(state)
+      ) {
+        // chipsProp の参照変化はないが、value (文字列) が外部から変更された場合 (セクションコピペ等)
+        isExternalUpdateRef.current = true;
+        const newChips = parseToChips(value);
+        setChips(newChips, false);
+        prevChipsString.current = value;
+        if (isTextMode) {
+          setTextValue(value);
         }
       }
     } else {

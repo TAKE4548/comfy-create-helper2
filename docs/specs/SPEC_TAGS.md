@@ -1,6 +1,6 @@
 # Prompt Surgeon — Tags ページ仕様書 (SPEC_TAGS)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
 **実装ファイル**: `frontend/src/pages/TagsPage.tsx`（`TagSetModals.tsx`, `CategoryManagerModal.tsx` 分割構成）
 
@@ -19,10 +19,10 @@ Generate ページのアセットパネルから role 単位で適用できる�
 
 | 機能 | 説明 |
 |---|---|
-| タグセット一覧 | Grid 表示。検索・カテゴリフィルタ・BaseModel フィルタ対応 |
+| タグセット一覧 | Grid 表示。検索キーワード・カテゴリフィルタ・BaseModel フィルタ（**AND 結合**）対応 |
 | タグセット新規作成 | モーダルダイアログ（`TagSetCreateModal`）で名前・カテゴリ・BaseModel・タグ・サブセットを入力して登録 |
 | タグセット編集・詳細 | カードクリックで詳細/編集モーダル（`TagSetEditModal`, `TagSetDetailModal`）を開き更新 |
-| タグセット削除 | 登録済みタグセットの削除 |
+| タグセット削除 | 登録済みタグセットの削除（紐づくサブセットはカスケード削除） |
 | タグサブセット管理 | 1つのタグセット内に複数のバリエーションタググループ（例: 「衣装通常」「衣装破損」「夏服」等）をサブセットとして保持・管理 |
 | サムネイル切り抜き | `ImageCropper` による自由なアスペクト比でのサムネイル画像切り抜き・登録 |
 | カテゴリ管理 | ページ内から直接カテゴリマスタの追加・編集・削除モーダル（`CategoryManagerModal`）を起動 |
@@ -61,9 +61,9 @@ interface TagSet {
   tags: string[];               // デフォルトタグリスト
   thumbnail_path?: string;
   sort_order: number;
-  base_models?: BaseModel[];
-  target_base_model_ids?: number[];
-  subsets?: TagSubset[];        // バリエーションサブセット
+  base_models?: BaseModel[];     // GET 取得時に展開される BaseModel オブジェクト配列
+  target_base_model_ids?: number[]; // POST/PUT 登録・更新時に送信する BaseModel ID 配列
+  subsets?: TagSubset[];        // バリエーションサブセット（親削除時 CASCADE 削除）
 }
 
 interface TagSubset {
@@ -85,15 +85,15 @@ interface TagSubset {
 
 ## 6. API 呼び出し
 
-| 操作 | エンドポイント |
-|---|---|
-| タグセット一覧 | `GET /api/tag-sets` |
-| タグセット登録 | `POST /api/tag-sets` |
-| タグセット更新 | `PUT /api/tag-sets/{id}` |
-| タグセット削除 | `DELETE /api/tag-sets/{id}` |
-| タグセット並び替え | `PUT /api/tag-sets/reorder` |
-| カテゴリ一覧・管理 | `GET/POST/PUT/DELETE /api/tagset-categories` |
-| ベースモデル一覧 | `GET /api/base-models` |
+| 操作 | エンドポイント | ペイロード / パラメータ |
+|---|---|---|
+| タグセット一覧 | `GET /api/tag-sets` | `?category_id={id}&base_model_id={id}&search={kw}` |
+| タグセット登録 | `POST /api/tag-sets` | `{ "name": string, "target_base_model_ids": number[], "subsets": [...] }` |
+| タグセット更新 | `PUT /api/tag-sets/{id}` | `{ "name": string, "target_base_model_ids": number[], "subsets": [...] }` |
+| タグセット削除 | `DELETE /api/tag-sets/{id}` | |
+| タグセット並び替え | `PUT /api/tag-sets/reorder` | `{ "ordered_ids": number[] }` |
+| カテゴリ一覧・管理 | `GET/POST/PUT/DELETE /api/tagset-categories` | |
+| ベースモデル一覧 | `GET /api/base-models` | |
 
 ---
 

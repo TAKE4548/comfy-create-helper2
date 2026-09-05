@@ -415,6 +415,42 @@ describe('TagChipEditor', () => {
       const cherryContainer = cherryEl.closest('div[tabindex]');
       expect(cherryContainer).toHaveClass('line-through');
     });
+
+    it('Case 4: synchronizes chips when external value string changes while chips prop reference remains unchanged', () => {
+      const initialChips = [
+        { id: 'chip-1', text: 'apple', enabled: true },
+        { id: 'chip-2', text: 'banana', enabled: true },
+      ];
+      const onChipsChangeMock = vi.fn();
+
+      const { rerender } = render(
+        <TagChipEditor
+          chips={initialChips}
+          value="apple, banana"
+          onChipsChange={onChipsChangeMock}
+          onChange={() => {}}
+        />
+      );
+
+      expect(screen.getByText('apple')).toBeInTheDocument();
+      expect(screen.getByText('banana')).toBeInTheDocument();
+      expect(screen.queryByText('orange')).not.toBeInTheDocument();
+
+      // Rerender with same chips array reference but changed value string (e.g. section copy-paste)
+      rerender(
+        <TagChipEditor
+          chips={initialChips}
+          value="orange, grape"
+          onChipsChange={onChipsChangeMock}
+          onChange={() => {}}
+        />
+      );
+
+      expect(screen.queryByText('apple')).not.toBeInTheDocument();
+      expect(screen.queryByText('banana')).not.toBeInTheDocument();
+      expect(screen.getByText('orange')).toBeInTheDocument();
+      expect(screen.getByText('grape')).toBeInTheDocument();
+    });
   });
 });
 

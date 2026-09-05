@@ -69,6 +69,8 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - **構造化チップ（`promptChips`）の状態管理と保持規則**:
   - プロンプトのトークン構造（無効タグ `enabled: false` を含む配列）は、グローバルストア `useGenerationStore.promptChips`（`Record<string, TagChip[]>`）および `GenerationSet.promptChips` を SSoT として一元管理される。
   - アコーディオンの開閉、モバイル画面のタブ切り替え、Multi-Set切替・追加・複製を行っても、無効タグの状態は破棄されず完全に維持される。
+  - セクションコピペ機能（`PromptSectionClipboardMenu`）や外部からの平文プロンプト文字列更新時、`TagChipEditor` は `chipsProp` を維持しつつ最新文字列を検知して正しくチップへ再パース・更新を行う。
+  - プリセット切り替え時、`DesktopLayout` および `MobileLayout` で `key={`${activeSetId}-${role}`}` を適用することによりコンポーネントの再初期化を担保し、`multiSetSlice.loadPresetData` において `paramValues` から初期 `promptChips` を自動構築することで、プロンプトの消失・空欄化を防止する。
   - ComfyUIへのキュー投入時（単一セット / Multi-Set）は、機械的導出ヘルパー `getEffectiveParamValues` により有効タグ（`enabled: true`）のみが抽出された平文マップが作成され、パラメータ同期（ParamSync）を経てComfyUI APIへ投入される。これにより無効タグが画像生成やメタデータ記録に混入することはない。
 
 ### 2-4. アセットパネル（LoRA / TagSet の適用）
