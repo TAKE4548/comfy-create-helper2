@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X, GripVertical } from 'lucide-react';
+import { X, GripVertical, Copy, Check } from 'lucide-react';
 import { parseTagWeight, formatTagWeight, adjustWeight } from './useChipParser';
+import { usePromptClipboardStore } from '../../store/usePromptClipboardStore';
 
 export interface TagChipProps {
   id: string;
@@ -28,8 +29,16 @@ export const TagChip: React.FC<TagChipProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(text);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyText = usePromptClipboardStore((s) => s.copyText);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyTag = async () => {
+    await copyText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const {
     attributes,
@@ -278,7 +287,7 @@ export const TagChip: React.FC<TagChipProps> = ({
           className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* ヘッダー: タグ名入力 + 有効/無効トグル */}
+          {/* ヘッダー: タグ名入力 + 有効/無効トグル + コピーボタン */}
           <div className="flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.08)] pb-2">
             <input
               type="text"
@@ -290,6 +299,15 @@ export const TagChip: React.FC<TagChipProps> = ({
               className="flex-1 min-w-0 px-2 py-1 bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] rounded text-[#E4E4E7] text-xs font-medium focus:outline-none focus:border-[#7C6FDD]"
               aria-label="タグ名編集"
             />
+            <button
+              type="button"
+              onClick={handleCopyTag}
+              className="p-1 rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] transition-colors shrink-0"
+              title="タグをコピー"
+              aria-label="タグをコピー"
+            >
+              {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            </button>
             <button
               type="button"
               onClick={() => onToggle(id)}

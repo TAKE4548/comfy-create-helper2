@@ -326,4 +326,95 @@ describe('TagChipEditor', () => {
     expect(screen.getByRole('button', { name: '+0.5' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+0.3' })).not.toBeInTheDocument();
   });
+
+  describe('REQ-220: native chips array and disabled tag preservation', () => {
+    it('Case 1: renders disabled chip initially when passed in chips prop', () => {
+      const initialChips = [
+        { id: 'chip-1', text: 'apple', enabled: true },
+        { id: 'chip-2', text: 'banana', enabled: false },
+      ];
+
+      render(
+        <TagChipEditor
+          chips={initialChips}
+          onChange={mockOnChange}
+        />
+      );
+
+      const appleEl = screen.getByText('apple');
+      const bananaEl = screen.getByText('banana');
+      expect(appleEl).toBeInTheDocument();
+      expect(bananaEl).toBeInTheDocument();
+
+      // Banana chip container should have line-through class
+      const bananaContainer = bananaEl.closest('div[tabindex]');
+      expect(bananaContainer).toHaveClass('line-through');
+    });
+
+    it('Case 2: calls onChipsChange with enabled: false when chip is disabled', () => {
+      const initialChips = [
+        { id: 'chip-1', text: 'apple', enabled: true },
+        { id: 'chip-2', text: 'banana', enabled: true },
+      ];
+      const mockOnChipsChange = vi.fn();
+
+      render(
+        <TagChipEditor
+          chips={initialChips}
+          onChange={mockOnChange}
+          onChipsChange={mockOnChipsChange}
+        />
+      );
+
+      // Click on banana chip to open menu
+      fireEvent.click(screen.getByText('banana'));
+
+      // Click the toggle button in the popover menu
+      const toggleBtn = screen.getByRole('button', { name: '有効' });
+      fireEvent.click(toggleBtn);
+
+      // Verify onChipsChange was called with banana disabled
+      expect(mockOnChipsChange).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ text: 'apple', enabled: true }),
+          expect.objectContaining({ text: 'banana', enabled: false }),
+        ])
+      );
+    });
+
+    it('Case 3: synchronizes state without re-parsing when chips prop is updated externally', () => {
+      const chipsA = [
+        { id: 'chip-1', text: 'apple', enabled: true },
+      ];
+      const chipsB = [
+        { id: 'chip-1', text: 'apple', enabled: true },
+        { id: 'chip-2', text: 'cherry', enabled: false },
+      ];
+
+      const { rerender } = render(
+        <TagChipEditor
+          chips={chipsA}
+          onChange={mockOnChange}
+        />
+      );
+
+      expect(screen.getByText('apple')).toBeInTheDocument();
+      expect(screen.queryByText('cherry')).not.toBeInTheDocument();
+
+      // Rerender with chipsB
+      rerender(
+        <TagChipEditor
+          chips={chipsB}
+          onChange={mockOnChange}
+        />
+      );
+
+      expect(screen.getByText('apple')).toBeInTheDocument();
+      const cherryEl = screen.getByText('cherry');
+      expect(cherryEl).toBeInTheDocument();
+      const cherryContainer = cherryEl.closest('div[tabindex]');
+      expect(cherryContainer).toHaveClass('line-through');
+    });
+  });
 });
+

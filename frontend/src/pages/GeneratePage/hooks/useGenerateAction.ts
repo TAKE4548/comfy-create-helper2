@@ -6,6 +6,7 @@
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { BatchJob } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
+import { getEffectiveParamValues } from '../../../store/slices/multiSetSlice'
 import { applyBypass } from '../../../utils/bypassUtils'
 import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
 import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
@@ -13,6 +14,7 @@ import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInfo: any = {}) {
   const {
     paramValues: currentParamValues,
+    promptChips,
     batchSize: currentBatchSize,
     seedMode: currentSeedMode,
     seed: currentSeed,
@@ -55,7 +57,8 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
-    const syncedParamValues = applyParamSync(currentParamValues)
+    const effectiveParamValues = getEffectiveParamValues(currentParamValues, promptChips || {})
+    const syncedParamValues = applyParamSync(effectiveParamValues)
 
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
@@ -137,7 +140,8 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     let currentIdx = existingActiveBatch.length
     try {
       for (const setItem of checkedSets) {
-        const syncedParamValues = applyParamSync(setItem.paramValues)
+        const effectiveParamValues = getEffectiveParamValues(setItem.paramValues, setItem.promptChips || {})
+        const syncedParamValues = applyParamSync(effectiveParamValues)
         for (let i = 0; i < setItem.batchSize; i++) {
           // キャンセル中断チェック
           if (abortController.signal.aborted) {

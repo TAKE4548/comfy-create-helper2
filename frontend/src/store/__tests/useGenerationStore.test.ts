@@ -1,5 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGenerationStore, _resetWebSocketForTesting, resolveNodeTitle } from '../useGenerationStore';
+import { getEffectiveParamValues, chipsToString } from '../slices/multiSetSlice';
+import type { TagChip } from '../../components/TagChipEditor/useChipParser';
 import { comfyApi } from '../../api/client';
 
 vi.mock('../../api/client', () => {
@@ -1643,5 +1645,95 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
     createObjectURLSpy.mockRestore();
   });
 });
+
+describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      paramValues: {},
+      promptChips: {},
+      sets: [],
+      activeSetId: null,
+      openPresetIds: [],
+    });
+  });
+
+  it('chipsToString converts only enabled chips to comma-separated string', () => {
+    const chips: TagChip[] = [
+      { id: '1', text: '1girl', enabled: true },
+      { id: '2', text: 'solo', enabled: false },
+      { id: '3', text: 'smile', enabled: true },
+    ];
+    expect(chipsToString(chips)).toBe('1girl, smile');
+  });
+
+  it('getEffectiveParamValues correctly replaces role with enabled chips only', () => {
+    const paramValues = {
+      positive: 'default positive prompt',
+      negative: 'lowres, bad anatomy',
+    };
+    const promptChips: Record<string, TagChip[]> = {
+      positive: [
+        { id: '1', text: 'masterpiece', enabled: true },
+        { id: '2', text: 'worst quality', enabled: false },
+        { id: '3', text: 'best quality', enabled: true },
+      ],
+    };
+
+    const effective = getEffectiveParamValues(paramValues, promptChips);
+    expect(effective.positive).toBe('masterpiece, best quality');
+    expect(effective.negative).toBe('lowres, bad anatomy');
+  });
+
+  it('setPromptChips updates promptChips and active set', () => {
+    useGenerationStore.getState().initSets(1);
+    const chips: TagChip[] = [
+      { id: '1', text: '1girl', enabled: true },
+      { id: '2', text: 'cat ears', enabled: false },
+    ];
+
+    useGenerationStore.getState().setPromptChips('positive', chips);
+
+    const state = useGenerationStore.getState();
+    expect(state.promptChips.positive).toEqual(chips);
+
+    const activeSet = state.sets.find((s) => s.id === state.activeSetId);
+    expect(activeSet?.promptChips?.positive).toEqual(chips);
+  });
+
+  it('preserves promptChips across set addition and switching', () => {
+    useGenerationStore.getState().initSets(1);
+    const set1Id = useGenerationStore.getState().activeSetId;
+
+    const chips1: TagChip[] = [
+      { id: '1', text: 'prompt1', enabled: true },
+      { id: '2', text: 'disabled1', enabled: false },
+    ];
+    useGenerationStore.getState().setPromptChips('positive', chips1);
+
+    // Add set 2
+    useGenerationStore.getState().addSet();
+    const set2Id = useGenerationStore.getState().activeSetId;
+    expect(set2Id).not.toBe(set1Id);
+    expect(useGenerationStore.getState().promptChips.positive).toEqual(chips1);
+
+    // Modify set 2 promptChips
+    const chips2: TagChip[] = [
+      { id: '3', text: 'prompt2', enabled: true },
+    ];
+    useGenerationStore.getState().setPromptChips('positive', chips2);
+    expect(useGenerationStore.getState().promptChips.positive).toEqual(chips2);
+
+    // Switch back to set 1
+    useGenerationStore.getState().setActiveSetId(set1Id!);
+    expect(useGenerationStore.getState().promptChips.positive).toEqual(chips1);
+
+    // Switch to set 2
+    useGenerationStore.getState().setActiveSetId(set2Id!);
+    expect(useGenerationStore.getState().promptChips.positive).toEqual(chips2);
+  });
+});
+
 
 

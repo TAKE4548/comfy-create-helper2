@@ -2,7 +2,28 @@ import { StateCreator } from 'zustand'
 import type { WorkflowPreset } from '../../api/types'
 import { LS_KEYS } from '../../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../../utils/promptUtils'
+import type { TagChip } from '../../components/TagChipEditor/useChipParser'
 import type { GenerationState, MultiSetState, MultiSetActions, GenerationSet, AppliedAsset } from '../types'
+
+export const chipsToString = (chips: TagChip[]): string => {
+  return chips
+    .filter((chip) => chip.enabled)
+    .map((chip) => chip.text)
+    .join(', ')
+}
+
+export function getEffectiveParamValues(
+  paramValues: Record<string, string>,
+  promptChips: Record<string, TagChip[]>
+): Record<string, string> {
+  const effective = { ...paramValues }
+  for (const [role, chips] of Object.entries(promptChips || {})) {
+    if (chips && chips.length > 0) {
+      effective[role] = chipsToString(chips)
+    }
+  }
+  return effective
+}
 
 export type MultiSetSlice = MultiSetState & MultiSetActions
 
@@ -40,6 +61,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     selectedWorkflowId: storedWorkflowId,
     paramValues: storedParams,
     appliedAssets: storedAppliedAssets,
+    promptChips: {},
     batchSize: storedBatchSize,
     seedMode: storedSeedMode,
     seed: storedSeed,
@@ -75,6 +97,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
           openPresetIds,
           paramValues: {},
           appliedAssets: {},
+          promptChips: {},
           batchSize: defaultBatchSize,
           seedMode: defaultSeedMode,
           seed: defaultSeed,
@@ -88,6 +111,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
           openPresetIds: [],
           paramValues: {},
           appliedAssets: {},
+          promptChips: {},
           batchSize: 1,
           seedMode: 'random',
           seed: 42,
@@ -99,6 +123,16 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     setParamValues: (values) => {
       set({ paramValues: values })
       get().updateActiveSet({ paramValues: values })
+    },
+
+    setPromptChips: (role, chips) => {
+      const updated = { ...(get().promptChips || {}), [role]: chips }
+      set({ promptChips: updated })
+      get().updateActiveSet({ promptChips: updated })
+    },
+
+    getEffectiveParamValues: () => {
+      return getEffectiveParamValues(get().paramValues, get().promptChips)
     },
 
     addAppliedAsset: (role, asset) => {
@@ -184,6 +218,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         name: 'Set 1',
         paramValues: {},
         appliedAssets: {},
+        promptChips: {},
         batchSize: defaultBatchSize,
         seedMode: defaultSeedMode,
         seed: defaultSeed,
@@ -211,6 +246,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         openPresetIds,
         paramValues: {},
         appliedAssets: {},
+        promptChips: {},
         batchSize: defaultBatchSize,
         seedMode: defaultSeedMode,
         seed: defaultSeed,
@@ -229,6 +265,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         activeSetId: id,
         paramValues: targetSet.paramValues,
         appliedAssets: targetSet.appliedAssets,
+        promptChips: targetSet.promptChips || {},
         batchSize: targetSet.batchSize,
         seedMode: targetSet.seedMode,
         seed: targetSet.seed,
@@ -257,6 +294,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
             name: preset.name || s.name,
             paramValues: mergedParamValues,
             appliedAssets,
+            promptChips: s.promptChips || {},
             batchSize,
             seedMode,
             seed,
@@ -273,6 +311,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
           name: preset.name,
           paramValues: mergedParamValues,
           appliedAssets,
+          promptChips: {},
           batchSize,
           seedMode,
           seed,
@@ -289,6 +328,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         activeSetId: preset.id,
         paramValues: mergedParamValues,
         appliedAssets,
+        promptChips: finalSets.find((s) => String(s.id) === String(preset.id))?.promptChips || {},
         batchSize,
         seedMode,
         seed,
@@ -303,6 +343,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
       const currentParamValues = { ...get().paramValues }
       const currentAppliedAssets = { ...get().appliedAssets }
+      const currentPromptChips = { ...get().promptChips }
       const currentBatchSize = get().batchSize
       const currentSeedMode = get().seedMode
       const currentSeed = get().seed
@@ -312,6 +353,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         name: `Set ${get().sets.length + 1}`,
         paramValues: currentParamValues,
         appliedAssets: currentAppliedAssets,
+        promptChips: currentPromptChips,
         batchSize: currentBatchSize,
         seedMode: currentSeedMode,
         seed: currentSeed,
@@ -320,7 +362,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
       const updatedSets = [...get().sets, newSet]
       const nextOpenPresetIds = [...get().openPresetIds, newSet.id]
-      set({ sets: updatedSets, activeSetId: newSet.id, openPresetIds: nextOpenPresetIds })
+      set({ sets: updatedSets, activeSetId: newSet.id, openPresetIds: nextOpenPresetIds, promptChips: currentPromptChips })
       localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(newSet.id))
       localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
     },
@@ -345,6 +387,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
             set({
               paramValues: nextActiveSet.paramValues,
               appliedAssets: nextActiveSet.appliedAssets,
+              promptChips: nextActiveSet.promptChips || {},
               batchSize: nextActiveSet.batchSize,
               seedMode: nextActiveSet.seedMode,
               seed: nextActiveSet.seed,

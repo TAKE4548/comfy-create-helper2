@@ -13,6 +13,8 @@ import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { PromptTranslationModal } from './PromptTranslationModal'
+import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
+import { SaveAsTagSetModal } from './SaveAsTagSetModal'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
@@ -112,6 +114,7 @@ export const MobileLayout = ({
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
   const [copySourceId, setCopySourceId] = useState<string | number>('default')
+  const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
 
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
   const currentNode = useGenerationStore((state) => state.currentNode)
@@ -123,6 +126,8 @@ export const MobileLayout = ({
   const toggleParamSyncGroup = useGenerationStore((state) => state.toggleParamSyncGroup)
   const errorToast = useGenerationStore((state) => state.errorToast)
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
+  const promptChips = useGenerationStore((state) => state.promptChips)
+  const setPromptChips = useGenerationStore((state) => state.setPromptChips)
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
@@ -654,6 +659,12 @@ export const MobileLayout = ({
             </button>
             {!isCollapsed && (
               <div className="relative flex items-center gap-1.5">
+                <PromptSectionClipboardMenu
+                  role={activePromptTabMapping.role!}
+                  currentValue={paramValues[activePromptTabMapping.role!] ?? ''}
+                  onChangeValue={(val) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: val })}
+                  onOpenSaveAsTagSet={() => setSaveAsTagSetRole(activePromptTabMapping.role!)}
+                />
                 {promptTranslation && (
                   <button
                     type="button"
@@ -689,8 +700,11 @@ export const MobileLayout = ({
           {!isCollapsed && (
             <>
               <TagChipEditor
+                key={activePromptTabMapping.role!}
                 id={`prompt-mobile-${activePromptTabMapping.role!}`}
                 value={paramValues[activePromptTabMapping.role!] ?? ''}
+                chips={promptChips?.[activePromptTabMapping.role!]}
+                onChipsChange={(chips) => setPromptChips(activePromptTabMapping.role!, chips)}
                 onChange={(val) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: val })}
                 placeholder={`Enter ${activePromptTabMapping.display_name}…`}
                 variant={isNegative ? 'negative' : 'positive'}
@@ -880,6 +894,14 @@ export const MobileLayout = ({
           error={promptTranslation.error}
           onTranslate={promptTranslation.executeTranslate}
           onApply={promptTranslation.applyToPrompt}
+        />
+      )}
+
+      {saveAsTagSetRole && (
+        <SaveAsTagSetModal
+          role={saveAsTagSetRole}
+          promptText={paramValues[saveAsTagSetRole] ?? ''}
+          onClose={() => setSaveAsTagSetRole(null)}
         />
       )}
     </div>

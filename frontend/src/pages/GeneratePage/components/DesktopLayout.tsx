@@ -18,6 +18,8 @@ import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { ParamSyncModal } from '../../../components/ParamSyncModal'
 import { PromptTranslationModal } from './PromptTranslationModal'
+import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
+import { SaveAsTagSetModal } from './SaveAsTagSetModal'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 
 interface SetTabItemProps {
@@ -164,6 +166,7 @@ export const DesktopLayout = ({
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
   const [copySourceId, setCopySourceId] = useState<string | number>('default')
+  const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
 
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
   const currentNode = useGenerationStore((state) => state.currentNode)
@@ -175,6 +178,8 @@ export const DesktopLayout = ({
   const toggleParamSyncGroup = useGenerationStore((state) => state.toggleParamSyncGroup)
   const errorToast = useGenerationStore((state) => state.errorToast)
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
+  const promptChips = useGenerationStore((state) => state.promptChips)
+  const setPromptChips = useGenerationStore((state) => state.setPromptChips)
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
@@ -558,6 +563,12 @@ export const DesktopLayout = ({
                 </button>
                 {!isCollapsed && (
                   <div className="relative flex items-center gap-1.5">
+                    <PromptSectionClipboardMenu
+                      role={m.role!}
+                      currentValue={paramValues[m.role!] ?? ''}
+                      onChangeValue={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                      onOpenSaveAsTagSet={() => setSaveAsTagSetRole(m.role!)}
+                    />
                     <button
                       type="button"
                       onClick={() => promptTranslation.openTranslation(m.role!, paramValues[m.role!] || '')}
@@ -590,13 +601,19 @@ export const DesktopLayout = ({
               </div>
               {!isCollapsed && (
                 <>
-                  <TagChipEditor id={`prompt-${m.role!}`} value={paramValues[m.role!] ?? ''}
+                  <TagChipEditor
+                    key={m.role!}
+                    id={`prompt-${m.role!}`}
+                    value={paramValues[m.role!] ?? ''}
+                    chips={promptChips?.[m.role!]}
+                    onChipsChange={(chips) => setPromptChips(m.role!, chips)}
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'}
                     defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
                     isAnimaMode={isAnimaMode}
-                    onTextModeToggle={() => setRoleCollapsed(m.role!, false)} />
+                    onTextModeToggle={() => setRoleCollapsed(m.role!, false)}
+                  />
                   <AppliedAssetChips
                     role={m.role!}
                     appliedAssets={appliedAssets}
@@ -1019,6 +1036,14 @@ export const DesktopLayout = ({
         onTranslate={promptTranslation.executeTranslate}
         onApply={promptTranslation.applyToPrompt}
       />
+
+      {saveAsTagSetRole && (
+        <SaveAsTagSetModal
+          role={saveAsTagSetRole}
+          promptText={paramValues[saveAsTagSetRole] ?? ''}
+          onClose={() => setSaveAsTagSetRole(null)}
+        />
+      )}
     </div>
   )
 }

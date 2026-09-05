@@ -655,4 +655,60 @@ describe('useGenerateAction', () => {
       expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('REQ-220: promptChips effectiveParamValues derivation', () => {
+    it('handleGenerate injects only enabled chips as effective param values', async () => {
+      mockStore.batchSize = 1;
+      mockStore.queuePrompt.mockResolvedValue('prompt-id');
+      mockStore.paramValues = {
+        Main_Positive_Prompt: 'raw positive text',
+      };
+      mockStore.promptChips = {
+        Main_Positive_Prompt: [
+          { id: '1', text: 'masterpiece', enabled: true },
+          { id: '2', text: 'worst quality', enabled: false },
+          { id: '3', text: '1girl', enabled: true },
+        ],
+      };
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      await handleGenerate();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const payloadMetadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(payloadMetadata.paramValues.Main_Positive_Prompt).toBe('masterpiece, 1girl');
+    });
+
+    it('handleGenerateSets injects only enabled chips for set items', async () => {
+      mockStore.queuePrompt.mockResolvedValue('prompt-id');
+      mockStore.sets = [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          checked: true,
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          appliedAssets: {},
+          paramValues: {
+            Main_Positive_Prompt: 'raw fallback',
+          },
+          promptChips: {
+            Main_Positive_Prompt: [
+              { id: '1', text: 'solo', enabled: false },
+              { id: '2', text: 'smile', enabled: true },
+            ],
+          },
+        },
+      ];
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const payloadMetadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(payloadMetadata.paramValues.Main_Positive_Prompt).toBe('smile');
+    });
+  });
 });
+

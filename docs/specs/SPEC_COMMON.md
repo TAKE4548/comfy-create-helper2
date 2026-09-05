@@ -1,8 +1,8 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
-**ステータス**: 現行実装に完全準拠
+**ステータス**: 現行実装に完全準拠（TagChipパース規則・イベント型契約・キャッシュライフサイクル定義）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md)
 
@@ -100,7 +100,7 @@ type TagChip = {
   id: string;          // 衝突耐性のあるユニークID (idGenerator.ts により生成)
   text: string;        // タグ文字列（trim 済み、(tag:1.2) のような重み付き文字列も含む）
   enabled: boolean;    // false = 無効化（グレーアウト）
-  converting?: boolean; // 変換処理中フラグ
+  converting?: boolean; // 変換処理中フラグ（過渡的一時状態。API送信や永続化時には除外）
 };
 ```
 
@@ -109,8 +109,10 @@ type TagChip = {
 ```typescript
 interface TagChipEditorProps {
   id?: string;
-  value: string;                          // カンマ区切りプロンプト文字列
-  onChange: (val: string) => void;        // 有効チップのみをカンマ連結した文字列を返す
+  value?: string;                         // カンマ区切りプロンプト文字列（フォールバック用）
+  onChange?: (val: string) => void;       // 有効チップのみをカンマ連結した文字列を返す
+  chips?: TagChip[];                      // 構造体チップ配列（SSoT）
+  onChipsChange?: (chips: TagChip[]) => void; // チップ変更通知（無効タグ保持）
   placeholder?: string;
   variant?: string;
   defaultTextMode?: boolean;              // テキストモード初期状態
@@ -118,6 +120,10 @@ interface TagChipEditorProps {
   onTextModeToggle?: (isTextMode: boolean) => void;
 }
 ```
+
+### 3-4-1. ライフサイクル保持仕様
+- 画面遷移、アコーディオン開閉、モバイルタブ切替、Multi-Set切替において、無効タグ（`enabled: false`）を含めた完全なトークン配列が親ストア（`useGenerationStore.promptChips`）と `chips` / `onChipsChange` を介して双方向同期・保持される。
+- ComfyUI投入時およびスナップショット生成時は、機械的導出ヘルパー `getEffectiveParamValues`（`chipsToString`）により有効チップ（`enabled: true`）のみが平文マップ（`effectiveParamValues`）として抽出され、安全かつ確定的に送信・記録される。
 
 ### 3-5. チップのインタラクション
 
@@ -141,7 +147,10 @@ interface TagChipEditorProps {
 | ペースト（カンマ区切り） | 複数チップを一括生成 |
 | Backspace（フィールドが空） | 直前チップを削除 |
 
-### 3-7. テキスト変換
+### 3-7. テキスト変換とパース規則
+
+- **括弧・重み記法の保護**: `(tag:1.2)` や `(tag1, tag2:1.3)` のような括弧ネスト内のカンマは分割せず、1つのタグトークンとして保持する。
+- **空トークン除外**: 連続カンマ `,,` や空白のみのトークンは自動的に `trim()` され除外される。
 
 ```typescript
 // 文字列 → チップ配列
@@ -174,9 +183,17 @@ function chipsToString(chips: TagChip[]): string {
 - チップ → textarea: 有効チップのみをカンマ連結して反映  
 - textarea → チップ: テキストをカンマ分割して再チップ化（無効チップは復元されない）
 
-### 3-10. Audit 機能との連携（カスタムイベント）
+### 3-10. Audit 機能との連携（カスタムイベント契約）
 
 親（GeneratePage等）とチップエディタ間の疎結合を保つためにグローバルなカスタムイベントを利用して動的に連携する。
+
+```typescript
+// イベントペイロード型定義
+interface TagChipEventDetail {
+  tag: string;
+}
+```
+
 - **干渉タグ診断結果（無効化）**:
   - 親側の無効化ボタン押下時に `window.dispatchEvent(new CustomEvent('tag-chip-editor:disable-tag', { detail: { tag } }))` が発行される。
   - チップエディタ側でこのイベントを検知し、一致するタグチップの `enabled` ステータスを `false` にトグル（無効化・グレーアウト）する。
@@ -235,6 +252,7 @@ function chipsToString(chips: TagChip[]): string {
 ### 6-1. キャッシュ基本方針
 - TanStack Query (React Query v5) + `PersistQueryClientProvider` による localStorage 永続化（10分間キャッシュ有効）。
 - Stale-While-Revalidate（SWR）モデルにより、UI 遷移時のフリッカーを排除しつつバックグラウンドで最新データを同期。
+- `Infinity` 設定の静的データ（`config`, `fonts`）は、アプリ再読み込み時または設定画面での明示的リフレッシュ時に再取得される。
 
 ### 6-2. staleTime 定数テーブル (`frontend/src/constants/staleTimes.ts`)
 

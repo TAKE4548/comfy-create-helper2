@@ -25,8 +25,10 @@ import './tagChipEditor.css';
 
 interface TagChipEditorProps {
   id?: string;
-  value: string;
-  onChange: (val: string) => void;
+  value?: string;
+  onChange?: (val: string) => void;
+  chips?: TagChipType[];
+  onChipsChange?: (chips: TagChipType[]) => void;
   placeholder?: string;
   variant?: string;
   defaultTextMode?: boolean;
@@ -36,14 +38,18 @@ interface TagChipEditorProps {
 
 export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   id,
-  value,
+  value = '',
   onChange,
+  chips: chipsProp,
+  onChipsChange,
   placeholder = 'Add tag...',
   defaultTextMode = false,
   isAnimaMode = false,
   onTextModeToggle,
 }) => {
-  const initialChips = useMemo(() => parseToChips(value), []);
+  const initialChips = useMemo(() => {
+    return chipsProp && chipsProp.length > 0 ? chipsProp : parseToChips(value);
+  }, []);
   const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(initialChips);
   const [isTextMode, setIsTextMode] = useState(defaultTextMode);
   const [textValue, setTextValue] = useState('');
@@ -51,6 +57,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   const isExternalUpdateRef = useRef(false);
   const prevChipsString = useRef(value);
+  const prevChipsProp = useRef(chipsProp);
 
   // `@dnd-kit` センサーの設定
   // 入力エリアなどの干渉を防ぐため、ドラッグ判定の最小距離(8px)を設定
@@ -70,24 +77,35 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     })
   );
 
-  // 外部から value プロップスが更新されたら同期する
+  // 外部からの同期
   useEffect(() => {
-    if (value !== prevChipsString.current) {
-      isExternalUpdateRef.current = true;
-      const newChips = parseToChips(value);
-      setChips(newChips, false);
-      prevChipsString.current = value;
-      if (isTextMode) {
-        setTextValue(value);
+    if (chipsProp !== undefined) {
+      if (chipsProp !== prevChipsProp.current) {
+        prevChipsProp.current = chipsProp;
+        isExternalUpdateRef.current = true;
+        setChips(chipsProp, false);
+        if (isTextMode) {
+          setTextValue(chipsToString(chipsProp));
+        }
+      }
+    } else {
+      if (value !== prevChipsString.current) {
+        isExternalUpdateRef.current = true;
+        const newChips = parseToChips(value);
+        setChips(newChips, false);
+        prevChipsString.current = value;
+        if (isTextMode) {
+          setTextValue(value);
+        }
       }
     }
-  }, [value, setChips, isTextMode]);
+  }, [chipsProp, value, setChips, isTextMode]);
 
   // 外部から defaultTextMode プロップスが更新されたら同期する
   useEffect(() => {
     setIsTextMode(defaultTextMode);
     if (defaultTextMode) {
-      setTextValue(value);
+      setTextValue(chipsProp ? chipsToString(chipsProp) : value);
     }
   }, [defaultTextMode]);
 
@@ -97,12 +115,13 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
       isExternalUpdateRef.current = false;
       return;
     }
+    onChipsChange?.(state);
     const newStr = chipsToString(state);
     if (newStr !== value) {
       prevChipsString.current = newStr;
-      onChange(newStr);
+      onChange?.(newStr);
     }
-  }, [state, onChange, value]);
+  }, [state, onChipsChange, onChange, value]);
 
   // イベントリスナー用に最新の state を保持
   const stateRef = useRef(state);

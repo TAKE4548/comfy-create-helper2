@@ -406,4 +406,34 @@ describe('TagChip', () => {
     fireEvent.keyDown(wordInput, { key: 'Delete', code: 'Delete' });
     expect(mockOnDelete).not.toHaveBeenCalled();
   });
+
+  it('copies tag text to clipboard when copy button in submenu is clicked', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(
+      <TagChip
+        id="1"
+        text="masterpiece, 1girl"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('masterpiece, 1girl'));
+
+    const copyBtn = screen.getByRole('button', { name: 'タグをコピー' });
+    expect(copyBtn).toBeInTheDocument();
+
+    fireEvent.click(copyBtn);
+    expect(writeTextMock).toHaveBeenCalledWith('masterpiece, 1girl');
+  });
 });

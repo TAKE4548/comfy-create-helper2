@@ -1,4 +1,5 @@
 import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, WorkflowPreset } from '../api/types'
+import type { TagChip } from '../components/TagChipEditor/useChipParser'
 
 export interface BatchJob {
   promptId: string;
@@ -66,6 +67,7 @@ export interface GenerationSet {
   name: string;
   paramValues: Record<string, string>;
   appliedAssets: Record<string, AppliedAsset[]>;
+  promptChips?: Record<string, TagChip[]>;
   batchSize: number;
   seedMode: 'random' | 'fixed';
   seed: number;
@@ -151,6 +153,7 @@ export interface MultiSetState {
   selectedWorkflowId: number | null;
   paramValues: Record<string, string>;
   appliedAssets: Record<string, AppliedAsset[]>;
+  promptChips: Record<string, TagChip[]>;
   batchSize: number;
   seedMode: 'random' | 'fixed';
   seed: number;
@@ -162,6 +165,8 @@ export interface MultiSetState {
 export interface MultiSetActions {
   setSelectedWorkflowId: (id: number | null) => void;
   setParamValues: (values: Record<string, string>) => void;
+  setPromptChips: (role: string, chips: TagChip[]) => void;
+  getEffectiveParamValues: () => Record<string, string>;
   addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => void;
   removeAppliedAsset: (role: string, id: string) => void;
   toggleAppliedAsset: (role: string, id: string) => void;

@@ -1,6 +1,6 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.0  
+**バージョン**: 2.1  
 **最終更新**: 2026-09-01  
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
@@ -37,7 +37,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 | 要素 | ID / 識別子 | 説明 |
 |---|---|---|
-| 接続インジケーター | — | ComfyUI WebSocket 接続状態（緑パルス / グレー） |
+| 接続インジケーター | — | ComfyUI WebSocket 接続状態（緑パルス: 接続中 / グレー: 未接続） |
 | ワークフロー選択 | `#workflow-select` | セレクトボックス。「+ 新しいワークフローを追加」が先頭オプション |
 | ワークフロー管理 | `#workflow-manage-btn` | 名称変更・複製（`POST /copy`）モーダルを開く |
 | Presets ボタン | `#presets-toggle-btn` | プリセット管理パネル（`PresetManagerPanel`）の開閉 |
@@ -48,7 +48,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 ### 2-2. LLM 支援パネル (Audit / Translate / Scene Generator)
 
-アクセントカラーは `accent-purple`（`#7C6FDD`）を使用。
+アクセントカラーは `accent-purple`（`#7C6FDD`）を使用。外部 API はタイムアウト監視（翻訳: 10秒、シーン/監査: 30秒）を行い、失敗時はトースト警告を表示して安全にフォールバックする。
 
 1. **LLM Audit パネル (`AuditPanel.tsx`)**:
    - 監査タイプの選択（`interference` / `vocabulary` / `physical`）
@@ -56,6 +56,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
    - 実行結果: 干渉タグ（無効化イベント発行）、語彙サジェスト（追加イベント発行）
 2. **プロンプト翻訳 (`PromptTranslationModal.tsx`)**:
    - 日本語入力テキストから英語プロンプト・タグへの自動翻訳（Google Cloud / DeepL / LLM 選択可能）。
+   - 翻訳エラー時は元の日本語テキストを入力欄に挿入する安全フォールバック。
 3. **シーン自動生成 (`SceneGeneratorModal.tsx`)**:
    - 日本語のシチュエーション文章から、各ロール（背景・構図・ポーズ・表情等）への最適なプロンプトタグを自動分解・一括生成。
 
@@ -65,6 +66,10 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - タブ切り替えで複数プロンプトフィールドを切り替え。
 - 各プロンプトフィールドに「+ LoRA / TagSet を追加」ボタンを配置。
 - 「テキスト入力モード切替」エスケープハッチを完備。
+- **構造化チップ（`promptChips`）の状態管理と保持規則**:
+  - プロンプトのトークン構造（無効タグ `enabled: false` を含む配列）は、グローバルストア `useGenerationStore.promptChips`（`Record<string, TagChip[]>`）および `GenerationSet.promptChips` を SSoT として一元管理される。
+  - アコーディオンの開閉、モバイル画面のタブ切り替え、Multi-Set切替・追加・複製を行っても、無効タグの状態は破棄されず完全に維持される。
+  - ComfyUIへのキュー投入時（単一セット / Multi-Set）は、機械的導出ヘルパー `getEffectiveParamValues` により有効タグ（`enabled: true`）のみが抽出された平文マップが作成され、パラメータ同期（ParamSync）を経てComfyUI APIへ投入される。これにより無効タグが画像生成やメタデータ記録に混入することはない。
 
 ### 2-4. アセットパネル（LoRA / TagSet の適用）
 
@@ -84,7 +89,10 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 ### 2-6. ワークフロープリセット (`PresetManagerPanel.tsx`)
 
 - 現在のプロンプト値、パラメータ値、適用アセット、バッチ枚数、シード設定を一括で名前付きプリセットとして保存。
-- プリセットのワンクリックロード、更新、削除、並び替え、一括削除・編集（`BulkEditModal`）に対応。
+- **プリセット適用のフォールトトレランス**:
+  - ワークフローのノード構成変更や BaseModel 差異により存在しない mapping role の値が含まれる場合、存在する role のみを適用し、欠落した role は安全にスキップして警告トーストを表示する。
+- プリセットのワンクリックロード、更新、削除、並び替え（`PUT /api/presets/reorder`）、一括削除・編集（`ProfileBulkEditModal`）に対応。
+  - プロンプトの一括編集における先頭追加（`prefix`）・末尾追加（`suffix`）では、境界デリミタ（カンマ `, `）の自動補正および重複カンマ・不要空白の正規化（`prependToPrompt` / `appendToPrompt`）が行われる。
 
 ### 2-7. ノードバイパス設定 (`BypassSettingsModal.tsx`)
 
@@ -99,6 +107,8 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 - 生成中: WebSocket 経由の進捗バー表示。
 - 完了後: 高解像度画像表示（ダウンロード、スナップショット保存）。
+- **ジョブ割り込み / キャンセル**:
+  - キャンセルボタン押下時、フロントエンドは直ちに `isGenerating: false` へ復帰し、`POST /api/comfy/interrupt` を発行して ComfyUI 側実行を即時中断。
 - ジョブ管理モーダル（`JobManagementModal.tsx`）: ComfyUI キュー一覧の確認、割り込み、キャンセル。
 - キーボードナビ: `←` / `→` キーでサムネイル切替。
 
@@ -131,7 +141,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 ---
 
-## 4. 状態管理（Zustand スライス構成）
+## 4. 状態管理（Zustand スライス構成 & 切断回復）
 
 `store/useGenerationStore.ts` は機能別にスライス分割して管理。
 
@@ -147,6 +157,10 @@ frontend/src/store/
     comfyWebSocketService.ts — WebSocket 通信シングルトンサービス
   useGenerationStore.ts  — ルートストア結合（39行）
 ```
+
+- **WebSocket 切断回復**:
+  - 切断検知時、指数バックオフで自動再接続を試行。
+  - 再接続時、`/api/comfy/queue` を照会して進行中ジョブを再検知し、進捗バー・プレビューに自動復帰する。
 
 ---
 
@@ -164,7 +178,7 @@ frontend/src/store/
 
 - **個別保存**: `AddSnapshotToAlbumModal` からアルバム選択・新規作成して `POST /api/snapshots`。
 - **一括保存**: サムネイル複数選択時に `Promise.all` で並列保存。
-- **派生スナップショット**: 親スナップショット ID（`source_snapshot_id`）を保持。
+- **派生スナップショット**: 親スナップショット ID（`source_snapshot_id`）を保持。親スナップショット削除時も DB の `SET NULL` により派生画像は独立して保持される。
 
 ---
 

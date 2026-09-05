@@ -1,61 +1,74 @@
-# インシデントレポート: モバイルモードにおけるセリフ一括変換モーダルの下部メニュー被り及び履歴ヘッダーのはみ出し事象
+# インシデントレポート: 生成プロンプトのタグ無効化後に画面切替・再描画で無効タグが消失する事象
 
 ## 1. 事象概要 (Overview)
-モバイル表示（スマートフォン等の画面幅 < 1024px）において、以下の2つのUI不具合が発生している。
 
-1. **事象1（セリフ一括変換モーダルの下部メニュー被り）**:
-   履歴ページから「セリフ一括変換」モーダルを開いた際、画面下部に常駐するモバイル下部ナビゲーションバー（`AppShell` の Mobile Bottom Navigation）とモーダルが重なってしまい、モーダル下部に配置されている重要操作ボタン（「次へ：変換リストへ進む」「一括変換を開始」「すべての画像に合成して保存」など）が下部メニューに隠れて操作できなくなる。
-
-2. **事象2（履歴ヘッダーでのアルバム遷移ボタン画面外はみ出し）**:
-   履歴ページ（`HistoryPage`）のヘッダーに新設された「セリフ一括変換」ボタンの影響で、ヘッダーのアクション領域の横幅がモバイル画面幅を超過し、右端に配置されているビュー切り替えボタン（「Albums」タブボタン）が画面外にはみ出してタップできなくなっている。
+生成画面（`GeneratePage`）のプロンプト入力欄（`TagChipEditor`）において、タグチップをクリックして「無効化（グレーアウト）」状態にした後、別画面への遷移（LoRAs/Tags/History/Settingsへの移動）やアコーディオンの開閉、モバイルでのプロンプトタブ切替など、コンポーネントの再マウントまたは外部同期が発生すると、無効化されていたタグが復元されずに完全に消失してしまう。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
-### 再現手順 1 (モーダル下部メニュー被り):
-1. ブラウザをモバイル画面幅（例: 375px〜414px）にする、またはスマートフォン実機でアクセスする。
-2. 履歴ページ（`/history`）を開く。
-3. ヘッダーの「セリフ一括変換」ボタンを押下してモーダル（`BatchSpeechTransformModal`）を開く。
-4. モーダル下部を確認する。
+### 再現手順:
+1. 生成ページ（`/`）を開き、プロンプト入力欄に複数のタグ（例: `masterpiece, 1girl, smile`）がチップとして表示されている状態にする。
+2. いずれかのタグチップ（例: `smile`）をクリックして「無効化（取り消し線・グレーアウト）」にする。
+3. 以下のいずれかの操作（画面切替・再描画・再マウント）を行う：
+   - **パターンA（ページ切替）**: サイドメニューから「History」または「Tags」ページへ移動し、再度「Generate」ページへ戻る。
+   - **パターンB（アコーディオン開閉）**: プロンプト欄上部のアコーディオン開閉ボタンを押してセクションを閉じ、再度開く。
+   - **パターンC（モバイルタブ切替）**: モバイル表示にて「Positive」から「Negative」タブへ切り替え、再度「Positive」タブへ戻る。
+   - **パターンD（Multi-Set切替）**: 「Set 1」から「Set 2」へ切り替え、再度「Set 1」へ戻る。
 
-### 観測結果 1:
-- モーダルのフッター部分（選択完了ボタンや一括変換実行・保存ボタン）が、最下部に固定表示されているモバイルボトムナビ（Generate/LoRAs/Tags/History/Settings）と被ってしまい、タップ操作が困難または不可能になる。
-
-### 再現手順 2 (アルバム遷移ボタンはみ出し):
-1. ブラウザをモバイル画面幅（例: 375px）にして履歴ページ（`/history`）を表示する。
-2. ページ上部のヘッダー領域を確認する。
-
-### 観測結果 2:
-- ヘッダー内の「History」タイトル、「セリフ一括変換」ボタン、「Add to Album」ボタン、「Snapshots / Albums」切り替えトグルが横1列に並び、合計幅がビューポート幅を超えるため、右端の「Albums」切り替えボタンが画面外に押し出されて見切れる。
+### 観測結果:
+- **期待値**: 無効化したタグ（`smile`）がグレーアウト（無効）のまま保持され、再描画後もチップ列内に残り続ける。
+- **実際の結果**: 再描画後、無効化していたタグ（`smile`）がチップ列から完全に消失し、有効なタグ（`masterpiece, 1girl`）のみが表示される。
 
 ---
 
 ## 3. 影響範囲・該当コード (Affected Area & Source Locations)
 
-| # | 対象ファイル | 該当行 / コンポーネント | 詳細 |
+| # | 対象ファイル | 該当行 | 詳細 |
 |---|---|---|---|
-| 1 | `frontend/src/components/BatchSpeechTransformModal.tsx` | L340 | モーダルの最外殻コンテナが `className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fade-in"` となっており、プロジェクト標準の `.modal-backdrop`（`z-index: var(--z-modal)` [100] かつ `padding-bottom: calc(var(--mobile-nav-height) + ...)`）が使われていないため、ボトムナビ（`z-50`）とスタッキング競合し下部パディングも不足している |
-| 2 | `frontend/src/pages/HistoryPage.tsx` | L309-L356 | ヘッダーコンテナが `flex items-center justify-between`、ボタングループが `flex items-center gap-2` と横並び固定になっており、`flex-wrap` やモバイル向けのラベル省略/レイアウト最適化がされていないため横幅超過が発生している |
+| 1 | `docs/specs/SPEC_COMMON.md` | L110-L120, L151-L160 | SSoT仕様書において、`TagChipEditorProps` の `onChange` が「有効チップのみをカンマ連結した文字列を返す」と定義されており、無効タグの保持・復元に関する仕様およびインターフェースが欠落している |
+| 2 | `frontend/src/components/TagChipEditor/useChipParser.ts` | L26-L47 | `chipsToString` が `chip.enabled` のタグのみを抽出して文字列化し、`parseToChips` は渡された文字列から全タグを `enabled: true` として初期化している |
+| 3 | `frontend/src/components/TagChipEditor/index.tsx` | L46-L47, L74-L84, L95-L106 | チップの有効/無効状態を内部のローカルステート（`useChipHistory`）のみで管理し、`onChange` では無効タグが除去された文字列 `newStr` を親へ通知しているため、再マウント時に `parseToChips(value)` が実行されると無効タグが喪失する |
+| 4 | `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` | L600-L608 | `{!isCollapsed && <TagChipEditor ... />}` でアコーディオン閉時にアンマウントされ、親ストアの `paramValues`（文字列）から再マウントされる |
+| 5 | `frontend/src/pages/GeneratePage/components/MobileLayout.tsx` | L698-L709 | タブ切替時に `activePromptTabMapping.role` が切り替わり、親ストアの `paramValues[role]` と同期される |
+| 6 | `frontend/src/store/slices/multiSetSlice.ts` | L41 | ストア側の `paramValues` は `Record<string, string>` 型であり、有効タグのカンマ区切り平文文字列しか保持できない構造となっている |
+| 7 | `frontend/src/App.tsx` | L51-L61 | ルーティング切替時に `GeneratePage` がアンマウントされる |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 原因 1: `BatchSpeechTransformModal` における共通モーダルスタイル（`.modal-backdrop`）の未適用
-1. **スタッキングコンテキストと z-index 不整合**:
-   - `frontend/src/index.css` にて `--z-mobile-nav: 50;`, `--z-modal: 100;` が定義されている。
-   - `AppShell.tsx` のモバイルボトムナビは `z-[var(--z-mobile-nav)]`（z-index: 50）で画面最下部に固定配置されている。
-   - `BatchSpeechTransformModal.tsx` では `z-50` を直書きしてしまっており、モーダルがボトムナビより前面に正しく重ならない。
-2. **モバイルセーフエリア・ボトムナビ分のパディング欠落**:
-   - プロジェクト内の他モーダルが利用している `.modal-backdrop` クラスは `padding-bottom: calc(var(--mobile-nav-height) + 1rem + env(safe-area-inset-bottom))` を備えているが、`BatchSpeechTransformModal` は `p-4` のみとなっており、モーダルの高さ（`h-[88vh]`）が下部ナビゲーション領域まで侵入してしまう。
+### 原因: SSoT仕様およびコンポーネント設計における「無効タグ状態の永続化仕様」の欠落と状態不整合
 
-### 原因 2: `HistoryPage` ヘッダーコンポーネントのレスポンシブ考慮不足
-1. **ヘッダー要素の幅超過**:
-   - 履歴ページヘッダーには「History タイトル（約80px）」「セリフ一括変換ボタン（約125px）」「Add to Album ボタン（約115px）」「Snapshots/Albums 切り替えトグル（約140px）」が同一行に配置されている。
-   - 横幅の合計は約460px以上となり、一般的なモバイル幅（375px〜414px）を大きく上回る。
-2. **非折り返しレイアウト**:
-   - `HistoryPage.tsx` のヘッダー親要素が `flex items-center justify-between`、右側アクション部が `flex items-center gap-2`（`flex-wrap` なし）となっているため、要素の縮小や折り返しが行われず、末尾の「Albums」ボタンが画面右外へはみ出してしまう。
+1. **SSoT（`SPEC_COMMON.md`）の契約上の制約**:
+   - `SPEC_COMMON.md` の第3項（TagChipEditor コンポーネント仕様）において、コンポーネントのPropsは以下のように定義されている：
+     ```typescript
+     interface TagChipEditorProps {
+       value: string;                   // カンマ区切りプロンプト文字列
+       onChange: (val: string) => void; // 有効チップのみをカンマ連結した文字列を返す
+     }
+     ```
+   - さらに、パース・シリアライズ仕様として以下が明記されている：
+     ```typescript
+     // 有効チップのみをカンマ連結
+     function chipsToString(chips: TagChip[]): string {
+       return chips.filter(c => c.enabled).map(c => c.text).join(", ");
+     }
+     // 文字列から全チップを enabled: true として生成
+     function parseToChips(text: string): TagChip[] {
+       return text.split(",").map(s => s.trim()).filter(Boolean)
+         .map(text => ({ id: generateChipId(), text, enabled: true }));
+     }
+     ```
+2. **親ストアとコンポーネント間での情報喪失の発生メカニズム**:
+   - ユーザーがタグを無効化（`enabled = false`）すると、`TagChipEditor/index.tsx` の `useEffect`（L95-106）により `chipsToString(state)` が評価される。
+   - この時点で無効化されたタグは除外され、有効タグのみの文字列が親コンポーネント（`DesktopLayout` / `MobileLayout`）経由でグローバルストア（`useGenerationStore.paramValues`）に `setParamValues` される。
+   - 結果として、グローバルストア上の `paramValues[role]` には無効化タグの情報が一切残らない。
+3. **ライフサイクル（アンマウント・外部同期）による状態破棄**:
+   - 無効化タグの存在は `TagChipEditor` のローカルステート（`useChipHistory`）にしか存在しない。
+   - 画面遷移（React Routerによる他ページ遷移）、アコーディオン開閉（`!isCollapsed` による条件付きレンダリング）、タブ切替、Multi-Set切替、画面リサイズ等が発生すると、`TagChipEditor` がアンマウントされるか外部Props同期（L74-84）が走る。
+   - 再マウント時に親から渡される `value` は無効タグが除去済みの文字列であるため、`parseToChips(value)` が実行された結果、無効化タグは完全に失われる。
 
 ---
 
@@ -63,22 +76,20 @@
 
 <diagnostic_check>
 - Root_Cause_Isolated: Yes
-- Classification: Type_A: Implementation Bug (Both modal z-index/padding and header responsive layout)
+- Classification: Type_B: Specification Flaw
 - Scope_Restriction: Read-only phase. Code modification or fix proposals are strictly PROHIBITED during this turn.
 - Route: Direct to /dev-design
 </diagnostic_check>
 
-* **事象1（モーダルの下部メニュー被り）**: **Type A (Implementation Bug - 実装バグ)**
-  * `BatchSpeechTransformModal` 実装時にプロジェクト標準のモーダル Backdrop 規則（`.modal-backdrop` または `z-[var(--z-modal)]` / モバイルボトムナビパディング）が適用されなかったことによる実装不整合。
-* **事象2（ヘッダーのアルバム遷移ボタンはみ出し）**: **Type A (Implementation Bug - 実装バグ)**
-  * `HistoryPage` ヘッダーへ「セリフ一括変換」ボタンを追加した際、モバイル画面幅におけるレスポンシブ配置（折り返しやアイコン化等のレスポンシブ対応）の考慮が漏れていたことによるレイアウト不整合。
+* **分類**: **Type B (Specification Flaw - 仕様の不備・欠落)**
+  * 単なるコーディングミスではなく、SSoTである `docs/specs/SPEC_COMMON.md` において「`onChange` は有効チップのみのカンマ区切り文字列を親へ返す」「`value` はカンマ区切り文字列」と規定されており、無効化タグの状態をコンポーネント外（ストア・セット・永続化層）でどのように保持・表現・復元するかの仕様が根本的に欠落・不整合を起こしているため。
+  * （※旧検討仕様 `docs/spec_tag_chip_editor.md` L48-78 では「フォーム状態に `chips: TagChip[]` を保持し、ComfyUI投入時およびスナップショット保存時のみ `toPromptString(chips)`（有効チップ抽出）を行う」という構想が存在していたが、現行SSoTへの統合時にインターフェースが `string` 単一に簡素化され、ライフサイクル保持仕様が抜け落ちた経緯がある。）
 
 ---
 
 ## 6. バックログ登録とルーティング (Backlog Registration & Routing)
 
-- **登録 PBI**: `docs/backlog/pbi/active/REQ-216.md`
-- **タイトル**: `モバイルモードにおけるセリフ一括変換モーダル下部被り解消および履歴ヘッダーレスポンシブレイアウト修正`
-- **次のワークフロー**: `/dev-design REQ-216`
-
+- **登録 PBI**: [REQ-220.md](./backlog/pbi/active/REQ-220.md)
+- **タイトル**: `生成プロンプト（TagChipEditor）の無効化タグ状態永続化およびライフサイクル保持`
+- **次のワークフロー**: `/dev-design REQ-220`
 
