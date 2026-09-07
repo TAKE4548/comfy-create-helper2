@@ -41,6 +41,8 @@ vi.mock('../../api/client', () => ({
   },
   workflowPresetsApi: {
     list: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue({}),
+    create: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -346,6 +348,40 @@ describe('GeneratePage Component Regression Tests', () => {
       expect(screen.getByRole('button', { name: '再読み込み' })).toBeInTheDocument();
 
       consoleErrorSpy.mockRestore();
+    });
+
+    it('locks autosave before initial sync completes and preserves prompt without destructive empty save on server restart', async () => {
+      const { workflowPresetsApi } = await import('../../api/client');
+      (workflowPresetsApi.list as any).mockResolvedValue([
+        {
+          id: 1,
+          workflow_id: 1,
+          name: 'Set 1',
+          param_values: { Sampler_Seed: '12345', positive: 'masterpiece, 1girl' },
+          applied_assets: {},
+          batch_size: 1,
+          seed_mode: 'fixed',
+          seed: 12345,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ]);
+
+      const updateSpy = vi.spyOn(workflowPresetsApi, 'update');
+
+      renderPage();
+
+      // 初期同期前および同期直後に空文字破壊の update が autosave されないこと
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      });
+
+      expect(updateSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          param_values: expect.objectContaining({ positive: '' }),
+        })
+      );
     });
   });
 });

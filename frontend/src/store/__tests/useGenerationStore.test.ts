@@ -18,8 +18,13 @@ vi.mock('../../api/client', () => {
       getHistory: vi.fn().mockResolvedValue({}),
       deleteHistory: vi.fn().mockResolvedValue({ status: 'ok' }),
     },
+    promptMetadataApi: {
+      create: vi.fn().mockResolvedValue({ status: 'ok' }),
+      get: vi.fn().mockResolvedValue(null),
+    },
   };
 });
+
 
 describe('useGenerationStore REQ-059 preview reset logic', () => {
   beforeEach(() => {
@@ -315,9 +320,11 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
     expect(state.isGenerating).toBe(true);
     expect(state.previewImage).toBe('existing-preview.png');
     expect(state.currentWorkflow).toEqual({ updated: true });
-    expect(localStorage.getItem('prompt-surgeon-meta-batch-prompt-id')).toBeNull();
+    // REQ-227: isBatchIntermediate の場合もメタデータは無条件でキャッシュ・永続化される
+    expect(localStorage.getItem('prompt-surgeon-meta-batch-prompt-id')).toBeDefined();
   });
 });
+
 
 describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and multi-session sync', () => {
   beforeEach(() => {
@@ -1732,6 +1739,52 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
     // Switch to set 2
     useGenerationStore.getState().setActiveSetId(set2Id!);
     expect(useGenerationStore.getState().promptChips.positive).toEqual(chips2);
+  });
+
+  it('restores promptChips from preset param_values when existing promptChips role array is empty', () => {
+    useGenerationStore.getState().initSets(1);
+    const presetId = 101;
+
+    // セットに positive: [] が入ってしまっている状態をシミュレート
+    useGenerationStore.setState({
+      sets: [
+        {
+          id: presetId,
+          name: 'Preset 101',
+          paramValues: { positive: '' },
+          promptChips: { positive: [] },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ],
+      activeSetId: presetId,
+      openPresetIds: [presetId],
+      promptChips: { positive: [] },
+    });
+
+    const mockPreset: any = {
+      id: presetId,
+      name: 'Preset 101',
+      param_values: { positive: 'solo, smile, 1girl' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+    };
+
+    useGenerationStore.getState().loadPresetData(mockPreset, {});
+
+    const state = useGenerationStore.getState();
+    const updatedSet = state.sets.find((s) => s.id === presetId);
+
+    // 空配列で上書きされず、param_values.positive から正規チップが復元されていること
+    expect(updatedSet?.promptChips?.positive).toBeDefined();
+    expect(updatedSet?.promptChips?.positive?.length).toBe(3);
+    expect(updatedSet?.promptChips?.positive?.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
+    expect(state.promptChips.positive.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
   });
 });
 

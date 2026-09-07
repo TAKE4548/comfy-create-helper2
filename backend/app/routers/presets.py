@@ -103,7 +103,7 @@ def update_preset(preset_id: int, payload: schemas.WorkflowPresetUpdate, db: Ses
     if payload.seed is not None:
         preset.seed = payload.seed
 
-    preset.updated_at = datetime.utcnow()
+    preset.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(preset)
     return _preset_to_schema(preset)

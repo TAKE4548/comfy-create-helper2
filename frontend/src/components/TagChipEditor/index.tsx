@@ -56,6 +56,8 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   const [inputValue, setInputValue] = useState('');
 
   const isExternalUpdateRef = useRef(false);
+  const isInitialMountRef = useRef(true);
+  const userEditedRef = useRef(false);
   const prevChipsString = useRef(value);
   const prevChipsProp = useRef(chipsProp);
 
@@ -82,11 +84,22 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     if (chipsProp !== undefined) {
       if (chipsProp !== prevChipsProp.current) {
         prevChipsProp.current = chipsProp;
-        prevChipsString.current = chipsToString(chipsProp);
-        isExternalUpdateRef.current = true;
-        setChips(chipsProp, false);
-        if (isTextMode) {
-          setTextValue(chipsToString(chipsProp));
+        if (chipsProp.length === 0 && value && value.trim() !== '') {
+          // 下り同期の自己修復: chipsProp が空でも value が非空なら parseToChips(value) で復元
+          isExternalUpdateRef.current = true;
+          const newChips = parseToChips(value);
+          setChips(newChips, false);
+          prevChipsString.current = value;
+          if (isTextMode) {
+            setTextValue(value);
+          }
+        } else {
+          prevChipsString.current = chipsToString(chipsProp);
+          isExternalUpdateRef.current = true;
+          setChips(chipsProp, false);
+          if (isTextMode) {
+            setTextValue(chipsToString(chipsProp));
+          }
         }
       } else if (
         value &&
@@ -125,10 +138,19 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   // 内部のチップステートが変わったら外部へ通知
   useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
     if (isExternalUpdateRef.current) {
       isExternalUpdateRef.current = false;
       return;
     }
+    if (!userEditedRef.current) {
+      return;
+    }
+    userEditedRef.current = false;
+
     onChipsChange?.(state);
     const newStr = chipsToString(state);
     if (newStr !== value) {
@@ -156,6 +178,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
           ? { ...chip, enabled: false }
           : chip
       );
+      userEditedRef.current = true;
       setChips(next, true);
     };
 
@@ -174,6 +197,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
           text: tagToAdd,
           enabled: true,
         };
+        userEditedRef.current = true;
         setChips([...current, newChip], true);
       }
     };
@@ -195,6 +219,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     const newIndex = state.findIndex((chip) => chip.id === over.id);
 
     if (oldIndex !== -1 && newIndex !== -1) {
+      userEditedRef.current = true;
       const newChips = arrayMove(state, oldIndex, newIndex);
       setChips(newChips, true); // 順序入れ替えを履歴に積む
     }
@@ -216,6 +241,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   const handleSwitchToChipMode = () => {
     const newChips = parseToChips(textValue);
+    userEditedRef.current = true;
     setChips(newChips, true); // 編集確定したテキストを履歴に積む
     setIsTextMode(false);
     onTextModeToggle?.(false);
@@ -232,18 +258,25 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   const handleContainerKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
       e.preventDefault();
-      if (canUndo) undo();
+      if (canUndo) {
+        userEditedRef.current = true;
+        undo();
+      }
     } else if (
       ((e.ctrlKey || e.metaKey) && e.key === 'y') ||
       ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')
     ) {
       e.preventDefault();
-      if (canRedo) redo();
+      if (canRedo) {
+        userEditedRef.current = true;
+        redo();
+      }
     }
   };
 
   // チップのアクションハンドラ
   const handleToggle = (id: string) => {
+    userEditedRef.current = true;
     const next = state.map((chip) =>
       chip.id === id ? { ...chip, enabled: !chip.enabled } : chip
     );
@@ -251,11 +284,13 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   };
 
   const handleDelete = (id: string) => {
+    userEditedRef.current = true;
     const next = state.filter((chip) => chip.id !== id);
     setChips(next, true);
   };
 
   const handleEdit = (id: string, newText: string) => {
+    userEditedRef.current = true;
     const next = state.map((chip) =>
       chip.id === id ? { ...chip, text: newText } : chip
     );
@@ -265,6 +300,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   const handleDuplicate = (id: string) => {
     const index = state.findIndex((chip) => chip.id === id);
     if (index === -1) return;
+    userEditedRef.current = true;
     const chipToDuplicate = state[index];
     const newChip: TagChipType = {
       id: generateChipId(),
@@ -277,6 +313,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   };
 
   const handleAddTags = (newTexts: string[]) => {
+    userEditedRef.current = true;
     const newChips = newTexts.map((txt) => ({
       id: generateChipId(),
       text: txt,
@@ -287,6 +324,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   const handleRemoveLast = () => {
     if (state.length === 0) return;
+    userEditedRef.current = true;
     const next = state.slice(0, -1);
     setChips(next, true);
   };
@@ -329,6 +367,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
             <textarea
               value={textValue}
               onChange={(e) => {
+                userEditedRef.current = true;
                 setTextValue(e.target.value);
                 const newChips = parseToChips(e.target.value);
                 setChips(newChips, false);

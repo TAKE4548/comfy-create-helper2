@@ -307,13 +307,20 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
       const updatedSets = get().sets.map((s) => {
         if (String(s.id) === String(preset.id)) {
-          const existingChips = s.promptChips && Object.keys(s.promptChips).length > 0 ? s.promptChips : initialPromptChips
+          const mergedPromptChips: Record<string, TagChip[]> = { ...initialPromptChips }
+          if (s.promptChips) {
+            for (const [role, chips] of Object.entries(s.promptChips)) {
+              if (chips && chips.length > 0) {
+                mergedPromptChips[role] = chips
+              }
+            }
+          }
           return {
             ...s,
             name: preset.name || s.name,
             paramValues: mergedParamValues,
             appliedAssets,
-            promptChips: existingChips,
+            promptChips: mergedPromptChips,
             batchSize,
             seedMode,
             seed,

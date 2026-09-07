@@ -1,6 +1,6 @@
 """LLM system prompts management router."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -39,7 +39,7 @@ def get_current_model(db: Session = Depends(get_db)):
             key="llm_model",
             content=settings.llm_model,
             description="Current LLM Model",
-            updated_at=datetime.utcnow()
+            updated_at=datetime.now(timezone.utc)
         )
     return prompt
 
@@ -56,12 +56,12 @@ def update_current_model(payload: CurrentModelUpdate, db: Session = Depends(get_
             key="llm_model",
             content=model_name,
             description="Current LLM Model",
-            updated_at=datetime.utcnow()
+            updated_at=datetime.now(timezone.utc)
         )
         db.add(prompt)
     else:
         prompt.content = model_name
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(prompt)
     return prompt
@@ -75,14 +75,14 @@ def update_llm_prompt(key: str, payload: schemas.LlmPromptUpdate, db: Session = 
             key=key,
             content=payload.content,
             description=payload.description or f"Setting for {key}",
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(prompt)
     else:
         prompt.content = payload.content
         if payload.description is not None:
             prompt.description = payload.description
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(prompt)
     return prompt

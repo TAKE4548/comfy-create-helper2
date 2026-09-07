@@ -94,7 +94,17 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - **プリセット適用のフォールトトレランス**:
   - ワークフローのノード構成変更や BaseModel 差異により存在しない mapping role の値が含まれる場合、存在する role のみを適用し、欠落した role は安全にスキップして警告トーストを表示する。
 - プリセットのワンクリックロード、更新、削除、並び替え（`PUT /api/presets/reorder`）、一括削除・編集（`ProfileBulkEditModal`）に対応。
-  - プロンプトの一括編集における先頭追加（`prefix`）・末尾追加（`suffix`）では、境界デリミタ（カンマ `, `）の自動補正および重複カンマ・不要空白の正規化（`prependToPrompt` / `appendToPrompt`）が行われる。
+  - **プリセット一括編集モーダル (`ProfileBulkEditModal`)**:
+    - **タブ構成**: 「プロンプト」「パラメータ」の2タブ構成（旧LoRAタブはパラメータタブ内へ一元化統合）。
+    - **プロンプト一括編集**: 単語・タグの追加（先頭 `prefix` / 末尾 `suffix`、境界カンマ自動補正 `prependToPrompt` / `appendToPrompt`）、検索・置換、共通タグ削除、アセット（TagSet/LoRA）のトリガータグ追加。
+    - **パラメータ一括編集**:
+      - 一般パラメータ: 個別有効化チェックボックス付きの入力（数値、選択肢等）。
+      - **LoRA Stack (`lora_stack`)**:
+        - 個別有効化チェックボックスを完備。
+        - **差分編集モード**: `computeCommonLoras` により選択プリセット全件で共通適用されているLoRA（積集合）を自動抽出し、共通LoRAの削除指定（除外）や強度更新、および新規LoRAの追記（追加スロット）が可能。
+        - **ComfyUIモデル連携**: 通常の `LoraStackEditor` と同様に、ComfyUI 側認識済みモデル（`/api/loras/comfy-models`）と連携し、DB未登録LoRA（`Unregistered` バッジ付き）も検索・選択・一括反映可能。登録済みLoRAは登録名（説明文・モデル名）を優先表示。
+        - **完全上書きモード**: `LoraStackEditor` を用いて、既存LoRAスロットを全置換する新スロット群を一括設定可能（`activeBaseModelId` 連携対応）。
+        - `usePresetState.handleBulkEditApply` により各プリセットへ `loraStackOps` が正確に反映・永続化される。
 
 ### 2-7. ノードバイパス設定 (`BypassSettingsModal.tsx`)
 
@@ -176,11 +186,20 @@ frontend/src/store/
 
 ---
 
-## 6. スナップショット保存
+## 6. スナップショット保存および生成時パラメータ永続化 (REQ-227)
 
 - **個別保存**: `AddSnapshotToAlbumModal` からアルバム選択・新規作成して `POST /api/snapshots`。
 - **一括保存**: サムネイル複数選択時に `Promise.all` で並列保存。
 - **派生スナップショット**: 親スナップショット ID（`source_snapshot_id`）を保持。親スナップショット削除時も DB の `SET NULL` により派生画像は独立して保持される。
+- **生成時メタデータ永続化とスナップショット復元**:
+  - キュー投入時（バッチ中間ジョブ含む全ジョブ）、各プロンプト ID に対して生成パラメータ・適用アセットを `localStorage` およびサーバーDB（`POST /api/prompt-metadata`）へ二重永続化。
+  - スナップショット保存時、画像 URL の `t` パラメータからローカルキャッシュまたはサーバーDB（`GET /api/prompt-metadata/{prompt_id}`）を照会し、実際にその画像を生成したパラメータを復元して保存。別ブラウザ・別端末からの保存時も現在の画面設定値による汚染を防ぐ。
+
+---
+
+## 6-2. 履歴プレビューモーダル (`HistoryModalPreview.tsx`)
+
+- スナップショット未保存の画像であっても、URL の `t` パラメータからメタデータを照会し、`<Info />` ボタンより生成時パラメータ（アスペクト比、サンプラー、スケジューラー、ステップ数、CFG、シード値、プロンプト）の確認パネルを表示可能。
 
 ---
 

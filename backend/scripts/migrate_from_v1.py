@@ -12,7 +12,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def connect(path: str, foreign_keys: bool = True) -> sqlite3.Connection:
@@ -76,7 +76,7 @@ def migrate(src_path: str, dst_path: str):
         strength = row["recommended_strength"]
         dst_cur.execute(
             "INSERT INTO loras (model_name, description, recommended_strength_min, recommended_strength_max, category_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (lora_name, row["description"], strength, strength, cat_id, datetime.utcnow().isoformat()),
+            (lora_name, row["description"], strength, strength, cat_id, datetime.now(timezone.utc).isoformat()),
         )
         new_id = dst_cur.lastrowid
         lora_name_to_id[lora_name] = new_id
@@ -105,7 +105,7 @@ def migrate(src_path: str, dst_path: str):
             tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
         dst_cur.execute(
             "INSERT INTO tag_sets (name, description, category_id, tags, created_at) VALUES (?, ?, ?, ?, ?)",
-            (row["name"], row["description"], cat_id, json.dumps(tags_list), datetime.utcnow().isoformat()),
+            (row["name"], row["description"], cat_id, json.dumps(tags_list), datetime.now(timezone.utc).isoformat()),
         )
         print(f"  [+] tag_set: {row['name']}")
 

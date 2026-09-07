@@ -394,3 +394,23 @@ export const speechBatchApi = {
       body: payload ? JSON.stringify(payload) : undefined,
     }),
 }
+
+// ─── Prompt Metadata ──────────────────────────────────────────────
+export interface PromptMetadataRead {
+  prompt_id: string;
+  workflow_id: number | null;
+  param_values: Record<string, any>;
+  applied_assets: Record<string, any> | null;
+  created_at: string;
+}
+
+export const promptMetadataApi = {
+  create: (data: {
+    prompt_id: string;
+    workflow_id?: number | null;
+    param_values: Record<string, any>;
+    applied_assets?: Record<string, any>;
+  }) => request('/prompt-metadata', { method: 'POST', body: JSON.stringify(data) }),
+  get: (promptId: string) =>
+    request<PromptMetadataRead>(`/prompt-metadata/${encodeURIComponent(promptId)}`),
+}

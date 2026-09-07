@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.logging_config import setup_logging
+from app.middleware.request_logging import RequestLoggingMiddleware
 from app.database import engine, SessionLocal
 from app import models
 from app.migrations import run_migrations
@@ -20,13 +22,13 @@ from app.routers import (
     param_type_masters, comfy, param_sync_groups,
     speech_bubble_presets, speech_tone_presets,
     translate, speech_batch,
+    prompt_metadata, system_logs,
 )
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+import traceback
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging(log_dir=settings.log_path, log_level=settings.log_level, retention_days=settings.log_retention_days)
 logger = logging.getLogger(__name__)
 
 
@@ -58,7 +60,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None)
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}: {str(exc)}",
+        exc_info=True,
+        extra={
+            "request_id": request_id,
+            "source": "backend",
+            "http": {
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 500,
+                "client_ip": request.client.host if request.client else None,
+            },
+            "error": {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "stack_trace": traceback.format_exc(),
+            },
+        },
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "request_id": request_id},
+    )
+
+
+# Middlewares
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -68,6 +100,7 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(system_logs.router)
 app.include_router(workflows.router)
 app.include_router(mapping_masters.router)
 app.include_router(snapshots.router)
@@ -89,6 +122,8 @@ app.include_router(speech_bubble_presets.router)
 app.include_router(speech_tone_presets.router)
 app.include_router(translate.router)
 app.include_router(speech_batch.router)
+app.include_router(prompt_metadata.router)
+
 
 
 

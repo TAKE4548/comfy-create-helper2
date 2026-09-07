@@ -143,4 +143,5 @@ db/snapshots/
 db/prompt_surgeon.db
 brain/
 .vite/
+logs/
 

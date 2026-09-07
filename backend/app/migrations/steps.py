@@ -330,6 +330,20 @@ def step_009_workflow_presets_updated_at(conn: Connection, inspector: any) -> No
             logger.info("Migrated: Added 'updated_at' column to 'workflow_presets' table.")
 
 
+def step_010_create_prompt_metadata(conn: Connection, inspector: any) -> None:
+    if "prompt_metadata" not in inspector.get_table_names():
+        conn.execute(sa.text("""
+            CREATE TABLE prompt_metadata (
+                prompt_id VARCHAR PRIMARY KEY,
+                workflow_id INTEGER,
+                param_values TEXT NOT NULL,
+                applied_assets TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        logger.info("Migrated: Created 'prompt_metadata' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -340,4 +354,6 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("007", "speech_bubble_presets_and_constraints", step_007_speech_bubble_presets_and_constraints),
     MigrationStep("008", "create_speech_tone_presets", step_008_create_speech_tone_presets),
     MigrationStep("009", "workflow_presets_updated_at", step_009_workflow_presets_updated_at),
+    MigrationStep("010", "create_prompt_metadata", step_010_create_prompt_metadata),
 ]
+

@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import create_engine, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models import Base, TagSet, TagSubset
 from app.schemas.tag_set import TagSetCreate, TagSetRead, TagSubsetCreate, TagSubsetRead
@@ -100,7 +100,7 @@ def test_tag_set_schemas_with_subsets():
         id=2,
         name="Main Set",
         tags=["tag1"],
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         subsets=subsets_read_data
     )
     assert tag_set_read.id == 2

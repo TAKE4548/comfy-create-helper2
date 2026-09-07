@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, Info, Maximize2, Download } from 'lucide-react'
-import { snapshotsApi, lorasApi, tagSetsApi } from '../api/client'
+import { snapshotsApi, lorasApi, tagSetsApi, promptMetadataApi } from '../api/client'
 import type { Snapshot, Lora, TagSet } from '../api/types'
 
 // Fullscreen APIのTypeScript型拡張（Safari/iOS等の互換対応）
@@ -148,6 +148,37 @@ export function HistoryModalPreview({
     ? snapshotIds[currentIndex]
     : null
 
+  const activeImage = images[currentIndex]
+
+  const promptId = useMemo(() => {
+    if (!activeImage) return null
+    try {
+      const match = activeImage.match(/[?&]t=([^&]+)/)
+      return match ? decodeURIComponent(match[1]) : null
+    } catch {
+      return null
+    }
+  }, [activeImage])
+
+  // 1. ローカルキャッシュのチェック
+  const cachedMetadata = useMemo(() => {
+    if (!promptId) return null
+    try {
+      const raw = localStorage.getItem(`prompt-surgeon-meta-${promptId}`)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  }, [promptId])
+
+  // 2. 端末間対応: サーバーDBからのフェッチ (スナップショットIDが無く、ローカルにも無い場合)
+  const { data: serverMetadata, isLoading: isServerMetaLoading } = useQuery({
+    queryKey: ['prompt-metadata', promptId],
+    queryFn: () => promptMetadataApi.get(promptId!),
+    enabled: !!promptId && !activeSnapshotId && !cachedMetadata && isOpen,
+    staleTime: 1000 * 60 * 10,
+  })
+
   // Fetch snapshot metadata if snapshot ID exists
   const { data: snapshot, isLoading } = useQuery<Snapshot>({
     queryKey: ['snapshot', activeSnapshotId],
@@ -155,11 +186,24 @@ export function HistoryModalPreview({
     enabled: !!activeSnapshotId && isOpen,
   })
 
+  const effectiveParams: Record<string, any> | null = useMemo(() => {
+    if (snapshot?.params && Object.keys(snapshot.params).length > 0) {
+      return snapshot.params
+    }
+    if (cachedMetadata?.paramValues && Object.keys(cachedMetadata.paramValues).length > 0) {
+      return cachedMetadata.paramValues
+    }
+    if (serverMetadata?.param_values && Object.keys(serverMetadata.param_values).length > 0) {
+      return serverMetadata.param_values
+    }
+    return null
+  }, [snapshot?.params, cachedMetadata?.paramValues, serverMetadata?.param_values])
+
   // Fetch all loras and tagsets to resolve IDs
   const { data: loras } = useQuery<Lora[]>({
     queryKey: ['loras'],
     queryFn: () => lorasApi.list() as Promise<Lora[]>,
-    enabled: !!activeSnapshotId && isOpen,
+    enabled: (!!activeSnapshotId || !!effectiveParams) && isOpen,
   })
 
   const { data: tagSets } = useQuery<TagSet[]>({
@@ -220,9 +264,10 @@ export function HistoryModalPreview({
   }, [isOpen, currentIndex, images.length, onChangeIndex, resetControlsTimeout])
 
   const loraStacks = useMemo(() => {
-    if (!snapshot?.params) return []
+    const params = effectiveParams
+    if (!params) return []
     const roles: string[] = []
-    Object.keys(snapshot.params).forEach((key) => {
+    Object.keys(params).forEach((key) => {
       const match = key.match(/^(.+)_lora_count$/)
       if (match) {
         roles.push(match[1])
@@ -230,10 +275,10 @@ export function HistoryModalPreview({
     })
 
     return roles.map((role) => {
-      const count = parseInt(String(snapshot.params[`${role}_lora_count`]), 10) || 0
+      const count = parseInt(String(params[`${role}_lora_count`]), 10) || 0
       const items = []
       for (let i = 1; i <= count; i++) {
-        const filePath = String(snapshot.params[`${role}_lora_name_${i}`] || '')
+        const filePath = String(params[`${role}_lora_name_${i}`] || '')
         if (!filePath) continue
         
         const registered = loras?.find((l) => l.file_path === filePath)
@@ -242,9 +287,9 @@ export function HistoryModalPreview({
         items.push({
           index: i,
           displayName,
-          wt: String(snapshot.params[`${role}_lora_wt_${i}`] ?? '0.0'),
-          model_str: String(snapshot.params[`${role}_model_str_${i}`] ?? '1.0'),
-          clip_str: String(snapshot.params[`${role}_clip_str_${i}`] ?? '1.0'),
+          wt: String(params[`${role}_lora_wt_${i}`] ?? '0.0'),
+          model_str: String(params[`${role}_model_str_${i}`] ?? '1.0'),
+          clip_str: String(params[`${role}_clip_str_${i}`] ?? '1.0'),
         })
       }
       return {
@@ -252,13 +297,24 @@ export function HistoryModalPreview({
         items,
       }
     }).filter((stack) => stack.items.length > 0)
-  }, [snapshot?.params, loras])
+  }, [effectiveParams, loras])
+
+  // Helper to extract values from params dictionary (早期リターン前に配置してRules of Hooksを遵守)
+  const getParamValue = useCallback((keys: string[], excludeKeys: string[] = []): string => {
+    if (!effectiveParams) return ''
+    const matchKey = Object.keys(effectiveParams).find((key) => {
+      const k = key.toLowerCase()
+      const matchesInclude = keys.some((target) => k.includes(target.toLowerCase()))
+      const matchesExclude = excludeKeys.some((target) => k.includes(target.toLowerCase()))
+      return matchesInclude && !matchesExclude
+    })
+    return matchKey ? String(effectiveParams[matchKey]) : ''
+  }, [effectiveParams])
 
   if (!isOpen || images.length === 0) return null
 
-  const activeImage = images[currentIndex]
-
   // Swipe gesture handling
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
   }
@@ -282,20 +338,11 @@ export function HistoryModalPreview({
     touchStartX.current = null
   }
 
-  // Helper to extract values from params dictionary
-  const getParamValue = (keys: string[], excludeKeys: string[] = []): string => {
-    if (!snapshot?.params) return ''
-    const matchKey = Object.keys(snapshot.params).find((key) => {
-      const k = key.toLowerCase()
-      const matchesInclude = keys.some((target) => k.includes(target.toLowerCase()))
-      const matchesExclude = excludeKeys.some((target) => k.includes(target.toLowerCase()))
-      return matchesInclude && !matchesExclude
-    })
-    return matchKey ? String(snapshot.params[matchKey]) : ''
-  }
-
   const positivePrompt = getParamValue(['prompt', 'positive'], ['negative'])
   const negativePrompt = getParamValue(['negative'])
+  const aspectRatio = getParamValue(['resolution', 'aspect'])
+  const sampler = getParamValue(['sampler'])
+  const scheduler = getParamValue(['scheduler'])
   const cfgScale = getParamValue(['cfg'])
   const steps = getParamValue(['step'])
   const seed = getParamValue(['seed'])
@@ -403,7 +450,7 @@ export function HistoryModalPreview({
           </div>
         )}
 
-        {showControls && activeSnapshotId && !isFullscreen && (
+        {showControls && (activeSnapshotId || !!effectiveParams) && !isFullscreen && (
           viewMode === 'full' ? (
             <button
               onClick={(e) => { e.stopPropagation(); setViewMode('info') }}
@@ -430,108 +477,124 @@ export function HistoryModalPreview({
           className="flex-1 overflow-y-auto p-5 bg-surface border-t border-[rgba(255,255,255,0.06)]"
           onClick={(e) => e.stopPropagation()}
         >
-          {activeSnapshotId ? (
-            isLoading ? (
-              <div className="flex items-center justify-center py-10 gap-2 text-zinc-400 text-xs">
-                <Loader2 size={16} className="animate-spin text-accent-green" />
-                <span>Loading snapshot metadata...</span>
-              </div>
-            ) : (
-              <div className="space-y-4 text-xs text-zinc-300">
-                {/* Prompt */}
-                {positivePrompt && (
-                  <div>
-                    <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Prompt</h4>
-                    <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
-                      {positivePrompt}
-                    </div>
+          {(activeSnapshotId && isLoading) || isServerMetaLoading ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-zinc-400 text-xs">
+              <Loader2 size={16} className="animate-spin text-accent-green" />
+              <span>Loading metadata...</span>
+            </div>
+          ) : effectiveParams ? (
+            <div className="space-y-4 text-xs text-zinc-300">
+              {/* Prompt */}
+              {positivePrompt && (
+                <div>
+                  <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Prompt</h4>
+                  <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
+                    {positivePrompt}
                   </div>
-                )}
-
-                {/* Negative Prompt */}
-                {negativePrompt && (
-                  <div>
-                    <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Negative Prompt</h4>
-                    <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
-                      {negativePrompt}
-                    </div>
-                  </div>
-                )}
-
-                {/* Grid of basic variables */}
-                <div className="grid grid-cols-3 gap-3">
-                  {cfgScale && (
-                    <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
-                      <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">CFG Scale</span>
-                      <span className="font-mono text-zinc-200 font-semibold">{cfgScale}</span>
-                    </div>
-                  )}
-                  {steps && (
-                    <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
-                      <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Steps</span>
-                      <span className="font-mono text-zinc-200 font-semibold">{steps}</span>
-                    </div>
-                  )}
-                  {seed && (
-                    <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)] col-span-1">
-                      <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Seed</span>
-                      <span className="font-mono text-zinc-200 font-semibold select-all break-all">{seed}</span>
-                    </div>
-                  )}
                 </div>
+              )}
 
-                {/* LoRA Stack */}
-                {loraStacks.map((stack) => (
-                  <div key={stack.role} className="space-y-1.5">
-                    <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">
-                      LoRA Stack ({stack.role})
-                    </h4>
-                    <div className="bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] overflow-hidden">
-                      <table className="w-full text-left text-[11px]">
-                        <thead>
-                          <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-500">
-                            <th className="p-2 font-medium">Model</th>
-                            <th className="p-2 font-medium text-right w-16">Weight</th>
-                            <th className="p-2 font-medium text-right w-16">Model Str</th>
-                            <th className="p-2 font-medium text-right w-16">Clip Str</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {stack.items.map((item) => (
-                            <tr key={item.index} className="border-b border-[rgba(255,255,255,0.02)] last:border-0 text-zinc-300">
-                              <td className="p-2 truncate max-w-[200px]" title={item.displayName}>
-                                {item.displayName}
-                              </td>
-                              <td className="p-2 text-right font-mono">{item.wt}</td>
-                              <td className="p-2 text-right font-mono">{item.model_str}</td>
-                              <td className="p-2 text-right font-mono">{item.clip_str}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              {/* Negative Prompt */}
+              {negativePrompt && (
+                <div>
+                  <h4 className="text-zinc-500 font-semibold mb-1 uppercase tracking-wider text-[10px]">Negative Prompt</h4>
+                  <div className="bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] text-zinc-200 select-all whitespace-pre-wrap break-all">
+                    {negativePrompt}
                   </div>
-                ))}
+                </div>
+              )}
 
-                {/* Applied Assets */}
+              {/* Grid of basic variables */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {aspectRatio && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Aspect Ratio</span>
+                    <span className="font-mono text-zinc-200 font-semibold truncate block" title={aspectRatio}>{aspectRatio}</span>
+                  </div>
+                )}
+                {sampler && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Sampler</span>
+                    <span className="font-mono text-zinc-200 font-semibold truncate block" title={sampler}>{sampler}</span>
+                  </div>
+                )}
+                {scheduler && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Scheduler</span>
+                    <span className="font-mono text-zinc-200 font-semibold truncate block" title={scheduler}>{scheduler}</span>
+                  </div>
+                )}
+                {cfgScale && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">CFG Scale</span>
+                    <span className="font-mono text-zinc-200 font-semibold">{cfgScale}</span>
+                  </div>
+                )}
+                {steps && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)]">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Steps</span>
+                    <span className="font-mono text-zinc-200 font-semibold">{steps}</span>
+                  </div>
+                )}
+                {seed && (
+                  <div className="bg-surface-2 p-2.5 rounded-lg border border-[rgba(255,255,255,0.04)] col-span-1">
+                    <span className="text-[10px] text-zinc-500 block mb-0.5 font-medium uppercase">Seed</span>
+                    <span className="font-mono text-zinc-200 font-semibold select-all break-all">{seed}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* LoRA Stack */}
+              {loraStacks.map((stack) => (
+                <div key={stack.role} className="space-y-1.5">
+                  <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">
+                    LoRA Stack ({stack.role})
+                  </h4>
+                  <div className="bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] overflow-hidden">
+                    <table className="w-full text-left text-[11px]">
+                      <thead>
+                        <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-500">
+                          <th className="p-2 font-medium">Model</th>
+                          <th className="p-2 font-medium text-right w-16">Weight</th>
+                          <th className="p-2 font-medium text-right w-16">Model Str</th>
+                          <th className="p-2 font-medium text-right w-16">Clip Str</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stack.items.map((item) => (
+                          <tr key={item.index} className="border-b border-[rgba(255,255,255,0.02)] last:border-0 text-zinc-300">
+                            <td className="p-2 truncate max-w-[200px]" title={item.displayName}>
+                              {item.displayName}
+                            </td>
+                            <td className="p-2 text-right font-mono">{item.wt}</td>
+                            <td className="p-2 text-right font-mono">{item.model_str}</td>
+                            <td className="p-2 text-right font-mono">{item.clip_str}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+
+              {/* Applied Assets (snapshot の場合のみ表示) */}
+              {activeSnapshotId && (
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h4 className="text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">Applied Assets</h4>
-                    {activeSnapshotId && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isEditing) {
-                            setLocalLoraIds(snapshot?.loras?.map((l) => l.lora_id) || [])
-                            setLocalTagSetIds(snapshot?.tag_sets?.map((t) => t.tag_set_id) || [])
-                          }
-                          setIsEditing(!isEditing)
-                        }}
-                        className="text-[10px] text-[#7C6FDD] hover:underline font-medium"
-                      >
-                        {isEditing ? 'キャンセル' : '編集'}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isEditing) {
+                          setLocalLoraIds(snapshot?.loras?.map((l) => l.lora_id) || [])
+                          setLocalTagSetIds(snapshot?.tag_sets?.map((t) => t.tag_set_id) || [])
+                        }
+                        setIsEditing(!isEditing)
+                      }}
+                      className="text-[10px] text-[#7C6FDD] hover:underline font-medium"
+                    >
+                      {isEditing ? 'キャンセル' : '編集'}
+                    </button>
                   </div>
 
                   {!isEditing ? (
@@ -677,8 +740,8 @@ export function HistoryModalPreview({
                     </div>
                   )}
                 </div>
-              </div>
-            )
+              )}
+            </div>
           ) : (
             <div className="text-zinc-500 italic text-center py-6 text-xs">
               一時生成画像（スナップショット未保存）またはメタデータがありません。
@@ -686,6 +749,7 @@ export function HistoryModalPreview({
           )}
         </div>
       )}
+
     </div>
   )
 }

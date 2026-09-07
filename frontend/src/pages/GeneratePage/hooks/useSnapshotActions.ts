@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { snapshotsApi } from '../../../api/client'
+import { snapshotsApi, promptMetadataApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
 export function useSnapshotActions(selectedWorkflowId: number | null) {
@@ -37,11 +37,23 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
                   resolvedParamValues = parsed.paramValues
                   resolvedAppliedAssets = parsed.appliedAssets
                 }
+              } else {
+                // 端末跨ぎ・別ブラウザ対応: サーバーDBから取得
+                try {
+                  const serverMeta = await promptMetadataApi.get(t)
+                  if (serverMeta && serverMeta.param_values) {
+                    resolvedParamValues = serverMeta.param_values
+                    resolvedAppliedAssets = serverMeta.applied_assets || {}
+                  }
+                } catch (err) {
+                  console.warn(`[Snapshot] Could not fetch server metadata for prompt ${t}:`, err)
+                }
               }
             }
           } catch (e) {
             console.error('Failed to resolve metadata from image URL:', e)
           }
+
 
           const activeLoras: { lora_id: number; strength: number; role: string }[] = []
           const activeTagSets: { tag_set_id: number; role: string }[] = []

@@ -325,6 +325,7 @@ export function GeneratePage() {
         tagSets={tagSets ?? []}
         onApply={handleBulkEditApply}
         isApplying={isBulkApplying}
+        activeBaseModelId={workflow?.target_base_model_id ?? null}
       />
     </>
   )

@@ -1,6 +1,6 @@
 """SQLAlchemy ORM models for Prompt Surgeon."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import (
     Integer, String, Text, Float, Boolean,
@@ -9,6 +9,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+
+
+def utc_now() -> datetime:
+    """Return timezone-aware UTC datetime for SQLAlchemy column defaults."""
+    return datetime.now(timezone.utc)
 
 
 class ParamTypeMaster(Base):
@@ -22,7 +27,7 @@ class ParamTypeMaster(Base):
     min_value: Mapped[Optional[float]] = mapped_column(Float)
     max_value: Mapped[Optional[float]] = mapped_column(Float)
     step: Mapped[Optional[float]] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class MappingMaster(Base):
@@ -62,7 +67,7 @@ class BaseModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     description: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     loras: Mapped[list["Lora"]] = relationship(
         secondary=lora_base_models,
@@ -78,7 +83,7 @@ class CheckpointMapping(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     checkpoint_name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     base_model_id: Mapped[int] = mapped_column(ForeignKey("base_models.id", ondelete="CASCADE"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     
     base_model: Mapped["BaseModel"] = relationship()
 
@@ -92,7 +97,7 @@ class Workflow(Base):
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     default_applied_assets: Mapped[Optional[str]] = mapped_column(Text)
     target_base_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("base_models.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     target_base_model: Mapped[Optional["BaseModel"]] = relationship()
     mappings: Mapped[list["WorkflowMapping"]] = relationship(
@@ -120,7 +125,7 @@ class BypassProfile(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     bypassed_node_ids: Mapped[str] = mapped_column(Text, nullable=False)  # JSON string
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="bypass_profiles")
 
@@ -136,8 +141,8 @@ class WorkflowPreset(Base):
     batch_size: Mapped[int] = mapped_column(Integer, nullable=False)
     seed_mode: Mapped[str] = mapped_column(String, nullable=False)
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="presets")
@@ -163,7 +168,7 @@ class Snapshot(Base):
     params: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: {role: value}
     image_path: Mapped[Optional[str]] = mapped_column(String)
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     source_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id", ondelete="SET NULL"), nullable=True)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="snapshots")
@@ -184,7 +189,7 @@ class Album(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     items: Mapped[list["AlbumItem"]] = relationship(
         back_populates="album", cascade="all, delete-orphan",
@@ -227,7 +232,7 @@ class Lora(Base):
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
     file_path: Mapped[Optional[str]] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     category_rel: Mapped[Optional["LoraCategory"]] = relationship(back_populates="loras")
     base_models: Mapped[list["BaseModel"]] = relationship(
@@ -271,7 +276,7 @@ class TagSet(Base):
     tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     category_rel: Mapped[Optional["TagsetCategory"]] = relationship(back_populates="tag_sets")
     base_models: Mapped[list["BaseModel"]] = relationship(
@@ -289,7 +294,7 @@ class TagSubset(Base):
     tag_set_id: Mapped[int] = mapped_column(ForeignKey("tag_sets.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     tag_set: Mapped["TagSet"] = relationship(back_populates="subsets")
 
@@ -301,7 +306,7 @@ class LlmPrompt(Base):
     key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
 
 class SnapshotLora(Base):
@@ -340,7 +345,7 @@ class ParamSyncGroup(Base):
     master_role: Mapped[str] = mapped_column(String, nullable=False)
     slave_roles: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON string
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="param_sync_groups")
 
@@ -364,7 +369,7 @@ class SpeechBubblePreset(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     effects_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="{}")
     text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class SpeechTonePreset(Base):
@@ -375,7 +380,14 @@ class SpeechTonePreset(Base):
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+class PromptMetadata(Base):
+    __tablename__ = "prompt_metadata"
 
+    prompt_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workflow_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    param_values: Mapped[str] = mapped_column(Text, nullable=False)  # JSON serialized dict
+    applied_assets: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON serialized dict
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

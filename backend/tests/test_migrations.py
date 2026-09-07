@@ -27,6 +27,7 @@ class TestDatabaseMigrations(unittest.TestCase):
             self.assertIn("param_type_masters", tables)
             self.assertIn("speech_bubble_presets", tables)
             self.assertIn("speech_tone_presets", tables)
+            self.assertIn("prompt_metadata", tables)
 
     def test_legacy_database_full_migration(self):
         """古いスキーマのDBに対して run_migrations を実行し、すべてのカラム・制約が最新化されデータが保持されること"""
@@ -165,6 +166,10 @@ class TestDatabaseMigrations(unittest.TestCase):
             conn.execute(sa.text("INSERT INTO speech_bubble_presets (name, orientation) VALUES ('Legacy Preset', 'horizontal');"))
             presets = conn.execute(sa.text("SELECT name, orientation FROM speech_bubble_presets WHERE name = 'Legacy Preset'")).fetchall()
             self.assertEqual(len(presets), 2)
+
+            # prompt_metadata テーブル作成検証
+            self.assertIn("prompt_metadata", inspector.get_table_names())
+
 
     def test_schema_parity_between_fresh_and_migrated_db(self):
         """新規作成DBとレガシー移行後DBの間で、主要テーブルのカラム構成が完全に一致すること（SSoT整合性検証）"""

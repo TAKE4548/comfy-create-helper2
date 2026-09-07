@@ -277,5 +277,45 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     fireEvent.click(redoBtn)
     expect(redoMock).toHaveBeenCalledWith('default')
   })
+
+  it('preserves prompt values and does not overwrite with empty strings when switching prompt tabs on mobile', () => {
+    const setParamValuesMock = vi.fn()
+    const setActivePromptTabMock = vi.fn()
+    const state = createMockState({
+      selectedWorkflowId: 1,
+      activePromptTab: 'Main_Positive_Prompt',
+      setActivePromptTab: setActivePromptTabMock,
+      paramValues: {
+        Main_Positive_Prompt: '1girl, masterpiece, high quality',
+        Main_Negative_Prompt: 'worst quality, normal quality',
+      },
+      setParamValues: setParamValuesMock,
+    })
+
+    const { rerender } = render(<MobileLayout state={state} />)
+
+    // Positiveプロンプトが表示されていることを確認
+    expect(screen.getByText('1girl')).toBeInTheDocument();
+    expect(screen.getByText('masterpiece')).toBeInTheDocument();
+
+    // Negativeタブへ切り替えをシミュレート (textMappings: id: 2, display_name: 'Negative Prompt')
+    const negativeTab = screen.getByText('Negative Prompt')
+    fireEvent.click(negativeTab)
+    expect(setActivePromptTabMock).toHaveBeenCalledWith('Main_Negative_Prompt')
+
+    // タブが Negative に切り替わった状態を rerender
+    const updatedState = {
+      ...state,
+      activePromptTab: 'Main_Negative_Prompt',
+    }
+    rerender(<MobileLayout state={updatedState} />)
+
+    // Negativeプロンプトがチップとして描画され、空文字での破壊的書き換え（setParamValues({ ... "" })）が呼ばれていないことを確認
+    expect(screen.getByText('worst quality')).toBeInTheDocument();
+    expect(screen.getByText('normal quality')).toBeInTheDocument();
+    expect(setParamValuesMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ Main_Negative_Prompt: '' })
+    );
+  })
 })
 

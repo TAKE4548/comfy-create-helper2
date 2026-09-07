@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app import models
 from app.seed_data import (
@@ -54,7 +54,7 @@ def _seed_llm_prompts(db) -> None:
                 key=seed["key"],
                 content=seed["content"],
                 description=seed["description"],
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
             ))
             logger.info(f"Seeded LLM prompt: {seed['key']}")
 

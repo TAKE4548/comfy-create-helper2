@@ -451,6 +451,96 @@ describe('TagChipEditor', () => {
       expect(screen.getByText('orange')).toBeInTheDocument();
       expect(screen.getByText('grape')).toBeInTheDocument();
     });
+
+    it('Case 5: prevents initial mount notification and does not trigger onChange("") when external value arrives late', () => {
+      const onChangeMock = vi.fn();
+      const onChipsChangeMock = vi.fn();
+
+      // 初期マウント (value="", chips=[])
+      const { rerender } = render(
+        <TagChipEditor
+          chips={[]}
+          value=""
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // 初回マウント時に親への逆流通知（onChipsChangeやonChange）が発生しないこと
+      expect(onChipsChangeMock).not.toHaveBeenCalled();
+      expect(onChangeMock).not.toHaveBeenCalled();
+
+      // 親から遅延して非空の value が渡された場合
+      rerender(
+        <TagChipEditor
+          chips={[]}
+          value="masterpiece, best quality"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // 下り同期であり、空文字破壊の onChange("") は発火しないこと
+      expect(onChangeMock).not.toHaveBeenCalledWith('');
+      // チップが正常に描画されること
+      expect(screen.getByText('masterpiece')).toBeInTheDocument();
+      expect(screen.getByText('best quality')).toBeInTheDocument();
+    });
+
+    it('Case 6: autonomously restores chips when chips=[] but external value is non-empty', () => {
+      const { rerender } = render(
+        <TagChipEditor
+          chips={[]}
+          value="cat ears, tail"
+          onChange={() => {}}
+        />
+      );
+
+      // chips=[] だが value があるため自律復元される
+      expect(screen.getByText('cat ears')).toBeInTheDocument();
+      expect(screen.getByText('tail')).toBeInTheDocument();
+
+      // さらに外部から空チップ配列で上書き同期が走っても、valueが非空なら復元される
+      rerender(
+        <TagChipEditor
+          chips={[]}
+          value="cat ears, tail"
+          onChange={() => {}}
+        />
+      );
+
+      expect(screen.getByText('cat ears')).toBeInTheDocument();
+      expect(screen.getByText('tail')).toBeInTheDocument();
+    });
+
+    it('Case 7: triggers onChange("") only when user explicitly removes all tag chips', () => {
+      const onChangeMock = vi.fn();
+      const onChipsChangeMock = vi.fn();
+      const initialChips = [
+        { id: 'c1', text: 'solo', enabled: true },
+      ];
+
+      render(
+        <TagChipEditor
+          chips={initialChips}
+          value="solo"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      expect(screen.getByText('solo')).toBeInTheDocument();
+      expect(onChangeMock).not.toHaveBeenCalled();
+
+      // ユーザーが削除ボタンをクリックして明示的に削除
+      const deleteButton = screen.getByLabelText('タグ solo を削除');
+      fireEvent.click(deleteButton);
+
+      // ユーザー操作による削除なので onChange("") が発火する
+      expect(onChangeMock).toHaveBeenCalledWith('');
+      expect(onChipsChangeMock).toHaveBeenCalledWith([]);
+      expect(screen.queryByText('solo')).not.toBeInTheDocument();
+    });
   });
 });
 

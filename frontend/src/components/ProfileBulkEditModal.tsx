@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import type { WorkflowPreset, MappingMaster, Lora, TagSet, ParamTypeMaster } from '../api/types';
+import { lorasApi } from '../api/client';
 import type { AppliedAsset } from '../store/useGenerationStore';
 import { SearchableLoraSelect } from './SearchableLoraSelect';
 import { LoraStackEditor } from './LoraStackEditor';
@@ -47,12 +49,36 @@ export interface AppliedAssetOp {
   assets: AppliedAsset[];
 }
 
+export interface PresetLoraSlot {
+  name: string;
+  weight: string;
+  modelStrength: string;
+  clipStrength: string;
+}
+
+export interface CommonLoraOp {
+  name: string;
+  action: 'update' | 'remove';
+  weight?: string;
+  modelStrength?: string;
+  clipStrength?: string;
+}
+
+export interface LoraStackOp {
+  role: string;
+  mode: 'overwrite' | 'differential';
+  slots?: PresetLoraSlot[];       // overwrite モード用
+  commonOps?: CommonLoraOp[];     // differential モード用
+  addSlots?: PresetLoraSlot[];    // differential モード用
+}
+
 export interface BulkEditPayload {
   promptOps?: PromptOp[];
   paramPatch?: Record<string, string>;
   batchSize?: number;
   loraOps?: LoraOp[];
   assetOps?: AppliedAssetOp[];
+  loraStackOps?: LoraStackOp[];
 }
 
 export interface ProfileBulkEditModalProps {
@@ -66,9 +92,10 @@ export interface ProfileBulkEditModalProps {
   comfyObjectInfo?: Record<string, any>;
   onApply: (payload: BulkEditPayload) => void;
   isApplying?: boolean;
+  activeBaseModelId?: number | null;
 }
 
-type Tab = 'prompt' | 'params' | 'lora';
+export type Tab = 'prompt' | 'params';
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -157,6 +184,46 @@ export function computeCommonTags(
   return common;
 }
 
+export function computeCommonLoras(presets: WorkflowPreset[], role: string): PresetLoraSlot[] {
+  if (!presets || presets.length === 0) return [];
+
+  // For each preset, extract list of lora slots for this role
+  const presetSlotLists: PresetLoraSlot[][] = presets.map(p => {
+    const vals = p.param_values || {};
+    const count = parseInt(vals[`${role}_lora_count`] || '0', 10);
+    const slots: PresetLoraSlot[] = [];
+    for (let i = 1; i <= count; i++) {
+      const name = vals[`${role}_lora_name_${i}`];
+      if (name && name.trim()) {
+        slots.push({
+          name: name.trim(),
+          weight: vals[`${role}_lora_wt_${i}`] ?? '1.0',
+          modelStrength: vals[`${role}_model_str_${i}`] ?? '1.0',
+          clipStrength: vals[`${role}_clip_str_${i}`] ?? '1.0',
+        });
+      }
+    }
+    return slots;
+  });
+
+  const firstSlots = presetSlotLists[0];
+  if (!firstSlots || firstSlots.length === 0) return [];
+
+  const common: PresetLoraSlot[] = [];
+  for (const slot of firstSlots) {
+    const slotNameLower = slot.name.toLowerCase();
+    // Check if slot exists in all other presets
+    const isCommon = presetSlotLists.every(list =>
+      list.some(s => s.name.toLowerCase() === slotNameLower)
+    );
+    if (isCommon) {
+      common.push(slot);
+    }
+  }
+
+  return common;
+}
+
 // ─── Component ──────────────────────────────────────────────────
 
 export function ProfileBulkEditModal({
@@ -170,7 +237,14 @@ export function ProfileBulkEditModal({
   comfyObjectInfo,
   onApply,
   isApplying = false,
+  activeBaseModelId,
 }: ProfileBulkEditModalProps) {
+  const { data: comfyModels } = useQuery({
+    queryKey: ['comfy-lora-models'],
+    queryFn: lorasApi.getComfyModels,
+    enabled: isOpen,
+  });
+
   const [activeTab, setActiveTab] = useState<Tab>('prompt');
 
   // Prompt tab state
@@ -190,11 +264,10 @@ export function ProfileBulkEditModal({
   const [batchSizeEnabled, setBatchSizeEnabled] = useState(false);
   const [batchSizeInput, setBatchSizeInput] = useState('');
 
-  // LoRA / Asset tab state
-  const [loraFilename, setLoraFilename] = useState('');
-  const [loraRole, setLoraRole] = useState('');
-  const [loraMode, setLoraMode] = useState<'append' | 'replace'>('append');
-  const [loraStrength, setLoraStrength] = useState('1.0');
+  // LoRA Stack state (per role)
+  const [loraStackModes, setLoraStackModes] = useState<Record<string, 'differential' | 'overwrite'>>({});
+  const [commonLoraOps, setCommonLoraOps] = useState<Record<string, CommonLoraOp[]>>({});
+  const [addLoraSlots, setAddLoraSlots] = useState<Record<string, PresetLoraSlot[]>>({});
 
   // AddAssetModal & AssetOps state
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
@@ -271,7 +344,7 @@ export function ProfileBulkEditModal({
     const rolesToApply = targetRoles.length > 0 ? targetRoles : [role];
 
     // Determine asset operation mode (if promptOp is overwrite, treat assetOp mode as replace)
-    const effectiveMode = promptOp === 'overwrite' ? 'replace' : loraMode;
+    const effectiveMode = promptOp === 'overwrite' ? 'replace' : 'append';
 
     // 1. Queue for asset registration in applied_assets for each target role
     setAssetOps(prev => {
@@ -397,10 +470,11 @@ export function ProfileBulkEditModal({
       payload.assetOps = assetOps;
     }
 
-    // 3. Param patch (only include explicitly enabled params)
+    // 3. Param patch (only include explicitly enabled params that are not lora_stack)
+    const loraStackRoleSet = new Set(loraRoles.map(m => m.role));
     const filteredParams: Record<string, string> = {};
     enabledParams.forEach((role) => {
-      if (paramPatch[role] !== undefined && paramPatch[role] !== '') {
+      if (!loraStackRoleSet.has(role) && paramPatch[role] !== undefined && paramPatch[role] !== '') {
         filteredParams[role] = paramPatch[role];
       }
     });
@@ -410,25 +484,40 @@ export function ProfileBulkEditModal({
       if (!isNaN(n) && n > 0) payload.batchSize = n;
     }
 
-    // 4. Legacy LoRA op
-    if (loraFilename) {
-      const targetRole = loraRole || (loraRoles.length > 0 ? loraRoles[0].role : 'lora');
-      const loraData = loras.find(l => l.model_name === loraFilename || l.file_path === loraFilename);
-      if (loraData && targetRole) {
-        const path = loraData.file_path || loraData.model_name || '';
-        const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, '') || 'lora';
-        const strength = parseFloat(loraStrength) || 1.0;
-        const asset: AppliedAsset = {
-          id: `lora-${loraData.id}-${Date.now()}`,
-          type: 'lora',
-          assetId: loraData.id,
-          name: loraData.description || filename,
-          enabled: true,
-          tags: loraData.trigger_word_sets?.[0]?.words ?? [],
-          loraPromptString: `<lora:${filename}:${strength.toFixed(1)}>`,
-        };
-        payload.loraOps = [{ mode: loraMode, role: targetRole, asset }];
+    // 4. LoRA Stack ops
+    const ops: LoraStackOp[] = [];
+    loraRoles.forEach((m) => {
+      if (!enabledParams.has(m.role)) return;
+      const mode = loraStackModes[m.role] || 'differential';
+      if (mode === 'overwrite') {
+        const count = parseInt(paramPatch[`${m.role}_lora_count`] || '0', 10);
+        const slots: PresetLoraSlot[] = [];
+        for (let i = 1; i <= count; i++) {
+          slots.push({
+            name: paramPatch[`${m.role}_lora_name_${i}`] ?? '',
+            weight: paramPatch[`${m.role}_lora_wt_${i}`] ?? '0.0',
+            modelStrength: paramPatch[`${m.role}_model_str_${i}`] ?? '1.0',
+            clipStrength: paramPatch[`${m.role}_clip_str_${i}`] ?? '1.0',
+          });
+        }
+        ops.push({
+          role: m.role,
+          mode: 'overwrite',
+          slots,
+        });
+      } else {
+        const common = commonLoraOps[m.role] ?? [];
+        const added = addLoraSlots[m.role] ?? [];
+        ops.push({
+          role: m.role,
+          mode: 'differential',
+          commonOps: common,
+          addSlots: added,
+        });
       }
+    });
+    if (ops.length > 0) {
+      payload.loraStackOps = ops;
     }
 
     return Object.keys(payload).length > 0 ? payload : null;
@@ -520,7 +609,6 @@ export function ProfileBulkEditModal({
           {([
             { id: 'prompt', label: 'プロンプト' },
             { id: 'params', label: 'パラメータ' },
-            { id: 'lora', label: 'LoRA' },
           ] as { id: Tab; label: string }[]).map(tab => (
             <button
               key={tab.id}
@@ -817,15 +905,233 @@ export function ProfileBulkEditModal({
               )}
               {paramRoles.map(m => {
                 if (m.input_type === 'lora_stack') {
+                  const isEnabled = enabledParams.has(m.role);
+                  const currentMode = loraStackModes[m.role] || 'differential';
+                  const commonList = computeCommonLoras(selectedPresets, m.role);
+
+                  // Initialize commonLoraOps for this role if not present
+                  const roleOps = commonLoraOps[m.role] ?? commonList.map(item => ({
+                    name: item.name,
+                    action: 'update' as const,
+                    weight: item.weight,
+                    modelStrength: item.modelStrength,
+                    clipStrength: item.clipStrength,
+                  }));
+
+                  const roleAddSlots = addLoraSlots[m.role] ?? [];
+
                   return (
-                    <LoraStackEditor
-                      key={m.role}
-                      role={m.role}
-                      paramValues={paramPatch}
-                      setParamValues={setParamPatch}
-                      loras={loras}
-                      title={m.display_name || undefined}
-                    />
+                    <div key={m.role} className="p-3 bg-[#1F1F25]/60 border border-[rgba(255,255,255,0.06)] rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => toggleParamEnabled(m.role)}
+                            className="w-3.5 h-3.5 rounded accent-[#3ECF8E]"
+                          />
+                          <span className={`text-xs font-semibold uppercase tracking-wider transition-colors ${isEnabled ? 'text-white' : 'text-gray-400'}`}>
+                            {m.display_name}
+                          </span>
+                        </label>
+                        <span className="text-[10px] text-gray-500 font-mono">{m.input_type}</span>
+                      </div>
+
+                      <div className={!isEnabled ? 'opacity-40 pointer-events-none' : 'space-y-3'}>
+                        {/* Mode Selector */}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={!isEnabled}
+                            onClick={() => setLoraStackModes(prev => ({ ...prev, [m.role]: 'differential' }))}
+                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-all ${
+                              currentMode === 'differential'
+                                ? 'bg-[#3ECF8E]/15 border-[#3ECF8E]/50 text-[#3ECF8E]'
+                                : 'bg-[#18181C] border-[rgba(255,255,255,0.06)] text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            差分編集（共通確認・追加・削除）
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isEnabled}
+                            onClick={() => setLoraStackModes(prev => ({ ...prev, [m.role]: 'overwrite' }))}
+                            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium border transition-all ${
+                              currentMode === 'overwrite'
+                                ? 'bg-[#3ECF8E]/15 border-[#3ECF8E]/50 text-[#3ECF8E]'
+                                : 'bg-[#18181C] border-[rgba(255,255,255,0.06)] text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            完全上書き
+                          </button>
+                        </div>
+
+                        {currentMode === 'overwrite' ? (
+                          <div className="pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                            <LoraStackEditor
+                              role={m.role}
+                              paramValues={paramPatch}
+                              setParamValues={setParamPatch}
+                              loras={loras}
+                              title=""
+                              activeBaseModelId={activeBaseModelId}
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-3 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                            {/* Common LoRAs Section */}
+                            <div>
+                              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                                共通LoRA ({commonList.length}件)
+                              </div>
+                              {commonList.length === 0 ? (
+                                <p className="text-xs text-gray-500 py-1">全プリセットで共通のLoRAはありません</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {commonList.map((item) => {
+                                    const currentOp = roleOps.find(o => o.name === item.name);
+                                    const isRemoved = currentOp?.action === 'remove';
+                                    const currentWeight = currentOp?.weight ?? item.weight;
+
+                                    return (
+                                      <div
+                                        key={item.name}
+                                        className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-all ${
+                                          isRemoved
+                                            ? 'bg-red-500/10 border-red-500/20 text-gray-500'
+                                            : 'bg-[#18181C] border-[rgba(255,255,255,0.06)] text-gray-200'
+                                        }`}
+                                      >
+                                        <span className={`font-medium truncate flex-1 mr-2 ${isRemoved ? 'line-through text-gray-500' : ''}`}>
+                                          {item.name}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          {!isRemoved && (
+                                            <input
+                                              type="number"
+                                              step="0.05"
+                                              value={currentWeight}
+                                              onChange={e => {
+                                                const val = e.target.value;
+                                                const nextOps = roleOps.some(o => o.name === item.name)
+                                                  ? roleOps.map(o => o.name === item.name ? { ...o, weight: val, modelStrength: val, clipStrength: val } : o)
+                                                  : [...roleOps, { name: item.name, action: 'update' as const, weight: val, modelStrength: val, clipStrength: val }];
+                                                setCommonLoraOps(prev => ({ ...prev, [m.role]: nextOps }));
+                                              }}
+                                              className="w-16 px-1.5 py-0.5 text-xs text-right bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded focus:outline-none focus:border-[#3ECF8E]"
+                                            />
+                                          )}
+                                          <button
+                                            type="button"
+                                            title={isRemoved ? '削除を取り消す' : '削除'}
+                                            onClick={() => {
+                                              const nextAction: 'update' | 'remove' = isRemoved ? 'update' : 'remove';
+                                              const nextOps = roleOps.some(o => o.name === item.name)
+                                                ? roleOps.map(o => o.name === item.name ? { ...o, action: nextAction } : o)
+                                                : [...roleOps, { ...item, action: nextAction }];
+                                              setCommonLoraOps(prev => ({ ...prev, [m.role]: nextOps }));
+                                            }}
+                                            className={`p-1 rounded transition-colors ${
+                                              isRemoved
+                                                ? 'text-gray-400 hover:text-white'
+                                                : 'text-gray-400 hover:text-red-400'
+                                            }`}
+                                          >
+                                            <Trash2 size={13} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Additional LoRAs Section */}
+                            <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                                  新規追加LoRA
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAddLoraSlots(prev => ({
+                                      ...prev,
+                                      [m.role]: [
+                                        ...(prev[m.role] || []),
+                                        { name: '', weight: '1.0', modelStrength: '1.0', clipStrength: '1.0' },
+                                      ],
+                                    }));
+                                  }}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-[#3ECF8E] hover:underline"
+                                >
+                                  <Plus size={12} /> LoRAを追加
+                                </button>
+                              </div>
+
+                              {roleAddSlots.map((slot, sIdx) => (
+                                <div key={sIdx} className="p-2 bg-[#18181C] border border-[rgba(255,255,255,0.06)] rounded-lg space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1">
+                                      <SearchableLoraSelect
+                                        loras={loras}
+                                        comfyModels={comfyModels}
+                                        activeBaseModelId={activeBaseModelId}
+                                        value={slot.name}
+                                        onChange={val => {
+                                          setAddLoraSlots(prev => {
+                                            const updated = [...(prev[m.role] || [])];
+                                            updated[sIdx] = { ...updated[sIdx], name: val };
+                                            return { ...prev, [m.role]: updated };
+                                          });
+                                        }}
+                                        placeholder="LoRAを選択..."
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAddLoraSlots(prev => {
+                                          const updated = [...(prev[m.role] || [])];
+                                          updated.splice(sIdx, 1);
+                                          return { ...prev, [m.role]: updated };
+                                        });
+                                      }}
+                                      className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-gray-400">強度:</span>
+                                    <input
+                                      type="number"
+                                      step="0.05"
+                                      value={slot.weight}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setAddLoraSlots(prev => {
+                                          const updated = [...(prev[m.role] || [])];
+                                          updated[sIdx] = {
+                                            ...updated[sIdx],
+                                            weight: val,
+                                            modelStrength: val,
+                                            clipStrength: val,
+                                          };
+                                          return { ...prev, [m.role]: updated };
+                                        });
+                                      }}
+                                      className="w-20 px-2 py-1 text-xs text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded focus:outline-none focus:border-[#3ECF8E]"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
                 }
 
@@ -991,132 +1297,6 @@ export function ProfileBulkEditModal({
                     className="w-full px-3 py-2 text-sm text-white bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
                   />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── LoRA / Asset Tab ── */}
-          {activeTab === 'lora' && (
-            <div className="space-y-4">
-              {/* Asset Modal Opener */}
-              <div className="p-3 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-[#3ECF8E] uppercase tracking-wider">アセット一括追加（LoRA・タグセット）</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const defaultRole = allAssetTargetRoles[0]?.role || loraRoles[0]?.role || textareaRoles[0]?.role || 'lora';
-                      setTargetAssetRole(defaultRole);
-                      setIsAddAssetOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#3ECF8E]/20 text-[#3ECF8E] border border-[#3ECF8E]/40 text-xs font-semibold hover:bg-[#3ECF8E]/30 transition-all"
-                  >
-                    <Plus size={14} />
-                    アセットを追加
-                  </button>
-                </div>
-
-                {assetOps.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-                    <span className="text-[11px] font-medium text-gray-400">適用予定のアセット:</span>
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                      {assetOps.map(op => (
-                        <div key={op.role} className="p-2 bg-[#18181C] border border-[rgba(255,255,255,0.06)] rounded-lg space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-gray-300">ロール: <span className="text-[#3ECF8E]">{op.role}</span></span>
-                            <span className="text-[10px] text-gray-500 font-mono">({op.mode === 'replace' ? '置換' : '追記'})</span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {op.assets.map(asset => (
-                              <span key={asset.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-gray-200">
-                                <span className="font-medium">{asset.name}</span>
-                                {asset.type === 'lora' && asset.loraPromptString && (
-                                  <span className="text-[10px] text-amber-300 font-mono">{asset.loraPromptString}</span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveQueuedAsset(op.role, asset.id)}
-                                  className="text-gray-400 hover:text-red-400 ml-1 transition-colors"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Legacy LoRA selection fallback */}
-              <div className="space-y-1.5 pt-2 border-t border-[rgba(255,255,255,0.06)]">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">単一 LoRA 指定（従来機能）</label>
-                <SearchableLoraSelect
-                  loras={loras}
-                  value={loraFilename}
-                  onChange={setLoraFilename}
-                  placeholder="LoRAを検索..."
-                />
-              </div>
-
-              {/* Strength */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">強度（Strength）</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="2"
-                  value={loraStrength}
-                  onChange={e => setLoraStrength(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
-                />
-              </div>
-
-              {/* Target role */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">適用ロール</label>
-                <select
-                  value={loraRole}
-                  onChange={e => setLoraRole(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-white bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg focus:outline-none focus:border-[#3ECF8E] transition-colors"
-                >
-                  <option value="">ロールを選択...</option>
-                  {loraRoles.map(m => (
-                    <option key={m.role} value={m.role}>{m.display_name}</option>
-                  ))}
-                  {loraRoles.length === 0 && (
-                    <option value="lora" >lora（デフォルト）</option>
-                  )}
-                </select>
-              </div>
-
-              {/* Mode */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider font-semibold">操作モード</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {([['append', '追加（既存を保持）'], ['replace', '置換（既存を削除）']] as const).map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      onClick={() => setLoraMode(mode)}
-                      className={`py-2 px-3 rounded-lg text-xs font-medium border transition-all ${
-                        loraMode === mode
-                          ? 'bg-[#3ECF8E]/15 border-[#3ECF8E]/50 text-[#3ECF8E]'
-                          : 'bg-[#1F1F25] border-[rgba(255,255,255,0.06)] text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {loraMode === 'replace' && (
-                  <p className="text-xs text-amber-400 flex items-center gap-1">
-                    <AlertTriangle size={12} />
-                    置換モードは選択ロールの既存 アセット/LoRA をすべて削除します
-                  </p>
-                )}
               </div>
             </div>
           )}

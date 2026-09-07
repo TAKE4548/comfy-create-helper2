@@ -284,6 +284,88 @@ export function usePresetState({
             newParamValues = { ...newParamValues, ...payload.paramPatch }
           }
 
+          if (payload.loraStackOps) {
+            for (const stackOp of payload.loraStackOps) {
+              const { role, mode } = stackOp
+              const oldCount = parseInt(newParamValues[`${role}_lora_count`] || '0', 10)
+              
+              // Extract current slots
+              const currentSlots: Array<{ name: string; weight: string; modelStrength: string; clipStrength: string }> = []
+              for (let i = 1; i <= oldCount; i++) {
+                currentSlots.push({
+                  name: newParamValues[`${role}_lora_name_${i}`] || '',
+                  weight: newParamValues[`${role}_lora_wt_${i}`] || '0.0',
+                  modelStrength: newParamValues[`${role}_model_str_${i}`] || '1.0',
+                  clipStrength: newParamValues[`${role}_clip_str_${i}`] || '1.0',
+                })
+              }
+
+              // Delete old slot keys from newParamValues
+              delete newParamValues[`${role}_lora_count`]
+              for (let i = 1; i <= oldCount; i++) {
+                delete newParamValues[`${role}_lora_name_${i}`]
+                delete newParamValues[`${role}_lora_wt_${i}`]
+                delete newParamValues[`${role}_model_str_${i}`]
+                delete newParamValues[`${role}_clip_str_${i}`]
+              }
+
+              let finalSlots: Array<{ name: string; weight: string; modelStrength: string; clipStrength: string }> = []
+
+              if (mode === 'overwrite') {
+                finalSlots = (stackOp.slots || []).filter(s => s.name.trim() !== '')
+              } else if (mode === 'differential') {
+                const removeSet = new Set<string>()
+                const updateMap = new Map<string, { weight?: string; modelStrength?: string; clipStrength?: string }>()
+                for (const cop of stackOp.commonOps || []) {
+                  if (cop.action === 'remove') {
+                    removeSet.add(cop.name.toLowerCase())
+                  } else if (cop.action === 'update') {
+                    updateMap.set(cop.name.toLowerCase(), {
+                      weight: cop.weight,
+                      modelStrength: cop.modelStrength,
+                      clipStrength: cop.clipStrength,
+                    })
+                  }
+                }
+
+                for (const slot of currentSlots) {
+                  if (removeSet.has(slot.name.toLowerCase())) {
+                    continue
+                  }
+                  const updates = updateMap.get(slot.name.toLowerCase())
+                  finalSlots.push({
+                    name: slot.name,
+                    weight: updates?.weight ?? slot.weight,
+                    modelStrength: updates?.modelStrength ?? slot.modelStrength,
+                    clipStrength: updates?.clipStrength ?? slot.clipStrength,
+                  })
+                }
+
+                for (const addSlot of stackOp.addSlots || []) {
+                  if (addSlot.name.trim() !== '') {
+                    finalSlots.push({
+                      name: addSlot.name.trim(),
+                      weight: addSlot.weight || '1.0',
+                      modelStrength: addSlot.modelStrength || '1.0',
+                      clipStrength: addSlot.clipStrength || '1.0',
+                    })
+                  }
+                }
+              }
+
+              // Clamp to maximum 10 slots
+              const clampedSlots = finalSlots.slice(0, 10)
+              newParamValues[`${role}_lora_count`] = String(clampedSlots.length)
+              clampedSlots.forEach((slot, idx) => {
+                const i = idx + 1
+                newParamValues[`${role}_lora_name_${i}`] = slot.name
+                newParamValues[`${role}_lora_wt_${i}`] = slot.weight
+                newParamValues[`${role}_model_str_${i}`] = slot.modelStrength
+                newParamValues[`${role}_clip_str_${i}`] = slot.clipStrength
+              })
+            }
+          }
+
           if (payload.batchSize !== undefined) {
             newBatchSize = payload.batchSize
           }
@@ -596,26 +678,39 @@ export function usePresetState({
     const checkedPresets: (string | number)[] | null = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
     const defaultParams = workflow ? getInitialParams(workflow) : {}
 
-    const rawMappedSets = presets.map((p) => ({
-      id: p.id,
-      name: p.name,
-      paramValues: { ...defaultParams, ...(p.param_values || {}) },
-      appliedAssets: p.applied_assets || {},
-      batchSize: p.batch_size || 1,
-      seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
-      seed: p.seed !== undefined ? p.seed : 42,
-      checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
-    }))
+    const existingSets = currentStore.sets || []
+    const existingSetsMap = new Map(existingSets.map((s) => [String(s.id), s]))
+
+    const rawMappedSets = presets.map((p) => {
+      const existingSet = existingSetsMap.get(String(p.id))
+      return {
+        id: p.id,
+        name: p.name,
+        // defaultParams < サーバー取得値 < 既存セット内のローカル編集値 の順で優先マージ
+        paramValues: {
+          ...defaultParams,
+          ...(p.param_values || {}),
+          ...(existingSet?.paramValues || {}),
+        },
+        appliedAssets: existingSet?.appliedAssets || p.applied_assets || {},
+        promptChips: existingSet?.promptChips,
+        batchSize: existingSet?.batchSize || p.batch_size || 1,
+        seedMode: existingSet?.seedMode || (p.seed_mode as 'random' | 'fixed') || 'random',
+        seed: existingSet?.seed !== undefined ? existingSet.seed : (p.seed !== undefined ? p.seed : 42),
+        checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
+      }
+    })
 
     const isFirstSync = !isInitialSyncRef.current
     let mappedSets = rawMappedSets
-    if (!isFirstSync && typeof currentActiveSetId === 'number') {
+    if (!isFirstSync && currentActiveSetId !== null && currentActiveSetId !== undefined) {
       mappedSets = rawMappedSets.map((s) =>
-        s.id === currentActiveSetId
+        String(s.id) === String(currentActiveSetId)
           ? {
               ...s,
               paramValues: currentStore.paramValues,
               appliedAssets: currentStore.appliedAssets,
+              promptChips: currentStore.promptChips || s.promptChips,
               batchSize: currentStore.batchSize,
               seedMode: currentStore.seedMode,
               seed: currentStore.seed,
@@ -639,7 +734,7 @@ export function usePresetState({
         ? currentOpenPresetIds[0]
         : presets[0].id
       const isInvalidActive =
-        currentActiveSetId === null || !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))
+        currentActiveSetId === null || currentActiveSetId === undefined || !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))
 
       if (isFirstSync) {
         isInitialSyncRef.current = true
@@ -686,7 +781,8 @@ export function usePresetState({
 
   // Autosave
   useEffect(() => {
-    if (!selectedWorkflowId || activeSetId === null || typeof activeSetId !== 'number') return
+    if (!isInitialSyncRef.current) return
+    if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
     const activePreset = presets?.find((p) => String(p.id) === String(activeSetId))
     if (!activePreset) return
 

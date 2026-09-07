@@ -1,7 +1,110 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { ProfileBulkEditModal, computeCommonTags } from '../ProfileBulkEditModal';
-import type { WorkflowPreset, MappingMaster, ParamTypeMaster } from '../../api/types';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+import { ProfileBulkEditModal, computeCommonTags, computeCommonLoras } from '../ProfileBulkEditModal';
+import type { WorkflowPreset, MappingMaster, ParamTypeMaster, Lora } from '../../api/types';
+import { lorasApi } from '../../api/client';
+
+const renderWithClient = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+    </QueryClientProvider>
+  );
+};
+
+describe('computeCommonLoras', () => {
+  const samplePresets: WorkflowPreset[] = [
+    {
+      id: 1,
+      name: 'Preset 1',
+      workflow_id: 1,
+      display_order: 1,
+      is_default: false,
+      param_values: {
+        lora_lora_count: '2',
+        lora_lora_name_1: 'lora_a.safetensors',
+        lora_lora_wt_1: '0.8',
+        lora_model_str_1: '0.8',
+        lora_clip_str_1: '0.8',
+        lora_lora_name_2: 'lora_b.safetensors',
+        lora_lora_wt_2: '1.0',
+        lora_model_str_2: '1.0',
+        lora_clip_str_2: '1.0',
+      },
+    },
+    {
+      id: 2,
+      name: 'Preset 2',
+      workflow_id: 1,
+      display_order: 2,
+      is_default: false,
+      param_values: {
+        lora_lora_count: '2',
+        lora_lora_name_1: 'lora_b.safetensors',
+        lora_lora_wt_1: '0.9',
+        lora_model_str_1: '0.9',
+        lora_clip_str_1: '0.9',
+        lora_lora_name_2: 'lora_c.safetensors',
+        lora_lora_wt_2: '0.5',
+        lora_model_str_2: '0.5',
+        lora_clip_str_2: '0.5',
+      },
+    },
+  ];
+
+  it('correctly extracts common LoRAs across all presets for a role', () => {
+    const common = computeCommonLoras(samplePresets, 'lora');
+    expect(common).toHaveLength(1);
+    expect(common[0].name).toBe('lora_b.safetensors');
+    // First preset's values are used as default representation
+    expect(common[0].weight).toBe('1.0');
+    expect(common[0].modelStrength).toBe('1.0');
+    expect(common[0].clipStrength).toBe('1.0');
+  });
+
+  it('returns empty array when there is no intersection (Red Teaming)', () => {
+    const disjointPresets: WorkflowPreset[] = [
+      {
+        id: 1,
+        name: 'P1',
+        workflow_id: 1,
+        display_order: 1,
+        is_default: false,
+        param_values: {
+          lora_lora_count: '1',
+          lora_lora_name_1: 'lora_x.safetensors',
+          lora_lora_wt_1: '1.0',
+        },
+      },
+      {
+        id: 2,
+        name: 'P2',
+        workflow_id: 1,
+        display_order: 2,
+        is_default: false,
+        param_values: {
+          lora_lora_count: '1',
+          lora_lora_name_1: 'lora_y.safetensors',
+          lora_lora_wt_1: '1.0',
+        },
+      },
+    ];
+    expect(computeCommonLoras(disjointPresets, 'lora')).toEqual([]);
+  });
+
+  it('returns empty array when presets is empty or count is 0', () => {
+    expect(computeCommonLoras([], 'lora')).toEqual([]);
+    const emptyCountPresets: WorkflowPreset[] = [
+      { id: 1, name: 'P1', workflow_id: 1, display_order: 1, is_default: false, param_values: {} },
+    ];
+    expect(computeCommonLoras(emptyCountPresets, 'lora')).toEqual([]);
+  });
+});
 
 describe('computeCommonTags', () => {
   const samplePresets: WorkflowPreset[] = [
@@ -131,7 +234,7 @@ describe('ProfileBulkEditModal Component', () => {
   };
 
   it('renders modal with correct preset count and tabs', () => {
-    render(
+    renderWithClient(
       <ProfileBulkEditModal
         isOpen={true}
         onClose={vi.fn()}
@@ -147,12 +250,12 @@ describe('ProfileBulkEditModal Component', () => {
     expect(screen.getByText('2 件')).toBeInTheDocument();
     expect(screen.getByText('プロンプト')).toBeInTheDocument();
     expect(screen.getByText('パラメータ')).toBeInTheDocument();
-    expect(screen.getByText('LoRA')).toBeInTheDocument();
+    expect(screen.queryByText('LoRA')).not.toBeInTheDocument();
   });
 
   it('handles remove_tags mode and selects tags for removal', () => {
     const onApply = vi.fn();
-    render(
+    renderWithClient(
       <ProfileBulkEditModal
         isOpen={true}
         onClose={vi.fn()}
@@ -199,7 +302,7 @@ describe('ProfileBulkEditModal Component', () => {
 
   it('handles tag strength adjustments (+/-) in remove_tags mode', () => {
     const onApply = vi.fn();
-    render(
+    renderWithClient(
       <ProfileBulkEditModal
         isOpen={true}
         onClose={vi.fn()}
@@ -239,7 +342,7 @@ describe('ProfileBulkEditModal Component', () => {
 
   it('handles typed parameter changes with opt-in checkboxes', () => {
     const onApply = vi.fn();
-    render(
+    renderWithClient(
       <ProfileBulkEditModal
         isOpen={true}
         onClose={vi.fn()}
@@ -280,4 +383,269 @@ describe('ProfileBulkEditModal Component', () => {
       batchSize: 4,
     });
   });
+
+  it('handles lora_stack parameter in differential mode with remove and add', () => {
+    const onApply = vi.fn();
+    const loraStackPresets: WorkflowPreset[] = [
+      {
+        id: 1,
+        name: 'P1',
+        workflow_id: 1,
+        display_order: 1,
+        is_default: false,
+        param_values: {
+          lora_lora_count: '2',
+          lora_lora_name_1: 'detail_slider.safetensors',
+          lora_lora_wt_1: '0.8',
+          lora_model_str_1: '0.8',
+          lora_clip_str_1: '0.8',
+          lora_lora_name_2: 'anime_v2.safetensors',
+          lora_lora_wt_2: '1.0',
+          lora_model_str_2: '1.0',
+          lora_clip_str_2: '1.0',
+        },
+      },
+      {
+        id: 2,
+        name: 'P2',
+        workflow_id: 1,
+        display_order: 2,
+        is_default: false,
+        param_values: {
+          lora_lora_count: '1',
+          lora_lora_name_1: 'detail_slider.safetensors',
+          lora_lora_wt_1: '0.5',
+          lora_model_str_1: '0.5',
+          lora_clip_str_1: '0.5',
+        },
+      },
+    ];
+
+    const loraMappings: MappingMaster[] = [
+      { id: 10, workflow_id: 1, role: 'lora', display_name: 'LoRA Stack', input_type: 'lora_stack', is_required: false, is_hidden: false, display_order: 1 },
+    ];
+
+    renderWithClient(
+      <ProfileBulkEditModal
+        isOpen={true}
+        onClose={vi.fn()}
+        selectedPresets={loraStackPresets}
+        mappingMasters={loraMappings}
+        loras={[]}
+        onApply={onApply}
+      />
+    );
+
+    // Switch to params tab
+    fireEvent.click(screen.getByText('パラメータ'));
+
+    // Verify checkbox for LoRA Stack exists and is unchecked
+    const loraCheckbox = screen.getByLabelText('LoRA Stack');
+    expect(loraCheckbox).not.toBeChecked();
+
+    // Check it
+    fireEvent.click(loraCheckbox);
+    expect(loraCheckbox).toBeChecked();
+
+    // Default mode is differential
+    expect(screen.getByText('差分編集（共通確認・追加・削除）')).toBeInTheDocument();
+    expect(screen.getByText('detail_slider.safetensors')).toBeInTheDocument();
+
+    // Mark common LoRA detail_slider for removal
+    const removeBtn = screen.getByTitle('削除');
+    fireEvent.click(removeBtn);
+
+    // Click apply
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      loraStackOps: [
+        {
+          role: 'lora',
+          mode: 'differential',
+          commonOps: [
+            {
+              name: 'detail_slider.safetensors',
+              action: 'remove',
+              weight: '0.8',
+              modelStrength: '0.8',
+              clipStrength: '0.8',
+            },
+          ],
+          addSlots: [],
+        },
+      ],
+    });
+  });
+
+  it('handles lora_stack parameter in overwrite mode', () => {
+    const onApply = vi.fn();
+    const loraStackPresets: WorkflowPreset[] = [
+      {
+        id: 1,
+        name: 'P1',
+        workflow_id: 1,
+        display_order: 1,
+        is_default: false,
+        param_values: {},
+      },
+    ];
+
+    const loraMappings: MappingMaster[] = [
+      { id: 10, workflow_id: 1, role: 'lora', display_name: 'LoRA Stack', input_type: 'lora_stack', is_required: false, is_hidden: false, display_order: 1 },
+    ];
+
+    renderWithClient(
+      <ProfileBulkEditModal
+        isOpen={true}
+        onClose={vi.fn()}
+        selectedPresets={loraStackPresets}
+        mappingMasters={loraMappings}
+        loras={[]}
+        onApply={onApply}
+      />
+    );
+
+    fireEvent.click(screen.getByText('パラメータ'));
+    fireEvent.click(screen.getByLabelText('LoRA Stack'));
+
+    // Switch to overwrite mode
+    fireEvent.click(screen.getByText('完全上書き'));
+
+    // Click "Add LoRA" in LoraStackEditor
+    fireEvent.click(screen.getByRole('button', { name: /Add LoRA/i }));
+
+    // Click apply
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      loraStackOps: [
+        {
+          role: 'lora',
+          mode: 'overwrite',
+          slots: [
+            {
+              name: '',
+              weight: '0.0',
+              modelStrength: '1.0',
+              clipStrength: '1.0',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('supports selecting unregistered and registered ComfyUI LoRA models in differential mode', async () => {
+    const mockComfyModels = [
+      {
+        model_name: 'unregistered_lora.safetensors',
+        file_path: 'subfolder/unregistered_lora.safetensors',
+        is_registered: false,
+        lora_id: null,
+      },
+      {
+        model_name: 'registered_lora.safetensors',
+        file_path: 'registered_lora.safetensors',
+        is_registered: true,
+        lora_id: 101,
+      },
+    ];
+
+    const mockLoras: Lora[] = [
+      {
+        id: 101,
+        model_name: 'registered_lora.safetensors',
+        description: 'Registered LoRA Nice Description',
+        recommended_strength_min: 0.5,
+        recommended_strength_max: 1.2,
+        category_id: null,
+        thumbnail_path: null,
+        file_path: 'registered_lora.safetensors',
+        trigger_word_sets: [],
+        sort_order: 1,
+        created_at: '2026-01-01',
+      },
+    ];
+
+    vi.spyOn(lorasApi, 'getComfyModels').mockResolvedValue(mockComfyModels as any);
+
+    const onApply = vi.fn();
+    const loraStackPresets: WorkflowPreset[] = [
+      {
+        id: 1,
+        name: 'P1',
+        workflow_id: 1,
+        display_order: 1,
+        is_default: false,
+        param_values: {
+          lora_lora_count: '0',
+        },
+      },
+    ];
+
+    const loraMappings: MappingMaster[] = [
+      { id: 10, workflow_id: 1, role: 'lora', display_name: 'LoRA Stack', input_type: 'lora_stack', is_required: false, is_hidden: false, display_order: 1 },
+    ];
+
+    renderWithClient(
+      <ProfileBulkEditModal
+        isOpen={true}
+        onClose={vi.fn()}
+        selectedPresets={loraStackPresets}
+        mappingMasters={loraMappings}
+        loras={mockLoras}
+        onApply={onApply}
+      />
+    );
+
+    // Switch to params tab
+    fireEvent.click(screen.getByText('パラメータ'));
+    fireEvent.click(screen.getByLabelText('LoRA Stack'));
+
+    // Click "LoRAを追加" in differential mode
+    fireEvent.click(screen.getByRole('button', { name: /LoRAを追加/i }));
+
+    // Click select placeholder to open dropdown
+    const selectTrigger = await screen.findByText('LoRAを選択...');
+    fireEvent.click(selectTrigger);
+
+    // Unregistered badge should appear and unregistered option is displayed
+    expect(await screen.findByText('Unregistered')).toBeInTheDocument();
+    const unregisteredOptions = screen.getAllByText('subfolder/unregistered_lora.safetensors');
+    expect(unregisteredOptions.length).toBeGreaterThan(0);
+
+    // Registered LoRA should display its description primarily
+    const registeredDescElements = screen.getAllByText('Registered LoRA Nice Description');
+    expect(registeredDescElements.length).toBeGreaterThan(0);
+
+    // Select the unregistered LoRA
+    fireEvent.click(unregisteredOptions[0]);
+
+    // Click apply
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+    // Verify payload receives the file_path of the unregistered LoRA
+    expect(onApply).toHaveBeenCalledWith({
+      loraStackOps: [
+        {
+          role: 'lora',
+          mode: 'differential',
+          commonOps: [],
+          addSlots: [
+            {
+              name: 'subfolder/unregistered_lora.safetensors',
+              weight: '1.0',
+              modelStrength: '1.0',
+              clipStrength: '1.0',
+            },
+          ],
+        },
+      ],
+    });
+  });
 });
+

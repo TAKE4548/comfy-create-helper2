@@ -19,6 +19,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     seedMode: currentSeedMode,
     seed: currentSeed,
     sets,
+    activeSetId,
     queuePrompt,
     activeBatch,
     setActiveBatch,
@@ -140,7 +141,15 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     let currentIdx = existingActiveBatch.length
     try {
       for (const setItem of checkedSets) {
-        const effectiveParamValues = getEffectiveParamValues(setItem.paramValues, setItem.promptChips || {})
+        const isActive = activeSetId !== null && String(setItem.id) === String(activeSetId)
+        const itemParams = isActive
+          ? { ...setItem.paramValues, ...currentParamValues }
+          : setItem.paramValues
+        const itemChips = isActive
+          ? (promptChips || setItem.promptChips || {})
+          : (setItem.promptChips || {})
+
+        const effectiveParamValues = getEffectiveParamValues(itemParams, itemChips)
         const syncedParamValues = applyParamSync(effectiveParamValues)
         for (let i = 0; i < setItem.batchSize; i++) {
           // キャンセル中断チェック

@@ -1,21 +1,39 @@
-# インシデントレポート: アクティブプリセットのプロンプト消失およびセクションコピペ機能不全
+# インシデントレポート: 画像プレビュー表示時にReactフックルール違反により画面がクラッシュする不具合
 
 ## 1. 事象概要 (Overview)
-生成画面において、以下2つの重大な不具合が観測された：
-1. アクティブなプリセットの入力欄（TagChipEditor）に表示されていたはずのプロンプト文字列が消える（空になる）。
-2. 別プリセットからセクションのコピペ機能（`PromptSectionClipboardMenu`）を使用して貼り付け（ペースト）を実行しても、入力欄に反映されない（ペーストできない）。
+
+ユーザーより以下の事象が報告された。
+- 16:9をはじめとするアスペクト比で画像を生成後、生成画像のプレビューを開こうとするとエラーが発生する。
+- 複数のアスペクト比で同様に発生するため、アスペクト比固有の問題ではなくプレビュー機能そのものの不具合であることが疑われる。
+
+調査の結果、生成画面等で画像をクリックして画像プレビューモーダル（`HistoryModalPreview`）を開く際に、Reactの「フックのルール（Rules of Hooks）」違反が発生し、`GlobalErrorBoundary` が発火して画面全体がクラッシュ（「システムエラーが発生しました」画面に遷移）していることが判明した。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
 ### 再現手順:
-1. 複数のプリセットを作成または切り替える。
-2. プリセット切り替え時、アクティブなプリセットの入力欄のプロンプトが空（`""`）になる。
-3. セクションのクリップボードメニュー（`PromptSectionClipboardMenu`）から「プロンプトをコピー」し、別のプリセットで「クリップボードから貼り付け」または履歴から選択する。
+1. 生成画面（`GeneratePage`）を開く。
+2. 任意のアスペクト比（16:9, 1:1, 3:4 等）で画像を生成する（または表示中の画像を選択する）。
+3. メインプレビュー領域の画像をクリックして拡大プレビューモーダルを開く。
 
 ### 観測結果:
-- 入力欄に貼り付けテキストが反映されず、元の値または空のままとなる。
+1. **画面クラッシュ**:
+   - モーダルが開かず、画面全体が `GlobalErrorBoundary` のエラー表示（「システムエラーが発生しました / Rendered more hooks than during the previous render.」）に置き換わる。
+2. **ログ証跡 (`logs/app.jsonl`)**:
+   - `L581`: `[FE] window.onerror: Rendered more hooks than during the previous render.`
+   - `L583`: `[FE] GlobalErrorBoundary: Rendered more hooks than during the previous render.`
+   - `L602`: `[FE] window.onerror: Rendered more hooks than during the previous render.`
+   - `L604`: `[FE] GlobalErrorBoundary: Rendered more hooks than during the previous render.`
+3. **スタックトレース**:
+   ```
+   Error: Rendered more hooks than during the previous render.
+       at updateWorkInProgressHook
+       at updateCallback
+       at Object.useCallback
+       at useCallback
+       at HistoryModalPreview (src/components/HistoryModalPreview.tsx:279:25)
+   ```
 
 ---
 
@@ -23,25 +41,26 @@
 
 | # | 対象ファイル | 該当行 | 詳細 |
 |---|---|---|---|
-| 1 | `frontend/src/components/TagChipEditor/index.tsx` | L86-L108 | `chipsProp !== undefined` の場合、`value`（文字列プロンプト）の変更監視・同期処理がスキップされ、外部からの文字列変更を完全に無視する |
-| 2 | `frontend/src/components/TagChipEditor/index.tsx` | L118-L145 | 内部通知 Effect が直後に走り、更新されなかった古いチップ文字列で親の `onChange` を上書き発火する |
-| 3 | `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` | L608-L620 | `TagChipEditor` の `key` が `m.role!` のみとなっており、`activeSetId`（プリセット・セットID）の変化でコンポーネントが再マウントされない |
-| 4 | `frontend/src/pages/GeneratePage/components/MobileLayout.tsx` | L706-L718 | MobileLayout でも同様に `key` に `activeSetId` が含まれていない |
-| 5 | `frontend/src/store/slices/multiSetSlice.ts` | L320-L345 | `loadPresetData` において `promptChips` の同期・パースと `paramValues` の整合性が未保証 |
+| 1 | `frontend/src/components/HistoryModalPreview.tsx` | L303 | `if (!isOpen || images.length === 0) return null`（条件付き早期リターン） |
+| 2 | `frontend/src/components/HistoryModalPreview.tsx` | L331 | `const getParamValue = useCallback(...)`（早期リターンより後に配置されたReact Hook） |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 原因①: `TagChipEditor` が `chips` prop を受け取っている場合、外部からの `value` 変更を完全に無視する
-- `DesktopLayout` および `MobileLayout` では `chips={promptChips?.[role]}` を渡している。
-- セクションコピペ機能（`PromptSectionClipboardMenu`）は `onChangeValue(cleanToPaste)` を呼び出し、親の `paramValues`（文字列）を更新する。
-- しかし `TagChipEditor` は `chipsProp !== undefined`（空配列 `[]` や以前のチップが渡されている状態）であるため、親の `value`（文字列）がコピペで変更されても **else ブロックが実行されず、文字列の更新を完全に無視**する。
-- その直後、内部通知 Effect（L118-L145）によって TagChipEditor 内の未更新チップ配列から生成された古い文字列で親の `onChange` が呼び戻され、貼り付けたプロンプトが古い値で即座に上書きされてしまう。
-
-### 原因②: プリセット・セット切り替え時にコンポーネントが再マウントされず、チップ状態と `paramValues` が乖離する
-- `DesktopLayout` および `MobileLayout` において `TagChipEditor` の `key` が `role` のみ（例: `key={m.role!}`）となっており、`activeSetId` が変化してもコンポーネントが再初期化されない。
-- プリセット切り替え時に `paramValues`（文字列）が更新されても、上記原因①により `chipsProp` が空配列や旧プリセット状態のままだと `paramValues` の新文字列がチップに変換されず、空チップがストアに送り返されてプロンプトが消滅する。
+### 発生メカニズム:
+1. **React Hooks の実行順序制約（Rules of Hooks）**:
+   - Reactはコンポーネント内のフック呼び出し順序と総数が毎レンダリングで不変であることを前提としてステートを管理している。そのため、条件分岐や早期リターンの後にフックを呼び出すことは厳禁とされている。
+2. **モーダル非表示時 (`isOpen === false`) の動作**:
+   - `GeneratePage` の初期描画時、`isModalPreviewOpen` は `false` であるため、`HistoryModalPreview` 内では L303 の `if (!isOpen || images.length === 0) return null` が成立し、コンポーネントは途中で早期リターンされる。
+   - この時点で実行されるフック数は先頭から数えて **26個**（`useState`, `useRef`, `useCallback`, `useEffect`, `useQuery`, `useMemo` 等）。
+3. **モーダル表示時 (`isOpen === true`) の動作**:
+   - ユーザーが画像をクリックすると `isModalPreviewOpen` が `true` に更新され、再レンダリングが発生する。
+   - `isOpen === true` であるため L303 の早期リターンを通過し、その直後（L331）にある `const getParamValue = useCallback(...)`（**27個目のフック**）が呼び出される。
+4. **不具合の発現**:
+   - React内部の `updateWorkInProgressHook` は、前回のレンダリング（26個）に対して今回のレンダリングで余分なフック（27個目）が呼び出されたことを検知し、`Rendered more hooks than during the previous render.` 例外を送出する。
+   - この例外が `GlobalErrorBoundary` によって捕捉され、画面全体がクラッシュする。
+   - 画像のアスペクト比設定とは無関係に、プレビューを開く操作（`isOpen: false -> true`）を行った時点で 100% 確実に発現する。
 
 ---
 
@@ -54,16 +73,19 @@
 - Route: Direct to /dev-design
 </diagnostic_check>
 
-* **分類**: **Type A (Implementation Bug - 実装上の不具合)**
-  * 仕様設計（セクションコピペ機能やタグチップ機能）の問題ではなく、コンポーネント間のプロップス同期（`value` と `chips` の調停ロジック）および React キー設計に起因する実装バグ。
+* **分類**:
+  * **Type A (Implementation Bug)**:
+    - コンポーネント内の条件付き早期リターン（`return null`）以降に `useCallback` フックが配置されているという、Reactの基本規約に違反した実装上の不具合。
 
 ---
 
-## 6. バックログ登録とルーティング (Backlog Registration & Routing)
+## 6. バックログ登録とルーティング提案 (Backlog Registration & Routing)
 
-- **登録 PBI**: [REQ-221.md](./backlog/pbi/active/REQ-221.md)
-- **タイトル**: `REQ-220適用後の生成ページ無限再描画エラー（真っ黒画面）の解消`
-- **分類**: Type A (Implementation Bug)
-- **次のワークフロー**: `/dev-design REQ-221`
+- **推奨対応**: 
+  - 本事象は実装バグ（Type A）であり、原因および該当箇所が完全に特定されているため、直ちに `/dev-design` へ進み、タスクカードを作成して修正を行うことを提案します。
+- **次のワークフロー**: `/dev-design`
 
+---
 
+**ユーザー確認事項 (Approval Gate)**:
+上記インシデントレポートの内容で合意いただける場合、PBIとしてバックログに登録し、`/dev-design` に進みますか？ (YES / NO)
