@@ -42,7 +42,7 @@ function App() {
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
             const key = query.queryKey[0] as string
-            const excluded = ['comfy-object-info', 'snapshots']
+            const excluded = ['comfy-object-info', 'snapshots', 'workflow-presets']
             return !excluded.includes(key)
           },
         },

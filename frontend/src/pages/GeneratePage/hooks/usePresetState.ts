@@ -16,6 +16,18 @@ export interface HistoryState {
   seed: number
 }
 
+export interface PresetConflictData {
+  serverPreset: WorkflowPreset
+  localDraft: {
+    name: string
+    paramValues: Record<string, string>
+    appliedAssets: Record<string, any[]>
+    batchSize: number
+    seedMode: 'random' | 'fixed'
+    seed: number
+  }
+}
+
 export interface UsePresetStateProps {
   selectedWorkflowId: number | null
   workflow: Workflow | undefined
@@ -52,24 +64,32 @@ export function usePresetState({
   const [isPresetOpen, setIsPresetOpen] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
   const [isPresetManagerOpen, setIsPresetManagerOpen] = useState(false)
+  // ── Conflict State & Saved State Tracking ──
+  const [conflictData, setConflictData] = useState<PresetConflictData | null>(null)
+  const lastSavedStateRef = useRef<Record<string | number, HistoryState>>({})
+  const isInitialSyncRef = useRef(false)
+  const prevWorkflowIdRef = useRef<number | null>(null)
+
+  const isStateEqual = (a: HistoryState, b: HistoryState) => {
+    return (
+      JSON.stringify(a.paramValues) === JSON.stringify(b.paramValues) &&
+      JSON.stringify(a.appliedAssets) === JSON.stringify(b.appliedAssets) &&
+      a.batchSize === b.batchSize &&
+      a.seedMode === b.seedMode &&
+      a.seed === b.seed
+    )
+  }
 
   // ── Queries ──
   const { data: presets } = useQuery({
     queryKey: ['workflow-presets', selectedWorkflowId],
     queryFn: () => workflowPresetsApi.list(selectedWorkflowId!) as Promise<WorkflowPreset[]>,
     enabled: !!selectedWorkflowId,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
   })
 
   const presetUpdatedAtRef = useRef<Record<number, string>>({})
-  useEffect(() => {
-    if (presets) {
-      presets.forEach((p) => {
-        if (p.updated_at) {
-          presetUpdatedAtRef.current[p.id] = p.updated_at
-        }
-      })
-    }
-  }, [presets])
 
   // ── Mutations ──
   const createPresetMutation = useMutation({
@@ -133,9 +153,16 @@ export function usePresetState({
         seed: args.seed !== undefined ? args.seed : seed,
         base_updated_at: args.base_updated_at,
       }),
-    onSuccess: (updatedPreset) => {
+    onSuccess: (updatedPreset, variables) => {
       if (updatedPreset?.id) {
         presetUpdatedAtRef.current[updatedPreset.id] = updatedPreset.updated_at
+        lastSavedStateRef.current[updatedPreset.id] = {
+          paramValues: variables.param_values !== undefined ? variables.param_values : paramValues,
+          appliedAssets: (variables.applied_assets !== undefined ? variables.applied_assets : appliedAssets) as any,
+          batchSize: variables.batch_size !== undefined ? variables.batch_size : batchSize,
+          seedMode: (variables.seed_mode !== undefined ? variables.seed_mode : seedMode) as any,
+          seed: variables.seed !== undefined ? variables.seed : seed,
+        }
         qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
           if (!old) return old
           return old.map((p) => (p.id === updatedPreset.id ? updatedPreset : p))
@@ -145,8 +172,21 @@ export function usePresetState({
     },
     onError: (err: any, variables) => {
       if (err?.message?.includes('409') || err?.status === 409) {
-        delete lastSavedStateRef.current[variables.id]
         qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+        const serverPreset = presets?.find((p) => p.id === variables.id)
+        if (serverPreset) {
+          setConflictData({
+            serverPreset,
+            localDraft: {
+              name: variables.name,
+              paramValues: variables.param_values || paramValues,
+              appliedAssets: variables.applied_assets || appliedAssets,
+              batchSize: variables.batch_size ?? batchSize,
+              seedMode: (variables.seed_mode as 'random' | 'fixed') || seedMode,
+              seed: variables.seed ?? seed,
+            },
+          })
+        }
       }
     },
   })
@@ -559,9 +599,6 @@ export function usePresetState({
   // ── Undo/Redo ──
   const [historyVersion, setHistoryVersion] = useState(0)
   const triggerHistoryChange = () => setHistoryVersion((v) => v + 1)
-  const lastSavedStateRef = useRef<Record<string | number, HistoryState>>({})
-  const isInitialSyncRef = useRef(false)
-  const prevWorkflowIdRef = useRef<number | null>(null)
 
   const getHistory = (id: string | number) => {
     try {
@@ -582,16 +619,6 @@ export function usePresetState({
 
   const canUndo = activeSetId !== null && getHistory(activeSetId).past.length > 0
   const canRedo = activeSetId !== null && getHistory(activeSetId).future.length > 0
-
-  const isStateEqual = (a: HistoryState, b: HistoryState) => {
-    return (
-      JSON.stringify(a.paramValues) === JSON.stringify(b.paramValues) &&
-      JSON.stringify(a.appliedAssets) === JSON.stringify(b.appliedAssets) &&
-      a.batchSize === b.batchSize &&
-      a.seedMode === b.seedMode &&
-      a.seed === b.seed
-    )
-  }
 
   const undo = (presetId: string | number) => {
     const hist = getHistory(presetId)
@@ -686,17 +713,16 @@ export function usePresetState({
       return {
         id: p.id,
         name: p.name,
-        // defaultParams < サーバー取得値 < 既存セット内のローカル編集値 の順で優先マージ
+        // defaultParams < サーバーDB最新値 (SSoT)
         paramValues: {
           ...defaultParams,
           ...(p.param_values || {}),
-          ...(existingSet?.paramValues || {}),
         },
-        appliedAssets: existingSet?.appliedAssets || p.applied_assets || {},
+        appliedAssets: p.applied_assets || {},
         promptChips: existingSet?.promptChips,
-        batchSize: existingSet?.batchSize || p.batch_size || 1,
-        seedMode: existingSet?.seedMode || (p.seed_mode as 'random' | 'fixed') || 'random',
-        seed: existingSet?.seed !== undefined ? existingSet.seed : (p.seed !== undefined ? p.seed : 42),
+        batchSize: p.batch_size || 1,
+        seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
+        seed: p.seed !== undefined ? p.seed : 42,
         checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
       }
     })
@@ -738,6 +764,11 @@ export function usePresetState({
 
       if (isFirstSync) {
         isInitialSyncRef.current = true
+        presets.forEach((p) => {
+          if (p.updated_at) {
+            presetUpdatedAtRef.current[p.id] = p.updated_at
+          }
+        })
         const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
         const activePresetData = rawMappedSets.find((s) => String(s.id) === String(targetActiveId))
         if (activePreset && activePresetData) {
@@ -762,14 +793,61 @@ export function usePresetState({
             currentStore.openPreset?.(targetActiveId)
           }
         }
-      } else if (isInvalidActive || String(currentActiveSetId) !== String(targetActiveId)) {
-        currentStore.setActiveSetId?.(targetActiveId)
-        if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
-          currentStore.openPreset?.(targetActiveId)
-        }
       } else {
-        if (!currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
+        // Subsequent syncs (polling / window focus / invalid active)
+        if (isInvalidActive || String(currentActiveSetId) !== String(targetActiveId)) {
+          currentStore.setActiveSetId?.(targetActiveId)
+          if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
+            currentStore.openPreset?.(targetActiveId)
+          }
+        } else if (!currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
           currentStore.openPreset?.(currentActiveSetId)
+        }
+
+        // Check if server activePreset has updated_at newer than presetUpdatedAtRef
+        const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
+        if (activePreset && activePreset.updated_at) {
+          const prevUpdatedAt = presetUpdatedAtRef.current[activePreset.id]
+          if (prevUpdatedAt && activePreset.updated_at !== prevUpdatedAt) {
+            presetUpdatedAtRef.current[activePreset.id] = activePreset.updated_at
+            const lastSaved = lastSavedStateRef.current[activePreset.id]
+            const currentLocalState: HistoryState = {
+              paramValues: currentStore.paramValues,
+              appliedAssets: currentStore.appliedAssets,
+              batchSize: currentStore.batchSize,
+              seedMode: currentStore.seedMode,
+              seed: currentStore.seed,
+            }
+            const isDirty = !lastSaved || !isStateEqual(lastSaved, currentLocalState)
+
+            if (!isDirty) {
+              // Local is clean: auto-sync with SSoT
+              const activePresetData = rawMappedSets.find((s) => String(s.id) === String(activePreset.id))
+              if (activePresetData) {
+                lastSavedStateRef.current[activePreset.id] = {
+                  paramValues: activePresetData.paramValues,
+                  appliedAssets: activePresetData.appliedAssets,
+                  batchSize: activePresetData.batchSize,
+                  seedMode: activePresetData.seedMode,
+                  seed: activePresetData.seed,
+                }
+              }
+              currentStore.loadPresetData?.(activePreset, defaultParams)
+            } else {
+              // Local has unsaved edits: trigger conflict resolution
+              setConflictData({
+                serverPreset: activePreset,
+                localDraft: {
+                  name: activePreset.name,
+                  paramValues: currentStore.paramValues,
+                  appliedAssets: currentStore.appliedAssets,
+                  batchSize: currentStore.batchSize,
+                  seedMode: currentStore.seedMode,
+                  seed: currentStore.seed,
+                },
+              })
+            }
+          }
         }
       }
     } else if (presets && presets.length === 0) {
@@ -800,7 +878,6 @@ export function usePresetState({
         hist.future = []
         saveHistory(activeSetId, hist)
       }
-      lastSavedStateRef.current[activeSetId] = currentState
       updatePresetMutation.mutate({
         id: activePreset.id,
         name: activePreset.name,
@@ -816,8 +893,50 @@ export function usePresetState({
     return () => clearTimeout(timer)
   }, [paramValues, appliedAssets, batchSize, seedMode, seed, activeSetId, presets, selectedWorkflowId])
 
+  // Conflict Resolution Handlers
+  const handleResolveConflictUseServer = () => {
+    if (!conflictData) return
+    handleLoadPreset(conflictData.serverPreset)
+    setConflictData(null)
+  }
+
+  const handleResolveConflictOverwrite = () => {
+    if (!conflictData) return
+    const { serverPreset, localDraft } = conflictData
+    updatePresetMutation.mutate({
+      id: serverPreset.id,
+      name: localDraft.name,
+      param_values: localDraft.paramValues,
+      applied_assets: localDraft.appliedAssets,
+      batch_size: localDraft.batchSize,
+      seed_mode: localDraft.seedMode,
+      seed: localDraft.seed,
+      base_updated_at: serverPreset.updated_at,
+    })
+    setConflictData(null)
+  }
+
+  const handleResolveConflictSaveAsNew = (newName: string) => {
+    if (!conflictData) return
+    const { localDraft } = conflictData
+    createPresetMutation.mutate({
+      name: newName,
+      paramValues: localDraft.paramValues,
+      appliedAssets: localDraft.appliedAssets,
+      batchSize: localDraft.batchSize,
+      seedMode: localDraft.seedMode,
+      seed: localDraft.seed,
+    })
+    setConflictData(null)
+  }
+
   return {
     presets,
+    conflictData,
+    setConflictData,
+    handleResolveConflictUseServer,
+    handleResolveConflictOverwrite,
+    handleResolveConflictSaveAsNew,
     createPresetMutation,
     updatePresetMutation,
     deletePresetMutation,

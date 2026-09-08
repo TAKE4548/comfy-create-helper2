@@ -13,6 +13,7 @@ import { HistoryModalPreview } from '../components/HistoryModalPreview'
 import { JobManagementModal } from '../components/JobManagementModal'
 import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
 import { SceneGeneratorModal } from '../components/SceneGeneratorModal'
+import { PresetConflictModal } from '../components/PresetConflictModal'
 import { LS_KEYS } from '../utils/localStorageKeys'
 
 interface ErrorBoundaryProps {
@@ -326,6 +327,16 @@ export function GeneratePage() {
         onApply={handleBulkEditApply}
         isApplying={isBulkApplying}
         activeBaseModelId={workflow?.target_base_model_id ?? null}
+      />
+
+      {/* Preset Conflict Modal */}
+      <PresetConflictModal
+        isOpen={!!state.conflictData}
+        conflictData={state.conflictData}
+        onClose={() => state.setConflictData(null)}
+        onUseServer={state.handleResolveConflictUseServer}
+        onOverwriteServer={state.handleResolveConflictOverwrite}
+        onSaveAsNew={state.handleResolveConflictSaveAsNew}
       />
     </>
   )

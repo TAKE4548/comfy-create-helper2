@@ -307,20 +307,12 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
       const updatedSets = get().sets.map((s) => {
         if (String(s.id) === String(preset.id)) {
-          const mergedPromptChips: Record<string, TagChip[]> = { ...initialPromptChips }
-          if (s.promptChips) {
-            for (const [role, chips] of Object.entries(s.promptChips)) {
-              if (chips && chips.length > 0) {
-                mergedPromptChips[role] = chips
-              }
-            }
-          }
           return {
             ...s,
             name: preset.name || s.name,
             paramValues: mergedParamValues,
             appliedAssets,
-            promptChips: mergedPromptChips,
+            promptChips: initialPromptChips,
             batchSize,
             seedMode,
             seed,
@@ -350,16 +342,11 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
       }
 
-      const currentPresetChips = finalSets.find((s) => String(s.id) === String(preset.id))?.promptChips
-      const finalPromptChips = currentPresetChips && Object.keys(currentPresetChips).length > 0
-        ? currentPresetChips
-        : initialPromptChips
-
       set({
         activeSetId: preset.id,
         paramValues: mergedParamValues,
         appliedAssets,
-        promptChips: finalPromptChips,
+        promptChips: initialPromptChips,
         batchSize,
         seedMode,
         seed,

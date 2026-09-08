@@ -254,6 +254,10 @@ interface TagChipEventDetail {
 ### 6-1. キャッシュ基本方針
 - TanStack Query (React Query v5) + `PersistQueryClientProvider` による localStorage 永続化（10分間キャッシュ有効）。
 - Stale-While-Revalidate（SWR）モデルにより、UI 遷移時のフリッカーを排除しつつバックグラウンドで最新データを同期。
+- **永続化除外クエリ (`App.tsx` の `shouldDehydrateQuery`)**:
+  - `comfy-object-info`: ComfyUI の動的ノード定義。
+  - `snapshots`: 頻繁に更新されるスナップショット。
+  - `workflow-presets`: マルチデバイス間でのプリセット同期（REQ-229）において、アプリ起動時に古いローカルキャッシュが初期化ステートを上書き・破壊するのを防ぐため永続化から除外。
 - `Infinity` 設定の静的データ（`config`, `fonts`）は、アプリ再読み込み時または設定画面での明示的リフレッシュ時に再取得される。
 
 ### 6-2. staleTime 定数テーブル (`frontend/src/constants/staleTimes.ts`)
