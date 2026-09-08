@@ -58,13 +58,15 @@ export function useGeneratePageState() {
     openPreset,
     closePreset,
     fetchParamSyncGroups,
+    fetchBypassProfiles,
   } = store
 
   useEffect(() => {
-    if (selectedWorkflowId && fetchParamSyncGroups) {
-      fetchParamSyncGroups(selectedWorkflowId)
+    if (selectedWorkflowId) {
+      if (fetchParamSyncGroups) fetchParamSyncGroups(selectedWorkflowId)
+      if (fetchBypassProfiles) fetchBypassProfiles(selectedWorkflowId)
     }
-  }, [selectedWorkflowId, fetchParamSyncGroups])
+  }, [selectedWorkflowId, fetchParamSyncGroups, fetchBypassProfiles])
 
   // 1. Workflow Management
   const workflowMgmt = useWorkflowManagement({

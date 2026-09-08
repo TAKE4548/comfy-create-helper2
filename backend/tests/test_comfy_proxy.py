@@ -80,6 +80,14 @@ class TestComfyProxyAPI(unittest.TestCase):
         self.assertEqual(res2.json(), {"KSampler": {"input": {}}})
         self.assertEqual(mock_get.call_count, 1)
 
+    @patch("httpx.AsyncClient.get")
+    def test_get_object_info_failure_503(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("Connection refused")
+
+        res = self.client.get("/api/comfy/object_info")
+        self.assertEqual(res.status_code, 503)
+        self.assertIn("ComfyUI server is unavailable or starting up", res.json().get("detail", ""))
+
     @patch("httpx.AsyncClient.post")
     def test_post_prompt_proxy_success(self, mock_post):
         mock_response = MagicMock()

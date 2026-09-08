@@ -58,6 +58,15 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       )
     )
 
+    const hasComfySchema = comfyObjectInfo && Object.keys(comfyObjectInfo).length > 0
+    if (activeBypassNodeIds.length > 0 && !hasComfySchema) {
+      setErrorToast?.({
+        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
+        type: 'error',
+      })
+      return
+    }
+
     const effectiveParamValues = getEffectiveParamValues(currentParamValues, promptChips || {})
     const syncedParamValues = applyParamSync(effectiveParamValues)
 
@@ -108,6 +117,23 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
       return
     }
 
+    const activeBypassNodeIds = Array.from(
+      new Set(
+        bypassProfiles
+          .filter((p) => p.is_enabled)
+          .flatMap((p) => p.bypassed_node_ids)
+      )
+    )
+
+    const hasComfySchema = comfyObjectInfo && Object.keys(comfyObjectInfo).length > 0
+    if (activeBypassNodeIds.length > 0 && !hasComfySchema) {
+      setErrorToast?.({
+        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
+        type: 'error',
+      })
+      return
+    }
+
     // 中断用 AbortController の作成とストア登録
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
@@ -129,14 +155,6 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
     const existingActiveBatch = activeBatch ? [...activeBatch] : []
     const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
     setActiveBatch([...currentBatch])
-
-    const activeBypassNodeIds = Array.from(
-      new Set(
-        bypassProfiles
-          .filter((p) => p.is_enabled)
-          .flatMap((p) => p.bypassed_node_ids)
-      )
-    )
 
     let currentIdx = existingActiveBatch.length
     try {

@@ -199,6 +199,16 @@ frontend/src/store/
 3. バイパス対象ノードのバイパス処理
 4. シード値（Random時は 32bit乱数 / Fixed時は seed + batchIndex）
 
+### 5-2. 生成前バイパス処理およびスキーマ整合性保証 (REQ-230)
+
+1. **バイパス前提条件（ComfyUI スキーマキャッシュ）**:
+   - 有効化されたバイパスプロファイル（`bypassProfiles` の `is_enabled: true` かつ `bypassed_node_ids.length > 0`）が存在する場合、ノードの入出力スロットを安全に繋ぎ替えるために ComfyUI のノード定義スキーマ（`/api/comfy/object_info`）が必要となる。
+2. **フェイルセーフ防御**:
+   - 生成実行時（単一生成 `handleGenerate` / セット生成 `handleGenerateSets`）、アクティブなバイパスノードが存在するにもかかわらず `comfyObjectInfo` が未取得（空オブジェクトまたは未ロード）の場合、不完全なワークフロー投入による画像破損や意図しないノード接続破壊を防止するため、キュー投入を即座に中断する。
+   - ユーザーへはエラートースト「`ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。`」を表示し、状態の破損（activeBatch の先行初期化やキュー投入）を防ぐ。
+3. **ComfyUI 接続復帰時の自動再検証・取得**:
+   - ComfyUI 接続が確立（`isConnected: true`）された契機で `comfy-object-info` クエリを自動再検証（`invalidateQueries`）し、最新スキーマを同期する。
+
 ---
 
 ## 6. スナップショット保存および生成時パラメータ永続化 (REQ-227)

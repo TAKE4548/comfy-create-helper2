@@ -710,5 +710,105 @@ describe('useGenerateAction', () => {
       expect(payloadMetadata.paramValues.Main_Positive_Prompt).toBe('smile');
     });
   });
+
+  describe('Bypass safety & schema verification', () => {
+    const bypassWorkflow: Workflow = {
+      ...baseWorkflow,
+      json_body: {
+        '3': {
+          class_type: 'KSampler',
+          inputs: { seed: 123 },
+        },
+        '4': {
+          class_type: 'PassThrough',
+          inputs: { input_val: ['3', 0] },
+        },
+      },
+    };
+
+    it('blocks handleGenerate and sets error toast when active bypass profile exists but comfyObjectInfo is empty', async () => {
+      mockStore.bypassProfiles = [
+        {
+          id: 1,
+          workflow_id: 1,
+          name: 'Bypass Node 4',
+          is_enabled: true,
+          bypassed_node_ids: ['4'],
+          created_at: '',
+        },
+      ];
+
+      const { handleGenerate } = useGenerateAction(bypassWorkflow, {});
+      await handleGenerate();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
+        type: 'error',
+      });
+      expect(mockStore.queuePrompt).not.toHaveBeenCalled();
+    });
+
+    it('blocks handleGenerateSets and sets error toast without starting batch when active bypass profile exists but comfyObjectInfo is empty', async () => {
+      mockStore.bypassProfiles = [
+        {
+          id: 1,
+          workflow_id: 1,
+          name: 'Bypass Node 4',
+          is_enabled: true,
+          bypassed_node_ids: ['4'],
+          created_at: '',
+        },
+      ];
+      mockStore.sets = [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          checked: true,
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 100,
+          appliedAssets: {},
+          paramValues: {},
+        },
+      ];
+
+      const { handleGenerateSets } = useGenerateAction(bypassWorkflow, {});
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
+        type: 'error',
+      });
+      expect(mockStore.queuePrompt).not.toHaveBeenCalled();
+      expect(mockStore.setActiveBatch).not.toHaveBeenCalled();
+    });
+
+    it('applies bypass and removes bypassed nodes when comfyObjectInfo is provided', async () => {
+      mockStore.bypassProfiles = [
+        {
+          id: 1,
+          workflow_id: 1,
+          name: 'Bypass Node 4',
+          is_enabled: true,
+          bypassed_node_ids: ['4'],
+          created_at: '',
+        },
+      ];
+      const mockComfyObjectInfo = {
+        PassThrough: {
+          input: { required: { input_val: ['IMAGE'] } },
+          output: ['IMAGE'],
+        },
+      };
+
+      const { handleGenerate } = useGenerateAction(bypassWorkflow, mockComfyObjectInfo);
+      await handleGenerate();
+
+      expect(mockStore.setErrorToast).not.toHaveBeenCalled();
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const queuedPayload = mockStore.queuePrompt.mock.calls[0][0];
+      expect(queuedPayload['4']).toBeUndefined();
+    });
+  });
 });
 

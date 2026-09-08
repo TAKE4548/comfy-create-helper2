@@ -65,7 +65,10 @@ async def get_comfy_object_info_all():
         return _object_info_cache
     except Exception as e:
         logger.warning(f"Failed to fetch all object_info from ComfyUI: {e}")
-        return {}
+        raise HTTPException(
+            status_code=503,
+            detail=f"ComfyUI server is unavailable or starting up: {e}",
+        )
 
 
 class PromptRequest(BaseModel):

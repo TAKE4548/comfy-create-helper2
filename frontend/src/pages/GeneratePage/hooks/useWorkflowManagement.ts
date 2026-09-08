@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi, baseModelsApi, paramTypeMastersApi, comfyApi } from '../../../api/client'
 import type { Workflow, MappingMaster, BaseModel, ParamTypeMaster } from '../../../api/types'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { useGenerationStore } from '../../../store/useGenerationStore'
 
 export interface UseWorkflowManagementProps {
   selectedWorkflowId: number | null
@@ -14,6 +15,7 @@ export function useWorkflowManagement({
   setSelectedWorkflowId,
 }: UseWorkflowManagementProps) {
   const qc = useQueryClient()
+  const isConnected = useGenerationStore((state) => state.isConnected)
   const [selectedMasters, setSelectedMasters] = useState<Record<number, number>>({})
   const [workflowManageMode, setWorkflowManageMode] = useState<'rename' | 'copy' | null>(null)
   const [isWorkflowMenuOpen, setIsWorkflowMenuOpen] = useState(false)
@@ -47,7 +49,14 @@ export function useWorkflowManagement({
     queryKey: ['comfy-object-info'],
     queryFn: () => comfyApi.getObjectInfo(),
     staleTime: 1000 * 60 * 60,
+    retry: 3,
   })
+
+  useEffect(() => {
+    if (isConnected) {
+      qc.invalidateQueries({ queryKey: ['comfy-object-info'] })
+    }
+  }, [isConnected, qc])
 
   // ── Tab & Collapse Helpers ──
   const setActivePromptTab = (tab: string) => {
