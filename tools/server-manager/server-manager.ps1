@@ -138,6 +138,8 @@ function Stop-PortProcesses ([int]$port, [string]$name) {
     $pids = Get-PidsFromPort $port
     foreach ($p in $pids) {
         try {
+            # taskkill /T /F によりプロセスおよび配下の子プロセスツリー（cmd, node, esbuild等）を一括強制終了
+            & taskkill.exe /PID $p /T /F 2>$null
             Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
         } catch {}
     }
@@ -279,6 +281,23 @@ function Start-FrontendProcess ([bool]$asBackground) {
         return
     }
     $feDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.frontend.relative_dir)).Path
+
+    # 起動前に .vite ディレクトリの ReadOnly 属性ビットを解除し、空洞化 deps を先行クリーンアップ
+    $viteDir = Join-Path $feDir "node_modules\.vite"
+    if (Test-Path $viteDir) {
+        try {
+            Get-ChildItem -Path $viteDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($_.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
+                    $_.Attributes = $_.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+                }
+            }
+            $depsDir = Join-Path $viteDir "deps"
+            $metaFile = Join-Path $depsDir "_metadata.json"
+            if ((Test-Path $depsDir) -and (-not (Test-Path $metaFile))) {
+                Remove-Item -Path $depsDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+    }
 
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "frontend.log"

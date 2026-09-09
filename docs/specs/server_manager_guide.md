@@ -39,8 +39,8 @@ networkingMode=mirrored
 ### 3.1 ワンクリックバッチファイル
 `tools/server-manager/` 内の各バッチファイルをダブルクリックまたはショートカット作成して利用します。
 
-- **`start_servers.bat`**: 全サービス（ComfyUI, Backend, Frontend）を一括起動します。各サービスは独立したコマンドプロンプトウィンドウで起動するため、リアルタイムログが視認できます。
-- **`stop_servers.bat`**: 稼働中の全サービスを一括停止します（ポートリッスンPIDを自動検出して安全に解放）。
+- **`start_servers.bat`**: 全サービス（ComfyUI, Backend, Frontend）を一括起動します。フロントエンド起動前には `.vite` の属性解除と破損キャッシュの先行クリーンアップが自動実行されます。各サービスは独立したコマンドプロンプトウィンドウで起動するため、リアルタイムログが視認できます。
+- **`stop_servers.bat`**: 稼働中の全サービスを一括停止します（ポートリッスンPIDおよびその子プロセスツリー `taskkill /T /F` を自動検出して安全・確実に解放）。
 - **`toggle_servers.bat`**: サービスが稼働中の場合は停止、停止中の場合は起動をトグル切り替えします。
 - **`server_menu.bat`**: 対話型のコンソールダッシュボード（CLIメニュー）を起動します。
 
@@ -163,7 +163,7 @@ powershell -ExecutionPolicy Bypass -File tools/server-manager/register_startup_t
 ## 6. トラブルシューティング
 
 ### Q1. ポートが既に使用されている / 停止できない
-`server-manager.ps1` は該当ポート（5173, 8000, 8188）をリッスンしているPIDを探索し、`Stop-Process -Force` で解放します。
+`server-manager.ps1` は該当ポート（5173, 8000, 8188）をリッスンしているPIDを探索し、`taskkill.exe /PID $p /T /F` により子プロセスツリーごと強制終了した上でポートを解放します。これにより、esbuild や cmd.exe がバックグラウンドに残存してファイルロックやポート競合を引き起こすのを防ぎます。
 手動で解放したい場合は以下を実行してください：
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/server-manager/server-manager.ps1 -Action stop
