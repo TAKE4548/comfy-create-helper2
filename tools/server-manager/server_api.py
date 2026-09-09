@@ -1,6 +1,7 @@
 import http.server
 import json
 import os
+import socket
 import socketserver
 import subprocess
 import sys
@@ -16,6 +17,21 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 PS_SCRIPT = SCRIPT_DIR / "server-manager.ps1"
 PORT = 8899
+
+def get_local_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
@@ -148,7 +164,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <h1>Prompt Surgeon Server Manager</h1>
         <p style="color: var(--text-muted); font-size: 0.85rem;">WSL2 ComfyUI & Windows Server Orchestrator</p>
       </div>
-      <div>
+      <div style="display: flex; align-items: center;">
+        <span id="lan-url" style="font-size: 0.8rem; color: var(--primary); margin-right: 12px; font-weight: 500;"></span>
         <span id="auto-refresh-label" style="font-size: 0.8rem; color: var(--text-muted);">Auto-refreshing (5s)</span>
       </div>
     </header>
@@ -166,7 +183,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <div class="card" style="margin-bottom: 24px;">
-      <h2 class="section-title">実行ログ / コンソール出力</h2>
+      <h2 class="section-title">実行ログ</h2>
       <pre id="log-output">待機中...</pre>
     </div>
 
@@ -184,6 +201,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const serviceGrid = document.getElementById('service-grid');
     const logOutput = document.getElementById('log-output');
     const configEditor = document.getElementById('config-editor');
+    const lanUrlSpan = document.getElementById('lan-url');
+
+    function setControlsDisabled(disabled) {
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(btn => {
+        btn.disabled = disabled;
+      });
+    }
 
     async function fetchStatus() {
       try {
@@ -220,6 +245,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     async function triggerAction(action, service = '') {
+      setControlsDisabled(true);
       logOutput.textContent = `Action '${action}' ${service ? `for service '${service}' ` : ''}executing...`;
       try {
         const res = await fetch('/api/action', {
@@ -232,6 +258,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         await fetchStatus();
       } catch (err) {
         logOutput.textContent = "Error executing action: " + err;
+      } finally {
+        setControlsDisabled(false);
       }
     }
 
@@ -261,6 +289,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     // Initialize
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      lanUrlSpan.textContent = `LAN: http://${window.location.host}`;
+    }
     fetchStatus();
     loadConfig();
     setInterval(fetchStatus, 5000);
@@ -309,6 +340,8 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
             action = payload.get("action", "status")
             service = payload.get("service", "")
             cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", action]
+            if action in ["start", "restart", "reboot-service"]:
+                cmd.append("-Background")
             if service:
                 cmd += ["-Service", service]
             res = subprocess.run(cmd, capture_output=True, text=True)
@@ -337,8 +370,12 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
 
 def run_server():
     server_address = ("", PORT)
-    with socketserver.TCPServer(server_address, ManagerHandler) as httpd:
-        print(f"Server Manager Web UI running at http://localhost:{PORT}")
+    local_ip = get_local_ip()
+    with ThreadedTCPServer(server_address, ManagerHandler) as httpd:
+        print(f"Server Manager Web UI running at:")
+        print(f"  Local:   http://localhost:{PORT}")
+        if local_ip != "127.0.0.1":
+            print(f"  Network: http://{local_ip}:{PORT}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

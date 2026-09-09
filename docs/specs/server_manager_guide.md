@@ -69,7 +69,7 @@ networkingMode=mirrored
 ```
 
 ### 3.3 ブラウザ管理画面 (Web Manager Dashboard)
-ブラウザから直感的に操作できる軽量Webサーバーです。
+ブラウザから直感的に操作できる軽量Webサーバーです。マルチスレッド対応（`ThreadedTCPServer`）により、サービスの起動・再起動処理中であってもステータスの自動取得（ポーリング）がブロックされずにスムーズに動作します。
 
 1. **`tools/server-manager/start_web_manager.bat`** を実行します。
 2. 自動的にブラウザで `http://localhost:8899` が開きます。
@@ -77,6 +77,8 @@ networkingMode=mirrored
    - リアルタイム稼働状況（5秒間隔自動更新、LISTEN/STOPPEDバッジ、PID表示）
    - 全体起動・停止・再起動ボタン
    - 各サービス（ComfyUI, Backend, Frontend）ごとの個別起動・停止・再起動
+   - 連打防止ロック：アクション実行中は画面上の全操作ボタンが一時的に無効化（disabled）され、二重送信やレースコンディションを防止
+   - 同一 LAN 内アクセス：ヘッダー部に `LAN: http://<LAN-IP>:8899` バッジを表示。`tools/server-manager/allow_firewall_8899.bat` を実行（管理者権限）して Windows Defender ファイアウォールを開放することで、LAN 内の他端末（スマホやタブレット）からブラウザで一元管理可能
    - `config.json` のオンライン閲覧・編集・即時保存
    - 実行ログコンソール
 
@@ -181,8 +183,9 @@ powershell -ExecutionPolicy Bypass -File tools/server-manager/server-manager.ps1
   WSL2 Mirrored モードや仮想ネットワーク環境下では Windows の `Get-NetTCPConnection` に LISTEN ソケットが直接現れない場合があります。`server-manager.ps1` は `Get-NetTCPConnection` に加え、`TcpClient` による 127.0.0.1 への接続試行フォールバックを備えており、WSL2 上で LISTEN 中の ComfyUI を確実に検出します。
 - **PID 補完 (`Get-WslComfyPids`)**:
   Windows 側ポート所有者 PID が取得できない場合でも、WSL 内部で `pgrep -f 'python.*main.py'` を実行して Linux 側 PID を取得し、ステータス画面・JSON 出力に反映します。
-- **確実な停止・SIGKILL フォールバック**:
-  `Stop-ComfyUIProcess` は `pkill` による正常終了要求を送信した後、最大 5 秒間ポート解放（閉鎖）を監視します。時間内に閉鎖しない場合は `pkill -9`（SIGKILL）を自動送出して強制解放します。さらに、対話ウィンドウ起動時に生成された `cmd.exe`（ウィンドウタイトル `ComfyUI (WSL2)`）の残骸プロセスも一括クリーンアップします。
+- **確実な停止・SIGKILL フォールバックと Windows 側プロキシ保護**:
+  `Stop-ComfyUIProcess` は WSL 内部で `pkill` による正常終了要求を送信した後、最大 5 秒間ポート解放（閉鎖）を監視します。時間内に閉鎖しない場合は `pkill -9`（SIGKILL）を自動送出して強制解放します。さらに、対話ウィンドウ起動時に生成された `cmd.exe`（ウィンドウタイトル `ComfyUI (WSL2)`）の残骸プロセスも一括クリーンアップします。
+  なお、WSL2 Mirrored モード環境では Windows 側のポート 8188 は WSL ホストプロキシが LISTEN しているため、Windows 側ポートの強制終了（`taskkill`）は実行しません。これにより、ホストと WSL 間の通信プロキシ破損を防ぎ、再起動後も安定してポート 8188 への疎通を維持します。
 - **安全な再起動 (`Restart-ServiceByName`)**:
   停止から即座に起動する際のポート競合・レースコンディションを回避するため、ポートが完全に閉じたことをポーリング確認（`Wait-For-Port-Closed`）してから新規プロセスの起動を実行します。
 

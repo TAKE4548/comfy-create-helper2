@@ -316,10 +316,21 @@ function Start-ComfyUIProcess ([bool]$asBackground) {
     }
 }
 
+# サービス識別子の正規化
+function Get-NormalizedServiceName ([string]$name) {
+    if (-not $name) { return "" }
+    switch ($name.ToLower()) {
+        { $_ -in "fe", "frontend" } { return "frontend" }
+        { $_ -in "be", "backend" } { return "backend" }
+        { $_ -in "comfy", "wsl" } { return "comfy" }
+        default { return "" }
+    }
+}
+
 function Stop-ComfyUIProcess {
     $wslPrefix = Get-WslDistroPrefix
     try {
-        Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -f 'python.*main.py.*8188' || pkill -f 'python.*main.py'`" 2>`$null"
+        Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -f 'python.*main.py'`" 2>`$null"
     } catch {}
 
     $closed = Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI"
@@ -337,7 +348,9 @@ function Stop-ComfyUIProcess {
         }
     } catch {}
 
-    Stop-PortProcesses $cfg.wsl.port "ComfyUI"
+    # 注意: Windows 側の Stop-PortProcesses $cfg.wsl.port は実行しない。
+    # WSL2 Mirrored モードでは Windows 側の 8188 は WSL ホストプロキシが LISTEN しており、
+    # それを taskkill すると WSL2 との通信ブリッジが破損するため。
 }
 
 
@@ -401,6 +414,11 @@ function Stop-AllServices {
     Stop-ComfyUIProcess
     Stop-BackendProcess
     Stop-FrontendProcess
+
+    Write-Host "Waiting for ports to close..." -ForegroundColor Gray
+    Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI" | Out-Null
+    Wait-For-Port-Closed -port $cfg.backend.port -timeoutSec 5 -serviceName "Backend" | Out-Null
+    Wait-For-Port-Closed -port $cfg.frontend.port -timeoutSec 5 -serviceName "Frontend" | Out-Null
 }
 
 function Start-AllServices ([bool]$asBackground) {
@@ -420,7 +438,8 @@ function Start-AllServices ([bool]$asBackground) {
 }
 
 function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
-    switch ($name.ToLower()) {
+    $normalized = Get-NormalizedServiceName $name
+    switch ($normalized) {
         "comfy" {
             Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow
             Stop-ComfyUIProcess
@@ -443,7 +462,7 @@ function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
             Wait-For-Service "frontend" "Frontend" | Out-Null
         }
         default {
-            Write-Host "Unknown service: $name (choose: comfy, backend, frontend)" -ForegroundColor Red
+            Write-Host "Unknown service: $name (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red
         }
     }
     Show-Status
@@ -523,10 +542,12 @@ function Show-InteractiveMenu {
 switch ($Action.ToLower()) {
     "start" {
         if ($Service) {
-            switch ($Service.ToLower()) {
+            $normalized = Get-NormalizedServiceName $Service
+            switch ($normalized) {
                 "comfy" { Start-ComfyUIProcess $Background; Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null; Show-Status }
                 "backend" { Start-BackendProcess $Background; Wait-For-Service "backend" "Backend" | Out-Null; Show-Status }
                 "frontend" { Start-FrontendProcess $Background; Wait-For-Service "frontend" "Frontend" | Out-Null; Show-Status }
+                default { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
             }
         } else {
             Start-AllServices $Background
@@ -534,10 +555,12 @@ switch ($Action.ToLower()) {
     }
     "stop" {
         if ($Service) {
-            switch ($Service.ToLower()) {
+            $normalized = Get-NormalizedServiceName $Service
+            switch ($normalized) {
                 "comfy" { Stop-ComfyUIProcess; Show-Status }
                 "backend" { Stop-BackendProcess; Show-Status }
                 "frontend" { Stop-FrontendProcess; Show-Status }
+                default { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
             }
         } else {
             Stop-AllServices
