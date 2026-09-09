@@ -310,7 +310,7 @@ function Start-ComfyUIProcess ([bool]$asBackground) {
     $cmdStr = "cd $($cfg.wsl.project_dir) && if [ -f '$($cfg.wsl.venv_activate)' ]; then source $($cfg.wsl.venv_activate); fi && cd $($cfg.wsl.comfy_dir) && export PYTORCH_HIP_ALLOC_CONF='$($cfg.wsl.env_vars.PYTORCH_HIP_ALLOC_CONF)' && $($cfg.wsl.start_command)"
 
     if ($asBackground) {
-        Invoke-Expression "wsl $($wslPrefix)bash -c `"nohup bash -c \`"`$cmdStr\`" > ~/comfyui.log 2>&1 &`""
+        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c wsl $($wslPrefix)bash -c `"$cmdStr`"" -WindowStyle Hidden
     } else {
         Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl $($wslPrefix)bash -c `"$cmdStr`""
     }
@@ -347,14 +347,12 @@ function Start-BackendProcess ([bool]$asBackground) {
         return
     }
     $beDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.backend.relative_dir)).Path
-    $pyExe = Join-Path $beDir $cfg.backend.venv_python
-    if (-not (Test-Path $pyExe)) { $pyExe = "python.exe" }
 
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "backend.log"
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$pyExe`" $($cfg.backend.start_args) > `"$logFile`" 2>&1" -WorkingDirectory $beDir -WindowStyle Hidden
+        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c run_server.bat > `"$logFile`" 2>&1" -WorkingDirectory $beDir -WindowStyle Hidden
     } else {
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && `"$pyExe`" $($cfg.backend.start_args)" -WorkingDirectory $beDir
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat" -WorkingDirectory $beDir
     }
 }
 
@@ -388,7 +386,7 @@ function Start-FrontendProcess ([bool]$asBackground) {
 
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "frontend.log"
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" -WorkingDirectory $feDir -WindowStyle Hidden
+        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" -WorkingDirectory $feDir -WindowStyle Hidden
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Frontend && $($cfg.frontend.start_cmd)" -WorkingDirectory $feDir
     }

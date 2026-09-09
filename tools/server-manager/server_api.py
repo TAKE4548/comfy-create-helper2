@@ -3,7 +3,14 @@ import json
 import os
 import socketserver
 import subprocess
+import sys
 from pathlib import Path
+
+# pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"

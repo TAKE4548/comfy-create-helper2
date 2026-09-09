@@ -140,23 +140,21 @@ networkingMode=mirrored
 
 ## 5. Windows 自動常駐化 (タスクスケジューラ連携)
 
-PC起動（ログオン）時に全サービスをバックグラウンドで自動起動したい場合、`register_startup_task.ps1` を管理者権限で実行します。
+PC起動（ログオン）時に全サービス（WSL ComfyUI, Backend, Frontend）および Web Manager（ポート8899）をバックグラウンドで自動起動・常駐化できます。
 
-### 登録
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/server-manager/register_startup_task.ps1 -Action register
-```
-※ ログオンから15秒遅延してサイレント起動（非表示ウィンドウ）します。
+### 5.1 ワンクリック登録・解除・状態確認
+WindowsのUAC（管理者権限昇格）ダイアログを自動表示して安全にタスクスケジューラへ登録できます。
 
-### 解除
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/server-manager/register_startup_task.ps1 -Action unregister
-```
+- **登録**: `tools/server-manager/register_task_scheduler.bat` をダブルクリック（UAC「はい」をクリック）
+- **解除**: `tools/server-manager/unregister_task_scheduler.bat` をダブルクリック
+- **状態確認**: `tools/server-manager/check_task_status.bat` をダブルクリック
 
-### 状態確認
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/server-manager/register_startup_task.ps1 -Action status
-```
+### 5.2 動作仕様
+- **タスク名**: `PromptSurgeon_AutoStart`
+- **トリガー**: Windows ログオン時（15秒遅延起動 `/DELAY 0000:15`）
+- **権限**: 最高特権（`HIGHEST` / 管理者権限）
+- **実行内容**: `tools/server-manager/start_startup_task.bat` が呼び出され、Web Manager（http://localhost:8899）および各サーバー群（ComfyUI, Backend, Frontend）が一括してサイレント常駐起動します。
+- **停止・再起動**: 通常通り `stop_servers.bat` や Web Manager 画面（http://localhost:8899）から制御できます。
 
 ---
 
