@@ -1,60 +1,69 @@
-# インシデントレポート: server-manager で ComfyUI ポート開放待ちタイムアウト (10s) が不足・ハードコードされている不具合
+# インシデントレポート: server-manager 起動時における Frontend (Vite) の EPERM rmdir 起動エラー
 
 ## 1. 事象概要 (Overview)
 
-ユーザーより以下の事象および改修要望が報告された。
-- 「server-managerのポート開放待ちがComfyUIは10sじゃ足りないっぽい。」
-- 「ここの待機時間を毎度ハードコードで修正したくないので、configで調整可能にしたい。」
-- 「また、待機で1度failだったとしても、数回はリトライするようにして堅牢にしたい」
+ユーザーより以下の事象が報告された。
+- 「server-managerで一括起動すると、FEがエラー吐くようになった」
+- 発生エラー:
+  ```text
+  error when starting dev server:
+  Error: EPERM: operation not permitted, rmdir 'frontend/node_modules/.vite/deps'
+  ```
 
-調査の結果、以下の事実を確認した。
-1. `tools/server-manager/server-manager.ps1` において、`Wait-For-Port` 関数およびその呼び出し箇所（全8箇所）で待機タイムアウト時間 `10` 秒が固定値（ハードコード）で渡されている。
-2. ComfyUI は WSL2 上で PyTorch、CUDA/ROCm ランタイム初期化、カスタムノードのインポートなど重い起動処理を行うため、起動開始からポート `8188` の LISTEN 状態になるまでに環境やキャッシュ状況によって 10 秒以上を要することが頻繁に発生する。
-3. `Wait-For-Port` は指定秒数経過後に `Test-PortOpen` が偽であれば即座に終了し、再試行（リトライ）を行う仕組みが存在しない。
-4. `tools/server-manager/config.json` には待機タイムアウト秒数やリトライ回数を定義・制御する設定項目が存在しない。
-5. このため、ComfyUI が正常にバックグラウンド起動中であっても、10秒経過した時点でタイムアウトし、マネージャー上で起動失敗・停止（`STOPPED`）と誤判定される。
+調査および実機検証の結果、以下の事実を確認した。
+1. `frontend` ディレクトリ配下で手動起動（`npm run dev`）を行っても、同様に `Error: EPERM: operation not permitted, rmdir ...\frontend\node_modules\.vite\deps` が発生し、dev サーバーの起動が 100% 失敗する。
+2. 対象パス `frontend/node_modules/.vite/deps` を確認したところ、内部にファイル（`_metadata.json` 等）が一切存在せず空洞化している。
+3. Windows のファイル属性コマンド（`attrib /D`）で確認したところ、`frontend/node_modules/.vite/deps` および過去の一時ディレクトリ群（`deps_temp_*`）に `R` (Read-Only) 属性が付与されている。
+4. Node.js の `fs.promises.rm(dir, { recursive: true, force: true })` は、Windows においてディレクトリ自体に `R` 属性が付与されている場合、ディレクトリ削除の `rmdir` システムコールで `ERROR_ACCESS_DENIED` (`EPERM: operation not permitted`) をスローして異常終了することが確認された。
+5. 一度この状態に陥ると、Vite が起動するたびにキャッシュ削除を試みて `rmdir` で即時クラッシュするため、自律復旧できないデッドロック状態となっている。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
-### ログ確認結果 (`logs/app.jsonl`):
+### ログ確認結果:
 - `scripts/inspect_logs.py --summary` および `--errors --tail 10` を実行して確認。
-- エントリー総数: 12,762 件
-- 直近エラー:
-  - `[2026-09-09T00:14:36.002+09:00] [frontend] [FE] window.onerror: Should have a queue. This is likely a bug in React.`
-  - `[2026-09-09T00:14:36.051+09:00] [frontend] [FE] GlobalErrorBoundary: Should have a queue. This is likely a bug in React.`
-- `logs/app.jsonl` は Prompt Surgeon 本体のログであり、`server-manager` のプロセス監視・ポート待機ログは標準出力または `tools/server-manager/logs/` で扱われる設計である。
+- `logs/app.jsonl` は Prompt Surgeon アプリケーション自体の稼働ログであり、本件の Vite 起動前段階（dev server 初期化フェーズ）のエラーは記録されない。
+- Frontend プロセスのコンソール出力にて以下のスタックトレースが観測される。
+  ```text
+  > frontend@0.0.0 dev
+  > vite
+
+  error when starting dev server:
+  Error: EPERM: operation not permitted, rmdir 'frontend/node_modules/.vite/deps'
+  ```
 
 ### 再現手順:
-1. ComfyUI が停止している状態で、`tools/server-manager/server-manager.ps1 -Action start -Service comfy` または `start_servers.bat` を実行する。
-2. WSL2 内で ComfyUI プロセスが立ち上がるが、Python プロセスのモジュール読み込みに 10 秒以上かかる。
-3. `server-manager.ps1` 側の `Wait-For-Port $cfg.wsl.port 10` が 10 秒で待機を終了する。
-4. ポート 8188 がまだリッスンされていないため待機が失敗と判定され、ステータス画面に `STOPPED` と表示される（プロセス自体はその後遅れて起動完了するが、起動完了を待てずに終了する）。
+1. `frontend/node_modules/.vite/deps` に `_metadata.json` が存在せず、ディレクトリに `R` 属性が存在する状態になる。
+2. `tools/server-manager/server-manager.ps1 -Action start`（または `start_servers.bat`、あるいは `npm run dev`）を実行する。
+3. Vite の `loadCachedDepOptimizationMetadata` がキャッシュメタデータを検出できず、古いキャッシュディレクトリの削除処理 `await fsp.rm(depsCacheDir, { recursive: true, force: true })` を呼び出す。
+4. Windows の `rmdir` で `EPERM` が発生し、Vite がプロセス終了コード 1 で即座にクラッシュする。
 
 ---
 
 ## 3. 影響範囲・該当コード (Affected Area & Source Locations)
 
-| # | 対象ファイル | 該当行 | 詳細 |
+| # | 対象ファイル | 該当行/箇所 | 詳細 |
 |---|---|---|---|
-| 1 | `tools/server-manager/server-manager.ps1` | L36-L44 | `Wait-For-Port ([int]$port, [int]$timeoutSec = 10)` のシグネチャおよび実装。デフォルト値が 10 秒固定であり、リトライ機能を持たない。 |
-| 2 | `tools/server-manager/server-manager.ps1` | L219-L222 | `Start-AllServices` 内で `Wait-For-Port $cfg.wsl.port 10`、`Wait-For-Port $cfg.backend.port 10`、`Wait-For-Port $cfg.frontend.port 10` とハードコード呼び出し。メッセージも `"up to 10s"` で固定。 |
-| 3 | `tools/server-manager/server-manager.ps1` | L234, L241, L248 | `Restart-ServiceByName` 内で各サービスの再起動後に `Wait-For-Port ... 10` とハードコード呼び出し。 |
-| 4 | `tools/server-manager/server-manager.ps1` | L331, L332, L333 | メインディスパッチ (`Action == "start"`) 内で個別起動時に `Wait-For-Port ... 10` とハードコード呼び出し。 |
-| 5 | `tools/server-manager/config.json` | 全体 | ポート待機タイムアウト時間やリトライ回数を設定する項目（例: サービス別または共通の timeout / retry 設定）が存在しない。 |
+| 1 | `frontend/node_modules/.vite/deps` | ディレクトリ属性・内容 | ディレクトリが空であり、かつ `R` (Read-Only) 属性が付与されているため、Node.js からの `rmdir` が拒否される。 |
+| 2 | `frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js` | L50630-L50661 | `loadCachedDepOptimizationMetadata`: キャッシュメタデータ（`_metadata.json`）が存在しない場合に `await fsp.rm(depsCacheDir, { recursive: true, force: true })` を実行するが、Windows では `R` 属性付きディレクトリに対して `rmdir` が失敗する。 |
+| 3 | `frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js` | L50761-L50785 | `runOptimizeDeps.commit`: キャッシュ退避先の一時ディレクトリ `deps_temp_*` も同様に `R` 属性により削除されず残存し続ける。 |
+| 4 | `tools/server-manager/server-manager.ps1` | L137-L144, L276-L293 | `Stop-FrontendProcess` および `Start-FrontendProcess`: `Stop-Process -Force` による単純なプロセス強制終了が行われており、Vite の依存関係最適化中（ファイル書き込み中）に強制終了されるとキャッシュファイルの欠落や破損を招きやすい。また `cmd.exe` や子プロセスのツリー終了が考慮されていない。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
 ### 発生メカニズム:
-1. **ComfyUI の起動時間特性とタイムアウト値の不一致**:
-   - ComfyUI は Python 仮想環境の起動、PyTorch やハードウェアアクセラレータ（CUDA/ROCm）の初期化、多数のカスタムノードのインポートなどを行うため、コールドスタート時に 10 秒を超える時間がかかるのが一般的である。
-2. **待機時間のハードコードと柔軟性の欠如**:
-   - `server-manager.ps1` 内の全呼び出し箇所で数値リテラル `10` が直接渡されており、ユーザー環境やマシンスペック、初回起動時のモデルロード等の変動を `config.json` 側で吸収・調整できない構造になっている。
-3. **リトライ機構の欠落による脆弱性**:
-   - `Wait-For-Port` は単一ループで `$timeoutSec` 秒待機した後に `Test-PortOpen` の結果を返すのみであり、一時的な通信遅延やポートバインドの瞬間的な失敗に対する再試行（リトライ回数・インターバル制御）が組み込まれていない。
+1. **Windows NTFS における `R` 属性と Node.js `rmdir` の挙動差異**:
+   - Windows において、フォルダに `R` (Read-Only) 属性が付与されている場合、OS 標準の `rmdir` API はアクセス拒否（Access Denied / EPERM）を返す。
+   - Node.js の `fsp.rm(path, { recursive: true, force: true })` は内部のファイルを再帰的に削除できるものの、フォルダ自体の削除フェーズにおいて `rmdir` を呼び出すため、`R` 属性の付いた空フォルダが削除できず `EPERM: operation not permitted, rmdir` で例外を発生させる。
+2. **キャッシュメタデータの欠落による削除トリガーの恒常発火**:
+   - Vite は起動時に `node_modules/.vite/deps/_metadata.json` を読み込み、キャッシュが有効であれば削除処理を行わずに起動を継続する。
+   - しかし、一度何らかの理由（プロセスの途中終了や手動介入等）で `_metadata.json` が欠落すると、Vite はキャッシュ無効と判定して必ず `await fsp.rm(depsCacheDir)` を実行する。
+   - その結果、メカニズム 1 の `EPERM` が必ず発火し、起動処理が完了できず、永久に新しい `_metadata.json` も生成されないというデッドロックに陥る。
+3. **server-manager のプロセス停止契機**:
+   - `server-manager.ps1` の停止ロジックはポート 5173 をリッスンしているプロセスへの直接的な `Stop-Process -Force` であるため、Vite の起動処理や最適化処理の最中に一括再起動・停止が行われると、アトミック性が保たれずにキャッシュが破損・空洞化しやすい。
 
 ---
 
@@ -69,16 +78,15 @@
 
 - **分類**:
   - **Type A (Implementation Bug)**:
-    - ComfyUI などヘビーなサービスの起動特性に対する考慮不足、待機時間のハードコード、およびリトライ機構の欠如に起因する実装上の不備。
+    - Windows 環境におけるフォルダ属性（Read-Only 属性）および `rmdir` 制約に対する不備、ならびにプロセス停止・キャッシュ管理の堅牢性不足に起因する実装上の問題。
 
 ---
 
 ## 6. バックログ登録とルーティング提案 (Backlog Registration & Routing)
 
-- **改修方針の概要**:
-  - `config.json` にポート開放待ちタイムアウトおよびリトライ設定（サービス個別または全体共通）を追加できるようにする。
-  - `server-manager.ps1` の `Wait-For-Port` において、`config.json` からタイムアウト値・リトライ回数を読み込んで適用し、失敗時のリトライ制御をサポートする。
-  - ハードコードされている `10` を設定値参照に変更する。
+- **課題概要**:
+  - Windows 環境における Vite キャッシュディレクトリ（`.vite/deps`）の `R` 属性による起動クラッシュの解消。
+  - キャッシュ破損時や強制終了時でも安全にリカバリ・起動できる仕組み、および server-manager 側のプロセス停止・起動手順の堅牢化。
 - **推奨ワークフロー**: `/dev-design`
 
 ---
