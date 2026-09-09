@@ -1,25 +1,39 @@
 {
-  "wsl": {
-    "distro": "Ubuntu",
-    "project_dir": "~/comfy",
-    "venv_activate": ".venv/bin/activate",
-    "comfy_dir": "ComfyUI",
-    "env_vars": {
-      "PYTORCH_HIP_ALLOC_CONF": "garbage_collection_threshold:0.8,max_split_size_mb:512"
-    },
-    "start_command": "python main.py --bf16-vae --fp8_e4m3fn-unet --fast --disable-smart-memory --enable-cors-header --listen 0.0.0.0 --use-split-cross-attention",
-    "port": 8188
-  },
-  "backend": {
-    "relative_dir": "../../backend",
-    "venv_python": ".venv\\Scripts\\python.exe",
-    "start_args": "-m uvicorn app.main:app --host 127.0.0.1 --port 8000",
-    "port": 8000
-  },
-  "frontend": {
-    "relative_dir": "../../frontend",
-    "start_cmd": "npm run dev",
-    "port": 5173
-  },
-  "logs_dir": "logs"
+    "wsl":  {
+                "distro":  "",
+                "project_dir":  "~/comfy",
+                "venv_activate":  ".venv/bin/activate",
+                "comfy_dir":  "ComfyUI",
+                "env_vars":  {
+                                 "PYTORCH_HIP_ALLOC_CONF":  "garbage_collection_threshold:0.8,max_split_size_mb:512"
+                             },
+                "start_command":  "python main.py --bf16-vae --fp8_e4m3fn-unet --fast --disable-smart-memory --enable-cors-header --listen 0.0.0.0 --use-split-cross-attention",
+                "port":  8188,
+                "wait_timeout_sec": 30,
+                "retry_count": 3,
+                "retry_interval_sec": 2
+            },
+    "backend":  {
+                    "relative_dir":  "../../backend",
+                    "venv_python":  ".venv\\Scripts\\python.exe",
+                    "start_args":  "-m uvicorn app.main:app --host 127.0.0.1 --port 8000",
+                    "port":  8000,
+                    "wait_timeout_sec": 15,
+                    "retry_count": 2,
+                    "retry_interval_sec": 1
+                },
+    "frontend":  {
+                     "relative_dir":  "../../frontend",
+                     "start_cmd":  "npm run dev",
+                     "port":  5173,
+                     "wait_timeout_sec": 15,
+                     "retry_count": 2,
+                     "retry_interval_sec": 1
+                 },
+    "port_wait": {
+                     "default_timeout_sec": 15,
+                     "default_retry_count": 2,
+                     "default_retry_interval_sec": 1
+                 },
+    "logs_dir":  "logs"
 }

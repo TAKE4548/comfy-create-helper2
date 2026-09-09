@@ -89,7 +89,7 @@ networkingMode=mirrored
 ```json
 {
   "wsl": {
-    "distro": "Ubuntu",
+    "distro": "",
     "project_dir": "~/comfy",
     "venv_activate": ".venv/bin/activate",
     "comfy_dir": "ComfyUI",
@@ -97,22 +97,42 @@ networkingMode=mirrored
       "PYTORCH_HIP_ALLOC_CONF": "garbage_collection_threshold:0.8,max_split_size_mb:512"
     },
     "start_command": "python main.py --bf16-vae --fp8_e4m3fn-unet --fast --disable-smart-memory --enable-cors-header --listen 0.0.0.0 --use-split-cross-attention",
-    "port": 8188
+    "port": 8188,
+    "wait_timeout_sec": 30,
+    "retry_count": 3,
+    "retry_interval_sec": 2
   },
   "backend": {
     "relative_dir": "../../backend",
     "venv_python": ".venv\\Scripts\\python.exe",
     "start_args": "-m uvicorn app.main:app --host 127.0.0.1 --port 8000",
-    "port": 8000
+    "port": 8000,
+    "wait_timeout_sec": 15,
+    "retry_count": 2,
+    "retry_interval_sec": 1
   },
   "frontend": {
     "relative_dir": "../../frontend",
     "start_cmd": "npm run dev",
-    "port": 5173
+    "port": 5173,
+    "wait_timeout_sec": 15,
+    "retry_count": 2,
+    "retry_interval_sec": 1
+  },
+  "port_wait": {
+    "default_timeout_sec": 15,
+    "default_retry_count": 2,
+    "default_retry_interval_sec": 1
   },
   "logs_dir": "logs"
 }
 ```
+
+- `wsl.distro`: 対象の WSL ディストリビューション名（例: `"Ubuntu-24.04"`）。空文字 `""` に指定した場合は、WSL の既定（デフォルト）ディストリビューションが自動的に使用されます。
+- `wait_timeout_sec`: 1回あたりのポート開放待機タイムアウト秒数（サービスごと）。
+- `retry_count`: タイムアウト後の最大再試行（リトライ）回数（0で再試行なし）。
+- `retry_interval_sec`: 再試行前の待機インターバル秒数。
+- `port_wait`: 個別サービスで未設定の場合のグローバル待機フォールバック設定。
 
 ※ Web管理画面上のエディタから編集・保存した場合、自動的に `config.json.bak` バックアップが作成されます。
 

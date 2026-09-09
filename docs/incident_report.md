@@ -1,36 +1,36 @@
-# インシデントレポート: REQ-229実装以降にノードバイパス機能が正常に動作しない不具合
+# インシデントレポート: server-manager で ComfyUI ポート開放待ちタイムアウト (10s) が不足・ハードコードされている不具合
 
 ## 1. 事象概要 (Overview)
 
-ユーザーより以下の事象が報告された。
-- 「229実装以降、バイパスが機能してない」
+ユーザーより以下の事象および改修要望が報告された。
+- 「server-managerのポート開放待ちがComfyUIは10sじゃ足りないっぽい。」
+- 「ここの待機時間を毎度ハードコードで修正したくないので、configで調整可能にしたい。」
+- 「また、待機で1度failだったとしても、数回はリトライするようにして堅牢にしたい」
 
-調査の結果、生成実行時（`handleGenerateSets`）においてバイパスプロファイルが有効（`is_enabled: true`）に設定されているにもかかわらず、ComfyUIへ送信されたワークフローJSONからバイパス対象ノードが一切削除されず、全ノード（91ノード）がそのまま実行される事象を確認した。
-
-本事象は単一のコード不備ではなく、**バックエンドのエラー握りつぶし（HTTP 200返却）**、**フロントエンドの長時間キャッシュ（1時間staleTime）**、および**バイパス適用処理（`applyBypass`）のサイレントスキップ仕様**が連鎖して発生した実装上の不具合（Type A）である。
+調査の結果、以下の事実を確認した。
+1. `tools/server-manager/server-manager.ps1` において、`Wait-For-Port` 関数およびその呼び出し箇所（全8箇所）で待機タイムアウト時間 `10` 秒が固定値（ハードコード）で渡されている。
+2. ComfyUI は WSL2 上で PyTorch、CUDA/ROCm ランタイム初期化、カスタムノードのインポートなど重い起動処理を行うため、起動開始からポート `8188` の LISTEN 状態になるまでに環境やキャッシュ状況によって 10 秒以上を要することが頻繁に発生する。
+3. `Wait-For-Port` は指定秒数経過後に `Test-PortOpen` が偽であれば即座に終了し、再試行（リトライ）を行う仕組みが存在しない。
+4. `tools/server-manager/config.json` には待機タイムアウト秒数やリトライ回数を定義・制御する設定項目が存在しない。
+5. このため、ComfyUI が正常にバックグラウンド起動中であっても、10秒経過した時点でタイムアウトし、マネージャー上で起動失敗・停止（`STOPPED`）と誤判定される。
 
 ---
 
 ## 2. 再現手順・観測された挙動 (Reproduction & Observed Symptoms)
 
-### 観測された実行ログ（2026-09-08 23:36）:
-1. **バイパスプロファイル更新**:
-   - `2026-09-08T23:36:42.786+09:00` [req-9c34910298de]: `PUT /api/bypass-profiles/118` -> 200 OK
-   - `2026-09-08T23:36:43.327+09:00` [req-f4ce441039cf]: `PUT /api/bypass-profiles/118` -> 200 OK
-   - プロファイル118（`detailers`）が有効化され、バイパス対象ノード `["1283:1216", "1291:1221", "1297:1222", "1298:1223"]` が指定された。
-2. **生成バッチ実行**:
-   - `2026-09-08T23:36:44.799+09:00`: UIから生成ボタン（`handleGenerateSets`）が押下された。
-   - `2026-09-08T23:36:44.875+09:00` [req-25d71cd26b51]: `POST /api/comfy/prompt` -> 200 OK
-   - 投入プロンプトID: `fb6ad4ce-830d-4fa2-87ee-0fce8335d9fa`, `998f15f9-1bad-4cfd-a023-b1172077e86b`, `a8ff2bd8-1327-471c-b987-b94b6421db16`, `395571c2-f93e-4c03-a05c-9a108707929c`
-3. **ComfyUI 実行履歴（History API）の検証結果**:
-   - ComfyUI History API（`GET /history?max_items=5`）より、投入されたプロンプトJSONを検証したところ、バイパス指定されていたノード（`1283:1216` 等）およびプロファイル119のノード（`1345`, `1344` 等）を含む**全91ノードが1つもバイパスされずに残存**していた。
+### ログ確認結果 (`logs/app.jsonl`):
+- `scripts/inspect_logs.py --summary` および `--errors --tail 10` を実行して確認。
+- エントリー総数: 12,762 件
+- 直近エラー:
+  - `[2026-09-09T00:14:36.002+09:00] [frontend] [FE] window.onerror: Should have a queue. This is likely a bug in React.`
+  - `[2026-09-09T00:14:36.051+09:00] [frontend] [FE] GlobalErrorBoundary: Should have a queue. This is likely a bug in React.`
+- `logs/app.jsonl` は Prompt Surgeon 本体のログであり、`server-manager` のプロセス監視・ポート待機ログは標準出力または `tools/server-manager/logs/` で扱われる設計である。
 
 ### 再現手順:
-1. ComfyUIが未起動または起動途中の状態でアプリ（バックエンドおよびフロントエンド）にアクセスする。
-2. その後ComfyUIが起動完了・接続状態となる。
-3. ワークフロー57を選択し、バイパスプロファイル（例: `detailers` や `upscaler`）を有効化（トグルON）する。
-4. 生成ボタンを押下して生成を実行する。
-5. ComfyUI上でバイパス対象ノードがスキップされずにそのまま実行される。
+1. ComfyUI が停止している状態で、`tools/server-manager/server-manager.ps1 -Action start -Service comfy` または `start_servers.bat` を実行する。
+2. WSL2 内で ComfyUI プロセスが立ち上がるが、Python プロセスのモジュール読み込みに 10 秒以上かかる。
+3. `server-manager.ps1` 側の `Wait-For-Port $cfg.wsl.port 10` が 10 秒で待機を終了する。
+4. ポート 8188 がまだリッスンされていないため待機が失敗と判定され、ステータス画面に `STOPPED` と表示される（プロセス自体はその後遅れて起動完了するが、起動完了を待てずに終了する）。
 
 ---
 
@@ -38,34 +38,23 @@
 
 | # | 対象ファイル | 該当行 | 詳細 |
 |---|---|---|---|
-| 1 | `backend/app/routers/comfy.py` | L61-68 | ComfyUIへの `/object_info` 取得失敗時に例外をキャッチして `{}` を HTTP 200 OK で返却しており、エラー状態を正常レスポンスとして偽装している。 |
-| 2 | `frontend/src/pages/GeneratePage/hooks/useWorkflowManagement.ts` | L46-50 | `useQuery(['comfy-object-info'], ...)` の `staleTime` が `1000 * 60 * 60`（1時間）に設定されており、空オブジェクト `{}` がキャッシュされると1時間再取得されない。ComfyUI再接続時のクエリ無効化も存在しない。 |
-| 3 | `frontend/src/utils/bypassUtils.ts` | L68-80 | `comfyObjectInfo[classType]` が存在しない場合、安全策としてバイパス対象から除外（`continue`）され、有効対象が0件の場合は元のワークフローをそのまま返却する（エラー通知なしのサイレントスキップ）。 |
-| 4 | `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` | L63-67 | `fetchParamSyncGroups` はページ初期化時に呼び出されているが、`fetchBypassProfiles` の呼び出しが `useGeneratePageState` に存在せず、`DesktopLayout` / `MobileLayout` 側に分散している。 |
-| 5 | `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` | L84, L172 | `applyBypass` の戻り値検証や、スキーマ情報欠落時のユーザー通知（エラー表示やToast）が存在せず、未バイパスのままComfyUIへ投入されてしまう。 |
+| 1 | `tools/server-manager/server-manager.ps1` | L36-L44 | `Wait-For-Port ([int]$port, [int]$timeoutSec = 10)` のシグネチャおよび実装。デフォルト値が 10 秒固定であり、リトライ機能を持たない。 |
+| 2 | `tools/server-manager/server-manager.ps1` | L219-L222 | `Start-AllServices` 内で `Wait-For-Port $cfg.wsl.port 10`、`Wait-For-Port $cfg.backend.port 10`、`Wait-For-Port $cfg.frontend.port 10` とハードコード呼び出し。メッセージも `"up to 10s"` で固定。 |
+| 3 | `tools/server-manager/server-manager.ps1` | L234, L241, L248 | `Restart-ServiceByName` 内で各サービスの再起動後に `Wait-For-Port ... 10` とハードコード呼び出し。 |
+| 4 | `tools/server-manager/server-manager.ps1` | L331, L332, L333 | メインディスパッチ (`Action == "start"`) 内で個別起動時に `Wait-For-Port ... 10` とハードコード呼び出し。 |
+| 5 | `tools/server-manager/config.json` | 全体 | ポート待機タイムアウト時間やリトライ回数を設定する項目（例: サービス別または共通の timeout / retry 設定）が存在しない。 |
 
 ---
 
 ## 4. 根本原因の分析 (Root Cause Analysis)
 
-### 発生メカニズム（連鎖した4つの要因）:
-
-1. **バックエンドの異常時200返却によるフォールトマスキング (`backend/app/routers/comfy.py`)**:
-   - `get_comfy_object_info_all` において、ComfyUIへの接続失敗時（起動直後や通信瞬断時）にエラーコード（502や503等）を返さず、空の辞書 `{}` をステータス200で返却している。
-   - ログには `2026-09-08T23:33:41` および `23:34:08` に `Failed to fetch all object_info from ComfyUI: All connection attempts failed` が記録されていたが、クライアントには正常終了として扱われた。
-
-2. **フロントエンド React Query による空データの1時間キャッシュ (`useWorkflowManagement.ts`)**:
-   - クライアント側では `staleTime: 1000 * 60 * 60`（1時間）が指定されているため、一度空辞書 `{}` を受け取ると、その後ComfyUIが正常稼働しても1時間クエリが再実行されない。
-   - また、WebSocketの接続状態（`isConnected`）復帰時に `comfy-object-info` を `invalidateQueries` する仕組みも欠落している。
-
-3. **`applyBypass` によるサイレントスキップ (`bypassUtils.ts`)**:
-   - `applyBypass` は、ノード定義スキーマ（入力／出力スロットの型情報）を参照して結線を安全にバイパス（ショートカット）する設計となっている。
-   - `comfyObjectInfo` が空の場合、ノードクラス（`FaceDetailerPipe` 等）のスキーマが見つからないため、結線破壊を防ぐ安全ガードが作動してバイパス対象から除外される。
-   - 結果として、`validBypassSet.size === 0` となり、**一切のバイパス処理が行われずに元のワークフローがそのまま返却される**。
-
-4. **REQ-229 実装・再デプロイとの因果関係**:
-   - REQ-229 の実装に伴うサーバー再起動・ブラウザ再読み込みのタイミングで、ComfyUI起動待機中にフロントエンドがアクセスしたことで空の `comfyObjectInfo` がキャッシュされた。
-   - 加えて、プリセットポーリング（5秒間隔）や同期ロジック変更後も、この基盤キャッシュ破損状態が温存されたため、「229実装以降バイパスが動かない」という症状として顕在化した。
+### 発生メカニズム:
+1. **ComfyUI の起動時間特性とタイムアウト値の不一致**:
+   - ComfyUI は Python 仮想環境の起動、PyTorch やハードウェアアクセラレータ（CUDA/ROCm）の初期化、多数のカスタムノードのインポートなどを行うため、コールドスタート時に 10 秒を超える時間がかかるのが一般的である。
+2. **待機時間のハードコードと柔軟性の欠如**:
+   - `server-manager.ps1` 内の全呼び出し箇所で数値リテラル `10` が直接渡されており、ユーザー環境やマシンスペック、初回起動時のモデルロード等の変動を `config.json` 側で吸収・調整できない構造になっている。
+3. **リトライ機構の欠落による脆弱性**:
+   - `Wait-For-Port` は単一ループで `$timeoutSec` 秒待機した後に `Test-PortOpen` の結果を返すのみであり、一時的な通信遅延やポートバインドの瞬間的な失敗に対する再試行（リトライ回数・インターバル制御）が組み込まれていない。
 
 ---
 
@@ -80,17 +69,17 @@
 
 - **分類**:
   - **Type A (Implementation Bug)**:
-    - 仕様（REQ-091）ではバイパス設定が有効な場合、ComfyUI投入前にノードがバイパス・結線再構築されることが正当な仕様である。
-    - バックエンドプロキシのフォールトマスキング、React Queryのキャッシュ管理不備、およびフロントエンドのサイレントスキップ処理という実装上の欠陥によって引き起こされている純粋な不具合である。
+    - ComfyUI などヘビーなサービスの起動特性に対する考慮不足、待機時間のハードコード、およびリトライ機構の欠如に起因する実装上の不備。
 
 ---
 
 ## 6. バックログ登録とルーティング提案 (Backlog Registration & Routing)
 
-- **推奨対応**:
-  - 本事象は原因コードおよび発生経路が特定された実装バグ（Type A）です。
-  - 次のステップとして `/dev-design` に進み、修正設計およびタスクカードの作成を行うことを提案します。
-- **次のワークフロー**: `/dev-design`
+- **改修方針の概要**:
+  - `config.json` にポート開放待ちタイムアウトおよびリトライ設定（サービス個別または全体共通）を追加できるようにする。
+  - `server-manager.ps1` の `Wait-For-Port` において、`config.json` からタイムアウト値・リトライ回数を読み込んで適用し、失敗時のリトライ制御をサポートする。
+  - ハードコードされている `10` を設定値参照に変更する。
+- **推奨ワークフロー**: `/dev-design`
 
 ---
 

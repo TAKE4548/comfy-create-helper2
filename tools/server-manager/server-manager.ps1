@@ -33,14 +33,105 @@ function Get-PidsFromPort ([int]$port) {
     return ,@()
 }
 
-function Wait-For-Port ([int]$port, [int]$timeoutSec = 10) {
-    $elapsed = 0
-    while ($elapsed -lt $timeoutSec) {
-        if (Test-PortOpen $port) { return $true }
-        Start-Sleep -Seconds 1
-        $elapsed++
+function Get-ServiceWaitConfig ([string]$serviceKey) {
+    $defaultTimeout = 15
+    $defaultRetryCount = 2
+    $defaultRetryInterval = 1
+
+    if ($cfg.port_wait) {
+        if ($null -ne $cfg.port_wait.default_timeout_sec) { $defaultTimeout = [int]$cfg.port_wait.default_timeout_sec }
+        if ($null -ne $cfg.port_wait.default_retry_count) { $defaultRetryCount = [int]$cfg.port_wait.default_retry_count }
+        if ($null -ne $cfg.port_wait.default_retry_interval_sec) { $defaultRetryInterval = [int]$cfg.port_wait.default_retry_interval_sec }
     }
-    return (Test-PortOpen $port)
+
+    if ($serviceKey.ToLower() -eq "comfy" -or $serviceKey.ToLower() -eq "wsl") {
+        $svc = $cfg.wsl
+        $fallbackTimeout = 30
+        $fallbackRetry = 3
+        $fallbackInterval = 2
+    } elseif ($serviceKey.ToLower() -eq "backend") {
+        $svc = $cfg.backend
+        $fallbackTimeout = $defaultTimeout
+        $fallbackRetry = $defaultRetryCount
+        $fallbackInterval = $defaultRetryInterval
+    } elseif ($serviceKey.ToLower() -eq "frontend") {
+        $svc = $cfg.frontend
+        $fallbackTimeout = $defaultTimeout
+        $fallbackRetry = $defaultRetryCount
+        $fallbackInterval = $defaultRetryInterval
+    } else {
+        $svc = $null
+        $fallbackTimeout = $defaultTimeout
+        $fallbackRetry = $defaultRetryCount
+        $fallbackInterval = $defaultRetryInterval
+    }
+
+    $timeout = $fallbackTimeout
+    $retry = $fallbackRetry
+    $interval = $fallbackInterval
+
+    if ($svc) {
+        if ($null -ne $svc.wait_timeout_sec) { $timeout = [int]$svc.wait_timeout_sec }
+        if ($null -ne $svc.retry_count) { $retry = [int]$svc.retry_count }
+        if ($null -ne $svc.retry_interval_sec) { $interval = [int]$svc.retry_interval_sec }
+    }
+
+    return [PSCustomObject]@{
+        timeoutSec = $timeout
+        retryCount = $retry
+        retryIntervalSec = $interval
+    }
+}
+
+function Wait-For-Port ([int]$port, [int]$timeoutSec = 15, [int]$retryCount = 0, [int]$retryIntervalSec = 1, [string]$serviceName = "") {
+    $totalAttempts = 1 + [Math]::Max(0, $retryCount)
+    $namePrefix = if ($serviceName) { "[$serviceName] " } else { "" }
+
+    for ($attempt = 1; $attempt -le $totalAttempts; $attempt++) {
+        $elapsed = 0
+        while ($elapsed -lt $timeoutSec) {
+            if (Test-PortOpen $port) {
+                return $true
+            }
+            Start-Sleep -Seconds 1
+            $elapsed++
+        }
+
+        if (Test-PortOpen $port) {
+            return $true
+        }
+
+        if ($attempt -lt $totalAttempts) {
+            Write-Host "${namePrefix}Port $port not open yet after ${timeoutSec}s. Retrying ($attempt/$retryCount) in ${retryIntervalSec}s..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $retryIntervalSec
+        }
+    }
+
+    Write-Host "${namePrefix}Failed to open port $port after $totalAttempts attempt(s) (timeout: ${timeoutSec}s each)." -ForegroundColor Red
+    return $false
+}
+
+function Wait-For-Service ([string]$serviceKey, [string]$displayName = "") {
+    $key = $serviceKey.ToLower()
+    $port = 0
+    $name = if ($displayName) { $displayName } else { $serviceKey }
+
+    if ($key -eq "comfy" -or $key -eq "wsl") {
+        $port = [int]$cfg.wsl.port
+        if (-not $displayName) { $name = "WSL ComfyUI" }
+    } elseif ($key -eq "backend") {
+        $port = [int]$cfg.backend.port
+        if (-not $displayName) { $name = "Backend" }
+    } elseif ($key -eq "frontend") {
+        $port = [int]$cfg.frontend.port
+        if (-not $displayName) { $name = "Frontend" }
+    } else {
+        Write-Host "Unknown service for wait: $serviceKey" -ForegroundColor Red
+        return $false
+    }
+
+    $waitCfg = Get-ServiceWaitConfig $key
+    return Wait-For-Port -port $port -timeoutSec $waitCfg.timeoutSec -retryCount $waitCfg.retryCount -retryIntervalSec $waitCfg.retryIntervalSec -serviceName $name
 }
 
 function Stop-PortProcesses ([int]$port, [string]$name) {
@@ -104,25 +195,59 @@ function Show-Status {
     }
 }
 
+function Get-WslDistroPrefix {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    # 空文字または未定義の場合は "" を返し、-d を付与せずWSLの既定ディストリビューションを使用する
+    if ($cfg.wsl.distro -and ($cfg.wsl.distro.ToString().Trim() -ne "")) {
+        return "-d $($cfg.wsl.distro.ToString().Trim()) "
+    }
+    return ""
+}
+
+function Test-WslAvailability {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+
+    $prefix = Get-WslDistroPrefix
+    $cmd = "wsl $($prefix)echo OK"
+    $check = Invoke-Expression $cmd 2>$null
+    if ($LASTEXITCODE -ne 0 -or ($check -notcontains "OK" -and $check -notmatch "OK")) {
+        $target = if ($prefix -ne "") { "WSL distribution '$($cfg.wsl.distro)'" } else { "Default WSL distribution" }
+        Write-Host "[ERROR] $target was not found or is unavailable." -ForegroundColor Red
+        Write-Host "        Hint: Run 'wsl -l -v' to check installed distributions, or set distro to `"`" in config.json to use the default." -ForegroundColor Yellow
+        return $false
+    }
+    return $true
+}
+
 function Start-ComfyUIProcess ([bool]$asBackground) {
     if (Test-PortOpen $cfg.wsl.port) {
         Write-Host "ComfyUI is already running on port $($cfg.wsl.port)." -ForegroundColor Yellow
         return
     }
-    $distro = if ($cfg.wsl.distro) { $cfg.wsl.distro } else { "Ubuntu" }
+
+    if (-not (Test-WslAvailability)) {
+        return
+    }
+
+    $wslPrefix = Get-WslDistroPrefix
     $cmdStr = "cd $($cfg.wsl.project_dir) && if [ -f '$($cfg.wsl.venv_activate)' ]; then source $($cfg.wsl.venv_activate); fi && cd $($cfg.wsl.comfy_dir) && export PYTORCH_HIP_ALLOC_CONF='$($cfg.wsl.env_vars.PYTORCH_HIP_ALLOC_CONF)' && $($cfg.wsl.start_command)"
 
     if ($asBackground) {
-        wsl -d $distro bash -c "nohup bash -c `"$cmdStr`" > ~/comfyui.log 2>&1 &"
+        Invoke-Expression "wsl $($wslPrefix)bash -c `"nohup bash -c \`"`$cmdStr\`" > ~/comfyui.log 2>&1 &`""
     } else {
-        Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl -d $distro bash -c `"$cmdStr`""
+        Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl $($wslPrefix)bash -c `"$cmdStr`""
     }
 }
 
 function Stop-ComfyUIProcess {
-    $distro = if ($cfg.wsl.distro) { $cfg.wsl.distro } else { "Ubuntu" }
+    $wslPrefix = Get-WslDistroPrefix
     try {
-        wsl -d $distro bash -c "pkill -f 'python.*main.py.*8188' || pkill -f 'python.*main.py'" 2>$null
+        Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -f 'python.*main.py.*8188' || pkill -f 'python.*main.py'`" 2>`$null"
     } catch {}
     Stop-PortProcesses $cfg.wsl.port "ComfyUI"
 }
@@ -182,10 +307,10 @@ function Start-AllServices ([bool]$asBackground) {
     Write-Host "[3/3] Starting Windows Frontend..." -ForegroundColor Yellow
     Start-FrontendProcess $asBackground
 
-    Write-Host "`nWaiting for ports to open (up to 10s)..." -ForegroundColor Gray
-    Wait-For-Port $cfg.wsl.port 10 | Out-Null
-    Wait-For-Port $cfg.backend.port 10 | Out-Null
-    Wait-For-Port $cfg.frontend.port 10 | Out-Null
+    Write-Host "`nWaiting for ports to open..." -ForegroundColor Gray
+    Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
+    Wait-For-Service "backend" "Backend" | Out-Null
+    Wait-For-Service "frontend" "Frontend" | Out-Null
 
     Show-Status
 }
@@ -197,21 +322,21 @@ function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
             Stop-ComfyUIProcess
             Start-Sleep -Seconds 1
             Start-ComfyUIProcess $asBackground
-            Wait-For-Port $cfg.wsl.port 10 | Out-Null
+            Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
         }
         "backend" {
             Write-Host "Restarting Backend..." -ForegroundColor Yellow
             Stop-BackendProcess
             Start-Sleep -Seconds 1
             Start-BackendProcess $asBackground
-            Wait-For-Port $cfg.backend.port 10 | Out-Null
+            Wait-For-Service "backend" "Backend" | Out-Null
         }
         "frontend" {
             Write-Host "Restarting Frontend..." -ForegroundColor Yellow
             Stop-FrontendProcess
             Start-Sleep -Seconds 1
             Start-FrontendProcess $asBackground
-            Wait-For-Port $cfg.frontend.port 10 | Out-Null
+            Wait-For-Service "frontend" "Frontend" | Out-Null
         }
         default {
             Write-Host "Unknown service: $name (choose: comfy, backend, frontend)" -ForegroundColor Red
@@ -235,8 +360,8 @@ function Toggle-Services ([bool]$asBackground) {
 function Show-Logs ([string]$name) {
     switch ($name.ToLower()) {
         "comfy" {
-            $distro = if ($cfg.wsl.distro) { $cfg.wsl.distro } else { "Ubuntu" }
-            wsl -d $distro tail -n 50 ~/comfyui.log
+            $wslPrefix = Get-WslDistroPrefix
+            Invoke-Expression "wsl $($wslPrefix)tail -n 50 ~/comfyui.log"
         }
         "backend" {
             $logFile = Join-Path $LOGS_DIR "backend.log"
@@ -294,9 +419,9 @@ switch ($Action.ToLower()) {
     "start" {
         if ($Service) {
             switch ($Service.ToLower()) {
-                "comfy" { Start-ComfyUIProcess $Background; Wait-For-Port $cfg.wsl.port 10 | Out-Null; Show-Status }
-                "backend" { Start-BackendProcess $Background; Wait-For-Port $cfg.backend.port 10 | Out-Null; Show-Status }
-                "frontend" { Start-FrontendProcess $Background; Wait-For-Port $cfg.frontend.port 10 | Out-Null; Show-Status }
+                "comfy" { Start-ComfyUIProcess $Background; Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null; Show-Status }
+                "backend" { Start-BackendProcess $Background; Wait-For-Service "backend" "Backend" | Out-Null; Show-Status }
+                "frontend" { Start-FrontendProcess $Background; Wait-For-Service "frontend" "Frontend" | Out-Null; Show-Status }
             }
         } else {
             Start-AllServices $Background
