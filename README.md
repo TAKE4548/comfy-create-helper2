@@ -45,6 +45,17 @@ npm run dev
 
 React からポート `8188` に直接アクセス。別途起動しておくこと。
 
+## サービスの一括起動・管理 (Server Manager)
+
+WSL2 ComfyUI、FastAPI バックエンド、React フロントエンドを一括起動・管理するためのツールを用意しています。
+詳細は [docs/specs/server_manager_guide.md](docs/specs/server_manager_guide.md) を参照してください。
+
+- **一括起動**: `tools/server-manager/start_servers.bat` をダブルクリック
+- **一括停止**: `tools/server-manager/stop_servers.bat` をダブルクリック
+- **対話型コンソール**: `tools/server-manager/server_menu.bat` をダブルクリック
+- **Web 管理ダッシュボード**: `tools/server-manager/start_web_manager.bat` を実行し、ブラウザで `http://localhost:8899` にアクセス
+
+
 ## 依存サービス
 
 | サービス | デフォルトポート | アクセス元 |
