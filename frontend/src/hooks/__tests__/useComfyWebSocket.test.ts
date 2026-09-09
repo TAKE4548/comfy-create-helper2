@@ -48,7 +48,7 @@ describe('useComfyWebSocket', () => {
     mockGet.mockResolvedValue({ comfy_url: 'http://localhost:8188' })
     
     // Set up default mocks
-    globalThis.WebSocket = MockWebSocket as any
+    vi.stubGlobal('WebSocket', MockWebSocket)
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -60,7 +60,7 @@ describe('useComfyWebSocket', () => {
     React.createElement(QueryClientProvider, { client: queryClient }, children)
 
   afterEach(() => {
-    globalThis.WebSocket = originalWebSocket
+    vi.unstubAllGlobals()
     globalThis.fetch = originalFetch
     globalThis.URL.createObjectURL = originalCreateObjectURL
   })
@@ -70,9 +70,9 @@ describe('useComfyWebSocket', () => {
     mockGet.mockResolvedValue({ comfy_url: 'http://localhost:8188' })
 
     // WebSocket のコンストラクタが例外をスローするようにグローバル WebSocket をモック
-    ;(globalThis as any).WebSocket = vi.fn().mockImplementation(() => {
+    vi.stubGlobal('WebSocket', vi.fn().mockImplementation(() => {
       throw new Error('SecurityError: WebSocket connection failed')
-    }) as any
+    }))
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 

@@ -21,12 +21,10 @@ def override_get_db():
         db.close()
 
 
-# get_db依存性のオーバーライド
-app.dependency_overrides[get_db] = override_get_db
-
-
 class TestSnapshotsAPI(unittest.TestCase):
     def setUp(self):
+        self.old_override = app.dependency_overrides.get(get_db)
+        app.dependency_overrides[get_db] = override_get_db
         # 毎回テーブルを作成
         models.Base.metadata.create_all(bind=connection)
         self.client = TestClient(app)
@@ -51,6 +49,10 @@ class TestSnapshotsAPI(unittest.TestCase):
         # テーブルを削除してクリーンアップ
         self.db.close()
         models.Base.metadata.drop_all(bind=connection)
+        if self.old_override is not None:
+            app.dependency_overrides[get_db] = self.old_override
+        else:
+            app.dependency_overrides.pop(get_db, None)
 
     def test_create_snapshot_with_assets_and_new_album(self):
         # 新規アルバム名指定、LoRA/タグセット指定
