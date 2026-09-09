@@ -177,3 +177,14 @@ powershell -ExecutionPolicy Bypass -File tools/server-manager/server-manager.ps1
 - バックエンドログ: `tools/server-manager/logs/backend.log`
 - フロントエンドログ: `tools/server-manager/logs/frontend.log`
 - ComfyUI ログ: WSL内の `~/comfyui.log`
+
+### Q4. WSL2 ComfyUI の状態判定・停止・再起動仕様
+- **ポート疎通判定 (`Test-PortOpen`)**:
+  WSL2 Mirrored モードや仮想ネットワーク環境下では Windows の `Get-NetTCPConnection` に LISTEN ソケットが直接現れない場合があります。`server-manager.ps1` は `Get-NetTCPConnection` に加え、`TcpClient` による 127.0.0.1 への接続試行フォールバックを備えており、WSL2 上で LISTEN 中の ComfyUI を確実に検出します。
+- **PID 補完 (`Get-WslComfyPids`)**:
+  Windows 側ポート所有者 PID が取得できない場合でも、WSL 内部で `pgrep -f 'python.*main.py'` を実行して Linux 側 PID を取得し、ステータス画面・JSON 出力に反映します。
+- **確実な停止・SIGKILL フォールバック**:
+  `Stop-ComfyUIProcess` は `pkill` による正常終了要求を送信した後、最大 5 秒間ポート解放（閉鎖）を監視します。時間内に閉鎖しない場合は `pkill -9`（SIGKILL）を自動送出して強制解放します。さらに、対話ウィンドウ起動時に生成された `cmd.exe`（ウィンドウタイトル `ComfyUI (WSL2)`）の残骸プロセスも一括クリーンアップします。
+- **安全な再起動 (`Restart-ServiceByName`)**:
+  停止から即座に起動する際のポート競合・レースコンディションを回避するため、ポートが完全に閉じたことをポーリング確認（`Wait-For-Port-Closed`）してから新規プロセスの起動を実行します。
+

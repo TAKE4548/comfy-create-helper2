@@ -19,10 +19,33 @@ if (-not (Test-Path $LOGS_DIR)) {
     New-Item -ItemType Directory -Path $LOGS_DIR | Out-Null
 }
 
+function Test-PortConnect ([string]$targetHost = "127.0.0.1", [int]$port, [int]$timeoutMs = 500) {
+    $tcp = New-Object System.Net.Sockets.TcpClient
+    try {
+        $ar = $tcp.BeginConnect($targetHost, $port, $null, $null)
+        $wait = $ar.AsyncWaitHandle.WaitOne($timeoutMs, $false)
+        if (-not $wait) {
+            return $false
+        }
+        $tcp.EndConnect($ar)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $tcp.Close()
+        $tcp.Dispose()
+    }
+}
+
 function Test-PortOpen ([int]$port) {
     $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq "Listen"
-    return ($null -ne $conn)
+    if ($null -ne $conn) {
+        return $true
+    }
+    return (Test-PortConnect -targetHost "127.0.0.1" -port $port -timeoutMs 500)
 }
+
+
 
 function Get-PidsFromPort ([int]$port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq "Listen"
@@ -111,6 +134,24 @@ function Wait-For-Port ([int]$port, [int]$timeoutSec = 15, [int]$retryCount = 0,
     return $false
 }
 
+function Wait-For-Port-Closed ([int]$port, [int]$timeoutSec = 10, [string]$serviceName = "") {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeoutMs = $timeoutSec * 1000
+    $namePrefix = if ($serviceName) { "[$serviceName] " } else { "" }
+
+    while ($sw.ElapsedMilliseconds -lt $timeoutMs) {
+        if (-not (Test-PortOpen $port)) {
+            $sw.Stop()
+            return $true
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $sw.Stop()
+    Write-Host "${namePrefix}Port $port did not close within ${timeoutSec}s." -ForegroundColor Yellow
+    return $false
+}
+
+
 function Wait-For-Service ([string]$serviceKey, [string]$displayName = "") {
     $key = $serviceKey.ToLower()
     $port = 0
@@ -145,14 +186,42 @@ function Stop-PortProcesses ([int]$port, [string]$name) {
     }
 }
 
+function Get-WslComfyPids {
+    $wslPrefix = Get-WslDistroPrefix
+    try {
+        $pidsRaw = Invoke-Expression "wsl $($wslPrefix)bash -c `"pgrep -f 'python.*main.py'`" 2>`$null"
+        if ($LASTEXITCODE -eq 0 -and $pidsRaw) {
+            $pids = @()
+            foreach ($line in ($pidsRaw -split "`r?`n")) {
+                $trimmed = $line.Trim()
+                if ($trimmed -match '^\d+$') {
+                    $pids += [int]$trimmed
+                }
+            }
+            if ($pids.Count -gt 0) {
+                return ,@($pids)
+            }
+        }
+    } catch {}
+    return ,@()
+}
+
 function Get-StatusObject {
     $fePids = Get-PidsFromPort $cfg.frontend.port
     $bePids = Get-PidsFromPort $cfg.backend.port
     $comfyPids = Get-PidsFromPort $cfg.wsl.port
 
+    $comfyOpen = Test-PortOpen $cfg.wsl.port
+    if ($comfyPids.Count -eq 0 -and $comfyOpen) {
+        $wslPids = Get-WslComfyPids
+        if ($wslPids.Count -gt 0) {
+            $comfyPids = $wslPids
+        }
+    }
+
     $feRunning = ($fePids.Count -gt 0)
     $beRunning = ($bePids.Count -gt 0)
-    $comfyRunning = ($comfyPids.Count -gt 0)
+    $comfyRunning = $comfyOpen -or ($comfyPids.Count -gt 0)
 
     return [PSCustomObject]@{
         fe = [PSCustomObject]@{
@@ -178,6 +247,7 @@ function Get-StatusObject {
         }
     }
 }
+
 
 function Show-Status {
     $statusObj = Get-StatusObject
@@ -251,8 +321,25 @@ function Stop-ComfyUIProcess {
     try {
         Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -f 'python.*main.py.*8188' || pkill -f 'python.*main.py'`" 2>`$null"
     } catch {}
+
+    $closed = Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI"
+    if (-not $closed) {
+        try {
+            Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -9 -f 'python.*main.py'`" 2>`$null"
+            Start-Sleep -Seconds 2
+        } catch {}
+    }
+
+    # クリーンアップ: ウィンドウ起動時の残骸 cmd.exe プロセスを回収
+    try {
+        Get-Process cmd -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*ComfyUI (WSL2)*" } | ForEach-Object {
+            & taskkill.exe /PID $_.Id /T /F 2>$null
+        }
+    } catch {}
+
     Stop-PortProcesses $cfg.wsl.port "ComfyUI"
 }
+
 
 function Start-BackendProcess ([bool]$asBackground) {
     if (Test-PortOpen $cfg.backend.port) {
@@ -339,21 +426,21 @@ function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
         "comfy" {
             Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow
             Stop-ComfyUIProcess
-            Start-Sleep -Seconds 1
+            Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI" | Out-Null
             Start-ComfyUIProcess $asBackground
             Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
         }
         "backend" {
             Write-Host "Restarting Backend..." -ForegroundColor Yellow
             Stop-BackendProcess
-            Start-Sleep -Seconds 1
+            Wait-For-Port-Closed -port $cfg.backend.port -timeoutSec 5 -serviceName "Backend" | Out-Null
             Start-BackendProcess $asBackground
             Wait-For-Service "backend" "Backend" | Out-Null
         }
         "frontend" {
             Write-Host "Restarting Frontend..." -ForegroundColor Yellow
             Stop-FrontendProcess
-            Start-Sleep -Seconds 1
+            Wait-For-Port-Closed -port $cfg.frontend.port -timeoutSec 5 -serviceName "Frontend" | Out-Null
             Start-FrontendProcess $asBackground
             Wait-For-Service "frontend" "Frontend" | Out-Null
         }
@@ -363,6 +450,7 @@ function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
     }
     Show-Status
 }
+
 
 function Toggle-Services ([bool]$asBackground) {
     $st = Get-StatusObject
