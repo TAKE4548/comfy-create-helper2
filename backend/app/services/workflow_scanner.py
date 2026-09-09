@@ -31,21 +31,28 @@ def _find_candidate_nodes(
     for node_id, node_data in workflow_json.items():
         if not isinstance(node_data, dict):
             continue
-        node_title = node_data.get("_meta", {}).get("title", "")
-        node_class_type = node_data.get("class_type", "")
+        meta = node_data.get("_meta")
+        node_title = meta.get("title", "") if isinstance(meta, dict) and isinstance(meta.get("title"), str) else ""
+        raw_class_type = node_data.get("class_type")
+        node_class_type = raw_class_type if isinstance(raw_class_type, str) else ""
 
         # 1. Check title_patterns match
         title_match = False
         for pattern in title_patterns:
+            if not isinstance(pattern, str):
+                continue
             p_clean = pattern.strip().lower()
-            if p_clean == node_title.strip().lower() or p_clean == node_class_type.strip().lower():
+            if p_clean == node_title.strip().lower() or (node_class_type and p_clean == node_class_type.strip().lower()):
                 title_match = True
                 break
 
         # 2. Check class type match
         class_type_match = False
-        if expected_class_types:
-            class_type_match = any(ct.strip().lower() == node_class_type.strip().lower() for ct in expected_class_types)
+        if expected_class_types and node_class_type:
+            class_type_match = any(
+                isinstance(ct, str) and ct.strip().lower() == node_class_type.strip().lower()
+                for ct in expected_class_types
+            )
 
         # 3. Check parameter name match (if class type also matches)
         param_match = False
@@ -54,12 +61,12 @@ def _find_candidate_nodes(
                 node_inputs = node_data.get("inputs", {})
                 if isinstance(node_inputs, dict):
                     for input_key in node_inputs.keys():
-                        if input_key.strip().lower() in param_names:
+                        if isinstance(input_key, str) and input_key.strip().lower() in param_names:
                             param_match = True
                             break
 
         if title_match or class_type_match or param_match:
-            candidates.append((node_id, node_class_type, node_title))
+            candidates.append((str(node_id), node_class_type, node_title))
     return candidates
 
 
@@ -109,8 +116,14 @@ def scan_workflow(workflow_json: dict, mapping_masters: list) -> dict:
         # Check if there is exactly one perfect match (class type AND title pattern match)
         perfect_matches = []
         for node_id, node_class_type, node_title in candidates:
-            class_type_ok = any(ct.strip().lower() == node_class_type.strip().lower() for ct in expected_class_types) if expected_class_types else True
-            title_ok = any(p.strip().lower() == node_title.strip().lower() for p in title_patterns) if title_patterns else False
+            class_type_ok = any(
+                isinstance(ct, str) and ct.strip().lower() == node_class_type.strip().lower()
+                for ct in expected_class_types
+            ) if expected_class_types and node_class_type else (not expected_class_types)
+            title_ok = any(
+                isinstance(p, str) and p.strip().lower() == node_title.strip().lower()
+                for p in title_patterns
+            ) if title_patterns and node_title else False
             if class_type_ok and title_ok:
                 perfect_matches.append((node_id, node_class_type, node_title))
 
