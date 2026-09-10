@@ -496,7 +496,13 @@ export function BatchSpeechTransformModal({
                         <div className="p-3 flex gap-3">
                           <div className="w-20 h-24 rounded-lg bg-surface overflow-hidden shrink-0 border border-[rgba(255,255,255,0.05)]">
                             {snap.thumbnail_path || snap.image_path ? (
-                              <img src={snap.thumbnail_path || snap.image_path!} alt="" className="w-full h-full object-cover" />
+                              <img
+                                src={snap.thumbnail_path || snap.image_path!}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                className="w-full h-full object-cover"
+                              />
                             ) : null}
                           </div>
                           <div className="flex-1 space-y-2 overflow-y-auto max-h-32 custom-scrollbar pr-1">

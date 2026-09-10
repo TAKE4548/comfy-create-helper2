@@ -48,7 +48,7 @@ export function TagSetFormFields({
       const res = await fetch('/api/snapshots/upload', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Upload failed')
       const data = await res.json()
-      setForm((f) => ({ ...f, thumbnail_path: data.image_path }))
+      setForm((f) => ({ ...f, thumbnail_path: data.thumbnail_path || data.image_path }))
     } catch (err) {
       console.error(err)
       alert('画像のアップロードに失敗しました')
@@ -354,7 +354,7 @@ export function TagSetEditModal({
       const res = await fetch('/api/snapshots/upload', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Upload failed')
       const data = await res.json()
-      setForm((f) => ({ ...f, thumbnail_path: data.image_path }))
+      setForm((f) => ({ ...f, thumbnail_path: data.thumbnail_path || data.image_path }))
     } catch (err) {
       console.error(err)
       alert('画像のアップロードに失敗しました')
@@ -644,7 +644,7 @@ export function TagSetDetailModal({
       const res = await fetch('/api/snapshots/upload', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Upload failed')
       const data = await res.json()
-      setForm((f) => ({ ...f, thumbnail_path: data.image_path }))
+      setForm((f) => ({ ...f, thumbnail_path: data.thumbnail_path || data.image_path }))
     } catch (err) {
       console.error(err)
       alert('画像のアップロードに失敗しました')

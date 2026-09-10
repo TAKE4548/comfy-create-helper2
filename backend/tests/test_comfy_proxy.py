@@ -166,4 +166,42 @@ class TestComfyProxyAPI(unittest.TestCase):
         self.assertEqual(res.json(), {"prompt-123": {"outputs": {"9": {"images": []}}}})
         mock_get.assert_called_once_with(f"{comfy_router.settings.comfy_url}/history/prompt-123", timeout=15.0)
 
+    @patch("httpx.AsyncClient.get")
+    def test_get_comfy_thumbnail_success(self, mock_get):
+        from PIL import Image
+        import io
+        img = Image.new("RGB", (512, 512), color="red")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = png_bytes
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        comfy_router._thumbnail_cache.clear()
+        res = self.client.get("/api/comfy/thumbnail?filename=test.png&size=128&quality=80")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("content-type"), "image/webp")
+        self.assertIn("max-age=604800", res.headers.get("cache-control", ""))
+
+        # 2回目: キャッシュヒット確認（mock_get が呼ばれないこと）
+        mock_get.reset_mock()
+        res2 = self.client.get("/api/comfy/thumbnail?filename=test.png&size=128&quality=80")
+        self.assertEqual(res2.status_code, 200)
+        mock_get.assert_not_called()
+
+    @patch("httpx.AsyncClient.get")
+    def test_get_comfy_thumbnail_not_found(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_get.return_value = mock_resp
+
+        comfy_router._thumbnail_cache.clear()
+        res = self.client.get("/api/comfy/thumbnail?filename=notfound.png")
+        self.assertEqual(res.status_code, 404)
+
+
 

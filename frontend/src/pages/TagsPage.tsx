@@ -201,7 +201,7 @@ export function TagsPage() {
       throw new Error('Upload failed')
     }
     const data = await res.json()
-    return data.image_path
+    return data.thumbnail_path || data.image_path
   }
 
   const handleCropComplete = async (blob: Blob) => {

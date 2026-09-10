@@ -426,6 +426,7 @@ export function AlbumDetailView({
                         src={item.thumbnail_path || item.image_path!}
                         alt=""
                         loading="lazy"
+                        decoding="async"
                         className="max-w-full max-h-full object-contain pointer-events-none"
                       />
                     ) : (

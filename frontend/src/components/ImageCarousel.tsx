@@ -57,6 +57,8 @@ export function ImageCarousel({
       <img
         src={images[activeIndex]}
         alt={`${alt} preview ${activeIndex + 1}`}
+        loading="lazy"
+        decoding="async"
         className="w-full h-full object-cover transition-all duration-300 pointer-events-none select-none"
       />
 

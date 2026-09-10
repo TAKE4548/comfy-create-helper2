@@ -1,8 +1,11 @@
 """ComfyUI proxy router."""
+import io
 import logging
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
+from PIL import Image
 from pydantic import BaseModel
 from app.config import settings
 
@@ -11,6 +14,8 @@ router = APIRouter(prefix="/api/comfy", tags=["comfy"])
 
 # インメモリキャッシュ
 _object_info_cache: Optional[Dict[str, Any]] = None
+_thumbnail_cache: OrderedDict[str, bytes] = OrderedDict()
+_THUMBNAIL_CACHE_MAX_SIZE = 500
 _client: Optional[httpx.AsyncClient] = None
 
 
@@ -218,4 +223,62 @@ async def manage_history(payload: HistoryActionRequest):
         )
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+@router.get("/thumbnail")
+async def get_comfy_thumbnail(
+    filename: str = Query(..., description="Image filename"),
+    subfolder: str = Query("", description="Subfolder name"),
+    type: str = Query("output", description="Image type (output/temp/input)"),
+    size: int = Query(256, ge=32, le=1024, description="Thumbnail max edge size in pixels"),
+    quality: int = Query(80, ge=10, le=100, description="WebP quality"),
+):
+    """ComfyUI 出力画像をオンデマンドで WebP サムネイルに変換して返却する。"""
+    cache_key = f"{type}:{subfolder}:{filename}:{size}:{quality}"
+    if cache_key in _thumbnail_cache:
+        _thumbnail_cache.move_to_end(cache_key)
+        return Response(
+            content=_thumbnail_cache[cache_key],
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+
+    client = get_comfy_client()
+    try:
+        resp = await client.get(
+            f"{settings.comfy_url}/view",
+            params={"filename": filename, "subfolder": subfolder, "type": type},
+            timeout=10.0,
+        )
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
+        resp.raise_for_status()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Failed to fetch image from ComfyUI view: {e}")
+        raise HTTPException(status_code=502, detail=f"ComfyUI view error: {e}")
+
+    try:
+        image = Image.open(io.BytesIO(resp.content))
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGBA")
+        image.thumbnail((size, size))
+        buf = io.BytesIO()
+        image.save(buf, format="WEBP", quality=quality)
+        webp_bytes = buf.getvalue()
+    except Exception as e:
+        logger.error(f"Thumbnail conversion failed for {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"Thumbnail conversion error: {e}")
+
+    _thumbnail_cache[cache_key] = webp_bytes
+    if len(_thumbnail_cache) > _THUMBNAIL_CACHE_MAX_SIZE:
+        _thumbnail_cache.popitem(last=False)
+
+    return Response(
+        content=webp_bytes,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
+
 

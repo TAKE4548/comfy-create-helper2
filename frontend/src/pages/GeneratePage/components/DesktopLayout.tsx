@@ -21,6 +21,7 @@ import { PromptTranslationModal } from './PromptTranslationModal'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { SaveAsTagSetModal } from './SaveAsTagSetModal'
 import { generateNextProfileName } from '../../../utils/profileUtils'
+import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 
 interface SetTabItemProps {
   id: string | number
@@ -800,8 +801,10 @@ export const DesktopLayout = ({
                                 }`}
                               >
                                 <img
-                                  src={img}
+                                  src={toThumbnailUrl(img)}
                                   alt={`Generated ${i + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="w-full h-full object-cover pointer-events-none select-none"
                                   style={{ WebkitTouchCallout: 'none' }}
                                 />
@@ -839,7 +842,17 @@ export const DesktopLayout = ({
                           <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
                             className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded-md border border-[rgba(255,255,255,0.06)] hover:border-accent-green/45 bg-surface-2/40 hover:bg-surface-2 transition-all h-[90%] aspect-[4/5] max-h-[140px] min-h-[64px] group">
                             <div className="flex-1 w-full rounded overflow-hidden bg-black/40 min-h-0">
-                              {snap.image_path || snap.thumbnail_path ? <img src={snap.thumbnail_path || snap.image_path!} alt="Snapshot" className="w-full h-full object-cover group-hover:scale-105 transition-transform" /> : <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={16} /></div>}
+                              {snap.image_path || snap.thumbnail_path ? (
+                                <img
+                                  src={snap.thumbnail_path || snap.image_path!}
+                                  alt="Snapshot"
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={16} /></div>
+                              )}
                             </div>
                             <span className="text-[9px] text-zinc-450 text-center truncate w-full font-mono flex-shrink-0 mt-1">{getPromptPrefix(snap.params) || `Snap #${snap.id}`}</span>
                           </button>
