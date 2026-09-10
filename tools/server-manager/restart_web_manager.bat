@@ -11,9 +11,10 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command ^
   "" ^
   "Write-Host '[1/4] Checking for existing Web Manager process on port ' -NoNewline; Write-Host $port -ForegroundColor Yellow;" ^
   "$conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq 'Listen';" ^
+  "$oldPids = @();" ^
   "if ($conns) {" ^
-  "    $pids = @($conns | Select-Object -ExpandProperty OwningProcess -Unique);" ^
-  "    foreach ($p in $pids) {" ^
+  "    $oldPids = @($conns | Select-Object -ExpandProperty OwningProcess -Unique);" ^
+  "    foreach ($p in $oldPids) {" ^
   "        Write-Host ('      Stopping PID ' + $p + '...') -ForegroundColor Yellow;" ^
   "        & taskkill.exe /PID $p /T /F 2>$null;" ^
   "        Stop-Process -Id $p -Force -ErrorAction SilentlyContinue;" ^
@@ -25,16 +26,28 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command ^
   "Write-Host '[2/4] Waiting for port ' -NoNewline; Write-Host $port -NoNewline -ForegroundColor Yellow; Write-Host ' to be released...';" ^
   "$sw = [System.Diagnostics.Stopwatch]::StartNew();" ^
   "$freed = $false;" ^
-  "while ($sw.ElapsedMilliseconds -lt 10000) {" ^
+  "while ($sw.ElapsedMilliseconds -lt 4000) {" ^
   "    $check = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq 'Listen';" ^
   "    if (-not $check) { $freed = $true; break; }" ^
   "    Start-Sleep -Milliseconds 500;" ^
-  "}; $sw.Stop();" ^
+  "};" ^
+  "if (-not $freed -and $oldPids.Count -gt 0) {" ^
+  "    Write-Host '      Standard kill failed (Process may be elevated). Requesting admin elevation...' -ForegroundColor Yellow;" ^
+  "    $pidArgs = ($oldPids | ForEach-Object { '/PID ' + $_ }) -join ' ';" ^
+  "    $elevateCmd = 'taskkill.exe ' + $pidArgs + ' /T /F';" ^
+  "    Start-Process -FilePath 'powershell.exe' -ArgumentList ('-Command ' + [char]34 + $elevateCmd + [char]34) -Verb RunAs -Wait -WindowStyle Hidden;" ^
+  "    Start-Sleep -Seconds 1;" ^
+  "    $check = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq 'Listen';" ^
+  "    if (-not $check) { $freed = $true; }" ^
+  "};" ^
+  "$sw.Stop();" ^
   "if (-not $freed) {" ^
-  "    Write-Host '      [WARNING] Port did not close within 10s. Attempting start anyway...' -ForegroundColor Yellow;" ^
-  "} else {" ^
-  "    Write-Host '      Port is free.' -ForegroundColor Green;" ^
+  "    Write-Host ('      [ERROR] Port ' + $port + ' could not be released. Existing PID(s): ' + ($oldPids -join ', ')) -ForegroundColor Red;" ^
+  "    Write-Host '      Please close the process manually or run this batch as Administrator.' -ForegroundColor Yellow;" ^
+  "    pause;" ^
+  "    exit 1;" ^
   "}" ^
+  "Write-Host '      Port is free.' -ForegroundColor Green;" ^
   "" ^
   "Write-Host '[3/4] Starting new Web Manager process...';" ^
   "$logsDir = Join-Path (Get-Location).Path 'logs';" ^
@@ -48,20 +61,31 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command ^
   "" ^
   "Write-Host '[4/4] Verifying Web Manager startup on port ' -NoNewline; Write-Host $port -NoNewline -ForegroundColor Yellow; Write-Host '...';" ^
   "$sw = [System.Diagnostics.Stopwatch]::StartNew();" ^
-  "$ready = $false;" ^
+  "$newPid = $null;" ^
   "while ($sw.ElapsedMilliseconds -lt 15000) {" ^
   "    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq 'Listen';" ^
-  "    if ($conn) { $ready = $true; break; }" ^
+  "    if ($conn) {" ^
+  "        $candidatePids = @($conn | Select-Object -ExpandProperty OwningProcess -Unique);" ^
+  "        foreach ($cp in $candidatePids) {" ^
+  "            if ($oldPids -notcontains $cp) {" ^
+  "                $newPid = $cp;" ^
+  "                break;" ^
+  "            } ^" ^
+  "        }" ^
+  "        if ($newPid) { break; }" ^
+  "    }" ^
   "    Start-Sleep -Milliseconds 500;" ^
-  "}; $sw.Stop();" ^
-  "if ($ready) {" ^
-  "    Write-Host '      Web Manager is successfully running!' -ForegroundColor Green;" ^
+  "};" ^
+  "$sw.Stop();" ^
+  "if ($newPid) {" ^
+  "    Write-Host ('      Web Manager is successfully running (PID: ' + $newPid + ')!') -ForegroundColor Green;" ^
   "    Write-Host '      Opening http://localhost:8899 in default browser...' -ForegroundColor Cyan;" ^
   "    Start-Process 'http://localhost:8899';" ^
   "    Write-Host 'Restart completed successfully.' -ForegroundColor Green;" ^
   "    Start-Sleep -Seconds 2;" ^
   "} else {" ^
-  "    Write-Host '      [ERROR] Web Manager failed to bind to port ' -NoNewline -ForegroundColor Red; Write-Host $port -ForegroundColor Yellow;" ^
+  "    Write-Host ('      [ERROR] Web Manager failed to bind to port ' + $port) -ForegroundColor Red;" ^
   "    Write-Host ('      Check error log: ' + $webLog) -ForegroundColor Yellow;" ^
   "    pause;" ^
+  "    exit 1;" ^
   "}"
