@@ -5,6 +5,7 @@ import socket
 import socketserver
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 # pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
@@ -16,7 +17,33 @@ if sys.stderr is None:
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 PS_SCRIPT = SCRIPT_DIR / "server-manager.ps1"
+LOGS_DIR = SCRIPT_DIR / "logs"
 PORT = 8899
+
+# Windows 非表示実行フラグ
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+def read_log_file(filename: str, tail_lines: int = 200) -> tuple[bool, str, int]:
+    target = LOGS_DIR / filename
+    if not target.exists():
+        return False, "ログファイルはまだ生成されていません (サービス未起動)", 0
+    try:
+        # UTF-8 で試行、ダメなら CP932 でフォールバック
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            try:
+                with open(target, "r", encoding="cp932") as f:
+                    lines = f.readlines()
+            except UnicodeDecodeError:
+                with open(target, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+        
+        tail = lines[-tail_lines:] if len(lines) > tail_lines else lines
+        return True, "".join(tail), len(lines)
+    except Exception as e:
+        return False, f"ログ読み込みエラー: {e}", 0
 
 def get_local_ip():
     try:
@@ -155,6 +182,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-size: 0.85rem;
       resize: vertical;
     }
+    .tab-btn {
+      background: #1e293b;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover:not(:disabled) {
+      background: #334155;
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #38bdf8;
+    }
   </style>
 </head>
 <body>
@@ -183,8 +230,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <div class="card" style="margin-bottom: 24px;">
-      <h2 class="section-title">実行ログ</h2>
-      <pre id="log-output">待機中...</pre>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <!-- タブヘッダー -->
+        <div class="tab-header" style="display: flex; gap: 6px;">
+          <button class="tab-btn active" data-service="backend" onclick="selectTab('backend')">🖥️ Win BE</button>
+          <button class="tab-btn" data-service="frontend" onclick="selectTab('frontend')">🌐 React FE</button>
+          <button class="tab-btn" data-service="comfy" onclick="selectTab('comfy')">⚡ WSL ComfyUI</button>
+          <button class="tab-btn" data-service="manager" onclick="selectTab('manager')">📋 Manager 操作</button>
+        </div>
+        <!-- コントロールバー -->
+        <div style="display: flex; align-items: center; gap: 12px; font-size: 0.82rem;">
+          <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+            <input type="checkbox" id="auto-refresh-log" checked> 🔄 ログ自動更新 (2s)
+          </label>
+          <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+            <input type="checkbox" id="auto-scroll-log" checked> ⬇ 最新追従
+          </label>
+          <select id="tail-lines-select" onchange="fetchLogs()" style="background: #020617; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;">
+            <option value="100">100行</option>
+            <option value="200" selected>200行</option>
+            <option value="500">500行</option>
+          </select>
+          <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.78rem;" onclick="fetchLogs()">🔄 今すぐ更新</button>
+        </div>
+      </div>
+
+      <!-- コンソール表示エリア -->
+      <pre id="log-output" style="max-height: 380px; height: 380px; overflow-y: auto; background: #050914; border: 1px solid var(--border); padding: 12px; border-radius: 6px; font-family: Consolas, monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-all; color: #e2e8f0;"></pre>
+      <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);">
+        <span id="log-status">待機中...</span>
+        <span id="log-updated">最終更新: -</span>
+      </div>
     </div>
 
     <div class="card">
@@ -202,6 +278,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const logOutput = document.getElementById('log-output');
     const configEditor = document.getElementById('config-editor');
     const lanUrlSpan = document.getElementById('lan-url');
+    const autoRefreshLog = document.getElementById('auto-refresh-log');
+    const autoScrollLog = document.getElementById('auto-scroll-log');
+    const tailSelect = document.getElementById('tail-lines-select');
+    const logStatus = document.getElementById('log-status');
+    const logUpdated = document.getElementById('log-updated');
+
+    let activeService = 'backend';
+    let actionLogContent = '待機中...';
 
     function setControlsDisabled(disabled) {
       const buttons = document.querySelectorAll('button');
@@ -210,13 +294,53 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       });
     }
 
+    function selectTab(service) {
+      activeService = service;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-service') === service);
+      });
+      fetchLogs();
+    }
+
+    async function fetchLogs() {
+      if (activeService === 'manager') {
+        logOutput.textContent = actionLogContent;
+        logStatus.textContent = "Manager 実行ログ表示中";
+        logUpdated.textContent = "最終更新: " + new Date().toLocaleTimeString();
+        if (autoScrollLog.checked) logOutput.scrollTop = logOutput.scrollHeight;
+        return;
+      }
+
+      const tail = tailSelect.value;
+      try {
+        const res = await fetch(`/api/logs?service=${activeService}&tail=${tail}`);
+        const data = await res.json();
+        if (data.error) {
+          logStatus.textContent = data.error;
+          return;
+        }
+        const wasAtBottom = logOutput.scrollHeight - logOutput.scrollTop - logOutput.clientHeight < 40;
+        logOutput.textContent = data.content || "(出力なし)";
+        logStatus.textContent = `${data.filename} (${data.lines}行中 末尾表示)`;
+        logUpdated.textContent = "最終更新: " + new Date().toLocaleTimeString();
+        if (autoScrollLog.checked && wasAtBottom) {
+          logOutput.scrollTop = logOutput.scrollHeight;
+        }
+      } catch (err) {
+        logStatus.textContent = "ログ取得エラー: " + err;
+      }
+    }
+
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
         renderServices(data);
       } catch (err) {
-        logOutput.textContent = "Error fetching status: " + err;
+        if (activeService === 'manager') {
+          actionLogContent = "Error fetching status: " + err;
+          logOutput.textContent = actionLogContent;
+        }
       }
     }
 
@@ -246,7 +370,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     async function triggerAction(action, service = '') {
       setControlsDisabled(true);
-      logOutput.textContent = `Action '${action}' ${service ? `for service '${service}' ` : ''}executing...`;
+      actionLogContent = `Action '${action}' ${service ? `for service '${service}' ` : ''}executing...`;
+      if (activeService === 'manager') {
+        logOutput.textContent = actionLogContent;
+      }
       try {
         const res = await fetch('/api/action', {
           method: 'POST',
@@ -254,10 +381,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           body: JSON.stringify({ action, service })
         });
         const data = await res.json();
-        logOutput.textContent = data.output || `Action '${action}' completed.`;
+        actionLogContent = data.output || `Action '${action}' completed.`;
+        if (activeService === 'manager') {
+          logOutput.textContent = actionLogContent;
+        }
         await fetchStatus();
+        if (activeService !== 'manager') {
+          await fetchLogs();
+        }
       } catch (err) {
-        logOutput.textContent = "Error executing action: " + err;
+        actionLogContent = "Error executing action: " + err;
+        if (activeService === 'manager') {
+          logOutput.textContent = actionLogContent;
+        }
       } finally {
         setControlsDisabled(false);
       }
@@ -269,7 +405,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const data = await res.json();
         configEditor.value = JSON.stringify(data, null, 2);
       } catch (err) {
-        logOutput.textContent = "Error loading config: " + err;
+        actionLogContent = "Error loading config: " + err;
+        if (activeService === 'manager') {
+          logOutput.textContent = actionLogContent;
+        }
       }
     }
 
@@ -282,9 +421,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           body: JSON.stringify(parsed)
         });
         const data = await res.json();
-        logOutput.textContent = data.message || "Config saved.";
+        actionLogContent = data.message || "Config saved.";
+        if (activeService === 'manager') {
+          logOutput.textContent = actionLogContent;
+        }
       } catch (err) {
-        logOutput.textContent = "Invalid JSON or save failed: " + err;
+        actionLogContent = "Invalid JSON or save failed: " + err;
+        if (activeService === 'manager') {
+          logOutput.textContent = actionLogContent;
+        }
       }
     }
 
@@ -294,7 +439,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     fetchStatus();
     loadConfig();
+    fetchLogs();
     setInterval(fetchStatus, 5000);
+    setInterval(() => {
+      if (autoRefreshLog && autoRefreshLog.checked && activeService !== 'manager') {
+        fetchLogs();
+      }
+    }, 2000);
   </script>
 </body>
 </html>
@@ -313,7 +464,7 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/status":
             res = subprocess.run(
                 ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", "status", "-Json"],
-                capture_output=True, text=True
+                capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
             )
             try:
                 self._send_json(json.loads(res.stdout.strip() or "{}"))
@@ -325,6 +476,39 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json(json.load(f))
             except Exception as e:
                 self._send_json({"error": str(e)}, status=500)
+        elif self.path.startswith("/api/logs"):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            service = params.get("service", ["backend"])[0].lower()
+            tail_str = params.get("tail", ["200"])[0]
+            try:
+                tail = max(10, min(1000, int(tail_str)))
+            except ValueError:
+                tail = 200
+
+            service_file_map = {
+                "backend": "backend.log",
+                "be": "backend.log",
+                "frontend": "frontend.log",
+                "fe": "frontend.log",
+                "comfy": "comfy.log",
+                "wsl": "comfy.log",
+                "manager": "web_manager.log"
+            }
+
+            filename = service_file_map.get(service)
+            if not filename:
+                self._send_json({"error": f"Unknown service: {service}"}, status=400)
+                return
+
+            exists, content, total_lines = read_log_file(filename, tail)
+            self._send_json({
+                "service": service,
+                "filename": filename,
+                "exists": exists,
+                "lines": total_lines,
+                "content": content
+            })
         else:
             body = HTML_TEMPLATE.encode("utf-8")
             self.send_response(200)
@@ -344,7 +528,7 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                 cmd.append("-Background")
             if service:
                 cmd += ["-Service", service]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
             self._send_json({
                 "status": "ok",
                 "action": action,

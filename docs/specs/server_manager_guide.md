@@ -80,7 +80,9 @@ networkingMode=mirrored
    - 連打防止ロック：アクション実行中は画面上の全操作ボタンが一時的に無効化（disabled）され、二重送信やレースコンディションを防止
    - 同一 LAN 内アクセス：ヘッダー部に `LAN: http://<LAN-IP>:8899` バッジを表示。`tools/server-manager/allow_firewall_8899.bat` を実行（管理者権限）して Windows Defender ファイアウォールを開放することで、LAN 内の他端末（スマホやタブレット）からブラウザで一元管理可能
    - `config.json` のオンライン閲覧・編集・即時保存
-   - 実行ログコンソール
+   - タブ別コンソール出力エリア：
+     - **[Win BE]** / **[React FE]** / **[WSL ComfyUI]** / **[Manager 操作]** の 4 つのタブで各サービスの標準出力/エラーログを切り替え表示
+     - 2秒ごとの自動更新、最新ログへの自動追従（スクロール位置が上部の場合は追従を維持）、表示行数（100 / 200 / 500行）の切り替え、今すぐ更新ボタンを完備
 
 ---
 
@@ -176,7 +178,9 @@ powershell -ExecutionPolicy Bypass -File tools/server-manager/server-manager.ps1
 ### Q3. バックグラウンド起動時のログを確認したい
 - バックエンドログ: `tools/server-manager/logs/backend.log`
 - フロントエンドログ: `tools/server-manager/logs/frontend.log`
-- ComfyUI ログ: WSL内の `~/comfyui.log`
+- ComfyUI ログ: `tools/server-manager/logs/comfy.log`（フォールバック: WSL内の `~/comfyui.log`）
+
+Web Manager（http://localhost:8899）上のタブ別コンソール出力エリアからもリアルタイムに確認できます。
 
 ### Q4. WSL2 ComfyUI の状態判定・停止・再起動仕様
 - **ポート疎通判定 (`Test-PortOpen`)**:

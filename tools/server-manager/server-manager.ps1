@@ -19,6 +19,19 @@ if (-not (Test-Path $LOGS_DIR)) {
     New-Item -ItemType Directory -Path $LOGS_DIR | Out-Null
 }
 
+function Start-ProcessNoWindow ([string]$filePath, [string]$arguments, [string]$workingDirectory = "") {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $filePath
+    $psi.Arguments = $arguments
+    if ($workingDirectory) {
+        $psi.WorkingDirectory = $workingDirectory
+    }
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $psi.CreateNoWindow = $true
+    $psi.UseShellExecute = $false
+    return [System.Diagnostics.Process]::Start($psi)
+}
+
 function Test-PortConnect ([string]$targetHost = "127.0.0.1", [int]$port, [int]$timeoutMs = 500) {
     $tcp = New-Object System.Net.Sockets.TcpClient
     try {
@@ -310,7 +323,8 @@ function Start-ComfyUIProcess ([bool]$asBackground) {
     $cmdStr = "cd $($cfg.wsl.project_dir) && if [ -f '$($cfg.wsl.venv_activate)' ]; then source $($cfg.wsl.venv_activate); fi && cd $($cfg.wsl.comfy_dir) && export PYTORCH_HIP_ALLOC_CONF='$($cfg.wsl.env_vars.PYTORCH_HIP_ALLOC_CONF)' && $($cfg.wsl.start_command)"
 
     if ($asBackground) {
-        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c wsl $($wslPrefix)bash -c `"$cmdStr`"" -WindowStyle Hidden
+        $logFile = Join-Path $LOGS_DIR "comfy.log"
+        Start-ProcessNoWindow "cmd.exe" "/c wsl $($wslPrefix)bash -c `"$cmdStr`" > `"$logFile`" 2>&1"
     } else {
         Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl $($wslPrefix)bash -c `"$cmdStr`""
     }
@@ -363,7 +377,7 @@ function Start-BackendProcess ([bool]$asBackground) {
 
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "backend.log"
-        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c run_server.bat > `"$logFile`" 2>&1" -WorkingDirectory $beDir -WindowStyle Hidden
+        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat > `"$logFile`" 2>&1" $beDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat" -WorkingDirectory $beDir
     }
@@ -399,7 +413,7 @@ function Start-FrontendProcess ([bool]$asBackground) {
 
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "frontend.log"
-        Start-Process -FilePath "conhost.exe" -ArgumentList "cmd.exe /c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" -WorkingDirectory $feDir -WindowStyle Hidden
+        Start-ProcessNoWindow "cmd.exe" "/c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" $feDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Frontend && $($cfg.frontend.start_cmd)" -WorkingDirectory $feDir
     }
@@ -484,8 +498,13 @@ function Toggle-Services ([bool]$asBackground) {
 function Show-Logs ([string]$name) {
     switch ($name.ToLower()) {
         "comfy" {
-            $wslPrefix = Get-WslDistroPrefix
-            Invoke-Expression "wsl $($wslPrefix)tail -n 50 ~/comfyui.log"
+            $cLog = Join-Path $LOGS_DIR "comfy.log"
+            if (Test-Path $cLog) {
+                Get-Content $cLog -Tail 50
+            } else {
+                $wslPrefix = Get-WslDistroPrefix
+                Invoke-Expression "wsl $($wslPrefix)tail -n 50 ~/comfyui.log"
+            }
         }
         "backend" {
             $logFile = Join-Path $LOGS_DIR "backend.log"
@@ -496,6 +515,9 @@ function Show-Logs ([string]$name) {
             if (Test-Path $logFile) { Get-Content $logFile -Tail 50 } else { Write-Host "No frontend.log found" }
         }
         default {
+            Write-Host "=== ComfyUI Log ===" -ForegroundColor Cyan
+            $cLog = Join-Path $LOGS_DIR "comfy.log"
+            if (Test-Path $cLog) { Get-Content $cLog -Tail 20 }
             Write-Host "=== Backend Log ===" -ForegroundColor Cyan
             $bLog = Join-Path $LOGS_DIR "backend.log"
             if (Test-Path $bLog) { Get-Content $bLog -Tail 20 }
