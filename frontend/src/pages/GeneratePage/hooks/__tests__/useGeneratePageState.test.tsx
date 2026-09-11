@@ -57,7 +57,10 @@ vi.mock('../../../../store/useGenerationStore', () => {
     queuePending: [],
     openPresetIds: [10],
     openPreset: vi.fn(),
-    closePreset: vi.fn(),
+    promptChips: {},
+    setPromptChips: vi.fn(),
+    setAllPromptChips: vi.fn(),
+    getEffectiveParamValues: vi.fn(),
     fetchParamSyncGroups: vi.fn(),
   }
   return {
@@ -729,6 +732,85 @@ describe('useGeneratePageState', () => {
           positive_prompt: 'masterpiece, best quality, 1girl, blue eyes',
         }),
       }))
+    })
+
+    it('should immediately synchronize promptChips and sets in handleBulkEditApply', async () => {
+      const mockPreset: WorkflowPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { positive_prompt: 'masterpiece, best quality' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-29T12:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([mockPreset])
+      vi.mocked(workflowPresetsApi.update).mockResolvedValueOnce({
+        ...mockPreset,
+        param_values: { positive_prompt: 'solo, smile, 1girl' },
+      })
+
+      const store = useGenerationStore()
+      store.sets = [
+        {
+          id: 10,
+          name: 'Preset 1',
+          paramValues: { positive_prompt: 'masterpiece, best quality' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ]
+
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
+
+      act(() => {
+        result.current.handleBulkEditRequest([10])
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          promptOps: [
+            {
+              op: 'overwrite',
+              fields: ['positive_prompt'],
+              value: 'solo, smile, 1girl',
+            },
+          ],
+        })
+      })
+
+      expect(store.setSets).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            promptChips: expect.objectContaining({
+              positive_prompt: expect.arrayContaining([
+                expect.objectContaining({ text: 'solo' }),
+                expect.objectContaining({ text: 'smile' }),
+                expect.objectContaining({ text: '1girl' }),
+              ]),
+            }),
+          }),
+        ])
+      )
+      expect(store.setAllPromptChips).toHaveBeenCalledWith(
+        expect.objectContaining({
+          positive_prompt: expect.arrayContaining([
+            expect.objectContaining({ text: 'solo' }),
+            expect.objectContaining({ text: 'smile' }),
+            expect.objectContaining({ text: '1girl' }),
+          ]),
+        })
+      )
     })
   })
 })

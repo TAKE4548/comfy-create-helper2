@@ -166,6 +166,7 @@ export interface MultiSetActions {
   setSelectedWorkflowId: (id: number | null) => void;
   setParamValues: (values: Record<string, string>) => void;
   setPromptChips: (role: string, chips: TagChip[]) => void;
+  setAllPromptChips: (promptChips: Record<string, TagChip[]>) => void;
   getEffectiveParamValues: () => Record<string, string>;
   addAppliedAsset: (role: string, asset: Omit<AppliedAsset, 'id' | 'enabled'>) => void;
   removeAppliedAsset: (role: string, id: string) => void;

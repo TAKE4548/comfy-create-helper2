@@ -7,6 +7,7 @@ import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { getInitialParams } from './useWorkflowParams'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { prependToPrompt, appendToPrompt } from '../../../utils/promptUtils'
+import { parseToChips, TagChip } from '../../../components/TagChipEditor/useChipParser'
 
 export interface HistoryState {
   paramValues: Record<string, string>
@@ -453,33 +454,80 @@ export function usePresetState({
             presetUpdatedAtRef.current[res.id] = res.updated_at
           }
 
-          if (String(preset.id) === String(activeSetId)) {
-            lastSavedStateRef.current[preset.id] = {
-              paramValues: newParamValues,
-              appliedAssets: newAppliedAssets,
-              batchSize: newBatchSize ?? 1,
-              seedMode: (preset.seed_mode as 'random' | 'fixed') || 'random',
-              seed: preset.seed !== undefined ? preset.seed : 42,
-            }
-            setParamValues(newParamValues)
-            setAppliedAssets(newAppliedAssets)
-            if (newBatchSize !== undefined) {
-              setBatchSize(newBatchSize)
-            }
-            updateActiveSet({
-              paramValues: newParamValues,
-              appliedAssets: newAppliedAssets,
-              batchSize: newBatchSize,
-            })
-          }
           return res
         })
       )
 
+      const defaultParams = workflow ? getInitialParams(workflow) : {}
+      const resultMap = new Map(updatedResults.map((p) => [p.id, p]))
+
+      // 1. 開いている sets 配列内に含まれる更新プリセットを一括同期
+      const currentSets = storeRef.current.sets || []
+      const updatedSets = currentSets.map((s) => {
+        const updatedPreset = resultMap.get(Number(s.id))
+        if (!updatedPreset) return s
+
+        const mergedParams = { ...defaultParams, ...(updatedPreset.param_values || {}) }
+        const chips: Record<string, TagChip[]> = {}
+        for (const [role, val] of Object.entries(mergedParams)) {
+          if (val) {
+            chips[role] = parseToChips(val)
+          }
+        }
+        return {
+          ...s,
+          name: updatedPreset.name || s.name,
+          paramValues: mergedParams,
+          appliedAssets: updatedPreset.applied_assets || {},
+          batchSize: updatedPreset.batch_size ?? s.batchSize,
+          seedMode: (updatedPreset.seed_mode as 'random' | 'fixed') || s.seedMode,
+          seed: updatedPreset.seed !== undefined ? updatedPreset.seed : s.seed,
+          promptChips: chips,
+        }
+      })
+      storeRef.current.setSets?.(updatedSets)
+
+      // 2. アクティブプリセットが含まれていた場合、個別ステートおよび promptChips を即時同期
+      const activeUpdatedPreset = updatedResults.find(
+        (p) => String(p.id) === String(activeSetId)
+      )
+      if (activeUpdatedPreset) {
+        const mergedParams = { ...defaultParams, ...(activeUpdatedPreset.param_values || {}) }
+        const initialPromptChips: Record<string, TagChip[]> = {}
+        for (const [role, val] of Object.entries(mergedParams)) {
+          if (val) {
+            initialPromptChips[role] = parseToChips(val)
+          }
+        }
+
+        lastSavedStateRef.current[activeUpdatedPreset.id] = {
+          paramValues: mergedParams,
+          appliedAssets: activeUpdatedPreset.applied_assets || {},
+          batchSize: activeUpdatedPreset.batch_size ?? 1,
+          seedMode: (activeUpdatedPreset.seed_mode as 'random' | 'fixed') || 'random',
+          seed: activeUpdatedPreset.seed !== undefined ? activeUpdatedPreset.seed : 42,
+        }
+
+        setParamValues(mergedParams)
+        setAppliedAssets(activeUpdatedPreset.applied_assets || {})
+        if (activeUpdatedPreset.batch_size !== undefined) {
+          setBatchSize(activeUpdatedPreset.batch_size)
+        }
+        if (activeUpdatedPreset.seed_mode) {
+          setSeedMode(activeUpdatedPreset.seed_mode as 'random' | 'fixed')
+        }
+        if (activeUpdatedPreset.seed !== undefined) {
+          setSeed(activeUpdatedPreset.seed)
+        }
+
+        // 全ロールの promptChips を一括更新
+        storeRef.current.setAllPromptChips?.(initialPromptChips)
+      }
+
       qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
         if (!old) return old
-        const resultMap = new Map(updatedResults.map((p) => [p.id, p]))
-        return old.map((p) => resultMap.get(p.id) ?? p)
+        const resMap = new Map(updatedResults.map((p) => [p.id, p]))
+        return old.map((p) => resMap.get(p.id) ?? p)
       })
 
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })

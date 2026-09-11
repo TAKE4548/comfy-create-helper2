@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useGenerationStore } from '../../useGenerationStore';
 import { getEffectiveParamValues, chipsToString, areChipsEqual } from '../../slices/multiSetSlice';
 import type { TagChip } from '../../../components/TagChipEditor/useChipParser';
@@ -224,5 +224,25 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
     expect(updatedSet?.promptChips?.positive?.length).toBe(3);
     expect(updatedSet?.promptChips?.positive?.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
     expect(state.promptChips.positive.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
+  });
+
+  it('setAllPromptChips updates promptChips and active set', () => {
+    useGenerationStore.getState().initSets(1);
+    const chips: Record<string, TagChip[]> = {
+      positive: [
+        { id: '1', text: 'masterpiece', enabled: true },
+        { id: '2', text: '1girl', enabled: true },
+      ],
+      negative: [
+        { id: '3', text: 'worst quality', enabled: true },
+      ],
+    };
+
+    useGenerationStore.getState().setAllPromptChips(chips);
+
+    const state = useGenerationStore.getState();
+    expect(state.promptChips).toEqual(chips);
+    const activeSet = state.sets.find((s) => s.id === state.activeSetId);
+    expect(activeSet?.promptChips).toEqual(chips);
   });
 });

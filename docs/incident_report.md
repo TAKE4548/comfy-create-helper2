@@ -1,59 +1,80 @@
-# インシデントレポート: REQ-242 適用後も挙動が変わらない現象に関する調査報告
+# インシデントレポート: プリセット一括編集後にアクティブプリセットのプロンプト変更がUIに即時反映されない不具合
 
 ## 1. 事象概要 (Overview)
 
-PBI REQ-242（「Service Manager ターミナルバックグラウンド起動とタブ別コンソール出力表示」コミット `d218af1`）の完了後、ユーザーより「242をやったのに挙動が特に変わっていない」「1（Web Manager）はさっきrebootしたはず」との報告を受理。
-ログおよび実機プロセスの詳細追跡を行った結果、**ユーザーが実行した `restart_web_manager.bat` において旧プロセスの停止（kill）が失敗していたにもかかわらず、バッチ側の誤判定ロジックにより「再起動成功」と表示されて旧プロセスがそのまま残り続けていたこと**、および **バッチファイル起動時のバックグラウンド引数不整合** が判明した。
+プリセットの一括編集（Bulk Edit）機能においてプロンプトを編集した際、一括編集の対象に「現在アクティブになっているプリセット」が含まれていると、一括編集完了後に GeneratePage に戻っても編集前のプロンプト（チップ表示等）が維持され続ける。
+一方、一度別のプリセットタブをアクティブにしてから再度対象プリセットに戻ると、編集後のプロンプトが正常に反映される。
+
+調査の結果、バックエンドへの更新リクエストおよび TanStack Query キャッシュの更新は正常に完了しているものの、**フロントエンドのローカル状態管理（`usePresetState.ts`）におけるアクティブプリセットの同期処理において、プロンプトのチップ表現（`promptChips`）のパース・更新処理および開いているタブセット（`sets`）への同期が欠落していること**が判明した。
 
 ---
 
 ## 2. 観測ログおよび実機追跡結果 (Observed Evidence & Log Citations)
 
-### 2.1 Web Manager ログ (`tools/server-manager/logs/web_manager.log`)
-ユーザーが再起動を実施した直後のタイムスタンプ（`2026/09/10 21:28:35`）にて、以下の起動失敗ログを検知：
-```text
-Traceback (most recent call last):
-  File "tools/server-manager/server_api.py", line 569, in <module>
-    run_server()
-  File "tools/server-manager/server_api.py", line 558, in run_server
-    with ThreadedTCPServer(server_address, ManagerHandler) as httpd:
-  File "<python_lib>/socketserver.py", line 457, in __init__
-    self.server_bind()
-  File "<python_lib>/socketserver.py", line 473, in server_bind
-    self.socket.bind(self.server_address)
-PermissionError: [WinError 10013] アクセス許可で禁じられた方法でソケットにアクセスしようとしました。
-```
+### 2.1 アプリケーションログ追跡 (`logs/app.jsonl`)
+`scripts/inspect_logs.py` を用いて直近ログを調査：
+- `python scripts/inspect_logs.py --summary`
+  - Total Entries: 1065 (INFO: 1063, ERROR: 2)
+- `python scripts/inspect_logs.py --errors --tail 10`
+  - 直近のエラーは開発過渡期の 00:07:41 `useRef is not defined`（現在は解消済み）のみ。
+- **結論**:
+  一括編集実行時および画面復帰時において、バックエンド・フロントエンドともにランタイムエラーや例外ログは一切記録されていない。本現象はエラーを伴わない「メモリ内状態同期の不整合（サイレントな不整合）」である。
 
-### 2.2 プロセス状態の追跡 (ポート 8899)
-- **リッスンプロセス**: PID `29248` (`python.exe`)
-- **プロセス開始時刻 (StartTime)**: **`2026/09/09 21:53:20`**（昨日起動されたまま）
-- **事象のメカニズム**:
-  1. 既存の PID 29248 はタスクスケジューラ等（最高特権/別コンテキスト）で常駐していたため、非昇格で実行された `restart_web_manager.bat` の `taskkill /PID 29248 /F` および `Stop-Process` では権限不足（アクセス拒否）により停止できなかった。
-  2. `restart_web_manager.bat` はエラー出力を破棄（`2>$null`, `-ErrorAction SilentlyContinue`）していたため、停止失敗を検知できず警告を出しつつ起動ステップへ進行した。
-  3. 新たに起動された `server_api.py` は、旧プロセス（PID 29248）がポート 8899 を占有していたため `PermissionError: [WinError 10013]` で即座にクラッシュした（上記ログ）。
-  4. `restart_web_manager.bat` の完了判定（ステップ4）は「ポート 8899 が LISTEN しているか」のみをチェックしていたため、**死なずにリッスンし続けていた旧プロセス（PID 29248）を検知して「再起動完了」と誤判定し、ブラウザを開いた**。
-  5. 結果として、ユーザーの画面には昨日の古いコード（タブなし、旧UI）がそのまま配信され続けていた。
+### 2.2 フロントエンド状態管理の追跡結果
+1. **`usePresetState.ts` の `handleBulkEditApply` (L456-L474)**:
+   - サーバー更新成功後、アクティブプリセットに対して以下を実行している：
+     ```typescript
+     if (String(preset.id) === String(activeSetId)) {
+       lastSavedStateRef.current[preset.id] = { ... }
+       setParamValues(newParamValues)
+       setAppliedAssets(newAppliedAssets)
+       if (newBatchSize !== undefined) setBatchSize(newBatchSize)
+       updateActiveSet({
+         paramValues: newParamValues,
+         appliedAssets: newAppliedAssets,
+         batchSize: newBatchSize,
+       })
+     }
+     ```
+   - **欠落点**: `paramValues`（文字列辞書）は更新されているが、UIコンポーネントが直接参照している `promptChips`（タグチップ配列辞書）のパースおよび更新（`setPromptChips`）が一切呼ばれていない。また、`updateActiveSet` にも `promptChips` が渡されていない。
+   - さらに、一括編集の対象となった他の開いているタブ（`sets` 内の他プリセット）に対する状態更新も行われていない。
 
-### 2.3 アプリケーションログ (`logs/app.jsonl`)
-- `scripts/inspect_logs.py --summary` および `--tail 5` による確認結果：
-  - `[2026-09-10T21:28:58.006+09:00] [INFO ] [backend ] [app.main] Prompt Surgeon API started.`
-  - バックエンドサーバー自体は 21:28:58 に正常に起動・動作している。
+2. **UI レンダリングと `TagChipEditor` のキー (DesktopLayout L610-L614, MobileLayout L724)**:
+   - `TagChipEditor` は `key={`${activeSetId}-${m.role!}`}` でマウントされている。
+   - 一括編集前と後で `activeSetId` は変化しないため、コンポーネントの再マウント（アンマウント＆初期化）は発生しない。
+   - `TagChipEditor` に渡される props は `value={paramValues[m.role!]}`（更新後文字列）と `chips={promptChips?.[m.role!]}`（**未更新の古いチップ配列**）である。
+   - `TagChipEditor` 内部（`index.tsx` L140-L160）では、外部からの `value` 変更検知時に `isExternalUpdateRef.current = true` となり、親ストアへの `onChipsChange` 発火が抑止される設計となっているため、Zustand ストア内の `promptChips` は古いチップ配列のまま残存する。
+
+3. **生成処理への波及 (`multiSetSlice.ts` L22-L33 `getEffectiveParamValues`)**:
+   - 画像生成時にプロンプトを構築する `getEffectiveParamValues()` は、`promptChips` に要素が存在する場合、`paramValues` よりも `promptChips` の文字列表現（`chipsToString(chips)`）を優先して採用する。
+   - したがって、ストア内の `promptChips` が更新されない限り、一括編集後であっても古いプロンプトで画像生成が行われてしまう。
+
+4. **別プリセット切り替えで反映される理由 (`multiSetSlice.ts` L286-L356 `loadPresetData`)**:
+   - 別のプリセットタブをクリックして再度元のプリセットをクリックすると、`handleLoadPreset` から `loadPresetData` が実行される。
+   - `loadPresetData` は `parseToChips(val)` を呼び出して最新の `param_values` から `initialPromptChips` を構築し、`paramValues` と `promptChips` の双方をストアおよび `sets` に正しくセットする。
+   - 同時に `activeSetId` の変更に伴い `TagChipEditor` の `key` が変わり、再マウントされて最新のチップが表示される。
+
+5. **自動同期機構のバイパス (`usePresetState.ts` L453, L808-L850)**:
+   - `handleBulkEditApply` の L453 で `presetUpdatedAtRef.current[res.id] = res.updated_at` が即座に代入されている。
+   - これにより、クエリキャッシュ無効化後にバックグラウンドで走る同期エフェクト（L811: `activePreset.updated_at !== prevUpdatedAt`）が `false` と判定され、サーバー最新状態との自動同期（`loadPresetData` の呼び出し）がバイパスされている。
 
 ---
 
 ## 3. 再現手順と観測された挙動 (Reproduction Steps)
 
-### 事象 1: Web Manager 再起動の擬似成功と旧プロセス残存
-1. `tools/server-manager/restart_web_manager.bat` を実行する。
-2. 画面上には「Stopping PID 29248...」「Port did not close within 10s. Attempting start anyway...」「Restart completed successfully.」と表示され、ブラウザで `http://localhost:8899` が開く。
-3. **観測挙動**:
-   - 再起動が成功したように見えるが、ブラウザに表示される画面は REQ-242 適用前の旧 UI（単一ログ枠、タブなし）のままである。
-   - `logs/web_manager.log` に `WinError 10013` が出力され、PID 29248（2026/09/09 21:53:20 起動）が終了していない。
+### 再現手順
+1. GeneratePage を開き、任意のプリセット（例:「Preset A」）をアクティブにする。Positive Prompt に任意のタグ（例: `masterpiece, 1girl, solo`）が設定されていることを確認する。
+2. プリセット管理パネルを開き、「Preset A」を含む複数のプリセットを選択して「一括編集」を押下する。
+3. 一括編集モーダルにて、プロンプトの編集（例: サフィックス追加 `, high quality`）を設定し、「適用」を押下する。
+4. 一括編集完了後、プリセット管理パネルを閉じて GeneratePage のメイン画面に戻る。
 
-### 事象 2: バッチファイル（`start_servers.bat` 等）からの利用時
-1. `tools/server-manager/start_servers.bat` を実行する。
-2. **観測挙動**:
-   - デスクトップ上に 3 つの黒いターミナルウィンドウ（Backend, Frontend, ComfyUI）が前面に立ち上がって残り続ける。
+### 観測された挙動
+- **実際の挙動（不具合）**:
+  - 画面上の Positive Prompt（`TagChipEditor`）には一括編集前のプロンプト（`masterpiece, 1girl, solo`）が表示されたまま維持される。
+  - そのまま「生成」ボタンを押下した場合も、編集前のプロンプトで生成が実行される。
+  - 別のプリセットタブを選択した後に再度「Preset A」のタブを選択すると、一括編集で追加した `, high quality` が反映された状態に変化する。
+- **本来期待される挙動**:
+  - 一括編集が完了してメイン画面に戻った時点で、アクティブプリセットのプロンプト表示およびストア内のチップ・パラメータが即座に最新状態に同期・反映されること。
 
 ---
 
@@ -61,21 +82,23 @@ PermissionError: [WinError 10013] アクセス許可で禁じられた方法で�
 
 | # | 分類 | 対象ファイル | 該当行/箇所 | 詳細 |
 |---|---|---|---|---|
-| 1 | プロセス終了失敗の隠蔽と誤判定 | `tools/server-manager/restart_web_manager.bat` | L18-L19, L33-L37, L53-L61 | `taskkill` の失敗を黙殺。ポート未解放でも続行し、旧プロセスがポートを占有しているだけで「再起動成功」と誤判定してブラウザを開く。 |
-| 2 | バッチ引数の `-Background` 欠落 | `tools/server-manager/start_servers.bat` | L4: `powershell.exe ... -Action start` | `-Background` スイッチが付与されていないため、`server-manager.ps1` の `$Background` が `$false` となり、明示的なウィンドウ起動（`cmd.exe /k`）が実行される。 |
-| 3 | トグルバッチの `-Background` 欠落 | `tools/server-manager/toggle_servers.bat` | L4: `powershell.exe ... -Action toggle` | 同上。トグル起動時にウィンドウが立ち上がる。 |
-| 4 | レガシー起動スクリプトの conhost 残存 | `tools/server-manager/start_background_all.bat` | L6, L9 | `Start-Process -FilePath 'conhost.exe' ... -WindowStyle Hidden` が残存しており、ウィンドウ非表示化が機能しない。 |
+| 1 | 一括編集のアクティブプリセット同期不備 | `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` | L456-L474 (`handleBulkEditApply`) | `setParamValues`・`updateActiveSet` のみ行い、`promptChips` のパース・設定（`setPromptChips`）および `sets` 内の同プリセットの `promptChips` 更新が欠落。 |
+| 2 | 開いているタブセット（`sets`）の同期欠落 | `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` | L456-L474 (`handleBulkEditApply`) | 一括編集対象となった他の開いているタブ（`sets` 内のプリセット）の `paramValues` や `promptChips` が更新されず、タブ切り替え時に古い状態が残存するリスクがある。 |
+| 3 | SSoT 同期ロジックとの非対称性 | `frontend/src/store/slices/multiSetSlice.ts` | L286-L356 (`loadPresetData`) | `loadPresetData` では `parseToChips` による `promptChips` 構築・`sets` 全体への反映が行われているが、`handleBulkEditApply` では同等の処理が行われていない。 |
+| 4 | 自動同期エフェクトの抑止 | `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` | L453, L808-L850 | 更新直後に `presetUpdatedAtRef` を更新することで衝突検知を回避しているが、結果として `loadPresetData` によるバックグラウンド再同期もスキップされている。 |
 
 ---
 
 ## 5. 根本原因の分析 (Root Cause Analysis)
 
-1. **`restart_web_manager.bat` の停止失敗の隠蔽とステータス誤判定 (Primary)**:
-   - 管理者権限や別セッションで動作している常駐プロセスに対し、一般ユーザー権限からの `taskkill` が失敗（アクセス拒否）するケースが考慮されていなかった。
-   - ポート解放待ち（ステップ2）で解放されなかった場合にも中断せず起動を試行し、ステップ4の生存確認が「旧プロセスのリッスン」に騙されて成功判定を出していたため、ユーザーは再起動が完了したと誤認した。
-2. **CLI / バッチのエントリポイントにおけるバックグラウンド指定漏れ (Secondary)**:
-   - `server-manager.ps1` の `param([switch]$Background)` は、明示指定がない限り `$false`（ウィンドウ表示モード）が既定値となる。
-   - `start_servers.bat` や `toggle_servers.bat` に `-Background` が付与されていないため、デスクトップ上に 3 つのコンソールウィンドウが開く動作がそのまま残っていた。
+1. **`handleBulkEditApply` におけるチップ状態（`promptChips`）同期の欠落 (Primary)**:
+   - プリセットのプロンプト状態は、文字列形式の `paramValues` と、UIおよび生成処理で最優先される `promptChips` の二重管理となっている。
+   - 通常のプリセット読み込み（`loadPresetData`）では `paramValues` から `parseToChips` を介して `promptChips` を生成しストアに保存しているが、一括編集適用処理（`handleBulkEditApply`）では `setParamValues` のみ実行し、`promptChips` の再生成・更新を怠っていた。
+   - `TagChipEditor` のコンポーネントキーは `activeSetId` に依存しているため、アクティブプリセットのまま一括編集が完了しても再マウントされず、古い `promptChips` が画面および生成処理に残留した。
+
+2. **タブセットコレクション（`sets`）への更新未伝播 (Secondary)**:
+   - マルチタブUIでは `sets` 配列に各タブの現在の状態（`paramValues`, `promptChips`, `appliedAssets` 等）が保持されている。
+   - `handleBulkEditApply` はアクティブな 1 つのセット（`updateActiveSet`）のみ部分的に更新し、一括編集で変更された他のタブのメモリ内データを同期していない。
 
 ---
 
@@ -89,19 +112,19 @@ PermissionError: [WinError 10013] アクセス許可で禁じられた方法で�
 </diagnostic_check>
 
 <incident_report>
-- **障害分類**: **Type A (Implementation Bug)**
+- **障害分類**: **Type A (Implementation Bug / 実装上の不具合)**
 - **判定理由**:
-  - 要件の仕様不備ではなく、`restart_web_manager.bat` のプロセス終了失敗ハンドリング・判定ロジックの不備、および既存バッチファイル群の引数指定漏れという実装・スクリプト設計のバグであるため。
+  - 要件や仕様の矛盾・不備ではなく、`usePresetState.ts` の `handleBulkEditApply` におけるフロントエンド状態（`promptChips` および `sets`）の同期漏れという、明確な実装の欠落によるものであるため。
 </incident_report>
 
 ---
 
-## 7. バックログ登録とルーティング提案 (Backlog Registration & Routing)
-
-- **課題名**: `tools/server-manager` restart_web_manager.bat の確実なプロセス停止・判定適正化およびバッチ起動引数のバックグラウンド統一
-- **推奨ワークフロー**: `/dev-design`
-
 ---
 
-**ユーザー確認事項 (Approval Gate)**:
-上記インシデントレポートの内容で合意いただける場合、PBIとしてバックログに登録し、`/dev-design`（設計・実装計画）に進みますか？ (YES / NO)
+## 8. 対応完了 (Resolution)
+
+本インシデントは **REQ-250** にて対応・検証完了：
+- `frontend/src/store/types.ts` および `multiSetSlice.ts` に `setAllPromptChips` を新設。
+- `usePresetState.ts` の `handleBulkEditApply` で `sets` および `promptChips` の即時パース・一括反映を実装。
+- 単体テスト（`multiSetSlice.test.ts`, `useGeneratePageState.test.tsx`）およびRed Teaming検証を含む全テストをPASS。
+

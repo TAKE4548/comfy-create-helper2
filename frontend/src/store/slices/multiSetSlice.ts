@@ -142,6 +142,11 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
       get().updateActiveSet({ promptChips: updated })
     },
 
+    setAllPromptChips: (promptChips) => {
+      set({ promptChips })
+      get().updateActiveSet({ promptChips })
+    },
+
     getEffectiveParamValues: () => {
       return getEffectiveParamValues(get().paramValues, get().promptChips)
     },
