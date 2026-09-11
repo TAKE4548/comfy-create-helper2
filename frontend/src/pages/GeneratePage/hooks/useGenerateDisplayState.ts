@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { snapshotsApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
@@ -142,11 +142,35 @@ export function useGenerateDisplayState({
     }
   }, [store])
 
+  // Keep track of the currently viewed image in modal to protect context on list update
+  const currentModalUrlRef = useRef<string | null>(null)
+
+  // Update currentModalUrlRef when user manually navigates in modal or opens modal
+  useEffect(() => {
+    if (isModalPreviewOpen) {
+      currentModalUrlRef.current = sortedDisplayImages[modalPreviewIndex] ?? null
+    } else {
+      currentModalUrlRef.current = null
+    }
+  }, [modalPreviewIndex, isModalPreviewOpen])
+
+  // When sortedDisplayImages changes, adjust modalPreviewIndex so the viewed image remains the same
+  useEffect(() => {
+    if (isModalPreviewOpen && currentModalUrlRef.current) {
+      const newIdx = sortedDisplayImages.indexOf(currentModalUrlRef.current)
+      if (newIdx !== -1 && newIdx !== modalPreviewIndex) {
+        setModalPreviewIndex(newIdx)
+      }
+    }
+  }, [sortedDisplayImages, isModalPreviewOpen])
+
   const handleOpenModalPreview = () => {
     const currentImg = previewImage || selectedImg
     if (!currentImg) return
     const idx = sortedDisplayImages.indexOf(currentImg)
-    setModalPreviewIndex(idx >= 0 ? idx : 0)
+    const targetIdx = idx >= 0 ? idx : 0
+    setModalPreviewIndex(targetIdx)
+    currentModalUrlRef.current = sortedDisplayImages[targetIdx] ?? null
     setIsModalPreviewOpen(true)
   }
 

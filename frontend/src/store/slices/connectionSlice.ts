@@ -289,35 +289,53 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                     `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${promptId}`
                   )
                   const firstUrl = newUrls[0]
-                  set((state) => {
-                    const prevUrl = state.previewImage
-                    if (prevUrl && prevUrl.startsWith('blob:')) {
-                      try { URL.revokeObjectURL(prevUrl) } catch {}
-                    }
-                    const nextImages = [...newUrls, ...state.batchImages.filter((x) => !newUrls.includes(x))].slice(0, 8)
-                    const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
-                    localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
-                    localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
 
-                    const isStillGenerating = state.activeBatch
-                      ? !state.activeBatch.every((job) => (job.promptId === promptId ? 'completed' : job.status) === 'completed' || (job.promptId === promptId ? 'completed' : job.status) === 'failed')
-                      : false
+                  const isOwn = (promptId === get().currentPromptId) || (get().activeBatch?.some(j => j.promptId === promptId) ?? false)
 
-                    return {
-                      previewImage: null,
-                      batchImages: nextImages,
-                      comfyHistoryImages: nextHistoryImages,
-                      selectedImg: firstUrl,
-                      isGenerating: isStillGenerating,
-                      currentPromptId: null,
-                      activeClientId: null,
-                      generationStartTime: isStillGenerating ? state.generationStartTime : null,
-                      currentNode: isStillGenerating ? state.currentNode : null,
-                      nodeProgress: isStillGenerating ? state.nodeProgress : null,
-                      currentWorkflow: state.currentWorkflow,
-                    }
-                  })
-                  localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+                  if (isOwn) {
+                    set((state) => {
+                      const prevUrl = state.previewImage
+                      if (prevUrl && prevUrl.startsWith('blob:')) {
+                        try { URL.revokeObjectURL(prevUrl) } catch {}
+                      }
+                      const nextImages = [...newUrls, ...state.batchImages.filter((x) => !newUrls.includes(x))].slice(0, 8)
+                      const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
+                      localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
+                      localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
+
+                      const isStillGenerating = state.activeBatch
+                        ? !state.activeBatch.every((job) => (job.promptId === promptId ? 'completed' : job.status) === 'completed' || (job.promptId === promptId ? 'completed' : job.status) === 'failed')
+                        : false
+
+                      return {
+                        previewImage: null,
+                        batchImages: nextImages,
+                        comfyHistoryImages: nextHistoryImages,
+                        selectedImg: firstUrl,
+                        isGenerating: isStillGenerating,
+                        currentPromptId: null,
+                        activeClientId: null,
+                        generationStartTime: isStillGenerating ? state.generationStartTime : null,
+                        currentNode: isStillGenerating ? state.currentNode : null,
+                        nodeProgress: isStillGenerating ? state.nodeProgress : null,
+                        currentWorkflow: state.currentWorkflow,
+                      }
+                    })
+                    localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
+                  } else {
+                    // 他端末による生成画像: comfyHistoryImages の先頭に追加し、selectedImg は未選択時のみセット。他ステートは不変
+                    set((state) => {
+                      const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
+                      const nextSelectedImg = state.selectedImg || firstUrl
+                      if (!state.selectedImg) {
+                        localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
+                      }
+                      return {
+                        comfyHistoryImages: nextHistoryImages,
+                        selectedImg: nextSelectedImg,
+                      }
+                    })
+                  }
                 }
                 window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'executed', promptId } }))
                 break

@@ -113,4 +113,77 @@ describe('connectionSlice - WebSocket status event optimization', () => {
     expect(fetchQueueSpy).toHaveBeenCalledTimes(1)
     expect(fetchHistorySpy).not.toHaveBeenCalled()
   })
+
+  it('handles WS executed event for own job: updates selectedImg, batchImages, comfyHistoryImages and resets previewImage', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188')
+    useGenerationStore.getState().initialize()
+    const wsInstance = createdWsList[0]
+
+    useGenerationStore.setState({
+      currentPromptId: 'prompt-123',
+      isGenerating: true,
+      previewImage: 'blob:http://localhost/preview1',
+      selectedImg: 'old_selected.png',
+      batchImages: ['old_batch1.png'],
+      comfyHistoryImages: ['old_history1.png'],
+    })
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          prompt_id: 'prompt-123',
+          output: {
+            images: [{ filename: 'new_gen.png', subfolder: '', type: 'output' }],
+          },
+        },
+      }),
+    })
+
+    const state = useGenerationStore.getState()
+    const expectedUrl = 'http://localhost:3000/comfy/view?filename=new_gen.png&subfolder=&type=output&t=prompt-123'
+    expect(state.selectedImg).toBe(expectedUrl)
+    expect(state.batchImages[0]).toBe(expectedUrl)
+    expect(state.comfyHistoryImages[0]).toBe(expectedUrl)
+    expect(state.previewImage).toBeNull()
+    expect(state.isGenerating).toBe(false)
+    expect(state.currentPromptId).toBeNull()
+  })
+
+  it('handles WS executed event for other device job: adds to comfyHistoryImages but does not alter selectedImg or batchImages or local generating state', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188')
+    useGenerationStore.getState().initialize()
+    const wsInstance = createdWsList[0]
+
+    useGenerationStore.setState({
+      currentPromptId: 'own-prompt-999',
+      isGenerating: true,
+      previewImage: 'blob:http://localhost/preview-own',
+      selectedImg: 'my_viewing_image.png',
+      batchImages: ['my_batch1.png'],
+      comfyHistoryImages: ['old_history1.png'],
+    })
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          prompt_id: 'other-device-prompt-555',
+          output: {
+            images: [{ filename: 'other_gen.png', subfolder: '', type: 'output' }],
+          },
+        },
+      }),
+    })
+
+    const state = useGenerationStore.getState()
+    const otherUrl = 'http://localhost:3000/comfy/view?filename=other_gen.png&subfolder=&type=output&t=other-device-prompt-555'
+    expect(state.comfyHistoryImages[0]).toBe(otherUrl)
+    expect(state.selectedImg).toBe('my_viewing_image.png')
+    expect(state.batchImages).toEqual(['my_batch1.png'])
+    expect(state.previewImage).toBe('blob:http://localhost/preview-own')
+    expect(state.isGenerating).toBe(true)
+    expect(state.currentPromptId).toBe('own-prompt-999')
+  })
 })
+
