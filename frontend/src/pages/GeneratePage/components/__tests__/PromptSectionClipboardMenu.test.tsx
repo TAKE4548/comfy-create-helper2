@@ -157,4 +157,37 @@ describe('PromptSectionClipboardMenu', () => {
 
     expect(mockOnChangeValue).toHaveBeenCalledWith('solo, smile');
   });
+
+  it('renders all 10 history items with scroll container and shrink-0 items', () => {
+    const items = Array.from({ length: 10 }, (_, i) => `prompt item ${i + 1}`);
+    usePromptClipboardStore.setState({ history: items });
+
+    render(
+      <PromptSectionClipboardMenu
+        role="positive"
+        currentValue="initial"
+        onChangeValue={mockOnChangeValue}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'クリップボード・履歴メニュー (positive)' }));
+
+    expect(screen.getByText('コピー履歴 (10)')).toBeInTheDocument();
+
+    const buttons = items.map((item) => screen.getByRole('button', { name: item }));
+    expect(buttons).toHaveLength(10);
+
+    buttons.forEach((btn) => {
+      expect(btn).toHaveClass('shrink-0');
+    });
+
+    const scrollContainer = buttons[0].parentElement;
+    expect(scrollContainer).toHaveClass('max-h-40');
+    expect(scrollContainer).toHaveClass('overflow-y-auto');
+    expect(scrollContainer).toHaveClass('custom-scrollbar');
+
+    fireEvent.click(buttons[9]);
+    expect(mockOnChangeValue).toHaveBeenCalledWith('initial, prompt item 10');
+  });
 });
+

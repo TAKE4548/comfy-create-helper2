@@ -153,7 +153,7 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
             </button>
           )}
 
-          <div className="flex flex-col gap-1.5 pt-1 border-t border-[rgba(255,255,255,0.08)]">
+          <div className="flex flex-col gap-1.5 pt-1 border-t border-[rgba(255,255,255,0.08)] min-h-0">
             <div className="flex items-center justify-between text-zinc-400 text-[11px]">
               <span className="flex items-center gap-1 font-medium">
                 <History size={12} /> コピー履歴 ({history.length})
@@ -173,13 +173,13 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
             {history.length === 0 ? (
               <div className="py-2 text-center text-zinc-500 text-[11px]">履歴はありません</div>
             ) : (
-              <div className="max-h-40 overflow-y-auto flex flex-col gap-1 pr-0.5">
+              <div className="max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1 pr-0.5">
                 {history.map((item, index) => (
                   <button
                     key={`${index}-${item.slice(0, 15)}`}
                     type="button"
                     onClick={() => handleHistoryItemClick(item)}
-                    className="w-full px-2 py-1.5 rounded bg-[#27272F] hover:bg-[#32323D] text-left text-[11px] text-zinc-300 hover:text-white truncate transition-colors border border-transparent hover:border-[rgba(255,255,255,0.1)]"
+                    className="w-full shrink-0 px-2 py-1.5 rounded bg-[#27272F] hover:bg-[#32323D] text-left text-[11px] text-zinc-300 hover:text-white truncate transition-colors border border-transparent hover:border-[rgba(255,255,255,0.1)]"
                     title={item}
                   >
                     {item}
