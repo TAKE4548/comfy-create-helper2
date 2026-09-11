@@ -22,6 +22,7 @@ import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { SaveAsTagSetModal } from './SaveAsTagSetModal'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
+import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 
 interface SetTabItemProps {
   id: string | number
@@ -189,6 +190,25 @@ export const DesktopLayout = ({
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+
+  const gallery = useGalleryInteraction({
+    isMobile: false,
+    selectedImg,
+    setSelectedImg,
+    multiSelect: {
+      isMultiSelectMode,
+      selectedIds,
+      enterMultiSelectMode: () => {},
+      exitMultiSelectMode,
+      handleItemClick,
+      toggleItem: () => {},
+      selectAll,
+      clearSelection,
+      isSelected,
+      getLongPressHandlers,
+    },
+    onLoadSnapshot: handleLoadSnapshot,
+  })
 
   useEffect(() => {
     if (selectedWorkflowId !== null && typeof fetchBypassProfiles === 'function') {
@@ -771,25 +791,21 @@ export const DesktopLayout = ({
                             </div>
                           </div>
                         )}
-                        <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto custom-scrollbar pb-1 items-center">
+                        <div
+                          ref={gallery.scrollContainerRef}
+                          onWheel={gallery.handleWheelScroll}
+                          className="flex-1 min-h-0 flex gap-2 overflow-x-auto custom-scrollbar pb-1 items-center"
+                        >
                           {sortedDisplayImages.map((img, i) => {
-                            const longPressHandlers = getLongPressHandlers(img)
                             const isSel = isSelected(img)
+                            const itemProps = gallery.getThumbnailItemProps(img, i)
                             return (
-                              <button key={img || i} type="button" id={`thumb-${i}`}
-                                onMouseDown={longPressHandlers.onMouseDown}
-                                onMouseUp={longPressHandlers.onMouseUp}
-                                onMouseLeave={longPressHandlers.onMouseLeave}
-                                onTouchStart={longPressHandlers.onTouchStart}
-                                onTouchEnd={longPressHandlers.onTouchEnd}
-                                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                              <button
+                                key={img || i}
+                                type="button"
+                                id={`thumb-${i}`}
+                                {...itemProps}
                                 style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
-                                onClick={(e) => {
-                                  handleItemClick(img, e)
-                                  if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                                    setSelectedImg(img)
-                                  }
-                                }}
                                 className={`flex-shrink-0 h-[85%] aspect-square max-h-[140px] min-h-[48px] rounded-md overflow-hidden border-2 transition-all relative select-none ${
                                   isMultiSelectMode
                                     ? isSel
@@ -839,7 +855,7 @@ export const DesktopLayout = ({
                     sortedSnapshots && sortedSnapshots.length > 0 ? (
                       <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1 h-full items-center">
                         {sortedSnapshots.map((snap) => (
-                          <button key={snap.id} type="button" onClick={() => handleLoadSnapshot(snap.id)}
+                          <button key={snap.id} type="button" onClick={() => gallery.handleSnapshotClick(snap.id)}
                             className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded-md border border-[rgba(255,255,255,0.06)] hover:border-accent-green/45 bg-surface-2/40 hover:bg-surface-2 transition-all h-[90%] aspect-[4/5] max-h-[140px] min-h-[64px] group">
                             <div className="flex-1 w-full rounded overflow-hidden bg-black/40 min-h-0">
                               {snap.image_path || snap.thumbnail_path ? (
