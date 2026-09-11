@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import { useGenerationStore, _resetWebSocketForTesting } from '../store/useGenerationStore'
@@ -83,7 +83,7 @@ describe('REQ-240: Multi-device sync and UI context protection', () => {
     expect(state.batchImages).toEqual(['batch_item1.png'])
   })
 
-  it('AC-2 & AC-3: Protects modal preview index when sortedDisplayImages receives new external images', () => {
+  it('AC-2 & AC-3: Protects modal preview index when sortedDisplayImages receives new external images', async () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188')
     useGenerationStore.getState().initialize()
     const wsInstance = createdWsList[0]
@@ -106,7 +106,7 @@ describe('REQ-240: Multi-device sync and UI context protection', () => {
     expect(result.current.modalPreviewIndex).toBe(1)
     expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe('img_B.png')
 
-    // Receive external image execution -> prepends to comfyHistoryImages
+    // Receive external image execution -> prepends to comfyHistoryImages and notifies queries
     act(() => {
       wsInstance.onmessage?.({
         data: JSON.stringify({
@@ -123,13 +123,16 @@ describe('REQ-240: Multi-device sync and UI context protection', () => {
 
     const newUrl = 'http://localhost:3000/comfy/view?filename=img_NEW.png&subfolder=&type=output&t=external-prompt-200'
 
-    // The new item is at index 0, img_B is now at index 2
-    expect(result.current.sortedDisplayImages[0]).toBe(newUrl)
-    expect(result.current.sortedDisplayImages[2]).toBe('img_B.png')
+    await waitFor(() => {
+      // The new item is at index 0, img_B is now at index 2
+      expect(result.current.sortedDisplayImages[0]).toBe(newUrl)
+      expect(result.current.sortedDisplayImages[2]).toBe('img_B.png')
 
-    // The modal index should be adjusted so the user is STILL viewing img_B.png
-    expect(result.current.modalPreviewIndex).toBe(2)
-    expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe('img_B.png')
+      // The modal index should be adjusted so the user is STILL viewing img_B.png
+      expect(result.current.effectiveModalIndex).toBe(2)
+      expect(result.current.modalPreviewIndex).toBe(2)
+      expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe('img_B.png')
+    })
   })
 
   it('AC-4: Own session execution correctly updates selectedImg, batchImages, and resets previewImage', () => {

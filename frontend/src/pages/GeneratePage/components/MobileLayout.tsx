@@ -35,7 +35,6 @@ export const MobileLayout = ({
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     selectedImg, setSelectedImg,
-    comfyHistoryImages,
     appliedAssets,
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
@@ -73,6 +72,7 @@ export const MobileLayout = ({
     presets,
     comfyObjectInfo,
     sortedDisplayImages,
+    otherSessionCount,
     getSetNameForImage,
     sortedSnapshots,
     isMultiSelectMode,
@@ -534,9 +534,9 @@ export const MobileLayout = ({
                   })}
                 </div>
               </div>
-            ) : filterOwnSession && comfyHistoryImages.length > 0 ? (
+            ) : filterOwnSession && otherSessionCount > 0 ? (
               <div className="flex flex-col items-center justify-center py-3 gap-1.5 text-center">
-                <p className="text-[11px] text-zinc-400">他セッションの履歴（{comfyHistoryImages.length}件）があります</p>
+                <p className="text-[11px] text-zinc-400">他セッションの履歴（{otherSessionCount}件）があります</p>
                 <button
                   type="button"
                   onClick={() => setFilterOwnSession(false)}

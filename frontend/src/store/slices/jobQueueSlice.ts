@@ -224,30 +224,22 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
           })
 
           set((state) => {
-            const targetImages = state.filterOwnSession ? ownImages : allImages
-            const mergedBatchImages = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 200)
-            localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(mergedBatchImages.slice(0, 50)))
+            const nextBatch = Array.from(new Set([...state.batchImages, ...ownImages])).slice(0, 8)
+            localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextBatch))
 
-            const hasNewImages = targetImages.some((img) => !state.batchImages.includes(img))
             const nextSelected =
-              hasNewImages || !state.selectedImg || !mergedBatchImages.includes(state.selectedImg)
-                ? mergedBatchImages.length > 0
-                  ? mergedBatchImages[0]
-                  : null
-                : state.selectedImg
-
-            if (nextSelected) {
+              state.selectedImg || (state.filterOwnSession ? nextBatch[0] : allImages[0]) || null
+            if (nextSelected && !state.selectedImg) {
               localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
-            } else {
-              localStorage.removeItem(LS_KEYS.SELECTED_IMG)
             }
 
             return {
               comfyHistoryImages: allImages.slice(0, 200),
-              batchImages: mergedBatchImages,
+              batchImages: nextBatch,
               selectedImg: nextSelected,
             }
           })
+          window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'history-fetched' } }))
         } catch (e) {
           console.error('Failed to fetch comfy history:', e)
         }

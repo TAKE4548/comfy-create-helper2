@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { snapshotsApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { useImageNavigation } from './useImageNavigation'
@@ -43,6 +43,8 @@ export function useGenerateDisplayState({
   const [isModalPreviewOpen, setIsModalPreviewOpen] = useState(false)
   const [modalPreviewIndex, setModalPreviewIndex] = useState(0)
 
+  const queryClient = useQueryClient()
+
   // ── Snapshots Query ──
   const { data: snapshots } = useQuery({
     queryKey: ['snapshots', selectedWorkflowId],
@@ -50,7 +52,83 @@ export function useGenerateDisplayState({
     enabled: !!selectedWorkflowId,
   })
 
-  const displayImages = filterOwnSession ? batchImages : comfyHistoryImages
+  const rawImages = useMemo(() => {
+    return filterOwnSession ? batchImages : comfyHistoryImages
+  }, [filterOwnSession, batchImages, comfyHistoryImages])
+
+  const { data: displayImages = rawImages } = useQuery<string[]>({
+    queryKey: ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
+    queryFn: () => rawImages,
+    initialData: rawImages,
+    staleTime: Infinity,
+  })
+
+  // Synchronize query cache if store rawImages changes
+  useEffect(() => {
+    queryClient.setQueryData<string[]>(
+      ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
+      (old) => {
+        if (rawImages.length === 0) return []
+        if (!old || old.length === 0) return rawImages
+        const oldSet = new Set(old)
+        const appended = rawImages.filter((x) => !oldSet.has(x))
+        if (appended.length > 0) {
+          return [...old, ...appended]
+        }
+        return old
+      }
+    )
+  }, [rawImages, filterOwnSession, queryClient])
+
+  const addHistoryImage = useCallback(
+    (imageUrl: string, isOwnSession: boolean = true) => {
+      // 1. Update all-session cache
+      queryClient.setQueryData<string[]>(
+        ['generateDisplayImages', { filterOwnSession: false }],
+        (old = comfyHistoryImages) => {
+          return [imageUrl, ...(old || []).filter((x) => x !== imageUrl)].slice(0, 200)
+        }
+      )
+
+      // 2. If own session, also update own-session cache
+      if (isOwnSession) {
+        queryClient.setQueryData<string[]>(
+          ['generateDisplayImages', { filterOwnSession: true }],
+          (old = batchImages) => {
+            return [imageUrl, ...(old || []).filter((x) => x !== imageUrl)].slice(0, 8)
+          }
+        )
+      }
+    },
+    [queryClient, comfyHistoryImages, batchImages]
+  )
+
+  // Listen to comfy-job-event for real-time image completion
+  useEffect(() => {
+    const handleJobEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        type?: string
+        images?: string[]
+        isOwn?: boolean
+      }>
+      if (customEvent.detail?.type === 'executed' && customEvent.detail.images) {
+        for (const imgUrl of customEvent.detail.images) {
+          addHistoryImage(imgUrl, customEvent.detail.isOwn ?? true)
+        }
+      } else if (customEvent.detail?.type === 'history-fetched') {
+        queryClient.invalidateQueries({ queryKey: ['generateDisplayImages'] })
+      }
+    }
+    window.addEventListener('comfy-job-event', handleJobEvent)
+    return () => {
+      window.removeEventListener('comfy-job-event', handleJobEvent)
+    }
+  }, [addHistoryImage, queryClient])
+
+  const otherSessionCount = useMemo(() => {
+    const ownSet = new Set(batchImages)
+    return comfyHistoryImages.filter((img) => !ownSet.has(img)).length
+  }, [comfyHistoryImages, batchImages])
 
   const sortedDisplayImages = useMemo(() => {
     return sortOrder === 'desc' ? displayImages : [...displayImages].reverse()
@@ -61,7 +139,7 @@ export function useGenerateDisplayState({
   }
 
   const sortedSnapshots = useMemo(() => {
-    if (!snapshots) return []
+    if (!Array.isArray(snapshots)) return []
     const copy = [...snapshots] as SnapshotSummaryWithParams[]
     return sortOrder === 'desc'
       ? copy.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -93,7 +171,7 @@ export function useGenerateDisplayState({
   }, [sortedDisplayImages, sortedSnapshots])
 
   const showStrip =
-    batchImages.length > 0 || comfyHistoryImages.length > 0 || (!!sortedSnapshots && sortedSnapshots.length > 0)
+    sortedDisplayImages.length > 0 || (!!sortedSnapshots && sortedSnapshots.length > 0)
   const hasHistory = !!selectedWorkflowId && !!sortedSnapshots && sortedSnapshots.length > 0
 
   const isGeneratingHere =
@@ -154,6 +232,12 @@ export function useGenerateDisplayState({
     }
   }, [modalPreviewIndex, isModalPreviewOpen])
 
+  const effectiveModalIndex = useMemo(() => {
+    if (!isModalPreviewOpen || !currentModalUrlRef.current) return modalPreviewIndex
+    const newIdx = sortedDisplayImages.indexOf(currentModalUrlRef.current)
+    return newIdx !== -1 ? newIdx : modalPreviewIndex
+  }, [isModalPreviewOpen, modalPreviewIndex, sortedDisplayImages])
+
   // When sortedDisplayImages changes, adjust modalPreviewIndex so the viewed image remains the same
   useEffect(() => {
     if (isModalPreviewOpen && currentModalUrlRef.current) {
@@ -203,8 +287,11 @@ export function useGenerateDisplayState({
     setIsModalPreviewOpen,
     modalPreviewIndex,
     setModalPreviewIndex,
+    effectiveModalIndex,
     handleOpenModalPreview,
     filterOwnSession,
     setFilterOwnSession,
+    addHistoryImage,
+    otherSessionCount,
   }
 }

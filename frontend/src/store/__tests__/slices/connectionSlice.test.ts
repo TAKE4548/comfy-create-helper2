@@ -128,6 +128,9 @@ describe('connectionSlice - WebSocket status event optimization', () => {
       comfyHistoryImages: ['old_history1.png'],
     })
 
+    const eventSpy = vi.fn()
+    window.addEventListener('comfy-job-event', eventSpy)
+
     wsInstance.onmessage?.({
       data: JSON.stringify({
         type: 'executed',
@@ -148,6 +151,18 @@ describe('connectionSlice - WebSocket status event optimization', () => {
     expect(state.previewImage).toBeNull()
     expect(state.isGenerating).toBe(false)
     expect(state.currentPromptId).toBeNull()
+
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          type: 'executed',
+          promptId: 'prompt-123',
+          images: [expectedUrl],
+          isOwn: true,
+        },
+      })
+    )
+    window.removeEventListener('comfy-job-event', eventSpy)
   })
 
   it('handles WS executed event for other device job: adds to comfyHistoryImages but does not alter selectedImg or batchImages or local generating state', () => {
@@ -163,6 +178,9 @@ describe('connectionSlice - WebSocket status event optimization', () => {
       batchImages: ['my_batch1.png'],
       comfyHistoryImages: ['old_history1.png'],
     })
+
+    const eventSpy = vi.fn()
+    window.addEventListener('comfy-job-event', eventSpy)
 
     wsInstance.onmessage?.({
       data: JSON.stringify({
@@ -184,6 +202,18 @@ describe('connectionSlice - WebSocket status event optimization', () => {
     expect(state.previewImage).toBe('blob:http://localhost/preview-own')
     expect(state.isGenerating).toBe(true)
     expect(state.currentPromptId).toBe('own-prompt-999')
+
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          type: 'executed',
+          promptId: 'other-device-prompt-555',
+          images: [otherUrl],
+          isOwn: false,
+        },
+      })
+    )
+    window.removeEventListener('comfy-job-event', eventSpy)
   })
 })
 

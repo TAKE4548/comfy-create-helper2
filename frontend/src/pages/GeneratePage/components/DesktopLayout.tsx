@@ -87,7 +87,6 @@ export const DesktopLayout = ({
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
     selectedImg, setSelectedImg,
-    comfyHistoryImages,
     appliedAssets,
     addAppliedAsset,
     toggleAppliedAsset, removeAppliedAsset,
@@ -122,6 +121,7 @@ export const DesktopLayout = ({
     comfyObjectInfo,
     displayImages,
     sortedDisplayImages,
+    otherSessionCount,
     getSetNameForImage,
     sortedSnapshots,
     handlePrevImg,
@@ -823,9 +823,9 @@ export const DesktopLayout = ({
                           })}
                         </div>
                       </div>
-                    ) : filterOwnSession && comfyHistoryImages.length > 0 ? (
+                    ) : filterOwnSession && otherSessionCount > 0 ? (
                       <div className="flex flex-col items-center justify-center py-4 gap-2 text-center h-full">
-                        <p className="text-xs text-zinc-400">他セッションの履歴（{comfyHistoryImages.length}件）があります</p>
+                        <p className="text-xs text-zinc-400">他セッションの履歴（{otherSessionCount}件）があります</p>
                         <button
                           type="button"
                           onClick={() => setFilterOwnSession(false)}

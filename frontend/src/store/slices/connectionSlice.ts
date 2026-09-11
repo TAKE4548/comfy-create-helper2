@@ -282,15 +282,16 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                 if (get().activeBatch) {
                   get().updateBatchJobStatus(promptId, 'completed')
                 }
+                const isOwn = (promptId === get().currentPromptId) || (get().activeBatch?.some(j => j.promptId === promptId) ?? false)
+                let newUrls: string[] | undefined
+
                 if (images && images.length > 0) {
                   const currentComfyUrl = comfyWsService.getComfyUrl() || get().comfyUrl || ''
                   const baseUrl = resolveComfyUrl(currentComfyUrl)
-                  const newUrls = images.map((img) =>
+                  newUrls = images.map((img) =>
                     `${baseUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${promptId}`
                   )
                   const firstUrl = newUrls[0]
-
-                  const isOwn = (promptId === get().currentPromptId) || (get().activeBatch?.some(j => j.promptId === promptId) ?? false)
 
                   if (isOwn) {
                     set((state) => {
@@ -298,8 +299,8 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                       if (prevUrl && prevUrl.startsWith('blob:')) {
                         try { URL.revokeObjectURL(prevUrl) } catch {}
                       }
-                      const nextImages = [...newUrls, ...state.batchImages.filter((x) => !newUrls.includes(x))].slice(0, 8)
-                      const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
+                      const nextImages = [...newUrls!, ...state.batchImages.filter((x) => !newUrls!.includes(x))].slice(0, 8)
+                      const nextHistoryImages = [...newUrls!, ...state.comfyHistoryImages.filter((x) => !newUrls!.includes(x))].slice(0, 200)
                       localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
                       localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
 
@@ -325,7 +326,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                   } else {
                     // 他端末による生成画像: comfyHistoryImages の先頭に追加し、selectedImg は未選択時のみセット。他ステートは不変
                     set((state) => {
-                      const nextHistoryImages = [...newUrls, ...state.comfyHistoryImages.filter((x) => !newUrls.includes(x))].slice(0, 200)
+                      const nextHistoryImages = [...newUrls!, ...state.comfyHistoryImages.filter((x) => !newUrls!.includes(x))].slice(0, 200)
                       const nextSelectedImg = state.selectedImg || firstUrl
                       if (!state.selectedImg) {
                         localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
@@ -337,7 +338,9 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                     })
                   }
                 }
-                window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'executed', promptId } }))
+                window.dispatchEvent(new CustomEvent('comfy-job-event', {
+                  detail: { type: 'executed', promptId, images: newUrls, isOwn }
+                }))
                 break
               }
 
