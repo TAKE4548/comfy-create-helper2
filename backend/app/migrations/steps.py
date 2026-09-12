@@ -344,6 +344,20 @@ def step_010_create_prompt_metadata(conn: Connection, inspector: any) -> None:
         logger.info("Migrated: Created 'prompt_metadata' table.")
 
 
+def step_011_create_workflow_history(conn: Connection, inspector: any) -> None:
+    if "workflow_history" not in inspector.get_table_names():
+        conn.execute(sa.text("""
+            CREATE TABLE workflow_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                json_body TEXT NOT NULL,
+                mappings TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        logger.info("Migrated: Created 'workflow_history' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -355,5 +369,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("008", "create_speech_tone_presets", step_008_create_speech_tone_presets),
     MigrationStep("009", "workflow_presets_updated_at", step_009_workflow_presets_updated_at),
     MigrationStep("010", "create_prompt_metadata", step_010_create_prompt_metadata),
+    MigrationStep("011", "create_workflow_history", step_011_create_workflow_history),
 ]
+
 

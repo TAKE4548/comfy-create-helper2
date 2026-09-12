@@ -115,6 +115,9 @@ class Workflow(Base):
     param_sync_groups: Mapped[list["ParamSyncGroup"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    history_entries: Mapped[list["WorkflowHistory"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan", order_by="desc(WorkflowHistory.created_at)"
+    )
 
 
 class BypassProfile(Base):
@@ -158,6 +161,18 @@ class WorkflowMapping(Base):
 
     workflow: Mapped["Workflow"] = relationship(back_populates="mappings")
     master: Mapped["MappingMaster"] = relationship(back_populates="workflow_mappings")
+
+
+class WorkflowHistory(Base):
+    __tablename__ = "workflow_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
+    json_body: Mapped[str] = mapped_column(Text, nullable=False)
+    mappings: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array: [{"master_id": 1, "node_id": "6"}]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    workflow: Mapped["Workflow"] = relationship(back_populates="history_entries")
 
 
 class Snapshot(Base):

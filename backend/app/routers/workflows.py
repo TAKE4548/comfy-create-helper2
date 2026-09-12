@@ -106,6 +106,18 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
         wf.name = payload.name
 
     if payload.json_body is not None:
+        # Backup current workflow state to workflow_history before replacing
+        current_mappings = [
+            {"master_id": m.master_id, "node_id": m.node_id}
+            for m in wf.mappings
+        ]
+        history = models.WorkflowHistory(
+            workflow_id=workflow_id,
+            json_body=wf.json_body,
+            mappings=json.dumps(current_mappings),
+        )
+        db.add(history)
+
         wf.json_body = json.dumps(payload.json_body)
         if "target_base_model_id" not in payload.model_fields_set:
             from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
@@ -133,6 +145,71 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
     db.commit()
     db.refresh(wf)
     return wf
+
+
+@router.post("/{workflow_id}/diff-analyze", response_model=schemas.DiffAnalyzeResponse)
+def diff_analyze_workflow(workflow_id: int, payload: schemas.DiffAnalyzeRequest, db: Session = Depends(get_db)):
+    wf = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
+    from app.services.workflow_diff_engine import analyze_workflow_diff
+    return analyze_workflow_diff(
+        old_json=json.loads(wf.json_body),
+        new_json=payload.new_json_body,
+        mappings=wf.mappings,
+        masters=masters,
+        bypass_profiles=wf.bypass_profiles,
+    )
+
+
+@router.get("/{workflow_id}/history-status", response_model=schemas.WorkflowHistoryStatusResponse)
+def get_workflow_history_status(workflow_id: int, db: Session = Depends(get_db)):
+    wf = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    entries = db.query(models.WorkflowHistory).filter(
+        models.WorkflowHistory.workflow_id == workflow_id
+    ).order_by(models.WorkflowHistory.created_at.desc()).all()
+    count = len(entries)
+    latest_at = entries[0].created_at if count > 0 else None
+    return schemas.WorkflowHistoryStatusResponse(
+        has_rollback=count > 0,
+        history_count=count,
+        latest_backup_at=latest_at,
+    )
+
+
+@router.post("/{workflow_id}/rollback", response_model=schemas.WorkflowRollbackResponse)
+def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
+    wf = db.query(models.Workflow).filter(models.Workflow.id == workflow_id).first()
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    history = db.query(models.WorkflowHistory).filter(
+        models.WorkflowHistory.workflow_id == workflow_id
+    ).order_by(models.WorkflowHistory.created_at.desc()).first()
+    if not history:
+        raise HTTPException(status_code=400, detail="No rollback history available")
+
+    # Restore json_body & mappings
+    wf.json_body = history.json_body
+    db.query(models.WorkflowMapping).filter(
+        models.WorkflowMapping.workflow_id == workflow_id
+    ).delete()
+    saved_mappings = json.loads(history.mappings)
+    for m in saved_mappings:
+        db.add(models.WorkflowMapping(
+            workflow_id=workflow_id,
+            master_id=m["master_id"],
+            node_id=m["node_id"],
+        ))
+    db.delete(history)
+    db.commit()
+    return schemas.WorkflowRollbackResponse(
+        message="Rollback successful",
+        workflow_id=wf.id,
+        restored_at=models.utc_now(),
+    )
 
 
 

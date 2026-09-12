@@ -2,8 +2,8 @@
  * API client for Prompt Surgeon FastAPI backend
  */
 
-import type { SpeechBatchJob, SpeechBatchJobCreate, SpeechBatchItemRetryRequest, MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode } from './types'
-export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode }
+import type { SpeechBatchJob, SpeechBatchJobCreate, SpeechBatchItemRetryRequest, MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse } from './types'
+export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse }
 
 
 
@@ -47,6 +47,15 @@ export const workflowsApi = {
   delete: (id: number) => request(`/workflows/${id}`, { method: 'DELETE' }),
   copy: (id: number, name: string) => request<WorkflowSummary>(`/workflows/${id}/copy`, { method: 'POST', body: JSON.stringify({ name }) }),
   scan: (json_body: unknown) => request('/workflows/scan', { method: 'POST', body: JSON.stringify({ json_body }) }),
+  diffAnalyze: (workflowId: number, newJsonBody: Record<string, unknown>) =>
+    request<DiffAnalyzeResponse>(`/workflows/${workflowId}/diff-analyze`, {
+      method: 'POST',
+      body: JSON.stringify({ new_json_body: newJsonBody }),
+    }),
+  rollback: (workflowId: number) =>
+    request<WorkflowRollbackResponse>(`/workflows/${workflowId}/rollback`, { method: 'POST' }),
+  getHistoryStatus: (workflowId: number) =>
+    request<WorkflowHistoryStatusResponse>(`/workflows/${workflowId}/history-status`),
 }
 
 // 笏笏笏 Mapping Masters 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏

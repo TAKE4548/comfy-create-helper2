@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2 } from 'lucide-react'
+import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2 } from 'lucide-react'
 import { workflowsApi, workflowPresetsApi, snapshotsApi } from '../../../api/client'
-import type { WorkflowSummary, WorkflowPreset } from '../../../api/types'
+import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse } from '../../../api/types'
 import { useConfig } from '../../../hooks/useConfig'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { WorkflowManageModal } from '../../../components/WorkflowManageModal'
+import { WorkflowDiffReplaceModal } from '../../../components/WorkflowDiffReplaceModal'
 import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
 
@@ -44,6 +45,16 @@ export function WorkflowConnectionSection({
     snapshots: 0,
   })
   const [isLoadingWorkflowDetails, setIsLoadingWorkflowDetails] = useState(false)
+
+  // Smart Diff & Rollback states
+  const [diffReplaceModalOpen, setDiffReplaceModalOpen] = useState(false)
+  const [diffTargetWorkflow, setDiffTargetWorkflow] = useState<WorkflowSummary | null>(null)
+  const [diffResult, setDiffResult] = useState<DiffAnalyzeResponse | null>(null)
+  const [newWorkflowJson, setNewWorkflowJson] = useState<Record<string, unknown> | null>(null)
+  const [isReplacing, setIsReplacing] = useState(false)
+  const [hasRollbackMap, setHasRollbackMap] = useState<Record<number, boolean>>({})
+  const diffFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [pendingDiffWorkflow, setPendingDiffWorkflow] = useState<WorkflowSummary | null>(null)
 
   const { data: config } = useConfig()
 
@@ -103,6 +114,87 @@ export function WorkflowConnectionSection({
       active = false
     }
   }, [showWorkflowDeleteDialog, selectedWorkflowId])
+
+  // Fetch rollback history statuses for workflows
+  useEffect(() => {
+    if (!workflows || workflows.length === 0) return
+    let active = true
+    Promise.all(
+      workflows.map((wf) =>
+        workflowsApi
+          .getHistoryStatus(wf.id)
+          .then((res) => ({ id: wf.id, has_rollback: res.has_rollback }))
+          .catch(() => ({ id: wf.id, has_rollback: false }))
+      )
+    ).then((results) => {
+      if (active) {
+        const map: Record<number, boolean> = {}
+        results.forEach((r) => {
+          map[r.id] = r.has_rollback
+        })
+        setHasRollbackMap(map)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [workflows])
+
+  const handleOpenDiffFilePicker = (wf: WorkflowSummary) => {
+    setPendingDiffWorkflow(wf)
+    if (diffFileInputRef.current) {
+      diffFileInputRef.current.value = ''
+      diffFileInputRef.current.click()
+    }
+  }
+
+  const handleDiffFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !pendingDiffWorkflow) return
+
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text)
+      const res = await workflowsApi.diffAnalyze(pendingDiffWorkflow.id, json)
+      setDiffTargetWorkflow(pendingDiffWorkflow)
+      setNewWorkflowJson(json)
+      setDiffResult(res)
+      setDiffReplaceModalOpen(true)
+    } catch (err: any) {
+      alert(`差分解析エラー: ${err.message || err}`)
+    }
+  }
+
+  const handleConfirmDiffReplace = async (
+    customMappings: { master_id: number; node_id: string }[]
+  ) => {
+    if (!diffTargetWorkflow || !newWorkflowJson) return
+    setIsReplacing(true)
+    try {
+      await workflowsApi.update(diffTargetWorkflow.id, {
+        json_body: newWorkflowJson,
+        mappings: customMappings,
+      })
+      await qc.invalidateQueries({ queryKey: ['workflows'] })
+      setHasRollbackMap((prev) => ({ ...prev, [diffTargetWorkflow.id]: true }))
+      setDiffReplaceModalOpen(false)
+    } catch (err: any) {
+      alert(`置換エラー: ${err.message || err}`)
+    } finally {
+      setIsReplacing(false)
+    }
+  }
+
+  const handleRollback = async (workflowId: number) => {
+    if (!window.confirm('直前のワークフロー状態にロールバックしますか？')) return
+    try {
+      await workflowsApi.rollback(workflowId)
+      await qc.invalidateQueries({ queryKey: ['workflows'] })
+      setHasRollbackMap((prev) => ({ ...prev, [workflowId]: false }))
+    } catch (err: any) {
+      alert(`ロールバックエラー: ${err.message || err}`)
+    }
+  }
 
   // Workflow mutations
   const renameWorkflowMutation = useMutation({
@@ -300,6 +392,24 @@ export function WorkflowConnectionSection({
                               コピー
                             </button>
                             <button
+                              onClick={() => handleOpenDiffFilePicker(wf)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/20 text-accent-green text-[10px] font-medium transition-all"
+                              title="新ワークフローJSONとのスマート差分置換"
+                            >
+                              <ArrowLeftRight size={11} />
+                              スマート置換
+                            </button>
+                            {hasRollbackMap[wf.id] && (
+                              <button
+                                onClick={() => handleRollback(wf.id)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-medium transition-all"
+                                title="直前のワークフロー状態へ復元"
+                              >
+                                <Undo2 size={11} />
+                                ロールバック
+                              </button>
+                            )}
+                            <button
                               onClick={() =>
                                 setExpandedPresetWorkflowId(isExpanded ? null : wf.id)
                               }
@@ -421,6 +531,26 @@ export function WorkflowConnectionSection({
           presetsCount={deleteWorkflowDetails.presets}
           snapshotsCount={deleteWorkflowDetails.snapshots}
           isLoadingDetails={isLoadingWorkflowDetails}
+        />
+      )}
+
+      <input
+        ref={diffFileInputRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={handleDiffFileSelected}
+      />
+
+      {diffReplaceModalOpen && diffTargetWorkflow && (
+        <WorkflowDiffReplaceModal
+          isOpen={diffReplaceModalOpen}
+          onClose={() => setDiffReplaceModalOpen(false)}
+          workflowId={diffTargetWorkflow.id}
+          workflowName={diffTargetWorkflow.name}
+          diffResult={diffResult}
+          onConfirm={handleConfirmDiffReplace}
+          isSubmitting={isReplacing}
         />
       )}
     </>

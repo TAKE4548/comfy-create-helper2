@@ -117,3 +117,28 @@ class ScanResult(BaseModel):
     warnings: list[ScanWarningItem]
     estimated_base_model_id: Optional[int] = None
     unknown_checkpoint_name: Optional[str] = None
+
+
+# ─── Workflow Diff & Rollback ────────────────────────────────────
+
+class DiffAnalyzeRequest(BaseModel):
+    new_json_body: dict[str, Any]
+
+
+class DiffAnalyzeResponse(BaseModel):
+    summary: dict[str, int]
+    role_migrations: list[dict[str, Any]]
+    bypass_warnings: list[dict[str, Any]]
+    unmapped_new_nodes: list[dict[str, Any]]
+
+
+class WorkflowRollbackResponse(BaseModel):
+    message: str
+    workflow_id: int
+    restored_at: datetime
+
+
+class WorkflowHistoryStatusResponse(BaseModel):
+    has_rollback: bool
+    history_count: int
+    latest_backup_at: Optional[datetime] = None

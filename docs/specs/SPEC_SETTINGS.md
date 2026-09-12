@@ -147,6 +147,10 @@ interface SpeechTonePreset {
 | ベースモデル一覧・管理 | `GET/POST/PUT/DELETE /api/base-models` | |
 | チェックポイントマッピング一覧・管理 | `GET/POST/DELETE /api/checkpoint-mappings` | `GET /api/comfy/checkpoints` |
 | ワークフロー一覧・削除 | `GET/DELETE /api/workflows` | |
+| ワークフロー差分推測・トポロジー解析 | `POST /api/workflows/{id}/diff-analyze` | `{ "json_body": object }` |
+| ワークフロー置換確定（自動履歴バックアップ） | `PUT /api/workflows/{id}` | `{ "json_body": object, "mappings": array }` |
+| ワークフロー直前スナップショット復元（ロールバック） | `POST /api/workflows/{id}/rollback` | |
+| ワークフロー履歴状態確認 | `GET /api/workflows/{id}/history-status` | |
 | LLM プロンプト一覧・更新 | `GET/PUT /api/llm-prompts/{key}` | |
 | LLM モデル一覧取得・現在モデル切替 | `GET /api/llm-prompts/models`, `GET/PUT /api/llm-prompts/current-model` | |
 | 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` | |

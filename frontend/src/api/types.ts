@@ -102,6 +102,83 @@ export interface ScanResult {
   warnings: ScanWarningItem[]
 }
 
+// ─── Workflow Diff & Rollback ────────────────────────────────────
+
+export interface NodeTopologySlot {
+  slot: string
+  source_node_id?: string
+  source_class?: string
+  source_title?: string
+  target_node_id?: string
+  target_class?: string
+  target_title?: string
+}
+
+export interface NodeTopology {
+  node_id: string
+  title: string
+  class_type: string
+  inputs: NodeTopologySlot[]
+  outputs: NodeTopologySlot[]
+}
+
+export interface NodeCandidate {
+  node_id: string
+  title: string
+  class_type: string
+  score: number
+}
+
+export interface RoleMigration {
+  master_id: number
+  role: string
+  display_name: string
+  old_node_id: string
+  new_node_id: string | null
+  confidence: number
+  reason: string
+  status: 'ok' | 'renamed' | 'reindexed' | 'substituted' | 'false_reuse' | 'not_found'
+  candidates: NodeCandidate[]
+  old_topology?: NodeTopology | null
+  new_topology?: NodeTopology | null
+}
+
+export interface DiffAnalyzeResponse {
+  summary: {
+    ok?: number
+    renamed?: number
+    reindexed?: number
+    substituted?: number
+    false_reuse?: number
+    not_found?: number
+    total?: number
+    [key: string]: number | undefined
+  }
+  role_migrations: RoleMigration[]
+  bypass_warnings: Array<{
+    profile_id?: number
+    profile_name?: string
+    node_id?: string
+    missing_node_id?: string
+    suggested_node_id?: string
+    warning?: string
+  }>
+  unmapped_new_nodes: Array<{ node_id: string; title: string; class_type: string }>
+}
+
+export interface WorkflowHistoryStatusResponse {
+  has_rollback: boolean
+  history_count: number
+  latest_backup_at?: string | null
+}
+
+export interface WorkflowRollbackResponse {
+  message: string
+  workflow_id: number
+  restored_at: string
+}
+
+
 // 笏笏笏 Snapshot 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SnapshotLoraCreate {

@@ -20,6 +20,10 @@ from app.schemas.workflow import (
     ScanMatchedItem,
     ScanWarningItem,
     ScanResult,
+    DiffAnalyzeRequest,
+    DiffAnalyzeResponse,
+    WorkflowRollbackResponse,
+    WorkflowHistoryStatusResponse,
 )
 
 from app.schemas.snapshot import (
@@ -140,6 +144,7 @@ __all__ = [
     "WorkflowMappingRead", "WorkflowMappingCreate",
     "WorkflowCreate", "WorkflowSummary", "WorkflowRead", "WorkflowUpdate", "WorkflowCopyRequest",
     "WorkflowScanRequest", "ScanMatchedItem", "ScanWarningItem", "ScanResult",
+    "DiffAnalyzeRequest", "DiffAnalyzeResponse", "WorkflowRollbackResponse", "WorkflowHistoryStatusResponse",
     # Snapshot / Album
     "SnapshotLoraCreate", "SnapshotLoraRead",
     "SnapshotTagSetCreate", "SnapshotTagSetRead",
