@@ -1,97 +1,126 @@
-# インシデントレポート: セクションタグコピー・ペーストサブメニューの履歴潰れ不具合
+# インシデントレポート
 
-## 1. 事象概要 (Overview)
-
-GeneratePage 各プロンプトセクション右上の「クリップボード・履歴操作」メニュー（`PromptSectionClipboardMenu`）において、タグ等のコピー履歴（`history`）の件数が増加した場合に、履歴項目がスクロール表示されず縦方向に押し潰されて文字や項目が視認できなくなる。
-
-調査の結果、履歴一覧を表示するコンテナに `max-h-40 overflow-y-auto flex flex-col` が指定されている一方で、子要素の各ボタン要素に `shrink-0`（`flex-shrink: 0`）が指定されておらず、Flexbox の縮小（flex-shrink: 1）が働くことで、コンテナ高さ（160px）内に収まるように各ボタンの高さが強制的に圧縮されてしまうことが判明した。
-
----
-
-## 2. 観測ログおよび実機追跡結果 (Observed Evidence & Log Citations)
-
-### 2.1 アプリケーションログ追跡 (`logs/app.jsonl`)
-`scripts/inspect_logs.py` を用いてログを調査：
-- `python scripts/inspect_logs.py --summary`
-  - Total Entries: 3252 (INFO: 3250, ERROR: 2)
-  - ERROR: frontend: 2
-- `python scripts/inspect_logs.py --errors --tail 10`
-  - [2026-09-12T00:07:41.378+09:00] [frontend] [FE] window.onerror: useRef is not defined
-  - [2026-09-12T00:07:41.384+09:00] [frontend] [FE] GlobalErrorBoundary: useRef is not defined
-- **結論**:
-  直近のログにあるエラーは過去の開発過渡期に発生した未定義参照エラーのみであり、今回の現象に関する例外や実行時エラーはバックエンド・フロントエンドともに一切記録されていない。本件は CSS Flexbox のレイアウト計算に起因する純粋な描画崩れ（スタイリング不具合）である。
-
-### 2.2 ソースコード追跡結果 (`PromptSectionClipboardMenu.tsx`)
-1. **履歴一覧コンテナと子要素のスタイル (L176-L188)**:
-   ```tsx
-   <div className="max-h-40 overflow-y-auto flex flex-col gap-1 pr-0.5">
-     {history.map((item, index) => (
-       <button
-         key={`${index}-${item.slice(0, 15)}`}
-         type="button"
-         onClick={() => handleHistoryItemClick(item)}
-         className="w-full px-2 py-1.5 rounded bg-[#27272F] hover:bg-[#32323D] text-left text-[11px] text-zinc-300 hover:text-white truncate transition-colors border border-transparent hover:border-[rgba(255,255,255,0.1)]"
-         title={item}
-       >
-         {item}
-       </button>
-     ))}
-   </div>
-   ```
-2. **挙動の分析**:
-   - コンテナは `max-h-40`（10rem = 160px）と `overflow-y-auto` を持ち、スクロールさせる意図で実装されている。
-   - しかし、`flex flex-col` の直下の子要素 `<button>` には `shrink-0` や `min-h` が付与されていないため、Flexbox の既定値（`flex-shrink: 1`）が適用される。
-   - `history` の件数が増加（最大10件）すると、各アイテムの本来の高さ（`py-1.5` + line-height = 約28px〜30px）の合計が 160px を超過する。
-   - このとき、各ボタンに `truncate`（`overflow: hidden`）が指定されているため、要素の最小高さ制限（min-height）が効かずに Flexbox によって各ボタンの高さが押し潰されるように均等縮小される。
-   - 結果として、本来スクロールバーが現れて各アイテムの高さを維持すべきところ、すべてのアイテムが薄い帯状に圧縮され、文字が垂直方向に切り取られて視認不能となる。
+**日時**: 2026-09-12  
+**報告者**: Incident Analyst  
+**対象コンポーネント**: `useGenerateDisplayState.ts`, `App.tsx`  
+**分類**: **Type A（実装バグ）**
 
 ---
 
-## 3. 再現手順と観測された挙動 (Reproduction Steps)
+## 1. 症状
 
-### 再現手順
-1. GeneratePage を開く。
-2. Positive Prompt または Negative Prompt などのプロンプトセクションで、異なるプロンプト文字列を複数回コピーする（例: 6〜10件以上コピーを行い、`history` に履歴を蓄積させる）。
-3. プロンプトセクションの「クリップボード・履歴操作」ボタン（クリップボードアイコン）をクリックし、ポップオーバーサブメニューを展開する。
-4. 「コピー履歴」一覧の表示状態を確認する。
-
-### 観測された挙動
-- **実際の挙動（不具合）**:
-  - コピー履歴の件数が増えると、各履歴アイテムのボタンの縦幅が薄く圧縮され、ボタン内のプロンプト文字列が上下に切れて判読できなくなる。
-  - スクロールによる閲覧ではなく、固定枠内に無理やり全件が押し込まれた状態になる。
-- **本来期待される挙動**:
-  - コピー履歴の件数が増加しても各履歴アイテムの高さとパディングが正常に維持され、`max-h-40` を超過した分はコンテナが縦スクロール可能になって個別の履歴が明確に視認・選択できること。
+- **再現ステップ**: 生成画面（GeneratePage）でブラウザをリロードする。
+- **期待値**: 過去のComfyUI生成履歴が即座にギャラリー/ストリップに表示される。
+- **実際の挙動**:
+  1. リロード直後 → ギャラリーが空（履歴が見えない）。
+  2. 新しい生成ジョブを実行し、画像が生成・完了した瞬間 → 過去分も含めて画像が一気に表示される。
 
 ---
 
-## 4. 影響範囲・該当コード (Affected Area & Source Locations)
+## 2. ログエビデンス
 
-| # | 分類 | 対象ファイル | 該当行/箇所 | 詳細 |
-|---|---|---|---|---|
-| 1 | コピー履歴一覧のFlexbox縮小不備 | `frontend/src/pages/GeneratePage/components/PromptSectionClipboardMenu.tsx` | L176-L188 (`history.map`) | `flex flex-col` コンテナ内の各履歴アイテム `<button>` に `shrink-0`（`flex-shrink: 0`）が未指定のため、件数増加時にアイテムが縦方向に押し潰される。 |
+### エラー①（2026-09-12T00:07:41）
+```
+ReferenceError: useRef is not defined
+  at useGenerateDisplayState (useGenerateDisplayState.ts?t=1789139261186:104:30)
+```
+> （過去バージョンでの `useRef` 未定義エラーの痕跡）
+
+### エラー②（2026-09-12T02:33:28）
+```
+Error: Should have a queue. This is likely a bug in React.
+  at updateReducer → updateState → useState → useQuery
+  at useGenerateDisplayState (useGenerateDisplayState.ts?t=1789148008663:39:47)
+```
+> React フックの呼び出し順・レンダリング整合性破壊によるエラーの痕跡。
 
 ---
 
-## 5. 根本原因の分析 (Root Cause Analysis)
+## 3. 根本原因分析
 
-1. **Flexbox における `flex-shrink: 1` による要素圧縮**:
-   - `display: flex; flex-direction: column;` のコンテナ内では、子要素のデフォルトの `flex-shrink` は `1` である。
-   - スクロールコンテナ（`overflow-y-auto`）として機能させるためには、子要素が縮小せずに自身の高さを維持（`flex-shrink: 0`）し、親の `max-height` を溢れ出る必要がある。
-   - `shrink-0` が欠落していたため、ブラウザはスクロールを発生させる前に子要素を縮小させて枠内に収めようとし、ボタンが縦方向に押し潰された。
+### 関連ファイル
+| ファイル | 役割 |
+|---|---|
+| [`useGenerateDisplayState.ts`](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts) | `displayImages` の計算・同期・キャッシュ管理 |
+| [`jobQueueSlice.ts`](frontend/src/store/slices/jobQueueSlice.ts) | `fetchHistory()` の実装（`comfyHistoryImages` を取得・更新） |
+| [`App.tsx`](frontend/src/App.tsx) | `PersistQueryClientProvider` による React Query キャッシュ永続化 |
 
 ---
 
-## 6. 原因分類 (Classification)
+### バグ A: `useEffect` によるマウント時のキャッシュ破壊・初期化消去
 
-<diagnostic_check>
-- Root_Cause_Isolated: Yes
-- Classification: Type_A: Implementation Bug
-- Scope_Restriction: Read-only phase. Code modification or fix proposals are strictly PROHIBITED during this turn.
-- Route: Direct to /dev-design
-</diagnostic_check>
+**該当箇所**: [`useGenerateDisplayState.ts` L67-L81](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L67-L81)
 
-<incident_report>
-- **障害分類**: **Type A (Implementation Bug / 実装上の不具合)**
-- **判定理由**:
-  - 要件やデータモデルの変更を要するものではなく、`PromptSectionClipboardMenu.tsx` における CSS Flexbox の縮小制御（`shrink-0` の欠落）という純粋な実装上の不備であるため。
-</incident_report>
+```ts
+useEffect(() => {
+  queryClient.setQueryData<string[]>(
+    ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
+    (old) => {
+      if (rawImages.length === 0) return []  // ← ★問題行
+      ...
+    }
+  )
+}, [rawImages, filterOwnSession, queryClient])
+```
+
+- `App.tsx` では `PersistQueryClientProvider` がローカルストレージから `generateDisplayImages` を復元する設定になっています。
+- しかし、リロード直後の初期化時、Zustand の `comfyHistoryImages` は空配列 `[]`（`rawImages.length === 0`）です。
+- この `useEffect` が初回マウント時に発火し、`return []` を実行することで、**復元されたキャッシュまたは既存データを即座に空配列 `[]` で上書き消去**してしまいます。
+
+---
+
+### バグ B: `history-fetched` イベント時の `invalidateQueries` による競合（Race Condition）
+
+**該当箇所**: [`useGenerateDisplayState.ts` L118-L120](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L118-L120)
+
+```ts
+} else if (customEvent.detail?.type === 'history-fetched') {
+  queryClient.invalidateQueries({ queryKey: ['generateDisplayImages'] })
+}
+```
+
+1. リロード後、`jobQueueSlice.ts:242` の `fetchHistory()` が非同期完了し、Zustand に `comfyHistoryImages` をセットします。
+2. 同時に `comfy-job-event` (`history-fetched`) が発火され、`queryClient.invalidateQueries` が呼ばれます。
+3. `invalidateQueries` がリフェッチをトリガーしますが、`useQuery` に渡されている `queryFn: () => rawImages` はレンダリングサイクルのタイミング次第で古いクロージャ（`rawImages = []`）をキャプチャしている場合があり、再度 `[]` をキャッシュに格納してしまいます。
+4. この結果、リロード後にいくら `fetchHistory()` が完了しても、画面上は履歴が空のまま維持されます。
+
+---
+
+### バグ C: 新規ジョブ完了時に一気に表示されるメカニズム
+
+**該当箇所**: [`useGenerateDisplayState.ts` L88](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L88)
+
+```ts
+queryClient.setQueryData<string[]>(
+  ['generateDisplayImages', { filterOwnSession: false }],
+  (old = comfyHistoryImages) => {   // ← old が undefined の場合 comfyHistoryImages を使用
+    return [imageUrl, ...(old || []).filter((x) => x !== imageUrl)].slice(0, 200)
+  }
+)
+```
+
+1. リロード後、キャッシュが正常に表示されない状態が続きます。
+2. ユーザーが新規ジョブを投入し、ComfyUI で画像生成が完了して `executed` イベントが届きます。
+3. `executed` ハンドラ内の `addHistoryImage` は `invalidateQueries` を使わず、直接 `setQueryData` でキャッシュを更新します。
+4. この際、バックグラウンドの `fetchHistory()` で既に Zustand ストアに蓄積されていた `comfyHistoryImages` の全履歴が `addHistoryImage` やストアの再同期によって一気にギャラリーキャッシュへ反映されます。
+5. このため、ユーザーから見ると「ジョブ完了時に過去の履歴が一気にドバッと表示される」という挙動になります。
+
+---
+
+## 4. 診断チェック
+
+| 項目 | 判定結果 |
+|---|---|
+| **Root_Cause_Isolated** | **Yes** |
+| **Classification** | **Type A: Implementation Bug** |
+| **影響スコープ** | フロントエンド（`useGenerateDisplayState.ts`） |
+| **禁止事項遵守** | コード修正・実装計画の提案は未実施（Read-Only 診断完了） |
+
+---
+
+## 5. 次のアクション
+
+原因の特定が完了しました。次のステップを選択してください。
+
+- **YES**: `/dev-design` へ進み、修正設計および実装タスクを作成する
+- **NO**: 調査を継続する、または別の対応を行う

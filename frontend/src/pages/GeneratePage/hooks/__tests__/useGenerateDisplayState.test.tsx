@@ -213,4 +213,63 @@ describe('useGenerateDisplayState', () => {
       })
     })
   })
+
+  describe('REQ-253: reload and history-fetched race condition prevention', () => {
+    it('preserves persisted query cache when rawImages is initially empty on reload', () => {
+      // 事前にキャッシュにデータが存在する状態（PersistQueryClientProvider 復元シミュレーション）
+      queryClient.setQueryData(
+        ['generateDisplayImages', { filterOwnSession: false }],
+        ['persisted-1.png', 'persisted-2.png']
+      )
+
+      // ストアはリロード直後の空状態
+      useGenerationStore.setState({
+        batchImages: [],
+        comfyHistoryImages: [],
+        filterOwnSession: false,
+      })
+
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      // キャッシュが空配列に上書きされず、復元された値が即座に表示されること
+      expect(result.current.displayImages).toEqual(['persisted-1.png', 'persisted-2.png'])
+    })
+
+    it('directly updates query cache when history-fetched event carries allImages and ownImages', async () => {
+      useGenerationStore.setState({
+        batchImages: [],
+        comfyHistoryImages: [],
+        filterOwnSession: false,
+      })
+
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      // useEffect (イベントリスナー登録) が確実にコミットされるまで待機
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      await act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('comfy-job-event', {
+            detail: {
+              type: 'history-fetched',
+              allImages: ['fetched-1.png', 'fetched-2.png'],
+              ownImages: ['fetched-1.png'],
+            },
+          })
+        )
+      })
+
+      await waitFor(() => {
+        expect(result.current.displayImages).toEqual(['fetched-1.png', 'fetched-2.png'])
+      })
+
+      const ownSessionCache = queryClient.getQueryData<string[]>([
+        'generateDisplayImages',
+        { filterOwnSession: true },
+      ])
+      expect(ownSessionCache).toEqual(['fetched-1.png'])
+    })
+  })
 })

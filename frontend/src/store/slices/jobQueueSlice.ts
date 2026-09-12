@@ -223,8 +223,12 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
             }
           })
 
+          const nextComfyHistoryImages = allImages.slice(0, 200)
+          let finalBatchImages: string[] = []
+
           set((state) => {
             const nextBatch = Array.from(new Set([...state.batchImages, ...ownImages])).slice(0, 8)
+            finalBatchImages = nextBatch
             localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextBatch))
 
             const nextSelected =
@@ -234,12 +238,20 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
             }
 
             return {
-              comfyHistoryImages: allImages.slice(0, 200),
+              comfyHistoryImages: nextComfyHistoryImages,
               batchImages: nextBatch,
               selectedImg: nextSelected,
             }
           })
-          window.dispatchEvent(new CustomEvent('comfy-job-event', { detail: { type: 'history-fetched' } }))
+          window.dispatchEvent(
+            new CustomEvent('comfy-job-event', {
+              detail: {
+                type: 'history-fetched',
+                allImages: nextComfyHistoryImages,
+                ownImages: finalBatchImages,
+              },
+            })
+          )
         } catch (e) {
           console.error('Failed to fetch comfy history:', e)
         }

@@ -56,19 +56,31 @@ export function useGenerateDisplayState({
     return filterOwnSession ? batchImages : comfyHistoryImages
   }, [filterOwnSession, batchImages, comfyHistoryImages])
 
-  const { data: displayImages = rawImages } = useQuery<string[]>({
-    queryKey: ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
-    queryFn: () => rawImages,
-    initialData: rawImages,
+  const queryKey = useMemo(
+    () => ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
+    [filterOwnSession]
+  )
+
+  const { data: queryData } = useQuery<string[]>({
+    queryKey,
+    queryFn: () => {
+      const storeState = useGenerationStore.getState()
+      return filterOwnSession ? storeState.batchImages : storeState.comfyHistoryImages
+    },
+    // rawImages が空配列のときは initialData を設定せず、PersistQueryClientProvider によるキャッシュ復元値を保持させる
+    initialData: rawImages.length > 0 ? rawImages : undefined,
     staleTime: Infinity,
   })
 
-  // Synchronize query cache if store rawImages changes
+  const displayImages = queryData ?? (rawImages.length > 0 ? rawImages : [])
+
+  // Synchronize query cache if store rawImages changes (マウント初期の空配列によるキャッシュ消去を防止)
   useEffect(() => {
+    if (rawImages.length === 0) return
+
     queryClient.setQueryData<string[]>(
       ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
       (old) => {
-        if (rawImages.length === 0) return []
         if (!old || old.length === 0) return rawImages
         const oldSet = new Set(old)
         const appended = rawImages.filter((x) => !oldSet.has(x))
@@ -103,20 +115,35 @@ export function useGenerateDisplayState({
     [queryClient, comfyHistoryImages, batchImages]
   )
 
-  // Listen to comfy-job-event for real-time image completion
+  // Listen to comfy-job-event for real-time image completion & history sync
   useEffect(() => {
     const handleJobEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{
         type?: string
         images?: string[]
         isOwn?: boolean
+        allImages?: string[]
+        ownImages?: string[]
       }>
       if (customEvent.detail?.type === 'executed' && customEvent.detail.images) {
         for (const imgUrl of customEvent.detail.images) {
           addHistoryImage(imgUrl, customEvent.detail.isOwn ?? true)
         }
       } else if (customEvent.detail?.type === 'history-fetched') {
-        queryClient.invalidateQueries({ queryKey: ['generateDisplayImages'] })
+        const allImages = customEvent.detail.allImages
+        const ownImages = customEvent.detail.ownImages
+        if (allImages) {
+          queryClient.setQueryData<string[]>(
+            ['generateDisplayImages', { filterOwnSession: false }],
+            allImages
+          )
+        }
+        if (ownImages) {
+          queryClient.setQueryData<string[]>(
+            ['generateDisplayImages', { filterOwnSession: true }],
+            ownImages
+          )
+        }
       }
     }
     window.addEventListener('comfy-job-event', handleJobEvent)

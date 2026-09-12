@@ -451,6 +451,38 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
     expect(state.batchImages.some(img => img.includes('my-new-image.png'))).toBe(true);
     expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(true);
   });
+
+  it('fetchHistory dispatches comfy-job-event with allImages and ownImages in detail', async () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+    useGenerationStore.getState().initialize();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+    const mockHistoryData = {
+      'prompt-1': {
+        prompt: [1, 'prompt-1', {}, { client_id: useGenerationStore.getState().clientId }, []],
+        outputs: {
+          '9': { images: [{ filename: 'my-img.png', subfolder: '', type: 'output' }] },
+        },
+        status: { completed: true },
+      },
+    };
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce(mockHistoryData as any);
+
+    await useGenerationStore.getState().fetchHistory();
+
+    const dispatchedEvent = dispatchSpy.mock.calls.find(
+      ([event]) => (event as CustomEvent).detail?.type === 'history-fetched'
+    )?.[0] as CustomEvent;
+
+    expect(dispatchedEvent).toBeDefined();
+    expect(dispatchedEvent.detail.allImages).toBeDefined();
+    expect(dispatchedEvent.detail.allImages.length).toBeGreaterThan(0);
+    expect(dispatchedEvent.detail.ownImages).toBeDefined();
+
+    dispatchSpy.mockRestore();
+  });
 });
 
 describe('useGenerationStore REQ-166 queue clear vs cancel all separation and execution_interrupted handling', () => {
