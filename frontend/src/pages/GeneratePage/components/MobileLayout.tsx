@@ -13,6 +13,7 @@ import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { PromptTranslationModal } from './PromptTranslationModal'
+import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { SaveAsTagSetModal } from './SaveAsTagSetModal'
 import { getPromptPrefix } from '../../../utils/formatUtils'
@@ -526,11 +527,15 @@ export const MobileLayout = ({
                               : 'border-transparent hover:border-zinc-600'
                         }`}
                       >
-                        <img
+                        <LazyThumbnail
                           src={toThumbnailUrl(img)}
                           alt={`Generated ${i + 1}`}
-                          loading="lazy"
-                          decoding="async"
+                          onError={() => {
+                            useGenerationStore.setState((state) => ({
+                              comfyHistoryImages: state.comfyHistoryImages.filter((x) => x !== img),
+                              batchImages: state.batchImages.filter((x) => x !== img),
+                            }))
+                          }}
                           className="w-full h-full object-cover pointer-events-none select-none"
                           style={{ WebkitTouchCallout: 'none' }}
                         />

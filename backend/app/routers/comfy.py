@@ -1,7 +1,10 @@
 """ComfyUI proxy router."""
+import asyncio
+import hashlib
 import io
 import logging
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -18,6 +21,10 @@ _thumbnail_cache: OrderedDict[str, bytes] = OrderedDict()
 _THUMBNAIL_CACHE_MAX_SIZE = 500
 _client: Optional[httpx.AsyncClient] = None
 
+# ディスクキャッシュ上限
+_DISK_CACHE_MAX_FILES = 4000
+_DISK_CACHE_TARGET_FILES = 3600
+
 
 def get_comfy_client() -> httpx.AsyncClient:
     """ComfyUI通信用 httpx.AsyncClient シングルトン（コネクションプール）を取得する。"""
@@ -33,6 +40,44 @@ async def close_comfy_client():
     if _client is not None and not _client.is_closed:
         await _client.aclose()
         _client = None
+
+
+def _convert_to_webp_thumbnail(image_bytes: bytes, size: int, quality: int) -> bytes:
+    """CPU-bound Pillow conversion executed in worker thread."""
+    image = Image.open(io.BytesIO(image_bytes))
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGBA")
+    image.thumbnail((size, size))
+    buf = io.BytesIO()
+    image.save(buf, format="WEBP", quality=quality)
+    return buf.getvalue()
+
+
+def _get_thumbnail_disk_path(cache_key: str) -> Path:
+    """../db/thumbnails ディレクトリ内の SHA-256 キャッシュパスを返却する。"""
+    disk_dir = Path(settings.snapshot_path).parent / "thumbnails"
+    disk_dir.mkdir(parents=True, exist_ok=True)
+    filename = hashlib.sha256(cache_key.encode("utf-8")).hexdigest() + ".webp"
+    return disk_dir / filename
+
+
+def _prune_disk_cache_if_needed(disk_dir: Path) -> None:
+    """4,000件（約100MB）超過時に古い順に削除して3,600件まで間引く。"""
+    try:
+        files = list(disk_dir.glob("*.webp"))
+        if len(files) <= _DISK_CACHE_MAX_FILES:
+            return
+        files.sort(key=lambda f: f.stat().st_mtime)
+        delete_count = len(files) - _DISK_CACHE_TARGET_FILES
+        for f in files[:delete_count]:
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        logger.info(f"Pruned {delete_count} old thumbnail disk cache files.")
+    except Exception as e:
+        logger.warning(f"Error pruning thumbnail disk cache: {e}")
+
 
 
 @router.get("/object-info/{class_type}", response_model=dict)
@@ -235,7 +280,28 @@ async def get_comfy_thumbnail(
 ):
     """ComfyUI 出力画像をオンデマンドで WebP サムネイルに変換して返却する。"""
     cache_key = f"{type}:{subfolder}:{filename}:{size}:{quality}"
+
+    client = get_comfy_client()
+
+    # ヘルパー: キャッシュヒット時に元画像がComfyUIでまだ実在するか確認 (HEAD: ~20ms)
+    async def _check_comfy_exists() -> bool:
+        try:
+            h_resp = await client.head(
+                f"{settings.comfy_url}/view",
+                params={"filename": filename, "subfolder": subfolder, "type": type},
+                timeout=3.0,
+            )
+            return h_resp.status_code == 200
+        except Exception:
+            return True  # 疎通エラー時はキャッシュでフォールバック
+
+    # L1: メモリキャッシュ確認
     if cache_key in _thumbnail_cache:
+        if not await _check_comfy_exists():
+            _thumbnail_cache.pop(cache_key, None)
+            disk_p = _get_thumbnail_disk_path(cache_key)
+            disk_p.unlink(missing_ok=True)
+            raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
         _thumbnail_cache.move_to_end(cache_key)
         return Response(
             content=_thumbnail_cache[cache_key],
@@ -243,7 +309,32 @@ async def get_comfy_thumbnail(
             headers={"Cache-Control": "public, max-age=604800, immutable"},
         )
 
-    client = get_comfy_client()
+    # L2: ディスクキャッシュ確認
+    disk_path = _get_thumbnail_disk_path(cache_key)
+    if disk_path.is_file():
+        try:
+            if disk_path.stat().st_size > 0:
+                if not await _check_comfy_exists():
+                    disk_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
+                webp_bytes = await asyncio.to_thread(disk_path.read_bytes)
+                _thumbnail_cache[cache_key] = webp_bytes
+                if len(_thumbnail_cache) > _THUMBNAIL_CACHE_MAX_SIZE:
+                    _thumbnail_cache.popitem(last=False)
+                return Response(
+                    content=webp_bytes,
+                    media_type="image/webp",
+                    headers={"Cache-Control": "public, max-age=604800, immutable"},
+                )
+            else:
+                disk_path.unlink(missing_ok=True)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to read disk cache {disk_path}: {e}")
+            disk_path.unlink(missing_ok=True)
+
+    # L3: ComfyUI から取得
     try:
         resp = await client.get(
             f"{settings.comfy_url}/view",
@@ -259,17 +350,21 @@ async def get_comfy_thumbnail(
         logger.warning(f"Failed to fetch image from ComfyUI view: {e}")
         raise HTTPException(status_code=502, detail=f"ComfyUI view error: {e}")
 
+    # ワーカースレッドで非同期にPillow変換 (イベントループをブロックしない)
     try:
-        image = Image.open(io.BytesIO(resp.content))
-        if image.mode not in ("RGB", "RGBA"):
-            image = image.convert("RGBA")
-        image.thumbnail((size, size))
-        buf = io.BytesIO()
-        image.save(buf, format="WEBP", quality=quality)
-        webp_bytes = buf.getvalue()
+        webp_bytes = await asyncio.to_thread(
+            _convert_to_webp_thumbnail, resp.content, size, quality
+        )
     except Exception as e:
         logger.error(f"Thumbnail conversion failed for {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Thumbnail conversion error: {e}")
+
+    # ディスクおよびメモリへ保存
+    try:
+        await asyncio.to_thread(disk_path.write_bytes, webp_bytes)
+        await asyncio.to_thread(_prune_disk_cache_if_needed, disk_path.parent)
+    except Exception as e:
+        logger.warning(f"Failed to write thumbnail to disk {disk_path}: {e}")
 
     _thumbnail_cache[cache_key] = webp_bytes
     if len(_thumbnail_cache) > _THUMBNAIL_CACHE_MAX_SIZE:
@@ -280,5 +375,3 @@ async def get_comfy_thumbnail(
         media_type="image/webp",
         headers={"Cache-Control": "public, max-age=604800, immutable"},
     )
-
-

@@ -166,8 +166,9 @@ class TestComfyProxyAPI(unittest.TestCase):
         self.assertEqual(res.json(), {"prompt-123": {"outputs": {"9": {"images": []}}}})
         mock_get.assert_called_once_with(f"{comfy_router.settings.comfy_url}/history/prompt-123", timeout=15.0)
 
+    @patch("httpx.AsyncClient.head")
     @patch("httpx.AsyncClient.get")
-    def test_get_comfy_thumbnail_success(self, mock_get):
+    def test_get_comfy_thumbnail_success(self, mock_get, mock_head):
         from PIL import Image
         import io
         img = Image.new("RGB", (512, 512), color="red")
@@ -181,6 +182,11 @@ class TestComfyProxyAPI(unittest.TestCase):
         mock_resp.raise_for_status = MagicMock()
         mock_get.return_value = mock_resp
 
+        # HEAD チェック: ComfyUI に画像が存在する（200）
+        mock_head_resp = MagicMock()
+        mock_head_resp.status_code = 200
+        mock_head.return_value = mock_head_resp
+
         comfy_router._thumbnail_cache.clear()
         res = self.client.get("/api/comfy/thumbnail?filename=test.png&size=128&quality=80")
         self.assertEqual(res.status_code, 200)
@@ -192,6 +198,7 @@ class TestComfyProxyAPI(unittest.TestCase):
         res2 = self.client.get("/api/comfy/thumbnail?filename=test.png&size=128&quality=80")
         self.assertEqual(res2.status_code, 200)
         mock_get.assert_not_called()
+
 
     @patch("httpx.AsyncClient.get")
     def test_get_comfy_thumbnail_not_found(self, mock_get):
@@ -205,3 +212,93 @@ class TestComfyProxyAPI(unittest.TestCase):
 
 
 
+    @patch("httpx.AsyncClient.head")
+    def test_get_comfy_thumbnail_disk_cache_hit(self, mock_head):
+        """ディスクキャッシュが存在する場合、ComfyUI への GET が発生せず即座に WebP が返ること。"""
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        # WebP バイト列を生成
+        img = Image.new("RGB", (64, 64), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=80)
+        webp_bytes = buf.getvalue()
+
+        # HEAD リクエストは 200 を返す（ComfyUI に画像が存在する）
+        mock_head_resp = MagicMock()
+        mock_head_resp.status_code = 200
+        mock_head.return_value = mock_head_resp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # ディスクキャッシュパスをモック
+            fake_disk_path = Path(tmpdir) / "fake_thumb.webp"
+            fake_disk_path.write_bytes(webp_bytes)
+
+            comfy_router._thumbnail_cache.clear()
+            with mock_patch.object(comfy_router, "_get_thumbnail_disk_path", return_value=fake_disk_path):
+                with mock_patch("httpx.AsyncClient.get") as mock_get:
+                    res = self.client.get("/api/comfy/thumbnail?filename=disk_hit.png&size=64&quality=80")
+                    self.assertEqual(res.status_code, 200)
+                    self.assertEqual(res.headers.get("content-type"), "image/webp")
+                    # ComfyUI GET は呼ばれていないこと
+                    mock_get.assert_not_called()
+
+    @patch("httpx.AsyncClient.head")
+    @patch("httpx.AsyncClient.get")
+    def test_get_comfy_thumbnail_disk_cache_corrupt_recovery(self, mock_get, mock_head):
+        """ディスクキャッシュが 0 バイト破損の場合、自動削除して ComfyUI から再取得・再生成されること。"""
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        # ComfyUI からの PNG レスポンス
+        img = Image.new("RGB", (128, 128), color="green")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.content = png_bytes
+        mock_get_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_get_resp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 0バイトの破損キャッシュファイルを配置
+            fake_disk_path = Path(tmpdir) / "corrupt_thumb.webp"
+            fake_disk_path.write_bytes(b"")  # 0バイト（破損）
+
+            comfy_router._thumbnail_cache.clear()
+            with mock_patch.object(comfy_router, "_get_thumbnail_disk_path", return_value=fake_disk_path):
+                res = self.client.get("/api/comfy/thumbnail?filename=corrupt.png&size=128&quality=80")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.headers.get("content-type"), "image/webp")
+                # 破損ファイルを削除してから ComfyUI で再取得・再生成されていること
+                # (ファイルは再生成されて size > 0 になる)
+                self.assertTrue(fake_disk_path.exists())
+                self.assertGreater(fake_disk_path.stat().st_size, 0)
+                # ComfyUI GET が呼ばれていること（リカバリの証明）
+                mock_get.assert_called_once()
+
+    def test_prune_disk_cache_if_needed(self):
+        """4,000件超過時に古い順にファイルが削除されて 3,600件まで間引かれること。"""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            disk_dir = Path(tmpdir)
+            # 4,001件の .webp ファイルを作成
+            total = 4001
+            for i in range(total):
+                f = disk_dir / f"thumb_{i:05d}.webp"
+                f.write_bytes(b"dummy")
+
+            comfy_router._prune_disk_cache_if_needed(disk_dir)
+
+            remaining = list(disk_dir.glob("*.webp"))
+            self.assertLessEqual(len(remaining), comfy_router._DISK_CACHE_TARGET_FILES)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Settings, Plus, ChevronRight, ChevronDown,
@@ -13,6 +13,7 @@ import { AppliedAssetChips } from './AppliedAssetChips'
 import { AuditPanel } from './AuditPanel'
 import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
+import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
@@ -816,11 +817,16 @@ export const DesktopLayout = ({
                                       : 'border-transparent hover:border-zinc-650'
                                 }`}
                               >
-                                <img
+                                <LazyThumbnail
                                   src={toThumbnailUrl(img)}
                                   alt={`Generated ${i + 1}`}
-                                  loading="lazy"
-                                  decoding="async"
+                                  containerRef={gallery.scrollContainerRef}
+                                  onError={() => {
+                                    useGenerationStore.setState((state) => ({
+                                      comfyHistoryImages: state.comfyHistoryImages.filter((x) => x !== img),
+                                      batchImages: state.batchImages.filter((x) => x !== img),
+                                    }))
+                                  }}
                                   className="w-full h-full object-cover pointer-events-none select-none"
                                   style={{ WebkitTouchCallout: 'none' }}
                                 />
