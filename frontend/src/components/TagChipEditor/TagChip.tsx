@@ -156,6 +156,7 @@ export const TagChip: React.FC<TagChipProps> = ({
   };
 
   const handleWeightKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
     if (e.key === 'Enter') {
       e.preventDefault();
       handleWeightSubmit();
@@ -286,6 +287,13 @@ export const TagChip: React.FC<TagChipProps> = ({
           ref={menuRef}
           className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setIsMenuOpen(false);
+            }
+          }}
         >
           {/* ヘッダー: タグ名入力 + 有効/無効トグル + コピーボタン */}
           <div className="flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.08)] pb-2">

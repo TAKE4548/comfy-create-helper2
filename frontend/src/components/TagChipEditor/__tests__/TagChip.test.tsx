@@ -436,4 +436,76 @@ describe('TagChip', () => {
     fireEvent.click(copyBtn);
     expect(writeTextMock).toHaveBeenCalledWith('masterpiece, 1girl');
   });
+
+  it('prevents Backspace, Delete, Space, and Ctrl+D in weight input from triggering parent shortcuts', () => {
+    mockOnEdit.mockClear();
+    mockOnDelete.mockClear();
+    mockOnToggle.mockClear();
+    mockOnDuplicate.mockClear();
+
+    render(
+      <TagChip
+        id="1"
+        text="weight-keyboard-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('weight-keyboard-tag'));
+    const numInput = screen.getByRole('spinbutton');
+    expect(numInput).toBeInTheDocument();
+
+    // Backspace in weight input should not delete the chip
+    fireEvent.keyDown(numInput, { key: 'Backspace', code: 'Backspace' });
+    expect(mockOnDelete).not.toHaveBeenCalled();
+
+    // Delete in weight input should not delete the chip
+    fireEvent.keyDown(numInput, { key: 'Delete', code: 'Delete' });
+    expect(mockOnDelete).not.toHaveBeenCalled();
+
+    // Space in weight input should not toggle the chip
+    fireEvent.keyDown(numInput, { key: ' ', code: 'Space' });
+    expect(mockOnToggle).not.toHaveBeenCalled();
+
+    // Ctrl+D in weight input should not duplicate the chip
+    fireEvent.keyDown(numInput, { key: 'd', code: 'KeyD', ctrlKey: true });
+    expect(mockOnDuplicate).not.toHaveBeenCalled();
+  });
+
+  it('stops keyboard propagation in submenu container and closes submenu on Escape', () => {
+    render(
+      <TagChip
+        id="1"
+        text="container-key-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu
+    fireEvent.click(screen.getByText('container-key-tag'));
+    const submenuHeading = screen.getByText('強度 (Weight)');
+    const submenuContainer = submenuHeading.closest('.absolute')!;
+    expect(submenuContainer).toBeInTheDocument();
+
+    // Delete inside submenu container should not trigger onDelete
+    fireEvent.keyDown(submenuContainer, { key: 'Delete', code: 'Delete' });
+    expect(mockOnDelete).not.toHaveBeenCalled();
+
+    // Space inside submenu container should not trigger onToggle
+    fireEvent.keyDown(submenuContainer, { key: ' ', code: 'Space' });
+    expect(mockOnToggle).not.toHaveBeenCalled();
+
+    // Escape inside submenu container should close submenu without triggering parent shortcuts
+    fireEvent.keyDown(submenuContainer, { key: 'Escape', code: 'Escape' });
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+  });
 });
