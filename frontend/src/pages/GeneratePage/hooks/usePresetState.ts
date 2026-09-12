@@ -622,6 +622,9 @@ export function usePresetState({
   }
 
   const handleLoadPreset = (preset: WorkflowPreset) => {
+    if (preset.updated_at) {
+      presetUpdatedAtRef.current[preset.id] = preset.updated_at
+    }
     const defaultParams = workflow ? getInitialParams(workflow) : {}
     const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
 
@@ -642,6 +645,55 @@ export function usePresetState({
       }
     }
     setIsPresetOpen(false)
+  }
+
+  const handleSelectPresetTab = (presetId: string | number) => {
+    const targetId = Number(presetId)
+    const serverPreset = presets?.find((p) => p.id === targetId)
+    const prevUpdatedAt = presetUpdatedAtRef.current[targetId]
+    const serverChanged = !!(
+      serverPreset?.updated_at &&
+      prevUpdatedAt &&
+      serverPreset.updated_at !== prevUpdatedAt
+    )
+
+    const targetSet = storeRef.current.sets?.find((s) => String(s.id) === String(presetId))
+    const lastSaved = lastSavedStateRef.current[targetId]
+    const isDirty = targetSet && lastSaved ? !isStateEqual(lastSaved, targetSet) : false
+
+    if (serverChanged && isDirty && serverPreset && targetSet) {
+      // 別端末で更新あり ＋ 自端末でも編集中 → 即座に競合解消モーダルを表示
+      presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
+      setConflictData({
+        serverPreset,
+        localDraft: {
+          name: targetSet.name,
+          paramValues: targetSet.paramValues,
+          appliedAssets: targetSet.appliedAssets,
+          batchSize: targetSet.batchSize,
+          seedMode: targetSet.seedMode,
+          seed: targetSet.seed,
+        },
+      })
+      return
+    }
+
+    if (serverChanged && !isDirty && serverPreset) {
+      // 別端末で更新あり ＋ 自端末は未編集 → サーバー最新版をロード
+      presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
+      handleLoadPreset(serverPreset)
+      return
+    }
+
+    // サーバー変更なし: 既に開いているタブならローカル状態をアクティブ化、未開放ならDBから初期ロード
+    const isOpen = (storeRef.current.openPresetIds || []).map(String).includes(String(presetId))
+    if (isOpen) {
+      setActiveSetId(presetId)
+    } else if (serverPreset) {
+      handleLoadPreset(serverPreset)
+    } else {
+      setActiveSetId(presetId)
+    }
   }
 
   // ── Undo/Redo ──
@@ -776,21 +828,31 @@ export function usePresetState({
     })
 
     const isFirstSync = !isInitialSyncRef.current
-    let mappedSets = rawMappedSets
+    let mappedSets: import('../../../store/types').GenerationSet[] = rawMappedSets
     if (!isFirstSync && currentActiveSetId !== null && currentActiveSetId !== undefined) {
-      mappedSets = rawMappedSets.map((s) =>
-        String(s.id) === String(currentActiveSetId)
-          ? {
-              ...s,
+      mappedSets = presets.map((p) => {
+        const existing = existingSetsMap.get(String(p.id))
+        if (existing) {
+          if (String(p.id) === String(currentActiveSetId)) {
+            return {
+              ...existing,
+              name: p.name,
               paramValues: currentStore.paramValues,
               appliedAssets: currentStore.appliedAssets,
-              promptChips: currentStore.promptChips || s.promptChips,
+              promptChips: currentStore.promptChips || existing.promptChips,
               batchSize: currentStore.batchSize,
               seedMode: currentStore.seedMode,
               seed: currentStore.seed,
             }
-          : s
-      )
+          }
+          return {
+            ...existing,
+            name: p.name,
+          }
+        }
+        const raw = rawMappedSets.find((r) => String(r.id) === String(p.id))!
+        return raw
+      })
     }
 
     currentStore.setSets?.(mappedSets)
@@ -815,6 +877,16 @@ export function usePresetState({
         presets.forEach((p) => {
           if (p.updated_at) {
             presetUpdatedAtRef.current[p.id] = p.updated_at
+          }
+          const pData = rawMappedSets.find((s) => String(s.id) === String(p.id))
+          if (pData && !lastSavedStateRef.current[p.id]) {
+            lastSavedStateRef.current[p.id] = {
+              paramValues: pData.paramValues,
+              appliedAssets: pData.appliedAssets,
+              batchSize: pData.batchSize,
+              seedMode: pData.seedMode,
+              seed: pData.seed,
+            }
           }
         })
         const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
@@ -1005,6 +1077,7 @@ export function usePresetState({
     handleUpdatePreset,
     handleDeletePreset,
     handleLoadPreset,
+    handleSelectPresetTab,
     isPresetOpen,
     setIsPresetOpen,
     newPresetName,

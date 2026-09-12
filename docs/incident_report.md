@@ -1,126 +1,127 @@
-# インシデントレポート
+# インシデントレポート: プリセットのプロンプト編集が生成に反映されない
 
 **日時**: 2026-09-12  
 **報告者**: Incident Analyst  
-**対象コンポーネント**: `useGenerateDisplayState.ts`, `App.tsx`  
+**対象コンポーネント**: 
+- `frontend/src/components/TagChipEditor/index.tsx`（テキスト入力モード時の巻き戻し・同期競合）
+- `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx`（Multi-Set タブクリック時のキャッシュ強制再ロード）
+- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`（生成投入時の activeSetId と setItem 不一致時の値解決）
+- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`（自動保存のトリガー・更新判定）
 **分類**: **Type A（実装バグ）**
 
 ---
 
 ## 1. 症状
 
-- **再現ステップ**: 生成画面（GeneratePage）でブラウザをリロードする。
-- **期待値**: 過去のComfyUI生成履歴が即座にギャラリー/ストリップに表示される。
-- **実際の挙動**:
-  1. リロード直後 → ギャラリーが空（履歴が見えない）。
-  2. 新しい生成ジョブを実行し、画像が生成・完了した瞬間 → 過去分も含めて画像が一気に表示される。
+- **事象**: プリセット（ID: 1469「挿れたままおっぱい舐め」）のプロンプト（`Prompt_Pose_Action`）を編集しても、生成ボタン押下時に編集内容がComfyUIへ反映されず、過去の古いプロンプト（`"a girl walking front on a roulette table, a man standing"`）で生成が実行される。
+- **再現ステップ**:
+  1. ワークフロー（ID: 59）の生成画面を開く。
+  2. プリセット 1469「挿れたままおっぱい舐め」を選択する。
+  3. `Prompt_Pose_Action` をテキストモードまたはチップで編集する。
+  4. 「Generate Batch」を押下する。
+  5. 投入されたジョブ（4件）の画像履歴バッジは「挿れたままおっぱい舐め」となっているが、ComfyUIに送信されたプロンプトは編集前の `"a girl walking front on a roulette table, a man standing"` のままで実行されてしまう。
 
 ---
 
-## 2. ログエビデンス
+## 2. ログ・DBエビデンス
 
-### エラー①（2026-09-12T00:07:41）
-```
-ReferenceError: useRef is not defined
-  at useGenerateDisplayState (useGenerateDisplayState.ts?t=1789139261186:104:30)
-```
-> （過去バージョンでの `useRef` 未定義エラーの痕跡）
+### エビデンス①: 投入ジョブとプリセットの突合
+`db/prompt_surgeon.db`（`prompt_metadata` テーブル）および `logs/app.jsonl`:
+- **投入時刻**: `2026-09-12 17:36:02 JST` (ジョブ4件: `645b8c9b`, `a9b7cd02`, `af1be6ad`, `d098660e`)
+- **再投入時刻**: `2026-09-12 17:36:52 JST` (ジョブ4件: `bd5b64e0`, `b3b26b61`, `5b1e5638`, `6e7cd404`)
+- **生成パラメータ**:
+  - `Prompt_Pose_Action`: `"a girl walking front on a roulette table, a man standing"`
+  - `Prompt_Expression`: `the girl looking to the viewer, embarrassed face, flushed cheeks, shy smile, faceless male`
+  - `DetailDaemonSampler`: `-0.3`
+  - **ジョブ件数**: 4件（選択プリセットのバッチサイズと一致）
+- **DBの `workflow_presets` との完全一致**:
+  - 上記パラメータは、プリセット 1469（「挿れたままおっぱい舐め」）のDB保存値（`updated_at: 2026-09-12 00:47:54`）と全パラメータが完全一致。
+  - すなわち、**「プリセット 1469 が選択されて投入されたが、その内容は 00:47:54 の古いDB値のまま（画面での編集が一切反映されていない）」** 状態であった。
 
-### エラー②（2026-09-12T02:33:28）
-```
-Error: Should have a queue. This is likely a bug in React.
-  at updateReducer → updateState → useState → useQuery
-  at useGenerateDisplayState (useGenerateDisplayState.ts?t=1789148008663:39:47)
-```
-> React フックの呼び出し順・レンダリング整合性破壊によるエラーの痕跡。
-
----
-
-## 3. 根本原因分析
-
-### 関連ファイル
-| ファイル | 役割 |
-|---|---|
-| [`useGenerateDisplayState.ts`](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts) | `displayImages` の計算・同期・キャッシュ管理 |
-| [`jobQueueSlice.ts`](frontend/src/store/slices/jobQueueSlice.ts) | `fetchHistory()` の実装（`comfyHistoryImages` を取得・更新） |
-| [`App.tsx`](frontend/src/App.tsx) | `PersistQueryClientProvider` による React Query キャッシュ永続化 |
+### エビデンス②: 自動保存（PUTリクエスト）の発行ログ
+`logs/app.jsonl` の調査結果:
+- 17:16 〜 17:36 の間、別プリセット 1472（「中出し」）に対する `PUT /api/workflow-presets/1472` は多数発行されていた（17:35:52 にも成功）。
+- しかし、**プリセット 1469 に対する `PUT /api/workflow-presets/1469` は 09:47:54（UTC 00:47:54）以降、1件も発行されていなかった**。
+- つまり、画面上での編集がバックエンドへ自動保存されず、メモリ上あるいはエディタ内部で消失・遮断されていた。
 
 ---
 
-### バグ A: `useEffect` によるマウント時のキャッシュ破壊・初期化消去
+## 3. 根本原因分析（Root Cause Analysis）
 
-**該当箇所**: [`useGenerateDisplayState.ts` L67-L81](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L67-L81)
+詳細なコード追跡の結果、画面上でプロンプトを編集しても生成に反映されない根本原因として、以下の3点が特定されました。
 
-```ts
-useEffect(() => {
-  queryClient.setQueryData<string[]>(
-    ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
-    (old) => {
-      if (rawImages.length === 0) return []  // ← ★問題行
-      ...
-    }
-  )
-}, [rawImages, filterOwnSession, queryClient])
-```
+### 根本原因①: TagChipEditor テキスト入力時の自己同期ループ（入力の自動消去・巻き戻し）
+**該当箇所**: [`frontend/src/components/TagChipEditor/index.tsx` L96-L103](frontend/src/components/TagChipEditor/index.tsx#L96-L103)
 
-- `App.tsx` では `PersistQueryClientProvider` がローカルストレージから `generateDisplayImages` を復元する設定になっています。
-- しかし、リロード直後の初期化時、Zustand の `comfyHistoryImages` は空配列 `[]`（`rawImages.length === 0`）です。
-- この `useEffect` が初回マウント時に発火し、`return []` を実行することで、**復元されたキャッシュまたは既存データを即座に空配列 `[]` で上書き消去**してしまいます。
-
----
-
-### バグ B: `history-fetched` イベント時の `invalidateQueries` による競合（Race Condition）
-
-**該当箇所**: [`useGenerateDisplayState.ts` L118-L120](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L118-L120)
-
-```ts
-} else if (customEvent.detail?.type === 'history-fetched') {
-  queryClient.invalidateQueries({ queryKey: ['generateDisplayImages'] })
+```tsx
+} else {
+  prevChipsString.current = chipsToString(chipsProp);
+  isExternalUpdateRef.current = true;
+  setChips(chipsProp, false);
+  if (isTextMode) {
+    setTextValue(chipsToString(chipsProp)); // ← ★入力途中のテキストを chipsProp で強制上書き
+  }
 }
 ```
 
-1. リロード後、`jobQueueSlice.ts:242` の `fetchHistory()` が非同期完了し、Zustand に `comfyHistoryImages` をセットします。
-2. 同時に `comfy-job-event` (`history-fetched`) が発火され、`queryClient.invalidateQueries` が呼ばれます。
-3. `invalidateQueries` がリフェッチをトリガーしますが、`useQuery` に渡されている `queryFn: () => rawImages` はレンダリングサイクルのタイミング次第で古いクロージャ（`rawImages = []`）をキャプチャしている場合があり、再度 `[]` をキャッシュに格納してしまいます。
-4. この結果、リロード後にいくら `fetchHistory()` が完了しても、画面上は履歴が空のまま維持されます。
+1. テキスト入力モードでプロンプトを入力中、1文字入力やカンマ `,`、スペースを入力するたびに `onChange` が発火し、親ストアの `promptChips` が更新されます。
+2. 親から渡される `chipsProp` の参照が変化したことにより、`useEffect([chipsProp])` が発火します。
+3. `parseToChips` は末尾のカンマや空白を空トークンとして切り捨てるため、`chipsToString(chipsProp)` は未確定の末尾文字を削った文字列を返します。
+4. これが `setTextValue(chipsToString(chipsProp))` によって即座に textarea に再セットされ、ユーザーが入力中の文字が即座に消去・巻き戻されます。
+5. この結果、ユーザーがテキストモードでプロンプトを変更しようとしても、直前のチップ状態に巻き戻され、編集内容が `paramValues` に正しく保持・伝播されません。
 
 ---
 
-### バグ C: 新規ジョブ完了時に一気に表示されるメカニズム
+### 根本原因②: Multi-Set タブ切り替え時のサーバーキャッシュ強制再ロードによるローカル編集の破棄
+**該当箇所**: [`frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` L487-L490](frontend/src/pages/GeneratePage/components/DesktopLayout.tsx#L487-L490)
 
-**該当箇所**: [`useGenerateDisplayState.ts` L88](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L88)
-
-```ts
-queryClient.setQueryData<string[]>(
-  ['generateDisplayImages', { filterOwnSession: false }],
-  (old = comfyHistoryImages) => {   // ← old が undefined の場合 comfyHistoryImages を使用
-    return [imageUrl, ...(old || []).filter((x) => x !== imageUrl)].slice(0, 200)
-  }
-)
+```tsx
+onClick={() => {
+  const targetPreset = presets?.find((p) => String(p.id) === String(s.id))
+  if (targetPreset) handleLoadPreset(targetPreset)
+  else setActiveSetId(s.id)
+}}
 ```
 
-1. リロード後、キャッシュが正常に表示されない状態が続きます。
-2. ユーザーが新規ジョブを投入し、ComfyUI で画像生成が完了して `executed` イベントが届きます。
-3. `executed` ハンドラ内の `addHistoryImage` は `invalidateQueries` を使わず、直接 `setQueryData` でキャッシュを更新します。
-4. この際、バックグラウンドの `fetchHistory()` で既に Zustand ストアに蓄積されていた `comfyHistoryImages` の全履歴が `addHistoryImage` やストアの再同期によって一気にギャラリーキャッシュへ反映されます。
-5. このため、ユーザーから見ると「ジョブ完了時に過去の履歴が一気にドバッと表示される」という挙動になります。
+1. Multi-Set タブバーでプリセットタブをクリックした際、`setActiveSetId(s.id)` によるローカル状態の切り替えではなく、`handleLoadPreset(targetPreset)` が実行されます。
+2. `targetPreset` は React Query がサーバーから取得した `presets`（DB上の値: 00:47:54 の古いデータ）です。
+3. ユーザーが画面上で編集を行っても、自動保存完了前やタブをクリックした瞬間に、古いサーバーキャッシュ値によってローカルの入力内容が即座に上書き消去されます。
 
 ---
 
-## 4. 診断チェック
+### 根本原因③: useGenerateAction における activeSetId 不一致時のパラメータ解決フォールバック
+**該当箇所**: [`frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` L162-L170](frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts#L162-L170)
 
-| 項目 | 判定結果 |
-|---|---|
-| **Root_Cause_Isolated** | **Yes** |
-| **Classification** | **Type A: Implementation Bug** |
-| **影響スコープ** | フロントエンド（`useGenerateDisplayState.ts`） |
-| **禁止事項遵守** | コード修正・実装計画の提案は未実施（Read-Only 診断完了） |
+```typescript
+const isActive = activeSetId !== null && String(setItem.id) === String(activeSetId)
+const itemParams = isActive
+  ? { ...setItem.paramValues, ...currentParamValues }
+  : setItem.paramValues
+const itemChips = isActive
+  ? (promptChips || setItem.promptChips || {})
+  : (setItem.promptChips || {})
+
+const effectiveParamValues = getEffectiveParamValues(itemParams, itemChips)
+```
+
+1. バッチ生成時、`setItem.id` と `activeSetId` が一致（`isActive === true`）している場合のみ、現在画面上の入力値（`currentParamValues`, `promptChips`）がマージされます。
+2. もしタブの切り替えやフォーカス等のタイミングで `activeSetId` が対象プリセットとズレていた場合、`isActive` は `false` となり、`setItem.paramValues`（DBからロードされた古い値）がそのまま ComfyUI へ送信されます。
+
+---
+
+## 4. 診断チェック（Diagnostic Check）
+
+| 項目 | 判定結果 | 詳細 |
+|---|---|---|
+| **Root_Cause_Isolated** | **Yes** | ユーザー指摘に基づき再検証実施。ジョブ数（4件）およびプリセット（1469）のDB値・エディタ巻き戻しメカニズムを完全特定 |
+| **Classification** | **Type A: Implementation Bug** | `TagChipEditor` の同期ループ、タブクリック時のキャッシュ再ロード、`useGenerateAction` の値解決 |
+| **影響スコープ** | フロントエンド | `TagChipEditor/index.tsx`, `DesktopLayout.tsx`, `useGenerateAction.ts`, `usePresetState.ts` |
+| **禁止事項遵守** | 遵守 | コード変更は一切行わず、読み取り専用で診断・レポート更新完了 |
 
 ---
 
 ## 5. 次のアクション
 
-原因の特定が完了しました。次のステップを選択してください。
+正確な原因の特定が完了しました。修正フェーズへと移行します。
 
-- **YES**: `/dev-design` へ進み、修正設計および実装タスクを作成する
-- **NO**: 調査を継続する、または別の対応を行う
+- **推奨**: `/dev-design` へ進み、`TagChipEditor` のテキスト入力同期およびタブ切り替え時のキャッシュ保護の修正設計を行う。

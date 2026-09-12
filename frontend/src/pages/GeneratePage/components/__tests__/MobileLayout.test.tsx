@@ -79,6 +79,7 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       setSortOrder: vi.fn(),
       setIsPresetManagerOpen: vi.fn(),
       handleLoadPreset: vi.fn(),
+      handleSelectPresetTab: vi.fn(),
       baseModels: [],
       updateWorkflowBaseModelMutation: { mutate: vi.fn() },
       setWorkflowManageMode: vi.fn(),
@@ -316,6 +317,26 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(setParamValuesMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ Main_Negative_Prompt: '' })
     );
+  })
+
+  it('calls handleSelectPresetTab when preset tab is clicked on mobile', () => {
+    const handleSelectPresetTabMock = vi.fn()
+    const state = createMockState({
+      sets: [
+        { id: '101', name: 'Set 101', checked: true },
+        { id: '102', name: 'Set 102', checked: true },
+      ],
+      openPresetIds: ['101', '102'],
+      activeSetId: '101',
+      handleSelectPresetTab: handleSelectPresetTabMock,
+    })
+
+    render(<MobileLayout state={state} />)
+
+    const tab2 = screen.getByText('Set 102')
+    fireEvent.click(tab2)
+
+    expect(handleSelectPresetTabMock).toHaveBeenCalledWith('102')
   })
 })
 

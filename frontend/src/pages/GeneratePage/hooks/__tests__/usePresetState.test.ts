@@ -203,4 +203,282 @@ describe('usePresetState multi-device sync and conflict handling', () => {
     expect(result.current.conflictData?.serverPreset.id).toBe(101)
     expect(result.current.conflictData?.localDraft.paramValues.prompt).toBe('my local changes that failed')
   })
+
+  it('handleSelectPresetTab switches to existing set without reloading when server is unchanged', async () => {
+    const preset1: WorkflowPreset = {
+      id: 101,
+      workflow_id: 1,
+      name: 'Set 1',
+      param_values: { prompt: 'server prompt 1' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+    const preset2: WorkflowPreset = {
+      id: 102,
+      workflow_id: 1,
+      name: 'Set 2',
+      param_values: { prompt: 'server prompt 2' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1, preset2])
+
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      activeSetId: 101,
+      openPresetIds: [101, 102],
+      sets: [
+        {
+          id: 101,
+          name: 'Set 1',
+          paramValues: { prompt: 'edited draft 1' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+        {
+          id: 102,
+          name: 'Set 2',
+          paramValues: { prompt: 'edited draft 2' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ],
+    })
+
+    const { result } = renderHook(
+      () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+      { wrapper }
+    )
+
+    await waitFor(() => {
+      expect(result.current.presets).toHaveLength(2)
+    })
+
+    // User edits draft in Set 2 while on Set 1
+    act(() => {
+      useGenerationStore.setState((prev) => ({
+        sets: prev.sets.map((s) =>
+          s.id === 102 ? { ...s, paramValues: { prompt: 'edited draft 2' } } : s
+        ),
+      }))
+    })
+
+    act(() => {
+      result.current.handleSelectPresetTab(102)
+    })
+
+    expect(useGenerationStore.getState().activeSetId).toBe(102)
+    const set2 = useGenerationStore.getState().sets.find((s) => s.id === 102)
+    expect(set2?.paramValues.prompt).toBe('edited draft 2')
+    expect(result.current.conflictData).toBeNull()
+  })
+
+  it('handleSelectPresetTab automatically reloads server preset when server updated_at changed and local is clean', async () => {
+    const preset1: WorkflowPreset = {
+      id: 101,
+      workflow_id: 1,
+      name: 'Set 1',
+      param_values: { prompt: 'prompt 1' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+    const preset2: WorkflowPreset = {
+      id: 102,
+      workflow_id: 1,
+      name: 'Set 2',
+      param_values: { prompt: 'server prompt 2 clean' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1, preset2])
+
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      activeSetId: 101,
+      openPresetIds: [101, 102],
+      sets: [
+        {
+          id: 101,
+          name: 'Set 1',
+          paramValues: { prompt: 'prompt 1' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+        {
+          id: 102,
+          name: 'Set 2',
+          paramValues: { prompt: 'server prompt 2 clean' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ],
+    })
+
+    const { result } = renderHook(
+      () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+      { wrapper }
+    )
+
+    await waitFor(() => {
+      expect(result.current.presets).toHaveLength(2)
+    })
+
+    // Remote update occurs on preset2
+    const updatedPreset2: WorkflowPreset = {
+      ...preset2,
+      param_values: { prompt: 'remote updated prompt 2' },
+      updated_at: '2026-09-08T10:10:00Z',
+    }
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1, updatedPreset2])
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+    })
+
+    await waitFor(() => {
+      expect(result.current.presets?.[1].updated_at).toBe('2026-09-08T10:10:00Z')
+    })
+
+    act(() => {
+      result.current.handleSelectPresetTab(102)
+    })
+
+    const state = useGenerationStore.getState()
+    expect(state.activeSetId).toBe(102)
+    expect(state.paramValues.prompt).toBe('remote updated prompt 2')
+    expect(result.current.conflictData).toBeNull()
+  })
+
+  it('handleSelectPresetTab sets conflictData immediately when server updated_at changed and local is dirty', async () => {
+    const preset1: WorkflowPreset = {
+      id: 101,
+      workflow_id: 1,
+      name: 'Set 1',
+      param_values: { prompt: 'prompt 1' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+    const preset2: WorkflowPreset = {
+      id: 102,
+      workflow_id: 1,
+      name: 'Set 2',
+      param_values: { prompt: 'original prompt 2' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1, preset2])
+
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      activeSetId: 101,
+      openPresetIds: [101, 102],
+      sets: [
+        {
+          id: 101,
+          name: 'Set 1',
+          paramValues: { prompt: 'prompt 1' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+        {
+          id: 102,
+          name: 'Set 2',
+          paramValues: { prompt: 'local dirty prompt 2' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ],
+    })
+
+    const { result } = renderHook(
+      () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+      { wrapper }
+    )
+
+    await waitFor(() => {
+      expect(result.current.presets).toHaveLength(2)
+    })
+
+    // User edits draft in Set 2 while on Set 1
+    act(() => {
+      useGenerationStore.setState((prev) => ({
+        sets: prev.sets.map((s) =>
+          s.id === 102 ? { ...s, paramValues: { prompt: 'local dirty prompt 2' } } : s
+        ),
+      }))
+    })
+
+    // Remote update occurs on preset2
+    const updatedPreset2: WorkflowPreset = {
+      ...preset2,
+      param_values: { prompt: 'remote modified prompt 2' },
+      updated_at: '2026-09-08T10:15:00Z',
+    }
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1, updatedPreset2])
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+    })
+
+    await waitFor(() => {
+      expect(result.current.presets?.[1].updated_at).toBe('2026-09-08T10:15:00Z')
+    })
+
+    act(() => {
+      result.current.handleSelectPresetTab(102)
+    })
+
+    expect(result.current.conflictData).not.toBeNull()
+    expect(result.current.conflictData?.serverPreset.param_values?.prompt).toBe('remote modified prompt 2')
+    expect(result.current.conflictData?.localDraft.paramValues.prompt).toBe('local dirty prompt 2')
+  })
 })

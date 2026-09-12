@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { TagChipEditor } from '../index';
+import { parseToChips } from '../useChipParser';
 import { setDeterministicMode, generateChipId } from '../idGenerator';
 
 let mockOnDragEndCallback: any = null;
@@ -540,6 +541,42 @@ describe('TagChipEditor', () => {
       expect(onChangeMock).toHaveBeenCalledWith('');
       expect(onChipsChangeMock).toHaveBeenCalledWith([]);
       expect(screen.queryByText('solo')).not.toBeInTheDocument();
+    });
+
+    it('does not overwrite or revert textarea input when chips prop is provided and re-renders occur in text mode', () => {
+      let currentChips = parseToChips('apple, banana');
+      const mockOnChipsChange = vi.fn((chips) => { currentChips = chips; });
+      const { rerender } = render(
+        <TagChipEditor
+          value="apple, banana"
+          chips={currentChips}
+          onChipsChange={mockOnChipsChange}
+          onChange={mockOnChange}
+        />
+      );
+
+      // テキストモードに切り替え
+      const switchBtn = screen.getByRole('button', { name: 'テキスト入力モード切替' });
+      fireEvent.click(switchBtn);
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('apple, banana');
+
+      // 末尾にカンマとスペースを入力
+      fireEvent.change(textarea, { target: { value: 'apple, banana, ' } });
+
+      // 親の chips 更新を模倣して rerender
+      rerender(
+        <TagChipEditor
+          value="apple, banana, "
+          chips={[...currentChips]}
+          onChipsChange={mockOnChipsChange}
+          onChange={mockOnChange}
+        />
+      );
+
+      // 末尾のカンマとスペースが巻き戻されずに維持されること
+      expect(textarea.value).toBe('apple, banana, ');
     });
   });
 });

@@ -94,11 +94,15 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
             setTextValue(value);
           }
         } else {
-          prevChipsString.current = chipsToString(chipsProp);
           isExternalUpdateRef.current = true;
           setChips(chipsProp, false);
           if (isTextMode) {
-            setTextValue(chipsToString(chipsProp));
+            if (value !== undefined && value !== prevChipsString.current) {
+              setTextValue(value);
+              prevChipsString.current = value;
+            }
+          } else {
+            prevChipsString.current = chipsToString(chipsProp);
           }
         }
       } else if (
@@ -227,7 +231,9 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   // テキストモードトグル処理
   const handleSwitchToTextMode = () => {
-    setTextValue(chipsToString(state));
+    const currentStr = chipsToString(state);
+    setTextValue(currentStr);
+    prevChipsString.current = currentStr;
     setIsTextMode(true);
     onTextModeToggle?.(true);
     if (id) {
@@ -367,10 +373,14 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
             <textarea
               value={textValue}
               onChange={(e) => {
-                userEditedRef.current = true;
-                setTextValue(e.target.value);
-                const newChips = parseToChips(e.target.value);
+                const nextVal = e.target.value;
+                userEditedRef.current = false;
+                setTextValue(nextVal);
+                prevChipsString.current = nextVal;
+                const newChips = parseToChips(nextVal);
                 setChips(newChips, false);
+                onChange?.(nextVal);
+                onChipsChange?.(newChips);
               }}
               placeholder={placeholder}
               className="tag-chip-editor-textarea"

@@ -94,7 +94,7 @@ export const DesktopLayout = ({
     toggleAppliedAsset, removeAppliedAsset,
     setComfyUrl,
     sets, activeSetId, removeSet,
-    toggleSetChecked, setActiveSetId,
+    toggleSetChecked,
     openPresetIds, undo, redo, canUndo, canRedo,
     activeBatch,
     
@@ -158,7 +158,7 @@ export const DesktopLayout = ({
     handleResetDefaultParams,
     setIsSaveModalOpen,
     updateWorkflowMutation,
-    handleLoadPreset,
+    handleSelectPresetTab,
     handleCreatePreset,
     saveDefaultParamsMutation,
     isAnimaMode,
@@ -484,9 +484,7 @@ export const DesktopLayout = ({
                   checked={s.checked}
                   isActive={String(s.id) === String(activeSetId)}
                   onClick={() => {
-                    const targetPreset = presets?.find((p) => String(p.id) === String(s.id))
-                    if (targetPreset) handleLoadPreset(targetPreset)
-                    else setActiveSetId(s.id)
+                    handleSelectPresetTab(s.id)
                   }}
                   onToggleCheck={() => toggleSetChecked(s.id)}
                   onRemove={() => removeSet(s.id)}

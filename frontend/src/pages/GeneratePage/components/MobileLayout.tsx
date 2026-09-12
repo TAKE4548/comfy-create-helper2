@@ -42,7 +42,7 @@ export const MobileLayout = ({
     toggleAppliedAsset, removeAppliedAsset,
     activeBatch,
     sets, activeSetId, removeSet,
-    toggleSetChecked, setActiveSetId,
+    toggleSetChecked,
     openPresetIds, undo, redo, canUndo, canRedo,
     
     // state properties
@@ -59,7 +59,7 @@ export const MobileLayout = ({
     setIsJobModalOpen,
     sortOrder, setSortOrder,
     setIsPresetManagerOpen,
-    handleLoadPreset,
+    handleSelectPresetTab,
     baseModels,
     updateWorkflowBaseModelMutation,
     setWorkflowManageMode,
@@ -638,9 +638,7 @@ export const MobileLayout = ({
             <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
               {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
                 <div key={s.id} onClick={() => {
-                  const targetPreset = presets?.find(p => String(p.id) === String(s.id))
-                  if (targetPreset) handleLoadPreset(targetPreset)
-                  else setActiveSetId(s.id)
+                  handleSelectPresetTab(s.id)
                 }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
                     String(s.id) === String(activeSetId)
