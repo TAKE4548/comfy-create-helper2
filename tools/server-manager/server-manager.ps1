@@ -1,22 +1,89 @@
 param (
-    [ValidateSet("start", "stop", "restart", "status", "toggle", "menu", "reboot-service", "logs")]
+    [ValidateSet("start", "stop", "restart", "status", "toggle", "menu", "reboot-service", "logs", "none")]
     [string]$Action = "menu",
     [string]$Service = "",
     [switch]$Background,
     [switch]$Json
 )
 
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SCRIPT_DIR = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { Split-Path -Parent (Resolve-Path $MyInvocation.MyCommand.Definition).Path }
 $CONFIG_PATH = Join-Path $SCRIPT_DIR "config.json"
 if (-not (Test-Path $CONFIG_PATH)) {
     Write-Error "Config file not found: $CONFIG_PATH"
-    exit 1
+    return
 }
 
 $cfg = Get-Content $CONFIG_PATH -Raw -Encoding UTF8 | ConvertFrom-Json
 $LOGS_DIR = Join-Path $SCRIPT_DIR $cfg.logs_dir
 if (-not (Test-Path $LOGS_DIR)) {
     New-Item -ItemType Directory -Path $LOGS_DIR | Out-Null
+}
+
+$script:lastWslTimedOut = $false
+
+function Invoke-ProcessWithTimeout (
+    [string]$filePath,
+    [string]$arguments,
+    [int]$timeoutSec = 3
+) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $filePath
+    $psi.Arguments = $arguments
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    try {
+        if (-not $proc.Start()) {
+            return [PSCustomObject]@{ ExitCode = -1; StdOut = ""; StdErr = "Failed to start process"; TimedOut = $false }
+        }
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+
+        if ($proc.WaitForExit($timeoutSec * 1000)) {
+            $stdoutTask.Wait()
+            $stderrTask.Wait()
+            return [PSCustomObject]@{
+                ExitCode = $proc.ExitCode
+                StdOut = $stdoutTask.Result
+                StdErr = $stderrTask.Result
+                TimedOut = $false
+            }
+        } else {
+            try {
+                & taskkill.exe /PID $proc.Id /T /F 2>$null
+                $proc.Kill()
+            } catch {}
+            return [PSCustomObject]@{
+                ExitCode = -1
+                StdOut = ""
+                StdErr = "Command timed out after ${timeoutSec}s"
+                TimedOut = $true
+            }
+        }
+    } catch {
+        return [PSCustomObject]@{
+            ExitCode = -1
+            StdOut = ""
+            StdErr = $_.Exception.Message
+            TimedOut = $false
+        }
+    } finally {
+        $proc.Dispose()
+    }
+}
+
+function Invoke-WslWithTimeout ([string]$bashCommand, [int]$timeoutSec = 3) {
+    $wslPrefix = Get-WslDistroPrefix
+    $args = "$($wslPrefix)bash -c `"$bashCommand`""
+    $res = Invoke-ProcessWithTimeout "wsl.exe" $args $timeoutSec
+    if ($res.TimedOut) {
+        $script:lastWslTimedOut = $true
+    }
+    return $res
 }
 
 function Start-ProcessNoWindow ([string]$filePath, [string]$arguments, [string]$workingDirectory = "") {
@@ -200,12 +267,15 @@ function Stop-PortProcesses ([int]$port, [string]$name) {
 }
 
 function Get-WslComfyPids {
-    $wslPrefix = Get-WslDistroPrefix
     try {
-        $pidsRaw = Invoke-Expression "wsl $($wslPrefix)bash -c `"pgrep -f 'python.*main.py'`" 2>`$null"
-        if ($LASTEXITCODE -eq 0 -and $pidsRaw) {
+        $res = Invoke-WslWithTimeout "pgrep -f 'python.*main.py'" 3
+        if ($res.TimedOut) {
+            $script:lastWslTimedOut = $true
+            return ,@()
+        }
+        if ($res.ExitCode -eq 0 -and $res.StdOut) {
             $pids = @()
-            foreach ($line in ($pidsRaw -split "`r?`n")) {
+            foreach ($line in ($res.StdOut -split "`r?`n")) {
                 $trimmed = $line.Trim()
                 if ($trimmed -match '^\d+$') {
                     $pids += [int]$trimmed
@@ -234,7 +304,27 @@ function Get-StatusObject {
 
     $feRunning = ($fePids.Count -gt 0)
     $beRunning = ($bePids.Count -gt 0)
-    $comfyRunning = $comfyOpen -or ($comfyPids.Count -gt 0)
+
+    $comfyStatus = if ($script:lastWslTimedOut) {
+        "TIMEOUT"
+    } elseif ($comfyOpen -or ($comfyPids.Count -gt 0)) {
+        "LISTEN"
+    } else {
+        "STOPPED"
+    }
+
+    $comfyRunning = ($comfyStatus -eq "LISTEN")
+
+    $comfyObj = [PSCustomObject]@{
+        name = "WSL ComfyUI"
+        port = $cfg.wsl.port
+        running = $comfyRunning
+        status = $comfyStatus
+        pids = $comfyPids
+    }
+    if ($script:lastWslTimedOut) {
+        $comfyObj | Add-Member -NotePropertyName "error" -NotePropertyValue "WSL応答タイムアウト / WSL timeout (3s)"
+    }
 
     return [PSCustomObject]@{
         fe = [PSCustomObject]@{
@@ -251,13 +341,7 @@ function Get-StatusObject {
             status = if ($beRunning) { "LISTEN" } else { "STOPPED" }
             pids = $bePids
         }
-        comfy = [PSCustomObject]@{
-            name = "WSL ComfyUI"
-            port = $cfg.wsl.port
-            running = $comfyRunning
-            status = if ($comfyRunning) { "LISTEN" } else { "STOPPED" }
-            pids = $comfyPids
-        }
+        comfy = $comfyObj
     }
 }
 
@@ -297,12 +381,11 @@ function Test-WslAvailability {
     [OutputType([bool])]
     param()
 
-    $prefix = Get-WslDistroPrefix
-    $cmd = "wsl $($prefix)echo OK"
-    $check = Invoke-Expression $cmd 2>$null
-    if ($LASTEXITCODE -ne 0 -or ($check -notcontains "OK" -and $check -notmatch "OK")) {
+    $res = Invoke-WslWithTimeout "echo OK" 3
+    if ($res.TimedOut -or $res.ExitCode -ne 0 -or ($res.StdOut -notmatch "OK")) {
+        $prefix = Get-WslDistroPrefix
         $target = if ($prefix -ne "") { "WSL distribution '$($cfg.wsl.distro)'" } else { "Default WSL distribution" }
-        Write-Host "[ERROR] $target was not found or is unavailable." -ForegroundColor Red
+        Write-Host "[ERROR] $target was not found, timed out, or is unavailable." -ForegroundColor Red
         Write-Host "        Hint: Run 'wsl -l -v' to check installed distributions, or set distro to `"`" in config.json to use the default." -ForegroundColor Yellow
         return $false
     }
@@ -342,15 +425,14 @@ function Get-NormalizedServiceName ([string]$name) {
 }
 
 function Stop-ComfyUIProcess {
-    $wslPrefix = Get-WslDistroPrefix
     try {
-        Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -f 'python.*main.py'`" 2>`$null"
+        Invoke-WslWithTimeout "pkill -f 'python.*main.py'" 3 | Out-Null
     } catch {}
 
     $closed = Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI"
     if (-not $closed) {
         try {
-            Invoke-Expression "wsl $($wslPrefix)bash -c `"pkill -9 -f 'python.*main.py'`" 2>`$null"
+            Invoke-WslWithTimeout "pkill -9 -f 'python.*main.py'" 3 | Out-Null
             Start-Sleep -Seconds 2
         } catch {}
     }
@@ -502,8 +584,12 @@ function Show-Logs ([string]$name) {
             if (Test-Path $cLog) {
                 Get-Content $cLog -Tail 50
             } else {
-                $wslPrefix = Get-WslDistroPrefix
-                Invoke-Expression "wsl $($wslPrefix)tail -n 50 ~/comfyui.log"
+                $res = Invoke-WslWithTimeout "tail -n 50 ~/comfyui.log" 3
+                if ($res.StdOut) {
+                    Write-Host $res.StdOut
+                } elseif ($res.TimedOut) {
+                    Write-Host "[ERROR] WSL tail timed out after 3s" -ForegroundColor Red
+                }
             }
         }
         "backend" {

@@ -5,6 +5,8 @@ import socket
 import socketserver
 import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -22,6 +24,18 @@ PORT = 8899
 
 # Windows 非表示実行フラグ
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+# 多重実行防止ロックおよびステータスキャッシュ
+_status_lock = threading.Lock()
+_last_status_cache = None
+_last_status_time = 0.0
+
+def check_port_listening(port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
 
 def read_log_file(filename: str, tail_lines: int = 200) -> tuple[bool, str, int]:
     target = LOGS_DIR / filename
@@ -106,6 +120,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     .badge-running { background-color: rgba(34, 197, 94, 0.2); color: var(--success); border: 1px solid var(--success); }
     .badge-stopped { background-color: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-timeout { background-color: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
     
     .grid {
       display: grid;
@@ -331,16 +346,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
+    let isFetchingStatus = false;
     async function fetchStatus() {
+      if (isFetchingStatus) return;
+      isFetchingStatus = true;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
       try {
-        const res = await fetch('/api/status');
+        const res = await fetch('/api/status', { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await res.json();
         renderServices(data);
       } catch (err) {
+        clearTimeout(timeoutId);
         if (activeService === 'manager') {
           actionLogContent = "Error fetching status: " + err;
           logOutput.textContent = actionLogContent;
         }
+      } finally {
+        isFetchingStatus = false;
       }
     }
 
@@ -348,7 +372,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       serviceGrid.innerHTML = '';
       for (const [key, s] of Object.entries(status)) {
         const isRunning = s.running;
-        const badgeClass = isRunning ? 'badge-running' : 'badge-stopped';
+        const isTimeout = s.status === 'TIMEOUT';
+        const badgeClass = isTimeout ? 'badge-timeout' : (isRunning ? 'badge-running' : 'badge-stopped');
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
@@ -358,6 +383,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </h2>
           <p>ポート: <strong>${s.port}</strong></p>
           <p class="pids">PID: ${s.pids && s.pids.length > 0 ? s.pids.join(', ') : 'なし'}</p>
+          ${s.error ? `<p style="color: var(--warning); font-size: 0.8rem;">⚠️ ${s.error}</p>` : ''}
           <div class="btn-group">
             ${!isRunning ? `<button class="btn-success" onclick="triggerAction('start', '${key}')">起動</button>` : ''}
             ${isRunning ? `<button class="btn-danger" onclick="triggerAction('stop', '${key}')">停止</button>` : ''}
@@ -437,10 +463,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       lanUrlSpan.textContent = `LAN: http://${window.location.host}`;
     }
-    fetchStatus();
+    async function scheduleStatusPolling() {
+      await fetchStatus();
+      setTimeout(scheduleStatusPolling, 5000);
+    }
+    scheduleStatusPolling();
     loadConfig();
     fetchLogs();
-    setInterval(fetchStatus, 5000);
     setInterval(() => {
       if (autoRefreshLog && autoRefreshLog.checked && activeService !== 'manager') {
         fetchLogs();
@@ -461,15 +490,71 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        global _last_status_cache, _last_status_time
         if self.path == "/api/status":
-            res = subprocess.run(
-                ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", "status", "-Json"],
-                capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-            )
-            try:
-                self._send_json(json.loads(res.stdout.strip() or "{}"))
-            except Exception:
-                self._send_json({"error": "Failed to parse status", "raw": res.stdout, "stderr": res.stderr}, status=500)
+            with _status_lock:
+                now = time.time()
+                # 2秒以内の直近キャッシュがあれば再利用
+                if _last_status_cache is not None and (now - _last_status_time) < 2.0:
+                    self._send_json(_last_status_cache)
+                    return
+
+                try:
+                    res = subprocess.run(
+                        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", "status", "-Json"],
+                        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=6
+                    )
+                    data = json.loads(res.stdout.strip() or "{}")
+                    _last_status_cache = data
+                    _last_status_time = time.time()
+                    self._send_json(data)
+                except subprocess.TimeoutExpired:
+                    # 応答遅延プロセスの残留防止とソケットフォールバック
+                    fe_port = 5173
+                    be_port = 8000
+                    comfy_port = 8188
+                    try:
+                        if CONFIG_FILE.exists():
+                            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                                cfg = json.load(f)
+                                fe_port = cfg.get("frontend", {}).get("port", 5173)
+                                be_port = cfg.get("backend", {}).get("port", 8000)
+                                comfy_port = cfg.get("wsl", {}).get("port", 8188)
+                    except Exception:
+                        pass
+
+                    fe_running = check_port_listening(fe_port)
+                    be_running = check_port_listening(be_port)
+
+                    fallback_status = {
+                        "fe": {
+                            "name": "React FE",
+                            "port": fe_port,
+                            "running": fe_running,
+                            "status": "LISTEN" if fe_running else "STOPPED",
+                            "pids": []
+                        },
+                        "be": {
+                            "name": "Win BE",
+                            "port": be_port,
+                            "running": be_running,
+                            "status": "LISTEN" if be_running else "STOPPED",
+                            "pids": []
+                        },
+                        "comfy": {
+                            "name": "WSL ComfyUI",
+                            "port": comfy_port,
+                            "running": False,
+                            "status": "TIMEOUT",
+                            "pids": [],
+                            "error": "PowerShell / WSL 応答タイムアウト"
+                        }
+                    }
+                    _last_status_cache = fallback_status
+                    _last_status_time = time.time()
+                    self._send_json(fallback_status, status=200)
+                except Exception:
+                    self._send_json({"error": "Failed to parse status", "raw": getattr(res, "stdout", ""), "stderr": getattr(res, "stderr", "")}, status=500)
         elif self.path == "/api/config":
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -528,12 +613,19 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                 cmd.append("-Background")
             if service:
                 cmd += ["-Service", service]
-            res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
-            self._send_json({
-                "status": "ok",
-                "action": action,
-                "output": (res.stdout or "") + (res.stderr or "")
-            })
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=15)
+                self._send_json({
+                    "status": "ok",
+                    "action": action,
+                    "output": (res.stdout or "") + (res.stderr or "")
+                })
+            except subprocess.TimeoutExpired:
+                self._send_json({
+                    "status": "timeout",
+                    "action": action,
+                    "error": f"Action '{action}' timed out after 15s"
+                }, status=504)
         elif self.path == "/api/config":
             try:
                 length = int(self.headers.get("Content-Length", 0))

@@ -194,3 +194,17 @@ Web Manager（http://localhost:8899）上のタブ別コンソール出力エリ
 - **安全な再起動 (`Restart-ServiceByName`)**:
   停止から即座に起動する際のポート競合・レースコンディションを回避するため、ポートが完全に閉じたことをポーリング確認（`Wait-For-Port-Closed`）してから新規プロセスの起動を実行します。
 
+### Q5. WSL / サブプロセス呼び出しタイムアウト保護と耐障害性 (REQ-257)
+- **PowerShell レイヤー (`server-manager.ps1`)**:
+  - `Invoke-ProcessWithTimeout` / `Invoke-WslWithTimeout` を導入。WSL 呼び出し（`pgrep`, `echo OK`, `pkill`, `tail` 等）に既定 3 秒のタイムアウトを設定。
+  - WSL がフリーズ・無応答の場合でも 3 秒で強制中断（`taskkill /PID ... /T /F`）し、ComfyUI の status を `TIMEOUT`、error にメッセージを設定して返却。Frontend や Backend の判定を一切ブロックしません。
+- **Python Web API レイヤー (`server_api.py`)**:
+  - `/api/status`: `subprocess.run` に 6 秒のタイムアウトおよびスレッド排他ロック（`status_lock`）を導入。PowerShell プロセスの多重スタック・累積を防止。
+  - タイムアウト発生時は即座に `taskkill /T /F` で強制終了し、Python 側のソケット直接接続検査（`check_port_listening`）によるフォールバック状態（FE/BE は実疎通、ComfyUI は `status = "TIMEOUT"`）を HTTP 200 で返却。
+  - `/api/action`: `subprocess.run` に 15 秒のタイムアウトを設定し、超過時は HTTP 504 Gateway Timeout を返却。
+- **フロントエンド Web UI レイヤー**:
+  - `fetch('/api/status')` に `AbortController`（タイムアウト 7 秒）を付与し、ブラウザ側でのリクエストハングを物理遮断。
+  - `setInterval` を廃止し、先行リクエストの完了を待ってから次回ポーリングをスケジュールする再帰的 `setTimeout`（多重リクエストガード `isFetchingStatus`）に変更。
+  - `renderServices`: `status === 'TIMEOUT'` の場合に `.badge-timeout`（アンバー色）を表示し、ComfyUI 障害時も Frontend や Backend の操作ボタンを引き続き利用可能。
+
+
