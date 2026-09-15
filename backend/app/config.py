@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     log_dir: str = "../logs"
     log_level: str = "INFO"
     log_retention_days: int = 7
+    frontend_dist_dir: str = "../frontend/dist"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -30,6 +31,19 @@ class Settings(BaseSettings):
         p = Path(self.log_dir)
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def frontend_dist_path(self) -> Path:
+        p = Path(self.frontend_dist_dir)
+        if p.exists():
+            return p.resolve()
+        alt = Path("frontend/dist")
+        if alt.exists():
+            return alt.resolve()
+        alt_parent = Path("../frontend/dist")
+        if alt_parent.exists():
+            return alt_parent.resolve()
+        return p.resolve()
 
 
 settings = Settings()

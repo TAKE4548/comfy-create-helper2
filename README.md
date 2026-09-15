@@ -41,6 +41,27 @@ npm run dev
 
 アプリ: http://localhost:5173
 
+### 配布・単一プロセス運用（本番モード）
+
+フロントエンドをビルドして FastAPI バックエンドに内包させることで、単一プロセス（ポート 8000）で Web UI と API の両方を運用可能です。
+
+1. **フロントエンドのビルド**:
+   ```bash
+   tools\build_dist.bat
+   # またはチャットからエージェント向け /build コマンドを実行
+   ```
+2. **バックエンド単一プロセスの起動**:
+   ```bash
+   cd backend
+   .venv\Scripts\activate
+   uvicorn app.main:app --port 8000
+   ```
+3. **アクセス**:
+   - Web UI & API: `http://localhost:8000`
+   - Swagger UI: `http://localhost:8000/docs`
+
+> ※開発時は引き続き `npm run dev`（ポート 5173）でホットリロードを利用可能です。
+
 ### ComfyUI
 
 React からポート `8188` に直接アクセス。別途起動しておくこと。

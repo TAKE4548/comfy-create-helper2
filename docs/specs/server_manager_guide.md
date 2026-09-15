@@ -18,11 +18,12 @@ Prompt Surgeon システムを起動・運用する際、以下の3つのサー�
 
 ---
 
-## 2. 前提環境・ネットワーク設定 (WSL2 Mirrored Mode)
+## 2. 前提環境・ネットワーク設定 (WSL2 Mirrored Mode & Firewall)
 
+### 2.1 WSL2 ネットワーク設定 (Mirrored Mode)
 WindowsとWSL2間でのポート通信（`localhost:8188` など）をシームレスに行うため、WSL2の **mirrored ネットワークモード** を推奨します。
 
-### 設定方法
+#### 設定方法
 Windowsのユーザーディレクトリ（`%USERPROFILE%\.wslconfig`）に以下を記述してください：
 
 ```ini
@@ -32,6 +33,21 @@ networkingMode=mirrored
 
 設定後、PowerShell等で `wsl --shutdown` を実行し、WSL2を再起動してください。
 
+### 2.2 外部アクセス・ファイアウォール設定 (Port 8000 / 8899)
+LAN 内の他端末やスマートフォン等から Web UI（Port 8000）や Web Manager（Port 8899）へアクセスする場合、Windows ファイアウォールで受信接続を許可する必要があります。
+`tools/server-manager/` に管理者権限昇格対応の専用バッチファイルが用意されています：
+
+- **`allow_firewall_8000.bat`**: バックエンドおよび内包 Web UI 向けポート `8000`（TCP）の受信を許可します。ダブルクリックすると UAC 昇格確認が表示され、安全にファイアウォールルールが追加されます。
+- **`allow_firewall_8899.bat`**: サーバーマネージャー（Web Dashboard）向けポート `8899`（TCP）の受信を許可します。
+
+> [!NOTE]
+> ファイアウォールの開放は、家庭内 LAN や信頼できるプライベートネットワーク環境下でのみ行ってください。
+
+### 2.3 配布・内包モード（Bundled Mode）での運用
+フロントエンドがビルド済み（`frontend/dist/index.html` が存在）の場合、バックエンド（FastAPI / Uvicorn）が Web UI と API の両方をポート 8000 でホスティングします。
+この状態ではサーバーマネージャーの全体起動（`Start-AllServices`）時に不要な Vite（Port 5173）の起動が自動スキップされ、**ComfyUI と Backend の 2 プロセス構成**で軽量に運用可能です。
+必要に応じて、Web Manager 上の「▶ Vite 起動（開発用）」ボタンまたは `server-manager.ps1 -Action start -Service frontend` からいつでも Vite 開発サーバーを追加起動できます。
+
 ---
 
 ## 3. 利用方法
@@ -39,11 +55,13 @@ networkingMode=mirrored
 ### 3.1 ワンクリックバッチファイル
 `tools/server-manager/` 内の各バッチファイルをダブルクリックまたはショートカット作成して利用します。
 
-- **`start_servers.bat`**: 全サービス（ComfyUI, Backend, Frontend）を一括起動します。バックグラウンドモード（ウィンドウ非表示、ログファイル出力）で起動され、外部ターミナルウィンドウの前面出現を防止します。リアルタイムログは Web Manager Dashboard（http://localhost:8899）から確認できます。
+- **`start_servers.bat`**: 全サービスを一括起動します。フロントエンドのビルド成果物（`frontend/dist`）が存在する場合は、自動的に Vite 開発サーバーの起動をスキップし、ComfyUI + Backend（内包 Web UI 提供）の **2 プロセスのみを軽量起動** します。`frontend/dist` がない場合は Vite（Port 5173）も起動します。バックグラウンドモード（ウィンドウ非表示、ログファイル出力）で起動され、外部ターミナルウィンドウの前面出現を防止します。リアルタイムログは Web Manager Dashboard（http://localhost:8899）から確認できます。
 - **`stop_servers.bat`**: 稼働中の全サービスを一括停止します（ポートリッスンPIDおよびその子プロセスツリー `taskkill /T /F` を自動検出して安全・確実に解放）。
 - **`toggle_servers.bat`**: サービスが稼働中の場合は停止、停止中の場合はバックグラウンドで起動をトグル切り替えします。
 - **`restart_web_manager.bat`**: Web Manager（ポート 8899）自体の再起動を行います。既存の Web Manager プロセスを検知して確実に終了（必要に応じて特権停止）し、ポート解放を確認後に新規プロセスをバックグラウンドで起動してブラウザ（`http://localhost:8899`）を自動で開きます。旧プロセスの停止に失敗した場合は処理を安全に中断します。
 - **`server_menu.bat`**: 対話型のコンソールダッシュボード（CLIメニュー）を起動します。
+- **`allow_firewall_8000.bat`**: Port 8000（Web UI / API）の Windows ファイアウォール受信を許可します。
+- **`allow_firewall_8899.bat`**: Port 8899（Web Manager）の Windows ファイアウォール受信を許可します。
 
 ### 3.2 対話型メニュー (`server_menu.bat`)
 コンソール上でキー入力（1〜8, R, Q）により各操作をインタラクティブに実行できます：
@@ -132,6 +150,11 @@ networkingMode=mirrored
   "logs_dir": "logs"
 }
 ```
+
+> [!TIP]
+> **内包モード（Bundled Mode）での 2 プロセス運用**:
+> フロントエンドの静的ビルド（`npx vite build` またはチャットから `/build`）を実行して `frontend/dist` が存在する場合、一括起動時は自動的にフロントエンドが Uvicorn 内包配信（Port 8000）として扱われ、Vite（Port 5173）のプロセス起動がスキップされます。
+> 開発時にホットリロードが必要になった場合は、Web Manager の「▶ Vite 起動（開発用）」ボタンまたは対話型メニューからいつでもワンクリックで Vite を個別起動できます。
 
 - `wsl.distro`: 対象の WSL ディストリビューション名（例: `"Ubuntu-24.04"`）。空文字 `""` に指定した場合は、WSL の既定（デフォルト）ディストリビューションが自動的に使用されます。
 - `wait_timeout_sec`: 1回あたりのポート開放待機タイムアウト秒数（サービスごと）。

@@ -289,6 +289,11 @@ function Get-WslComfyPids {
     return ,@()
 }
 
+function Test-FrontendBundled {
+    $feDistIndex = Join-Path $SCRIPT_DIR "../../frontend/dist/index.html"
+    return (Test-Path $feDistIndex)
+}
+
 function Get-StatusObject {
     $fePids = Get-PidsFromPort $cfg.frontend.port
     $bePids = Get-PidsFromPort $cfg.backend.port
@@ -304,6 +309,25 @@ function Get-StatusObject {
 
     $feRunning = ($fePids.Count -gt 0)
     $beRunning = ($bePids.Count -gt 0)
+    $isBundled = Test-FrontendBundled
+
+    $feStatus = "STOPPED"
+    $feName = "React FE"
+    $feIsRunning = $false
+
+    if ($feRunning) {
+        $feStatus = "LISTEN"
+        $feName = "React FE (Dev: 5173)"
+        $feIsRunning = $true
+    } elseif ($isBundled) {
+        $feStatus = "BUNDLED"
+        $feName = "React FE (Bundled on 8000)"
+        $feIsRunning = $beRunning
+    } else {
+        $feStatus = "STOPPED"
+        $feName = "React FE"
+        $feIsRunning = $false
+    }
 
     $comfyStatus = if ($script:lastWslTimedOut) {
         "TIMEOUT"
@@ -328,10 +352,10 @@ function Get-StatusObject {
 
     return [PSCustomObject]@{
         fe = [PSCustomObject]@{
-            name = "React FE"
+            name = $feName
             port = $cfg.frontend.port
-            running = $feRunning
-            status = if ($feRunning) { "LISTEN" } else { "STOPPED" }
+            running = $feIsRunning
+            status = $feStatus
             pids = $fePids
         }
         be = [PSCustomObject]@{
@@ -522,13 +546,21 @@ function Start-AllServices ([bool]$asBackground) {
     Start-ComfyUIProcess $asBackground
     Write-Host "[2/3] Starting Windows Backend..." -ForegroundColor Yellow
     Start-BackendProcess $asBackground
-    Write-Host "[3/3] Starting Windows Frontend..." -ForegroundColor Yellow
-    Start-FrontendProcess $asBackground
+
+    $isBundled = Test-FrontendBundled
+    if ($isBundled) {
+        Write-Host "[3/3] Frontend is bundled into Backend (Port $($cfg.backend.port)) - Skipping dev server" -ForegroundColor Green
+    } else {
+        Write-Host "[3/3] Starting Windows Frontend..." -ForegroundColor Yellow
+        Start-FrontendProcess $asBackground
+    }
 
     Write-Host "`nWaiting for ports to open..." -ForegroundColor Gray
     Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
     Wait-For-Service "backend" "Backend" | Out-Null
-    Wait-For-Service "frontend" "Frontend" | Out-Null
+    if (-not $isBundled) {
+        Wait-For-Service "frontend" "Frontend" | Out-Null
+    }
 
     Show-Status
 }

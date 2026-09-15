@@ -373,9 +373,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       for (const [key, s] of Object.entries(status)) {
         const isRunning = s.running;
         const isTimeout = s.status === 'TIMEOUT';
-        const badgeClass = isTimeout ? 'badge-timeout' : (isRunning ? 'badge-running' : 'badge-stopped');
+        const isBundled = s.status === 'BUNDLED';
+        const badgeClass = isTimeout ? 'badge-timeout' : ((isRunning || isBundled) ? 'badge-running' : 'badge-stopped');
         const card = document.createElement('div');
         card.className = 'card';
+
+        let actionButtons = '';
+        if (key === 'fe') {
+          if (s.status === 'LISTEN') {
+            actionButtons = `
+              <button class="btn-danger" onclick="triggerAction('stop', '${key}')">⏹ Vite 停止</button>
+              <button class="btn-secondary" onclick="triggerAction('reboot-service', '${key}')">🔄 再起動</button>
+            `;
+          } else {
+            // BUNDLED または STOPPED の場合、Vite 開発サーバーをオンデマンド個別起動可能
+            actionButtons = `
+              <button class="btn-success" onclick="triggerAction('start', '${key}')">▶ Vite 起動（開発用）</button>
+            `;
+          }
+        } else {
+          actionButtons = `
+            ${!isRunning ? `<button class="btn-success" onclick="triggerAction('start', '${key}')">起動</button>` : ''}
+            ${isRunning ? `<button class="btn-danger" onclick="triggerAction('stop', '${key}')">停止</button>` : ''}
+            <button class="btn-secondary" onclick="triggerAction('reboot-service', '${key}')">再起動</button>
+          `;
+        }
+
         card.innerHTML = `
           <h2>
             <span>${s.name}</span>
@@ -385,9 +408,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <p class="pids">PID: ${s.pids && s.pids.length > 0 ? s.pids.join(', ') : 'なし'}</p>
           ${s.error ? `<p style="color: var(--warning); font-size: 0.8rem;">⚠️ ${s.error}</p>` : ''}
           <div class="btn-group">
-            ${!isRunning ? `<button class="btn-success" onclick="triggerAction('start', '${key}')">起動</button>` : ''}
-            ${isRunning ? `<button class="btn-danger" onclick="triggerAction('stop', '${key}')">停止</button>` : ''}
-            <button class="btn-secondary" onclick="triggerAction('reboot-service', '${key}')">再起動</button>
+            ${actionButtons}
           </div>
         `;
         serviceGrid.appendChild(card);
@@ -525,13 +546,28 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
 
                     fe_running = check_port_listening(fe_port)
                     be_running = check_port_listening(be_port)
+                    dist_index = SCRIPT_DIR.parent.parent / "frontend" / "dist" / "index.html"
+                    is_bundled = dist_index.exists()
+
+                    if fe_running:
+                        fe_status = "LISTEN"
+                        fe_name = "React FE (Dev: 5173)"
+                        fe_is_running = True
+                    elif is_bundled:
+                        fe_status = "BUNDLED"
+                        fe_name = "React FE (Bundled on 8000)"
+                        fe_is_running = be_running
+                    else:
+                        fe_status = "STOPPED"
+                        fe_name = "React FE"
+                        fe_is_running = False
 
                     fallback_status = {
                         "fe": {
-                            "name": "React FE",
+                            "name": fe_name,
                             "port": fe_port,
-                            "running": fe_running,
-                            "status": "LISTEN" if fe_running else "STOPPED",
+                            "running": fe_is_running,
+                            "status": fe_status,
                             "pids": []
                         },
                         "be": {

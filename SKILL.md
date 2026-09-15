@@ -69,6 +69,10 @@ uvicorn app.main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev   # http://localhost:5173
+
+# Distribution / Single-Process Build & Run
+tools\build_dist.bat            # またはチャットから `/build` コマンド
+cd backend && uvicorn app.main:app --port 8000  # http://localhost:8000 でフロント＆API単一ホスト
 ```
 
 ## API エンドポイント概要

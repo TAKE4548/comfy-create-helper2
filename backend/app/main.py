@@ -4,9 +4,12 @@ import logging
 from contextlib import asynccontextmanager
 
 import os
+from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
+from starlette.types import Scope
 
 from app.config import settings
 from app.logging_config import setup_logging
@@ -152,3 +155,34 @@ def health():
 @app.get("/api/config")
 def get_config():
     return {"comfy_url": settings.comfy_url}
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        norm_path = path.replace("\\", "/")
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                if norm_path.startswith("api/") or norm_path == "api":
+                    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+                if not Path(norm_path).suffix:
+                    return await super().get_response("index.html", scope)
+            raise exc
+
+
+frontend_dist = settings.frontend_dist_path
+if (frontend_dist / "index.html").exists():
+    app.mount("/", SPAStaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+else:
+    @app.get("/")
+    def frontend_fallback():
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Prompt Surgeon Backend is running.",
+                "frontend": "Frontend build not found. Run 'npm run build' in frontend/ to generate dist files.",
+                "docs": "/docs",
+                "health": "/health",
+            },
+        )
