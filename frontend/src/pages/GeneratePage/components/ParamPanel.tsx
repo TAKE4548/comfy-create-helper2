@@ -5,14 +5,14 @@ import { LoraStackEditor } from '../../../components/LoraStackEditor'
 import { SearchableLoraSelect } from '../../../components/SearchableLoraSelect'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 
-const DEFAULT_SAMPLERS = [
+export const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
   'lms', 'dpm_fast', 'dpm_adaptive', 'dpmpp_2s_ancestral', 'dpmpp_sde',
   'dpmpp_sde_gpu', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2m_sde_gpu',
   'dpmpp_3m_sde', 'dpmpp_3m_sde_gpu', 'ddim', 'uni_pc', 'uni_pc_bh2'
 ]
 
-const DEFAULT_SCHEDULERS = [
+export const DEFAULT_SCHEDULERS = [
   'normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta'
 ]
 

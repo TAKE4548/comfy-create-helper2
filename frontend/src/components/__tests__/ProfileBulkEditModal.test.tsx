@@ -384,6 +384,58 @@ describe('ProfileBulkEditModal Component', () => {
     });
   });
 
+  it('falls back to default samplers and schedulers when comfyObjectInfo is not provided', () => {
+    const onApply = vi.fn();
+    const mappingsWithScheduler: MappingMaster[] = [
+      ...mockMappings,
+      { id: 5, workflow_id: 1, role: 'scheduler', display_name: 'Scheduler', input_type: 'select_scheduler', is_required: false, is_hidden: false, display_order: 5 },
+    ];
+
+    renderWithClient(
+      <ProfileBulkEditModal
+        isOpen={true}
+        onClose={vi.fn()}
+        selectedPresets={mockPresets}
+        mappingMasters={mappingsWithScheduler}
+        paramTypeMasters={mockParamTypeMasters}
+        loras={[]}
+        onApply={onApply}
+      />
+    );
+
+    // Switch to params tab
+    fireEvent.click(screen.getByText('パラメータ'));
+
+    // Enable Sampler parameter
+    const samplerCheckbox = screen.getByLabelText('Sampler');
+    fireEvent.click(samplerCheckbox);
+
+    // Verify default options are present (e.g., euler, dpmpp_2m_sde_gpu)
+    const samplerSelect = screen.getByDisplayValue('サンプラーを選択…');
+    expect(samplerSelect).toBeInTheDocument();
+    fireEvent.change(samplerSelect, { target: { value: 'euler_ancestral' } });
+
+    // Enable Scheduler parameter
+    const schedulerCheckbox = screen.getByLabelText('Scheduler');
+    fireEvent.click(schedulerCheckbox);
+
+    // Verify default scheduler options are present (e.g., karras)
+    const schedulerSelect = screen.getByDisplayValue('スケジューラーを選択…');
+    expect(schedulerSelect).toBeInTheDocument();
+    fireEvent.change(schedulerSelect, { target: { value: 'karras' } });
+
+    // Click apply
+    fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+    fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      paramPatch: {
+        sampler_name: 'euler_ancestral',
+        scheduler: 'karras',
+      },
+    });
+  });
+
   it('handles lora_stack parameter in differential mode with remove and add', () => {
     const onApply = vi.fn();
     const loraStackPresets: WorkflowPreset[] = [

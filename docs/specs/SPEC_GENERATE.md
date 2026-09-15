@@ -119,7 +119,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
     - **タブ構成**: 「プロンプト」「パラメータ」の2タブ構成（旧LoRAタブはパラメータタブ内へ一元化統合）。
     - **プロンプト一括編集**: 単語・タグの追加（先頭 `prefix` / 末尾 `suffix`、境界カンマ自動補正 `prependToPrompt` / `appendToPrompt`）、検索・置換、共通タグ削除、アセット（TagSet/LoRA）のトリガータグ追加。
     - **パラメータ一括編集**:
-      - 一般パラメータ: 個別有効化チェックボックス付きの入力（数値、選択肢等）。
+      - 一般パラメータ: 個別有効化チェックボックス付きの入力（数値、選択肢等）。サンプラ（`select_sampler`）およびスケジューラ（`select_scheduler`）は `comfyObjectInfo`（`/object_info`）から動的取得した選択肢を優先表示し、ComfyUI 未接続・定義不在時は `ParamPanel` の定数フォールバック（`DEFAULT_SAMPLERS` / `DEFAULT_SCHEDULERS`）を用いて確実に選択肢を描画する。
       - **LoRA Stack (`lora_stack`)**:
         - 個別有効化チェックボックスを完備。
         - **差分編集モード**: `computeCommonLoras` により選択プリセット全件で共通適用されているLoRA（積集合）を自動抽出し、共通LoRAの削除指定（除外）や強度更新、および新規LoRAの追記（追加スロット）が可能。

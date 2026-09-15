@@ -8,6 +8,7 @@ import { SearchableLoraSelect } from './SearchableLoraSelect';
 import { LoraStackEditor } from './LoraStackEditor';
 import { AddAssetModal } from '../pages/GeneratePage/components/AddAssetModal';
 import { TagChipInput } from './TagChipInput';
+import { DEFAULT_SAMPLERS, DEFAULT_SCHEDULERS } from '../pages/GeneratePage/components/ParamPanel';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -280,12 +281,14 @@ export function ProfileBulkEditModal({
 
   // ── Sampler/Scheduler options from comfyObjectInfo ──
   const getSamplerOptions = (): string[] => {
-    return comfyObjectInfo?.KSampler?.input?.required?.sampler_name?.[0] ?? 
-           comfyObjectInfo?.KSamplerAdvanced?.input?.required?.sampler_name?.[0] ?? [];
+    const opts = comfyObjectInfo?.KSampler?.input?.required?.sampler_name?.[0] ?? 
+                 comfyObjectInfo?.KSamplerAdvanced?.input?.required?.sampler_name?.[0];
+    return (opts && opts.length > 0) ? opts : DEFAULT_SAMPLERS;
   };
   const getSchedulerOptions = (): string[] => {
-    return comfyObjectInfo?.KSampler?.input?.required?.scheduler?.[0] ?? 
-           comfyObjectInfo?.KSamplerAdvanced?.input?.required?.scheduler?.[0] ?? [];
+    const opts = comfyObjectInfo?.KSampler?.input?.required?.scheduler?.[0] ?? 
+                 comfyObjectInfo?.KSamplerAdvanced?.input?.required?.scheduler?.[0];
+    return (opts && opts.length > 0) ? opts : DEFAULT_SCHEDULERS;
   };
 
   if (!isOpen) return null;

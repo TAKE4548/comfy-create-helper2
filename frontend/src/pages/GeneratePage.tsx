@@ -316,6 +316,7 @@ export function GeneratePage() {
           sort_order: 0,
         })) ?? []}
         paramTypeMasters={state.paramTypeMasters}
+        comfyObjectInfo={state.comfyObjectInfo}
         loras={loras ?? []}
         tagSets={tagSets ?? []}
         onApply={handleBulkEditApply}
