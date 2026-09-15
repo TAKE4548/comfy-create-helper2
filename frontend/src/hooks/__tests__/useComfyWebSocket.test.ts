@@ -3,7 +3,7 @@ import React from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useComfyWebSocket } from '../useComfyWebSocket'
+import { useComfyWebSocket, resolveComfyUrl } from '../useComfyWebSocket'
 import { configApi } from '../../api/client'
 
 vi.mock('../../api/client', () => ({
@@ -14,7 +14,6 @@ vi.mock('../../api/client', () => ({
 
 describe('useComfyWebSocket', () => {
   let queryClient: QueryClient
-  const originalWebSocket = globalThis.WebSocket
   const originalFetch = globalThis.fetch
   const originalCreateObjectURL = globalThis.URL.createObjectURL
   let mockWebSocketInstance: any = null
@@ -259,6 +258,98 @@ describe('useComfyWebSocket', () => {
     })
     expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/comfy/interrupt', {
       method: 'POST',
+    })
+  })
+})
+
+describe('resolveComfyUrl', () => {
+  const originalLocation = window.location
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+    })
+  })
+
+  describe('when accessed from external host / mobile device', () => {
+    beforeEach(() => {
+      Object.defineProperty(window, 'location', {
+        value: {
+          hostname: '192.168.1.50',
+          port: '8000',
+          origin: 'http://192.168.1.50:8000',
+        },
+        writable: true,
+      })
+    })
+
+    it('resolves null url to direct ComfyUI port on the host IP', () => {
+      expect(resolveComfyUrl(null)).toBe('http://192.168.1.50:8188')
+    })
+
+    it('replaces localhost and 127.0.0.1 with host IP and targets ComfyUI port 8188', () => {
+      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://192.168.1.50:8188')
+      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://192.168.1.50:8188')
+    })
+
+    it('prevents misrouting to nonexistent /comfy in single-process mode', () => {
+      expect(resolveComfyUrl('http://localhost:8000/comfy')).toBe('http://192.168.1.50:8188')
+      expect(resolveComfyUrl('http://192.168.1.50:8000/comfy')).toBe('http://192.168.1.50:8188')
+    })
+
+    it('preserves custom remote host URLs without modifying them', () => {
+      expect(resolveComfyUrl('http://10.0.0.99:8188')).toBe('http://10.0.0.99:8188')
+    })
+  })
+
+  describe('when accessed locally in bundle mode (port 8000)', () => {
+    beforeEach(() => {
+      Object.defineProperty(window, 'location', {
+        value: {
+          hostname: 'localhost',
+          port: '8000',
+          origin: 'http://localhost:8000',
+        },
+        writable: true,
+      })
+    })
+
+    it('resolves null or loopback url to direct ComfyUI port 127.0.0.1:8188', () => {
+      expect(resolveComfyUrl(null)).toBe('http://127.0.0.1:8188')
+      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://127.0.0.1:8188')
+      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://127.0.0.1:8188')
+    })
+
+    it('cleans /comfy and port 8000 to direct ComfyUI port', () => {
+      expect(resolveComfyUrl('http://localhost:8000/comfy')).toBe('http://127.0.0.1:8188')
+    })
+
+    it('preserves custom host URLs', () => {
+      expect(resolveComfyUrl('http://custom-host:8188')).toBe('http://custom-host:8188')
+    })
+  })
+
+  describe('when accessed locally in Vite dev server (port 5173)', () => {
+    beforeEach(() => {
+      Object.defineProperty(window, 'location', {
+        value: {
+          hostname: 'localhost',
+          port: '5173',
+          origin: 'http://localhost:5173',
+        },
+        writable: true,
+      })
+    })
+
+    it('uses Vite /comfy proxy for null or loopback urls', () => {
+      expect(resolveComfyUrl(null)).toBe('http://localhost:5173/comfy')
+      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://localhost:5173/comfy')
+      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://localhost:5173/comfy')
+    })
+
+    it('preserves custom host URLs', () => {
+      expect(resolveComfyUrl('http://custom-host:8188')).toBe('http://custom-host:8188')
     })
   })
 })

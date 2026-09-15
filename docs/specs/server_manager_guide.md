@@ -33,15 +33,16 @@ networkingMode=mirrored
 
 設定後、PowerShell等で `wsl --shutdown` を実行し、WSL2を再起動してください。
 
-### 2.2 外部アクセス・ファイアウォール設定 (Port 8000 / 8899)
-LAN 内の他端末やスマートフォン等から Web UI（Port 8000）や Web Manager（Port 8899）へアクセスする場合、Windows ファイアウォールで受信接続を許可する必要があります。
+### 2.2 外部アクセス・ファイアウォール設定 (Port 8000 / 8188 / 8899)
+LAN 内の他端末やスマートフォン等から Web UI（Port 8000）、WSL2 ComfyUI（Port 8188）、Web Manager（Port 8899）へアクセスする場合、Windows ファイアウォールで受信接続を許可する必要があります。
 `tools/server-manager/` に管理者権限昇格対応の専用バッチファイルが用意されています：
 
+- **`allow_firewall_all.bat`**: バックエンド・Web UI (`8000`)、WSL2 ComfyUI (`8188`)、Web Manager (`8899`) の 3 つのポート受信許可ルールを一括登録・確認します。モバイル端末等から画像生成・進捗受信を行う場合は本スクリプトを実行してください。
 - **`allow_firewall_8000.bat`**: バックエンドおよび内包 Web UI 向けポート `8000`（TCP）の受信を許可します。ダブルクリックすると UAC 昇格確認が表示され、安全にファイアウォールルールが追加されます。
 - **`allow_firewall_8899.bat`**: サーバーマネージャー（Web Dashboard）向けポート `8899`（TCP）の受信を許可します。
 
 > [!NOTE]
-> ファイアウォールの開放は、家庭内 LAN や信頼できるプライベートネットワーク環境下でのみ行ってください。
+> ファイアウォールの開放は、家庭内 LAN や信頼できるプライベートネットワーク環境下でのみ行ってください。また、モバイル等の外部端末からアクセスした際、バックエンド（`/api/config`）およびフロントエンド（`useComfyWebSocket`）がアクセス元ホスト名に基づき ComfyUI URL（`http://<SERVER_LAN_IP>:8188`）を自動的に動的解決します。
 
 ### 2.3 配布・内包モード（Bundled Mode）での運用
 フロントエンドがビルド済み（`frontend/dist/index.html` が存在）の場合、バックエンド（FastAPI / Uvicorn）が Web UI と API の両方をポート 8000 でホスティングします。

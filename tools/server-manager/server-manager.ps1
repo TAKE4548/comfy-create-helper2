@@ -481,11 +481,12 @@ function Start-BackendProcess ([bool]$asBackground) {
     }
     $beDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.backend.relative_dir)).Path
 
+    $beArgs = "--host 0.0.0.0 --port $($cfg.backend.port)"
     if ($asBackground) {
         $logFile = Join-Path $LOGS_DIR "backend.log"
-        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat > `"$logFile`" 2>&1" $beDir
+        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat $beArgs > `"$logFile`" 2>&1" $beDir
     } else {
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat" -WorkingDirectory $beDir
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat $beArgs" -WorkingDirectory $beDir
     }
 }
 

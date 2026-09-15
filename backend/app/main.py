@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 
 import os
 from pathlib import Path
-from fastapi import FastAPI, Response
+from urllib.parse import urlparse, urlunparse
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
@@ -97,6 +98,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,8 +155,30 @@ def health():
 
 
 @app.get("/api/config")
-def get_config():
-    return {"comfy_url": settings.comfy_url}
+def get_config(request: Request):
+    comfy_url = settings.comfy_url
+    host = request.url.hostname
+    if host and host not in ("localhost", "127.0.0.1", "::1", "testserver"):
+        try:
+            parsed = urlparse(comfy_url)
+            if parsed.hostname in ("localhost", "127.0.0.1", "::1"):
+                netloc = f"{host}:{parsed.port}" if parsed.port else host
+                comfy_url = urlunparse(parsed._replace(netloc=netloc))
+        except Exception:
+            pass
+    elif host == "testserver":
+        # Handle TestClient simulated host header if present
+        client_host = request.headers.get("host", "").split(":")[0]
+        if client_host and client_host not in ("localhost", "127.0.0.1", "::1", "testserver"):
+            try:
+                parsed = urlparse(comfy_url)
+                if parsed.hostname in ("localhost", "127.0.0.1", "::1"):
+                    netloc = f"{client_host}:{parsed.port}" if parsed.port else client_host
+                    comfy_url = urlunparse(parsed._replace(netloc=netloc))
+            except Exception:
+                pass
+
+    return {"comfy_url": comfy_url}
 
 
 class SPAStaticFiles(StaticFiles):

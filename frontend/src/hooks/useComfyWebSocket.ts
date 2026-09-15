@@ -24,12 +24,52 @@ export interface UseComfyWebSocketReturn {
 }
 
 export function resolveComfyUrl(url: string | null): string {
-  if (!url) {
-    return typeof window !== 'undefined' ? `${window.location.origin}/comfy` : 'http://127.0.0.1:8188'
+  if (typeof window === 'undefined') {
+    if (!url) return 'http://127.0.0.1:8188'
+    return url.replace('localhost', '127.0.0.1')
   }
-  // URLがローカルループバック（localhost/127.0.0.1）を指す場合、Viteプロキシの `/comfy` を使用する
+
+  const hostname = window.location.hostname
+  const isLoopback =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+
+  // 1. モバイル端末や外部端末からのアクセス時 (hostname がローカルループバック以外):
+  // url 内の localhost / 127.0.0.1 をアクセス元ホスト名 (window.location.hostname) に動的置換し、
+  // ComfyUI の直接待受ポート (8188) の URL を返す。
+  // 単一プロセス配信 (Port 8000) で存在しない /comfy への誤ルーティングを確実に防止する。
+  if (!isLoopback) {
+    let targetUrl = url || 'http://127.0.0.1:8188'
+    targetUrl = targetUrl.replace(/\/comfy\/?$/, '')
+    if (targetUrl.includes(':8000')) {
+      targetUrl = targetUrl.replace(':8000', ':8188')
+    }
+    return targetUrl.replace('localhost', hostname).replace('127.0.0.1', hostname)
+  }
+
+  // 2. ループバックアクセス時かつバンドル配信時 (Port 8000 または本番ビルド):
+  // バックエンド (FastAPI) 単一プロセス配信では /comfy プロキシが存在しないため、
+  // ComfyUI 直接待受ポート (http://127.0.0.1:8188) を使用する。
+  const isBundlePort = window.location.port === '8000'
+  const isProdBuild = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD)
+  if (isBundlePort || (isProdBuild && window.location.port !== '5173')) {
+    let targetUrl = url || 'http://127.0.0.1:8188'
+    targetUrl = targetUrl.replace(/\/comfy\/?$/, '')
+    if (targetUrl.includes(':8000')) {
+      targetUrl = targetUrl.replace(':8000', ':8188')
+    }
+    return targetUrl.replace('localhost', '127.0.0.1')
+  }
+
+  // 3. Vite 開発サーバー稼働時 (Port 5173 / テスト環境):
+  // 従来通り Vite プロキシの `/comfy` を使用する
+  if (!url) {
+    return `${window.location.origin}/comfy`
+  }
   if (url.includes('localhost') || url.includes('127.0.0.1')) {
-    return typeof window !== 'undefined' ? `${window.location.origin}/comfy` : url.replace('localhost', '127.0.0.1')
+    return `${window.location.origin}/comfy`
   }
   return url
 }
