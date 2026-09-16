@@ -235,6 +235,9 @@ export function useGenerateDisplayState({
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
+        if (!store.isConnected) {
+          store.initialize({ force: true })
+        }
         store.fetchQueue()
         store.fetchHistory()
       }
@@ -246,6 +249,7 @@ export function useGenerateDisplayState({
       window.removeEventListener('focus', handleVisibility)
     }
   }, [store])
+
 
   // Keep track of the currently viewed image in modal to protect context on list update
   const currentModalUrlRef = useRef<string | null>(null)

@@ -227,12 +227,14 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
           let finalBatchImages: string[] = []
 
           set((state) => {
-            const nextBatch = Array.from(new Set([...state.batchImages, ...ownImages])).slice(0, 8)
+            const targetImages = state.filterOwnSession ? ownImages : allImages
+            const nextBatch = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 200)
             finalBatchImages = nextBatch
             localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextBatch))
 
             const nextSelected =
               state.selectedImg || (state.filterOwnSession ? nextBatch[0] : allImages[0]) || null
+
             if (nextSelected && !state.selectedImg) {
               localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
             }

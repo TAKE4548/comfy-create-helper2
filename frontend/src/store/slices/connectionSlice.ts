@@ -130,10 +130,35 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
       get().initialize()
     },
 
-    initialize: () => {
+    initialize: (options?: { force?: boolean }) => {
       comfyWsService.clearReconnectTimer()
-      if (comfyWsService.getIsInitializing() || comfyWsService.getWebSocket()) return
+
+      if (options?.force) {
+        comfyWsService.disconnect()
+      } else {
+        const existingWs = comfyWsService.getWebSocket()
+        if (
+          comfyWsService.getIsInitializing() ||
+          (existingWs && (existingWs.readyState === WebSocket.OPEN || existingWs.readyState === WebSocket.CONNECTING))
+        ) {
+          return
+        }
+      }
+
       comfyWsService.setIsInitializing(true)
+
+      const scheduleReconnect = () => {
+        set({ isConnected: false })
+        if (!comfyWsService.getReconnectTimer()) {
+          const delay = comfyWsService.getReconnectDelay()
+          comfyWsService.incrementRetryCount()
+          const timer = setTimeout(() => {
+            comfyWsService.setReconnectTimer(null)
+            get().initialize()
+          }, delay)
+          comfyWsService.setReconnectTimer(timer)
+        }
+      }
 
       const initConnection = (url: string) => {
         comfyWsService.setComfyUrl(url)
@@ -144,22 +169,17 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
 
         comfyWsService.connect(resolvedUrl, get().clientId, {
           onOpen: () => {
+            comfyWsService.resetRetryCount()
             set({ isConnected: true })
             get().fetchQueue()
           },
           onClose: () => {
-            set({ isConnected: false })
-            if (!comfyWsService.getReconnectTimer()) {
-              const timer = setTimeout(() => {
-                comfyWsService.setReconnectTimer(null)
-                get().initialize()
-              }, 3000)
-              comfyWsService.setReconnectTimer(timer)
-            }
+            scheduleReconnect()
           },
           onError: () => {
-            set({ isConnected: false })
+            scheduleReconnect()
           },
+
           onBlobMessage: (blob) => {
             const prevUrl = get().previewImage
             if (prevUrl && prevUrl.startsWith('blob:')) {
@@ -201,6 +221,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
 
                 set({
                   isGenerating: true,
+                  currentPromptId: promptId || get().currentPromptId,
                   progress: { value, max, percentage: max > 0 ? Math.round((value / max) * 100) : 0 },
                   nodeProgress: {
                     value,
@@ -212,6 +233,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                 })
                 break
               }
+
 
               case 'execution_start': {
                 const promptId = data.prompt_id as string

@@ -109,12 +109,13 @@ export interface ConnectionState {
 }
 
 export interface ConnectionActions {
-  initialize: () => void;
+  initialize: (options?: { force?: boolean }) => void;
   setComfyUrl: (url: string) => void;
   clearPreview: () => void;
   setSubmissionAbortController: (controller: AbortController | null) => void;
   abortSubmission: () => void;
 }
+
 
 export interface JobQueueState {
   filterOwnSession: boolean;

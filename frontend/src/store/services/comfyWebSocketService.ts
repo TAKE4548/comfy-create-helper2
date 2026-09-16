@@ -11,13 +11,68 @@ export interface ComfyWebSocketCallbacks {
   onJsonMessage: (type: string, data: Record<string, unknown>) => void;
 }
 
+export const HEARTBEAT_INTERVAL_MS = 25000;
+export const BASE_RECONNECT_DELAY_MS = 1000;
+export const MAX_RECONNECT_DELAY_MS = 15000;
+
 export class ComfyWebSocketService {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private retryCount: number = 0;
   private isInitializing: boolean = false;
   private activeSubmissionPromise: Promise<string | null> | null = null;
   private activeFetchHistoryPromise: Promise<void> | null = null;
   private comfyUrl: string | null = null;
+
+  public getHeartbeatTimer(): ReturnType<typeof setInterval> | null {
+    return this.heartbeatTimer;
+  }
+
+  public getRetryCount(): number {
+    return this.retryCount;
+  }
+
+  public incrementRetryCount(): void {
+    this.retryCount++;
+  }
+
+  public resetRetryCount(): void {
+    this.retryCount = 0;
+  }
+
+  public getReconnectDelay(): number {
+    const exponential = BASE_RECONNECT_DELAY_MS * Math.pow(2, this.retryCount);
+    const delay = Math.min(exponential, MAX_RECONNECT_DELAY_MS);
+    const jitter = Math.floor(Math.random() * 500);
+    return delay + jitter;
+  }
+
+  public startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      this.sendPing();
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  public stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  public sendPing(): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      } catch (e) {
+        console.error('Failed to send WebSocket ping:', e);
+        this.stopHeartbeat();
+      }
+    }
+  }
+
 
   public getWebSocket(): WebSocket | null {
     return this.ws;
@@ -84,15 +139,19 @@ export class ComfyWebSocketService {
     }
 
     this.ws.onopen = () => {
+      this.resetRetryCount();
+      this.startHeartbeat();
       callbacks.onOpen();
     };
 
     this.ws.onclose = () => {
+      this.stopHeartbeat();
       this.ws = null;
       callbacks.onClose();
     };
 
     this.ws.onerror = () => {
+      this.stopHeartbeat();
       if (this.ws) {
         try {
           this.ws.close();
@@ -121,6 +180,7 @@ export class ComfyWebSocketService {
 
   public disconnect(): void {
     this.clearReconnectTimer();
+    this.stopHeartbeat();
     if (this.ws) {
       try {
         this.ws.close();
@@ -131,10 +191,13 @@ export class ComfyWebSocketService {
 
   public resetForTesting(): void {
     this.disconnect();
+    this.stopHeartbeat();
+    this.resetRetryCount();
     this.isInitializing = false;
     this.activeSubmissionPromise = null;
     this.activeFetchHistoryPromise = null;
   }
+
 }
 
 export const comfyWsService = new ComfyWebSocketService();
