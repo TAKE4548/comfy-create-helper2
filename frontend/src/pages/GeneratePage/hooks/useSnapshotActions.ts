@@ -8,7 +8,7 @@ import { snapshotsApi, promptMetadataApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
 export function useSnapshotActions(selectedWorkflowId: number | null) {
-  const { selectedImg, paramValues, appliedAssets } = useGenerationStore()
+  const { selectedImg, paramValues, appliedAssets, setErrorToast } = useGenerationStore()
   const qc = useQueryClient()
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
@@ -90,6 +90,15 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
     },
     onSuccess: () => {
       setIsSaveModalOpen(false)
+    },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || err?.message || ''
+      setErrorToast({
+        type: 'error',
+        message: detail
+          ? `スナップショットの保存に失敗しました: ${detail}`
+          : 'スナップショットの保存に失敗しました。画像の取得エラーが発生しました。',
+      })
     },
   })
 

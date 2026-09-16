@@ -1,128 +1,117 @@
-# インシデントレポート: ビルド後FEにおける非アクティブ放置時のComfyUI接続切断および自動再接続不全
+# インシデントレポート: 複数端末環境におけるスナップショット画像（サムネイル・プレビュー）の表示不全
 
 **日時**: 2026-09-16  
 **報告者**: Incident Analyst  
 **対象コンポーネント**: 
-- `frontend/src/store/slices/connectionSlice.ts`（WebSocket 切断・再接続ハンドリング）
-- `frontend/src/store/services/comfyWebSocketService.ts`（WebSocket ライフサイクル・タイマー管理）
-- `frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts`（画面表示・タブ復帰イベント）
-- `frontend/src/hooks/useComfyWebSocket.ts`（URL 解決ロジック `resolveComfyUrl`）
-**分類**: **Type A（実装バグ）**
+- `backend/app/services/snapshot_service.py`（スナップショット作成・外部 ComfyUI 画像ダウンロード処理）
+- `backend/app/config.py`（ComfyUI 接続設定 `settings.comfy_url`）
+- `frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts`（スナップショット保存リクエスト）
+- `frontend/src/hooks/useComfyWebSocket.ts`（ComfyUI URL 解決 `resolveComfyUrl`）
+- `frontend/src/pages/HistoryPage.tsx`（履歴一覧・サムネイルおよびモーダルプレビュー表示）
+**分類**: **Type A（実装バグ / Implementation Bug）**
 
 ---
 
-## 1. 症状
+## 1. 障害概要
 
-- **事象**: `npm run build` でビルドしたフロントエンド（FastAPI 単一プロセス配信、Port 8000）において、ブラウザタブを非アクティブ（バックグラウンド化・別ウィンドウ操作・スリープ等）にしてしばらく放置すると、ComfyUI との WebSocket 接続が切断される（ヘッダー横の接続インジケーターが緑からグレーに変わり、生成ボタンが無効化される）。
-- **継続事象**: 画面を手動でリロード（F5）すると即座に再接続されるが、明示的にリロードしない限り切断された状態（未接続）のまま維持され、自動復帰しない。
-- **対比事象**: Vite 開発サーバー稼働時（Port 5173）で運用していた頃は、同様の非アクティブ放置を行ってもこの問題は発生しなかった。
-- **再現ステップ**:
-  1. `frontend/` でビルドを行い、FastAPI バックエンドから単一プロセスで配信（`http://localhost:8000`）。
-  2. ブラウザで生成画面（GeneratePage）を開き、ComfyUI 接続インジケーターが緑色（`isConnected: true`）であることを確認する。
-  3. タブを非アクティブにする（他タブへの切り替え、またはブラウザの最小化）か、端末を一定時間放置する（5分以上）。
-  4. 再度 Prompt Surgeon のタブをアクティブにして画面を確認する。
-  5. **結果**: ComfyUI 接続インジケーターがグレー（未接続）となり、生成ボタンが無効化されたまま復帰しない。待機しても再接続されず、F5 リロードを行うまで切断状態が継続する。
+- **症状**:
+  - 生成画像を保存（スナップショット登録）した端末と異なる端末で「History（履歴）」ページを閲覧すると、サムネイルおよびプレビュー（モーダル）の双方が実画像を表示できず、読み込みエラーまたはプレースホルダー表示となる。
+  - 一方、保存操作を行った端末自身では正常に画像が表示される。
+  - また、「生成履歴（Generate ページの履歴一覧）」では、異なる端末間であっても同様の画像表示不全は発生しない。
+- **影響範囲**:
+  - 2026-09-16 にクライアント端末（LAN IP: `192.168.3.10`）から保存されたスナップショット（ID: 4108 〜 4177 の計 68 件）。
+  - 保存された画像の実体ファイルが `db/snapshots/` に永続化保存されておらず、DB 上に外部 ComfyUI URL（`http://192.168.3.13:8188/view?...`）がそのまま記録され、`thumbnail_path` が `NULL` となっている。
 
 ---
 
-## 2. ログ・エビデンス
+## 2. 再現手順
+
+1. 端末 A（例: LAN 接続された外部 PC またはタブレット `192.168.3.10`）のブラウザから、サーバーホストの Prompt Surgeon（`http://192.168.3.13:8000`）にアクセスする。
+2. 端末 A で画像を生成し、生成完了した画像を「Save」または「スナップショット保存」ボタンから保存する。
+3. サーバーホスト端末 B（例: `127.0.0.1`）または別のクライアント端末 C で「History」ページ（`/history`）を開く。
+4. **結果**:
+   - 端末 A ではキャッシュまたは直接通信によりサムネイル・プレビューが見える。
+   - 端末 B / C では、サムネイルが真っ黒またはプレースホルダー表示となり、クリックしてモーダルプレビューを開いても実画像が読み込めない。
+   - 一方、「Generate」ページの履歴ドロワー／カルーセル（生成履歴）では、端末 B / C でもサムネイルが正常に表示される。
+
+---
+
+## 3. ログ・エビデンス
 
 ### エビデンス①: `logs/app.jsonl` の調査結果
-- `python scripts/inspect_logs.py --summary` および `python scripts/inspect_logs.py --errors --tail 10` を実行。
-- 総エントリー数 13,470 件。直近のエラーは過去のプリセット更新時の SQLite ロック例外のみであり、バックエンド API（FastAPI）や ComfyUI プロキシのクラッシュ・例外は記録されていない。
-- したがって、サーバープロセスのダウンではなく、フロントエンド側の WebSocket 接続維持および切断回復ロジックの不備であることを確認。
+- `python scripts/inspect_logs.py --errors --tail 10` を実行したところ、以下のエラーが大量に記録されていた：
+  ```
+  [2026-09-16T19:55:29.456+09:00] [ERROR] [backend ] [app.services.snapshot_service] Failed to download snapshot image from http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00019_.png&subfolder=&type=temp&t=407bb57b-3030-434b-bddc-a165a6e78571: <urlopen error timed out>
+  [2026-09-16T21:59:06.372+09:00] [ERROR] [backend ] [app.services.snapshot_service] Failed to download snapshot image from http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00161_.png&subfolder=&type=temp&t=86f6ceb2-b419-4f81-9bfe-e33fc69b1127: <urlopen error timed out>
+  ```
+- クライアント IP `192.168.3.10` からの `POST /api/snapshots` は、毎回タイムアウト制限である **5000ms（約 5.02 秒）** を要して HTTP 201 を返却していた。
+  - 例: `{"timestamp": "2026-09-16T21:59:06.386+09:00", ... "message": "POST /api/snapshots completed with 201 in 5018.51ms", "client_ip": "192.168.3.10"}`
 
-### エビデンス②: WebSocket 切断・再接続ハンドリングの欠落と単一タイマーの脆弱性
-[`frontend/src/store/slices/connectionSlice.ts`](frontend/src/store/slices/connectionSlice.ts)（L150-L163）:
-```ts
-          onClose: () => {
-            set({ isConnected: false })
-            if (!comfyWsService.getReconnectTimer()) {
-              const timer = setTimeout(() => {
-                comfyWsService.setReconnectTimer(null)
-                get().initialize()
-              }, 3000)
-              comfyWsService.setReconnectTimer(timer)
-            }
-          },
-          onError: () => {
-            set({ isConnected: false })
-          },
-```
-- **`onError` での再接続未スケジュール**: WebSocket 通信でエラー（`onError`）が発生した場合、`set({ isConnected: false })` を行うのみで、再接続タイマー（`comfyWsService.setReconnectTimer`）が一切スケジュールされない。
-- **ブラウザバックグラウンドタイマーの制約**: Chromium 系ブラウザでは、非アクティブタブ（バックグラウンドタブ）において `setTimeout` などのタイマーが省電力のために最低1分間隔へと強制スロットリング、あるいはタブサスペンドによって一時停止される。
-- **リトライ失敗時のデッドロック**: 一度切断された後、非アクティブ中に再接続試行が失敗または中断した場合、`comfyWsService.connect()` 内で例外が発生しても `onError` 経由では再接続が再試行されず、後続のタイマーが存在しないため永久に切断状態が維持される。
+### エビデンス②: データベース保存状態の確認（`db/prompt_surgeon.db`）
+- `snapshots` テーブルを調査：
+  - 正常時（ID <= 4107）:
+    - `image_path`: `/api/snapshots/images/ComfyUI_temp_xpuvb_00088__15c91cf5.webp`
+    - `thumbnail_path`: `/api/snapshots/images/thumb_ComfyUI_temp_xpuvb_00088__15c91cf5.webp`
+  - 異常時（ID >= 4108 〜 4177, 計 68 件）:
+    - `image_path`: `http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00089_.png&subfolder=&type=temp&t=...`
+    - `thumbnail_path`: `NULL`
 
-### エビデンス③: タブ復帰時（VisibilityChange / Focus）における WebSocket 再接続の欠落
-[`frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts`](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts)（L235-L248）:
-```ts
-  // Visibility / focus refresh
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        store.fetchQueue()
-        store.fetchHistory()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('focus', handleVisibility)
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('focus', handleVisibility)
-    }
-  }, [store])
-```
-- タブが再度アクティブ（`visibilitychange` / `window focus`）になった際、REST API のキュー照会（`store.fetchQueue()`）と履歴照会（`store.fetchHistory()`）のみが実行されている。
-- **WebSocket 接続状態の確認（`store.isConnected`）や再接続（`store.initialize()`）が完全に欠落**しており、非アクティブ中に WebSocket が切断された場合、画面に戻っても再接続がトリガーされない。
+### エビデンス③: バックエンドサーバーにおける ComfyUI 疎通確認
+- サーバーホスト（Windows）上で Python によるソケット疎通および `urllib` をテスト：
+  - `http://127.0.0.1:8188/view` : 即座に接続成功（ComfyUI が応答）。
+  - `http://192.168.3.13:8188/view` : **TimeoutError（10035 / timed out）** で失敗。
+- **理由**:
+  - ComfyUI は WSL2 内で稼働しており、Windows ホストでは `127.0.0.1` 経由のポートフォワーディングのみが自動構成されている。
+  - Windows ホスト自身の外部 LAN IP（`192.168.3.13`）宛ての通信は、Windows ファイアウォールおよびヘアピン NAT / ループバックルーティングの制約により WSL2 に転送されずタイムアウトする。
 
-### エビデンス④: Vite 開発サーバー環境との構造的差異（なぜ Vite では起きなかったか）
-1. **HMR（Hot Module Replacement）ハートビートの有無**:
-   - Vite 開発サーバー稼働時（Port 5173）は、Vite 内部のクライアント（`@vite/client`）が常時 WebSocket で約30秒間隔の Ping/Pong ハートビートを送受信している。
-   - このためブラウザのバックグラウンドタブが完全なアイドル状態とみなされず、TCP 接続やタイマーのスロットリングが緩和されていた。
-2. **プロキシ経路の差異**:
-   - Vite 稼働時は [`frontend/src/hooks/useComfyWebSocket.ts` L66-L74](frontend/src/hooks/useComfyWebSocket.ts#L66-L74) により `ws://localhost:5173/comfy/ws`（同一起源の Vite プロキシ）へ接続していた。
-   - 一方、ビルド後の単一プロセス配信環境では同ファイル L52-L64 により ComfyUI 直接待受ポート（`ws://127.0.0.1:8188/ws`）へクロスポートで直接接続している。
-   - ComfyUI の標準 WebSocket サーバーはアイドル時にハートビートフレームを送信しないため、単一プロセス運用下では長時間の無通信（アイドル）によって OS や Chromium の TCP キープアライブ/アイドルソケットクリーンアップにより容易に切断が発生する。
-
-### エビデンス⑤: 仕様書（`SPEC_GENERATE.md`）との乖離
-[`docs/specs/SPEC_GENERATE.md`](docs/specs/SPEC_GENERATE.md) 第4節（L194-L196）:
-```markdown
-- **WebSocket 切断回復**:
-  - 切断検知時、指数バックオフで自動再接続を試行。
-  - 再接続時、`/api/comfy/queue` を照会して進行中ジョブを再検知し、進捗バー・プレビューに自動復帰する。
-```
-- 仕様書には「**切断検知時、指数バックオフで自動再接続を試行**」と明記されているが、実装コード（`connectionSlice.ts`）は単一の固定3秒 `setTimeout` のみとなっており、指数バックオフやエラー時の堅牢な再試行ループ、タブ復帰時の再接続保証が実装されていない。
+### エビデンス④: 生成履歴（Generate ページ）が他端末でも表示される理由
+- [`frontend/src/pages/GeneratePage/components/DesktopLayout.tsx`](frontend/src/pages/GeneratePage/components/DesktopLayout.tsx) L819:
+  - サムネイル描画時に `toThumbnailUrl(img)` を適用している。
+- [`frontend/src/utils/thumbnailUrl.ts`](frontend/src/utils/thumbnailUrl.ts) L14:
+  - URL に `/view?` が含まれる場合、バックエンドのサムネイルプロキシ `/api/comfy/thumbnail?filename=...` に変換している。
+- このエンドポイントは FastAPI バックエンド（Port 8000）が受け持ち、内部設定 `settings.comfy_url`（`http://localhost:8188`）を通じて ComfyUI と通信するため、クライアントがどの端末であっても正常に表示される。
 
 ---
 
-## 3. 根本原因分析（Root Cause Analysis）
+## 4. 根本原因分析（Root Cause Analysis）
 
-### 根本原因: 単一プロセス配信下でのハートビート機構の欠如、および `connectionSlice` / `useGenerateDisplayState` における切断検知・タブ復帰時再接続ハンドリングの不備
+### 根本原因 1: `SnapshotService.create_snapshot` におけるクライアント提供外部 URL の無検証利用
+- **該当箇所**: [`backend/app/services/snapshot_service.py`](backend/app/services/snapshot_service.py) L92-L116
+- **メカニズム**:
+  1. クライアント端末（`192.168.3.10`）が `resolveComfyUrl` によって解決された ComfyUI URL（`http://192.168.3.13:8188/view?...`）を `payload.image_path` に格納して `POST /api/snapshots` を呼び出す。
+  2. バックエンドは、自環境で ComfyUI と通信するための内部 URL（`settings.comfy_url = "http://localhost:8188"`）を持っているにもかかわらず、クライアントから渡された `payload.image_path`（`192.168.3.13:8188`）に直接 `urllib.request.urlopen` を試行する。
+  3. サーバーホスト内部からの自機 LAN IP（`192.168.3.13:8188`）宛て通信がタイムアウトし、画像ダウンロードが失敗する。
 
-**該当箇所**:
-1. [`frontend/src/store/slices/connectionSlice.ts` L150-L163](frontend/src/store/slices/connectionSlice.ts#L150-L163)（`onError` での再接続未スケジュール、単一固定タイマーの脆弱性）
-2. [`frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts` L235-L248](frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts#L235-L248)（タブ復帰時の WebSocket 再接続トリガー漏れ）
-3. [`frontend/src/store/services/comfyWebSocketService.ts` L73-L120](frontend/src/store/services/comfyWebSocketService.ts#L73-L120)（定期的なキープアライブ・ハートビート ping 機構の不在）
+### 根本原因 2: 例外キャッチ時のサイレントフォールバックによる不正レコード永続化
+- **該当箇所**: [`backend/app/services/snapshot_service.py`](backend/app/services/snapshot_service.py) L114-L116, L138-L145
+- **メカニズム**:
+  1. 画像ダウンロード失敗時、`except Exception as e:` でエラーログを出力するのみで、処理を中断・失敗させない。
+  2. 結果として `saved_image_path` はフォールバックとして外部 URL のまま維持され、`saved_thumbnail_path` は `None` のまま DB に登録される。
+  3. `../db/snapshots/` への WebP 変換・永続化保存も行われない。
 
-#### 発生メカニズム:
-1. **無通信切断の発生**: ビルド後環境（Port 8000）では Vite の HMR ハートビートが存在せず、ComfyUI の直接 WebSocket（Port 8188）に対してもアプリケーション層のキープアライブ（Ping）が送信されていないため、非アクティブ放置時に Chromium や OS のアイドルソケット回収により TCP 接続が切断される。
-2. **再接続ループの停止**: 切断時または切断前後に `onError` が発生した場合、再接続タイマーがセットされない。また、非アクティブ中にセットされたタイマーが Chromium の省電力スロットリングやサスペンドによって遅延・阻害された際、再接続試行が失敗すると以降の再接続トリガーが失われる。
-3. **タブ復帰時の未回復**: ユーザーがタブに戻った際、`useGenerateDisplayState.ts` は REST API（`fetchQueue`, `fetchHistory`）のみを呼び出し、WebSocket が切断状態（`isConnected: false`）であっても `initialize()` を実行しないため、手動リロード（F5）を行わない限り切断状態が継続する。
-
----
-
-## 4. 診断チェック（Diagnostic Check）
-
-| 項目 | 判定結果 | 詳細 |
-|---|---|---|
-| **Root_Cause_Isolated** | **Yes** | `connectionSlice.ts`（L150-163）、`useGenerateDisplayState.ts`（L235-248）、およびキープアライブ不在を特定 |
-| **Classification** | **Type A: Implementation Bug** | 仕様書（`SPEC_GENERATE.md` 第4節「切断検知時の自動再接続」）で規定された切断回復要件を満たしていない実装不備 |
-| **影響スコープ** | フロントエンド単体 | `connectionSlice.ts`, `comfyWebSocketService.ts`, `useGenerateDisplayState.ts` |
-| **禁止事項遵守** | 遵守 | 調査フェーズ（Read-Only）を厳守し、コード改変や修正提案は実施せず |
+### 根本原因 3: `HistoryPage.tsx` における絶対 URL / 相対パスの依存
+- **該当箇所**: [`frontend/src/pages/HistoryPage.tsx`](frontend/src/pages/HistoryPage.tsx) L523, L639, [`AlbumDetailView.tsx`](frontend/src/pages/HistoryPage/components/AlbumDetailView.tsx) L426
+- **メカニズム**:
+  - `snap.thumbnail_path` が `NULL` の場合、`snap.image_path`（`http://192.168.3.13:8188/...`）がそのまま `<img>` の `src` に渡される。
+  - 保存端末（`192.168.3.10`）ではブラウザキャッシュまたは直接 LAN 通信により表示されるが、別端末（`127.0.0.1` やポート 8188 に直接到達できない端末）では画像の取得に失敗する。
 
 ---
 
-## 5. 次のアクション
+## 5. 影響データと復旧可能性
 
-根本原因の特定が完了しました。  
-本件は仕様（`SPEC_GENERATE.md`）で規定された切断回復設計に対する実装不足に起因する **Type A（実装バグ）** であるため、バックログに不具合修正 PBI を登録した上で、`/dev-design` へ移行して修正設計を行うことを推奨します。
+- **影響件数**: 68 件（Snapshot ID: 4108 〜 4177）
+- **データ実体の残存状況**:
+  - `http://127.0.0.1:8188/view` 経由で対象画像（例: `ComfyUI_temp_etsmj_00089_.png`）の存在を確認したところ、HTTP 200（約 1.7〜1.8MB）で全量取得可能であることを実証済み。
+  - ComfyUI の一時フォルダ（`type=temp`）にまだ画像ファイルが残存しているため、マイグレーションスクリプトまたは修復処理によって、正規の WebP 画像およびサムネイルとして `db/snapshots/` に永続化し、DB のパスを修復することが可能。
+
+---
+
+## 6. 是正方針（設計フェーズへの申し送り）
+
+1. **バックエンド ComfyUI 画像ダウンロード処理の是正** (`SnapshotService.create_snapshot`):
+   - クライアントから渡された `payload.image_path` が ComfyUI の `/view` URL である場合、ホスト名部分をサーバーの内部設定 `settings.comfy_url`（`http://localhost:8188` または `http://127.0.0.1:8188`）に正規化してダウンロードを行う。
+   - 万一ダウンロードに失敗した際のエラーハンドリングを強化し、サイレントな不正データ永続化を防止する。
+2. **既存 68 件のスナップショット修復マイグレーション**:
+   - `thumbnail_path IS NULL` かつ `image_path LIKE 'http%'` のレコードを対象に、内部 ComfyUI から実画像を取得して `db/snapshots/` に WebP 保存・サムネイル生成を行い、DB レコードを正規の相対 URI（`/api/snapshots/images/...`）に更新する修復スクリプトの作成・実行。
+3. **フロントエンド側の堅牢性向上**:
+   - `HistoryPage` や `HistoryModalPreview` においても、万一未保存の ComfyUI URL が渡された場合に備えた URL 解決またはフォールバックの検討。

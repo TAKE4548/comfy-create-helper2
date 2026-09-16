@@ -782,7 +782,95 @@ class TestSnapshotsAPI(unittest.TestCase):
         self.assertEqual(get_data["params"]["speech_bubbles"][0]["text"], "hello")
 
 
+    def test_resolve_internal_comfy_url(self):
+        from app.services.snapshot_service import resolve_internal_comfy_url
+        base_url = "http://localhost:8188"
+
+        # External IP with /view query parameters
+        ext1 = "http://192.168.3.13:8188/view?filename=test.png&subfolder=&type=temp"
+        self.assertEqual(
+            resolve_internal_comfy_url(ext1, base_url),
+            "http://localhost:8188/view?filename=test.png&subfolder=&type=temp"
+        )
+
+        # Base URL with trailing slash
+        self.assertEqual(
+            resolve_internal_comfy_url(ext1, "http://localhost:8188/"),
+            "http://localhost:8188/view?filename=test.png&subfolder=&type=temp"
+        )
+
+        # /view as subpath
+        ext2 = "http://192.168.3.13:8188/view/subfolder/test.png"
+        self.assertEqual(
+            resolve_internal_comfy_url(ext2, base_url),
+            "http://localhost:8188/view/subfolder/test.png"
+        )
+
+        # General external non-comfy URL
+        ext3 = "https://example.com/images/sample.png"
+        self.assertEqual(resolve_internal_comfy_url(ext3, base_url), ext3)
+
+        # Empty or None inputs
+        self.assertEqual(resolve_internal_comfy_url("", base_url), "")
+        self.assertEqual(resolve_internal_comfy_url(None, base_url), "")
+
+    def test_create_snapshot_from_external_comfy_url_success(self):
+        import io
+        from unittest.mock import patch, MagicMock
+        from PIL import Image
+        from app.config import settings
+
+        img = Image.new("RGB", (64, 64), color="blue")
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format="PNG")
+        dummy_bytes = img_byte_arr.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = dummy_bytes
+        mock_response.__enter__.return_value = mock_response
+        mock_response.__exit__.return_value = None
+
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "http://192.168.3.13:8188/view?filename=ComfyUI_0001_.png&subfolder=&type=temp",
+            "params": {"prompt": "1girl"}
+        }
+
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen, \
+             patch.object(settings, "comfy_url", "http://localhost:8188"):
+            res = self.client.post("/api/snapshots", json=payload)
+            self.assertEqual(res.status_code, 201)
+            data = res.json()
+            self.assertTrue(data["image_path"].startswith("/api/snapshots/images/"))
+            self.assertTrue(data["thumbnail_path"].startswith("/api/snapshots/images/thumb_"))
+
+            called_req = mock_urlopen.call_args[0][0]
+            called_url = called_req.full_url if hasattr(called_req, "full_url") else called_req
+            self.assertTrue(called_url.startswith("http://localhost:8188/view?"))
+
+    def test_create_snapshot_from_comfy_url_failure_raises_502(self):
+        import urllib.error
+        from unittest.mock import patch
+        from app.config import settings
+
+        payload = {
+            "workflow_id": self.workflow.id,
+            "image_path": "http://192.168.3.13:8188/view?filename=ComfyUI_missing.png&subfolder=&type=temp",
+            "params": {"prompt": "1girl"}
+        }
+
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")), \
+             patch.object(settings, "comfy_url", "http://localhost:8188"):
+            res = self.client.post("/api/snapshots", json=payload)
+            self.assertEqual(res.status_code, 502)
+            self.assertIn("Failed to download snapshot image from ComfyUI", res.json()["detail"])
+
+            # Verify no snapshot record created in DB
+            self.assertEqual(self.db.query(models.Snapshot).count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

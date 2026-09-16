@@ -46,6 +46,29 @@ def process_and_save_image(image_bytes: bytes, target_dir: Path, filename_base: 
         return path_str, path_str
 
 
+def resolve_internal_comfy_url(url: Optional[str], base_url: str) -> str:
+    if not url:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # Check if path corresponds to ComfyUI /view endpoint
+        if parsed.path.startswith("/view") or "/view" in parsed.path:
+            base_parsed = urllib.parse.urlparse(base_url.rstrip("/"))
+            # Reconstruct with base_url's scheme and netloc while preserving path, query, fragment
+            resolved = urllib.parse.urlunparse((
+                base_parsed.scheme,
+                base_parsed.netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            return resolved
+        return url
+    except Exception:
+        return url
+
+
 class SnapshotService:
     @staticmethod
     def list_snapshots(
@@ -90,8 +113,9 @@ class SnapshotService:
         downloaded_file_path: Optional[Path] = None
 
         if payload.image_path and (payload.image_path.startswith("http://") or payload.image_path.startswith("https://")):
+            target_download_url = resolve_internal_comfy_url(payload.image_path, settings.comfy_url)
             try:
-                parsed_url = urllib.parse.urlparse(payload.image_path)
+                parsed_url = urllib.parse.urlparse(target_download_url)
                 queries = urllib.parse.parse_qs(parsed_url.query)
                 filename = queries.get("filename", [None])[0]
                 
@@ -101,10 +125,10 @@ class SnapshotService:
                 filename_base = f"{stem}_{uuid.uuid4().hex[:8]}"
                 
                 req = urllib.request.Request(
-                    payload.image_path, 
+                    target_download_url, 
                     headers={'User-Agent': 'Mozilla/5.0'}
                 )
-                with urllib.request.urlopen(req, timeout=5) as response:
+                with urllib.request.urlopen(req, timeout=10) as response:
                     image_bytes = response.read()
 
                 saved_image_path, saved_thumbnail_path = process_and_save_image(
@@ -112,7 +136,11 @@ class SnapshotService:
                 )
                 downloaded_file_path = settings.snapshot_path / Path(saved_image_path).name
             except Exception as e:
-                logger.error(f"Failed to download snapshot image from {payload.image_path}: {e}")
+                logger.error(f"Failed to download snapshot image from {target_download_url} (original: {payload.image_path}): {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Failed to download snapshot image from ComfyUI: {e}"
+                )
 
         elif payload.image_path and payload.image_path.startswith("/api/snapshots/images/") and not saved_thumbnail_path:
             filename = payload.image_path.split("/")[-1]

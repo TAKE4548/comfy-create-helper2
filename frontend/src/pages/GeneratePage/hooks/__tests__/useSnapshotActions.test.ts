@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
@@ -26,7 +26,7 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     })
     useGenerationStore.setState({
       selectedImg: 'http://localhost:8188/view?filename=test.png&t=prompt-999',
-      paramValues: { aspect_ratio: '9:16', steps: 20 },
+      paramValues: { aspect_ratio: '9:16', steps: '20' },
       appliedAssets: {},
     })
   })
@@ -78,8 +78,31 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     expect(promptMetadataApi.get).toHaveBeenCalledWith('prompt-999')
     expect(snapshotsApi.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: { aspect_ratio: '9:16', steps: 20 },
+        params: { aspect_ratio: '9:16', steps: '20' },
       })
     )
+  })
+
+  it('REQ-267: should call setErrorToast when snapshotsApi.create fails', async () => {
+    vi.mocked(snapshotsApi.create).mockRejectedValueOnce(new Error('Failed to fetch image from ComfyUI'))
+
+    const { result } = renderHook(() => useSnapshotActions(1), { wrapper })
+
+    await act(async () => {
+      try {
+        await result.current.saveSnapshot.mutateAsync({
+          albumId: 1,
+          imagePaths: ['http://localhost:8188/view?filename=test.png'],
+        })
+      } catch {
+        // Expected mutation failure
+      }
+    })
+
+    const state = useGenerationStore.getState()
+    expect(state.errorToast).toEqual({
+      type: 'error',
+      message: 'スナップショットの保存に失敗しました: Failed to fetch image from ComfyUI',
+    })
   })
 })

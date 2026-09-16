@@ -25,6 +25,45 @@ import { AlbumListView } from './HistoryPage/components/AlbumListView'
 import { AlbumDetailView } from './HistoryPage/components/AlbumDetailView'
 import { PageHeader } from '../components/common/PageHeader'
 
+/**
+ * サムネイル URL または元画像 URL を安全に解決する。
+ * ComfyUI の直接 URL (ポート 8188 への /view? 等) が含まれている場合、
+ * 外部端末から直接アクセスできないため、プロキシエンドポイントへ変換する。
+ */
+export function toSafeImageUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  // 既に相対パスまたはプロキシパスの場合
+  if (url.startsWith('/') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url
+  }
+  try {
+    const parsed = new URL(url, window.location.origin)
+    // ComfyUI の direct view URL (e.g. :8188/view?...)
+    if (parsed.pathname === '/view' || parsed.pathname.endsWith('/view')) {
+      return `/api/comfy/view${parsed.search}`
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
+export function toThumbnailUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  if (url.startsWith('/') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url
+  }
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (parsed.pathname === '/view' || parsed.pathname.endsWith('/view')) {
+      return `/api/comfy/thumbnail${parsed.search}`
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
 export function HistoryPage() {
   const qc = useQueryClient()
   const { aspectRatioStyle } = useThumbnailAspectRatio()
@@ -257,8 +296,8 @@ export function HistoryPage() {
 
   const lightboxImages =
     selectedAlbumId !== null
-      ? sortedAlbumItems.map((item) => item.image_path ?? '')
-      : sortedSnapshots.map((s) => s.image_path ?? '') ?? []
+      ? sortedAlbumItems.map((item) => toSafeImageUrl(item.image_path))
+      : sortedSnapshots.map((s) => toSafeImageUrl(s.image_path)) ?? []
 
   const lightboxSnapshotIds =
     selectedAlbumId !== null
@@ -520,7 +559,7 @@ export function HistoryPage() {
                       <div className="bg-surface-2 w-full" style={aspectRatioStyle}>
                         {snap.image_path || snap.thumbnail_path ? (
                           <img
-                            src={snap.thumbnail_path || snap.image_path!}
+                            src={snap.thumbnail_path || toThumbnailUrl(snap.image_path)}
                             alt={`Snapshot ${snap.id}`}
                             loading="lazy"
                             decoding="async"

@@ -579,4 +579,51 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
 
     expect(screen.queryByTestId('batch-speech-transform-modal')).not.toBeInTheDocument()
   })
+
+  it('REQ-267: should render thumbnail with toThumbnailUrl fallback when ComfyUI direct URL is present', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValueOnce([
+      {
+        id: 999,
+        workflow_id: 1,
+        image_path: 'http://localhost:8188/view?filename=output_123.png',
+        thumbnail_path: null,
+        created_at: '2026-09-16T12:00:00Z',
+      },
+    ] as any)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const img = await screen.findByAltText('Snapshot 999')
+    expect(img).toBeInTheDocument()
+    expect(img).toHaveAttribute(
+      'src',
+      '/api/comfy/thumbnail?filename=output_123.png'
+    )
+  })
+
+  it('REQ-267: should preserve normal relative thumbnail path when present', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValueOnce([
+      {
+        id: 998,
+        workflow_id: 1,
+        image_path: '/api/snapshots/998/image',
+        thumbnail_path: '/api/snapshots/998/thumbnail',
+        created_at: '2026-09-16T12:00:00Z',
+      },
+    ] as any)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const img = await screen.findByAltText('Snapshot 998')
+    expect(img).toBeInTheDocument()
+    expect(img).toHaveAttribute('src', '/api/snapshots/998/thumbnail')
+  })
 })
