@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt Surgeon — 完了PBI分析・可視化ダッシュボード</title>
+  <style>
+    :root {
+      --bg: #0F0F11;
+      --surface: #18181C;
+      --surface-2: #1F1F25;
+      --surface-hover: #26262E;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(62, 207, 142, 0.5);
+      --accent-green: #3ecf8e;
+      --accent-purple: #7C6FDD;
+      --accent-blue: #3B82F6;
+      --accent-amber: #F59E0B;
+      --accent-rose: #EF4444;
+      --accent-cyan: #06B6D4;
+      --text-primary: #E4E4E7;
+      --text-muted: #A1A1AA;
+      --text-sub: #71717A;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title-group h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .title-group h1 .badge-repo {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(124, 111, 221, 0.18);
+      color: var(--accent-purple);
+      border: 1px solid rgba(124, 111, 221, 0.3);
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:hover {
+      background: var(--surface-2);
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+    .btn-accent {
+      background: rgba(62, 207, 142, 0.15);
+      color: var(--accent-green);
+      border-color: rgba(62, 207, 142, 0.3);
+    }
+    .btn-accent:hover {
+      background: rgba(62, 207, 142, 0.25);
+    }
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 4px; height: 100%;
+      background: var(--card-accent, var(--accent-green));
+    }
+    .kpi-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .kpi-value-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+    /* Charts Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 1024px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-title {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .chart-container {
+      width: 100%;
+      min-height: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    /* Filter Bar */
+    .filter-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .search-box {
+      flex: 1;
+      min-width: 240px;
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px 9px 34px;
+      color: var(--text-primary);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .search-box input:focus {
+      border-color: var(--border-focus);
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      font-size: 14px;
+    }
+    .filter-select {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--text-primary);
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+    .filter-select:focus {
+      border-color: var(--border-focus);
+    }
+    .filter-status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .active-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .pill {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--accent-green);
+    }
+    .pill button {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .pill button:hover { color: var(--text-primary); }
+    /* Table Panel */
+    .table-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-container {
+      overflow-x: auto;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 12px 16px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { color: var(--text-primary); }
+    th .sort-indicator { margin-left: 4px; opacity: 0.6; }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+    tr:hover td {
+      background: var(--surface-hover);
+    }
+    .col-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 600;
+      color: var(--accent-purple);
+      white-space: nowrap;
+    }
+    .col-title {
+      max-width: 380px;
+      font-weight: 500;
+    }
+    .col-title a {
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    .col-title a:hover {
+      color: var(--accent-green);
+      text-decoration: underline;
+    }
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-p0 { background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); box-shadow: 0 0 8px rgba(239, 68, 68, 0.2); }
+    .badge-p1 { background: rgba(245, 158, 11, 0.18); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .badge-p2 { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
+    
+    .badge-defect { background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-enhancement { background: rgba(62, 207, 142, 0.15); color: var(--accent-green); border: 1px solid rgba(62, 207, 142, 0.3); }
+    .badge-refactor { background: rgba(124, 111, 221, 0.18); color: var(--accent-purple); border: 1px solid rgba(124, 111, 221, 0.3); }
+    .badge-test { background: rgba(6, 182, 212, 0.18); color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+    
+    .badge-domain {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* Modal / Drawer */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .modal-close:hover { color: var(--text-primary); }
+    .modal-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 40px;
+    }
+    .modal-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .modal-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .modal-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .modal-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    /* Tooltip */
+    #chart-tooltip {
+      position: fixed;
+      display: none;
+      background: rgba(24, 24, 28, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-primary);
+      pointer-events: none;
+      z-index: 90;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    }
+    /* SVG Charts styling */
+    svg { width: 100%; height: 100%; overflow: visible; }
+    .chart-bar { transition: opacity 0.15s ease, fill 0.15s ease; cursor: pointer; }
+    .chart-bar:hover { opacity: 0.85; filter: brightness(1.15); }
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="title-group">
+        <h1>
+          Prompt Surgeon
+          <span class="badge-repo">comfy-create-helper2</span>
+        </h1>
+        <div class="subtitle">完了PBI（REQ-009 〜 REQ-256 全92件）インタラクティブ分析ダッシュボード</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="btn-reset-filters">🔄 フィルター全解除</button>
+        <button class="btn btn-accent" id="btn-export-csv">📥 CSVエクスポート</button>
+      </div>
+    </header>
+
+    <!-- KPI Cards Row -->
+    <div class="kpi-grid">
+      <div class="kpi-card" style="--card-accent: var(--accent-green);" onclick="filterByType('')">
+        <div class="kpi-label">完了PBI 総数</div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-total">92</div>
+          <div class="kpi-sub">件 (100%)</div>
+        </div>
+      </div>
+      <div class="kpi-card" style="--card-accent: var(--accent-rose);" onclick="filterByType('Defect')">
+        <div class="kpi-label">不具合修正 (Defect)</div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-defects">40</div>
+          <div class="kpi-sub" id="kpi-defects-pct">43.5%</div>
+        </div>
+      </div>
+      <div class="kpi-card" style="--card-accent: var(--accent-green);" onclick="filterByType('Enhancement')">
+        <div class="kpi-label">機能拡張 (Enhance)</div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-enhance">44</div>
+          <div class="kpi-sub" id="kpi-enhance-pct">47.8%</div>
+        </div>
+      </div>
+      <div class="kpi-card" style="--card-accent: var(--accent-amber);" onclick="filterByPriority('P1')">
+        <div class="kpi-label">高優先度 (P0 / P1)</div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-high-prio">35</div>
+          <div class="kpi-sub">38.0% (P0: 1, P1: 34)</div>
+        </div>
+      </div>
+      <div class="kpi-card" style="--card-accent: var(--accent-purple);" onclick="filterByType('Refactor')">
+        <div class="kpi-label">リファクタ & テスト</div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-refactor-test">8</div>
+          <div class="kpi-sub">8.7% (Refactor: 3, Test: 5)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Grid (2x2) -->
+    <div class="charts-grid">
+      <!-- Chart 1: Domain Distribution -->
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">📊 機能領域別 (Domain) 集中度</div>
+          <div class="panel-desc">クリックで対象領域に絞り込み</div>
+        </div>
+        <div class="chart-container" id="container-chart-domain">
+          <svg id="chart-domain" viewBox="0 0 500 240"></svg>
+        </div>
+        <div class="chart-legend" id="legend-domain"></div>
+      </div>
+
+      <!-- Chart 2: Type x Priority Stacked -->
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">⚖️ 変更種別 × 優先度マトリクス</div>
+          <div class="panel-desc">P0(致命的)・P1(高)・P2(中)の分布比率</div>
+        </div>
+        <div class="chart-container" id="container-chart-txp">
+          <svg id="chart-txp" viewBox="0 0 500 240"></svg>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item" onclick="filterByPriority('P0')"><span class="legend-color" style="background: var(--accent-rose);"></span>P0 (Critical)</div>
+          <div class="legend-item" onclick="filterByPriority('P1')"><span class="legend-color" style="background: var(--accent-amber);"></span>P1 (High)</div>
+          <div class="legend-item" onclick="filterByPriority('P2')"><span class="legend-color" style="background: var(--accent-blue);"></span>P2 (Medium)</div>
+        </div>
+      </div>
+
+      <!-- Chart 3: Root Cause Pareto -->
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">🔍 根本原因分類 (Root Cause) パレート図</div>
+          <div class="panel-desc">発生件数（棒）と累積構成比（折れ線）</div>
+        </div>
+        <div class="chart-container" id="container-chart-rc">
+          <svg id="chart-rc" viewBox="0 0 500 240"></svg>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><span class="legend-color" style="background: var(--accent-purple);"></span>発生件数</div>
+          <div class="legend-item"><span class="legend-color" style="background: var(--accent-green); height: 2px; width: 14px;"></span>累積比率 (%)</div>
+        </div>
+      </div>
+
+      <!-- Chart 4: Timeline Phase -->
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">📈 開発フェーズ別完了推移 (Timeline)</div>
+          <div class="panel-desc">フェーズごとの完了数と累積消化曲線</div>
+        </div>
+        <div class="chart-container" id="container-chart-timeline">
+          <svg id="chart-timeline" viewBox="0 0 500 240"></svg>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><span class="legend-color" style="background: var(--accent-cyan);"></span>フェーズ別消化数</div>
+          <div class="legend-item"><span class="legend-color" style="background: var(--accent-amber); height: 2px; width: 14px;"></span>累積完了数 (Burn-up)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter & Search Controls -->
+    <div class="filter-section">
+      <div class="filter-bar">
+        <div class="search-box">
+          <span class="search-icon">🔎</span>
+          <input type="text" id="filter-search" placeholder="ID・タイトル・根本原因・症状でキーワード検索...">
+        </div>
+        <select class="filter-select" id="filter-domain">
+          <option value="">すべての機能領域 (Domain)</option>
+        </select>
+        <select class="filter-select" id="filter-type">
+          <option value="">すべての変更種別 (Type)</option>
+          <option value="Defect">不具合修正 (Defect)</option>
+          <option value="Enhancement">機能拡張 (Enhancement)</option>
+          <option value="Refactor">リファクタリング (Refactor)</option>
+          <option value="Test">テスト強化 (Test)</option>
+        </select>
+        <select class="filter-select" id="filter-priority">
+          <option value="">すべての優先度 (Priority)</option>
+          <option value="P0">P0 (Critical)</option>
+          <option value="P1">P1 (High)</option>
+          <option value="P2">P2 (Medium)</option>
+        </select>
+        <select class="filter-select" id="filter-rootcause">
+          <option value="">すべての根本原因 (Root Cause)</option>
+        </select>
+      </div>
+      <div class="filter-status-row">
+        <div class="active-pills" id="active-filter-pills"></div>
+        <div id="filter-count-label">表示中: 92 / 92 件</div>
+      </div>
+    </div>
+
+    <!-- PBI Master Table -->
+    <div class="table-panel">
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortTable('id')">PBI ID <span class="sort-indicator" id="sort-id">↕</span></th>
+              <th onclick="sortTable('title')">タイトル <span class="sort-indicator" id="sort-title">↕</span></th>
+              <th onclick="sortTable('type')">種別 <span class="sort-indicator" id="sort-type">↕</span></th>
+              <th onclick="sortTable('priority')">優先度 <span class="sort-indicator" id="sort-priority">↕</span></th>
+              <th onclick="sortTable('domain')">機能領域 <span class="sort-indicator" id="sort-domain">↕</span></th>
+              <th onclick="sortTable('root_cause_cat')">根本原因分類 <span class="sort-indicator" id="sort-root_cause_cat">↕</span></th>
+              <th onclick="sortTable('ac_count')">AC数 <span class="sort-indicator" id="sort-ac_count">↕</span></th>
+              <th onclick="sortTable('completion_date')">完了日 <span class="sort-indicator" id="sort-completion_date">↕</span></th>
+              <th>詳細</th>
+            </tr>
+          </thead>
+          <tbody id="pbi-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div class="modal-backdrop" id="modal-backdrop" onclick="closeModal(event)">
+    <div class="modal-card" id="modal-card">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div class="modal-header">
+        <div class="modal-badges" id="modal-badges"></div>
+        <h2 id="modal-title"></h2>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Surface（症状・発生事象）</div>
+        <div class="modal-box" id="modal-surface"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Root Cause（根本原因分析）</div>
+        <div class="modal-box" id="modal-rootcause"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">仕様書・バックログリンク</div>
+        <div style="margin-top: 4px;">
+          <a href="#" target="_blank" class="btn btn-accent" id="modal-link">📄 Google DriveでPBI仕様書を開く ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="chart-tooltip"></div>
+
+  <script>
+    const ALL_PBIS = [{"id": "REQ-256", "title": "タグチップサブメニューでの強度直接入力時Backspaceキー誤削除の防止", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Prompt & TagChip Editor", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 3, "completion_date": "2026-09-13", "url": "https://drive.google.com/file/d/1VDt9-HR571pXIeI4sFChN2e8yGYnCROx/view?usp=drivesdk", "surface": "- タグチップのサブメニューを開き、「強度 (Weight)」の数値入力欄で直接数値を編集しようとして `Backspace` キーを入力すると、入力欄の数値ではなくタグチップ自体の削除が優先されてタグチップが消滅してしまう。", "root_cause_raw": "- `TagChip.tsx` において、最外周コンテナに設定された `handleKeyDown`（`Delete` / `Backspace` 押下時に `onDelete(id)` を呼び出すショートカット）が存在する一方で、サブメニュー内の強度数値入力欄の `handleWeightKeyDown` およびサブメニューラッパーコンテナにてキーイベントの伝播停止（`e.stopPropagation()`）が行われていない。", "snippet": "---  \nid: REQ-256  \nstatus: done  \ntags:  \n- tag-chip-editor  \n- frontend  \n- bugfix  \n- keyboard-events  \ntitle: タグチップサブメニューでの強度直接入力時Backspaceキー誤削除の防止  \n---  \n  \n### REQ-256: タグチップサブメニューでの強度直接入力時Backspaceキー誤削除の防止  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-13)  \n- **Current step**: dev-design  \n- **Priority**: P1  \n- **Surface**:  \n - タグチップのサブメニューを開き、「強度 (Weight)」の数値入力欄で直接数値を編集しようとして `Backspace` キーを入力すると、入力欄の数値ではなくタグチップ自体の削除が優先されてタグチップが消滅してしまう。  \n- **Root Cause**:  \n - `TagChip.tsx` において、最外周コンテナに設定された `handleKeyDown`（`Delete` / `Backspace` 押下時に `onDelete(id)` を呼び出すショートカット）が存在する一方で、サブメニュー内の強度数値入力欄の `handleWeightKeyDown` およびサブメニューラッパーコンテナにてキーイベントの伝播停止（`e.stopPropagation()`）が行われていない。  \n - そのため、数値入力中に `Backspace` を押下した際のキーイベントが親要素までバブリングし、親のチップ削除ハンドラが発火してブラウザ既定の文字削除がキャンセルされ、チップが誤削除される。  \n- **Requirement**:  \n - タグチップのサブメニュー内（特に強度数値入力欄）においてキーボード操作を行った際、そのキーイベントが親のタグチップショートカットハンドラにバブリングして意図しないチップの削除・複製・トグルが発生することを防止し、数値入力欄内での `Backspace` / `Delete` 操作による数値編集が正常に行えるようにすること。  \n- **A"}, {"id": "REQ-255", "title": "プリセットのプロンプト編集反映保証とタブ切り替えキャッシュ保護（TagChipEditorテキスト同期適正化・Multi-Set状態維持）", "type": "Defect (不具合修正)", "priority": "P0", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1Qh4aODeDIey1Jj7lE5z1c-JAEZfRX_AG/view?usp=drivesdk", "surface": "- プリセットのプロンプト（`Prompt_Pose_Action` など）を編集しても、生成ボタン押下時に編集内容がComfyUIへ反映されず、過去のプロンプトや古いDB保存値で生成が実行されてしまう。", "root_cause_raw": "- (TagChipEditor 内部の自己同期循環ループ):", "snippet": "---  \nid: REQ-255  \nstatus: done  \ntags:  \n- preset  \n- prompt-editor  \n- tag-chip-editor  \n- multi-set  \n- generate  \n- autosave  \n- frontend  \ntitle: プリセットのプロンプト編集反映保証とタブ切り替えキャッシュ保護（TagChipEditorテキスト同期適正化・Multi-Set状態維持）  \n---  \n  \n### REQ-255: プリセットのプロンプト編集反映保証とタブ切り替えキャッシュ保護（TagChipEditorテキスト同期適正化・Multi-Set状態維持）  \n  \n- **Type**: bugfix  \n- **Status**: done (2026-09-12)  \n- **Current step**: dev-design  \n- **Priority**: P0  \n- **Surface**:  \n - プリセットのプロンプト（`Prompt_Pose_Action` など）を編集しても、生成ボタン押下時に編集内容がComfyUIへ反映されず、過去のプロンプトや古いDB保存値で生成が実行されてしまう。  \n - テキスト入力モードでプロンプトを入力中に、末尾のカンマやスペースを入力した瞬間に文字が巻き戻される・消去される不具合が発生する。  \n - Multi-Set タブバーでプリセットタブを切り替えた際、メモリ内の最新編集値が破棄され、古いサーバーキャッシュ（DB値）で上書き消去される。  \n- **Root Cause**:  \n - (TagChipEditor 内部の自己同期循環ループ):  \n - テキスト入力モード時、入力のたびに親ストアへ `onChipsChange` が通知され、更新された `chipsProp` が渡される。`useEffect([chipsProp])` が `setTextValue(chipsToString(chipsProp))` を呼び出すため、末尾スペースやカンマが切り捨てられて即座に巻き戻される。  \n - (タブ切り替え時のサーバーキャッシュ強制再ロード):  \n - `DesktopLayout.tsx` および `Mobil"}, {"id": "REQ-254", "title": "生成ワークフロー差分推測・スマート置換（トポロジー解析とプリセット維持）", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "Workflow & Topology", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1aEXk4bAuBdC6kd2Cttwy9qzIiwW9u5o8/view?usp=drivesdk", "surface": "- ComfyUI 側でワークフローの改善・編集（ノード再生成、配線変更、Detailer 追加等）を行った際、Prompt Surgeon 側の既存ワークフローの JSON（json_body）のみを安全に差し替える仕組みがない。", "root_cause_raw": "- (Interaction & Information Design / 差分可視化および対話的移行機構の欠如):", "snippet": "---  \nid: REQ-254  \nstatus: done  \ntags:  \n- workflow  \n- topology-analysis  \n- smart-migration  \n- presets  \n- mapping  \n- diff-replace  \n- modal  \n- backend  \n- frontend  \ntitle: 生成ワークフロー差分推測・スマート置換（トポロジー解析とプリセット維持）  \n---  \n  \n### REQ-254: 生成ワークフロー差分推測・スマート置換（トポロジー解析とプリセット維持）  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - ComfyUI 側でワークフローの改善・編集（ノード再生成、配線変更、Detailer 追加等）を行った際、Prompt Surgeon 側の既存ワークフローの JSON（json_body）のみを安全に差し替える仕組みがない。  \n - 単純なワークフロー再登録や ID / タイトルによる単純一致では、ComfyUI の仕様（ノード再生成に伴う ID 変更、ID 再利用、リネーム）によりノードの誤同定が発生し、既存のプロファイル（プリセット群）、バイパス設定、ParamSync 等の独自アセットが切断・消失する課題がある。  \n- **Root Cause**:  \n - (Interaction & Information Design / 差分可視化および対話的移行機構の欠如):  \n - DAG（有向非巡回グラフ）の入出力トポロジーに基づく高精度な新旧ノード同定エンジンが存在しない。  \n - 新旧ノードの役割引き継ぎ状態や配線差分をユーザーが視覚的に確認・調整できる対話型 UI（Master-Detail インスペクター）が提供されていない。  \n - ワークフロー更新時に既存アセット（プリセット・マッピング）を不可逆破壊しない安全な置換トランザクションおよびロールバック機構が未整備である。  \n- **Requirement**:  \n - 新旧"}, {"id": "REQ-253", "title": "生成画面リロード後の履歴表示消失とジョブ完了時の一括同期バグの修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 3, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1YHzcmJLg_4_-vPNJ6OBf2POJSm9lLA5q/view?usp=drivesdk", "surface": "- 生成画面（GeneratePage）でブラウザをリロードすると、過去の ComfyUI 生成履歴がギャラリー/ストリップに表示されず空白になる。", "root_cause_raw": "- `useGenerateDisplayState.ts` のマウント時 `useEffect` において、`comfyHistoryImages` の非同期取得前に `rawImages.length === 0` で `return []` が実行され、`PersistQueryClientProvider` で復元された永続化キャッシュを即座に消去してしまう。", "snippet": "---  \nid: REQ-253  \ntitle: \"生成画面リロード後の履歴表示消失とジョブ完了時の一括同期バグの修正\"  \nstatus: ready  \ntags: [frontend, generate-page, history, react-query, zustand, defect]  \n---  \n  \n### REQ-253: 生成画面リロード後の履歴表示消失とジョブ完了時の一括同期バグの修正  \n  \n- **Type**: defect  \n- **Status**: ready  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 生成画面（GeneratePage）でブラウザをリロードすると、過去の ComfyUI 生成履歴がギャラリー/ストリップに表示されず空白になる。  \n - 新しい生成ジョブを実行し、画像生成が完了した瞬間に、過去分も含めて画像が一気に表示される。  \n- **Root Cause**:  \n - `useGenerateDisplayState.ts` のマウント時 `useEffect` において、`comfyHistoryImages` の非同期取得前に `rawImages.length === 0` で `return []` が実行され、`PersistQueryClientProvider` で復元された永続化キャッシュを即座に消去してしまう。  \n - `fetchHistory()` 完了時に発火する `history-fetched` イベント内で `queryClient.invalidateQueries` が呼ばれるが、React 再レンダリングとの競合（Race Condition）により古い空のクロージャを再参照してキャッシュが空配列に上書きされる。  \n- **Requirement**:  \n - 生成画面をリロードした際、永続化キャッシュおよび `fetchHistory()` によって取得された ComfyUI 履歴画像が正しくギャラリー/ストリップに表示されること。  \n - 新規ジョブ完了を待つことなく、リロード直後から履歴が正常に復元・閲覧できること。  \n- **Acceptance"}, {"id": "REQ-252", "title": "生成履歴サムネイル表示におけるイベントループブロッキング解消と多重ロード最適化", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1SXUp42j_PdUO-mIGVmfHXu9xlGHOmqju/view?usp=drivesdk", "surface": "- 生成履歴（Generate画面の履歴ストリップ）を表示した際に、以前よりも表示開始が著しく遅くなり、画面表示直後にUI全体やキュー監視が十数秒フリーズする", "root_cause_raw": "- (UX分類: Interaction / Infrastructure Architecture)", "snippet": "---  \nid: REQ-252  \nstatus: done  \ntags:  \n- performance  \n- thumbnail  \n- comfy  \n- backend  \n- frontend  \n- triage  \ntitle: 生成履歴サムネイル表示におけるイベントループブロッキング解消と多重ロード最適化  \n---  \n  \n### REQ-252: 生成履歴サムネイル表示におけるイベントループブロッキング解消と多重ロード最適化  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 生成履歴（Generate画面の履歴ストリップ）を表示した際に、以前よりも表示開始が著しく遅くなり、画面表示直後にUI全体やキュー監視が十数秒フリーズする  \n- **Root Cause**:  \n - (UX分類: Interaction / Infrastructure Architecture)  \n - バックエンド（`comfy.py`）の動的サムネイルエンドポイントにおいて、`async def` 内で同期的なPillow画像変換処理を実行しているためFastAPIのメインイベントループが1秒超ブロックされる。加えて横スクロールコンテナでのネイティブ遅延ロード不発により全件一括リクエストが殺到し、サーバー全体が同期ブロッキングキューで麻痺している  \n- **Requirement**:  \n - 生成履歴ストリップ表示時において、バックエンドのイベントループを停止させず、画面表示直後も他通信やジョブキュー監視がフリーズすることなく軽快に動作すること。また、画面外のサムネイルによる無駄な一括同時通信を抑制し、ローカル環境・リモート環境双方で最適な表示レイテンシが得られること  \n- **Acceptance criteria**:  \n - [ ] AC-1: Generate画面の生成履歴ストリップを開いた際、サムネイルの読み込み中であってもジョブキューのポーリングや他API通信がブロックされず、UIの操作性が維持されること。  \n - [ ] A"}, {"id": "REQ-251", "title": "セクションタグコピー履歴サブメニューのスクロール表示化と項目潰れ解消", "type": "Defect (不具合修正)", "priority": "P2", "domain": "Prompt & TagChip Editor", "root_cause_cat": "初期仕様・設計ギャップ", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1LRomlBC9wd5l39AEFVtOyObeWWn4u1uo/view?usp=drivesdk", "surface": "- セクションのタグコピーをペーストするサブメニューが、コピー履歴が多くなると潰れて見えなくなる。履歴の数が増えても縦幅に押し込むのではなく、スクロール可能にして各履歴が視認できるようにしたい。", "root_cause_raw": "- `PromptSectionClipboardMenu.tsx` の履歴一覧表示コンテナにおいて `flex flex-col` が指定されているが、子要素の各ボタン要素に `shrink-0`（`flex-shrink: 0`）が指定されていない。そのため、履歴件数が増加して合計高さが親コンテナの `max-h-40`（160px）を超過した際に、Flexboxの縮小アルゴリズム（`flex-shrink: 1`）によって各ボタンの縦幅が均等に押し潰され、スクロールではなく要素の圧縮（`truncate` による文字の欠落）が発生する。", "snippet": "---  \nid: REQ-251  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- ui  \n- generate-page  \n- prompt-clipboard  \ntitle: セクションタグコピー履歴サブメニューのスクロール表示化と項目潰れ解消  \n---  \n  \n### REQ-251: セクションタグコピー履歴サブメニューのスクロール表示化と項目潰れ解消  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-12)  \n- **Current step**: Step 4 (Verification Complete)  \n- **Priority**: P2  \n- **Surface**:  \n - セクションのタグコピーをペーストするサブメニューが、コピー履歴が多くなると潰れて見えなくなる。履歴の数が増えても縦幅に押し込むのではなく、スクロール可能にして各履歴が視認できるようにしたい。  \n- **Root Cause**:  \n - `PromptSectionClipboardMenu.tsx` の履歴一覧表示コンテナにおいて `flex flex-col` が指定されているが、子要素の各ボタン要素に `shrink-0`（`flex-shrink: 0`）が指定されていない。そのため、履歴件数が増加して合計高さが親コンテナの `max-h-40`（160px）を超過した際に、Flexboxの縮小アルゴリズム（`flex-shrink: 1`）によって各ボタンの縦幅が均等に押し潰され、スクロールではなく要素の圧縮（`truncate` による文字の欠落）が発生する。  \n- **Requirement**:  \n - コピー履歴の件数が増加しても、各履歴アイテムの縦幅・パディングが正常に維持されること。  \n - 履歴コンテナ（`max-h-40`）の表示領域を超過した場合は縦スクロール可能となり、各履歴のテキストが潰れずに視認およびクリック選択できること。  \n- **Acceptance criteria**:  \n - [x] AC-1: コピー履歴が複数件（最大件数含む）存在する場合でも、各履歴項目の縦幅が圧縮されず、テキスト"}, {"id": "REQ-250", "title": "プリセット一括編集適用時におけるアクティブプリセットおよび開いているタブセットのプロンプトチップ同期適正化", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1PPn4iCwxuY2l71CpgEBa7AG330l99mkp/view?usp=drivesdk", "surface": "- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` 内の `handleBulkEditApply` において、プリセットの一括編集を適用した際、一括編集の対象に現在アクティブなプリセットが含まれていても、プロンプトのチップ表示（`TagChipEditor`）や生成プロンプト（`getEffectiveParamValues`）に編集後のプロンプトが即時反映されない。", "root_cause_raw": "- `usePresetState.ts` の `handleBulkEditApply` でアクティブプリセットのローカル状態を更新する際、`paramValues` のみ更新し、UI表示および画像生成で最優先される `promptChips` のパースおよびストアへの設定（`setPromptChips` / `setAllPromptChips`）が欠落している。", "snippet": "---  \nid: REQ-250  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- state-management  \n- zustand  \n- presets  \n- bulk-edit  \n- generate-page  \n- tag-chip-editor  \ntitle: プリセット一括編集適用時におけるアクティブプリセットおよび開いているタブセットのプロンプトチップ同期適正化  \n---  \n  \n### REQ-250: プリセット一括編集適用時におけるアクティブプリセットおよび開いているタブセットのプロンプトチップ同期適正化  \n  \n- **Type**: bugfix  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` 内の `handleBulkEditApply` において、プリセットの一括編集を適用した際、一括編集の対象に現在アクティブなプリセットが含まれていても、プロンプトのチップ表示（`TagChipEditor`）や生成プロンプト（`getEffectiveParamValues`）に編集後のプロンプトが即時反映されない。  \n - 別のプリセットタブを一度アクティブにしてから再度戻ると、`loadPresetData` が実行されて最新のプロンプトチップが読み込まれる。  \n - また、一括編集対象に含まれる他の開いているタブ（`sets` 内のプリセット）のメモリ内データも同期されない。  \n- **Root Cause**:  \n - `usePresetState.ts` の `handleBulkEditApply` でアクティブプリセットのローカル状態を更新する際、`paramValues` のみ更新し、UI表示および画像生成で最優先される `promptChips` のパースおよびストアへの設定（`setPromptChips` / `setAllPromptChips`）が欠落している。  \n "}, {"id": "REQ-249", "title": "履歴表示パイプライン（useGenerateDisplayState）のデータソース正規化とリアルタイム同期基盤整備", "type": "Refactor (リファクタリング)", "priority": "P2", "domain": "Thumbnails & Assets", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1RQseAQ9Stouz-ljhsv1zkSv_xAUm05hy/view?usp=drivesdk", "surface": "- `useGenerateDisplayState.ts` 内において、ローカル生成画像のリスト（`batchImages`）、ComfyUI 履歴画像（`comfyHistoryImages`）、スナップショットクエリ（`useQuery(['snapshots'])`）の3系統がアドホックに合成・ソートされている。", "root_cause_raw": "- (Fragmented Source of Truth / 状態管理構造不全): 生成実行セッションごとのローカル配列とサーバー側の永続化スナップショットが二重管理されており、履歴リストに対する単一のデータフロー（SSoT）が確立されていない。", "snippet": "---  \nid: REQ-249  \nstatus: done  \ntags:  \n- frontend  \n- refactor  \n- state-management  \n- tanstack-query  \n- history  \n- real-time-sync  \n- generate-page  \ntitle: 履歴表示パイプライン（useGenerateDisplayState）のデータソース正規化とリアルタイム同期基盤整備  \n---  \n  \n### REQ-249: 履歴表示パイプライン（useGenerateDisplayState）のデータソース正規化とリアルタイム同期基盤整備  \n  \n- **Type**: refactor  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - `useGenerateDisplayState.ts` 内において、ローカル生成画像のリスト（`batchImages`）、ComfyUI 履歴画像（`comfyHistoryImages`）、スナップショットクエリ（`useQuery(['snapshots'])`）の3系統がアドホックに合成・ソートされている。  \n - 別端末で生成された画像のリアルタイム同期（REQ-240）を実装する際、どのデータストアに画像を挿入すべきかの責務境界が曖昧であり、履歴順序の崩壊や表示画像の重複、プロンプト編集ステートとの競合が発生しやすい。  \n- **Root Cause**:  \n - (Fragmented Source of Truth / 状態管理構造不全): 生成実行セッションごとのローカル配列とサーバー側の永続化スナップショットが二重管理されており、履歴リストに対する単一のデータフロー（SSoT）が確立されていない。  \n- **Requirement**:  \n - 履歴画像のデータソースを正規化し、生成完了イベント（ローカル端末 / リモート端末を問わず）を単一のキャッシュ更新パイプラインに集約すること。  \n - TanStack Query のキャッシュ無効化（`invalidateQueri"}, {"id": "REQ-247", "title": "DesktopLayout / MobileLayout 間のギャラリー・サムネイル操作ロジック共通化（useGalleryInteraction）", "type": "Refactor (リファクタリング)", "priority": "P2", "domain": "Thumbnails & Assets", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1EwiyMcKessnUz-hxQkzshyjLbb96DuAG/view?usp=drivesdk", "surface": "- `DesktopLayout.tsx` と `MobileLayout.tsx` において、履歴サムネイルのクリック選択、拡大プレビュー連携、複数選択操作（`useMultiSelect` 連動）、コンテキストメニュー呼び出しなどのイベントハンドラが各コンポーネント内に個別に記述されている。", "root_cause_raw": "- (UX分類: Interaction / Component Coupling Anti-Pattern): 表示レイアウト（JSX配置）とUIステートマシン・操作ハンドラが密結合しており、デバイス差分（タッチ vs マウスホバー）を吸収する中間フック層が不足している。", "snippet": "---  \nid: REQ-247  \nstatus: done  \ntags:  \n- frontend  \n- refactor  \n- hooks  \n- desktop-layout  \n- mobile-layout  \n- thumbnails  \n- gallery  \ntitle: DesktopLayout / MobileLayout 間のギャラリー・サムネイル操作ロジック共通化（useGalleryInteraction）  \n---  \n  \n### REQ-247: DesktopLayout / MobileLayout 間のギャラリー・サムネイル操作ロジック共通化（useGalleryInteraction）  \n  \n- **Type**: refactor  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - `DesktopLayout.tsx` と `MobileLayout.tsx` において、履歴サムネイルのクリック選択、拡大プレビュー連携、複数選択操作（`useMultiSelect` 連動）、コンテキストメニュー呼び出しなどのイベントハンドラが各コンポーネント内に個別に記述されている。  \n - REQ-023（サムネイルホバー拡大・ホイール横スクロール）や REQ-240（複数端末リアルタイム同期）の導入に伴い、レイアウトごとに類似のコードを追加する必要があり、UI挙動の差異や二重修正が発生しやすい。  \n- **Root Cause**:  \n - (UX分類: Interaction / Component Coupling Anti-Pattern): 表示レイアウト（JSX配置）とUIステートマシン・操作ハンドラが密結合しており、デバイス差分（タッチ vs マウスホバー）を吸収する中間フック層が不足している。  \n- **Requirement**:  \n - ギャラリー・サムネイルインタラクション（選択切り替え、ホバー拡大、ホイール横スクロール、複数選択、キーボードナビゲーション）を統括するカスタムフック `useGalleryInteraction` を新"}, {"id": "REQ-245", "title": "アプリケーション全体における画像・サムネイル表示パフォーマンス最適化", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-09-11", "url": "https://drive.google.com/file/d/1uOeGqYZgC5rWiwXGBhmMCWHpsX17a0rj/view?usp=drivesdk", "surface": "- モバイル端末（iPad、スマートフォン等）からWi-Fi経由でホストPCにアクセスしてPrompt Surgeonを利用する際、「Generate画面の生成履歴ストリップの読み込みが詰まる」「LoRAs/Tagsページを開くとカードグリッドの表示がカクつく」「モバイル端末の動作が重くなる」という課題を解消したい", "root_cause_raw": "- (UX分類: Interaction / Information Design) 画面外画像も含めた全件画像の一括ロードによるブラウザ同時接続枠の飽和（通信詰まり）、フル解像度PNG画像の無加工配信によるWi-Fi帯域の枯渇、およびアセット登録時の高解像度元画像パスの誤保存により、初期表示のフリーズやスクロール時の描画負荷が発生している", "snippet": "---  \nid: REQ-245  \nstatus: done  \ntags:  \n- performance  \n- thumbnail  \n- mobile  \n- network  \n- optimization  \ntitle: アプリケーション全体における画像・サムネイル表示パフォーマンス最適化  \n---  \n  \n### REQ-245: アプリケーション全体における画像・サムネイル表示パフォーマンス最適化  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-11)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - モバイル端末（iPad、スマートフォン等）からWi-Fi経由でホストPCにアクセスしてPrompt Surgeonを利用する際、「Generate画面の生成履歴ストリップの読み込みが詰まる」「LoRAs/Tagsページを開くとカードグリッドの表示がカクつく」「モバイル端末の動作が重くなる」という課題を解消したい  \n- **Root Cause**:  \n - (UX分類: Interaction / Information Design) 画面外画像も含めた全件画像の一括ロードによるブラウザ同時接続枠の飽和（通信詰まり）、フル解像度PNG画像の無加工配信によるWi-Fi帯域の枯渇、およびアセット登録時の高解像度元画像パスの誤保存により、初期表示のフリーズやスクロール時の描画負荷が発生している  \n- **Requirement**:  \n - モバイル端末や低帯域ネットワーク環境下でも、Generate画面の履歴ストリップや各アセット管理画面（LoRAs/Tags/モーダル等）の画像一覧が通信詰まりなくスムーズに読み込まれ、操作フリーズや描画のカクつきなく快適に閲覧・選択できること  \n- **Acceptance criteria**:  \n - [ ] AC-1: Generate画面の生成履歴ストリップにおいて、画像一覧の初期表示時に通信詰まりを起こさず、表示領域内の画像が迅速に表示され、未表示のスクロール先画像によって先頭の表示が遅延しないこと。  \n - [ ] AC-2:"}, {"id": "REQ-244", "title": "Web Managerプロセス再起動の適正化とバッチ起動引数統一", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Server Manager & Infra", "root_cause_cat": "OS/WSL2・サブプロセス・環境境界", "ac_count": 4, "completion_date": "2026-09-10", "url": "https://drive.google.com/file/d/1HN2QFXYY5dmJftLAdVe4Dfqn_lZbndzj/view?usp=drivesdk", "surface": "- 242（ターミナル非表示・タブ別コンソール出力表示）を完了したにもかかわらず、Web UI 画面やサービス起動挙動が変わっていない。Web Manager（ポート8899）の再起動を行っても旧画面のまま更新されず、またバッチ経由で起動した際にも依然として 3 つのターミナルウィンドウがデスクトップ前面に出てきて残り続ける。", "root_cause_raw": "- 1. `restart_web_manager.bat` において、特権等で常駐している既存 Web Manager プロセスの停止（kill）が失敗した場合にエラーが隠蔽され、ポートが未解放のまま新プロセスがクラッシュしたにもかかわらず、旧プロセスのリッスンを誤認して「再起動成功」と判定していたため、新コードが RAM 上に反映されていなかった。", "snippet": "---  \nid: REQ-244  \nstatus: done  \ntags:  \n- service-manager  \n- web-manager  \n- restart  \n- background-process  \ntitle: Web Managerプロセス再起動の適正化とバッチ起動引数統一  \n---  \n  \n### REQ-244: Web Managerプロセス再起動の適正化とバッチ起動引数統一  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-10)  \n- **Current step**: Step 3  \n- **Priority**: P1  \n- **Surface**:  \n - 242（ターミナル非表示・タブ別コンソール出力表示）を完了したにもかかわらず、Web UI 画面やサービス起動挙動が変わっていない。Web Manager（ポート8899）の再起動を行っても旧画面のまま更新されず、またバッチ経由で起動した際にも依然として 3 つのターミナルウィンドウがデスクトップ前面に出てきて残り続ける。  \n- **Root Cause**:  \n - 1. `restart_web_manager.bat` において、特権等で常駐している既存 Web Manager プロセスの停止（kill）が失敗した場合にエラーが隠蔽され、ポートが未解放のまま新プロセスがクラッシュしたにもかかわらず、旧プロセスのリッスンを誤認して「再起動成功」と判定していたため、新コードが RAM 上に反映されていなかった。  \n - 2. `start_servers.bat` や `toggle_servers.bat` において `server-manager.ps1` への `-Background` 引数が渡されておらず、前面ウィンドウ表示モード（`cmd.exe /k`）が実行され続けていた。また `start_background_all.bat` に旧式の `conhost.exe` 呼び出しが残存していた。  \n- **Requirement**:  \n - `restart_web_manager.bat` において既存プロセスの確実な終了とポート解放を検証し、新コードでの稼働開始を厳"}, {"id": "REQ-243", "title": "Web Manager 自体の再起動バッチ (restart_web_manager.bat) の追加", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Server Manager & Infra", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-09-10", "url": "https://drive.google.com/file/d/1XBZEPOO-x8uVq2zDbGhRgB72g-E_MdD_/view?usp=drivesdk", "surface": "- manager自体のreboot用batを作って、不調時や更新時にワンクリックでWeb Manager（ポート8899）を再起動できるようにしたい。", "root_cause_raw": "- (UX分類: Interaction / Workflow Friction) 現状はWeb Manager（ポート8899）専用の停止・再起動スクリプトが存在せず、Manager自体のプロセス更新やトラブルシューティング時に手動でポート解放やプロセス終了を行う必要があり、運用操作上の摩擦が生じている", "snippet": "---  \nid: REQ-243  \nstatus: done  \ntags:  \n- service-manager  \n- web-manager  \n- restart  \n- batch-script  \n- port-8899  \ntitle: Web Manager 自体の再起動バッチ (restart_web_manager.bat) の追加  \n---  \n  \n### REQ-243: Web Manager 自体の再起動バッチ (restart_web_manager.bat) の追加  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-10)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - manager自体のreboot用batを作って、不調時や更新時にワンクリックでWeb Manager（ポート8899）を再起動できるようにしたい。  \n- **Root Cause**:  \n - (UX分類: Interaction / Workflow Friction) 現状はWeb Manager（ポート8899）専用の停止・再起動スクリプトが存在せず、Manager自体のプロセス更新やトラブルシューティング時に手動でポート解放やプロセス終了を行う必要があり、運用操作上の摩擦が生じている  \n- **Requirement**:  \n - Web Manager（ポート8899）の稼働プロセスを自動検知して安全に終了し、ポートの解放を確認した後に自動で再起動を行うワンクリックバッチファイル（`restart_web_manager.bat`）を提供すること  \n- **Acceptance criteria**:  \n - [x] AC-1: `restart_web_manager.bat` を実行した際、ポート 8899 を占有している既存の Web Manager プロセスが自動検知され、安全に停止（プロセス終了）されること。  \n - [x] AC-2: 停止処理後、ポート 8899 が完全に解放されたことを確認（または待機）してから新規 Web Manager プロセスが起動される"}, {"id": "REQ-242", "title": "Service Manager ターミナルバックグラウンド起動とタブ別コンソール出力表示", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Server Manager & Infra", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-09-10", "url": "https://drive.google.com/file/d/1O8ZhX1K-ENJ8HMVaR-7lOC8_Zo03gNgB/view?usp=drivesdk", "surface": "- service managerで起動したとき、各サービスのターミナルがフォアグラウンドに出てくるのを防止したい。現状は一瞬フラッシュするだけでなく、普通に3つのターミナル（Backend, Frontend, ComfyUI）が前面に出てきて残り続ける動きになっている。", "root_cause_raw": "- (UX分類: Interaction / Information Design)", "snippet": "---  \nid: REQ-242  \nstatus: done  \ntags:  \n- service-manager  \n- console  \n- tabs  \n- background-process  \n- logs  \ntitle: Service Manager ターミナルバックグラウンド起動とタブ別コンソール出力表示  \n---  \n  \n### REQ-242: Service Manager ターミナルバックグラウンド起動とタブ別コンソール出力表示  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-10)  \n- **Current step**: Phase 3  \n- **Priority**: P2  \n- **Surface**:  \n - service managerで起動したとき、各サービスのターミナルがフォアグラウンドに出てくるのを防止したい。現状は一瞬フラッシュするだけでなく、普通に3つのターミナル（Backend, Frontend, ComfyUI）が前面に出てきて残り続ける動きになっている。  \n - また、ターミナルが見えなくなる分、各サービスのターミナル情報をmanager側に表示できるようにしたい。コンソール出力のエリアをタブで分けて、みたいサービスのタブを選ぶ方式を想定。  \n- **Root Cause**:  \n - (UX分類: Interaction / Information Design)  \n 1. `server-manager.ps1` 内のバックグラウンド起動に `Start-Process \"conhost.exe\" ... -WindowStyle Hidden` が使われており、Windows の仕様上 `conhost.exe` 自体がコンソールホストであるためウィンドウ非表示化（`SW_HIDE`）が効かず、常駐サーバーが動作することで 3 つのターミナルウィンドウが前面に開きっぱなしで残り続けてしまう。また非バックグラウンド時も `cmd.exe /k` により 3 つのウィンドウを明示的に維持する仕様となっていた。  \n 2. 各サービスの実行ログが外部ウィンドウに分散しており、Service Manager 上で"}, {"id": "REQ-241", "title": "Web Appからのサービス停止・再起動の不整合および競合バグの解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Server Manager & Infra", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 7, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/17iDXnIVWUp0kVkbuXd3Uua8qsIyxQyVf/view?usp=drivesdk", "surface": "- Web UI（ポート 8899）から個別・一括の停止・再起動を実行した際に、反映されない、プロセスが起動しない、あるいは連打等で再起動ループに陥る", "root_cause_raw": "- (実装・競合不具合)", "snippet": "---  \nid: REQ-241  \nstatus: done  \ntags:  \n- server-manager  \n- web-ui  \n- process  \n- wsl2  \ntitle: Web Appからのサービス停止・再起動の不整合および競合バグの解消  \n---  \n  \n### REQ-241: Web Appからのサービス停止・再起動の不整合および競合バグの解消  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-09)  \n- **Current step**: Step 2: dev-design  \n- **Priority**: P1  \n- **Surface**:  \n - Web UI（ポート 8899）から個別・一括の停止・再起動を実行した際に、反映されない、プロセスが起動しない、あるいは連打等で再起動ループに陥る  \n- **Root Cause**:  \n - (実装・競合不具合)   \n1. Web UIとPowerShell間のサービス識別子の不一致（fe/be vs frontend/backend）  \n 2. server_api.pyのシングルスレッド同期ブロッキングおよびUI側の操作中ロック欠如  \n 3. 再起動時のポート解放待ち抜けによる二重起動防止ロジックの誤判定  \n 4. Web経由呼び出し時の-Backgroundフラグ欠落  \n 5. WSL2 ComfyUI停止コマンドとポート監視の不整合（WSLプロキシの誤爆kill）  \n- **Requirement**:  \n - Web UIおよびPowerShellスクリプト（server-manager.ps1）において、個別・一括の起動・停止・再起動が確実に実行され、競合や多重実行による不整合が発生せず安定して動作すること  \n- **Acceptance criteria**:  \n - [x] AC-1: Web UIの各カード（Frontend, Backend, ComfyUI）から個別に停止・再起動を実行した際、対象サービスが確実に停止・再起動されること。  \n - [x] AC-2: 「全サービス再起動」を実行した際、既存プロセスの終了とポート解放完了を待ってから再起動が行われ"}, {"id": "REQ-240", "title": "別端末で生成した画像の履歴リアルタイム同期", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 4, "completion_date": "2026-09-12", "url": "https://drive.google.com/file/d/1za2kia_iE5Aypxv9zVUaLbZYBWMbB2Dc/view?usp=drivesdk", "surface": "- 現行は別端末で生成した画像が履歴に表示されるには、リロードが必要だが、リロードを挟まずシームレスに同期したい", "root_cause_raw": "- (UX分類: Interaction / Information Design) 別端末等で完了した生成イベントや新規履歴データがリアルタイムにクライアント側へ同期されず、手動でページリロードを行わないと最新の生成結果が一覧に反映されない", "snippet": "---  \nid: REQ-240  \nstatus: done  \ntags:  \n- history  \n- sync  \n- real-time  \n- multi-device  \ntitle: 別端末で生成した画像の履歴リアルタイム同期  \n---  \n  \n### REQ-240: 別端末で生成した画像の履歴リアルタイム同期  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-12)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - 現行は別端末で生成した画像が履歴に表示されるには、リロードが必要だが、リロードを挟まずシームレスに同期したい  \n- **Root Cause**:  \n - (UX分類: Interaction / Information Design) 別端末等で完了した生成イベントや新規履歴データがリアルタイムにクライアント側へ同期されず、手動でページリロードを行わないと最新の生成結果が一覧に反映されない  \n- **Requirement**:  \n - 別端末で画像生成が完了した際、ユーザーが手動で画面リロードを行わなくても、履歴一覧に新規生成画像が即座に自動挿入され、複数端末並行時でも順序整合性および現在のUI操作コンテキスト（スクロール・詳細プレビュー・編集中プロンプト）が安全に保持されること  \n- **Acceptance criteria**:  \n - [x] AC-1: 別端末で画像生成が完了した際、画面を手動リロードすることなく、履歴一覧の先頭に新規生成画像が即座に自動挿入・表示されること。  \n - [x] AC-2: 複数端末から並行してジョブが投入・生成された場合でも、生成完了順（時系列）の順序が正しく保たれて履歴一覧に表示されること。  \n - [x] AC-3: 履歴一覧をスクロールして過去画像を閲覧中、あるいは詳細プレビュー等を開いている最中に新規画像が自動挿入されても、スクロール位置の不意なジャンプやプレビュー状態の破棄・リセットが発生しないこと。  \n - [x] AC-4: 履歴のリアルタイム同期によって、現在入力・編集中のプロンプトやパラメー"}, {"id": "REQ-239", "title": "Fix WSL2 ComfyUI Port Detection in Server Manager", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Server Manager & Infra", "root_cause_cat": "未分類 / 該当なし", "ac_count": 7, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1YaH40HvagTKwx6wvzzcIyMGVMIkbE3Sa/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-239  \nstatus: done  \ntags: []  \ntitle: Fix WSL2 ComfyUI Port Detection in Server Manager  \n---  \n  \n### REQ-239: Fix WSL2 ComfyUI Port Detection in Server Manager  \n  \n- **Status**: done (2026-09-09)  \n- **Description**:   \n`tools/server-manager` において、WSL2 上で動作する ComfyUI のポート (8188) 開放確認およびプロセス状態（稼働/停止）判定が Windows ネイティブの `Get-NetTCPConnection` に依存しているため、正常稼働中であってもポート確認がタイムアウトして fail 扱いとなり、ステータスが STOPPED と誤判定される問題を解消する。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: WSL2 で ComfyUI が起動している際、`server-manager.ps1` の一括起動 (`start`) および単体起動において、ポート 8188 の疎通がタイムアウトせず迅速に検知・成功すること。  \n- [x] AC-2: `server-manager.ps1 -Action status` および Web マネージャー (`server_api.py`) において、WSL2 ComfyUI が稼働中である場合に正しく稼働状態（LISTEN / running）として認識・表示されること。  \n- [x] AC-3: ComfyUI が未起動または停止状態の際には正しく未起動/停止（STOPPED）として判定されること。  \n- [x] AC-4: ComfyUI が既に起動している状態で `Start-ComfyUIProcess` が呼ばれた際、多重起動を防止して既存稼働を正しく検知できること。  \n- [x] AC-5: Windows ネイティブで動作する Backend (8000) および Frontend (5173) のポート確認・停止処理にリグレッションが発生しないこと。 "}, {"id": "REQ-238", "title": "server-manager起動時のVite EPERM rmdirエラーの解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Server Manager & Infra", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 3, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1adx50Cval7HQszlNKz_5-oOpbQ6u_Aht/view?usp=drivesdk", "surface": "- 「server-managerで一括起動すると、FEがエラー吐くようになった」", "root_cause_raw": "- Windows環境において `frontend/node_modules/.vite/deps` などのディレクトリに `R` (Read-Only) 属性が付与されている場合、Vite のキャッシュ初期化処理 `await fsp.rm(depsCacheDir, { recursive: true, force: true })` が `rmdir` システムコールで `EPERM (Access Denied)` により失敗する。", "snippet": "---  \nid: REQ-238  \nstatus: done  \ntags:  \n- defect  \n- server-manager  \n- frontend  \n- vite  \n- windows  \ntitle: server-manager起動時のVite EPERM rmdirエラーの解消  \n---  \n  \n### REQ-238: server-manager起動時のVite EPERM rmdirエラーの解消  \n- **Type**: defect  \n- **Status**: done (2026-09-09)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 「server-managerで一括起動すると、FEがエラー吐くようになった」  \n - `Error: EPERM: operation not permitted, rmdir 'frontend/node_modules/.vite/deps'`  \n- **Root Cause**:  \n - Windows環境において `frontend/node_modules/.vite/deps` などのディレクトリに `R` (Read-Only) 属性が付与されている場合、Vite のキャッシュ初期化処理 `await fsp.rm(depsCacheDir, { recursive: true, force: true })` が `rmdir` システムコールで `EPERM (Access Denied)` により失敗する。  \n - キャッシュメタデータ（`_metadata.json`）がプロセス強制終了等により欠落・破損すると、Vite は起動のたびにキャッシュ削除を試みて即死するデッドロック状態に陥る。  \n - 加えて `server-manager.ps1` の停止処理がポートリッスン中の PID に対する単発の `Stop-Process -Force` であるため、起動・最適化中のプロセスが途中終了しやすく、キャッシュ破損を引き起こす契機となっている。  \n- **Requirement**:  \n - Windows 環境において `.vite/deps` ディ"}, {"id": "REQ-237", "title": "巨大テストのリファクタリングと隔離性検証 (Phase 4)", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "実装不具合・その他", "ac_count": 4, "completion_date": "2026-09-11", "url": "https://drive.google.com/file/d/1tgkZp0O-SbE8FqzNxv-yi_D5S2eaOWP7/view?usp=drivesdk", "surface": "- `frontend/src/store/__tests__/useGenerationStore.test.ts` が65KB超と巨大化しており、WebSocket接続、ジョブキュー、Multi-Set、バイパス等複数のドメインが同居して認知負荷が高く、保守が困難になっている。", "root_cause_raw": "- ストアの機能拡張に伴い単一のテストファイルにテストケースを追加し続けた結果、スライス構成とテスト構造が乖離し、ファイル分割と隔離検証が行われていなかった。", "snippet": "---  \nid: REQ-237  \nstatus: done  \ntags:  \n- test  \n- refactoring  \n- isolation  \n- store  \n- zustand  \n- pytest-randomly  \ntitle: 巨大テストのリファクタリングと隔離性検証 (Phase 4)  \n---  \n  \n### REQ-237: 巨大テストのリファクタリングと隔離性検証 (Phase 4)  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-11)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - `frontend/src/store/__tests__/useGenerationStore.test.ts` が65KB超と巨大化しており、WebSocket接続、ジョブキュー、Multi-Set、バイパス等複数のドメインが同居して認知負荷が高く、保守が困難になっている。  \n - テスト間の実行順序依存性（Order Dependency）やグローバル状態（モジュール変数、WebSocketインスタンス等）のリーク検証が未実施であり、テストの決定性が保証されていない。  \n- **Root Cause**:  \n - ストアの機能拡張に伴い単一のテストファイルにテストケースを追加し続けた結果、スライス構成とテスト構造が乖離し、ファイル分割と隔離検証が行われていなかった。  \n- **Requirement**:  \n - `useGenerationStore.test.ts` をZustandスライス構成（`connectionSlice`, `jobQueueSlice`, `multiSetSlice`, `bypassSlice`）に沿って独立したテストファイルに分割・整理する。  \n - バックエンドテストにおいて、`pytest-randomly` によるランダムシード（`--randomly-seed=auto` および異なる固定シード）で実行し、順序依存のない決定的なテスト実行を検証する。  \n - フロントエンド全テスト連続実行時において、モジュール変数"}, {"id": "REQ-236", "title": "異常系・耐障害性（Red Teaming）テストの実装 (Phase 3)", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "非同期ブロッキング・パフォーマンス・リソース競合", "ac_count": 6, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1cY4ZwxWYYrSLaooZfCmSX6MM036aOxhc/view?usp=drivesdk", "surface": "- ComfyUI や LM Studio、外部翻訳API等の外部サービスとの連携において、ネットワーク切断、タイムアウト、HTTP 502/503エラー、不正JSON等の障害発生時のハンドリングや復旧処理の自動テストが不足している。", "root_cause_raw": "- 正常系レスポンスを前提としたベタ書きモックに依存しており、通信断や遅延等の障害シナリオ（フォールトインジェクション）やプロパティベーステスト（Property-based Testing）が設計・自動化されていなかった。", "snippet": "---  \nid: REQ-236  \nstatus: done  \ntags:  \n- test  \n- resilience  \n- fault-injection  \n- property-based  \n- msw  \n- respx  \n- fast-check  \n- hypothesis  \ntitle: 異常系・耐障害性（Red Teaming）テストの実装 (Phase 3)  \n---  \n  \n### REQ-236: 異常系・耐障害性（Red Teaming）テストの実装 (Phase 3)  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-09)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - ComfyUI や LM Studio、外部翻訳API等の外部サービスとの連携において、ネットワーク切断、タイムアウト、HTTP 502/503エラー、不正JSON等の障害発生時のハンドリングや復旧処理の自動テストが不足している。  \n - チップ構文解析やワークフロースキャナーに対して、ランダム入力や極端な破損データを用いた境界値・ファジングテストが存在せず、予期せぬ入力によるクラッシュリスクがある。  \n- **Root Cause**:  \n - 正常系レスポンスを前提としたベタ書きモックに依存しており、通信断や遅延等の障害シナリオ（フォールトインジェクション）やプロパティベーステスト（Property-based Testing）が設計・自動化されていなかった。  \n- **Requirement**:  \n - フロントエンドにおいて、MSW を活用した障害注入テスト（ComfyUIキュー投入エラー、翻訳APIタイムアウト、LLMシーン生成タイムアウト等）を新設し、UI復旧とトースト通知を検証する。  \n - バックエンドにおいて、respx を活用した障害注入テスト（ComfyUIプロキシおよびLLMサービスの接続タイムアウト、読み取りタイムアウト、不正JSON）を新設し、適切なエラーハンドリングとHTTPException(503等)の送出を検証する。  \n - fast-che"}, {"id": "REQ-235", "title": "未カバー画面・主要モーダルのテスト新設 (Phase 2)", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "実装不具合・その他", "ac_count": 6, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1RGe8-dbchGQ8TJDQkcl4-V_Z7yZbWOHW/view?usp=drivesdk", "surface": "- `LoRAsPage.tsx` および `TagsPage.tsx` の画面統合テストが0件であり、また `LoraModals.tsx`, `TagSetModals.tsx`, `CategoryManagerModal.tsx`, `BypassSettingsModal.tsx`, `ParamSyncModal.tsx` 等の主要モーダルコンポーネントに対する統合テストが未作成となっている。", "root_cause_raw": "- コアロジック（`TagChipEditor`, `useGenerationStore` 等）の単体テストが優先され、画面・モーダルレベルのコンポーネント統合テストの作成が後回しとなっていた。", "snippet": "---  \nid: REQ-235  \nstatus: done  \ntags:  \n- test  \n- frontend  \n- ui  \n- pages  \n- modals  \n- vitest  \ntitle: 未カバー画面・主要モーダルのテスト新設 (Phase 2)  \n---  \n  \n### REQ-235: 未カバー画面・主要モーダルのテスト新設 (Phase 2)  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-09)  \n- **Current step**: Phase 4: Implementation & Verification  \n- **Priority**: P2  \n- **Surface**:  \n - `LoRAsPage.tsx` および `TagsPage.tsx` の画面統合テストが0件であり、また `LoraModals.tsx`, `TagSetModals.tsx`, `CategoryManagerModal.tsx`, `BypassSettingsModal.tsx`, `ParamSyncModal.tsx` 等の主要モーダルコンポーネントに対する統合テストが未作成となっている。  \n - 画面全体の描画やフィルタリング複合条件、一括操作、モーダル内の動的リスト追加・削除などのUIインタラクションに対する自動テストが存在せず、リファクタリングや機能追加時のデグレ検出が手動確認に依存している。  \n- **Root Cause**:  \n - コアロジック（`TagChipEditor`, `useGenerationStore` 等）の単体テストが優先され、画面・モーダルレベルのコンポーネント統合テストの作成が後回しとなっていた。  \n- **Requirement**:  \n - `LoRAsPage` のコンポーネント統合テストを新設し、カード描画、フィルタ複合検索、一括操作連携を検証する。  \n - `TagsPage` のコンポーネント統合テストを新設し、タグセット一覧描画、絞り込み、複数選択・D&D並び替え呼び出しを検証する。  \n - 主要モーダル（`LoraModals`, `TagSetModals`, `Catego"}, {"id": "REQ-234", "title": "テスト基盤・フレームワークのセットアップ (Phase 1)", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 7, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1VyIMcWFoQvLO3U7Jh7aVTvUFqcNKL6j5/view?usp=drivesdk", "surface": "- テスト監査レポート（`tmp/test_framework_implementation_plan.md`）において、フロントエンドがAPIクライアントをベタモックしていることによるMock Driftリスク、外部通信の異常系テスト不足、テスト順序依存性やDBセッションリークの未検知が指摘された。", "root_cause_raw": "- 各機能開発時にアドホックなモック実装を行ってきたため、統一されたネットワーク層インターセプト機構や、DBセッション解放漏れ・順序依存を自動検知するテスト基盤機構が未導入のままとなっていた。", "snippet": "---  \nid: REQ-234  \nstatus: done  \ntags:  \n- test  \n- infrastructure  \n- frontend  \n- backend  \n- msw  \n- respx  \n- hypothesis  \ntitle: テスト基盤・フレームワークのセットアップ (Phase 1)  \n---  \n  \n### REQ-234: テスト基盤・フレームワークのセットアップ (Phase 1)  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-09-09)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - テスト監査レポート（`tmp/test_framework_implementation_plan.md`）において、フロントエンドがAPIクライアントをベタモックしていることによるMock Driftリスク、外部通信の異常系テスト不足、テスト順序依存性やDBセッションリークの未検知が指摘された。  \n - 今後の画面テスト新設や耐障害性テスト拡充の基盤として、ネットワーク層モックツール（MSW, respx）やファジング・プロパティテストライブラリ（fast-check, hypothesis）、テスト隔離・リーク検知環境を先行してセットアップする必要がある。  \n- **Root Cause**:  \n - 各機能開発時にアドホックなモック実装を行ってきたため、統一されたネットワーク層インターセプト機構や、DBセッション解放漏れ・順序依存を自動検知するテスト基盤機構が未導入のままとなっていた。  \n- **Requirement**:  \n - フロントエンドにMSW (Mock Service Worker v2) を導入し、ネットワーク層でのインターセプトおよびハンドラ基盤（`handlers.ts`, `server.ts`, `setup.ts`）を整備する。  \n - フロントエンドにプロパティテストライブラリ（`fast-check`）を導入し、`vite.config.ts` のテスト環境隔離設定（`isolate`, `restoreMocks`, "}, {"id": "REQ-233", "title": "server-manager: ComfyUIポート開放待ちタイムアウトのconfig化とリトライ機構の導入", "type": "Defect (不具合修正)", "priority": "P2", "domain": "Server Manager & Infra", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1WbsS79A3bNIn_ld89hoGWALW9p4O5toc/view?usp=drivesdk", "surface": "- `tools/server-manager/server-manager.ps1`: `Wait-For-Port` 関数および各サービス起動・再起動時の呼び出し箇所で、待機タイムアウト時間 `10` 秒がハードコードされている。", "root_cause_raw": "- ComfyUI の起動所要時間（PyTorch、CUDA/ROCm初期化、ノード読込等による10秒超過）に対する許容値の不足。", "snippet": "---  \nid: REQ-233  \nstatus: done  \ntags:  \n- server-manager  \n- comfyui  \n- config  \n- robustness  \n- powershell  \ntitle: 'server-manager: ComfyUIポート開放待ちタイムアウトのconfig化とリトライ機構の導入'  \n---  \n  \n### REQ-233: server-manager: ComfyUIポート開放待ちタイムアウトのconfig化とリトライ機構の導入  \n- **Type**: bugfix / enhancement  \n- **Status**: done (2026-09-09)  \n- **Current step**: Phase 3: Walkthrough & SSoT Sync  \n- **Priority**: P2  \n- **Surface**:  \n - `tools/server-manager/server-manager.ps1`: `Wait-For-Port` 関数および各サービス起動・再起動時の呼び出し箇所で、待機タイムアウト時間 `10` 秒がハードコードされている。  \n - `tools/server-manager/config.json`: ポート待機タイムアウト秒数やリトライ回数を定義するプロパティが存在しない。  \n- **Root Cause**:  \n - ComfyUI の起動所要時間（PyTorch、CUDA/ROCm初期化、ノード読込等による10秒超過）に対する許容値の不足。  \n - 待機時間がコード内にハードコードされており、環境差や負荷に応じた調整ができない。  \n - 単一の待機ループのみで、失敗時のリトライ・再試行メカニズムが存在しないことによる堅牢性の欠如。  \n- **Requirement**:  \n 1. `config.json` において、サービス全体またはサービス個別（ComfyUI, Backend, Frontend）でポート待機タイムアウト（秒）およびリトライ回数・リトライ間隔を設定可能にする。  \n 2. `server-manager.ps1` の `Wait-For-Port` において、`config.json"}, {"id": "REQ-232", "title": "server-managerにおけるWSLディストリビューション未検出不具合の修正", "type": "Defect (不具合修正)", "priority": "P2", "domain": "Server Manager & Infra", "root_cause_cat": "OS/WSL2・サブプロセス・環境境界", "ac_count": 3, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1y_anSAENoJFpXbpRHb4t_5ZJ-3cekM4C/view?usp=drivesdk", "surface": "- 「server-managerでwslのディストリビューションが見つからないと言われる。手動ではディストリビューションは特に指定していないが、必須なのか？」", "root_cause_raw": "- `tools/server-manager/server-manager.ps1` において、`$cfg.wsl.distro` が未設定または空文字の場合でも固定値 `\"Ubuntu\"` にフォールバックし、常に `wsl -d $distro ...` として実行される実装になっている。実際の環境では `Ubuntu-24.04` 等のバージョン付き名称で登録されている場合があり、`Ubuntu` 完全一致のディストリビューションが存在しない環境で `WSL_E_DISTRO_NOT_FOUND` エラーとなり起動・停止・ログ参照に失敗する。", "snippet": "---  \nid: REQ-232  \nstatus: done  \ntags:  \n- defect  \n- server-manager  \n- wsl2  \n- comfyui  \ntitle: server-managerにおけるWSLディストリビューション未検出不具合の修正  \n---  \n  \n### REQ-232: server-managerにおけるWSLディストリビューション未検出不具合の修正  \n- **Type**: defect  \n- **Status**: done (2026-09-09)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - 「server-managerでwslのディストリビューションが見つからないと言われる。手動ではディストリビューションは特に指定していないが、必須なのか？」  \n- **Root Cause**:  \n - `tools/server-manager/server-manager.ps1` において、`$cfg.wsl.distro` が未設定または空文字の場合でも固定値 `\"Ubuntu\"` にフォールバックし、常に `wsl -d $distro ...` として実行される実装になっている。実際の環境では `Ubuntu-24.04` 等のバージョン付き名称で登録されている場合があり、`Ubuntu` 完全一致のディストリビューションが存在しない環境で `WSL_E_DISTRO_NOT_FOUND` エラーとなり起動・停止・ログ参照に失敗する。  \n- **Requirement**:  \n - `server-manager` において、ディストリビューションが明示的に指定されている場合はそのディストリビューションを対象とし、指定されていない（空または省略された）場合は `-d` オプションを付与せず WSL の既定ディストリビューション（default）を自動利用できるようにする。  \n - 初期設定やエラー発生時にもユーザー環境に適合しやすい構成とする。  \n- **Acceptance criteria**:  \n - [x] AC-1: `config.json` の `wsl.distro` "}, {"id": "REQ-231", "title": "Prompt SurgeonおよびComfyUIサービスの一括ライフサイクル管理", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Server Manager & Infra", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1JLZoCl43g5hVaUwGJQFykE-o2VYQJyno/view?usp=drivesdk", "surface": "- 「ツールのサービス、ComfyUIを手軽に起動できるようにしたい。@[tmp/windows_wsl2_server_manager.md] イメージはこんな感じ。」", "root_cause_raw": "- **UX Classification**: Interaction (ワークフローの摩擦 / 運用オーバーヘッド)", "snippet": "---  \nid: REQ-231  \nstatus: done  \ntags:  \n- environment  \n- developer-experience  \n- service-management  \n- comfyui  \n- wsl2  \ntitle: Prompt SurgeonおよびComfyUIサービスの一括ライフサイクル管理  \n---  \n  \n### REQ-231: Prompt SurgeonおよびComfyUIサービスの一括ライフサイクル管理  \n- **Type**: enhancement  \n- **Status**: done (2026-09-09)  \n- **Current step**: Phase 1: Requirement Intake & Refinement  \n- **Priority**: P2  \n- **Surface**:  \n - 「ツールのサービス、ComfyUIを手軽に起動できるようにしたい。@[tmp/windows_wsl2_server_manager.md] イメージはこんな感じ。」  \n - 「1. wsl2で実行してる。ホームディレクトリでこんなshを実行してる（仮想環境アクティベート、環境変数設定、ComfyUI起動） / 2. ワンクリック（A）と常駐化（C）。CLI（B）も対応 / 3. 独立した画面表示。追々サービスrebootやログ確認等の機能拡張を前提としたい」  \n- **Root Cause**:  \n - **UX Classification**: Interaction (ワークフローの摩擦 / 運用オーバーヘッド)  \n - Prompt Surgeon の稼働に必要な各サービス（Windows上の Frontend, Backend）および WSL2 上で動作する ComfyUI を起動・停止・確認するために、個別コンソールを立ち上げて手動操作する必要があり、作業開始・終了時の運用負担と認知負荷が高い。  \n- **Requirement**:  \n - Windowsホスト環境およびWSL2環境にまたがる複数サービス（Prompt Surgeon FE/BE、WSL2 ComfyUI）を一元的に管理し、ワンクリック起動・停止、状態確認、およびPC起動時"}, {"id": "REQ-230", "title": "ComfyUIノードバイパス機能の不全解消とスキーマキャッシュ・エラーハンドリングの是正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-09-09", "url": "https://drive.google.com/file/d/1IoVMNmYSfpJW60Y79TMZYOFXv505ok55/view?usp=drivesdk", "surface": "229実装以降、バイパスが機能してない", "root_cause_raw": "バックエンド `/api/comfy/object_info` の接続失敗時エラー握りつぶし（HTTP 200で空 `{}` 返却）、フロントエンド React Query の空データ1時間キャッシュ、`applyBypass` のスキーマ未取得時サイレントスキップ処理、および ComfyUI 再接続・画面初期化時のバイパスプロファイル同期不足", "snippet": "---  \nid: REQ-230  \nstatus: done  \ntags:  \n- backend  \n- frontend  \n- bypass  \n- comfyui  \n- cache  \ntitle: ComfyUIノードバイパス機能の不全解消とスキーマキャッシュ・エラーハンドリングの是正  \n---  \n  \n### REQ-230: ComfyUIノードバイパス機能の不全解消とスキーマキャッシュ・エラーハンドリングの是正  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-09)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: 229実装以降、バイパスが機能してない  \n- **Root Cause**: バックエンド `/api/comfy/object_info` の接続失敗時エラー握りつぶし（HTTP 200で空 `{}` 返却）、フロントエンド React Query の空データ1時間キャッシュ、`applyBypass` のスキーマ未取得時サイレントスキップ処理、および ComfyUI 再接続・画面初期化時のバイパスプロファイル同期不足  \n- **Requirement**: ComfyUIの稼働状況や起動順序にかかわらず、有効化されたバイパスプロファイルの対象ノードが生成実行時に確実にバイパス・結線再構築されてComfyUIに送信されること。また、スキーマ情報欠落時にサイレントに未バイパス投入されることなく、正常なエラーハンドリングが行われること  \n- **Design doc**: none  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: ComfyUIが未起動または起動途中の状態でアプリを起動・アクセスし、その後にComfyUIが起動・接続された場合でも、バイパスプロファイルを有効化して生成を実行した際、バイパス対象ノードが確実に除外・結線バイパスされてComfyUIへ投入されること。  \n- [ ] AC-2: ComfyUIとの接続が確立された際、または再接続された際に、ノードスキーマ情報が最新状態に同期され、古い空状態のまま固着しないこと"}, {"id": "REQ-229", "title": "端末間（マルチデバイス）でのプリセット同期不具合の修正とSSoT整合性の確立", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 5, "completion_date": "2026-09-08", "url": "https://drive.google.com/file/d/1S_dJ9giiuexfg7nFJ7QI9yLlkaOxonAe/view?usp=drivesdk", "surface": "端末を跨いだ時、別の端末で編集したプリセットが、同期で反映されない", "root_cause_raw": "`usePresetState` における `existingSet?.paramValues` のローカル優先マージによるサーバー更新値の破棄、初回同期フラグ以降のストア更新欠落、および TanStack Query の `PersistQueryClientProvider` による古い LocalStorage キャッシュでの初回同期消費", "snippet": "---  \nid: REQ-229  \nstatus: done  \ntags:  \n- frontend  \n- preset  \n- sync  \n- OCC  \ntitle: 端末間（マルチデバイス）でのプリセット同期不具合の修正とSSoT整合性の確立  \n---  \n  \n### REQ-229: 端末間（マルチデバイス）でのプリセット同期不具合の修正とSSoT整合性の確立  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-08)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: 端末を跨いだ時、別の端末で編集したプリセットが、同期で反映されない  \n- **Root Cause**: `usePresetState` における `existingSet?.paramValues` のローカル優先マージによるサーバー更新値の破棄、初回同期フラグ以降のストア更新欠落、および TanStack Query の `PersistQueryClientProvider` による古い LocalStorage キャッシュでの初回同期消費  \n- **Requirement**: 端末Aで編集・保存されたプリセットが端末B側でも確実に同期・反映され、サーバーDB（SSoT）の最新状態が手元の古いキャッシュやメモリステートに握りつぶされないようにする  \n- **Design doc**: docs/design/REQ-229.md  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: 端末Aでプリセット（プロンプト・パラメータ等）を編集・保存後、端末Bでワークフロー画面を開く、あるいは画面表示中に再取得された際、端末Aの最新の `param_values`, `applied_assets`, `batch_size`, `seed_mode`, `seed` が端末BのUIおよびストアに即時反映されること。  \n- [x] AC-2: 端末B起動時、`PersistQueryClientProvider` による古い LocalStorage キャッシュによって最新サーバーデータの反映が"}, {"id": "REQ-228", "title": "画像プレビュー表示時のReactフックルール違反によるクラッシュ不具合の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 3, "completion_date": "2026-09-08", "url": "https://drive.google.com/file/d/13d96w7zSf4Xx29WIlXOtj38mcCwQtbN5/view?usp=drivesdk", "surface": "16:9をはじめとするアスペクト比で生成した画像をプレビューしようとしたらエラー画面（システムエラーが発生しました）になった", "root_cause_raw": "`HistoryModalPreview.tsx` において、条件付き早期リターン（`if (!isOpen || images.length === 0) return null`）の直後に `useCallback` フック（`getParamValue`）が配置されている。これによりモーダルが閉じた状態（`isOpen === false`）と開いた状態（`isOpen === true`）でレンダリング時に実行されるフック数が変動し、Reactの「フックのルール（Rules of Hooks）」違反（`Rendered more hooks than during the previous render.`）が発生して画面全体がクラッシュする。", "snippet": "---  \nid: REQ-228  \ntitle: \"画像プレビュー表示時のReactフックルール違反によるクラッシュ不具合の修正\"  \nstatus: done  \ntags: [frontend, bug, preview, react-hooks]  \n---  \n  \n### REQ-228: 画像プレビュー表示時のReactフックルール違反によるクラッシュ不具合の修正  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-08)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: 16:9をはじめとするアスペクト比で生成した画像をプレビューしようとしたらエラー画面（システムエラーが発生しました）になった  \n- **Root Cause**: `HistoryModalPreview.tsx` において、条件付き早期リターン（`if (!isOpen || images.length === 0) return null`）の直後に `useCallback` フック（`getParamValue`）が配置されている。これによりモーダルが閉じた状態（`isOpen === false`）と開いた状態（`isOpen === true`）でレンダリング時に実行されるフック数が変動し、Reactの「フックのルール（Rules of Hooks）」違反（`Rendered more hooks than during the previous render.`）が発生して画面全体がクラッシュする。  \n- **Requirement**: `HistoryModalPreview` 内のすべてのReactフック（`useCallback` 等）が早期リターン（`return null`）よりも前に呼び出されるよう配置を是正し、任意の画像（アスペクト比問わず）のプレビューを開いた際にクラッシュせず正常にモーダルが表示されること。  \n- **Acceptance criteria**:  \n - [x] AC-1: 生成画面および履歴画面において、任意の画像をクリックした際に画像プレビューモーダル（`HistoryModalPrev"}, {"id": "REQ-227", "title": "生成パラメータのアスペクト比変更反映の修正および生成時パラメータの可視化", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 5, "completion_date": "2026-09-07", "url": "https://drive.google.com/file/d/1vKBCj_U1gsvXGvAeFquK9BYCx6fKW-HO/view?usp=drivesdk", "surface": "- 「生成パラメータのアス比変更が反映されない 他のパラメータが反映できてるのかもよくわからない」", "root_cause_raw": "- **State Desynchronization & Overwrite**:", "snippet": "---  \nid: REQ-227  \nstatus: done  \ntags:  \n- frontend  \n- generation  \n- params  \n- history  \n- metadata  \n- defect  \ntitle: 生成パラメータのアスペクト比変更反映の修正および生成時パラメータの可視化  \n---  \n  \n### REQ-227: 生成パラメータのアスペクト比変更反映の修正および生成時パラメータの可視化  \n- **Type**: defect  \n- **Status**: done (2026-09-07)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 「生成パラメータのアス比変更が反映されない 他のパラメータが反映できてるのかもよくわからない」  \n - 「マッピングしてて明示的に設定変えたにも関わらず変化しないのが問題。」  \n - 「プロンプトは変更反映されてるように見えるのだが、古いプリセットのまま送信されているというのは、パラメータだけの話か？」  \n- **Root Cause**:  \n - **State Desynchronization & Overwrite**:  \n - パラメータパネルでアスペクト比を変更した際、オートセーブやクエリ再取得の同期タイミングによって `sets` 内のパラメータがワークフロー初期値（デフォルト `9:16`）に巻き戻された状態でキューへ投入される不具合が存在する。  \n - **Missing Generation Metadata & Invisible Execution Parameters**:  \n - バッチ生成時に生成パラメータのメタデータキャッシュ保存がスキップされているため、スナップショット保存時に現在UI値で誤保存される。  \n - 履歴プレビューモーダルにおいて、スナップショット未保存の画像に対してパラメータ情報表示（`<Info />`）ボタンが非表示となっており、実際にComfyUIでどのパラメータが実行されたかを画面上で確認できない。  \n- **Requirement**:  \n - パラメータパネル上で明示的に変更されたアスペクト比などのパラメ"}, {"id": "REQ-226", "title": "不具合解析・AI自律分析のためのログ永続化と1週間ローテーション機構", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "初期仕様・設計ギャップ", "ac_count": 5, "completion_date": "2026-09-07", "url": "https://drive.google.com/file/d/1x_Qquz8fQ-0XkZ8Rcnp62eYl9273DtDh/view?usp=drivesdk", "surface": "- 「不具合が起きた時の解析、改善実装時の状況確認を効率化する為のログ機構を追加したい。1週間分程度のログをロールするように残したい。人も見るが、AIの自律分析での活用を主と考えている。」", "root_cause_raw": "- **Information Design / Missing Auditability**:", "snippet": "---  \nid: REQ-226  \nstatus: done  \ntags:  \n- logging  \n- backend  \n- frontend  \n- auditability  \n- rotation  \n- ai-friendly  \ntitle: 不具合解析・AI自律分析のためのログ永続化と1週間ローテーション機構  \n---  \n  \n### REQ-226: 不具合解析・AI自律分析のためのログ永続化と1週間ローテーション機構  \n- **Type**: enhancement  \n- **Status**: done (2026-09-07)  \n- **Current step**: Phase 1: Requirement Analysis  \n- **Priority**: P2  \n- **Surface**:  \n - 「不具合が起きた時の解析、改善実装時の状況確認を効率化する為のログ機構を追加したい。1週間分程度のログをロールするように残したい。人も見るが、AIの自律分析での活用を主と考えている。」  \n - 「人が見る部分は二の次で大丈夫。必要であればログviewerとかを要望するので、AI解析への最適化を優先したログ設計でいい。」  \n - 現状はFE・BEともにログの永続化機構が存在せず、ターミナルやブラウザのDevToolsコンソールをリアルタイムに開いていない限り、発生したエラーやコンテキストが消失して事後分析ができない。  \n- **Root Cause**:  \n - **Information Design / Missing Auditability**:  \n - システムの稼働状況や異常発生時のコンテキスト（スタックトレース、リクエスト情報、画面エラー等）を蓄積・保持する設計になっておらず、障害解析や実装改善時の事後検証が属人的・リアルタイム依存になっている。  \n- **Requirement**:  \n - バックエンドおよびフロントエンドで発生したエラーや重要な動作記録をローカルログファイルとして永続化する。  \n - ログファイルは約1週間（7日間分）を保持し、古いログを自動破棄するローテーション機構を備える。  \n - **AIによる自律分析・抽出に最優先で最適化**し、機械可読性の高い構造化ログ形"}, {"id": "REQ-225", "title": "プリセット一括編集におけるComfyUI未登録LoRAモデルの選択連携", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-09-06", "url": "https://drive.google.com/file/d/17yb8Hh_RU4x_xnz7kqcT1Ym-TI3d6pF7/view?usp=drivesdk", "surface": "- 生成プリセットの一括編集モーダル（`ProfileBulkEditModal`）のパラメータタブ内にある「新規追加LoRA（差分編集）」において、DBに未登録でComfyUI側にのみ存在するLoRAモデルが候補に表示されず、選択できない。", "root_cause_raw": "- `ProfileBulkEditModal.tsx` 内の `SearchableLoraSelect` に対して `comfyModels`（`/api/loras/comfy-models` の取得結果）が渡されておらず、DB登録済みの `loras` のみが渡されているため。", "snippet": "---  \nid: REQ-225  \nstatus: done  \ntags:  \n- frontend  \n- preset  \n- profile-bulk-edit  \n- lora  \ntitle: プリセット一括編集におけるComfyUI未登録LoRAモデルの選択連携  \n---  \n  \n### REQ-225: プリセット一括編集におけるComfyUI未登録LoRAモデルの選択連携  \n  \n- **Type**: improvement  \n- **Status**: done (2026-09-06)  \n- **Priority**: P2  \n- **Surface**:  \n - 生成プリセットの一括編集モーダル（`ProfileBulkEditModal`）のパラメータタブ内にある「新規追加LoRA（差分編集）」において、DBに未登録でComfyUI側にのみ存在するLoRAモデルが候補に表示されず、選択できない。  \n- **Symptom**:  \n - 通常の生成画面のパラメータパネル（`LoraStackEditor`）では、ComfyUIのモデルディレクトリ内にある未登録LoRA（`Unregistered`）も検索・選択できるが、プリセット一括編集モーダル内ではDB登録済みのLoRAしか候補に表示されない。  \n- **Root Cause**:  \n - `ProfileBulkEditModal.tsx` 内の `SearchableLoraSelect` に対して `comfyModels`（`/api/loras/comfy-models` の取得結果）が渡されておらず、DB登録済みの `loras` のみが渡されているため。  \n- **Requirement**:  \n - プリセット一括編集モーダル（`ProfileBulkEditModal`）のパラメータタブにおいて、通常のパラメータパネルの `LoraStackEditor` と同一の表示仕様（`SearchableLoraSelect` + `comfyModels` 連携）に統一し、ComfyUI側で認識されている全LoRAモデル（未登録含む）をピックアップして検索・選択・一括適用できること。  \n - **表示優先順位**: 個別LoRAスタックと同様に"}, {"id": "REQ-224", "title": "プリセット一括編集におけるパラメータタブLoRA適用不具合解消およびLoRA適用機能の重複整理", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "初期仕様・設計ギャップ", "ac_count": 5, "completion_date": "2026-09-06", "url": "https://drive.google.com/file/d/1C4t5qhBy1sQYPG_MQrcKfrpgRAL_RM6M/view?usp=drivesdk", "surface": "- 生成プリセットの一括編集（`ProfileBulkEditModal`）での、パラメータタブのLoRA適用が機能しない。", "root_cause_raw": "- `ProfileBulkEditModal.tsx` において、`m.input_type === 'lora_stack'` 描画時に個別有効化チェックボックスが欠落しており、`enabledParams` に登録されない。", "snippet": "---  \nid: REQ-224  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- preset  \n- profile-bulk-edit  \n- lora  \ntitle: プリセット一括編集におけるパラメータタブLoRA適用不具合解消およびLoRA適用機能の重複整理  \n---  \n  \n### REQ-224: プリセット一括編集におけるパラメータタブLoRA適用不具合解消およびLoRA適用機能の重複整理  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-06)  \n- **Priority**: P1  \n- **Surface**:  \n - 生成プリセットの一括編集（`ProfileBulkEditModal`）での、パラメータタブのLoRA適用が機能しない。  \n - LoRA専用のタブがあるが、パラメータタブのLoRA適用機能と重複している（なお、アセット追加はトリガータグのプロンプト反映が目的であり別役割）。  \n- **Root Cause**:  \n - `ProfileBulkEditModal.tsx` において、`m.input_type === 'lora_stack'` 描画時に個別有効化チェックボックスが欠落しており、`enabledParams` に登録されない。  \n - `buildPayload()` 内のパラメータ抽出ロジックが `enabledParams` の完全一致キー（`paramPatch[role]`）のみを走査するため、`LoraStackEditor` が生成する接頭辞付きスロットキー（`${role}_lora_count`, `${role}_lora_name_*`, `${role}_lora_wt_*` 等）がすべて除外される。  \n - プロンプトへのタグ反映を担う「アセットの追加（`AddAssetModal`）」とは別に、「LoRAモデル・強度等を指定してプリセットに適用する機能」が「パラメータ」タブ（`LoraStackEditor`）と「LoRA」タブ（単一LoRA指定等）の双方に存在し、機能が重複してUI導線が二重化している。  \n- **Requirement**:  \n"}, {"id": "REQ-223", "title": "サーバ再起動時におけるTagChipEditorプロンプト消失バグ解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 5, "completion_date": "2026-09-06", "url": "https://drive.google.com/file/d/19lSBkkfqeRXRMfjGFi7IeOxMJvhJfINM/view?usp=drivesdk", "surface": "- サーバをrebootすると、req222のアクティブ入力欄からプロンプトが消失する不具合が再発している。コピペの不具合は再発していない。", "root_cause_raw": "- `TagChipEditor` の初回マウント時、ローカル state が空チップ配列（`[]`）で初期化され、内部通知 Effect により直ちに `onChipsChange?.([])` が親ストアへ通知されてアクティブセットの `promptChips` に空配列が注入される。", "snippet": "---  \nid: REQ-223  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- generate-page  \n- tag-chip-editor  \n- preset  \ntitle: サーバ再起動時におけるTagChipEditorプロンプト消失バグ解消  \n---  \n  \n### REQ-223: サーバ再起動時におけるTagChipEditorプロンプト消失バグ解消  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-06)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - サーバをrebootすると、req222のアクティブ入力欄からプロンプトが消失する不具合が再発している。コピペの不具合は再発していない。  \n- **Root Cause**:  \n - `TagChipEditor` の初回マウント時、ローカル state が空チップ配列（`[]`）で初期化され、内部通知 Effect により直ちに `onChipsChange?.([])` が親ストアへ通知されてアクティブセットの `promptChips` に空配列が注入される。  \n - `multiSetSlice.loadPresetData` において、`s.promptChips && Object.keys(s.promptChips).length > 0 ? s.promptChips : initialPromptChips` の判定が空配列 `{ [role]: [] }` を「既存チップあり」と誤認し、DBからパースされた有効な `initialPromptChips` を破棄してしまう。  \n - その後、`TagChipEditor` が空チップ状態のまま `onChange?.(\"\")` を発火して親の `paramValues` を空文字で上書きし、自動保存 Effect によりバックエンドDBまで空文字で上書き保存されてプロンプトが恒久的に消失する。  \n- **Requirement**:  \n - サーバ再起動、画面リロード、または初期マウント時において、アク"}, {"id": "REQ-222", "title": "TagChipEditorの外部プロンプト文字列同期不全およびプリセット切替時の消失バグ解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 4, "completion_date": "2026-09-05", "url": "https://drive.google.com/file/d/1uXevrMAv6_KM6ufywiTQSXJ8ihlU-hMR/view?usp=drivesdk", "surface": "- アクティブなプリセットの入力欄のプロンプトが消える（空になる）。", "root_cause_raw": "- `TagChipEditor`（`frontend/src/components/TagChipEditor/index.tsx`）において、`chips` prop が渡されている場合（`chipsProp !== undefined`）、`value`（文字列プロンプト）の変更検知・同期 Effect が完全にスキップされる設計となっていた。そのため、セクションコピペ機能等で親の `paramValues`（`value`）が外部から更新されてもチップが再パースされず、直後の通知 Effect により未更新の古いチップ文字列で親の `onChange` が上書き発火されてペーストがキャンセルされていた。", "snippet": "---  \nid: REQ-222  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- generate-page  \n- tag-chip-editor  \n- preset  \ntitle: TagChipEditorの外部プロンプト文字列同期不全およびプリセット切替時の消失バグ解消  \n---  \n  \n### REQ-222: TagChipEditorの外部プロンプト文字列同期不全およびプリセット切替時の消失バグ解消  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-05)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - アクティブなプリセットの入力欄のプロンプトが消える（空になる）。  \n - 別プリセットからセクションのコピペ機能（PromptSectionClipboardMenu）を使って貼り付けを行っても、入力欄にペースト内容が反映されない。  \n- **Root Cause**:  \n - `TagChipEditor`（`frontend/src/components/TagChipEditor/index.tsx`）において、`chips` prop が渡されている場合（`chipsProp !== undefined`）、`value`（文字列プロンプト）の変更検知・同期 Effect が完全にスキップされる設計となっていた。そのため、セクションコピペ機能等で親の `paramValues`（`value`）が外部から更新されてもチップが再パースされず、直後の通知 Effect により未更新の古いチップ文字列で親の `onChange` が上書き発火されてペーストがキャンセルされていた。  \n - `DesktopLayout.tsx` および `MobileLayout.tsx` の `TagChipEditor` の `key` が `role` のみ（例: `key={m.role!}`）となっており、`activeSetId`（プリセット・セットID）の変化でコンポーネントが再マウントされないため、プリセット切り替え時に `chips"}, {"id": "REQ-221", "title": "REQ-220適用後の生成ページ無限再描画エラー（真っ黒画面）の解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Prompt & TagChip Editor", "root_cause_cat": "実装不具合・その他", "ac_count": 4, "completion_date": "2026-09-05", "url": "https://drive.google.com/file/d/19rBeDt0BHpdmoblhhEFSghBaNxsoI_cl/view?usp=drivesdk", "surface": "- 生成ページが真っ黒の画面になる。サーバをrebootしても変わらない。req220をやって以降起きた。", "root_cause_raw": "- `TagChipEditor` の `useEffect` 依存配列に `onChipsChange` が含まれており、親コンポーネント（`DesktopLayout` / `MobileLayout`）からインライン無名関数として渡されたコールバックがレンダー毎に新参照となるため、マウント時に Effect が発火して親ストアを更新し、親の再描画によってさらに新しいコールバックが渡されるという無限再レンダリングループ（`Maximum update depth exceeded`）が発生している。未捕捉の例外によってルートの React ツリー全体がアンマウントされ、ダーク背景のみの真っ黒画面となる。", "snippet": "---  \nid: REQ-221  \nstatus: done  \ntags:  \n- frontend  \n- bugfix  \n- generate-page  \n- tag-chip-editor  \ntitle: REQ-220適用後の生成ページ無限再描画エラー（真っ黒画面）の解消  \n---  \n  \n### REQ-221: REQ-220適用後の生成ページ無限再描画エラー（真っ黒画面）の解消  \n  \n- **Type**: defect  \n- **Status**: done (2026-09-05)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 生成ページが真っ黒の画面になる。サーバをrebootしても変わらない。req220をやって以降起きた。  \n- **Root Cause**:  \n - `TagChipEditor` の `useEffect` 依存配列に `onChipsChange` が含まれており、親コンポーネント（`DesktopLayout` / `MobileLayout`）からインライン無名関数として渡されたコールバックがレンダー毎に新参照となるため、マウント時に Effect が発火して親ストアを更新し、親の再描画によってさらに新しいコールバックが渡されるという無限再レンダリングループ（`Maximum update depth exceeded`）が発生している。未捕捉の例外によってルートの React ツリー全体がアンマウントされ、ダーク背景のみの真っ黒画面となる。  \n- **Requirement**:  \n - 生成画面および TagChipEditor が無限再レンダリングループを起こすことなく安定して描画され、プロンプトの編集や無効化タグ保持機能が正常に動作すること。  \n- **Acceptance criteria**:  \n - [x] AC-1: 生成画面（`/`）にアクセスした際、画面が真っ黒にならず正常にUI（プロンプト入力欄、パラメータ設定パネル等）が表示されること。  \n - [x] AC-2: 生成画面のプロンプト入力欄（TagChipEditor）において、タグチップの無効化・有効化、追加、削"}, {"id": "REQ-220", "title": "生成プロンプト（TagChipEditor）の無効化タグ状態永続化およびライフサイクル保持", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Prompt & TagChip Editor", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 5, "completion_date": "2026-09-05", "url": "https://drive.google.com/file/d/1ZrhUqvFkgmluE6czP9OFv42iS5hkEnnO/view?usp=drivesdk", "surface": "- 生成画面（GeneratePage）のプロンプト入力欄（TagChipEditor）でタグを無効化（グレーアウト）にした後、画面遷移やアコーディオン開閉、モバイルでのプロンプトタブ切替など再描画・再マウントが走ると、無効化したタグが消失してしまう。", "root_cause_raw": "- SSoT（`SPEC_COMMON.md`）の契約上、`TagChipEditorProps` の `onChange` が「有効チップのみをカンマ連結した文字列を返す」と定義されており、親ストア（`paramValues`）には無効タグが除去された平文文字列のみが保存されている。", "snippet": "---  \nid: REQ-220  \nstatus: done  \ntags:  \n- frontend  \n- ui  \n- prompt  \n- tag-chip-editor  \n- state-management  \ntitle: 生成プロンプト（TagChipEditor）の無効化タグ状態永続化およびライフサイクル保持  \n---  \n  \n### REQ-220: 生成プロンプト（TagChipEditor）の無効化タグ状態永続化およびライフサイクル保持  \n- **Type**: defect  \n- **Status**: done (2026-09-05)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**:  \n - 生成画面（GeneratePage）のプロンプト入力欄（TagChipEditor）でタグを無効化（グレーアウト）にした後、画面遷移やアコーディオン開閉、モバイルでのプロンプトタブ切替など再描画・再マウントが走ると、無効化したタグが消失してしまう。  \n- **Root Cause**:  \n - SSoT（`SPEC_COMMON.md`）の契約上、`TagChipEditorProps` の `onChange` が「有効チップのみをカンマ連結した文字列を返す」と定義されており、親ストア（`paramValues`）には無効タグが除去された平文文字列のみが保存されている。  \n - 無効タグの状態が `TagChipEditor` 内部のローカルステート（`useChipHistory`）にしか存在しないため、コンポーネントがアンマウント・再マウントされると、親の平文文字列から再パース（全件 `enabled: true`）され、無効タグが永久に喪失する。  \n- **Requirement**:  \n - プロンプトタグを無効化（enabled: false）した状態が、画面遷移、アコーディオン開閉、タブ切替、Multi-Set切替などの画面操作・再描画を跨いでも消失せず、無効化状態のまま保持・復元されること。  \n - ComfyUIへのAPI投入時およびスナップショット生成時には、従来通り有効タグのみが送信されること。  \n- **Accept"}, {"id": "REQ-219", "title": "生成プロンプト各入力欄および個別タグのコピー＆ペースト・履歴・タグセット連携", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-09-05", "url": "https://drive.google.com/file/d/1ozRD5oLJn3tsKwKEnk2TwBsaT7CdZeKq/view?usp=drivesdk", "surface": "- 生成プロンプトの各入力欄（背景や衣装など）において、設定されたプロンプト内容を別のプリセットやタグセットへ転用・共有する手段がなく、手動で再入力または再選択する必要がある。", "root_cause_raw": "- Interaction: プロンプト入力欄および個別タグ単位でのクリップボード操作（コピー＆ペースト）、複数件のコピー履歴保持、および入力欄からタグセットへの直接登録・更新機能が提供されていないため。", "snippet": "---  \nid: REQ-219  \nstatus: done  \ntags:  \n- frontend  \n- ui  \n- prompt  \n- generate-page  \n- tag-management  \ntitle: 生成プロンプト各入力欄および個別タグのコピー＆ペースト・履歴・タグセット連携  \n---  \n  \n### REQ-219: 生成プロンプト各入力欄および個別タグのコピー＆ペースト・履歴・タグセット連携  \n- **Type**: enhancement  \n- **Status**: done (2026-09-05)  \n- **Current step**: Phase 1: Requirement Analysis  \n- **Priority**: P2  \n- **Surface**:  \n - 生成プロンプトの各入力欄（背景や衣装など）において、設定されたプロンプト内容を別のプリセットやタグセットへ転用・共有する手段がなく、手動で再入力または再選択する必要がある。  \n - 個別のタグを別の欄やプリセットへ複製・移動する操作が煩雑である。  \n - 入力欄で作成・調整したプロンプトを、既存のタグセットや新規タグセットとして反映・改修する直接の導線がない。  \n- **Root Cause**:  \n - Interaction: プロンプト入力欄および個別タグ単位でのクリップボード操作（コピー＆ペースト）、複数件のコピー履歴保持、および入力欄からタグセットへの直接登録・更新機能が提供されていないため。  \n- **Requirement**:  \n - 生成プロンプトの各入力セクション単位で、設定されたプロンプト全体をOSクリップボードおよびアプリ内履歴へコピーし、他の入力セクションや別プリセットへペースト（上書き／追加の選択が可能）できること。  \n - ペースト時に直近でコピーした複数件の履歴から対象を選択して適用できること。  \n - 個別のタグに対してもコピー操作が可能であり、各入力欄へのペースト対象として利用できること。  \n - 入力セクションの内容から直接、新規タグセットの登録または既存タグセット（サブセット含む）への上書き更新が行えること。  \n- **Acceptance criteria**:  \n "}, {"id": "REQ-218", "title": "生成プリセット一括編集におけるプロンプト先頭・末尾追加時のデリミタ付与不具合の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "未分類 / 該当なし", "ac_count": 5, "completion_date": "2026-09-03", "url": "https://drive.google.com/file/d/1n0Ctdy_txooBgSblD3sgTq4SLhgxDWY_/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-218  \nstatus: done  \ntags:  \n- bug  \n- frontend  \n- preset  \n- bulk-edit  \ntitle: 生成プリセット一括編集におけるプロンプト先頭・末尾追加時のデリミタ付与不具合の修正  \n---  \n  \n### REQ-218: 生成プリセット一括編集におけるプロンプト先頭・末尾追加時のデリミタ付与不具合の修正  \n  \n- **Status**: done (2026-09-03)  \n- **Description**:   \n生成画面のプロファイル一括編集（`ProfileBulkEditModal`）において、プロンプトタブから操作種別「先頭に追加（`prefix`）」または「末尾に追加（`suffix`）」を指定して適用した際、既存プロンプトと追加プロンプトがデリミタなしで文字列結合されタグが破損する問題を解消する。  \n 既存プロンプトと追加値の境界に適切なカンマ区切り（`, `）を付与し、余分な先頭・末尾のカンマや空白を正規化して結合する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: 操作種別「先頭に追加（`prefix`）」を一括適用した際、既存プロンプトが空でない場合は追加テキストと既存テキストの間にカンマ区切り（`, `）が付与され、既存の先頭タグと結合しないこと。  \n- [ ] AC-2: 操作種別「末尾に追加（`suffix`）」を一括適用した際、既存プロンプトが空でない場合は既存テキストと追加テキストの間にカンマ区切り（`, `）が付与され、既存の末尾タグと結合しないこと。  \n- [ ] AC-3: 既存プロンプトが空文字（または空白のみ）の場合、余分なカンマや空白が付与されず追加テキストのみが正しく設定されること。  \n- [ ] AC-4: 既存プロンプトまたは追加テキストの末尾・先頭に既にカンマや空白が存在する場合でも、重複したカンマ（`, , `）にならず正しく正規化されて結合されること。  \n- [ ] AC-5: 関連する単体テスト（`usePresetState` / `useGeneratePageState` 等）がパスすること。  "}, {"id": "REQ-214", "title": "Python 3.12 / Pydantic V2 互換性対応（datetime.UTC標準化・ConfigDict移行）による非推奨警告の一掃", "type": "Refactor (リファクタリング)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "実装不具合・その他", "ac_count": 3, "completion_date": "2026-09-06", "url": "https://drive.google.com/file/d/1XATzz08jKj2QRrS21DI0tuHZ4-gkT0tT/view?usp=drivesdk", "surface": "- `models.py` の各テーブル定義（`created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)`）および各ルーター（`presets.py`, `llm_prompts.py`, `seeder.py`）において、Python 3.12で非推奨となった `datetime.utcnow()` が多用されている。", "root_cause_raw": "- **Outdated Standard Library & Pydantic Patterns**: Python 3.11以前の旧作法（`datetime.utcnow()` / `class Config:`）がコードベース全体に残存している。", "snippet": "---  \nid: REQ-214  \nstatus: done  \ntags:  \n- backend  \n- refactor  \n- python312  \n- pydantic-v2  \n- deprecation-cleanup  \n- timezone-safety  \n- degradation-risk  \ntitle: Python 3.12 / Pydantic V2 互換性対応（datetime.UTC標準化・ConfigDict移行）による非推奨警告の一掃  \n---  \n  \n### REQ-214: Python 3.12 / Pydantic V2 互換性対応（datetime.UTC標準化・ConfigDict移行）による非推奨警告の一掃  \n- **Type**: refactor  \n- **Status**: done (2026-09-06)  \n- **Current step**: Phase 1: Requirement Analysis  \n- **Priority**: P2  \n- **Surface**:  \n - `models.py` の各テーブル定義（`created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)`）および各ルーター（`presets.py`, `llm_prompts.py`, `seeder.py`）において、Python 3.12で非推奨となった `datetime.utcnow()` が多用されている。  \n - テスト実行時に **414件** の `DeprecationWarning` が出力されており、将来のPythonバージョン（3.13以降）へのアップグレード時にランタイムエラーとなる潜在リスクがある。  \n - また、タイムゾーン情報を持たないナイーブな日時オブジェクト（Naive Datetime）とタイムゾーン付きオブジェクト（Aware Datetime）の混在により、フロントエンドへのISO文字列返却時に時差ズレが発生しやすい。  \n - `app/config.py` において Pydantic V1形式の `class Config:` が残存しており、`Pyd"}, {"id": "REQ-204", "title": "セリフLLM変換における画像コンテキストおよび画像別場面ヒント付与・反映機能（マルチモーダル対応・単体/一括での画像別シーン説明入力）", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "SpeechBubble & Dialogue", "root_cause_cat": "初期仕様・設計ギャップ", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1jSC3Yr_HlNXKr9Mvm_Mf7d1ogOe67UWd/view?usp=drivesdk", "surface": "- セリフのLLM変換で、画像も渡して場面解釈のヒントにしてもらい、変換するセリフのトーンに反映されるようにしたい。", "root_cause_raw": "- **Information Design (Missing Multimodal Context & Per-Image Scene Hint Integration)**: セリフ口調変換の入力データが口調プリセットとセリフテキストのみに限定されており、対象画像（スナップショット）の視覚情報（表情、姿勢、シチュエーション）および画像ごとの個別文脈（場面説明テキスト）をマルチモーダルLLM等へ連携して場面解釈を補助させるデータモデル・プロンプト連携機構が存在しない。", "snippet": "---  \nid: REQ-204  \nstatus: done  \ntags:  \n- backend  \n- frontend  \n- speech-bubble  \n- llm  \n- multimodal  \n- vision  \n- dialogue-transform  \n- scene-hint  \n- batch  \n- enhancement  \ntitle: セリフLLM変換における画像コンテキストおよび画像別場面ヒント付与・反映機能（マルチモーダル対応・単体/一括での画像別シーン説明入力）  \n---  \n  \n### REQ-204: セリフLLM変換における画像コンテキストおよび画像別場面ヒント付与・反映機能（マルチモーダル対応・単体/一括での画像別シーン説明入力）  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: Phase 4: Implementation & Verification (Completed)  \n- **Priority**: P2  \n- **Surface**:  \n - セリフのLLM変換で、画像も渡して場面解釈のヒントにしてもらい、変換するセリフのトーンに反映されるようにしたい。  \n - 口調変換に用いるプロンプトはプリセットとして共通保存できるが、画像ごとにシチュエーションや文脈（「照れて強がっている」「敵に追い詰められて焦っている」など）が異なるため、画像単位で任意の「場面のヒント・説明テキスト」を付与できるようにしたい。  \n - 単体変換（単一画像の吹き出し編集）および一括変換（複数画像のバッチ変換）のいずれにおいても、画像データ（ビジョン）と合わせて画像ごとに個別の場面ヒントテキストを入力・付与し、LLMの場面解釈および口調トーンの決定に反映させたい。  \n- **Root Cause**:  \n - **Information Design (Missing Multimodal Context & Per-Image Scene Hint Integration)**: セリフ口調変換の入力データが口調プリセットとセリフテキストのみに限定されており、対象画像（スナップショット）の視"}, {"id": "REQ-201", "title": "生成プリセット一括編集機能の強化（範囲選択・型安全パラメータ入力・共通タグ抽出削除・タグチップ対応）", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1BoOyy-OuX_F8sTWti3d0InV4y-InABK1/view?usp=drivesdk", "surface": "- 生成プリセットの複数選択時に、全選択・全解除または1件ずつの個別選択しかできず、連続した範囲の選択（Shift+クリック等）ができない。", "root_cause_raw": "- プリセット一覧の選択ロジックに直前選択インデックスを保持した範囲選択（Shiftキー連動）が実装されていない（Interaction Design）。", "snippet": "---  \nid: REQ-201  \nstatus: done  \ntags:  \n- frontend  \n- preset  \n- batch-edit  \n- selection  \n- tag-chip  \n- enhancement  \ntitle: 生成プリセット一括編集機能の強化（範囲選択・型安全パラメータ入力・共通タグ抽出削除・タグチップ対応）  \n---  \n  \n### REQ-201: 生成プリセット一括編集機能の強化（範囲選択・型安全パラメータ入力・共通タグ抽出削除・タグチップ対応）  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: Phase 3: Verification & Closure (Completed)  \n- **Priority**: P2  \n- **Surface**:  \n - 生成プリセットの複数選択時に、全選択・全解除または1件ずつの個別選択しかできず、連続した範囲の選択（Shift+クリック等）ができない。  \n - 一括編集モーダルでのパラメータ編集がすべてプレーンテキスト入力となっており、各パラメータの属性（数値、セレクタ等）に応じた直感的な入力や選択ができない。  \n - プロンプトの一括編集において、選択された複数プリセットに共通するタグを抽出・列挙し、特定のタグを選択して一括削除する手段がない（例: 共通ベースプロンプトから一部プリセット群のみ特定の服装タグ等をまとめて除去したい）。  \n - 一括編集モーダルのプロンプト入力・編集欄がタグチップ形式に対応しておらず、単一編集画面との操作体験に差異がある。  \n- **Root Cause**:  \n - プリセット一覧の選択ロジックに直前選択インデックスを保持した範囲選択（Shiftキー連動）が実装されていない（Interaction Design）。  \n - 一括編集モーダルのパラメータ入力フォームが汎用テキストフィールドで構成されており、単一編集時のような型特化（数値スライダー/スピン、サンプラー/スケジューラーセレクタ等）のコントロールが適用されていない（Information / Interaction Design）。  \n"}, {"id": "REQ-198", "title": "プリセット・プロンプト編集のオートセーブおよび一括編集における状態同期・OCC競合解消（過去帰り・未反映防止）", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 4, "completion_date": "2026-08-29", "url": "https://drive.google.com/file/d/1T4Rl6uKEWYT2i4GiTBmI_9Oyhbt1oykE/view?usp=drivesdk", "surface": "- 生成画面でプロンプトを編集しても保存されず、ブラウザのリロードや別画面からの復帰時に過去の状態に戻ってしまうことがある。", "root_cause_raw": "- `updatePresetMutation` 成功時に React Query キャッシュを同期更新（`setQueryData`）せず `invalidateQueries` による非同期再取得のみを行っているため、連続入力時に古い `base_updated_at` が送信されてバックエンドで `409 Conflict` が発生し、変更が DB に保存されない。", "snippet": "---  \nid: REQ-198  \nstatus: done  \ntags:  \n- frontend  \n- backend  \n- presets  \n- prompt  \n- autosave  \n- occ  \n- bugfix  \ntitle: プリセット・プロンプト編集のオートセーブおよび一括編集における状態同期・OCC競合解消（過去帰り・未反映防止）  \n---  \n  \n### REQ-198: プリセット・プロンプト編集のオートセーブおよび一括編集における状態同期・OCC競合解消（過去帰り・未反映防止）  \n- **Type**: bugfix  \n- **Status**: done (2026-08-29)  \n- **Current step**: Phase 1: Intake & Triage (Completed)  \n- **Priority**: P1  \n- **Surface**:  \n - 生成画面でプロンプトを編集しても保存されず、ブラウザのリロードや別画面からの復帰時に過去の状態に戻ってしまうことがある。  \n - プリセット管理モーダルから一括編集を複数回実行すると、未反映の項目が出たり、以前の変更が古いデータで上書きされて巻き戻ることがある。  \n- **Root Cause**:  \n - `updatePresetMutation` 成功時に React Query キャッシュを同期更新（`setQueryData`）せず `invalidateQueries` による非同期再取得のみを行っているため、連続入力時に古い `base_updated_at` が送信されてバックエンドで `409 Conflict` が発生し、変更が DB に保存されない。  \n - 409 Conflict 発生時にエラーが握りつぶされ、フロントエンドの `lastSavedStateRef` と DB 実態が乖離し、リロード時に DB の過去データへ巻き戻る。  \n - プリセット一括編集（`handleBulkEditApply`）において、コンポーネント内の古い `presets` クロージャを参照して変更を適用しているため、連続実行時に古い値ベースで DB を上書きしてしまう。またアクティブプリセット更新時のステート同期不"}, {"id": "REQ-197", "title": "サムネイルのアスペクト比設定およびパン・ズームクロップ調整機能", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Thumbnails & Assets", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-08-29", "url": "https://drive.google.com/file/d/1xa4zsKu8pDHrbWdvjQSY3CdCBs6divW4/view?usp=drivesdk", "surface": "- 各所のサムネ表示が正方形だが、生成画像は縦長が多いので、サムネのアス比も縦長(3:4など)にしたい。", "root_cause_raw": "- UI全体のサムネイル表示（LoRA、タグセット、プリセット、ワークフロー、アルバム、スナップショット/ギャラリー等）が正方形（1:1）固定となっており、縦長画像等の被写体が見切れてしまう（Visual Design）。", "snippet": "---  \nid: REQ-197  \nstatus: done  \ntags:  \n- frontend  \n- settings  \n- thumbnail  \n- crop  \n- pan-zoom  \n- aspect-ratio  \n- enhancement  \ntitle: サムネイルのアスペクト比設定およびパン・ズームクロップ調整機能  \n---  \n  \n### REQ-197: サムネイルのアスペクト比設定およびパン・ズームクロップ調整機能  \n- **Type**: enhancement  \n- **Status**: done (2026-08-29)  \n- **Current step**: Phase 2: Detailed Design (Approved)  \n- **Priority**: P2  \n- **Surface**:  \n - 各所のサムネ表示が正方形だが、生成画像は縦長が多いので、サムネのアス比も縦長(3:4など)にしたい。  \n - 生成する画像のアス比が異なる場合もあるので、クロップ範囲をD&Dで位置とズーム・パン調整もできるようにしたい。  \n - 標準のアス比を設定画面側で調整できるようにし、ComfyUIでよく使う代表的なアス比の選択を基本に、任意の入力も可能とする。  \n- **Root Cause**:  \n - UI全体のサムネイル表示（LoRA、タグセット、プリセット、ワークフロー、アルバム、スナップショット/ギャラリー等）が正方形（1:1）固定となっており、縦長画像等の被写体が見切れてしまう（Visual Design）。  \n - サムネイル/カバー画像の表示位置・焦点（パン）や拡大率（ズーム）をインタラクティブに調整・保持する機能が存在しないため、任意の構図に合わせられない（Interaction）。  \n - サムネイルのアスペクト比を用途に応じて変更するグローバル設定が存在しない（Information/Visual Design）。  \n- **Requirement**:  \n - 設定画面において、サムネイルの標準アスペクト比を選択・カスタム入力できる設定項目を提供すること（代表的なプリセット: 1:1, 3:4, 4:3, 9:16, 16:9, 2:3, 3:2等 + 任意比率"}, {"id": "REQ-195", "title": "生成キュー投入および生成進行時のUI応答性・パフォーマンス改善（巨大履歴取得・描画ループストレージアクセスの最適化）", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-08-29", "url": "https://drive.google.com/file/d/1rCk3NnvY-jWb4pzMkaKQnsPkjwYaEIs3/view?usp=drivesdk", "surface": "生成キュー投入時および生成進行中において、体感できるレベルで画面の操作を受け付けない時間（UIフリーズ）が発生する。ComfyUI起動直後は軽快だが、生成回数を重ねるにつれて投入待ちおよびUIフリーズが長時間化する。", "root_cause_raw": "- `frontend/src/store/useGenerationStore.ts` において、ジョブ完了・ノード完了（`executing` (nodeId=null)、`executed`、`execution_complete`）のたびに `fetchHistory()`（`comfyApi.getHistory(100)`）が重複呼び出しされている。", "snippet": "---  \nid: REQ-195  \nstatus: done  \ntags:  \n- bugfix  \n- frontend  \n- backend  \n- performance  \n- comfy  \n- queue  \n- history  \ntitle: 生成キュー投入および生成進行時のUI応答性・パフォーマンス改善（巨大履歴取得・描画ループストレージアクセスの最適化）  \n---  \n  \n### REQ-195: 生成キュー投入および生成進行時のUI応答性・パフォーマンス改善（巨大履歴取得・描画ループストレージアクセスの最適化）  \n  \n- **Type**: bugfix  \n- **Status**: done (2026-08-29)  \n- **Current step**: Phase 1: Dev Design  \n- **Priority**: P1  \n- **Surface**: 生成キュー投入時および生成進行中において、体感できるレベルで画面の操作を受け付けない時間（UIフリーズ）が発生する。ComfyUI起動直後は軽快だが、生成回数を重ねるにつれて投入待ちおよびUIフリーズが長時間化する。  \n- **Root Cause**:  \n - `frontend/src/store/useGenerationStore.ts` において、ジョブ完了・ノード完了（`executing` (nodeId=null)、`executed`、`execution_complete`）のたびに `fetchHistory()`（`comfyApi.getHistory(100)`）が重複呼び出しされている。  \n - ComfyUIの履歴データには各生成時の完全なワークフロー定義JSONが含まれており、生成回数が増えて100件蓄積されると10MB〜50MB以上の巨大JSONとなる。これをComfyUI側でシリアライズする間にComfyUIのイベントループがブロックされてキュー投入が待たされ、さらにフロントエンドのメインスレッドで同期パース・ソートを行うためブラウザのUIがフリーズする。  \n - `frontend/src/pages/GeneratePage/hooks/useGeneratePageState.ts` の `getSet"}, {"id": "REQ-192", "title": "LLMプロバイダー選択時の翻訳疎通テスト・プロンプト翻訳エラー修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "LLM & Translation", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-27", "url": "https://drive.google.com/file/d/1NMi4WRjCtpaPQkpzpw30BooEceFdxjZh/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-192  \nstatus: done  \ntags:  \n- bug  \n- translation  \n- llm  \n- backend  \ntitle: LLMプロバイダー選択時の翻訳疎通テスト・プロンプト翻訳エラー修正  \n---  \n  \n### REQ-192: LLMプロバイダー選択時の翻訳疎通テスト・プロンプト翻訳エラー修正  \n  \n- **Status**: done (2026-08-27)  \n- **Description**: 翻訳設定でプロバイダーとして `llm`（ローカルLLM）を選択した場合に、疎通テスト（`POST /api/translate/test`）やプロンプト翻訳（`POST /api/translate/prompt`）を実行すると `TypeError: call_llm() got an unexpected keyword argument 'db'` が発生して失敗する問題を修正する。`translation_service.py` 内の `translate_llm` において、`call_llm` の関数シグネチャに合わせた呼び出し（`system_prompt` と `user_prompt` の分離、不要な `db` キーワード引数の削除）を行うように改修する。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: `translation_service.py` の `translate_llm` が `call_llm` のシグネチャ（`system_prompt`, `user_prompt`）に合致した形式で呼び出され、`TypeError` が発生しないこと。  \n- [x] AC-2: `provider=\"llm\"` 指定時に `POST /api/translate/test` エンドポイントで疎通テストが正常に成功（`success: true`）すること。  \n- [x] AC-3: `provider=\"llm\"` 指定時に `POST /api/translate/prompt` エンドポイントでプロンプト翻訳が正常に動作すること。  \n- [x] AC-4: `test_translation_proxy"}, {"id": "REQ-191", "title": "anima特化モードに応じたタグチップ重み増減量の動的切り替え", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Prompt & TagChip Editor", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-08-26", "url": "https://drive.google.com/file/d/17mz7RPjYNxUPyZ8MwqiVyH1nS3tXaK0e/view?usp=drivesdk", "surface": "生成画面のタグチップサブメニューで重みを増減するボタンがあるが、anima特化モードとそれ以外で、増減量を変えたい。animaは、重みを多めに振る必要がある為、±0.5と±1.0とし、それ以外では、±0.1と±0.3としたい", "root_cause_raw": "- 現在のタグチップサブメニューにおける重み増減ボタンの刻み幅は単一の固定値（または標準モデル向けの刻み幅）となっており、モデル/モードごとの最適な重み調整幅に対応できていない。", "snippet": "---  \nid: REQ-191  \nstatus: done  \ntags:  \n- frontend  \n- generation  \n- tag-chip  \n- weight  \n- anima  \n- ux  \ntitle: anima特化モードに応じたタグチップ重み増減量の動的切り替え  \n---  \n  \n### REQ-191: anima特化モードに応じたタグチップ重み増減量の動的切り替え  \n- **Type**: enhancement  \n- **Status**: done (2026-08-26)  \n- **Current step**: Phase 4: Pre-Audit & Hand-off  \n- **Priority**: P2  \n- **Surface**: 生成画面のタグチップサブメニューで重みを増減するボタンがあるが、anima特化モードとそれ以外で、増減量を変えたい。animaは、重みを多めに振る必要がある為、±0.5と±1.0とし、それ以外では、±0.1と±0.3としたい  \n- **Root Cause**:  \n - 現在のタグチップサブメニューにおける重み増減ボタンの刻み幅は単一の固定値（または標準モデル向けの刻み幅）となっており、モデル/モードごとの最適な重み調整幅に対応できていない。  \n - 特に anima 特化モード（Animaモデル）では、プロンプトタグの重み付けを大きく変動（0.5〜1.0単位）させるユースケースが多い一方、標準モデル（SDXL / SD1.5 / Illustrious等）では微小な調整（0.1〜0.3単位）が適しており、現在の刻み幅では anima モード時に何度もボタンを押下する必要がある。  \n- **Requirement**:  \n - タグチップのサブメニュー（または重み調整UI）において、anima特化モードの有効/無効状態に応じて重み増減ボタンの刻み幅（ステップ値およびラベル表示）を動的に切り替える。  \n - **anima特化モード有効時**: 重み増減ボタンの刻み幅を **±0.5** および **±1.0** とする。  \n - **anima特化モード無効時（通常モード等）**: 重み増減ボタンの刻み幅を **±0.1** および **±0.3** "}, {"id": "REQ-183", "title": "生成プリセットのタブ切り替え高速化・多重レンダリング解消", "type": "Defect (不具合修正)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1TvrjwotMpy1WpYdNwG8E853fL5vjYiJg/view?usp=drivesdk", "surface": "生成プリセットのタブ切り替えが重たく、クリックしてからアクティブになるまで2~3秒かかる", "root_cause_raw": "handleLoadPreset 内での多重・非バッチ Zustand 更新、activeSetId 連動の presets 同期 useEffect 発火、TagChipEditor での毎描画パースおよび onChange 逆流ループ、コンポーネントメモ化不足による連続再描画", "snippet": "---  \nid: REQ-183  \nstatus: done  \ntags: []  \ntitle: 生成プリセットのタブ切り替え高速化・多重レンダリング解消  \n---  \n  \n### REQ-183: 生成プリセットのタブ切り替え高速化・多重レンダリング解消  \n- **Type**: defect  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**: 生成プリセットのタブ切り替えが重たく、クリックしてからアクティブになるまで2~3秒かかる  \n- **Root Cause**: handleLoadPreset 内での多重・非バッチ Zustand 更新、activeSetId 連動の presets 同期 useEffect 発火、TagChipEditor での毎描画パースおよび onChange 逆流ループ、コンポーネントメモ化不足による連続再描画  \n- **Requirement**: 生成プリセットのタブ切り替えを瞬時（100ms以内）に完了させ、不要な多重再描画やステート逆流を防止する  \n- **Acceptance criteria**:  \n - [ ] AC-1: 生成画面の Multi-Set Tab Bar でタブをクリックした際、200ms以内にアクティブタブのハイライトおよび入力値が切り替わること  \n - [ ] AC-2: プリセット切り替え時に不要な多重再描画や自動保存の誤発火が発生しないこと  \n - [ ] AC-3: 既存のプリセット読み込み・編集・保存・パラメータ同期機能が正常に動作すること  \n- **Design doc**: none  "}, {"id": "REQ-180", "title": "セリフ・吹き出し編集機能の強化およびモーダルUIの最適化", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "SpeechBubble & Dialogue", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1t0i2cKN30tBUx45pIFeFePZl4ak2lIbe/view?usp=drivesdk", "surface": "1. セリフ修飾のパスやスケール変化などの屈折方向を反転できるようにしたい", "root_cause_raw": "1. **修飾の屈折方向反転欠如**: セリフ修飾機能（パス沿い配置・文字スケール変化・円弧や波形等の屈折変形）の増減・凸凹方向が一方向に固定されており、反転スイッチが存在しない。", "snippet": "---  \nid: REQ-180  \nstatus: done  \ntags:  \n- frontend  \n- speech-bubble  \n- ui  \n- ux  \n- enhancement  \ntitle: セリフ・吹き出し編集機能の強化およびモーダルUIの最適化  \n---  \n  \n### REQ-180: セリフ・吹き出し編集機能の強化およびモーダルUIの最適化  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P2  \n- **Surface**:   \n1. セリフ修飾のパスやスケール変化などの屈折方向を反転できるようにしたい  \n 2. セリフ編集モーダルのプレビューエリアの余白が無駄に広いので、余白を減らして画像を大きく表示したい  \n 3. プリセットの表示が、テキストあり⇒なしの順になっているが逆にしたい  \n 4. 吹き出しのしっぽが頂点しか調整できないが、本体との接点も調整できるようにしたい(現在のをデフォルトに、微調整モードとしてトグルできるオプションに)  \n- **Root Cause**:  \n 1. **修飾の屈折方向反転欠如**: セリフ修飾機能（パス沿い配置・文字スケール変化・円弧や波形等の屈折変形）の増減・凸凹方向が一方向に固定されており、反転スイッチが存在しない。  \n 2. **モーダルプレビュー余白過多**: `SpeechBubbleEditorModal` 内のプレビュー領域周囲に過度な余白が確保されており、編集対象の画像やキャンバスが縮小され視認性・ドラッグ操作性が低下している。  \n 3. **プリセット一覧順序**: セリフプリセット一覧がテキストあり優先（または現在のソート順）となっており、スタイル用途で選びたいテキストなしプリセットが埋もれている。  \n 4. **しっぽ接点調整の制約**: しっぽの編集において先端頂点ハンドルしか提供されておらず、本体接点（基部幅・位置）が自動計算固定のため、自由な形状調整ができない。  \n- **Requirement**:  \n 1. **セリフ修飾の屈折方向反転**:  \n - セリフ修飾設定パネルに変形方向を反転（Flip / Invert）"}, {"id": "REQ-175", "title": "セリフプリセット上書き時のモーダルダイアログ化（プリセット名編集・テキスト包含切替）", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "SpeechBubble & Dialogue", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1d6mVj1_ffLTrdkA1rt3Q7-EokPuyDEbl/view?usp=drivesdk", "surface": "プリセットの上書き保存時、現在はブラウザ標準の `window.confirm` による簡易確認のみとなっており、「テキストを含めるかどうか」のオプション選択や「プリセット名の変更」ができない。上書き時にも新規保存と同様にモーダルダイアログを表示し、プリセット名の編集やテキスト包含オプションの再選択・切替を行えるようにしたい。", "root_cause_raw": "1. **上書き時UIの制約**: `handleOverwritePreset` が `window.confirm` で確認するのみで、上書き時のペイロード生成において既存の `preset.text` の有無に基づき自動判定（`preset.text ? bubble.text : undefined`）していたため、上書きのタイミングで「新しくテキストを含める」「既存プリセットからテキストを除去してスタイル専用にする」「名前を変更する」といったユーザーの意図を反映するUIコントロールが存在しない。", "snippet": "---  \nid: REQ-175  \nstatus: done  \ntags:  \n- frontend  \n- speech-bubble  \n- preset  \n- ui  \n- ux  \ntitle: セリフプリセット上書き時のモーダルダイアログ化（プリセット名編集・テキスト包含切替）  \n---  \n  \n### REQ-175: セリフプリセット上書き時のモーダルダイアログ化（プリセット名編集・テキスト包含切替）  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P1  \n- **Surface**: プリセットの上書き保存時、現在はブラウザ標準の `window.confirm` による簡易確認のみとなっており、「テキストを含めるかどうか」のオプション選択や「プリセット名の変更」ができない。上書き時にも新規保存と同様にモーダルダイアログを表示し、プリセット名の編集やテキスト包含オプションの再選択・切替を行えるようにしたい。  \n- **Root Cause**:  \n 1. **上書き時UIの制約**: `handleOverwritePreset` が `window.confirm` で確認するのみで、上書き時のペイロード生成において既存の `preset.text` の有無に基づき自動判定（`preset.text ? bubble.text : undefined`）していたため、上書きのタイミングで「新しくテキストを含める」「既存プリセットからテキストを除去してスタイル専用にする」「名前を変更する」といったユーザーの意図を反映するUIコントロールが存在しない。  \n- **Requirement**:  \n 1. プリセット一覧の「ð¾（上書き保存）」ボタンをクリックした際、`window.confirm` の代わりに専用の「プリセット上書き・編集モーダル（ダイアログ）」を表示する。  \n 2. モーダル内で、プリセット名（`name`）の変更・編集ができるようにする。  \n 3. モーダル内で、「テキストを含める」チェックボックスを提供し、現在の吹き出しテキスト（プレビュー付き）をプリセットに保存するか、スタイル専用（テキス"}, {"id": "REQ-172", "title": "セリフ生成（吹き出しエディタ）の作業性・操作性向上", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "SpeechBubble & Dialogue", "root_cause_cat": "実装不具合・その他", "ac_count": 0, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1LwawYyhJJ5cFEmxSx2g6Y_sQH4mhhmq3/view?usp=drivesdk", "surface": "セリフ生成の作業性を向上させたい", "root_cause_raw": "1. **情報設計・データモデルの制約**: プリセット保存・適用においてテキスト内容の包含可否を選択できず、SE（効果音）などの定型テキストの再利用と、キャラごとのスタイル適用（テキスト保持）を両立できない。", "snippet": "---  \nid: REQ-172  \nstatus: done  \ntags:  \n- frontend  \n- speech-bubble  \n- preset  \n- canvas  \n- interaction  \n- ux  \ntitle: セリフ生成（吹き出しエディタ）の作業性・操作性向上  \n---  \n  \n### REQ-172: セリフ生成（吹き出しエディタ）の作業性・操作性向上  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P1  \n- **Surface**: セリフ生成の作業性を向上させたい  \n - プリセットに修飾だけでなく、テキストも保存して再利用できるようにしたい。テキストまで欲しいケースはSE系の吹き出しで、キャラ特性とかではテキストなしで登録したくなるので、プリセットの保存・上書き時にテキストエリアを含めるか選ぶオプション形式で欲しい。テキストエリアを登録しないパターンのプリセットは、ロード時にテキストエリアを上書きしないように。  \n - 吹き出しサイズの自動調整と回転が頻出するが、テキストエリアからの導線が遠く、分散もしていて使いにくいので、都度調整する系をテキスト入力エリア付近に集約したい。フォントサイズ・フォント・色などは一度作ったらプリセットで切替ることが多く、回転・文字方向・枠サイズは画像ごとに調整が入りやすい。  \n - 吹き出しの回転をプレビューエリアでのドラッグ&ドロップでも設定できるようにしたい(よくある回転用ハンドルのイメージ)  \n - 各所パラメータ系(フォントサイズや回転など)は、スライダーに加えて単位ごとに増減するボタンも欲しい(微調整用)  \n- **Root Cause**:  \n 1. **情報設計・データモデルの制約**: プリセット保存・適用においてテキスト内容の包含可否を選択できず、SE（効果音）などの定型テキストの再利用と、キャラごとのスタイル適用（テキスト保持）を両立できない。  \n 2. **情報設計・導線の分散**: 生成画像ごとに頻繁に変更・調整する「枠サイズ自動調整」「回転」「文字方向」の操作コントロールがテキスト入力エリアから離れた場所に散在しており、操作時の"}, {"id": "REQ-169", "title": "セリフ装飾プリセットのDBスキーママイグレーション修復および一覧表示正常化", "type": "Test (テスト強化)", "priority": "P1", "domain": "SpeechBubble & Dialogue", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1XTzts06qlehG_o4E31-YNILzsL4FGLAv/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-169  \nstatus: done  \ntags:  \n- backend  \n- database  \n- migration  \n- speech_bubble  \ntitle: セリフ装飾プリセットのDBスキーママイグレーション修復および一覧表示正常化  \n---  \n  \n### REQ-169: セリフ装飾プリセットのDBスキーママイグレーション修復および一覧表示正常化  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: セリフ編集モーダルにおいて、保存済みプリセット一覧の取得API（`GET /api/speech-bubble-presets`）が `no such column: speech_bubble_presets.effects_json` エラーで失敗し、画面上でプリセットが表示・選択できなくなっている問題を解決するため、DBマイグレーション処理およびテーブル作成ロジックを修復する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: `backend/app/main.py` の `run_migrations()` において、既存の `speech_bubble_presets` テーブルが存在する場合に `effects_json` カラムが安全に追加（`ALTER TABLE ... ADD COLUMN effects_json TEXT DEFAULT '{}'`）されること。  \n- [ ] AC-2: `backend/app/main.py` の新規テーブル作成用 `CREATE TABLE speech_bubble_presets` 定義に `effects_json TEXT DEFAULT '{}'` カラムが含まれること。  \n- [ ] AC-3: `GET /api/speech-bubble-presets` を呼び出した際、500エラーとならず、既存プリセット（および `effects` データ）が正常に取得できること。  \n- [ ] AC-4: `backend/tests/test_speech_bubble_presets.py` のテスト（マイグレーション"}, {"id": "REQ-166", "title": "ジョブ管理におけるキュー削除と全ジョブ中断の機能・UIボタン分離および中断状態同期の堅牢化", "type": "Defect (不具合修正)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1tWNoVf-px7NRFlC9BzTRpjtYLAnWgqrG/view?usp=drivesdk", "surface": "- ジョブ管理モーダルにおいて「一括キャンセル」を実行した際、待機中キューは削除されるものの、現在生成中の1枚（実行中ジョブ）が停止せず最後まで生成・出力されてしまう。", "root_cause_raw": "- `cancelAllJobs` 実行直後にフロントエンドのステート（`isGenerating: false` 等）を即時リセットしているが、ComfyUIの `/interrupt` 完了前に届く後続の WebSocket イベント（`progress` や `executing`）によってフロントエンド状態が `isGenerating: true` に再同期・上書きされてしまう。", "snippet": "---  \nid: REQ-166  \nstatus: done  \ntags: []  \ntitle: ジョブ管理におけるキュー削除と全ジョブ中断の機能・UIボタン分離および中断状態同期の堅牢化  \n---  \n  \n# REQ-166: ジョブ管理におけるキュー削除と全ジョブ中断の機能・UIボタン分離および中断状態同期の堅牢化  \n  \n- **Type**: defect / enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P2  \n- **Surface**:  \n - ジョブ管理モーダルにおいて「一括キャンセル」を実行した際、待機中キューは削除されるものの、現在生成中の1枚（実行中ジョブ）が停止せず最後まで生成・出力されてしまう。  \n - 現在生成中の1枚を残して待機キューのみを空にしたいユースケースと、生成中も含めてすべて即座に中断（Abort）したいユースケースが存在するが、単一の「一括キャンセル」ボタンしかなく使い分けることができない。  \n- **Root Cause**:  \n - `cancelAllJobs` 実行直後にフロントエンドのステート（`isGenerating: false` 等）を即時リセットしているが、ComfyUIの `/interrupt` 完了前に届く後続の WebSocket イベント（`progress` や `executing`）によってフロントエンド状態が `isGenerating: true` に再同期・上書きされてしまう。  \n - ComfyUI の中断イベント（`execution_interrupted`）がフロントエンドで適切に処理されておらず、中断完了の確定が行われていない。  \n - 「待機キューのみ削除（実行中ジョブは継続）」と「全ジョブ中断（実行中ジョブも停止）」の機能およびUIボタンが分離されていない。  \n- **Requirement**:  \n - **ボタン・機能の明確な分離 (Frontend / Store)**:  \n - ジョブ管理モーダルのフッター等に「キューのみクリア」ボタンと「すべて中断（全ジョブ中止）」ボタンの2つを個別に配置すること。  \n - **「キューのみクリア」**: Co"}, {"id": "REQ-165", "title": "プロンプト翻訳機能の外部APIプロキシ化・チャンクキャッシュおよび手動反映UI/UXの刷新", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1C-LvMet9hkCH0nLpZe6z6AWYv0nUDt5Z/view?usp=drivesdk", "surface": "- 現行のプロンプトエリア内翻訳機能において、日英相互変換時にユーザーが意図・確認する前に翻訳結果が入力欄へ自動反映・上書きされてしまう事故が発生する。", "root_cause_raw": "- フロントエンド側で翻訳結果を入力フィールドへ即時双方向バインド/同期する設計になっており、プレビュー・確認と適用が分離されていない。", "snippet": "---  \nid: REQ-165  \nstatus: done  \ntags: []  \ntitle: プロンプト翻訳機能の外部APIプロキシ化・チャンクキャッシュおよび手動反映UI/UXの刷新  \n---  \n  \n# REQ-165: プロンプト翻訳機能の外部APIプロキシ化・チャンクキャッシュおよび手動反映UI/UXの刷新  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P2  \n- **Surface**:  \n - 現行のプロンプトエリア内翻訳機能において、日英相互変換時にユーザーが意図・確認する前に翻訳結果が入力欄へ自動反映・上書きされてしまう事故が発生する。  \n - ローカルLLMを用いた翻訳処理では、画像生成中に別プロファイルのプロンプトを調整・翻訳しようとするとVRAM枯渇や処理競合が発生し、画像生成と翻訳の双方に著しいパフォーマンス低下やエラーを引き起こす。  \n- **Root Cause**:  \n - フロントエンド側で翻訳結果を入力フィールドへ即時双方向バインド/同期する設計になっており、プレビュー・確認と適用が分離されていない。  \n - 翻訳エンジンとしてローカルLLMを同一マシンリソース（GPU VRAM）上で共有利用しており、画像生成プロセスとのリソース競合を回避する仕組み（外部API利用＋バックエンドプロキシ）になっていない。  \n - プロンプトのタグ単位での重複リクエストを抑止・再利用するキャッシュ層（プロキシ）が存在しない。  \n- **Requirement**:  \n - **外部APIプロキシ & チャンクキャッシュ (Backend)**:  \n - Google Translation API等の外部翻訳APIを利用し、フロントエンドからバックエンド（`POST /api/translate/prompt` 等）を経由して呼び出すプロキシ構成とすること。  \n - バックエンド側でプロンプトをカンマ・改行単位でチャンク分割し、LoRA構文（`<lora:...>`）や重み付け構文（`(tag:weight)`）等の特殊構文を保護・退避した上で、未翻訳チャンクのみを外部APIへバッチ送信するキャッシ"}, {"id": "REQ-163", "title": "プリセット別プロンプト・パラメータのSSoT確立とデバイス間・セッション間同期の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Workflow & Topology", "root_cause_cat": "実装不具合・その他", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1HCu_5sWYhtUmCWFsmW4rQf2etjly0VgP/view?usp=drivesdk", "surface": "- デバイス間（PCとスマホなど）の切り替え時やページリロード時に、直近に編集したプリセットのプロンプトが別のプリセットのプロンプトに勝手に置き換わってしまったり、バックエンドDBのデータが誤った内容で上書き保存されてしまう。", "root_cause_raw": "1. `useWorkflowParams.ts` および `useGenerationStore.ts` で、プロンプト/パラメータをプリセット単位ではなく「ワークフロー単位の単一キー (`prompt-surgeon-params-wf-${workflowId}`)」でLocalStorageに保持・上書きしており、プリセット間でのデータ混同・汚染が発生している。", "snippet": "---  \nid: REQ-163  \nstatus: done  \ntags: []  \ntitle: プリセット別プロンプト・パラメータのSSoT確立とデバイス間・セッション間同期の修正  \n---  \n  \n# REQ-163: プリセット別プロンプト・パラメータのSSoT確立とデバイス間・セッション間同期の修正  \n  \n- **Type**: defect  \n- **Status**: done (2026-08-30)  \n- **Priority**: P1  \n- **Surface**:  \n - デバイス間（PCとスマホなど）の切り替え時やページリロード時に、直近に編集したプリセットのプロンプトが別のプリセットのプロンプトに勝手に置き換わってしまったり、バックエンドDBのデータが誤った内容で上書き保存されてしまう。  \n- **Root Cause**:  \n 1. `useWorkflowParams.ts` および `useGenerationStore.ts` で、プロンプト/パラメータをプリセット単位ではなく「ワークフロー単位の単一キー (`prompt-surgeon-params-wf-${workflowId}`)」でLocalStorageに保持・上書きしており、プリセット間でのデータ混同・汚染が発生している。  \n 2. マウント時・ワークフロー読み込み時に、バックエンドDBのプリセット一覧よりも先に上記単一キーのLocalStorageからプロンプトを読み込み、現在アクティブなプリセットに注入してしまう。  \n 3. `useGeneratePageState.ts` のオートセーブ機能（1秒デバウンス）が、上記で汚染された `paramValues` を現在アクティブなプリセットIDに対して `PUT /api/workflow-presets/{id}` で送信し、バックエンドDBのデータを破壊的に上書き保存してしまう。  \n- **Requirement**:  \n - プロンプトおよびパラメータのマスターデータはバックエンドDBの `workflow_presets` を絶対的なSSoT（Single Source of Truth）として扱い、プリセットごとに独立して管理されること。  \n - ワークフロー単位の単"}, {"id": "REQ-158", "title": "FEキャッシュ設計の最適化：冗長なBEアクセスの削減とレスポンス向上", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 0, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1yg2Ri6MHA8m87T36ZkidCnfxd5TJ1gkn/view?usp=drivesdk", "surface": "画像保存時のアルバム名表示ラグ（IDはキャッシュされているが名称取得にBEアクセスが必要）を筆頭に、FEが同一セッション内で不要なBEアクセスを繰り返している箇所が複数存在する。これによりUIの応答性が低下し、モーダル・ページ切替時に視認できるフリッカー・ラグが発生している。", "root_cause_raw": "1. **React Queryバイパス**: 複数コンポーネントが `useQuery` を使わず `useEffect + raw fetch` で直接APIを呼び出しており、既存のReact Queryキャッシュを無視して重複HTTPリクエストが発生している。", "snippet": "---  \nid: REQ-158  \nstatus: done  \ntags:  \n- frontend  \n- cache  \n- performance  \n- react-query  \n- zustand  \n- ux  \ntitle: FEキャッシュ設計の最適化：冗長なBEアクセスの削減とレスポンス向上  \n---  \n  \n### REQ-158: FEキャッシュ設計の最適化：冗長なBEアクセスの削減とレスポンス向上  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P1  \n- **Surface**: 画像保存時のアルバム名表示ラグ（IDはキャッシュされているが名称取得にBEアクセスが必要）を筆頭に、FEが同一セッション内で不要なBEアクセスを繰り返している箇所が複数存在する。これによりUIの応答性が低下し、モーダル・ページ切替時に視認できるフリッカー・ラグが発生している。  \n- **Root Cause**:  \n 1. **React Queryバイパス**: 複数コンポーネントが `useQuery` を使わず `useEffect + raw fetch` で直接APIを呼び出しており、既存のReact Queryキャッシュを無視して重複HTTPリクエストが発生している。  \n 2. **staleTime 過小設定**: グローバルデフォルト `staleTime: 30,000ms`（30秒）が、事実上不変なデータ（フォント、ベースモデル、カテゴリ、LLMプロンプト設定等）に対しても適用されており、不必要な再フェッチが頻発している。  \n 3. **アルバム名マッピング欠如**: `lastSaveAlbumId`（localStorage）でアルバムIDはキャッシュしているが、ID→アルバム名のマッピングが保持されておらず、表示時に毎回BEアクセスが必要になる。  \n 4. **ワークフロー別データのキャッシュ欠如**: `bypassProfiles` / `paramSyncGroups` がZustandで配列保持のみで、ワークフロー切替時に前のワークフローのデータが破棄され、同一ワークフローに戻った際に再フェッチが"}, {"id": "REQ-155", "title": "タグチップサブメニュー内でのタグ単語編集機能の追加", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Workflow & Topology", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1WZqk5L5zAP1OAC2UOcbX3kFJrMsZfvpb/view?usp=drivesdk", "surface": "タグチップのサブメニュー内で、タグチップの単語自体の編集を行えるようにしたい（例: `looking back` を `looking away` へ編集）。現状はタグの削除・再入力やテキストモード切替が必要で手間がかかる。", "root_cause_raw": "- **Interaction / Workflow Friction**: タグチップの操作メニューにおいて、重み変更や削除などのメタ操作は可能だが、単語テキストそのものを直接修正・置換するインタラクション導線が存在しないため、単語変更のワークフローに不要なステップ（削除→再入力、またはテキストモード切替）が発生している。", "snippet": "---  \nid: REQ-155  \nstatus: done  \ntags:  \n- prompt  \n- tag-chip  \n- ui  \n- interaction  \n- frontend  \ntitle: タグチップサブメニュー内でのタグ単語編集機能の追加  \n---  \n  \n### REQ-155: タグチップサブメニュー内でのタグ単語編集機能の追加  \n  \n- **Type**: feature  \n- **Status**: done (2026-08-30)  \n- **Priority**: P2  \n- **Surface**: タグチップのサブメニュー内で、タグチップの単語自体の編集を行えるようにしたい（例: `looking back` を `looking away` へ編集）。現状はタグの削除・再入力やテキストモード切替が必要で手間がかかる。  \n- **Root Cause**:  \n - **Interaction / Workflow Friction**: タグチップの操作メニューにおいて、重み変更や削除などのメタ操作は可能だが、単語テキストそのものを直接修正・置換するインタラクション導線が存在しないため、単語変更のワークフローに不要なステップ（削除→再入力、またはテキストモード切替）が発生している。  \n- **Requirement**:  \n 1. タグチップのサブメニュー内にタグ単語を直接編集できる導線（編集項目またはインライン入力UI）を提供する。  \n 2. 単語の編集確定時に、タグに設定されている重み（weight）等の属性を維持したまま単語文字列が更新され、プロンプトへ即時反映される。  \n 3. 編集のキャンセルや空入力等のエッジケースに対して安全な操作体験を提供する。  \n  \n#### Acceptance Criteria (AC)  \n  \n##### 1. タグ編集導線の提供と入力  \n- [x] AC-1-1: タグチップのサブメニューに「タグを編集」などの単語編集導線が存在し、選択することでテキスト入力可能な状態に遷移すること。  \n- [x] AC-1-2: 編集開始時に現在のタグ単語が初期値として入力欄に設定されていること。  \n  \n##### 2. 編集確定とプロンプト反映  \n-"}, {"id": "REQ-152", "title": "バッチ生成キュー登録時の不要オーバーヘッド削減およびキャンセル時状態復活デグレの修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "実装不具合・その他", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1o0qvNkKek4soi-WEAbyYUl6L5dZW4PLS/view?usp=drivesdk", "surface": "バッチ・複数プリセット生成実行中において、キュー登録のレスポンスが重く、またキャンセルを実行しても直後にキャンセルしたはずのジョブ枠や生成中状態が復活してしまう。", "root_cause_raw": "1. `handleGenerateSets` において、キャンセル操作（`cancelAllJobs` / `cancelJob`）でストアの `activeBatch` が `null` に初期化された後、投入ループ離脱時の `finally` ブロックで無条件に `setActiveBatch([...currentBatch])` および `fetchQueue()` が実行され、未投入のダミージョブを含むバッチ配列でストアが上書きされて生成状態が復活する（REQ-141のデグレ）。", "snippet": "---  \nid: REQ-152  \nstatus: done  \ntags:  \n- generate  \n- batch  \n- queue  \n- cancellation  \n- bugfix  \n- regression  \n- performance  \n- frontend  \ntitle: バッチ生成キュー登録時の不要オーバーヘッド削減およびキャンセル時状態復活デグレの修正  \n---  \n  \n### REQ-152: バッチ生成キュー登録時の不要オーバーヘッド削減およびキャンセル時状態復活デグレの修正  \n  \n- **Type**: bugfix  \n- **Status**: done (2026-08-30)  \n- **Current step**: Verified & Archived  \n- **Priority**: P1  \n- **Surface**: バッチ・複数プリセット生成実行中において、キュー登録のレスポンスが重く、またキャンセルを実行しても直後にキャンセルしたはずのジョブ枠や生成中状態が復活してしまう。  \n- **Root Cause**:  \n 1. `handleGenerateSets` において、キャンセル操作（`cancelAllJobs` / `cancelJob`）でストアの `activeBatch` が `null` に初期化された後、投入ループ離脱時の `finally` ブロックで無条件に `setActiveBatch([...currentBatch])` および `fetchQueue()` が実行され、未投入のダミージョブを含むバッチ配列でストアが上書きされて生成状態が復活する（REQ-141のデグレ）。  \n 2. `useGenerationStore.ts` の `queuePrompt` 内 `fetch(/prompt)` に `AbortSignal` が渡されておらず、通信中にキャンセルしてもComfyUIへそのまま投入されてしまう。  \n 3. 逐次投入ループの各イテレーション毎に、ストアの `set({ isGenerating, ... })`、`handleGenerateSets` の `setActiveBatch()`、およびComfyUIからのWebSo"}, {"id": "REQ-140", "title": "モバイルモードにおけるバッチ・複数プリセット生成のキュー登録高速化および取り消しレスポンス改善", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "非同期ブロッキング・パフォーマンス・リソース競合", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/13iCOFTY9_o2aSGPn42wxCFRpRuMbdybI/view?usp=drivesdk", "surface": "モバイルモードでバッチ・複数プリセットで生成実行した時、キューへの登録がやけに遅い。また取り消し時のレスポンスも悪い。", "root_cause_raw": "1. `handleGenerateSets` において、全プリセット×バッチサイズのジョブを逐次直列ループで処理し、毎回の `queuePrompt` 内で `POST /prompt` と `await fetchQueue()`（`GET /queue`）が直列実行されるため、Wi-Fi環境下でネットワーク往復遅延（RTT）が累積する。", "snippet": "---  \nid: REQ-140  \nstatus: done  \ntags:  \n- generate  \n- batch  \n- queue  \n- cancellation  \n- performance  \n- mobile  \n- frontend  \ntitle: モバイルモードにおけるバッチ・複数プリセット生成のキュー登録高速化および取り消しレスポンス改善  \n---  \n  \n### REQ-140: モバイルモードにおけるバッチ・複数プリセット生成のキュー登録高速化および取り消しレスポンス改善  \n  \n- **Type**: bugfix  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: モバイルモードでバッチ・複数プリセットで生成実行した時、キューへの登録がやけに遅い。また取り消し時のレスポンスも悪い。  \n- **Root Cause**:   \n1. `handleGenerateSets` において、全プリセット×バッチサイズのジョブを逐次直列ループで処理し、毎回の `queuePrompt` 内で `POST /prompt` と `await fetchQueue()`（`GET /queue`）が直列実行されるため、Wi-Fi環境下でネットワーク往復遅延（RTT）が累積する。  \n 2. `queuePrompt` 実行毎に最大200件の `localStorage` メタデータ走査および同期 `JSON.parse` が実行され、モバイル端末のメインスレッドをブロックする。  \n 3. 毎ジョブのキュー取得に伴う Zustand 状態更新により、単一コンテナで構成された `MobileLayout` 全体が連続再レンダリングされ、UI描画負荷とイベント遅延が発生する。  \n 4. `handleGenerateSets` にキャンセル検知（AbortController / 中断シグナル）が存在せず、ユーザーがキャンセルを実行してもバックグラウンドの直列ループが残りのジョブをComfyUIに再投入し続けてしまう。  \n- **Requirement**:  \n 1. バッチ・複数プリ"}, {"id": "REQ-133", "title": "REQ-132のWebP化に伴うLoRA/TagSetカバー画像パスの不整合修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1VLrsXe2o580jMYZX-hTvEwDA4j-gYPO9/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-133  \nstatus: done  \ntags:  \n- backend  \n- migration  \n- webp  \n- loras  \n- tag_sets  \ntitle: REQ-132のWebP化に伴うLoRA/TagSetカバー画像パスの不整合修正  \n---  \n  \n### REQ-133: REQ-132のWebP化に伴うLoRA/TagSetカバー画像パスの不整合修正  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: REQ-132でSnapshot画像をWebP形式へ変換・移行した際、LoRAおよびTagSetのカバー画像として保存されていた `thumbnail_path`（DBレコード）のパスが更新されず旧拡張子（.png, .jpg等）のまま残り、404エラーでリンク切れとなる不具合を修正する。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: `backend/scripts/migrate_images_to_webp.py` に `loras` テーブルおよび `tag_sets` テーブルの `thumbnail_path` カラムを検査し、旧拡張子パスを同名の WebP パスへ更新する処理を追加・実装すること。  \n- [x] AC-2: マイグレーション実行後、明示的にカバー画像が設定された LoRA / TagSet の `thumbnail_path` が正しく WebP パスに更新され、フロントエンド等での 404 リンク切れが解消すること。  \n- [x] AC-3: `backend/tests/test_migrate_images_to_webp.py` に LoRA および TagSet の `thumbnail_path` が正しく更新されることを検証するユニットテストを追加し、テストが PASS すること。  "}, {"id": "REQ-130", "title": "Add Set 実行時に追加されたセットがアクティブ化されないバグの修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1AdGDxKAmJuNS79QDEREn2HH3rN7DfVN5/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-130  \nstatus: done  \ntags:  \n- bug  \n- frontend  \n- generate-page  \ntitle: Add Set 実行時に追加されたセットがアクティブ化されないバグの修正  \n---  \n  \n### REQ-130: Add Set 実行時に追加されたセットがアクティブ化されないバグの修正  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: 生成画面のプロファイルタブ行にある「+ Add Set」から新規プロファイル作成モーダルを開き「作成」を実行した際、追加された新しいセットがアクティブ（選択状態）にならず、作成前の既存セットがアクティブなまま維持されてしまう不具合を修正する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: 「Add Set」モーダルで新規プロファイル（セット）を作成した直後に、追加されたセットが自動的にアクティブ状態（選択タブ）になり、フォームパラメータ値も新セットの値に即時同期されること。  \n- [ ] AC-2: presets の再取得（Query Invalidation 等）が発生した際、`localStorage` に保存されたアクティブIDが正しく優先評価され、新セットがアクティブのまま維持されること。  \n- [ ] AC-3: 既存のセット追加・切り替え・削除機能およびオートセーブ機能に副作用や回帰が発生しないこと。  "}, {"id": "REQ-126", "title": "パラメータ同期グループ設定と主従ノード項目連動機能", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Workflow & Topology", "root_cause_cat": "状態管理・キャッシュ不整合・SSoT欠如", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1ljGP6iJUlpaUCOW_Qhz7KiZp4Sra6G1Q/view?usp=drivesdk", "surface": "パラメータ（CFGやSchedulerなど）を複数のノードで同じ設定にする際、現状はそれぞれのノードの項目を手動で同じ値に変更する必要があり手間がかかる。あえて別設定にするケースもあるため、個々のノードマッピング状態は保持しつつ、特定のパラメータを主従関係で同期できるセットを登録・アクティブ化/非アクティブ化できるようにしたい。", "root_cause_raw": "複数ノード間におけるパラメータ項目の主従同期グループ（Master-Slave Sync Group）定義および実行時連動の仕組みが存在しないため。", "snippet": "---  \nid: REQ-126  \nstatus: done  \ntags:  \n- parameter-sync  \n- node-mapping  \n- ux-enhancement  \n- sync-group  \ntitle: パラメータ同期グループ設定と主従ノード項目連動機能  \n---  \n  \n### REQ-126: パラメータ同期グループ設定と主従ノード項目連動機能  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Priority**: P2  \n- **Surface**: パラメータ（CFGやSchedulerなど）を複数のノードで同じ設定にする際、現状はそれぞれのノードの項目を手動で同じ値に変更する必要があり手間がかかる。あえて別設定にするケースもあるため、個々のノードマッピング状態は保持しつつ、特定のパラメータを主従関係で同期できるセットを登録・アクティブ化/非アクティブ化できるようにしたい。  \n- **Root Cause**: 複数ノード間におけるパラメータ項目の主従同期グループ（Master-Slave Sync Group）定義および実行時連動の仕組みが存在しないため。  \n- **Requirement**:   \n1. 主項目（Master）1つと従項目群（Slaves）で構成されるパラメータ同期セットを管理（作成・編集・削除）する専用モーダル画面を提供する。  \n 2. メイン画面/設定画面上に同期セットごとの有効/無効を切り替えるトグルスイッチ（Bypass設定と同等のUIスタイル）を提供する。  \n 3. 同期セットが有効（Active）の場合、従項目群の入力欄は画面上で無効化（グレーアウト）され、見た目上はその時点の設定値を維持しつつも、生成実行時には主項目の最新値が送信される。  \n 4. 同期セットが無効（Deactive）の場合、従項目群の入力欄は有効化され、従来通り各ノード個別のパラメータ設定・編集が可能となる。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: パラメータ同期セット管理モーダルから、主項目（1項目）と同一型の従項目群（複数項目）を指定した同期セットの追加"}, {"id": "REQ-123", "title": "プロファイル同期不具合修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "未分類 / 該当なし", "ac_count": 0, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1oF06b32DeRVQ0rGNorEPm2r3Q8kjbWch/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-123  \nstatus: done  \ntags: []  \ntitle: プロファイル同期不具合修正  \n---  \n- **Status**: done (2026-08-30)  \n  \n﻿"}, {"id": "REQ-115", "title": "生成画面のLoRALoaderでのLoRA管理・タグセット管理に基づくフィルタと検索機能の実装", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Prompt & TagChip Editor", "root_cause_cat": "実装不具合・その他", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1r-i5798RjLElRi9-srQkrIv5d4LBcxa6/view?usp=drivesdk", "surface": "生成画面のLoRALoaderの選択肢を、LoRA管理とタグセット管理の登録状況に基づくフィルタ・検索をかけられるようにしたい。", "root_cause_raw": "現状は全LoRAが出るため、ベースモデルに非対応のものも表示されたり、単純に数が多くて探すのが大変。", "snippet": "---  \nid: REQ-115  \nstatus: done  \ntags: []  \ntitle: 生成画面のLoRALoaderでのLoRA管理・タグセット管理に基づくフィルタと検索機能の実装  \n---  \n  \n### REQ-115: 生成画面のLoRALoaderでのLoRA管理・タグセット管理に基づくフィルタと検索機能の実装  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**: 生成画面のLoRALoaderの選択肢を、LoRA管理とタグセット管理の登録状況に基づくフィルタ・検索をかけられるようにしたい。  \n- **Root Cause**: 現状は全LoRAが出るため、ベースモデルに非対応のものも表示されたり、単純に数が多くて探すのが大変。  \n- **Requirement**: 生成画面のLoRALoaderにて、ドロップダウンの最上部にスクロール固定の検索・フィルタヘッダを設け、ベースモデル、カテゴリでのフィルタや、フリーワード（名称、パス、説明）での絞り込みを可能にする。  \n- **Acceptance criteria**:  \n - [ ] AC-1: 生成画面のLoRALoaderの選択肢ドロップダウンの最上部に、スクロールしても位置が固定される検索・フィルタヘッダUIが表示されること。  \n - [ ] AC-2: 検索・フィルタヘッダにて、ベースモデル（Base Model）によるフィルタができること。  \n - [ ] AC-3: 検索・フィルタヘッダにて、カテゴリ（Category）によるフィルタができること。  \n - [ ] AC-4: フリーワード検索入力エリアにテキストを入力した際、LoRAの「名称（name）」「モデルパス（path）」「説明（description）」のいずれかに部分一致するLoRAのみが絞り込まれて選択肢に表示されること。  \n- **Design doc**: none  "}, {"id": "REQ-112", "title": "生成画面のワークフロー・プリセット設定UIの整理と省スペース化", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1rD6HcjCiNyDKRCRa3Qrzw4alTJW0Ze8M/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-112  \nstatus: done  \ntags:  \n- UI/UX  \n- Refactoring  \n- InformationDesign  \ntitle: 生成画面のワークフロー・プリセット設定UIの整理と省スペース化  \n---  \n  \n### REQ-112: 生成画面のワークフロー・プリセット設定UIの整理と省スペース化  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: 生成画面におけるワークフローおよびプリセット関連の設定UIが煩雑で散らかっている問題を解決し、モバイル対応を含めた省スペース化と操作性の向上を実現します。「ワークフロー単位の設定（低頻度操作）」と「プリセットの管理・操作（高頻度操作）」を明確に分離・整理します。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: ワークフロー選択ドロップダウンやベースモデルタイプ等の「ワークフロー全体の設定」と、プリセット切り替え・追加・削除等の「プリセットの操作」が明確な階層構造（親子関係）として視覚的に整理されること  \n- [ ] AC-2: ComfyUIのURL設定、デフォルト設定更新・リセット、ノードリマッピングなどの低頻度操作項目が、アコーディオンまたはドロップダウンメニュー、モーダル等でデフォルトで隠され、必要なときのみ展開できる省スペースなUIになること  \n- [ ] AC-3: プリセット切り替えおよびプリセット管理操作（選択・追加・削除・名前編集・全選択/解除・Undo/Redoなど）が一箇所に集約され、スムーズな操作動線が確保されること  \n- [ ] AC-4: レスポンシブ対応（モバイル表示）において、UI要素が重なったり極端に画面を圧迫したりせず、縦一列の適切なレイアウト、もしくはハンバーガーメニューやアコーディオン、ドロップダウン等の折りたたみ機構を導入して省スペース化されること  "}, {"id": "REQ-109", "title": "タブレットやスマホから Scene Generator を開くと画面が真っ黒になる問題の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "LLM & Translation", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 2, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1E3COGr87t6n7UYf67voLBRkFDrnu-ak1/view?usp=drivesdk", "surface": "scene generatorがタブレットやスマホからだと真っ黒の画面になって使えない。モバイルモードでなくても同じ。PCでは使える", "root_cause_raw": "非セキュアコンテキスト環境で `crypto.randomUUID()` が呼び出され、例外スローにより React のレンダーツリーがクラッシュするため。", "snippet": "---  \nid: REQ-109  \nstatus: done  \ntags:  \n- defect  \n- frontend  \n- mobile  \ntitle: タブレットやスマホから Scene Generator を開くと画面が真っ黒になる問題の修正  \n---  \n  \n### REQ-109: タブレットやスマホから Scene Generator を開くと画面が真っ黒になる問題の修正  \n  \n- **Type**: defect  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: scene generatorがタブレットやスマホからだと真っ黒の画面になって使えない。モバイルモードでなくても同じ。PCでは使える  \n- **Root Cause**: 非セキュアコンテキスト環境で `crypto.randomUUID()` が呼び出され、例外スローにより React のレンダーツリーがクラッシュするため。  \n- **Requirement**: 非セキュアコンテキスト環境（実機スマホ・タブレット等の HTTP 接続）でも Scene Generator が例外スローせず正常に開いて使用できること。  \n- **Acceptance criteria**:  \n - [ ] AC-1: `crypto.randomUUID` が利用できない環境でも Scene Generator モーダルを開く際にエラーとならず、正常に表示されること。  \n - [ ] AC-2: モーダル内でシーンを追加、削除、移動する際にも ID 生成エラーでクラッシュせず、正常に動作すること。  \n- **Design doc**: docs/design/REQ-109.md  \n  "}, {"id": "REQ-106", "title": "ノードマッピングにおけるBoolean型のサポート", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1BPBF-e2FQHAhBhL9y6g_pZo2f1hXQS4r/view?usp=drivesdk", "surface": "ノードマッピングのtypeでBooleanを扱えるようにしたい", "root_cause_raw": "ノードマッピングの設定において「Boolean」データ型が選択肢になく、トグルスイッチのような直感的なON/OFF操作のUIで入力を行えない。", "snippet": "---  \nid: REQ-106  \nstatus: done  \ntags: []  \ntitle: ノードマッピングにおけるBoolean型のサポート  \n---  \n  \n### REQ-106: ノードマッピングにおけるBoolean型のサポート  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**: ノードマッピングのtypeでBooleanを扱えるようにしたい  \n- **Root Cause**: ノードマッピングの設定において「Boolean」データ型が選択肢になく、トグルスイッチのような直感的なON/OFF操作のUIで入力を行えない。  \n- **Requirement**: ノードマッピングのデータ型（type）として `Boolean` をサポートし、Boolean型が選択された場合にはトグルスイッチによる直感的なON/OFF入力を可能にする。  \n- **Acceptance criteria**:  \n - [ ] AC-1: マッピング編集UIのタイプ（データ型）選択肢において、新たに「Boolean」を選択可能にすること。  \n - [ ] AC-2: データ型「Boolean」が選択された項目は、設定画面上でテキストフィールド等の代わりにトグルスイッチ（ON/OFFスイッチ）として表示され、直感的に操作できること。  \n - [ ] AC-3: トグルスイッチのON/OFF操作が、対応するノードパラメータの `true`/`false` 値として正しくマッピング定義へ保存・反映されること。  \n- **Design doc**: none  "}, {"id": "REQ-105", "title": "Scene Generatorの追加調整", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1jZf0fFMYXFP41yJCOaCc8i8yXAohfLi4/view?usp=drivesdk", "surface": "- 使うLLMのモデルを切り替えたい。後述の設定画面で選択できるようにしたい。", "root_cause_raw": "- Scene GeneratorでLM Studioを使用する際、利用可能なモデルが動的に取得されず、モデルの切り替えが不可能であること。", "snippet": "---  \nid: REQ-105  \nstatus: done  \ntags: []  \ntitle: Scene Generatorの追加調整  \n---  \n  \n### REQ-105: Scene Generatorの追加調整  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:  \n - 使うLLMのモデルを切り替えたい。後述の設定画面で選択できるようにしたい。  \n - ベースのプロファイルを選択できない  \n - 生成がいまいち&適用先の入力欄も適切でない  \n - 上記も含めたLLM挙動の調整をコード以外でできるように、これ用のシステムプロンプトを設定画面で設定できるようにしたい  \n- **Root Cause**:  \n - Scene GeneratorでLM Studioを使用する際、利用可能なモデルが動的に取得されず、モデルの切り替えが不可能であること。  \n - ベースとなるプロファイルが現在のパラメータ値に固定されており、保存済みプロファイルから選択して開始できないこと。  \n - LLMの抽出精度やプロンプトマッピングの精度が不足しており、またそれを微調整するためのシステムプロンプトが固定されているため、コードを変更せずに挙動を制御できないこと。  \n- **Requirement**:  \n - 設定画面で、LM Studioに登録されているモデルの一覧をAPI経由で動的に取得してリスト表示し、そこから使用するモデルを選択・保存（永続化）できること。  \n - 設定画面で、Scene Generator用のシステムプロンプトをテキストエリアで編集・保存（永続化）できること。  \n - Scene Generatorモーダル起動時、ベースとなるプロファイルを保存済みのプロファイル一覧からドロップダウン等で選択できるようにすること（デフォルトは現在のパラメータ値）。  \n - LLMでのドラフト生成時に、ユーザーが設定したシステムプロンプトと選択したモデルを使用してAPIを実行し、指定されたパラメータ欄（ポーズ、構図、表情等）へ正しくマ"}, {"id": "REQ-103", "title": "Scene Generator 機能の追加", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "LLM & Translation", "root_cause_cat": "非同期ブロッキング・パフォーマンス・リソース競合", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1tSzf02EqGoD_oqlgl9yKfqjwnx-tji9w/view?usp=drivesdk", "surface": "- `tmp/Scene Generator 機能仕様書.md` の機能を追加したい。生成画面からのプロファイル生成の拡張機能のイメージで、専用のモーダルを追加するイメージ。", "root_cause_raw": "連続したシーン（動画やアニメーション等）を生成する際、共通設定をベースとしつつシーンごとに異なる一部パラメータ（ポーズ、表情等）を切り替えたプロファイルを、手動で逐一複製して個別編集してキュー投入しなければならず、作業の認知負荷と操作コストが高いこと。", "snippet": "---  \nid: REQ-103  \nstatus: done  \ntags: []  \ntitle: Scene Generator 機能の追加  \n---  \n  \n### REQ-103: Scene Generator 機能の追加  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:   \n- `tmp/Scene Generator 機能仕様書.md` の機能を追加したい。生成画面からのプロファイル生成の拡張機能のイメージで、専用のモーダルを追加するイメージ。  \n - 現状は差分毎に手動でプロファイルをコピー生成し変更部分を手動で変えているが、何を消して何を追加するか逐一考えて編集するのが手間なので、ドラフトを一気に作ってもらって微調整だけ手動でやりたい。  \n - 既存のプロファイル追加ボタンの近くに、scene生成ボタンを追加するイメージ。  \n - ベースとして指定するプロファイルを元に抽出して、対象をチェックボックスで選択するのがいい。シーンの概要は対象を気にせず短文で書きたいので、対象で選択された中でどこの入力欄の内容を編集するかもLLMに考えて欲しい。  \n- **Root Cause**: 連続したシーン（動画やアニメーション等）を生成する際、共通設定をベースとしつつシーンごとに異なる一部パラメータ（ポーズ、表情等）を切り替えたプロファイルを、手動で逐一複製して個別編集してキュー投入しなければならず、作業の認知負荷と操作コストが高いこと。  \n- **Requirement**: 既存の「プロファイル追加」ボタン付近から「Scene Generator」の専用モーダルを起動し、ベースとなるプロファイル情報から編集対象パラメータを選択した上で、シーンごとの日本語の概要指示（短文）を入力するだけで、LLMが自動的に各フィールドへの割り当てと英語プロンプトのドラフトを生成し、ユーザーが手動で編集・確認した上で、シーンごとに個別のプロファイル（プリセット）を一括作成できること。ComfyUIへの直接キュー投入はスコープ外とし、生成されたプロファイル"}, {"id": "REQ-100", "title": "生成画面におけるプロファイルの自動保存とタブ管理の改善およびUndo/Redo機能の実装", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "未分類 / 該当なし", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1h3e7Ik7TV3WZGRqJtYXiDTGKmJ7ru5v6/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-100  \nstatus: done  \ntags: []  \ntitle: 生成画面におけるプロファイルの自動保存とタブ管理の改善およびUndo/Redo機能の実装  \n---  \n  \n### REQ-100: 生成画面におけるプロファイルの自動保存とタブ管理の改善およびUndo/Redo機能の実装  \n  \n- **Status**: done (2026-08-30)  \n- **Description**:  \n 生成画面におけるプロファイル（WorkflowPreset）の保存とタブ（Zustandストアの `sets`）の同期について、以下の問題を解消しUXを改善します。  \n 1. 個別の上書き保存ではなく自動セーブを基本とし、編集内容とプロファイルが常に一致する仕様とする。  \n 2. 端末切替時などに「タブ未選択状態での編集」ができてしまう状態を防ぎ、常に何かしらのプロファイルに紐付いて自動セーブされるようにする（存在しない場合はデフォルトプロファイルを自動生成する）。  \n 3. タブの「×」ボタンは「タブを閉じる（非表示にする）」だけであり、DBからの削除は行わない。閉じられたプロファイルは、生成ページのプロファイル選択リストから容易に再表示できるようにする。プロファイルの実削除はプロファイル一覧（プリセットマネージャーなど）からのみとする。  \n 4. 誤操作時の対応用に、タブ（プロファイル）ごとに独立したUndo/Redo機能（タブを切り替えて戻ってきても有効な履歴）を実装する。  \n 5. モバイルモードでも同様の挙動を保証し、デバイス間で無意識に最後の編集内容が自動同期されるようにする。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: **タブの「閉じる」と「削除」の分離**  \n - タブの「×」ボタンを押した際、DBからの削除は行わず、画面上（Zustand `sets` 及び UI）から非表示（閉じる）にするだけとする。  \n - 表示中のタブ（開いているプロファイル）のIDリストは `localStorage` に保持され、リロード時や再訪問時にも再現される。  \n - 生成ページのプロファイル選択ポップオーバー等に、閉じられたものも含めて全プロファ"}, {"id": "REQ-098", "title": "loras.pyのreorderエンドポイントバリデーションテストの追加", "type": "Test (テスト強化)", "priority": "P1", "domain": "Testing & Architecture", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1Zcrrb8mWT6yB9tkXuxWWmw4aeciry9ao/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-098  \nstatus: done  \ntags:  \n- Backend  \n- Testing  \ntitle: loras.pyのreorderエンドポイントバリデーションテストの追加  \n---  \n  \n### REQ-098: loras.pyのreorderエンドポイントバリデーションテストの追加  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: LoRAの並び順を変更する `PUT /api/loras/reorder` エンドポイントについて、無効なペイロード（空配列、重複ID、存在しないIDなど）が渡された際のエッジケースにおけるバリデーションと例外挙動を検証するテストを追加します。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: `ordered_ids` が空配列の場合にAPIが期待通りのレスポンス（または検証エラー）を返すことのテストを追加すること  \n- [x] AC-2: `ordered_ids` に存在しない LoRA ID や重複した ID が送信された際、DB更新時に例外が発生せず安全にスキップされるか、またはエラーを返すかの挙動がテストで検証されること  \n- [x] AC-3: テスト実行時のデータベース整合性が破壊されないことを確認すること  "}, {"id": "REQ-097", "title": "workflows.pyのコピー空状態・名称重複エラーテストの追加", "type": "Test (テスト強化)", "priority": "P1", "domain": "Workflow & Topology", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/13JWlyetS_-kJpEilxxX-k0CyMed76T5J/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-097  \nstatus: done  \ntags:  \n- Backend  \n- Testing  \ntitle: workflows.pyのコピー空状態・名称重複エラーテストの追加  \n---  \n  \n### REQ-097: workflows.pyのコピー空状態・名称重複エラーテストの追加  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: `workflows.py` に実装されているワークフローコピー機能や更新処理について、境界的な状態（マッピングやプリセットを持たない空のワークフロー）や、名称の衝突が発生した際の挙動をカバーするテストケースを追加します。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: マッピング定義やプリセット定義が存在しない空のワークフローをコピー（`/api/workflows/{id}/copy`）した際に、例外を発生させずコピーが作成されるテストを追加すること  \n- [ ] AC-2: `PUT /api/workflows/{id}` において、すでに登録されている他のワークフロー名と重複する名前で更新リクエストを送信した際、`HTTP 409 Conflict` が返されることを検証するテストを追加すること  \n- [ ] AC-3: 不正な `json_body`（空の文字列や無効なJSONオブジェクト形式）がワークフロー作成・更新時に送信された場合の検証挙動のテストを追加すること  "}, {"id": "REQ-095", "title": "snapshots.py及びloras.pyの例外エラー応答テストの追加", "type": "Test (テスト強化)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/16c5lcCkhPU-Nj_0lgNqDU949R-E9UNd5/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-095  \nstatus: done  \ntags:  \n- Backend  \n- Testing  \ntitle: snapshots.py及びloras.pyの例外エラー応答テストの追加  \n---  \n  \n### REQ-095: snapshots.py及びloras.pyの例外エラー応答テストの追加  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: `snapshots.py` や `loras.py` において、存在しないIDへのリクエストや無効なアセットIDの送信に対して適切に `HTTP 404` や `HTTP 400` を返すロジックが実装されていますが、pytest による検証コードが存在しません。これらの例外系・異常系に対するテストを追加します。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: `PATCH /api/snapshots/{snapshot_id}` において、存在しない Lora ID または TagSet ID を送信した際に `HTTP 400 Bad Request` が返されることを検証するテストを追加すること  \n- [ ] AC-2: `PUT /api/loras/{lora_id}` において、存在しない ID にリクエストした際に `HTTP 404 Not Found` が返されることを検証するテストを追加すること  \n- [ ] AC-3: `DELETE /api/loras/{lora_id}` において、存在しない ID に対して削除を試みた際に `HTTP 404` が返されることを検証するテストを追加すること  "}, {"id": "REQ-086", "title": "タッチデバイス操作時のスクロール阻害問題の解消", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "未分類 / 該当なし", "ac_count": 2, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1h4rcUi8T6qPU-EENi_w5cNJdR0MrQA8z/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-086  \nstatus: done  \ntags: []  \ntitle: タッチデバイス操作時のスクロール阻害問題の解消  \n---  \n  \n### REQ-086: タッチデバイス操作時のスクロール阻害問題の解消  \n  \n- **Status**: done (2026-08-30)  \n- **Description**:   \nアルバムページ一覧などでスクロールを行おうとした際、画像のタッチ領域を触ると画像タップなどの他のイベント判定が優先されてしまいスクロールできない問題を解消する。隙間以外の画像領域をスワイプしてもスムーズに縦スクロールが行えるように、タッチ検出系イベントの処理順やバブリング制御を修正する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: モバイル・タッチデバイスにおいて、アルバムページの画像領域を指でスライド（スワイプ）した際、ページがスムーズにスクロールすること。  \n- [ ] AC-2: スワイプによるスクロール開始時には、画像のタップイベント（詳細モーダルを開くなど）が誤発火しないこと。通常の短いタップ操作時には正しく画像タップイベントが機能すること。  "}, {"id": "REQ-083", "title": "レイアウトおよび設定画面の共通UI操作性改善", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1iS_1svAzPXXdZ3T8ZU4VCG9aVuEyUFOp/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-083  \nstatus: done  \ntags: []  \ntitle: レイアウトおよび設定画面の共通UI操作性改善  \n---  \n  \n### REQ-083: レイアウトおよび設定画面の共通UI操作性改善  \n  \n- **Status**: done (2026-08-30)  \n- **Description**:   \n1. 左右ペインやセクションの境界をドラッグ＆ドロップ（D&D）して任意の幅や高さに調整できるようにする。これは生成ページだけでなく、他ページでも再利用可能な共通レイアウト仕様とする。  \n 2. 設定画面において、各大項目（セクション）ごとに折り畳み（アコーディオン）可能にし、設定項目の見通しを改善する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: 左右ペインおよび上下セクションの境界線にドラッグ可能なハンドルが表示され、D&Dで幅・高さを任意に変更できること。  \n- [ ] AC-2: リサイズ領域の最小幅/最小高さの制限が適切に設定されており、UIが崩れないこと。  \n- [ ] AC-3: 変更したリサイズ幅・高さの情報がブラウザ（LocalStorage等）に保持され、再読み込み時も維持されること。  \n- [ ] AC-4: 設定画面の各大項目ヘッダーをクリックすることで、その配下の設定項目を折り畳み/展開できること。デフォルトは展開状態であること。  "}, {"id": "REQ-080", "title": "新規プロファイル作成時にワークフローのデフォルト設定を選択すると全パラメータが空欄になる問題の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Presets & Multi-Set", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1SiixgkVPgwtnUFTVV2broAbRc81EcAp-/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-080  \nstatus: done  \ntags:  \n- bug  \n- frontend  \ntitle: 新規プロファイル作成時にワークフローのデフォルト設定を選択すると全パラメータが空欄になる問題の修正  \n---  \n  \n### REQ-080: 新規プロファイル作成時にワークフローのデフォルト設定を選択すると全パラメータが空欄になる問題の修正  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: 新規プロファイル作成（Add Set）モーダルにて、「ワークフローのデフォルト設定」を選択して作成した際、プロファイルのパラメータ（`paramValues`）および適用アセット（`appliedAssets`）が全て空欄（`{}`）になってしまうバグを修正する。ワークフロー定義から得られるデフォルトのパラメータおよび適用アセットを設定するように修正する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: `useWorkflowParams.ts` から `getInitialParams` 関数をエクスポートする。  \n- [ ] AC-2: `useGeneratePageState.ts` の `handleCreatePreset` 内で、「ワークフローのデフォルト設定」が選ばれた場合に、空の `{}` ではなく `getInitialParams(workflow)` を用いて初期パラメータを取得し、適用アセットも `workflow.default_applied_assets` から復元して設定する。  \n- [ ] AC-3: 作成された新規プロファイル（セット）を選択した際、正しく初期値が入力欄および適用アセットに反映される。  \n- [ ] AC-4: 既存のテストおよび新規に追加する単体テストがすべて合格すること。  "}, {"id": "REQ-078", "title": "全画面プレビュー機能の実装", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "未分類 / 該当なし", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1vHGfkEEHLG4nls0HNbIiDzAVHyDMdrCw/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-078  \nstatus: done  \ntags: []  \ntitle: 全画面プレビュー機能の実装  \n---  \n  \n### REQ-078: 全画面プレビュー機能の実装  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: モバイル（タブレット等を含む）端末におけるプレビュー画像の表示領域を最大化し、詳細を確認しやすくするため、ブラウザ標準の Fullscreen API を活用した完全全画面表示プレビュー機能を「一覧画面」および「生成画面」に導入する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: 通常プレビュー（モーダル）表示時に、画像をタップ/クリックすることでブラウザ標準の `Fullscreen API` を起動し、ブラウザUIやタスクバーを非表示にした完全全画面プレビューへ移行する。  \n- [ ] AC-2: 全画面プレビュー中も、全画面状態を維持したまま、左右スワイプやナビゲーション操作（キーボードの左右矢印等）でシームレスに前後の画像をめくることができる。  \n- [ ] AC-3: 全画面プレビュー中に閉じるボタンを押す、Escキーを押す、またはブラウザ標準の解除操作を行った場合、全画面表示を終了すると同時に、プレビューモーダルも閉じて元の画面（一覧画面/生成画面）に直接戻る。  \n- [ ] AC-4: 一覧画面と生成画面の両方において、同一の全画面切り替えおよび解除挙動が一貫して動作する。  \n- [ ] AC-5: モバイル・タブレット端末（タッチデバイス）でもアスペクト比を維持しつつ、画面内に最大限大きく画像が表示される（`object-fit: contain` 等）。  "}, {"id": "REQ-075", "title": "SettingsPage.tsx および TagsPage.tsx の分割リファクタリング", "type": "Test (テスト強化)", "priority": "P1", "domain": "Prompt & TagChip Editor", "root_cause_cat": "未分類 / 該当なし", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1qr6qdjQkBkfZESHyuFsWre-uRTbdGWdr/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-075  \nstatus: done  \ntags: []  \ntitle: SettingsPage.tsx および TagsPage.tsx の分割リファクタリング  \n---  \n  \n### REQ-075: SettingsPage.tsx および TagsPage.tsx の分割リファクタリング  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: フロントエンドの `SettingsPage.tsx` と `TagsPage.tsx` は設定セクションや編集エリアなどが1ファイルに混在しているため、セクションごとにコンポーネントを分割して可読性を向上させる。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: `SettingsPage.tsx` 内の各設定カテゴリ（API接続設定、ワークフロー設定など）をサブコンポーネントに分離する。  \n- [x] AC-2: `TagsPage.tsx` からタグ編集エリアとタグライブラリエリアを独立したファイルに切り出す。  \n- [x] AC-3: リファクタリング前後で既存の自動テストがすべてPASSすること。  "}, {"id": "REQ-069", "title": "LoraStackの編集がワークフローに反映されない（キャラLoRAが変更されない）不具合", "type": "Defect (不具合修正)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1W7o4idBNI4LkksEP7dIv1qQ9yGH2t-IW/view?usp=drivesdk", "surface": "LoraStackの編集がワークフローに反映されていないかも？ キャラLoRAを入れ替えてみても、アップロード時に設定されていたキャラの特徴が強く残る。", "root_cause_raw": "パラメータインジェクション時に、ComfyUIの `easy loraStack` ノードが認識しないフィールド（`lora_count`, `lora_name_X`等）でJSONに書き込もうとしていたため、ComfyUI側で変更が完全に無視され、アップロード時の初期値が適用され続けていた。", "snippet": "---  \nid: REQ-069  \nstatus: done  \ntags: []  \ntitle: LoraStackの編集がワークフローに反映されない（キャラLoRAが変更されない）不具合  \n---  \n  \n### REQ-069: LoraStackの編集がワークフローに反映されない（キャラLoRAが変更されない）不具合  \n- **Type**: defect  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: LoraStackの編集がワークフローに反映されていないかも？ キャラLoRAを入れ替えてみても、アップロード時に設定されていたキャラの特徴が強く残る。  \n- **Root Cause**: パラメータインジェクション時に、ComfyUIの `easy loraStack` ノードが認識しないフィールド（`lora_count`, `lora_name_X`等）でJSONに書き込もうとしていたため、ComfyUI側で変更が完全に無視され、アップロード時の初期値が適用され続けていた。  \n- **Requirement**: ワークフロー内のLoRAスタックノード（`easy loraStack`など）に対して、ComfyUIが想定する正しい入力キー（`num_loras`, `lora_X_name`, `lora_X_strength`, `lora_X_model_strength`, `lora_X_clip_strength`）でパラメータが反映・インジェクトされること。  \n- **Acceptance criteria**:  \n - AC-1: `easy loraStack` 型ノードのパラメータ取得時（初期値設定）および送信・保存時に、`num_loras`, `lora_X_name`, `lora_X_strength` 等の正しいキー名で読み書きされること。  \n - AC-2: UI上で編集されたLoRAスタック構成が、画像生成時（Queue Prompt）に正しくComfyUIのワークフローJSONへインジェクトされ、変更後のLoRAで画像生成が実行されること。  \n "}, {"id": "REQ-060", "title": "ワークフローアップロード時のマッピング機能の改善", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1AZ0wMfPMFyv9rze__k8nMHb4KICcYs7E/view?usp=drivesdk", "surface": "新規ワークフローをアップロードしたときの、マッピング周りを改修したい。現状、マスタに定義した順番にマッピングを行うため、登録した時の順番によって同一系統がバラバラになり認知負荷が高い。また、自動検知されたものと警告（不一致・複数候補・未検出）が重複表示され、どちらかを無効化する必要があり作業負荷が高い。自動検出されたID主体の構成からマッピングマスタの項目主体の構成に変更し、候補をドロップダウンや自由入力で選べるようにしたい。", "root_cause_raw": "1. マッピング確認UIが「検出されたノードID」を基準にマッピング先ロールを選択する設計になっているため、ロール側で重複が発生した際の手動調整や除外操作の作業負荷が高い。", "snippet": "---  \nid: REQ-060  \nstatus: done  \ntags: []  \ntitle: ワークフローアップロード時のマッピング機能の改善  \n---  \n  \n### REQ-060: ワークフローアップロード時のマッピング機能の改善  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: 新規ワークフローをアップロードしたときの、マッピング周りを改修したい。現状、マスタに定義した順番にマッピングを行うため、登録した時の順番によって同一系統がバラバラになり認知負荷が高い。また、自動検知されたものと警告（不一致・複数候補・未検出）が重複表示され、どちらかを無効化する必要があり作業負荷が高い。自動検出されたID主体の構成からマッピングマスタの項目主体の構成に変更し、候補をドロップダウンや自由入力で選べるようにしたい。  \n- **Root Cause**:   \n1. マッピング確認UIが「検出されたノードID」を基準にマッピング先ロールを選択する設計になっているため、ロール側で重複が発生した際の手動調整や除外操作の作業負荷が高い。  \n 2. マッピングマスタの項目（役割）ベースではなく、スキャン結果のノードベースで一覧が生成されるため、同一系統（サンプラーとDetailerなど）の役割がマスタの登録順で散らばって表示され、視認性が悪い。  \n 3. マッピングマスタの表示順を制御する仕組み（並び替え機能）がマスタおよびDBに存在しないため、関連する役割を近くにまとめて表示できない。  \n- **Requirement**:   \n1. **マスタ表示順の制御（D&D並び替え）**:   \n- データベースの `mapping_master` に並び順（`sort_order`）カラムを追加し、API経由で取得・更新できるようにする。  \n - 設定画面（`SettingsPage`）のノードマッピングマスタ管理UIにおいて、D&Dによる項目の並び替え機能を実装し、並び替えた順序を永続化する。  \n 2. **マッピング確認UIの構成変更**:  \n -"}, {"id": "REQ-058", "title": "マスタマッピングのサンプラ・スケジューラ選択肢の分離と初期アップロード時の設定値反映", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1r4auwmStiSbDPCATLVKSl5oOdZxBl3UA/view?usp=drivesdk", "surface": "サンプラ選択などをマスタマッピングに追加して入力欄を生成することはできるが、選択肢がLora一覧になってしまう。設定値の対象によって、適切な選択肢を表示できるようにしたい。また、初期アップロード時に設定値が反映されていないのも修正したい。", "root_cause_raw": "- フロントエンドの `GeneratePage.tsx` において、`input_type` が `select` のパラメータ入力欄をレンダリングする際、選択肢（options）として `loras` 一覧がハードコードされている。", "snippet": "---  \nid: REQ-058  \nstatus: done  \ntags: []  \ntitle: マスタマッピングのサンプラ・スケジューラ選択肢の分離と初期アップロード時の設定値反映  \n---  \n  \n### REQ-058: マスタマッピングのサンプラ・スケジューラ選択肢の分離と初期アップロード時の設定値反映  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P1  \n- **Surface**: サンプラ選択などをマスタマッピングに追加して入力欄を生成することはできるが、選択肢がLora一覧になってしまう。設定値の対象によって、適切な選択肢を表示できるようにしたい。また、初期アップロード時に設定値が反映されていないのも修正したい。  \n- **Root Cause**:   \n- フロントエンドの `GeneratePage.tsx` において、`input_type` が `select` のパラメータ入力欄をレンダリングする際、選択肢（options）として `loras` 一覧がハードコードされている。  \n - このため、サンプラ名やスケジューラ名など、LoRA以外の選択肢を持つべき項目でもLoRA一覧が表示されてしまい、適切な値（例: \"euler\"）を選択できない。  \n - また、ワークフローの初期ロード（アップロード）時にJSONからパースされたパラメータ初期値（例: \"euler\"）が、LoRA一覧の選択肢に含まれないため、ブラウザの `<select>` 挙動により空（未選択）として表示されてしまい、初期設定値が画面に反映されない。  \n- **Requirement**:  \n - パラメータマスタマッピングの `input_type` に、サンプラ名選択用の `select_sampler` と、スケジューラ名選択用の `select_scheduler` を追加する。  \n - フロントエンドのパラメータ描画部で、これら新しい `input_type` に応じて適切な選択肢を表示する。  \n - 選択肢は、ComfyUI API（`/object_info` エ"}, {"id": "REQ-055", "title": "Generateページ マルチセット一括生成", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Presets & Multi-Set", "root_cause_cat": "実装不具合・その他", "ac_count": 12, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1XU_h0ZQ0GOxWWZnYtYdE9kMepicviwUw/view?usp=drivesdk", "surface": "ワークフローに対し、複数のプロンプト・パラメータ設定（セット）をタブ的に切り替えて編集し、選択したセットをまとめて「セット数×セットあたりバッチ数」で一括生成したい。従来の単セット生成（current表示中セットのみ）も維持したい。", "root_cause_raw": "Generateページの状態（`paramValues`/`appliedAssets`/`seedMode`/`seed`）が単一構成しか持てず、衣装違い・構図違いなど複数バリエーションを生成する際に都度手動で設定を上書き・再生成する必要があり、作業効率が悪い。", "snippet": "---  \nid: REQ-055  \nstatus: done  \ntags: []  \ntitle: Generateページ マルチセット一括生成  \n---  \n  \n### REQ-055: Generateページ マルチセット一括生成  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**: ワークフローに対し、複数のプロンプト・パラメータ設定（セット）をタブ的に切り替えて編集し、選択したセットをまとめて「セット数×セットあたりバッチ数」で一括生成したい。従来の単セット生成（current表示中セットのみ）も維持したい。  \n- **Root Cause**: Generateページの状態（`paramValues`/`appliedAssets`/`seedMode`/`seed`）が単一構成しか持てず、衣装違い・構図違いなど複数バリエーションを生成する際に都度手動で設定を上書き・再生成する必要があり、作業効率が悪い。  \n- **Requirement**: ユーザーが複数の生成設定（セット＝プロンプト・パラメータ・適用アセット・Seedモードを完全に独立して保持）を作成・複製・編集でき、チェックボックスで選択した任意の複数セットを一括生成できる。一括生成は「失敗したセットのみスキップし、他は継続」する。  \n- **Design doc**: none（`/dev-design` で store 配列化リファクタと同一スコープで設計）  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1: プロンプト入力パネルの上部に、現在表示中のセットを示す軽量なセットチップ（番号/名前表示）が並び、クリックで表示中セットを切り替えられる。既存のMain/Face等フィールドタブは維持される  \n- [x] AC-2: 各セットは、プロンプト全フィールド・パラメータ・適用LoRA/TagSet・Seedモード/Seed値を、他のセットと独立して保持する  \n- [x] AC-3: 「+ 新規セット」操作で、現在表示中セットの内容"}, {"id": "REQ-046", "title": "プレビューのウィンドウフルサイズ対応", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1G_8JQ8nbKjBfbIs3OrYKiNNfNzCxXYMl/view?usp=drivesdk", "surface": "- プレビューのウィンドウフルサイズ対応したい。", "root_cause_raw": "- 現状のプレビュー表示は固定サイズまたは縮小されたサイズであり、縦横の長辺をウィンドウサイズいっぱいに拡大表示して細部を確認する手段がない。", "snippet": "---  \nid: REQ-046  \nstatus: done  \ntags: []  \ntitle: プレビューのウィンドウフルサイズ対応  \n---  \n  \n### REQ-046: プレビューのウィンドウフルサイズ対応  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**:   \n- プレビューのウィンドウフルサイズ対応したい。  \n - Height・Widthどちらかの長辺方向をウィンドウ端まで拡大する。左右のボタンクリックで画像送り、右上に通常プレビューに戻るボタンを設ける。  \n - 生成画面のメインプレビューと、スナップショット一覧画面(アルバム含む)に適応する。  \n - 一覧画面の方では、画像クリック・タップでフルサイズプレビューを標準にし、右下に情報表示用アイコンを設け、それをクリック・タップでメタ情報を出す現行のプレビューと切り替えたい。  \n - タッチ操作時は左右スワイプでの画像送りもサポートする。  \n- **Root Cause**:  \n - 現状のプレビュー表示は固定サイズまたは縮小されたサイズであり、縦横の長辺をウィンドウサイズいっぱいに拡大表示して細部を確認する手段がない。  \n - 画像の一覧（スナップショット一覧・アルバム）において、画像を順番に確認する（画像送り）手段がなく、1枚ずつ閉じて開き直す必要がある。  \n - 一覧画面で画像をクリックするとメタ情報表示がデフォルトで開くが、画像そのものを大きく見たいニーズが強く、画像閲覧とメタ情報閲覧を柔軟に切り替えられる仕組みが不足している。  \n- **Requirement**:  \n - 生成画面のメインプレビューおよびスナップショット一覧画面（アルバム含む）において、ウィンドウの長辺に合わせたアスペクト比維持のフルサイズプレビュー表示に対応する。  \n - フルサイズプレビュー時は、暗めの半透明背景でオーバーレイし、左右の画像送りボタンおよび右上に戻るボタンを提供する。タッチデバイスではスワイプによる画像送りも可能にする。  \n - 一覧画面（アルバム含む）では、画像"}, {"id": "REQ-043", "title": "LoRA・タグセットの紐付け編集およびフィルタ機能", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Prompt & TagChip Editor", "root_cause_cat": "未分類 / 該当なし", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/19JtSPpu2yZEJYRpN9vvvvGNvVhAgDPGr/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-043  \nstatus: done  \ntags: []  \ntitle: LoRA・タグセットの紐付け編集およびフィルタ機能  \n---  \n  \n### REQ-043: LoRA・タグセットの紐付け編集およびフィルタ機能  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: 保存済みのスナップショットに対して、関連付けられている LoRA およびタグセットを後から追加・削除（編集）できるようにするとともに、スナップショット一覧画面において紐付いている LoRA やタグセットによるフィルタリングを可能にする。  \n  \n#### Acceptance Criteria (AC)  \n- [x] AC-1 (Backend - Patch API): スナップショットの関連情報（LoRA、タグセットのリレーション）を更新するためのエンドポイント `PATCH /api/snapshots/{snapshot_id}` を実装する。  \n - リクエストボディで更新後の `lora_ids` (IDの配列) および `tag_set_ids` (IDの配列) を受け取り、既存のリレーションを安全に更新できること。  \n- [x] AC-2 (Backend - Filter API): スナップショット一覧取得 API `GET /api/snapshots` を拡張し、クエリパラメータとして `lora_id` (数値) および `tag_set_id` (数値) によるフィルタリングが行えるようにする。  \n- [x] AC-3 (Frontend - Relation Edit UI): 履歴 (History) 画面のスナップショット詳細表示（`HistoryModalPreview` 内）において、紐付いている LoRA とタグセットを後から編集（追加・削除）できるUIを提供する。  \n - ユーザーは登録済みの LoRA やタグセットを選択して追加、または既存の紐付けを削除でき、保存ボタン等で変更が永続化されること。  \n- [x] AC-4 (Frontend - Filter UI): 履歴 (History) 画面のスナップショット一覧において、紐付いている"}, {"id": "REQ-040", "title": "生成履歴とスナップショットの並び替え機能", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Thumbnails & Assets", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1wnV4PriHfzlQOFkq4kfFrByOl03U7Wh5/view?usp=drivesdk", "surface": "生成ページの履歴・スナップショット、スナップショット一覧ページともに、並び順を新しい順・古い順に任意で変えられるようにしたい", "root_cause_raw": "生成履歴やスナップショットの並び順が固定されているため、古いものや特定のスナップショットを遡って探す際の操作性が悪い。", "snippet": "---  \nid: REQ-040  \nstatus: done  \ntags: []  \ntitle: 生成履歴とスナップショットの並び替え機能  \n---  \n  \n### REQ-040: 生成履歴とスナップショットの並び替え機能  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: dev-design  \n- **Priority**: P2  \n- **Surface**: 生成ページの履歴・スナップショット、スナップショット一覧ページともに、並び順を新しい順・古い順に任意で変えられるようにしたい  \n- **Root Cause**: 生成履歴やスナップショットの並び順が固定されているため、古いものや特定のスナップショットを遡って探す際の操作性が悪い。  \n- **Requirement**: 生成ページの履歴・スナップショット表示部分、およびスナップショット一覧ページに、「新しい順」と「古い順」を切り替えるテキスト付きのトグル/セグメントボタンを設置し、ユーザーが並び順を任意に変更できるようにする。初期表示は「新しい順」とする。  \n- **Acceptance criteria**:  \n - AC-1: 生成ページの履歴（ヒストリー・スナップショット）表示部分に、並び順を切り替える「新しい順」「古い順」の文字ラベル付きボタンが設置されていること。  \n - AC-2: スナップショット一覧ページに、並び順を切り替える「新しい順」「古い順」の文字ラベル付きボタンが設置されていること。  \n - AC-3: どちらの画面も初期表示（リロード時）は「新しい順」でソートされて表示されること。  \n - AC-4: ボタン切り替え時、表示される履歴・スナップショットの順番が「新しい順（作成日時の降順）」「古い順（作成日時の昇順）」に正しく切り替わること。  \n - AC-5: 現在選択されている並び順のボタンがアクティブ状態として視覚的（背景色やテキスト色など）に強調されていること。  \n- **Design doc**: docs/design/REQ-040.md  "}, {"id": "REQ-039", "title": "生成ジョブのキャンセル機能", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "Prompt & TagChip Editor", "root_cause_cat": "実装不具合・その他", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1WVanH8tGVzQXw15uu17NHZUWBod-3R-C/view?usp=drivesdk", "surface": "生成開始したジョブをキャンセルできるようにしたい。生成中だけでなく、キューに入っているものもキャンセル可能としたい。実行中・キューにストックされているJOBともに、任意のjobを選んでのキャンセルと、全部一括でのキャンセルを両方実施できるように。", "root_cause_raw": "ジョブを送信した後にプロンプトやパラメータの編集漏れに気づくケースがあり、不要なジョブの生成によってリソースが無駄に消費されたり、不要な待ち時間が発生するのを防止したい。", "snippet": "---  \nid: REQ-039  \nstatus: done  \ntags: []  \ntitle: 生成ジョブのキャンセル機能  \n---  \n  \n### REQ-039: 生成ジョブのキャンセル機能  \n  \n- **Type**: enhancement  \n- **Status**: done (2026-08-30)  \n- **Current step**: none  \n- **Priority**: P2  \n- **Surface**: 生成開始したジョブをキャンセルできるようにしたい。生成中だけでなく、キューに入っているものもキャンセル可能としたい。実行中・キューにストックされているJOBともに、任意のjobを選んでのキャンセルと、全部一括でのキャンセルを両方実施できるように。  \n- **Root Cause**: ジョブを送信した後にプロンプトやパラメータの編集漏れに気づくケースがあり、不要なジョブの生成によってリソースが無駄に消費されたり、不要な待ち時間が発生するのを防止したい。  \n- **Requirement**: 実行中の生成ジョブの中断、およびキュー待機中のジョブの削除を個別または一括で行える操作モーダルと、それを制御するAPI・フロントエンドロジックの実装。  \n- **Acceptance criteria**:  \n - [ ] AC-1: 進捗表示の「Queue待機数」のラベル部分をクリックすると、ジョブ管理用のモーダルウィンドウが表示されること。  \n - [ ] AC-2: ジョブ管理モーダル内に、現在生成中のジョブ（1件）と、キューに待機しているジョブの一覧（複数件）がそれぞれ順番に表示されること。  \n - [ ] AC-3: 各ジョブに対して個別のキャンセルアクションが実行できること。  \n - [ ] AC-3-a: 生成中のジョブをキャンセルした場合、ComfyUI側での生成処理が即座に中断されること。  \n - [ ] AC-3-b: キュー待機中のジョブをキャンセルした場合、キューからそのジョブが削除されること。  \n - [ ] AC-4: モーダル内に「一括キャンセル」ボタンが配置され、クリックすると生成中のジョブの中断およびキュー待機中ジョブの全削除が同時に実行されること。  \n - [ ] "}, {"id": "REQ-036", "title": "LoRA登録時のモデルパス選択機能の追加", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 5, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1Jv5NSu7cafDNLSMg1mH3e4RhukrBMC8N/view?usp=drivesdk", "surface": "LoRA管理画面で新規LoRAを登録する際、パスを手入力だけでなく、ComfyUIで登録済みのモデルをセレクタ的に選択するようにしたい。", "root_cause_raw": "現在のLoRA登録フォームでは、ファイルパスを完全に手動で入力する必要があり、タイポによる参照エラーが発生しやすい。また、ComfyUIに存在するモデルのうちどれが既にシステムに登録済みであるかをフォーム上で確認する術がなく、重複登録や確認の手間が発生している。", "snippet": "---  \nid: REQ-036  \nstatus: done  \ntags: []  \ntitle: LoRA登録時のモデルパス選択機能の追加  \n---  \n  \n### REQ-036: LoRA登録時のモデルパス選択機能の追加  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: enhancement  \n- **Priority**: P2  \n- **Current step**: none  \n- **Surface**:  \n LoRA管理画面で新規LoRAを登録する際、パスを手入力だけでなく、ComfyUIで登録済みのモデルをセレクタ的に選択するようにしたい。  \n 未だLoRA管理に未登録のものが優先的に上位に表示されるようにし、登録済みのものは非表示ではなくグレーアウトなどで差別化するとともに選択できないようにして、参照エラーではないことがわかるように。  \n また、レアケースだがComfyUIに先行して登録する場合用に、直接入力も可能としておきたい。  \n 仕様の詳細として、  \n 1. 入力はコンボボックス形式とし、候補から選択もできれば、手入力で任意のパス指定することも可能とする。  \n 2. ComfyUIのLoRAフォルダ内のサブフォルダ構造（相対パス）を含めて候補リストに表示・検索可能とする。  \n 3. 登録済みのモデルはグレーアウトされ選択不可とし、さらに「登録済み」バッジを表示する。  \n  \n- **Root Cause**:  \n 現在のLoRA登録フォームでは、ファイルパスを完全に手動で入力する必要があり、タイポによる参照エラーが発生しやすい。また、ComfyUIに存在するモデルのうちどれが既にシステムに登録済みであるかをフォーム上で確認する術がなく、重複登録や確認の手間が発生している。  \n  \n- **Requirement**:  \n - **コンボボックスによるパス入力**: LoRA登録・編集フォームのファイルパス入力フィールドを、ComfyUI側で認識されているLoRAモデルファイル一覧を選択・検索できるコンボボックス（セレクトボックスかつ直接入力可能な入力フィールド）に変更する。  \n - **ComfyUIモデル情報の取得**: ComfyUI側のLoR"}, {"id": "REQ-033", "title": "スマートフォン接続時のスナップショット画像非表示バグの修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "未分類 / 該当なし", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1ib_6DLpybKwjwETim_tBmjzXSqDmYJ8g/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-033  \nstatus: done  \ntags: []  \ntitle: スマートフォン接続時のスナップショット画像非表示バグの修正  \n---  \n  \n### REQ-033: スマートフォン接続時のスナップショット画像非表示バグの修正  \n  \n- **Status**: done (2026-08-30)  \n- **Description**: スマートフォンや外部端末から IP アドレス等でフロントエンドにアクセスした際、過去のスナップショット画像が localhost への直参照となっており非表示になる問題を解決するため、バックエンド側で画像をダウンロードして `db/snapshots/` に保存し、相対パス `/api/snapshots/images/<filename>` で配信するよう修正する。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: バックエンドの `POST /api/snapshots` において、`image_path` が外部 URL（`http://` または `https://`）の場合、自動的にその画像をダウンロードして `db/snapshots/` ディレクトリ配下にユニークなファイル名で保存すること。また、DB には配信用相対パス `/api/snapshots/images/<filename>` を保存すること。  \n- [ ] AC-2: バックエンド（FastAPI）の起動時に `db/snapshots` が `/api/snapshots/images` パスへ静的ファイルとしてマウント・配信されるよう設定すること。  \n- [ ] AC-3: `POST /api/snapshots` で保存した画像が、スマートフォン等の他端末からホストPCのIPアドレス経由でアクセスした際にも正常に表示できること（Vite のプロキシを通じて配信されること）。  \n- [ ] AC-4: テスト（`backend/tests/test_snapshots.py` 等）で snapshot 保存・取得APIの挙動が壊れていないこと。  \n  "}, {"id": "REQ-032", "title": "生成画面での新規ワークフローアップロード・登録機能の追加", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1_eMoT1C_n40Kghasiemo1uFQ2Y0bWqi7/view?usp=drivesdk", "surface": "生成画面（Generate ページ）", "root_cause_raw": "システム仕様書（`spec_and_migration.md`）には、新規ワークフローのJSONをアップロードして登録・マッピングする仕様が記述されているが、フロントエンドUIにアップロード用のボタンやファイル選択機能、マッピングの初期設定フローが欠落している。", "snippet": "---  \nid: REQ-032  \nstatus: done  \ntags: []  \ntitle: 生成画面での新規ワークフローアップロード・登録機能の追加  \n---  \n  \n### REQ-032: 生成画面での新規ワークフローアップロード・登録機能の追加  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: enhancement  \n- **Priority**: P1  \n- **Current step**: none  \n- **Surface**: 生成画面（Generate ページ）  \n  \n- **Root Cause**:  \n システム仕様書（`spec_and_migration.md`）には、新規ワークフローのJSONをアップロードして登録・マッピングする仕様が記述されているが、フロントエンドUIにアップロード用のボタンやファイル選択機能、マッピングの初期設定フローが欠落している。  \n  \n- **Requirement**:  \n 1. 生成画面のワークフロー選択ドロップダウン付近に、新規ワークフローを追加（アップロード）するためのボタンを配置する。  \n 2. ボタン押下時にJSONファイルを選択するダイアログを表示する。  \n 3. ファイルロード後、バックエンドAPI `POST /api/workflows/scan` を利用してマッピングの自動検出を行い、結果を登録確認モーダル（新規登録用）に表示する。  \n 4. 登録確認モーダルにて、ワークフロー名の設定、マッピング（役割とnode_idの対応）の確認・編集（変更/追加/削除）を行えるようにする。  \n 5. 確定時に `POST /api/workflows` APIを呼び出してワークフローを新規登録し、登録成功後は生成画面の選択状態を新規追加されたワークフローに切り替える。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: **アップロードUIの配置**: 生成画面のワークフロー選択エリア付近に、新規ワークフローをアップロードするためのボタン（例: アップロード用のアイコン等）が分かりやすく配置されていること。  \n- [ ] AC-2: **ファイル選択ダイアロ"}, {"id": "REQ-030", "title": "スナップショット一覧のアルバム表示不具合の修正", "type": "Defect (不具合修正)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "実装不具合・その他", "ac_count": 4, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/18RZ7lnu3-gv-Xfzg4b0NPXRiCXpJxuri/view?usp=drivesdk", "surface": "スナップショット一覧のアルバム（Albums）ページが空で何も表示されない。404エラーになるわけではない。", "root_cause_raw": "バックエンドの `GET /api/albums` が `schemas.AlbumSummary` スキーマを返却しているのに対し、フロントエンドが `Album` スキーマ（`items` フィールドを含む）を期待しているため、フロントエンドで `album.items` が `undefined` となり、`album.items.slice(0, 3)` 呼び出し時にレンダリング例外が発生して描画が停止する。", "snippet": "---  \nid: REQ-030  \nstatus: done  \ntags:  \n- Defect  \n- Backend  \n- Frontend  \ntitle: スナップショット一覧のアルバム表示不具合の修正  \n---  \n  \n### REQ-030: スナップショット一覧のアルバム表示不具合の修正  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: defect  \n- **Priority**: P1  \n- **Current step**: none  \n- **Surface**: スナップショット一覧のアルバム（Albums）ページが空で何も表示されない。404エラーになるわけではない。  \n  \n- **Root Cause**:  \n バックエンドの `GET /api/albums` が `schemas.AlbumSummary` スキーマを返却しているのに対し、フロントエンドが `Album` スキーマ（`items` フィールドを含む）を期待しているため、フロントエンドで `album.items` が `undefined` となり、`album.items.slice(0, 3)` 呼び出し時にレンダリング例外が発生して描画が停止する。  \n  \n- **Requirement**:  \n `GET /api/albums` のレスポンススキーマを変更し、`items`（およびそれに含まれる `image_path` など）が返却されるように修正する。  \n  \n- **Acceptance criteria**:  \n - [ ] AC-1: **アルバム一覧の正常表示**: 「History」画面の「Albums」タブを選択した際、保存済みのアルバム一覧がカード形式で正常に描画されること。  \n - [ ] AC-2: **サムネイル画像の描画**: 各アルバムカードのサムネイルグリッド（最大3枚）に、アルバムに含まれるスナップショット画像が正しく表示されること。  \n - [ ] AC-3: **件数表示の整合性**: アルバムカード内に、登録されている画像枚数（例: \"3 images\"）が正しく表示されること。  \n - [ ] AC-4: **エラーのない動作**"}, {"id": "REQ-029", "title": "生成画面のデザイン修正および旧REQ-019の統合", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "実装不具合・その他", "ac_count": 7, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/15AbrXysODJ9MoGKkG2raN7Gu-kmxE9XY/view?usp=drivesdk", "surface": "生成画面のUI/UX向上を目的とした以下のデザイン・レイアウト修正：", "root_cause_raw": "1. ワークフロー設定セクションが常時展開されており、頻繁に変更しない割に画面スペースを圧迫している。", "snippet": "---  \nid: REQ-029  \nstatus: done  \ntags:  \n- Visual  \n- Interaction  \ntitle: 生成画面のデザイン修正および旧REQ-019の統合  \n---  \n  \n### REQ-029: 生成画面のデザイン修正および旧REQ-019の統合  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: enhancement  \n- **Priority**: P2  \n- **Current step**: none  \n- **Surface**: 生成画面のUI/UX向上を目的とした以下のデザイン・レイアウト修正：  \n 1. ワークフロー設定（ComfyUI接続設定等）のセクションを、ワークフロー選択の脇に配置した設定アイコンをクリックしたときに表示されるサブメニュー/ポップオーバー形式に移行し、メイン画面の省スペース化を図る。  \n 2. 生成中のプログレスバー表示がプレビュー画面全体を覆う仕様を廃止し、プレビュー領域の一部（上部または下部の境界部など）に細いバーとして表示されるようにし、生成中であってもメインプレビューおよび履歴の操作を行えるようにする。  \n 3. 過去のスナップショット選択において、名前だけでなくスナップショットの画像を見ながら選択できるサムネイル付きUIに刷新し、履歴（History）エリアに統合または隣接する形で配置する。  \n 4. \"Save Snapshot\" の保存ボタンのアイコンを、現在のフロッピーディスクからカメラ等の直感的なアイコンに変更する。  \n 5. 既存の `REQ-019`（プレビューサイズの70%縮小、パディング・枠線・影の適用、ホバー時の左右ナビゲーションボタン、フォーカス時のキーボード左右矢印キーによる履歴画像切り替え）を統合する。  \n  \n- **Root Cause**:  \n 1. ワークフロー設定セクションが常時展開されており、頻繁に変更しない割に画面スペースを圧迫している。  \n 2. 生成中に画面全体がプログレスバー表示で覆われてしまい、生成中のプレビュー確認や過去履歴の参照・比較ができない。  \n 3. スナップショットの選択がテキストベースの名前のみで行われており、過去に作成した構"}, {"id": "REQ-026", "title": "スマホモード時の画像生成進捗表示改善および履歴画像のモーダルプレビュー実装", "type": "Enhancement (機能拡張)", "priority": "P2", "domain": "GeneratePage & Layout UI", "root_cause_cat": "未分類 / 該当なし", "ac_count": 6, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1jkDjMSS5fmXnzQUCsoiRV1ssxGPuvI4K/view?usp=drivesdk", "surface": "", "root_cause_raw": "", "snippet": "---  \nid: REQ-026  \nstatus: done  \ntags: []  \ntitle: スマホモード時の画像生成進捗表示改善および履歴画像のモーダルプレビュー実装  \n---  \n  \n### REQ-026: スマホモード時の画像生成進捗表示改善および履歴画像のモーダルプレビュー実装  \n  \n- **Status**: done (2026-08-30)  \n- **Current step**: Phase 2: Detailed Design  \n- **Description**: スマホモード（画面幅768px未満）において、画像生成中の進捗確認と生成完了後の履歴画像の確認体験を向上させます。具体的には、生成中にヘッダーとボディの間に細いライン状の進捗バーを表示し、履歴サムネイルタップ時にスワイプ切り替えやメタ情報のスクロール表示が可能な全画面プレビューモーダルを提供します。  \n  \n#### Acceptance Criteria (AC)  \n- [ ] AC-1: スマホモードでの画像生成中に、ヘッダーとメインコンテンツ（ボディ）の間に細いライン状のプログレスバーが表示されること。  \n- [ ] AC-2: プログレスバーの付近に進行状況のパーセンテージ（例: `70%`）が表示されること（表示スペースが極端に狭い場合は非表示にするなど、レスポンシブに適応すること）。生成完了後または中断時にはバーが非表示になること。  \n- [ ] AC-3: スマホモードで生成履歴のサムネイルをタップした際、画面全体を覆うプレビューモーダルが表示されること。  \n- [ ] AC-4: プレビューモーダルにおいて、左右のスワイプ操作で履歴の前後画像を切り替えられること。  \n- [ ] AC-5: プレビューモーダルの右上に控えめな「閉じる」アイコンボタンが配置され、それを押すか、あるいはモーダル画像外の背景エリアをタップすることでモーダルを閉じられること。  \n- [ ] AC-6: プレビューモーダル内をスクロールすることで、その画像を生成した際のプロンプトやシード値などのメタ情報が表示されること。プレビュー画像自体の表示領域が阻害されないよう考慮されたスクロールレイアウトであること。  "}, {"id": "REQ-018", "title": "スナップショット一覧での拡大プレビューとキーボード/クリックによる前後ナビゲーション機能", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "Thumbnails & Assets", "root_cause_cat": "実装不具合・その他", "ac_count": 7, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/1j-oEh5ensn0E_SuDJhFczOOcL2uZJ7HY/view?usp=drivesdk", "surface": "スナップショット一覧ページで、サムネイルをクリックした時に詳細を拡大プレビュー表示できず、また前後のスナップショットへの切り替えをキーボードやクリック操作で行えない。", "root_cause_raw": "HistoryPageにスナップショット拡大プレビュー（ライトボックス）機能がなく、キーボードやクリックによるナビゲーション機能も実装されていない。", "snippet": "---  \nid: REQ-018  \nstatus: done  \ntags: []  \ntitle: スナップショット一覧での拡大プレビューとキーボード/クリックによる前後ナビゲーション機能  \n---  \n  \n### REQ-018: スナップショット一覧での拡大プレビューとキーボード/クリックによる前後ナビゲーション機能  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: enhancement  \n- **Priority**: P1  \n- **Current step**: none  \n- **Surface**: スナップショット一覧ページで、サムネイルをクリックした時に詳細を拡大プレビュー表示できず、また前後のスナップショットへの切り替えをキーボードやクリック操作で行えない。  \n- **Root Cause**: HistoryPageにスナップショット拡大プレビュー（ライトボックス）機能がなく、キーボードやクリックによるナビゲーション機能も実装されていない。  \n- **Requirement**:  \n 1. **拡大プレビュー（ライトボックス）表示**:  \n - サムネイルをクリックした際、画面全体を覆う暗い半透明のオーバーレイ（プレビューモーダル）が表示され、その中央に拡大されたスナップショット画像が表示されること。  \n - モーダル内右上に閉じる（×）ボタンを配置する。また、プレビュー画像外のオーバーレイ領域をクリックすることでもプレビューが閉じられること。  \n 2. **前後ナビゲーションのクリック操作**:  \n - モーダル内の左右に、モダンなデザインの「前へ」「次へ」の矢印ボタンを配置する。  \n - 矢印ボタンをクリックすると、現在のスナップショットから前後のスナップショットへプレビュー表示が切り替わること。  \n 3. **キーボードによる前後ナビゲーション操作**:  \n - 拡大プレビュー表示中にキーボードの `←`（左矢印キー）を押すと前のスナップショット、`→`（右矢印キー）を押すと次のスナップショットへ切り替わること。  \n - `Esc`（エスケープキー）を押すとプレビュー表示が閉じられること。  \n 4. **ループ移動のサポート**:  \n - 先頭"}, {"id": "REQ-009", "title": "生成セッション（WebSocket進捗同期）の維持", "type": "Enhancement (機能拡張)", "priority": "P1", "domain": "GeneratePage & Layout UI", "root_cause_cat": "UI/DOMイベント伝播・操作干渉", "ac_count": 3, "completion_date": "2026-08-30", "url": "https://drive.google.com/file/d/13R30emXsHD7YndRCirCzydJE045VFNMa/view?usp=drivesdk", "surface": "リロードや別画面遷移で、生成実行中の進捗やComfyUIとのWebSocketセッション（進行状態）がリセットされてしまう。BE稼働中は生成状態を維持し、画面を開き直してもシームレスに再開できること。", "root_cause_raw": "現状、画像生成進捗の監視やプレビュー画像の受信は、フロントエンドがComfyUIのWebSocketに直接接続してハンドリングしているため、ページのリロードや他ページ（LoRA管理、設定等）への遷移によってフロントエンドのWebSocket接続が切断されると、生成進行中のイベントデータや進捗状態が破棄され、画面を開き直した際（再接続時）に進行中の生成プロセスの進捗を追跡・同期できなくなってしまう。", "snippet": "---  \nid: REQ-009  \nstatus: done  \ntags: []  \ntitle: 生成セッション（WebSocket進捗同期）の維持  \n---  \n  \n### REQ-009: 生成セッション（WebSocket進捗同期）の維持  \n  \n- **Status**: done (2026-08-30)  \n- **Type**: enhancement  \n- **Priority**: P1  \n- **Current step**: Step 7  \n- **Surface**: リロードや別画面遷移で、生成実行中の進捗やComfyUIとのWebSocketセッション（進行状態）がリセットされてしまう。BE稼働中は生成状態を維持し、画面を開き直してもシームレスに再開できること。  \n- **Root Cause**: 現状、画像生成進捗の監視やプレビュー画像の受信は、フロントエンドがComfyUIのWebSocketに直接接続してハンドリングしているため、ページのリロードや他ページ（LoRA管理、設定等）への遷移によってフロントエンドのWebSocket接続が切断されると、生成進行中のイベントデータや進捗状態が破棄され、画面を開き直した際（再接続時）に進行中の生成プロセスの進捗を追跡・同期できなくなってしまう。  \n- **Requirement**:   \n- 生成実行中の進行状況（進捗率、プレビュー、ログなど）を、リロードや別画面遷移後でもシームレスに同期再開できる仕組みを提供する。  \n - 実装アプローチとして、以下の2つのいずれかを採用し、システム設計時に最終決定する。  \n 1. **バックエンド（FastAPI）中継アプローチ**: バックエンドでComfyUIとのWebSocketを常時監視・バッファし、フロントエンドからの再接続に対して進捗を復元・同期する（マルチデバイス同期や完了保証に強い）。  \n 2. **フロントエンド（FE）再アタッチアプローチ**: フロントエンドのみで完結させ、現在実行中のプロンプトID（ジョブID）を永続化（localStorage等）し、リロード時にComfyUI WebSocketへ自動で直接再接続して最新の進行状態へ復帰する（構成がシンプル）。  \n- **Acceptance "}];
+    let currentFilter = {
+      search: '',
+      domain: '',
+      type: '',
+      priority: '',
+      root_cause: ''
+    };
+    let currentSort = {
+      column: 'id',
+      asc: false
+    };
+
+    // Domain color palette
+    const DOMAIN_COLORS = {
+      'Presets & Multi-Set': '#7C6FDD',
+      'GeneratePage & Layout UI': '#3ecf8e',
+      'Thumbnails & Assets': '#3B82F6',
+      'Prompt & TagChip Editor': '#F59E0B',
+      'Server Manager & Infra': '#EC4899',
+      'LLM & Translation': '#06B6D4',
+      'Workflow & Topology': '#8B5CF6',
+      'SpeechBubble & Dialogue': '#10B981',
+      'Testing & Architecture': '#6366F1',
+      'Other': '#71717A'
+    };
+
+    // Initialize Select Dropdowns
+    function initDropdowns() {
+      const domains = [...new Set(ALL_PBIS.map(p => p.domain))].sort();
+      const domSelect = document.getElementById('filter-domain');
+      domains.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = `${d} (${ALL_PBIS.filter(p => p.domain === d).length})`;
+        domSelect.appendChild(opt);
+      });
+
+      const rcs = [...new Set(ALL_PBIS.map(p => p.root_cause_cat))].sort();
+      const rcSelect = document.getElementById('filter-rootcause');
+      rcs.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r;
+        opt.textContent = `${r} (${ALL_PBIS.filter(p => p.root_cause_cat === r).length})`;
+        rcSelect.appendChild(opt);
+      });
+    }
+
+    // Filter Logic
+    function getFilteredData() {
+      return ALL_PBIS.filter(item => {
+        if (currentFilter.search) {
+          const q = currentFilter.search.toLowerCase();
+          const target = (item.id + ' ' + item.title + ' ' + item.surface + ' ' + item.root_cause_cat + ' ' + item.root_cause_raw).toLowerCase();
+          if (!target.includes(q)) return false;
+        }
+        if (currentFilter.domain && item.domain !== currentFilter.domain) return false;
+        if (currentFilter.type && !item.type.includes(currentFilter.type)) return false;
+        if (currentFilter.priority && item.priority !== currentFilter.priority) return false;
+        if (currentFilter.root_cause && item.root_cause_cat !== currentFilter.root_cause) return false;
+        return true;
+      });
+    }
+
+    // Render Table
+    function renderTable() {
+      const filtered = getFilteredData();
+      
+      // Sort
+      filtered.sort((a, b) => {
+        let vA = a[currentSort.column];
+        let vB = b[currentSort.column];
+        if (currentSort.column === 'id') {
+          const nA = parseInt((a.id.match(/\d+/) || [0])[0]);
+          const nB = parseInt((b.id.match(/\d+/) || [0])[0]);
+          return currentSort.asc ? nA - nB : nB - nA;
+        }
+        if (typeof vA === 'string') {
+          return currentSort.asc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+        }
+        return currentSort.asc ? vA - vB : vB - vA;
+      });
+
+      const tbody = document.getElementById('pbi-table-body');
+      tbody.innerHTML = '';
+
+      filtered.forEach(p => {
+        const tr = document.createElement('tr');
+        
+        let typeBadgeClass = 'badge-enhancement';
+        if (p.type.includes('Defect')) typeBadgeClass = 'badge-defect';
+        else if (p.type.includes('Refactor')) typeBadgeClass = 'badge-refactor';
+        else if (p.type.includes('Test')) typeBadgeClass = 'badge-test';
+
+        let prioBadgeClass = 'badge-p2';
+        if (p.priority === 'P0') prioBadgeClass = 'badge-p0';
+        else if (p.priority === 'P1') prioBadgeClass = 'badge-p1';
+
+        tr.innerHTML = `
+          <td class="col-id">${p.id}</td>
+          <td class="col-title"><a href="#" onclick="openModal('${p.id}'); return false;">${escapeHtml(p.title)}</a></td>
+          <td><span class="badge ${typeBadgeClass}">${p.type.split(' ')[0]}</span></td>
+          <td><span class="badge ${prioBadgeClass}">${p.priority}</span></td>
+          <td><span class="badge badge-domain" style="color:${DOMAIN_COLORS[p.domain] || '#ccc'}">${p.domain}</span></td>
+          <td><span style="font-size:12px; color:var(--text-muted);">${p.root_cause_cat}</span></td>
+          <td style="font-weight:600; text-align:center;">${p.ac_count}</td>
+          <td style="font-size:12px; color:var(--text-sub); white-space:nowrap;">${p.completion_date}</td>
+          <td><button class="btn" style="padding:4px 8px; font-size:11px;" onclick="openModal('${p.id}')">詳細</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Update count
+      document.getElementById('filter-count-label').textContent = `表示中: ${filtered.length} / ${ALL_PBIS.length} 件`;
+      renderActivePills();
+      renderKPICards(filtered);
+    }
+
+    function renderActivePills() {
+      const container = document.getElementById('active-filter-pills');
+      container.innerHTML = '';
+      const keys = [
+        { key: 'search', label: '検索' },
+        { key: 'domain', label: '領域' },
+        { key: 'type', label: '種別' },
+        { key: 'priority', label: '優先度' },
+        { key: 'root_cause', label: '根本原因' }
+      ];
+      keys.forEach(k => {
+        if (currentFilter[k.key]) {
+          const pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.innerHTML = `${k.label}: ${currentFilter[k.key]} <button onclick="clearFilter('${k.key}')">✕</button>`;
+          container.appendChild(pill);
+        }
+      });
+    }
+
+    function renderKPICards(data) {
+      document.getElementById('kpi-total').textContent = data.length;
+      const defects = data.filter(p => p.type.includes('Defect')).length;
+      const enhance = data.filter(p => p.type.includes('Enhancement')).length;
+      const highPrio = data.filter(p => p.priority === 'P0' || p.priority === 'P1').length;
+      const refTest = data.filter(p => p.type.includes('Refactor') || p.type.includes('Test')).length;
+
+      document.getElementById('kpi-defects').textContent = defects;
+      document.getElementById('kpi-defects-pct').textContent = data.length ? `${(defects / data.length * 100).toFixed(1)}%` : '0%';
+      document.getElementById('kpi-enhance').textContent = enhance;
+      document.getElementById('kpi-enhance-pct').textContent = data.length ? `${(enhance / data.length * 100).toFixed(1)}%` : '0%';
+      document.getElementById('kpi-high-prio').textContent = highPrio;
+      document.getElementById('kpi-refactor-test').textContent = refTest;
+    }
+
+    // Interactive SVG Charts
+    function renderCharts() {
+      renderDomainChart();
+      renderTxPChart();
+      renderRootCauseChart();
+      renderTimelineChart();
+    }
+
+    // Chart 1: Domain Horizontal Bar
+    function renderDomainChart() {
+      const counts = {};
+      ALL_PBIS.forEach(p => counts[p.domain] = (counts[p.domain] || 0) + 1);
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      
+      const svg = document.getElementById('chart-domain');
+      svg.innerHTML = '';
+      const maxVal = sorted[0][1];
+      const barHeight = 18;
+      const gap = 6;
+      const startX = 170;
+      const maxBarWidth = 280;
+
+      sorted.forEach(([domain, count], idx) => {
+        const y = idx * (barHeight + gap) + 10;
+        const barWidth = (count / maxVal) * maxBarWidth;
+        const color = DOMAIN_COLORS[domain] || '#71717A';
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.style.cursor = 'pointer';
+        g.onclick = () => filterByDomain(domain);
+
+        // Label
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', startX - 8);
+        text.setAttribute('y', y + barHeight - 4);
+        text.setAttribute('text-anchor', 'end');
+        text.setAttribute('fill', 'var(--text-muted)');
+        text.setAttribute('font-size', '11px');
+        text.textContent = domain;
+        g.appendChild(text);
+
+        // Bar
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', startX);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barWidth);
+        rect.setAttribute('height', barHeight);
+        rect.setAttribute('rx', 4);
+        rect.setAttribute('fill', color);
+        rect.className.baseVal = 'chart-bar';
+        g.appendChild(rect);
+
+        // Value text
+        const valText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        valText.setAttribute('x', startX + barWidth + 8);
+        valText.setAttribute('y', y + barHeight - 4);
+        valText.setAttribute('fill', 'var(--text-primary)');
+        valText.setAttribute('font-size', '11px');
+        valText.setAttribute('font-weight', '600');
+        valText.textContent = `${count} (${(count / ALL_PBIS.length * 100).toFixed(1)}%)`;
+        g.appendChild(valText);
+
+        svg.appendChild(g);
+      });
+      svg.setAttribute('viewBox', `0 0 500 ${sorted.length * (barHeight + gap) + 20}`);
+    }
+
+    // Chart 2: Type x Priority Stacked Bar
+    function renderTxPChart() {
+      const types = ['Defect (不具合修正)', 'Enhancement (機能拡張)', 'Refactor (リファクタリング)', 'Test (テスト強化)'];
+      const data = types.map(t => {
+        const matched = ALL_PBIS.filter(p => p.type.includes(t.split(' ')[0]));
+        return {
+          type: t.split(' ')[0],
+          p0: matched.filter(p => p.priority === 'P0').length,
+          p1: matched.filter(p => p.priority === 'P1').length,
+          p2: matched.filter(p => p.priority === 'P2').length,
+          total: matched.length
+        };
+      });
+
+      const svg = document.getElementById('chart-txp');
+      svg.innerHTML = '';
+      const barHeight = 24;
+      const gap = 16;
+      const startX = 130;
+      const maxWidth = 320;
+      const maxTotal = Math.max(...data.map(d => d.total));
+
+      data.forEach((d, idx) => {
+        const y = idx * (barHeight + gap) + 20;
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+        // Type label
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', startX - 10);
+        text.setAttribute('y', y + barHeight - 6);
+        text.setAttribute('text-anchor', 'end');
+        text.setAttribute('fill', 'var(--text-muted)');
+        text.setAttribute('font-size', '12px');
+        text.setAttribute('font-weight', '500');
+        text.textContent = d.type;
+        g.appendChild(text);
+
+        // Stacked rects: P0, P1, P2
+        let currentX = startX;
+        const segments = [
+          { key: 'P0', count: d.p0, color: 'var(--accent-rose)' },
+          { key: 'P1', count: d.p1, color: 'var(--accent-amber)' },
+          { key: 'P2', count: d.p2, color: 'var(--accent-blue)' }
+        ];
+
+        segments.forEach(seg => {
+          if (seg.count > 0) {
+            const w = (seg.count / maxTotal) * maxWidth;
+            const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            r.setAttribute('x', currentX);
+            r.setAttribute('y', y);
+            r.setAttribute('width', w);
+            r.setAttribute('height', barHeight);
+            r.setAttribute('fill', seg.color);
+            r.className.baseVal = 'chart-bar';
+            r.onmouseenter = (e) => showTooltip(e, `${d.type} [${seg.key}]: ${seg.count}件 (${(seg.count/d.total*100).toFixed(1)}%)`);
+            r.onmouseleave = hideTooltip;
+            r.onclick = () => { filterByType(d.type); filterByPriority(seg.key); };
+            g.appendChild(r);
+            currentX += w;
+          }
+        });
+
+        // Total label
+        const totalText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        totalText.setAttribute('x', currentX + 8);
+        totalText.setAttribute('y', y + barHeight - 6);
+        totalText.setAttribute('fill', 'var(--text-primary)');
+        totalText.setAttribute('font-size', '11px');
+        totalText.setAttribute('font-weight', '600');
+        totalText.textContent = `計 ${d.total}件`;
+        g.appendChild(totalText);
+
+        svg.appendChild(g);
+      });
+      svg.setAttribute('viewBox', `0 0 500 ${data.length * (barHeight + gap) + 40}`);
+    }
+
+    // Chart 3: Root Cause Pareto
+    function renderRootCauseChart() {
+      const counts = {};
+      ALL_PBIS.forEach(p => counts[p.root_cause_cat] = (counts[p.root_cause_cat] || 0) + 1);
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      
+      const total = ALL_PBIS.length;
+      let cum = 0;
+      const paretoData = sorted.map(([rc, c]) => {
+        cum += c;
+        return { rc, count: c, cumPct: (cum / total) * 100 };
+      });
+
+      const svg = document.getElementById('chart-rc');
+      svg.innerHTML = '';
+      const w = 440;
+      const h = 180;
+      const padX = 40;
+      const padY = 20;
+      const barW = (w - padX) / paretoData.length - 8;
+      const maxCount = paretoData[0].count;
+
+      // Draw Bars
+      paretoData.forEach((d, idx) => {
+        const x = padX + idx * (barW + 8);
+        const barH = (d.count / maxCount) * (h - 40);
+        const y = h - barH;
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barW);
+        rect.setAttribute('height', barH);
+        rect.setAttribute('fill', 'var(--accent-purple)');
+        rect.setAttribute('rx', 3);
+        rect.className.baseVal = 'chart-bar';
+        rect.onmouseenter = (e) => showTooltip(e, `${d.rc}: ${d.count}件 (累積 ${d.cumPct.toFixed(1)}%)`);
+        rect.onmouseleave = hideTooltip;
+        rect.onclick = () => filterByRootCause(d.rc);
+        svg.appendChild(rect);
+
+        // Count on top
+        const countTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        countTxt.setAttribute('x', x + barW / 2);
+        countTxt.setAttribute('y', y - 4);
+        countTxt.setAttribute('text-anchor', 'middle');
+        countTxt.setAttribute('fill', 'var(--text-muted)');
+        countTxt.setAttribute('font-size', '10px');
+        countTxt.textContent = d.count;
+        svg.appendChild(countTxt);
+      });
+
+      // Draw Cumulative Line
+      let points = '';
+      paretoData.forEach((d, idx) => {
+        const x = padX + idx * (barW + 8) + barW / 2;
+        const y = h - (d.cumPct / 100) * (h - 30);
+        points += `${x},${y} `;
+      });
+
+      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      polyline.setAttribute('points', points.trim());
+      polyline.setAttribute('fill', 'none');
+      polyline.setAttribute('stroke', 'var(--accent-green)');
+      polyline.setAttribute('stroke-width', '2.5');
+      svg.appendChild(polyline);
+
+      // Points on line
+      paretoData.forEach((d, idx) => {
+        const x = padX + idx * (barW + 8) + barW / 2;
+        const y = h - (d.cumPct / 100) * (h - 30);
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', 3.5);
+        circle.setAttribute('fill', 'var(--accent-green)');
+        circle.setAttribute('stroke', 'var(--surface)');
+        circle.setAttribute('stroke-width', '1.5');
+        circle.style.cursor = 'pointer';
+        circle.onmouseenter = (e) => showTooltip(e, `累積: ${d.cumPct.toFixed(1)}% (${d.rc})`);
+        circle.onmouseleave = hideTooltip;
+        svg.appendChild(circle);
+      });
+
+      svg.setAttribute('viewBox', `0 0 500 210`);
+    }
+
+    // Chart 4: Timeline Phase Burn-up
+    function renderTimelineChart() {
+      const phases = [
+        { name: 'Phase 1\n(MVP・基盤: 〜8/31)', count: 54, cum: 54 },
+        { name: 'Phase 2\n(インフラ・テスト: 9/1〜9/9)', count: 23, cum: 77 },
+        { name: 'Phase 3\n(高度最適化: 9/10〜9/13)', count: 15, cum: 92 }
+      ];
+
+      const svg = document.getElementById('chart-timeline');
+      svg.innerHTML = '';
+      const w = 440;
+      const h = 180;
+      const padX = 60;
+      const barW = 60;
+      const gap = 80;
+
+      phases.forEach((p, idx) => {
+        const x = padX + idx * (barW + gap);
+        const barH = (p.count / 92) * (h - 40);
+        const y = h - barH;
+
+        // Bar (count)
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barW);
+        rect.setAttribute('height', barH);
+        rect.setAttribute('fill', 'var(--accent-cyan)');
+        rect.setAttribute('rx', 4);
+        rect.className.baseVal = 'chart-bar';
+        rect.onmouseenter = (e) => showTooltip(e, `${p.name.replace('\n', ' ')}: ${p.count}件完了 (累積 ${p.cum}件)`);
+        rect.onmouseleave = hideTooltip;
+        svg.appendChild(rect);
+
+        // Bar label
+        const countTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        countTxt.setAttribute('x', x + barW / 2);
+        countTxt.setAttribute('y', y - 6);
+        countTxt.setAttribute('text-anchor', 'middle');
+        countTxt.setAttribute('fill', 'var(--text-primary)');
+        countTxt.setAttribute('font-size', '11px');
+        countTxt.setAttribute('font-weight', '600');
+        countTxt.textContent = `${p.count}件`;
+        svg.appendChild(countTxt);
+
+        // X axis label
+        const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        xLabel.setAttribute('x', x + barW / 2);
+        xLabel.setAttribute('y', h + 18);
+        xLabel.setAttribute('text-anchor', 'middle');
+        xLabel.setAttribute('fill', 'var(--text-muted)');
+        xLabel.setAttribute('font-size', '10px');
+        xLabel.textContent = `P${idx + 1} (${p.count}件)`;
+        svg.appendChild(xLabel);
+      });
+
+      // Cumulative Burn-up Line
+      let points = '';
+      phases.forEach((p, idx) => {
+        const x = padX + idx * (barW + gap) + barW / 2;
+        const y = h - (p.cum / 92) * (h - 30);
+        points += `${x},${y} `;
+      });
+
+      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      polyline.setAttribute('points', points.trim());
+      polyline.setAttribute('fill', 'none');
+      polyline.setAttribute('stroke', 'var(--accent-amber)');
+      polyline.setAttribute('stroke-width', '2.5');
+      svg.appendChild(polyline);
+
+      phases.forEach((p, idx) => {
+        const x = padX + idx * (barW + gap) + barW / 2;
+        const y = h - (p.cum / 92) * (h - 30);
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', x);
+        c.setAttribute('cy', y);
+        c.setAttribute('r', 4);
+        c.setAttribute('fill', 'var(--accent-amber)');
+        c.setAttribute('stroke', 'var(--surface)');
+        c.setAttribute('stroke-width', '2');
+        c.onmouseenter = (e) => showTooltip(e, `累積消化: ${p.cum} / 92件 (${(p.cum/92*100).toFixed(1)}%)`);
+        c.onmouseleave = hideTooltip;
+        svg.appendChild(c);
+      });
+
+      svg.setAttribute('viewBox', `0 0 500 220`);
+    }
+
+    // Tooltip
+    function showTooltip(e, text) {
+      const tt = document.getElementById('chart-tooltip');
+      tt.innerHTML = text;
+      tt.style.display = 'block';
+      tt.style.left = (e.clientX + 12) + 'px';
+      tt.style.top = (e.clientY + 12) + 'px';
+    }
+    function hideTooltip() {
+      document.getElementById('chart-tooltip').style.display = 'none';
+    }
+
+    // Filter Trigger helpers
+    function filterByDomain(domain) {
+      document.getElementById('filter-domain').value = domain;
+      currentFilter.domain = domain;
+      renderTable();
+    }
+    function filterByType(type) {
+      document.getElementById('filter-type').value = type;
+      currentFilter.type = type;
+      renderTable();
+    }
+    function filterByPriority(prio) {
+      document.getElementById('filter-priority').value = prio;
+      currentFilter.priority = prio;
+      renderTable();
+    }
+    function filterByRootCause(rc) {
+      document.getElementById('filter-rootcause').value = rc;
+      currentFilter.root_cause = rc;
+      renderTable();
+    }
+    function clearFilter(key) {
+      currentFilter[key] = '';
+      if (key === 'search') document.getElementById('filter-search').value = '';
+      if (key === 'domain') document.getElementById('filter-domain').value = '';
+      if (key === 'type') document.getElementById('filter-type').value = '';
+      if (key === 'priority') document.getElementById('filter-priority').value = '';
+      if (key === 'root_cause') document.getElementById('filter-rootcause').value = '';
+      renderTable();
+    }
+
+    // Modal
+    function openModal(id) {
+      const p = ALL_PBIS.find(item => item.id === id);
+      if (!p) return;
+      document.getElementById('modal-title').textContent = `${p.id}: ${p.title}`;
+      
+      const badges = document.getElementById('modal-badges');
+      badges.innerHTML = `
+        <span class="badge badge-domain">${p.domain}</span>
+        <span class="badge badge-p1">${p.priority}</span>
+        <span class="badge badge-enhancement">${p.type}</span>
+        <span class="badge badge-domain">受入基準: AC 1〜${p.ac_count}</span>
+        <span class="badge badge-domain">完了日: ${p.completion_date}</span>
+      `;
+
+      document.getElementById('modal-surface').textContent = p.surface || '(Surface記述なし)';
+      document.getElementById('modal-rootcause').textContent = `${p.root_cause_cat}\n\n${p.root_cause_raw || ''}`;
+      
+      const linkBtn = document.getElementById('modal-link');
+      if (p.url) {
+        linkBtn.href = p.url;
+        linkBtn.style.display = 'inline-flex';
+      } else {
+        linkBtn.style.display = 'none';
+      }
+
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+
+    function closeModal(e) {
+      if (!e || e.target.id === 'modal-backdrop' || e.target.classList.contains('modal-close')) {
+        document.getElementById('modal-backdrop').classList.remove('open');
+      }
+    }
+
+    // Table Sorting
+    function sortTable(column) {
+      if (currentSort.column === column) {
+        currentSort.asc = !currentSort.asc;
+      } else {
+        currentSort.column = column;
+        currentSort.asc = true;
+      }
+      document.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '↕');
+      document.getElementById(`sort-${column}`).textContent = currentSort.asc ? '↑' : '↓';
+      renderTable();
+    }
+
+    // Export CSV
+    function exportCSV() {
+      const filtered = getFilteredData();
+      const headers = ['PBI ID', 'Title', 'Type', 'Priority', 'Domain', 'Root Cause Category', 'AC Count', 'Completion Date', 'Document Link'];
+      const csvRows = [headers.join(',')];
+
+      filtered.forEach(p => {
+        const row = [
+          `"${p.id}"`,
+          `"${p.title.replace(/"/g, '""')}"`,
+          `"${p.type}"`,
+          `"${p.priority}"`,
+          `"${p.domain}"`,
+          `"${p.root_cause_cat}"`,
+          p.ac_count,
+          `"${p.completion_date}"`,
+          `"${p.url || ''}"`
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'prompt_surgeon_pbi_filtered.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Event Listeners
+    window.addEventListener('DOMContentLoaded', () => {
+      initDropdowns();
+      renderCharts();
+      renderTable();
+
+      document.getElementById('filter-search').addEventListener('input', e => {
+        currentFilter.search = e.target.value;
+        renderTable();
+      });
+      document.getElementById('filter-domain').addEventListener('change', e => {
+        currentFilter.domain = e.target.value;
+        renderTable();
+      });
+      document.getElementById('filter-type').addEventListener('change', e => {
+        currentFilter.type = e.target.value;
+        renderTable();
+      });
+      document.getElementById('filter-priority').addEventListener('change', e => {
+        currentFilter.priority = e.target.value;
+        renderTable();
+      });
+      document.getElementById('filter-rootcause').addEventListener('change', e => {
+        currentFilter.root_cause = e.target.value;
+        renderTable();
+      });
+      document.getElementById('btn-reset-filters').addEventListener('click', () => {
+        currentFilter = { search: '', domain: '', type: '', priority: '', root_cause: '' };
+        document.getElementById('filter-search').value = '';
+        document.getElementById('filter-domain').value = '';
+        document.getElementById('filter-type').value = '';
+        document.getElementById('filter-priority').value = '';
+        document.getElementById('filter-rootcause').value = '';
+        renderTable();
+      });
+      document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
+    });
+  </script>
+</body>
+</html>
