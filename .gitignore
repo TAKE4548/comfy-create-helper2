@@ -138,10 +138,13 @@ Thumbs.db
 
 # App databases and snapshots
 db/snapshots/
+db/thumbnails/
+*.bak
 *.db.bak
 *.db-journal
 db/prompt_surgeon.db
 brain/
+scratch/
 .vite/
 logs/
 
