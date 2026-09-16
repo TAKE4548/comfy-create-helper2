@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
+import server_status
 
 # pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
 if sys.stdout is None:
@@ -30,12 +31,11 @@ _status_lock = threading.Lock()
 _last_status_cache = None
 _last_status_time = 0.0
 
+
+# 後方互換性エイリアス: server_status.check_port_listening に委譲
 def check_port_listening(port: int, timeout: float = 0.5) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
-            return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
-        return False
+    return server_status.check_port_listening(port, timeout)
+
 
 def read_log_file(filename: str, tail_lines: int = 200) -> tuple[bool, str, int]:
     target = LOGS_DIR / filename
@@ -520,77 +520,11 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                     self._send_json(_last_status_cache)
                     return
 
-                try:
-                    res = subprocess.run(
-                        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", "status", "-Json"],
-                        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=6
-                    )
-                    data = json.loads(res.stdout.strip() or "{}")
-                    _last_status_cache = data
-                    _last_status_time = time.time()
-                    self._send_json(data)
-                except subprocess.TimeoutExpired:
-                    # 応答遅延プロセスの残留防止とソケットフォールバック
-                    fe_port = 5173
-                    be_port = 8000
-                    comfy_port = 8188
-                    try:
-                        if CONFIG_FILE.exists():
-                            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                                cfg = json.load(f)
-                                fe_port = cfg.get("frontend", {}).get("port", 5173)
-                                be_port = cfg.get("backend", {}).get("port", 8000)
-                                comfy_port = cfg.get("wsl", {}).get("port", 8188)
-                    except Exception:
-                        pass
+                data = server_status.get_server_status(CONFIG_FILE)
+                _last_status_cache = data
+                _last_status_time = time.time()
+                self._send_json(data)
 
-                    fe_running = check_port_listening(fe_port)
-                    be_running = check_port_listening(be_port)
-                    dist_index = SCRIPT_DIR.parent.parent / "frontend" / "dist" / "index.html"
-                    is_bundled = dist_index.exists()
-
-                    if fe_running:
-                        fe_status = "LISTEN"
-                        fe_name = "React FE (Dev: 5173)"
-                        fe_is_running = True
-                    elif is_bundled:
-                        fe_status = "BUNDLED"
-                        fe_name = "React FE (Bundled on 8000)"
-                        fe_is_running = be_running
-                    else:
-                        fe_status = "STOPPED"
-                        fe_name = "React FE"
-                        fe_is_running = False
-
-                    fallback_status = {
-                        "fe": {
-                            "name": fe_name,
-                            "port": fe_port,
-                            "running": fe_is_running,
-                            "status": fe_status,
-                            "pids": []
-                        },
-                        "be": {
-                            "name": "Win BE",
-                            "port": be_port,
-                            "running": be_running,
-                            "status": "LISTEN" if be_running else "STOPPED",
-                            "pids": []
-                        },
-                        "comfy": {
-                            "name": "WSL ComfyUI",
-                            "port": comfy_port,
-                            "running": False,
-                            "status": "TIMEOUT",
-                            "pids": [],
-                            "error": "PowerShell / WSL 応答タイムアウト"
-                        }
-                    }
-                    _last_status_cache = fallback_status
-                    _last_status_time = time.time()
-                    self._send_json(fallback_status, status=200)
-                except Exception:
-                    self._send_json({"error": "Failed to parse status", "raw": getattr(res, "stdout", ""), "stderr": getattr(res, "stderr", "")}, status=500)
         elif self.path == "/api/config":
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:

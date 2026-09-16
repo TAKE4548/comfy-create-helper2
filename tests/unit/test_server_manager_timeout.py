@@ -36,7 +36,26 @@ def test_check_port_listening():
     assert server_api.check_port_listening(port, timeout=0.1) is False
 
 
-def test_api_status_powershell_timeout():
+
+def _make_status_bundled(be_running=True):
+    """Helper: return a get_server_status result in BUNDLED mode."""
+    return {
+        "fe": {"name": "React FE (Bundled on 8000)", "port": 5173,
+               "running": be_running, "status": "BUNDLED", "pids": []},
+        "be": {"name": "Win BE", "port": 8000,
+               "running": be_running, "status": "LISTEN" if be_running else "STOPPED", "pids": []},
+        "comfy": {"name": "WSL ComfyUI", "port": 8188,
+                  "running": False, "status": "STOPPED", "pids": []},
+    }
+
+
+def test_api_status_bundled_mode():
+    """
+    REQ-262 BUNDLED mode: when backend is running and frontend is bundled,
+    fe.running should equal be.running (True) and fe.status == "BUNDLED".
+    """
+    import server_status as ss
+
     handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
     handler.path = "/api/status"
     sent_responses = []
@@ -46,38 +65,54 @@ def test_api_status_powershell_timeout():
 
     handler._send_json = fake_send_json
 
-    # Mock subprocess.run raising TimeoutExpired
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=6)):
-        # Also mock check_port_listening to return True for FE/BE and False for Comfy
-        def fake_check_port(port, timeout=0.5):
-            if port == 8000:
-                return True
-            if port == 5173:
-                return False
-            return False
-
-        with patch.object(server_api, "check_port_listening", side_effect=fake_check_port):
-            # Reset cache if any
-            server_api._last_status_cache = None
-            server_api._last_status_time = 0.0
-
-            handler.do_GET()
+    with patch.object(ss, "get_server_status", return_value=_make_status_bundled(be_running=True)):
+        server_api._last_status_cache = None
+        server_api._last_status_time = 0.0
+        handler.do_GET()
 
     assert len(sent_responses) == 1
     data, status_code = sent_responses[0]
     assert status_code == 200
-    assert "fe" in data
-    assert "be" in data
-    assert "comfy" in data
-
-    assert data["comfy"]["status"] == "TIMEOUT"
-    assert data["comfy"]["running"] is False
-    assert "タイムアウト" in data["comfy"].get("error", "")
-
+    assert data["fe"]["status"] == "BUNDLED"
+    assert data["fe"]["running"] is True      # inherits be_running=True
     assert data["be"]["running"] is True
     assert data["be"]["status"] == "LISTEN"
+
+
+def test_api_status_standalone_mode():
+    """
+    Standalone (non-BUNDLED) mode: all services stopped.
+    fe.running should be False and fe.status == "STOPPED".
+    """
+    import server_status as ss
+
+    handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
+    handler.path = "/api/status"
+    sent_responses = []
+
+    def fake_send_json(data, status=200):
+        sent_responses.append((data, status))
+
+    handler._send_json = fake_send_json
+
+    stopped_status = {
+        "fe": {"name": "React FE", "port": 5173, "running": False, "status": "STOPPED", "pids": []},
+        "be": {"name": "Win BE", "port": 8000, "running": False, "status": "STOPPED", "pids": []},
+        "comfy": {"name": "WSL ComfyUI", "port": 8188, "running": False, "status": "STOPPED", "pids": []},
+    }
+
+    with patch.object(ss, "get_server_status", return_value=stopped_status):
+        server_api._last_status_cache = None
+        server_api._last_status_time = 0.0
+        handler.do_GET()
+
+    assert len(sent_responses) == 1
+    data, status_code = sent_responses[0]
+    assert status_code == 200
     assert data["fe"]["running"] is False
     assert data["fe"]["status"] == "STOPPED"
+
+
 
 
 def test_api_action_timeout():
@@ -105,29 +140,32 @@ def test_api_action_timeout():
 
 
 def test_status_concurrency_lock():
-    # Test that concurrent requests do not spawn multiple concurrent powershell processes
-    # and either use cache or wait on the lock
-    concurrent_calls = 0
-    max_concurrent_calls = 0
+    """
+    Concurrent requests should not invoke get_server_status more than once
+    within the 2-second cache window; the lock prevents parallel calls.
+    """
+    import server_status as ss
+
+    call_count = 0
+    max_concurrent = 0
+    concurrent_now = 0
     lock = threading.Lock()
 
-    def fake_run(*args, **kwargs):
-        nonlocal concurrent_calls, max_concurrent_calls
+    def fake_get_status(*args, **kwargs):
+        nonlocal call_count, max_concurrent, concurrent_now
         with lock:
-            concurrent_calls += 1
-            if concurrent_calls > max_concurrent_calls:
-                max_concurrent_calls = concurrent_calls
+            concurrent_now += 1
+            if concurrent_now > max_concurrent:
+                max_concurrent = concurrent_now
+            call_count += 1
         time.sleep(0.05)
         with lock:
-            concurrent_calls -= 1
-        res = MagicMock()
-        res.stdout = json.dumps({
+            concurrent_now -= 1
+        return {
             "fe": {"name": "React FE", "port": 5173, "running": False, "status": "STOPPED", "pids": []},
-            "be": {"name": "Win BE", "port": 8000, "running": True, "status": "LISTEN", "pids": [1234]},
-            "comfy": {"name": "WSL ComfyUI", "port": 8188, "running": True, "status": "LISTEN", "pids": [5678]}
-        })
-        res.stderr = ""
-        return res
+            "be": {"name": "Win BE", "port": 8000, "running": True, "status": "LISTEN", "pids": []},
+            "comfy": {"name": "WSL ComfyUI", "port": 8188, "running": True, "status": "LISTEN", "pids": []},
+        }
 
     server_api._last_status_cache = None
     server_api._last_status_time = 0.0
@@ -146,7 +184,7 @@ def test_status_concurrency_lock():
         except Exception as e:
             errors.append(str(e))
 
-    with patch("subprocess.run", side_effect=fake_run):
+    with patch.object(ss, "get_server_status", side_effect=fake_get_status):
         threads = [threading.Thread(target=worker) for _ in range(5)]
         for t in threads:
             t.start()
@@ -154,4 +192,5 @@ def test_status_concurrency_lock():
             t.join()
 
     assert len(errors) == 0
-    assert max_concurrent_calls <= 1
+    assert max_concurrent <= 1
+

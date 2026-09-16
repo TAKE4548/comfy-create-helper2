@@ -8,24 +8,21 @@ param (
 
 $SCRIPT_DIR = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { Split-Path -Parent (Resolve-Path $MyInvocation.MyCommand.Definition).Path }
 $CONFIG_PATH = Join-Path $SCRIPT_DIR "config.json"
-if (-not (Test-Path $CONFIG_PATH)) {
-    Write-Error "Config file not found: $CONFIG_PATH"
-    return
-}
+if (-not (Test-Path $CONFIG_PATH)) { Write-Error "Config file not found: $CONFIG_PATH"; return }
 
 $cfg = Get-Content $CONFIG_PATH -Raw -Encoding UTF8 | ConvertFrom-Json
 $LOGS_DIR = Join-Path $SCRIPT_DIR $cfg.logs_dir
-if (-not (Test-Path $LOGS_DIR)) {
-    New-Item -ItemType Directory -Path $LOGS_DIR | Out-Null
-}
+if (-not (Test-Path $LOGS_DIR)) { New-Item -ItemType Directory -Path $LOGS_DIR | Out-Null }
 
 $script:lastWslTimedOut = $false
 
-function Invoke-ProcessWithTimeout (
-    [string]$filePath,
-    [string]$arguments,
-    [int]$timeoutSec = 3
-) {
+function Get-WslDistroPrefix {
+    if ($cfg.wsl.distro -and ($cfg.wsl.distro.ToString().Trim() -ne "")) { return "-d $($cfg.wsl.distro.ToString().Trim()) " }
+    return ""
+}
+
+# REQ-257: Process timeout defense (3s force-kill)
+function Invoke-ProcessWithTimeout ([string]$filePath, [string]$arguments, [int]$timeoutSec = 3) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $filePath
     $psi.Arguments = $arguments
@@ -33,24 +30,20 @@ function Invoke-ProcessWithTimeout (
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
     try {
         if (-not $proc.Start()) {
-            return [PSCustomObject]@{ ExitCode = -1; StdOut = ""; StdErr = "Failed to start process"; TimedOut = $false }
+            return [PSCustomObject]@{
+                ExitCode = -1; StdOut = ""; StdErr = "Failed to start process"; TimedOut = $false
+            }
         }
         $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
         $stderrTask = $proc.StandardError.ReadToEndAsync()
-
         if ($proc.WaitForExit($timeoutSec * 1000)) {
-            $stdoutTask.Wait()
-            $stderrTask.Wait()
+            $stdoutTask.Wait(); $stderrTask.Wait()
             return [PSCustomObject]@{
-                ExitCode = $proc.ExitCode
-                StdOut = $stdoutTask.Result
-                StdErr = $stderrTask.Result
-                TimedOut = $false
+                ExitCode = $proc.ExitCode; StdOut = $stdoutTask.Result; StdErr = $stderrTask.Result; TimedOut = $false
             }
         } else {
             try {
@@ -58,18 +51,12 @@ function Invoke-ProcessWithTimeout (
                 $proc.Kill()
             } catch {}
             return [PSCustomObject]@{
-                ExitCode = -1
-                StdOut = ""
-                StdErr = "Command timed out after ${timeoutSec}s"
-                TimedOut = $true
+                ExitCode = -1; StdOut = ""; StdErr = "Command timed out after ${timeoutSec}s"; TimedOut = $true
             }
         }
     } catch {
         return [PSCustomObject]@{
-            ExitCode = -1
-            StdOut = ""
-            StdErr = $_.Exception.Message
-            TimedOut = $false
+            ExitCode = -1; StdOut = ""; StdErr = $_.Exception.Message; TimedOut = $false
         }
     } finally {
         $proc.Dispose()
@@ -77,431 +64,167 @@ function Invoke-ProcessWithTimeout (
 }
 
 function Invoke-WslWithTimeout ([string]$bashCommand, [int]$timeoutSec = 3) {
-    $wslPrefix = Get-WslDistroPrefix
-    $args = "$($wslPrefix)bash -c `"$bashCommand`""
-    $res = Invoke-ProcessWithTimeout "wsl.exe" $args $timeoutSec
-    if ($res.TimedOut) {
-        $script:lastWslTimedOut = $true
-    }
+    $prefix = Get-WslDistroPrefix
+    $res = Invoke-ProcessWithTimeout "wsl.exe" "$($prefix)bash -c `"$bashCommand`"" $timeoutSec
+    if ($res.TimedOut) { $script:lastWslTimedOut = $true }
     return $res
+}
+
+function Test-WslAvailability {
+    $res = Invoke-WslWithTimeout "echo OK" 3
+    if ($res.TimedOut -or $res.ExitCode -ne 0 -or ($res.StdOut -notmatch "OK")) {
+        $prefix = Get-WslDistroPrefix
+        $target = if ($prefix -ne "") { "WSL distribution '$($cfg.wsl.distro)'" } else { "Default WSL distribution" }
+        Write-Host "[ERROR] $target was not found, timed out, or is unavailable." -ForegroundColor Red
+        Write-Host "        Hint: Run 'wsl -l -v' to check installed distributions." -ForegroundColor Yellow
+        return $false
+    }
+    return $true
 }
 
 function Start-ProcessNoWindow ([string]$filePath, [string]$arguments, [string]$workingDirectory = "") {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $filePath
     $psi.Arguments = $arguments
-    if ($workingDirectory) {
-        $psi.WorkingDirectory = $workingDirectory
-    }
+    if ($workingDirectory) { $psi.WorkingDirectory = $workingDirectory }
     $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
     $psi.CreateNoWindow = $true
     $psi.UseShellExecute = $false
     return [System.Diagnostics.Process]::Start($psi)
 }
 
-function Test-PortConnect ([string]$targetHost = "127.0.0.1", [int]$port, [int]$timeoutMs = 500) {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    try {
-        $ar = $tcp.BeginConnect($targetHost, $port, $null, $null)
-        $wait = $ar.AsyncWaitHandle.WaitOne($timeoutMs, $false)
-        if (-not $wait) {
-            return $false
-        }
-        $tcp.EndConnect($ar)
-        return $true
-    } catch {
-        return $false
-    } finally {
-        $tcp.Close()
-        $tcp.Dispose()
-    }
-}
-
 function Test-PortOpen ([int]$port) {
     $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq "Listen"
-    if ($null -ne $conn) {
-        return $true
-    }
-    return (Test-PortConnect -targetHost "127.0.0.1" -port $port -timeoutMs 500)
-}
-
-
-
-function Get-PidsFromPort ([int]$port) {
-    $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq "Listen"
-    if ($conns) {
-        $pids = @($conns | Select-Object -ExpandProperty OwningProcess -Unique)
-        return ,@($pids)
-    }
-    return ,@()
-}
-
-function Get-ServiceWaitConfig ([string]$serviceKey) {
-    $defaultTimeout = 15
-    $defaultRetryCount = 2
-    $defaultRetryInterval = 1
-
-    if ($cfg.port_wait) {
-        if ($null -ne $cfg.port_wait.default_timeout_sec) { $defaultTimeout = [int]$cfg.port_wait.default_timeout_sec }
-        if ($null -ne $cfg.port_wait.default_retry_count) { $defaultRetryCount = [int]$cfg.port_wait.default_retry_count }
-        if ($null -ne $cfg.port_wait.default_retry_interval_sec) { $defaultRetryInterval = [int]$cfg.port_wait.default_retry_interval_sec }
-    }
-
-    if ($serviceKey.ToLower() -eq "comfy" -or $serviceKey.ToLower() -eq "wsl") {
-        $svc = $cfg.wsl
-        $fallbackTimeout = 30
-        $fallbackRetry = 3
-        $fallbackInterval = 2
-    } elseif ($serviceKey.ToLower() -eq "backend") {
-        $svc = $cfg.backend
-        $fallbackTimeout = $defaultTimeout
-        $fallbackRetry = $defaultRetryCount
-        $fallbackInterval = $defaultRetryInterval
-    } elseif ($serviceKey.ToLower() -eq "frontend") {
-        $svc = $cfg.frontend
-        $fallbackTimeout = $defaultTimeout
-        $fallbackRetry = $defaultRetryCount
-        $fallbackInterval = $defaultRetryInterval
-    } else {
-        $svc = $null
-        $fallbackTimeout = $defaultTimeout
-        $fallbackRetry = $defaultRetryCount
-        $fallbackInterval = $defaultRetryInterval
-    }
-
-    $timeout = $fallbackTimeout
-    $retry = $fallbackRetry
-    $interval = $fallbackInterval
-
-    if ($svc) {
-        if ($null -ne $svc.wait_timeout_sec) { $timeout = [int]$svc.wait_timeout_sec }
-        if ($null -ne $svc.retry_count) { $retry = [int]$svc.retry_count }
-        if ($null -ne $svc.retry_interval_sec) { $interval = [int]$svc.retry_interval_sec }
-    }
-
-    return [PSCustomObject]@{
-        timeoutSec = $timeout
-        retryCount = $retry
-        retryIntervalSec = $interval
-    }
-}
-
-function Wait-For-Port ([int]$port, [int]$timeoutSec = 15, [int]$retryCount = 0, [int]$retryIntervalSec = 1, [string]$serviceName = "") {
-    $totalAttempts = 1 + [Math]::Max(0, $retryCount)
-    $namePrefix = if ($serviceName) { "[$serviceName] " } else { "" }
-
-    for ($attempt = 1; $attempt -le $totalAttempts; $attempt++) {
-        $elapsed = 0
-        while ($elapsed -lt $timeoutSec) {
-            if (Test-PortOpen $port) {
-                return $true
-            }
-            Start-Sleep -Seconds 1
-            $elapsed++
-        }
-
-        if (Test-PortOpen $port) {
-            return $true
-        }
-
-        if ($attempt -lt $totalAttempts) {
-            Write-Host "${namePrefix}Port $port not open yet after ${timeoutSec}s. Retrying ($attempt/$retryCount) in ${retryIntervalSec}s..." -ForegroundColor Yellow
-            Start-Sleep -Seconds $retryIntervalSec
-        }
-    }
-
-    Write-Host "${namePrefix}Failed to open port $port after $totalAttempts attempt(s) (timeout: ${timeoutSec}s each)." -ForegroundColor Red
-    return $false
-}
-
-function Wait-For-Port-Closed ([int]$port, [int]$timeoutSec = 10, [string]$serviceName = "") {
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $timeoutMs = $timeoutSec * 1000
-    $namePrefix = if ($serviceName) { "[$serviceName] " } else { "" }
-
-    while ($sw.ElapsedMilliseconds -lt $timeoutMs) {
-        if (-not (Test-PortOpen $port)) {
-            $sw.Stop()
-            return $true
-        }
-        Start-Sleep -Milliseconds 500
-    }
-    $sw.Stop()
-    Write-Host "${namePrefix}Port $port did not close within ${timeoutSec}s." -ForegroundColor Yellow
-    return $false
-}
-
-
-function Wait-For-Service ([string]$serviceKey, [string]$displayName = "") {
-    $key = $serviceKey.ToLower()
-    $port = 0
-    $name = if ($displayName) { $displayName } else { $serviceKey }
-
-    if ($key -eq "comfy" -or $key -eq "wsl") {
-        $port = [int]$cfg.wsl.port
-        if (-not $displayName) { $name = "WSL ComfyUI" }
-    } elseif ($key -eq "backend") {
-        $port = [int]$cfg.backend.port
-        if (-not $displayName) { $name = "Backend" }
-    } elseif ($key -eq "frontend") {
-        $port = [int]$cfg.frontend.port
-        if (-not $displayName) { $name = "Frontend" }
-    } else {
-        Write-Host "Unknown service for wait: $serviceKey" -ForegroundColor Red
-        return $false
-    }
-
-    $waitCfg = Get-ServiceWaitConfig $key
-    return Wait-For-Port -port $port -timeoutSec $waitCfg.timeoutSec -retryCount $waitCfg.retryCount -retryIntervalSec $waitCfg.retryIntervalSec -serviceName $name
+    if ($null -ne $conn) { return $true }
+    $tcp = New-Object System.Net.Sockets.TcpClient
+    try {
+        $ar = $tcp.BeginConnect("127.0.0.1", $port, $null, $null)
+        $ok = $ar.AsyncWaitHandle.WaitOne(500, $false)
+        if ($ok) { $tcp.EndConnect($ar) }
+        return $ok
+    } catch { return $false } finally { $tcp.Close(); $tcp.Dispose() }
 }
 
 function Stop-PortProcesses ([int]$port, [string]$name) {
-    $pids = Get-PidsFromPort $port
-    foreach ($p in $pids) {
-        try {
-            # taskkill /T /F によりプロセスおよび配下の子プロセスツリー（cmd, node, esbuild等）を一括強制終了
-            & taskkill.exe /PID $p /T /F 2>$null
-            Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
-        } catch {}
+    $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object State -eq "Listen"
+    foreach ($p in @($conns | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        try { & taskkill.exe /PID $p /T /F 2>$null; Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } catch {}
     }
 }
 
-function Get-WslComfyPids {
-    try {
-        $res = Invoke-WslWithTimeout "pgrep -f 'python.*main.py'" 3
-        if ($res.TimedOut) {
-            $script:lastWslTimedOut = $true
-            return ,@()
-        }
-        if ($res.ExitCode -eq 0 -and $res.StdOut) {
-            $pids = @()
-            foreach ($line in ($res.StdOut -split "`r?`n")) {
-                $trimmed = $line.Trim()
-                if ($trimmed -match '^\d+$') {
-                    $pids += [int]$trimmed
-                }
-            }
-            if ($pids.Count -gt 0) {
-                return ,@($pids)
-            }
-        }
-    } catch {}
-    return ,@()
-}
-
+# REQ-262: BUNDLED mode detection (frontend/dist/index.html exists)
 function Test-FrontendBundled {
     $feDistIndex = Join-Path $SCRIPT_DIR "../../frontend/dist/index.html"
     return (Test-Path $feDistIndex)
 }
 
+# Get server status - delegates to server_status.py (Python-native), fallback to local port check
 function Get-StatusObject {
-    $fePids = Get-PidsFromPort $cfg.frontend.port
-    $bePids = Get-PidsFromPort $cfg.backend.port
-    $comfyPids = Get-PidsFromPort $cfg.wsl.port
-
+    $pyScript = Join-Path $SCRIPT_DIR "server_status.py"
+    if (Test-Path $pyScript) {
+        try {
+            $res = Invoke-ProcessWithTimeout "python" "`"$pyScript`" --json" 5
+            if ($res.ExitCode -eq 0 -and $res.StdOut.Trim()) { return ($res.StdOut | ConvertFrom-Json) }
+        } catch {}
+    }
+    # Fallback: local port check
+    $feOpen = Test-PortOpen $cfg.frontend.port
+    $beOpen = Test-PortOpen $cfg.backend.port
     $comfyOpen = Test-PortOpen $cfg.wsl.port
-    if ($comfyPids.Count -eq 0 -and $comfyOpen) {
-        $wslPids = Get-WslComfyPids
-        if ($wslPids.Count -gt 0) {
-            $comfyPids = $wslPids
-        }
-    }
-
-    $feRunning = ($fePids.Count -gt 0)
-    $beRunning = ($bePids.Count -gt 0)
     $isBundled = Test-FrontendBundled
-
-    $feStatus = "STOPPED"
-    $feName = "React FE"
-    $feIsRunning = $false
-
-    if ($feRunning) {
-        $feStatus = "LISTEN"
-        $feName = "React FE (Dev: 5173)"
-        $feIsRunning = $true
-    } elseif ($isBundled) {
-        $feStatus = "BUNDLED"
-        $feName = "React FE (Bundled on 8000)"
-        $feIsRunning = $beRunning
-    } else {
-        $feStatus = "STOPPED"
-        $feName = "React FE"
-        $feIsRunning = $false
-    }
-
-    $comfyStatus = if ($script:lastWslTimedOut) {
-        "TIMEOUT"
-    } elseif ($comfyOpen -or ($comfyPids.Count -gt 0)) {
-        "LISTEN"
-    } else {
-        "STOPPED"
-    }
-
-    $comfyRunning = ($comfyStatus -eq "LISTEN")
-
-    $comfyObj = [PSCustomObject]@{
-        name = "WSL ComfyUI"
-        port = $cfg.wsl.port
-        running = $comfyRunning
-        status = $comfyStatus
-        pids = $comfyPids
-    }
-    if ($script:lastWslTimedOut) {
-        $comfyObj | Add-Member -NotePropertyName "error" -NotePropertyValue "WSL応答タイムアウト / WSL timeout (3s)"
-    }
-
+    $feStatus = if ($feOpen) { "LISTEN" } elseif ($isBundled) { "BUNDLED" } else { "STOPPED" }
+    $feName = if ($feOpen) { "React FE (Dev: 5173)" } elseif ($isBundled) { "React FE (Bundled on 8000)" } else { "React FE" }
     return [PSCustomObject]@{
-        fe = [PSCustomObject]@{
-            name = $feName
-            port = $cfg.frontend.port
-            running = $feIsRunning
-            status = $feStatus
-            pids = $fePids
-        }
-        be = [PSCustomObject]@{
-            name = "Win BE"
-            port = $cfg.backend.port
-            running = $beRunning
-            status = if ($beRunning) { "LISTEN" } else { "STOPPED" }
-            pids = $bePids
-        }
-        comfy = $comfyObj
+        fe    = [PSCustomObject]@{ name = $feName; port = $cfg.frontend.port; running = ($feOpen -or ($isBundled -and $beOpen)); status = $feStatus; pids = @() }
+        be    = [PSCustomObject]@{ name = "Win BE"; port = $cfg.backend.port; running = $beOpen; status = if ($beOpen) { "LISTEN" } else { "STOPPED" }; pids = @() }
+        comfy = [PSCustomObject]@{ name = "WSL ComfyUI"; port = $cfg.wsl.port; running = $comfyOpen; status = if ($comfyOpen) { "LISTEN" } else { "STOPPED" }; pids = @() }
     }
 }
 
-
 function Show-Status {
-    $statusObj = Get-StatusObject
+    $st = Get-StatusObject
     if ($Json) {
-        $statusObj | ConvertTo-Json -Depth 5
+        $st | ConvertTo-Json -Depth 5
     } else {
         Write-Host "=================================================" -ForegroundColor Cyan
         Write-Host "  Prompt Surgeon & ComfyUI Server Status" -ForegroundColor Cyan
         Write-Host "=================================================" -ForegroundColor Cyan
-        foreach ($prop in $statusObj.PSObject.Properties) {
+        foreach ($prop in $st.PSObject.Properties) {
             $item = $prop.Value
             $col = if ($item.running) { "Green" } else { "Red" }
-            $pidsStr = if ($item.pids.Count -gt 0) { " (PID: $($item.pids -join ', '))" } else { "" }
-            Write-Host ("  [{0,-7}] {1,-15} : Port {2}{3}" -f $item.status, $item.name, $item.port, $pidsStr) -ForegroundColor $col
+            Write-Host ("  [{0,-7}] {1,-30} : Port {2}" -f $item.status, $item.name, $item.port) -ForegroundColor $col
         }
         Write-Host "=================================================" -ForegroundColor Cyan
     }
 }
 
-function Get-WslDistroPrefix {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param()
-
-    # 空文字または未定義の場合は "" を返し、-d を付与せずWSLの既定ディストリビューションを使用する
-    if ($cfg.wsl.distro -and ($cfg.wsl.distro.ToString().Trim() -ne "")) {
-        return "-d $($cfg.wsl.distro.ToString().Trim()) "
+function Wait-For-Port ([int]$port, [int]$timeoutSec = 15, [string]$serviceName = "") {
+    $elapsed = 0
+    $prefix = if ($serviceName) { "[$serviceName] " } else { "" }
+    while ($elapsed -lt $timeoutSec) {
+        if (Test-PortOpen $port) { return $true }
+        Start-Sleep -Seconds 1; $elapsed++
     }
-    return ""
+    Write-Host "${prefix}Port $port not open after ${timeoutSec}s." -ForegroundColor Red
+    return $false
 }
 
-function Test-WslAvailability {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param()
-
-    $res = Invoke-WslWithTimeout "echo OK" 3
-    if ($res.TimedOut -or $res.ExitCode -ne 0 -or ($res.StdOut -notmatch "OK")) {
-        $prefix = Get-WslDistroPrefix
-        $target = if ($prefix -ne "") { "WSL distribution '$($cfg.wsl.distro)'" } else { "Default WSL distribution" }
-        Write-Host "[ERROR] $target was not found, timed out, or is unavailable." -ForegroundColor Red
-        Write-Host "        Hint: Run 'wsl -l -v' to check installed distributions, or set distro to `"`" in config.json to use the default." -ForegroundColor Yellow
-        return $false
+function Wait-For-Port-Closed ([int]$port, [int]$timeoutSec = 10, [string]$serviceName = "") {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $prefix = if ($serviceName) { "[$serviceName] " } else { "" }
+    while ($sw.ElapsedMilliseconds -lt ($timeoutSec * 1000)) {
+        if (-not (Test-PortOpen $port)) { $sw.Stop(); return $true }
+        Start-Sleep -Milliseconds 500
     }
-    return $true
+    $sw.Stop()
+    Write-Host "${prefix}Port $port did not close within ${timeoutSec}s." -ForegroundColor Yellow
+    return $false
 }
 
 function Start-ComfyUIProcess ([bool]$asBackground) {
-    if (Test-PortOpen $cfg.wsl.port) {
-        Write-Host "ComfyUI is already running on port $($cfg.wsl.port)." -ForegroundColor Yellow
-        return
-    }
-
-    if (-not (Test-WslAvailability)) {
-        return
-    }
-
+    if (Test-PortOpen $cfg.wsl.port) { Write-Host "ComfyUI is already running on port $($cfg.wsl.port)." -ForegroundColor Yellow; return }
+    if (-not (Test-WslAvailability)) { return }
     $wslPrefix = Get-WslDistroPrefix
     $cmdStr = "cd $($cfg.wsl.project_dir) && if [ -f '$($cfg.wsl.venv_activate)' ]; then source $($cfg.wsl.venv_activate); fi && cd $($cfg.wsl.comfy_dir) && export PYTORCH_HIP_ALLOC_CONF='$($cfg.wsl.env_vars.PYTORCH_HIP_ALLOC_CONF)' && $($cfg.wsl.start_command)"
-
     if ($asBackground) {
-        $logFile = Join-Path $LOGS_DIR "comfy.log"
-        Start-ProcessNoWindow "cmd.exe" "/c wsl $($wslPrefix)bash -c `"$cmdStr`" > `"$logFile`" 2>&1"
+        Start-ProcessNoWindow "cmd.exe" "/c wsl $($wslPrefix)bash -c `"$cmdStr`" > `"$(Join-Path $LOGS_DIR 'comfy.log')`" 2>&1"
     } else {
         Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl $($wslPrefix)bash -c `"$cmdStr`""
     }
 }
 
-# サービス識別子の正規化
-function Get-NormalizedServiceName ([string]$name) {
-    if (-not $name) { return "" }
-    switch ($name.ToLower()) {
-        { $_ -in "fe", "frontend" } { return "frontend" }
-        { $_ -in "be", "backend" } { return "backend" }
-        { $_ -in "comfy", "wsl" } { return "comfy" }
-        default { return "" }
-    }
-}
-
+# WSL2-Bridge protection: Do NOT call Stop-PortProcesses on port 8188
+# (killing the Windows-side WSL2 Mirrored proxy would break the WSL2 communication bridge)
 function Stop-ComfyUIProcess {
-    try {
-        Invoke-WslWithTimeout "pkill -f 'python.*main.py'" 3 | Out-Null
-    } catch {}
-
+    try { Invoke-WslWithTimeout "pkill -f 'python.*main.py'" 3 | Out-Null } catch {}
     $closed = Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI"
     if (-not $closed) {
-        try {
-            Invoke-WslWithTimeout "pkill -9 -f 'python.*main.py'" 3 | Out-Null
-            Start-Sleep -Seconds 2
-        } catch {}
+        try { Invoke-WslWithTimeout "pkill -9 -f 'python.*main.py'" 3 | Out-Null; Start-Sleep -Seconds 2 } catch {}
     }
-
-    # クリーンアップ: ウィンドウ起動時の残骸 cmd.exe プロセスを回収
     try {
         Get-Process cmd -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*ComfyUI (WSL2)*" } | ForEach-Object {
             & taskkill.exe /PID $_.Id /T /F 2>$null
         }
     } catch {}
-
-    # 注意: Windows 側の Stop-PortProcesses $cfg.wsl.port は実行しない。
-    # WSL2 Mirrored モードでは Windows 側の 8188 は WSL ホストプロキシが LISTEN しており、
-    # それを taskkill すると WSL2 との通信ブリッジが破損するため。
 }
 
-
 function Start-BackendProcess ([bool]$asBackground) {
-    if (Test-PortOpen $cfg.backend.port) {
-        Write-Host "Backend is already running on port $($cfg.backend.port)." -ForegroundColor Yellow
-        return
-    }
+    if (Test-PortOpen $cfg.backend.port) { Write-Host "Backend is already running on port $($cfg.backend.port)." -ForegroundColor Yellow; return }
     $beDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.backend.relative_dir)).Path
-
     $beArgs = "--host 0.0.0.0 --port $($cfg.backend.port)"
     if ($asBackground) {
-        $logFile = Join-Path $LOGS_DIR "backend.log"
-        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat $beArgs > `"$logFile`" 2>&1" $beDir
+        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat $beArgs > `"$(Join-Path $LOGS_DIR 'backend.log')`" 2>&1" $beDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat $beArgs" -WorkingDirectory $beDir
     }
 }
 
-function Stop-BackendProcess {
-    Stop-PortProcesses $cfg.backend.port "Backend"
-}
+function Stop-BackendProcess { Stop-PortProcesses $cfg.backend.port "Backend" }
 
+# Vite Cache EPERM fix: clear ReadOnly bits and hollow deps before starting
 function Start-FrontendProcess ([bool]$asBackground) {
-    if (Test-PortOpen $cfg.frontend.port) {
-        Write-Host "Frontend is already running on port $($cfg.frontend.port)." -ForegroundColor Yellow
-        return
-    }
+    if (Test-PortOpen $cfg.frontend.port) { Write-Host "Frontend is already running on port $($cfg.frontend.port)." -ForegroundColor Yellow; return }
     $feDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.frontend.relative_dir)).Path
-
-    # 起動前に .vite ディレクトリの ReadOnly 属性ビットを解除し、空洞化 deps を先行クリーンアップ
     $viteDir = Join-Path $feDir "node_modules\.vite"
     if (Test-Path $viteDir) {
         try {
@@ -511,147 +234,66 @@ function Start-FrontendProcess ([bool]$asBackground) {
                 }
             }
             $depsDir = Join-Path $viteDir "deps"
-            $metaFile = Join-Path $depsDir "_metadata.json"
-            if ((Test-Path $depsDir) -and (-not (Test-Path $metaFile))) {
+            if ((Test-Path $depsDir) -and (-not (Test-Path (Join-Path $depsDir "_metadata.json")))) {
                 Remove-Item -Path $depsDir -Recurse -Force -ErrorAction SilentlyContinue
             }
         } catch {}
     }
-
     if ($asBackground) {
-        $logFile = Join-Path $LOGS_DIR "frontend.log"
-        Start-ProcessNoWindow "cmd.exe" "/c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" $feDir
+        Start-ProcessNoWindow "cmd.exe" "/c $($cfg.frontend.start_cmd) > `"$(Join-Path $LOGS_DIR 'frontend.log')`" 2>&1" $feDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Frontend && $($cfg.frontend.start_cmd)" -WorkingDirectory $feDir
     }
 }
 
-function Stop-FrontendProcess {
-    Stop-PortProcesses $cfg.frontend.port "Frontend"
-}
+function Stop-FrontendProcess { Stop-PortProcesses $cfg.frontend.port "Frontend" }
 
 function Stop-AllServices {
     Write-Host "Stopping all services..." -ForegroundColor Yellow
-    Stop-ComfyUIProcess
-    Stop-BackendProcess
-    Stop-FrontendProcess
-
-    Write-Host "Waiting for ports to close..." -ForegroundColor Gray
+    Stop-ComfyUIProcess; Stop-BackendProcess; Stop-FrontendProcess
     Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI" | Out-Null
     Wait-For-Port-Closed -port $cfg.backend.port -timeoutSec 5 -serviceName "Backend" | Out-Null
     Wait-For-Port-Closed -port $cfg.frontend.port -timeoutSec 5 -serviceName "Frontend" | Out-Null
 }
 
 function Start-AllServices ([bool]$asBackground) {
-    Write-Host "[1/3] Starting WSL2 ComfyUI..." -ForegroundColor Yellow
-    Start-ComfyUIProcess $asBackground
-    Write-Host "[2/3] Starting Windows Backend..." -ForegroundColor Yellow
-    Start-BackendProcess $asBackground
-
+    Write-Host "[1/3] Starting WSL2 ComfyUI..." -ForegroundColor Yellow; Start-ComfyUIProcess $asBackground
+    Write-Host "[2/3] Starting Windows Backend..." -ForegroundColor Yellow; Start-BackendProcess $asBackground
     $isBundled = Test-FrontendBundled
     if ($isBundled) {
         Write-Host "[3/3] Frontend is bundled into Backend (Port $($cfg.backend.port)) - Skipping dev server" -ForegroundColor Green
     } else {
-        Write-Host "[3/3] Starting Windows Frontend..." -ForegroundColor Yellow
-        Start-FrontendProcess $asBackground
+        Write-Host "[3/3] Starting Windows Frontend..." -ForegroundColor Yellow; Start-FrontendProcess $asBackground
     }
-
     Write-Host "`nWaiting for ports to open..." -ForegroundColor Gray
-    Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
-    Wait-For-Service "backend" "Backend" | Out-Null
-    if (-not $isBundled) {
-        Wait-For-Service "frontend" "Frontend" | Out-Null
-    }
-
-    Show-Status
-}
-
-function Restart-ServiceByName ([string]$name, [bool]$asBackground) {
-    $normalized = Get-NormalizedServiceName $name
-    switch ($normalized) {
-        "comfy" {
-            Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow
-            Stop-ComfyUIProcess
-            Wait-For-Port-Closed -port $cfg.wsl.port -timeoutSec 5 -serviceName "WSL ComfyUI" | Out-Null
-            Start-ComfyUIProcess $asBackground
-            Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null
-        }
-        "backend" {
-            Write-Host "Restarting Backend..." -ForegroundColor Yellow
-            Stop-BackendProcess
-            Wait-For-Port-Closed -port $cfg.backend.port -timeoutSec 5 -serviceName "Backend" | Out-Null
-            Start-BackendProcess $asBackground
-            Wait-For-Service "backend" "Backend" | Out-Null
-        }
-        "frontend" {
-            Write-Host "Restarting Frontend..." -ForegroundColor Yellow
-            Stop-FrontendProcess
-            Wait-For-Port-Closed -port $cfg.frontend.port -timeoutSec 5 -serviceName "Frontend" | Out-Null
-            Start-FrontendProcess $asBackground
-            Wait-For-Service "frontend" "Frontend" | Out-Null
-        }
-        default {
-            Write-Host "Unknown service: $name (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red
-        }
-    }
-    Show-Status
-}
-
-
-function Toggle-Services ([bool]$asBackground) {
-    $st = Get-StatusObject
-    if ($st.fe.running -or $st.be.running -or $st.comfy.running) {
-        Write-Host "Services are running. Stopping all services..." -ForegroundColor Yellow
-        Stop-AllServices
-    } else {
-        Write-Host "Services are stopped. Starting all services..." -ForegroundColor Green
-        Start-AllServices $asBackground
-    }
+    Wait-For-Port -port $cfg.wsl.port -timeoutSec 30 -serviceName "WSL ComfyUI" | Out-Null
+    Wait-For-Port -port $cfg.backend.port -timeoutSec 15 -serviceName "Backend" | Out-Null
+    if (-not $isBundled) { Wait-For-Port -port $cfg.frontend.port -timeoutSec 15 -serviceName "Frontend" | Out-Null }
     Show-Status
 }
 
 function Show-Logs ([string]$name) {
-    switch ($name.ToLower()) {
-        "comfy" {
-            $cLog = Join-Path $LOGS_DIR "comfy.log"
-            if (Test-Path $cLog) {
-                Get-Content $cLog -Tail 50
-            } else {
-                $res = Invoke-WslWithTimeout "tail -n 50 ~/comfyui.log" 3
-                if ($res.StdOut) {
-                    Write-Host $res.StdOut
-                } elseif ($res.TimedOut) {
-                    Write-Host "[ERROR] WSL tail timed out after 3s" -ForegroundColor Red
-                }
-            }
-        }
-        "backend" {
-            $logFile = Join-Path $LOGS_DIR "backend.log"
-            if (Test-Path $logFile) { Get-Content $logFile -Tail 50 } else { Write-Host "No backend.log found" }
-        }
-        "frontend" {
-            $logFile = Join-Path $LOGS_DIR "frontend.log"
-            if (Test-Path $logFile) { Get-Content $logFile -Tail 50 } else { Write-Host "No frontend.log found" }
-        }
-        default {
-            Write-Host "=== ComfyUI Log ===" -ForegroundColor Cyan
-            $cLog = Join-Path $LOGS_DIR "comfy.log"
-            if (Test-Path $cLog) { Get-Content $cLog -Tail 20 }
-            Write-Host "=== Backend Log ===" -ForegroundColor Cyan
-            $bLog = Join-Path $LOGS_DIR "backend.log"
-            if (Test-Path $bLog) { Get-Content $bLog -Tail 20 }
-            Write-Host "=== Frontend Log ===" -ForegroundColor Cyan
-            $fLog = Join-Path $LOGS_DIR "frontend.log"
-            if (Test-Path $fLog) { Get-Content $fLog -Tail 20 }
+    $logMap = @{
+        "comfy" = "comfy.log"; "wsl" = "comfy.log"
+        "backend" = "backend.log"; "be" = "backend.log"
+        "frontend" = "frontend.log"; "fe" = "frontend.log"
+        "manager" = "web_manager.log"
+    }
+    if ($name -and $logMap.ContainsKey($name.ToLower())) {
+        $f = Join-Path $LOGS_DIR $logMap[$name.ToLower()]
+        if (Test-Path $f) { Get-Content $f -Tail 50 } else { Write-Host "No log file found for '$name'" }
+    } else {
+        foreach ($key in @("comfy", "backend", "frontend")) {
+            Write-Host "=== $($key.ToUpper()) Log ===" -ForegroundColor Cyan
+            $f = Join-Path $LOGS_DIR $logMap[$key]
+            if (Test-Path $f) { Get-Content $f -Tail 20 }
         }
     }
 }
 
 function Show-InteractiveMenu {
     do {
-        Clear-Host
-        Show-Status
-        Write-Host ""
+        Clear-Host; Show-Status; Write-Host ""
         Write-Host " [1] Start All Services (Windowed)"
         Write-Host " [2] Start All Services (Background)"
         Write-Host " [3] Stop All Services"
@@ -669,9 +311,9 @@ function Show-InteractiveMenu {
             "2" { Start-AllServices $true; Read-Host "Press Enter to continue..." }
             "3" { Stop-AllServices; Show-Status; Read-Host "Press Enter to continue..." }
             "4" { Stop-AllServices; Start-Sleep -Seconds 1; Start-AllServices $false; Read-Host "Press Enter to continue..." }
-            "5" { Restart-ServiceByName "comfy" $false; Read-Host "Press Enter to continue..." }
-            "6" { Restart-ServiceByName "backend" $false; Read-Host "Press Enter to continue..." }
-            "7" { Restart-ServiceByName "frontend" $false; Read-Host "Press Enter to continue..." }
+            "5" { Stop-ComfyUIProcess; Wait-For-Port-Closed $cfg.wsl.port 5 "WSL ComfyUI" | Out-Null; Start-ComfyUIProcess $false; Wait-For-Port $cfg.wsl.port 30 "WSL ComfyUI" | Out-Null; Show-Status; Read-Host "Press Enter..." }
+            "6" { Stop-BackendProcess; Wait-For-Port-Closed $cfg.backend.port 5 "Backend" | Out-Null; Start-BackendProcess $false; Wait-For-Port $cfg.backend.port 15 "Backend" | Out-Null; Show-Status; Read-Host "Press Enter..." }
+            "7" { Stop-FrontendProcess; Wait-For-Port-Closed $cfg.frontend.port 5 "Frontend" | Out-Null; Start-FrontendProcess $false; Wait-For-Port $cfg.frontend.port 15 "Frontend" | Out-Null; Show-Status; Read-Host "Press Enter..." }
             "8" { Show-Logs ""; Read-Host "Press Enter to continue..." }
             "R" { }
             "Q" { break }
@@ -682,58 +324,38 @@ function Show-InteractiveMenu {
 # Main Execution Dispatch
 switch ($Action.ToLower()) {
     "start" {
-        if ($Service) {
-            $normalized = Get-NormalizedServiceName $Service
-            switch ($normalized) {
-                "comfy" { Start-ComfyUIProcess $Background; Wait-For-Service "comfy" "WSL ComfyUI" | Out-Null; Show-Status }
-                "backend" { Start-BackendProcess $Background; Wait-For-Service "backend" "Backend" | Out-Null; Show-Status }
-                "frontend" { Start-FrontendProcess $Background; Wait-For-Service "frontend" "Frontend" | Out-Null; Show-Status }
-                default { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
-            }
-        } else {
-            Start-AllServices $Background
+        switch ($Service.ToLower()) {
+            { $_ -in "comfy", "wsl" }  { Start-ComfyUIProcess $Background; Wait-For-Port $cfg.wsl.port 30 "WSL ComfyUI" | Out-Null; Show-Status }
+            { $_ -in "backend", "be" } { Start-BackendProcess $Background; Wait-For-Port $cfg.backend.port 15 "Backend" | Out-Null; Show-Status }
+            { $_ -in "frontend", "fe" }{ Start-FrontendProcess $Background; Wait-For-Port $cfg.frontend.port 15 "Frontend" | Out-Null; Show-Status }
+            default                    { Start-AllServices $Background }
         }
     }
     "stop" {
+        switch ($Service.ToLower()) {
+            { $_ -in "comfy", "wsl" }  { Stop-ComfyUIProcess; Show-Status }
+            { $_ -in "backend", "be" } { Stop-BackendProcess; Show-Status }
+            { $_ -in "frontend", "fe" }{ Stop-FrontendProcess; Show-Status }
+            default                    { Stop-AllServices; Show-Status }
+        }
+    }
+    { $_ -in "restart", "reboot-service" } {
         if ($Service) {
-            $normalized = Get-NormalizedServiceName $Service
-            switch ($normalized) {
-                "comfy" { Stop-ComfyUIProcess; Show-Status }
-                "backend" { Stop-BackendProcess; Show-Status }
-                "frontend" { Stop-FrontendProcess; Show-Status }
-                default { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
+            switch ($Service.ToLower()) {
+                { $_ -in "comfy", "wsl" }  { Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow; Stop-ComfyUIProcess; Wait-For-Port-Closed $cfg.wsl.port 5 "WSL ComfyUI" | Out-Null; Start-ComfyUIProcess $Background; Wait-For-Port $cfg.wsl.port 30 "WSL ComfyUI" | Out-Null }
+                { $_ -in "backend", "be" } { Write-Host "Restarting Backend..." -ForegroundColor Yellow; Stop-BackendProcess; Wait-For-Port-Closed $cfg.backend.port 5 "Backend" | Out-Null; Start-BackendProcess $Background; Wait-For-Port $cfg.backend.port 15 "Backend" | Out-Null }
+                { $_ -in "frontend", "fe" }{ Write-Host "Restarting Frontend..." -ForegroundColor Yellow; Stop-FrontendProcess; Wait-For-Port-Closed $cfg.frontend.port 5 "Frontend" | Out-Null; Start-FrontendProcess $Background; Wait-For-Port $cfg.frontend.port 15 "Frontend" | Out-Null }
+                default                    { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
             }
-        } else {
-            Stop-AllServices
             Show-Status
-        }
+        } else { Stop-AllServices; Start-Sleep -Seconds 1; Start-AllServices $Background }
     }
-    "restart" {
-        if ($Service) {
-            Restart-ServiceByName $Service $Background
-        } else {
-            Stop-AllServices
-            Start-Sleep -Seconds 1
-            Start-AllServices $Background
-        }
-    }
-    "reboot-service" {
-        if ($Service) {
-            Restart-ServiceByName $Service $Background
-        } else {
-            Write-Host "Please specify -Service (comfy, backend, frontend)" -ForegroundColor Red
-        }
-    }
-    "status" {
+    "status" { Show-Status }
+    "toggle" {
+        $st = Get-StatusObject
+        if ($st.fe.running -or $st.be.running -or $st.comfy.running) { Stop-AllServices } else { Start-AllServices $Background }
         Show-Status
     }
-    "toggle" {
-        Toggle-Services $Background
-    }
-    "logs" {
-        Show-Logs $Service
-    }
-    "menu" {
-        Show-InteractiveMenu
-    }
+    "logs"   { Show-Logs $Service }
+    "menu"   { Show-InteractiveMenu }
 }
