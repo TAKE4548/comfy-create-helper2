@@ -189,13 +189,32 @@ function Wait-For-Port-Closed ([int]$port, [int]$timeoutSec = 10, [string]$servi
     return $false
 }
 
+function Rotate-LogFile ([string]$logPath, [int]$maxCount = 5) {
+    if (-not (Test-Path $logPath)) { return }
+    try {
+        for ($i = $maxCount; $i -ge 2; $i--) {
+            $prev = "$logPath.$($i - 1)"
+            $dest = "$logPath.$i"
+            if (Test-Path $dest) { Remove-Item -Path $dest -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $prev) { Rename-Item -Path $prev -NewName (Split-Path $dest -Leaf) -Force -ErrorAction SilentlyContinue }
+        }
+        $firstRotated = "$logPath.1"
+        if (Test-Path $firstRotated) { Remove-Item -Path $firstRotated -Force -ErrorAction SilentlyContinue }
+        Rename-Item -Path $logPath -NewName (Split-Path $firstRotated -Leaf) -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "Warning: Failed to rotate log file $logPath : $_" -ForegroundColor Yellow
+    }
+}
+
 function Start-ComfyUIProcess ([bool]$asBackground) {
     if (Test-PortOpen $cfg.wsl.port) { Write-Host "ComfyUI is already running on port $($cfg.wsl.port)." -ForegroundColor Yellow; return }
     if (-not (Test-WslAvailability)) { return }
+    $logFile = Join-Path $LOGS_DIR 'comfy.log'
+    Rotate-LogFile $logFile
     $wslPrefix = Get-WslDistroPrefix
     $cmdStr = "cd $($cfg.wsl.project_dir) && if [ -f '$($cfg.wsl.venv_activate)' ]; then source $($cfg.wsl.venv_activate); fi && cd $($cfg.wsl.comfy_dir) && export PYTORCH_HIP_ALLOC_CONF='$($cfg.wsl.env_vars.PYTORCH_HIP_ALLOC_CONF)' && $($cfg.wsl.start_command)"
     if ($asBackground) {
-        Start-ProcessNoWindow "cmd.exe" "/c wsl $($wslPrefix)bash -c `"$cmdStr`" > `"$(Join-Path $LOGS_DIR 'comfy.log')`" 2>&1"
+        Start-ProcessNoWindow "cmd.exe" "/c wsl $($wslPrefix)bash -c `"$cmdStr`" > `"$logFile`" 2>&1"
     } else {
         Start-Process "cmd.exe" -ArgumentList "/k title ComfyUI (WSL2) && wsl $($wslPrefix)bash -c `"$cmdStr`""
     }
@@ -220,8 +239,12 @@ function Start-BackendProcess ([bool]$asBackground) {
     if (Test-PortOpen $cfg.backend.port) { Write-Host "Backend is already running on port $($cfg.backend.port)." -ForegroundColor Yellow; return }
     $beDir = (Resolve-Path (Join-Path $SCRIPT_DIR $cfg.backend.relative_dir)).Path
     $beArgs = "--host 0.0.0.0 --port $($cfg.backend.port)"
+    $logFile = Join-Path $LOGS_DIR 'backend.log'
+    Rotate-LogFile $logFile
+    $header = "[{0}] Starting Prompt Surgeon Backend..." -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    Set-Content -Path $logFile -Value $header -Encoding UTF8
     if ($asBackground) {
-        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat $beArgs > `"$(Join-Path $LOGS_DIR 'backend.log')`" 2>&1" $beDir
+        Start-ProcessNoWindow "cmd.exe" "/c run_server.bat $beArgs >> `"$logFile`" 2>&1" $beDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Backend && run_server.bat $beArgs" -WorkingDirectory $beDir
     }
@@ -247,8 +270,10 @@ function Start-FrontendProcess ([bool]$asBackground) {
             }
         } catch {}
     }
+    $logFile = Join-Path $LOGS_DIR 'frontend.log'
+    Rotate-LogFile $logFile
     if ($asBackground) {
-        Start-ProcessNoWindow "cmd.exe" "/c $($cfg.frontend.start_cmd) > `"$(Join-Path $LOGS_DIR 'frontend.log')`" 2>&1" $feDir
+        Start-ProcessNoWindow "cmd.exe" "/c $($cfg.frontend.start_cmd) > `"$logFile`" 2>&1" $feDir
     } else {
         Start-Process -FilePath "cmd.exe" -ArgumentList "/k title PromptSurgeon Frontend && $($cfg.frontend.start_cmd)" -WorkingDirectory $feDir
     }
@@ -351,7 +376,20 @@ switch ($Action.ToLower()) {
         if ($Service) {
             switch ($Service.ToLower()) {
                 { $_ -in "comfy", "wsl" }  { Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow; Stop-ComfyUIProcess; Wait-For-Port-Closed $cfg.wsl.port 5 "WSL ComfyUI" | Out-Null; Start-ComfyUIProcess $Background; Wait-For-Port $cfg.wsl.port 30 "WSL ComfyUI" | Out-Null }
-                { $_ -in "backend", "be" } { Write-Host "Restarting Backend..." -ForegroundColor Yellow; Stop-BackendProcess; Wait-For-Port-Closed $cfg.backend.port 5 "Backend" | Out-Null; Start-BackendProcess $Background; Wait-For-Port $cfg.backend.port 15 "Backend" | Out-Null }
+                { $_ -in "backend", "be" } {
+                    Write-Host "Restarting Backend..." -ForegroundColor Yellow
+                    Stop-BackendProcess
+                    $closed = Wait-For-Port-Closed $cfg.backend.port 5 "Backend"
+                    if (-not $closed) {
+                        Write-Host "Backend port still open, retrying force stop..." -ForegroundColor Yellow
+                        Stop-BackendProcess
+                        Wait-For-Port-Closed $cfg.backend.port 5 "Backend" | Out-Null
+                    }
+                    Start-BackendProcess $Background
+                    $timeoutSec = if ($cfg.backend.wait_timeout_sec) { [int]$cfg.backend.wait_timeout_sec } else { 20 }
+                    if ($timeoutSec -lt 20) { $timeoutSec = 20 }
+                    Wait-For-Port $cfg.backend.port $timeoutSec "Backend" | Out-Null
+                }
                 { $_ -in "frontend", "fe" }{ Write-Host "Restarting Frontend..." -ForegroundColor Yellow; Stop-FrontendProcess; Wait-For-Port-Closed $cfg.frontend.port 5 "Frontend" | Out-Null; Start-FrontendProcess $Background; Wait-For-Port $cfg.frontend.port 15 "Frontend" | Out-Null }
                 default                    { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }
             }

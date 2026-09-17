@@ -129,14 +129,72 @@ def test_api_action_timeout():
     mock_rfile.read.return_value = json.dumps({"action": "start", "service": "comfy"}).encode("utf-8")
     handler.rfile = mock_rfile
 
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=15)):
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=35)):
         handler.do_POST()
 
     assert len(sent_responses) == 1
     data, status_code = sent_responses[0]
     assert status_code == 504
     assert data.get("status") == "timeout"
-    assert "timed out" in data.get("error", "").lower() or "タイムアウト" in data.get("error", "")
+    assert "timed out after 35s" in data.get("error", "").lower() or "timed out" in data.get("error", "").lower()
+
+
+def test_get_action_timeout_matrix():
+    # restart / reboot-service
+    assert server_api.get_action_timeout("restart", "backend") == 35
+    assert server_api.get_action_timeout("reboot-service", "be") == 35
+    assert server_api.get_action_timeout("restart", "comfy") == 50
+    assert server_api.get_action_timeout("reboot-service", "wsl") == 50
+    assert server_api.get_action_timeout("restart", "frontend") == 35
+    assert server_api.get_action_timeout("reboot-service", "fe") == 35
+    assert server_api.get_action_timeout("restart", "") == 90
+    assert server_api.get_action_timeout("reboot-service", "all") == 90
+
+    # start
+    assert server_api.get_action_timeout("start", "backend") == 25
+    assert server_api.get_action_timeout("start", "be") == 25
+    assert server_api.get_action_timeout("start", "frontend") == 25
+    assert server_api.get_action_timeout("start", "fe") == 25
+    assert server_api.get_action_timeout("start", "comfy") == 35
+    assert server_api.get_action_timeout("start", "wsl") == 35
+    assert server_api.get_action_timeout("start", "") == 60
+    assert server_api.get_action_timeout("start", "all") == 60
+
+    # stop
+    assert server_api.get_action_timeout("stop", "") == 25
+    assert server_api.get_action_timeout("stop", "all") == 25
+    assert server_api.get_action_timeout("stop", "backend") == 15
+    assert server_api.get_action_timeout("stop", "comfy") == 15
+
+    # default / other
+    assert server_api.get_action_timeout("unknown", "backend") == 30
+
+
+def test_api_action_reboot_backend_timeout_used():
+    handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
+    handler.path = "/api/action"
+    sent_responses = []
+
+    def fake_send_json(data, status=200):
+        sent_responses.append((data, status))
+
+    handler._send_json = fake_send_json
+    payload = json.dumps({"action": "reboot-service", "service": "backend"}).encode("utf-8")
+    handler.headers = {"Content-Length": str(len(payload))}
+    mock_rfile = MagicMock()
+    mock_rfile.read.return_value = payload
+    handler.rfile = mock_rfile
+
+    mock_res = MagicMock(stdout="ok", stderr="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        handler.do_POST()
+
+    assert mock_run.called
+    assert mock_run.call_args.kwargs.get("timeout") == 35
+    assert len(sent_responses) == 1
+    data, status_code = sent_responses[0]
+    assert status_code == 200
+    assert data["status"] == "ok"
 
 
 def test_status_concurrency_lock():
@@ -193,4 +251,49 @@ def test_status_concurrency_lock():
 
     assert len(errors) == 0
     assert max_concurrent <= 1
+
+
+def test_read_log_file_tail_seek(tmp_path, monkeypatch):
+    monkeypatch.setattr(server_api, "LOGS_DIR", tmp_path)
+    
+    # 1. Non-existent file
+    exists, content, lines = server_api.read_log_file("nonexistent.log", tail_lines=10)
+    assert not exists
+    assert "未起動" in content
+    assert lines == 0
+
+    # 2. Small file (< 256KB)
+    small_file = tmp_path / "small.log"
+    small_lines = [f"line {i}\n" for i in range(50)]
+    small_file.write_text("".join(small_lines), encoding="utf-8")
+    exists, content, lines = server_api.read_log_file("small.log", tail_lines=10)
+    assert exists
+    assert lines == 50
+    ret_lines = content.splitlines(keepends=True)
+    assert len(ret_lines) == 10
+    assert ret_lines == small_lines[-10:]
+
+    # 3. Large file (> 256KB)
+    large_file = tmp_path / "large.log"
+    # Each line ~100 chars, write 4000 lines (~400KB)
+    large_lines = [f"log entry number {i:06d} padding " + "x" * 70 + "\n" for i in range(4000)]
+    large_file.write_bytes("".join(large_lines).encode("utf-8"))
+    exists, content, lines = server_api.read_log_file("large.log", tail_lines=15)
+    assert exists
+    ret_lines = content.splitlines(keepends=True)
+    assert len(ret_lines) == 15
+    assert ret_lines == large_lines[-15:]
+
+
+def test_manager_handler_log_message():
+    handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
+    handler.client_address = ("127.0.0.1", 12345)
+
+    with patch.object(server_api._logger, "info") as mock_logger:
+        handler.log_message("Test message %s %d", "foo", 42)
+        assert mock_logger.called
+        msg = mock_logger.call_args[0][0]
+        assert "Test message foo 42" in msg
+        assert "127.0.0.1" in msg
+
 

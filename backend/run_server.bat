@@ -9,4 +9,5 @@ echo %ARGS% | findstr /i /c:"--loop" >nul
 if errorlevel 1 (
     set ARGS=--loop asyncio:SelectorEventLoop %ARGS%
 )
-python -m uvicorn app.main:app %ARGS%
+set PYTHONUNBUFFERED=1
+python -u -m uvicorn app.main:app %ARGS%

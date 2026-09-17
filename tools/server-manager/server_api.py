@@ -9,6 +9,9 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
+import logging
+from logging.handlers import RotatingFileHandler
+from typing import Optional
 import server_status
 
 # pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
@@ -22,6 +25,30 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 PS_SCRIPT = SCRIPT_DIR / "server-manager.ps1"
 LOGS_DIR = SCRIPT_DIR / "logs"
 PORT = 8899
+
+# ロガー初期化 (5MB, 5世代, UTF-8)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+_logger = logging.getLogger("server_manager")
+_logger.setLevel(logging.INFO)
+if not _logger.handlers:
+    _log_path = LOGS_DIR / "web_manager.log"
+    try:
+        _rf_handler = RotatingFileHandler(
+            str(_log_path),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+            delay=True
+        )
+        _formatter = logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        _rf_handler.setFormatter(_formatter)
+        _logger.addHandler(_rf_handler)
+    except Exception as e:
+        # ロギングハンドラ初期化失敗時もモジュールインポートを妨げない
+        pass
 
 # Windows 非表示実行フラグ
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -37,25 +64,79 @@ def check_port_listening(port: int, timeout: float = 0.5) -> bool:
     return server_status.check_port_listening(port, timeout)
 
 
+def get_action_timeout(action: str, service: str = "", config: Optional[dict] = None) -> int:
+    """
+    アクション種別および対象サービスに応じた動的タイムアウト秒数を算出する。
+    """
+    act = (action or "").lower()
+    svc = (service or "").lower()
+
+    if act in ["restart", "reboot-service"]:
+        if svc in ["backend", "be"]:
+            return 35
+        if svc in ["comfy", "wsl"]:
+            return 50
+        if svc in ["frontend", "fe"]:
+            return 35
+        if not svc or svc == "all":
+            return 90
+        return 35
+
+    if act == "start":
+        if svc in ["backend", "be", "frontend", "fe"]:
+            return 25
+        if svc in ["comfy", "wsl"]:
+            return 35
+        if not svc or svc == "all":
+            return 60
+        return 25
+
+    if act == "stop":
+        if not svc or svc == "all":
+            return 25
+        return 15
+
+    return 30
+
+
 def read_log_file(filename: str, tail_lines: int = 200) -> tuple[bool, str, int]:
     target = LOGS_DIR / filename
     if not target.exists():
         return False, "ログファイルはまだ生成されていません (サービス未起動)", 0
     try:
-        # UTF-8 で試行、ダメなら CP932 でフォールバック
-        try:
-            with open(target, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except UnicodeDecodeError:
+        file_size = target.stat().st_size
+        seek_size = 256 * 1024  # 256KB
+
+        if file_size > seek_size:
+            # 末尾 seek 最適化
             try:
-                with open(target, "r", encoding="cp932") as f:
+                with open(target, "rb") as f:
+                    f.seek(file_size - seek_size)
+                    raw_chunk = f.read(seek_size)
+                try:
+                    text_chunk = raw_chunk.decode("utf-8", errors="replace")
+                except Exception:
+                    text_chunk = raw_chunk.decode("cp932", errors="replace")
+                chunk_lines = text_chunk.splitlines(keepends=True)
+                tail = chunk_lines[-tail_lines:] if len(chunk_lines) > tail_lines else chunk_lines
+                return True, "".join(tail), len(chunk_lines)
+            except Exception as e:
+                return False, f"ログ読み込みエラー: {e}", 0
+        else:
+            # 全体読み出し
+            try:
+                with open(target, "r", encoding="utf-8") as f:
                     lines = f.readlines()
             except UnicodeDecodeError:
-                with open(target, "r", encoding="utf-8", errors="replace") as f:
-                    lines = f.readlines()
-        
-        tail = lines[-tail_lines:] if len(lines) > tail_lines else lines
-        return True, "".join(tail), len(lines)
+                try:
+                    with open(target, "r", encoding="cp932") as f:
+                        lines = f.readlines()
+                except UnicodeDecodeError:
+                    with open(target, "r", encoding="utf-8", errors="replace") as f:
+                        lines = f.readlines()
+
+            tail = lines[-tail_lines:] if len(lines) > tail_lines else lines
+            return True, "".join(tail), len(lines)
     except Exception as e:
         return False, f"ログ読み込みエラー: {e}", 0
 
@@ -502,6 +583,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 class ManagerHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args):
+        # アクセスログ・エラーログを web_manager.log に漏れなく出力
+        message = "%s - - [%s] %s" % (
+            self.address_string(),
+            self.log_date_time_string(),
+            format % args
+        )
+        _logger.info(message)
+
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
@@ -583,8 +673,9 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                 cmd.append("-Background")
             if service:
                 cmd += ["-Service", service]
+            timeout = get_action_timeout(action, service)
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=15)
+                res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=timeout)
                 self._send_json({
                     "status": "ok",
                     "action": action,
@@ -594,7 +685,7 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({
                     "status": "timeout",
                     "action": action,
-                    "error": f"Action '{action}' timed out after 15s"
+                    "error": f"Action '{action}' timed out after {timeout}s"
                 }, status=504)
         elif self.path == "/api/config":
             try:
