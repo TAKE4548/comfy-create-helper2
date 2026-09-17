@@ -1,9 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LoraRegisterModal, type LoraFormState } from '../LoraModals'
+import { LoraRegisterModal, LoraDetailModal, type LoraFormState } from '../LoraModals'
 import { lorasApi, baseModelsApi } from '../../api/client'
-import type { Category, BaseModel, ComfyLoraModel } from '../../api/types'
+import type { Category, BaseModel, ComfyLoraModel, Lora } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
   lorasApi: {
@@ -170,5 +170,97 @@ describe('LoraModals Component (LoraRegisterModal)', () => {
     const removedState = removeUpdater(formWithSets)
     expect(removedState.trigger_word_sets).toHaveLength(1)
     expect(removedState.trigger_word_sets[0].name).toBe('Hair')
+  })
+
+  it('renders TagChipEditor in chips mode for trigger word sets and synchronizes tag deletion', async () => {
+    const formWithSets: LoraFormState = {
+      ...formState,
+      model_name: 'Test Lora',
+      trigger_word_sets: [
+        { name: 'Costume', words: 'maid apron, ribbon' },
+      ],
+    }
+
+    renderComponent(formWithSets)
+
+    expect(screen.getByText('maid apron')).toBeInTheDocument()
+    expect(screen.getByText('ribbon')).toBeInTheDocument()
+
+    const deleteBtn = screen.getByLabelText('タグ maid apron を削除')
+    fireEvent.click(deleteBtn)
+    expect(setFormMock).toHaveBeenCalled()
+  })
+})
+
+describe('LoraModals Component (LoraDetailModal)', () => {
+  let queryClient: QueryClient
+  const onCopyMock = vi.fn()
+  const onCloseMock = vi.fn()
+  const onSaveMock = vi.fn()
+  const onCategoryCreatedMock = vi.fn()
+
+  const mockLora: Lora = {
+    id: 101,
+    model_name: 'cyberpunk_style.safetensors',
+    description: 'Cyberpunk aesthetics LoRA',
+    recommended_strength_min: 0.6,
+    recommended_strength_max: 0.8,
+    category_id: 2,
+    file_path: 'models/loras/cyberpunk_style.safetensors',
+    thumbnail_path: '/images/cyberpunk.jpg',
+    snapshot_paths: ['/images/cyberpunk.jpg'],
+    sort_order: 1,
+    created_at: '2026-09-17T00:00:00Z',
+    trigger_word_sets: [
+      { id: 1, lora_id: 101, name: 'Main Trigger', words: ['neon lighting', 'cybernetic implant', 'futuristic city'] },
+    ],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
+    vi.mocked(baseModelsApi.list).mockResolvedValue(MOCK_BASE_MODELS)
+  })
+
+  it('renders TagChipViewer in chips mode initially with green accent and toggles to text mode', () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LoraDetailModal
+          lora={mockLora}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+        />
+      </QueryClientProvider>
+    )
+
+    // Initial chips mode
+    expect(screen.getByText('neon lighting')).toBeInTheDocument()
+    expect(screen.getByText('cybernetic implant')).toBeInTheDocument()
+    expect(screen.getByText('futuristic city')).toBeInTheDocument()
+
+    // Verify green accent styling
+    const chip = screen.getByText('neon lighting')
+    expect(chip.className).toContain('text-accent-green')
+
+    // Click toggle button to switch to text mode
+    const toggleBtn = screen.getByRole('button', { name: /switch to text view/i })
+    fireEvent.click(toggleBtn)
+
+    // Should display comma-separated text
+    expect(screen.getByText('neon lighting, cybernetic implant, futuristic city')).toBeInTheDocument()
+
+    // Switch back to chips mode
+    const chipsToggleBtn = screen.getByRole('button', { name: /switch to chips view/i })
+    fireEvent.click(chipsToggleBtn)
+    expect(screen.getByText('neon lighting')).toBeInTheDocument()
   })
 })

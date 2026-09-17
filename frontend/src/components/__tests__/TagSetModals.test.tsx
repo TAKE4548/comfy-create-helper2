@@ -1,9 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { TagSetCreateModal, type TagSetFormState } from '../TagSetModals'
+import { TagSetCreateModal, TagSetDetailModal, type TagSetFormState } from '../TagSetModals'
 import { baseModelsApi } from '../../api/client'
-import type { Category, BaseModel } from '../../api/types'
+import type { Category, BaseModel, TagSet } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
   tagsetCategoriesApi: {
@@ -141,8 +141,9 @@ describe('TagSetModals Component (TagSetCreateModal)', () => {
     renderComponent(formWithSubsets)
 
     expect(screen.getByDisplayValue('Summer')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('short sleeves')).toBeInTheDocument()
+    expect(screen.getByText('short sleeves')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Winter')).toBeInTheDocument()
+    expect(screen.getByText('long coat')).toBeInTheDocument()
 
     // Add subset
     const addBtn = screen.getByText('+ Add Subset')
@@ -177,5 +178,93 @@ describe('TagSetModals Component (TagSetCreateModal)', () => {
     const removedState = removeUpdater(formWithSubsets)
     expect(removedState.subsets).toHaveLength(1)
     expect(removedState.subsets[0].name).toBe('Winter')
+  })
+
+  it('renders TagChipEditor in chips mode and synchronizes tag deletion', async () => {
+    const formWithTags: TagSetFormState = {
+      ...formState,
+      name: 'Bikini Set',
+      tags: 'bikini, beach',
+    }
+
+    renderComponent(formWithTags)
+
+    expect(screen.getByText('Chips Mode')).toBeInTheDocument()
+    expect(screen.getByText('bikini')).toBeInTheDocument()
+    expect(screen.getByText('beach')).toBeInTheDocument()
+
+    const deleteBtn = screen.getByLabelText('タグ bikini を削除')
+    fireEvent.click(deleteBtn)
+    expect(setFormMock).toHaveBeenCalled()
+  })
+})
+
+describe('TagSetModals Component (TagSetDetailModal)', () => {
+  let queryClient: QueryClient
+  const onCopyMock = vi.fn()
+  const onCloseMock = vi.fn()
+  const onSaveMock = vi.fn()
+  const onCategoryCreatedMock = vi.fn()
+
+  const mockTagSet: TagSet = {
+    id: 10,
+    name: 'Sailor Suit',
+    description: 'Classic uniform',
+    category_id: 1,
+    tags: ['sailor suit', 'pleated skirt', 'neckerchief'],
+    thumbnail_path: '/images/thumb.jpg',
+    snapshot_paths: ['/images/thumb.jpg'],
+    sort_order: 1,
+    created_at: '2026-09-17T00:00:00Z',
+    subsets: [
+      { id: 1, tag_set_id: 10, name: 'Summer', tags: ['short sleeves', 'white socks'] },
+    ],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
+    vi.mocked(baseModelsApi.list).mockResolvedValue(MOCK_BASE_MODELS)
+  })
+
+  it('renders TagChipViewer in chips mode initially and toggles to text mode on toggle button click', () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TagSetDetailModal
+          tagSet={mockTagSet}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+        />
+      </QueryClientProvider>
+    )
+
+    // Verify chips mode by default for main tags and subsets
+    expect(screen.getByText('sailor suit')).toBeInTheDocument()
+    expect(screen.getByText('pleated skirt')).toBeInTheDocument()
+    expect(screen.getByText('neckerchief')).toBeInTheDocument()
+    expect(screen.getByText('short sleeves')).toBeInTheDocument()
+    expect(screen.getByText('white socks')).toBeInTheDocument()
+
+    // Toggle main tags to text mode
+    const toggleButtons = screen.getAllByRole('button', { name: /switch to text view/i })
+    expect(toggleButtons.length).toBeGreaterThanOrEqual(1)
+    fireEvent.click(toggleButtons[0])
+
+    // Should display comma-separated text
+    expect(screen.getByText('sailor suit, pleated skirt, neckerchief')).toBeInTheDocument()
+
+    // Toggle back to chips mode
+    const chipsToggleBtn = screen.getByRole('button', { name: /switch to chips view/i })
+    fireEvent.click(chipsToggleBtn)
+    expect(screen.getByText('sailor suit')).toBeInTheDocument()
   })
 })

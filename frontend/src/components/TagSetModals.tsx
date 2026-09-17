@@ -6,6 +6,8 @@ import { tagsetCategoriesApi, baseModelsApi } from '../api/client'
 import { ImageCropper } from './ImageCropper'
 import { useQuery } from '@tanstack/react-query'
 import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
+import { TagChipEditor } from './TagChipEditor'
+import { TagChipViewer } from './TagChipViewer'
 
 export interface TagSetFormState {
   name: string
@@ -120,14 +122,13 @@ export function TagSetFormFields({
         </div>
       </div>
       <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Tags (comma-separated) *</label>
-        <textarea
+        <label className="text-xs text-zinc-400 mb-1 block">Tags *</label>
+        <TagChipEditor
           id={`${idPrefix}-tags`}
           value={form.tags}
-          onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-          rows={3}
-          className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono focus:outline-none focus:border-[#7C6FDD]/40 resize-none"
+          onChange={(val) => setForm((f) => ({ ...f, tags: val }))}
           placeholder="swimsuit, bikini, white bikini, ..."
+          defaultTextMode={false}
         />
       </div>
       <div>
@@ -221,16 +222,15 @@ export function TagSetFormFields({
                   }}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40"
                 />
-                <input
-                  type="text"
-                  placeholder="Tags (comma-separated)"
+                <TagChipEditor
                   value={sub.tags}
-                  onChange={(e) => {
+                  onChange={(val) => {
                     const next = [...(form.subsets || [])]
-                    next[idx] = { ...next[idx], tags: e.target.value }
+                    next[idx] = { ...next[idx], tags: val }
                     setForm((f) => ({ ...f, subsets: next }))
                   }}
-                  className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-xs text-zinc-200 font-mono focus:outline-none focus:border-[#7C6FDD]/40"
+                  placeholder="Tags (comma-separated)..."
+                  defaultTextMode={false}
                 />
               </div>
               <button
@@ -787,10 +787,12 @@ export function TagSetDetailModal({
                     <div className="space-y-2 border-t border-[rgba(255,255,255,0.06)] pt-4">
                       <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Tags</span>
                       <div className="p-3 bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] flex items-start justify-between gap-4">
-                        <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                          {tagSet.tags.map((tag, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 rounded bg-[rgba(124,111,221,0.1)] border border-[rgba(124,111,221,0.2)] text-[#a99ef7] font-mono">{tag}</span>
-                          ))}
+                        <div className="min-w-0 flex-1">
+                          <TagChipViewer
+                            tags={tagSet.tags}
+                            accentColor="purple"
+                            defaultMode="chips"
+                          />
                         </div>
                         <button id={`detail-copy-btn-${tagSet.id}`} onClick={() => onCopy(tagSet.id, tagSet.tags)}
                           className={`p-2 rounded-md border transition-all flex-shrink-0 ${copiedId === tagSet.id ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:bg-surface'}`}>
@@ -805,11 +807,11 @@ export function TagSetDetailModal({
                           {tagSet.subsets.map((sub, i) => (
                             <div key={i} className="p-2.5 bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] space-y-1">
                               <span className="text-xs font-semibold text-zinc-300 block">{sub.name}</span>
-                              <div className="flex flex-wrap gap-1">
-                                {(Array.isArray(sub.tags) ? sub.tags : (sub.tags as unknown as string).split(',')).map((t: string, j: number) => (
-                                  <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(124,111,221,0.08)] border border-[rgba(124,111,221,0.15)] text-[#a99ef7] font-mono">{t.trim()}</span>
-                                ))}
-                              </div>
+                              <TagChipViewer
+                                tags={Array.isArray(sub.tags) ? sub.tags : (sub.tags as unknown as string).split(',').map((t: string) => t.trim()).filter(Boolean)}
+                                accentColor="purple"
+                                defaultMode="chips"
+                              />
                             </div>
                           ))}
                         </div>

@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
 import { InlineCategorySelect } from './InlineCategorySelect'
 import TagChipEditor from './TagChipEditor'
+import { TagChipViewer } from './TagChipViewer'
 import { ImageCropper } from './ImageCropper'
 import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
@@ -652,13 +653,17 @@ export function LoraDetailModal({
                             const wordsStr = tws.words.join(', ')
                             const isCopied = copiedId === tws.id
                             return (
-                              <div key={tws.id} className="p-3 bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] flex items-center justify-between gap-4">
+                              <div key={tws.id} className="p-3 bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] flex items-start justify-between gap-4">
                                 <div className="min-w-0 flex-1">
-                                  <span className="text-[10px] text-accent-green font-medium block mb-0.5">{tws.name || 'Trigger Set'}</span>
-                                  <p className="text-xs text-zinc-300 break-words select-all leading-normal">{wordsStr}</p>
+                                  <span className="text-[10px] text-accent-green font-medium block mb-1">{tws.name || 'Trigger Set'}</span>
+                                  <TagChipViewer
+                                    tags={tws.words}
+                                    accentColor="green"
+                                    defaultMode="chips"
+                                  />
                                 </div>
                                 <button id={`modal-copy-trigger-${tws.id}`} onClick={() => onCopy(tws.id, wordsStr)}
-                                  className={`p-2 rounded-md border transition-all ${isCopied ? 'bg-accent-green/10 border-accent-green/30 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:bg-surface'}`} title="Copy trigger words">
+                                  className={`p-2 rounded-md border transition-all flex-shrink-0 ${isCopied ? 'bg-accent-green/10 border-accent-green/30 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:bg-surface'}`} title="Copy trigger words">
                                   {isCopied ? <Check size={14} /> : <Copy size={14} />}
                                 </button>
                               </div>
