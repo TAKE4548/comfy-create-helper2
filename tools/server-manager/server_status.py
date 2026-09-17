@@ -23,11 +23,19 @@ _DEFAULT_PORTS = {
 
 def check_port_listening(port: int, timeout: float = 0.5) -> bool:
     """ローカルポート（127.0.0.1）に TCP 接続可能かを判定する。"""
+    s = None
     try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
-            return True
+        s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        return True
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
+    finally:
+        if s is not None:
+            s.close()
 
 
 def is_frontend_bundled(dist_index_path: Optional[Path] = None) -> bool:

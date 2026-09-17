@@ -102,7 +102,15 @@ function Test-PortOpen ([int]$port) {
         $ok = $ar.AsyncWaitHandle.WaitOne(500, $false)
         if ($ok) { $tcp.EndConnect($ar) }
         return $ok
-    } catch { return $false } finally { $tcp.Close(); $tcp.Dispose() }
+    } catch { return $false } finally {
+        try {
+            if ($tcp.Connected -and $null -ne $tcp.Client) {
+                $tcp.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Both)
+            }
+        } catch {}
+        $tcp.Close()
+        $tcp.Dispose()
+    }
 }
 
 function Stop-PortProcesses ([int]$port, [string]$name) {

@@ -40,6 +40,33 @@ def test_check_port_listening():
     assert server_status.check_port_listening(port, timeout=0.1) is False
 
 
+def test_check_port_listening_graceful_shutdown():
+    """Verify check_port_listening calls shutdown before close on successful connection."""
+    from unittest.mock import MagicMock
+
+    mock_sock = MagicMock()
+    with patch("socket.create_connection", return_value=mock_sock):
+        result = server_status.check_port_listening(8000, timeout=0.5)
+
+    assert result is True
+    mock_sock.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+    mock_sock.close.assert_called_once()
+
+
+def test_check_port_listening_shutdown_oserror_suppressed():
+    """Verify OSError during shutdown is safely suppressed and close is called."""
+    from unittest.mock import MagicMock
+
+    mock_sock = MagicMock()
+    mock_sock.shutdown.side_effect = OSError("Connection reset by peer")
+    with patch("socket.create_connection", return_value=mock_sock):
+        result = server_status.check_port_listening(8000, timeout=0.5)
+
+    assert result is True
+    mock_sock.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+    mock_sock.close.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # test_is_frontend_bundled
 # ---------------------------------------------------------------------------

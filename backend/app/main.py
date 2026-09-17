@@ -1,6 +1,11 @@
 """FastAPI application entry point."""
 
 import logging
+from app.utils.windows_loop_defense import apply_windows_loop_defense
+
+# Windows イベントループ防御 (WinError 64 / 10054 / 1236 によるクラッシュ防止)
+apply_windows_loop_defense()
+
 from contextlib import asynccontextmanager
 
 import os

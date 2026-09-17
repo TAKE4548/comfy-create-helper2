@@ -260,4 +260,12 @@ Web Manager（http://localhost:8899）上のタブ別コンソール出力エリ
   - `setInterval` を廃止し、先行リクエストの完了を待ってから次回ポーリングをスケジュールする再帰的 `setTimeout`（多重リクエストガード `isFetchingStatus`）に変更。
   - `renderServices`: `status === 'TIMEOUT'` の場合に `.badge-timeout`（アンバー色）を表示し、ComfyUI 障害時も Frontend や Backend の操作ボタンを引き続き利用可能。
 
+### Q6. Windows 環境における IOCP 切断耐性とヘルスチェック保護 (REQ-274)
+- **バックエンド側 (FastAPI / Uvicorn)**:
+  - Windows の ProactorEventLoop (IOCP AcceptEx) において、即座にクローズされた接続による一時的エラー（`WinError 64: 指定されたネットワーク名は利用できません`、`WinError 1236`、`WinError 10054`）が発生した際、リスナーソケットが破棄されず継続して accept を行う `apply_windows_loop_defense()` パッチを適用。
+  - `run_server.bat` では `--loop asyncio:SelectorEventLoop` を明示指定して IOCP 自体の問題を回避。
+- **Web Manager 監視側 (`server_status.py` / `server-manager.ps1`)**:
+  - `check_port_listening` でソケット接続成功時に即座に RST を送信せず、`s.shutdown(socket.SHUT_RDWR)` による Graceful Shutdown を経てからクローズするよう改修。
+  - PowerShell 側でも `TcpClient.Close()` 前にストリームを正常に処理し、相手側プロセスへの不要な RST 送信を防止。
+
 
