@@ -141,7 +141,7 @@ def main() -> None:
         print(json.dumps(status, ensure_ascii=False, indent=2))
     else:
         for key, info in status.items():
-            running_str = "✓ RUNNING" if info["running"] else "✗ STOPPED"
+            running_str = "[RUNNING]" if info["running"] else "[STOPPED]"
             print(
                 f"[{key.upper():5s}] {info['name']:<30s}  port={info['port']}  "
                 f"status={info['status']:<8s}  {running_str}"
