@@ -458,6 +458,67 @@ class TestPresetOCC(unittest.TestCase):
         res_conflict = self.client.put(f"/api/workflow-presets/{preset.id}", json=conflict_payload)
         assert res_conflict.status_code == 409
 
+    def test_preset_utc_timestamps(self):
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset UTC Check",
+            param_values="{}",
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+
+        response = self.client.get(f"/api/workflow-presets?workflow_id={self.workflow.id}")
+        assert response.status_code == 200
+        data = response.json()
+        target = [p for p in data if p["id"] == preset.id][0]
+        assert target["created_at"].endswith("Z") or "+00:00" in target["created_at"]
+        assert target["updated_at"].endswith("Z") or "+00:00" in target["updated_at"]
+
+    def test_mapping_master_role_change_cascades_preset_keys(self):
+        # Create a mapping master
+        mm_payload = {
+            "role": "OldRole",
+            "expected_class_types": ["KSampler"],
+            "param_name": "seed",
+            "input_type": "STRING",
+            "display_name": "Test Role",
+        }
+        res_mm = self.client.post("/api/mapping-masters", json=mm_payload)
+        assert res_mm.status_code == 201
+        mm_id = res_mm.json()["id"]
+
+        # Create preset referencing OldRole
+        preset = models.WorkflowPreset(
+            workflow_id=self.workflow.id,
+            name="Preset Cascade Check",
+            param_values='{"OldRole": "value_123", "OtherParam": "test"}',
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=-1,
+        )
+        self.db.add(preset)
+        self.db.commit()
+        self.db.refresh(preset)
+
+        # Update mapping master role to NewRole
+        update_payload = mm_payload.copy()
+        update_payload["role"] = "NewRole"
+        res_update = self.client.put(f"/api/mapping-masters/{mm_id}", json=update_payload)
+        assert res_update.status_code == 200
+
+        # Verify preset param_values has been updated
+        self.db.refresh(preset)
+        res_p = self.client.get(f"/api/workflow-presets?workflow_id={self.workflow.id}")
+        p_data = [p for p in res_p.json() if p["id"] == preset.id][0]
+        assert "NewRole" in p_data["param_values"]
+        assert p_data["param_values"]["NewRole"] == "value_123"
+        assert "OldRole" not in p_data["param_values"]
+
 
 
 

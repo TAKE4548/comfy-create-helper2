@@ -13,7 +13,16 @@ from app import models, schemas
 router = APIRouter(prefix="/api/workflow-presets", tags=["workflow-presets"])
 
 
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _preset_to_schema(preset: models.WorkflowPreset) -> schemas.WorkflowPresetRead:
+    raw_updated = preset.updated_at or preset.created_at
     return schemas.WorkflowPresetRead(
         id=preset.id,
         workflow_id=preset.workflow_id,
@@ -23,8 +32,8 @@ def _preset_to_schema(preset: models.WorkflowPreset) -> schemas.WorkflowPresetRe
         batch_size=preset.batch_size,
         seed_mode=preset.seed_mode,
         seed=preset.seed,
-        created_at=preset.created_at,
-        updated_at=preset.updated_at or preset.created_at,
+        created_at=_ensure_utc(preset.created_at),
+        updated_at=_ensure_utc(raw_updated),
         sort_order=preset.sort_order,
     )
 

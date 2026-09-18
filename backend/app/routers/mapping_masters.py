@@ -49,7 +49,23 @@ def update_master(master_id: int, payload: schemas.MappingMasterCreate, db: Sess
     mm = db.query(models.MappingMaster).filter(models.MappingMaster.id == master_id).first()
     if not mm:
         raise HTTPException(status_code=404, detail="MappingMaster not found")
-    mm.role = payload.role
+    old_role = mm.role
+    new_role = payload.role
+    if old_role and new_role and old_role != new_role:
+        old_pattern = f'"{old_role}":'
+        new_pattern = f'"{new_role}":'
+        db.query(models.WorkflowPreset).filter(
+            models.WorkflowPreset.param_values.contains(old_pattern)
+        ).update(
+            {
+                models.WorkflowPreset.param_values: func.replace(
+                    models.WorkflowPreset.param_values, old_pattern, new_pattern
+                )
+            },
+            synchronize_session=False,
+        )
+
+    mm.role = new_role
     mm.expected_class_types = json.dumps(payload.expected_class_types) if payload.expected_class_types else None
     mm.param_name = payload.param_name
     mm.input_type = payload.input_type

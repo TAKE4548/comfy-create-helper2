@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { getInitialParams, extractGeneralParam, extractLoraStackParams, useWorkflowParams } from '../useWorkflowParams';
+import { getInitialParams, extractGeneralParam, extractLoraStackParams, useWorkflowParams, healLegacyParamKeys } from '../useWorkflowParams';
 import { useGenerationStore } from '../../../../store/useGenerationStore';
 import { LS_KEYS } from '../../../../utils/localStorageKeys';
 import type { Workflow } from '../../../../api/types';
@@ -278,6 +278,30 @@ describe('useWorkflowParams hook - remapping backfill', () => {
 
     // Single LocalStorage key is no longer written
     expect(localStorage.getItem(LS_KEYS.PARAMS_PREFIX + '1')).toBeNull();
+  });
+
+  describe('healLegacyParamKeys', () => {
+    it('should promote "Resolution Selecto" to "Resolution Selector"', () => {
+      const input = {
+        'Resolution Selecto': '1:1 (Square)',
+        'Prompt_Core': 'masterpiece',
+      };
+      const result = healLegacyParamKeys(input);
+      expect(result).toEqual({
+        'Resolution Selector': '1:1 (Square)',
+        'Prompt_Core': 'masterpiece',
+      });
+      expect(result['Resolution Selecto']).toBeUndefined();
+    });
+
+    it('should not overwrite existing "Resolution Selector"', () => {
+      const input = {
+        'Resolution Selector': '16:9 (Landscape)',
+        'Resolution Selecto': '1:1 (Square)',
+      };
+      const result = healLegacyParamKeys(input);
+      expect(result['Resolution Selector']).toBe('16:9 (Landscape)');
+    });
   });
 });
 

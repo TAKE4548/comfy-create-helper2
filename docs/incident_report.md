@@ -1,13 +1,12 @@
-# インシデントレポート: 複数端末環境におけるスナップショット画像（サムネイル・プレビュー）の表示不全
+# インシデントレポート: 生成パラメータ（アスペクト比）変更の遅延反映および巻き戻り事象
 
-**日時**: 2026-09-16  
+**日時**: 2026-09-18  
 **報告者**: Incident Analyst  
 **対象コンポーネント**: 
-- `backend/app/services/snapshot_service.py`（スナップショット作成・外部 ComfyUI 画像ダウンロード処理）
-- `backend/app/config.py`（ComfyUI 接続設定 `settings.comfy_url`）
-- `frontend/src/pages/GeneratePage/hooks/useSnapshotActions.ts`（スナップショット保存リクエスト）
-- `frontend/src/hooks/useComfyWebSocket.ts`（ComfyUI URL 解決 `resolveComfyUrl`）
-- `frontend/src/pages/HistoryPage.tsx`（履歴一覧・サムネイルおよびモーダルプレビュー表示）
+- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`（プリセット同期・`updated_at` 比較ロジック）
+- `backend/app/routers/presets.py`（プリセット更新 API・日時シリアライズ）
+- `frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts`（ワークフローパラメータ補完・フォールバック）
+- `db/prompt_surgeon.db`（`workflow_presets`, `workflow_mappings`）
 **分類**: **Type A（実装バグ / Implementation Bug）**
 
 ---
@@ -15,103 +14,92 @@
 ## 1. 障害概要
 
 - **症状**:
-  - 生成画像を保存（スナップショット登録）した端末と異なる端末で「History（履歴）」ページを閲覧すると、サムネイルおよびプレビュー（モーダル）の双方が実画像を表示できず、読み込みエラーまたはプレースホルダー表示となる。
-  - 一方、保存操作を行った端末自身では正常に画像が表示される。
-  - また、「生成履歴（Generate ページの履歴一覧）」では、異なる端末間であっても同様の画像表示不全は発生しない。
+  - 生成画面においてアスペクト比（`aspect_ratio`）などの生成パラメータを変更した直後に「生成」ボタンを押しても変更が反映されず、以前の比率のまま画像が生成される。
+  - その後、何度か生成を繰り返していると、遅れて変更後のアスペクト比で生成されることがある。
 - **影響範囲**:
-  - 2026-09-16 にクライアント端末（LAN IP: `192.168.3.10`）から保存されたスナップショット（ID: 4108 〜 4177 の計 68 件）。
-  - 保存された画像の実体ファイルが `db/snapshots/` に永続化保存されておらず、DB 上に外部 ComfyUI URL（`http://192.168.3.13:8188/view?...`）がそのまま記録され、`thumbnail_path` が `NULL` となっている。
+  - ワークフロー 61（および `Resolution Selector` 等のプリセット連動パラメータを持つワークフロー全般）。
+  - パラメータ変更直後に即座に生成を実行した全セッション。
 
 ---
 
 ## 2. 再現手順
 
-1. 端末 A（例: LAN 接続された外部 PC またはタブレット `192.168.3.10`）のブラウザから、サーバーホストの Prompt Surgeon（`http://192.168.3.13:8000`）にアクセスする。
-2. 端末 A で画像を生成し、生成完了した画像を「Save」または「スナップショット保存」ボタンから保存する。
-3. サーバーホスト端末 B（例: `127.0.0.1`）または別のクライアント端末 C で「History」ページ（`/history`）を開く。
+1. 生成画面（Generate ページ）でワークフローおよびプリセット（例: プリセット 1506 "Set 1"）を選択する。
+2. アスペクト比パラメータを `9:16 (Portrait Widescreen)` から `16:9 (Widescreen)` に変更する。
+3. オートセーブ（1秒デバウンス）の完了前、あるいは生成中のポーリング（5秒間隔）やウィンドウフォーカス復帰のタイミングで「生成」ボタンを押下する。
 4. **結果**:
-   - 端末 A ではキャッシュまたは直接通信によりサムネイル・プレビューが見える。
-   - 端末 B / C では、サムネイルが真っ黒またはプレースホルダー表示となり、クリックしてモーダルプレビューを開いても実画像が読み込めない。
-   - 一方、「Generate」ページの履歴ドロワー／カルーセル（生成履歴）では、端末 B / C でもサムネイルが正常に表示される。
+   - フロントエンドのストア値がサーバー側の旧データで上書き再同期され、`9:16` のまま ComfyUI にプロンプトが投入される。
+   - 数回生成を試行している間にバックエンドへのオートセーブ `PUT` が完了し、その後のリフェッチタイミングと合致したタイミングでようやく `16:9` で生成される。
 
 ---
 
-## 3. ログ・エビデンス
+## 3. 調査結果およびエビデンス
 
-### エビデンス①: `logs/app.jsonl` の調査結果
-- `python scripts/inspect_logs.py --errors --tail 10` を実行したところ、以下のエラーが大量に記録されていた：
-  ```
-  [2026-09-16T19:55:29.456+09:00] [ERROR] [backend ] [app.services.snapshot_service] Failed to download snapshot image from http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00019_.png&subfolder=&type=temp&t=407bb57b-3030-434b-bddc-a165a6e78571: <urlopen error timed out>
-  [2026-09-16T21:59:06.372+09:00] [ERROR] [backend ] [app.services.snapshot_service] Failed to download snapshot image from http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00161_.png&subfolder=&type=temp&t=86f6ceb2-b419-4f81-9bfe-e33fc69b1127: <urlopen error timed out>
-  ```
-- クライアント IP `192.168.3.10` からの `POST /api/snapshots` は、毎回タイムアウト制限である **5000ms（約 5.02 秒）** を要して HTTP 201 を返却していた。
-  - 例: `{"timestamp": "2026-09-16T21:59:06.386+09:00", ... "message": "POST /api/snapshots completed with 201 in 5018.51ms", "client_ip": "192.168.3.10"}`
+### エビデンス①: プロンプト投入履歴とパラメータ巻き戻り（`logs/app.jsonl`, `db/prompt_surgeon.db`）
+- `prompt_metadata` テーブルの投入履歴を抽出：
+  - 16:50〜16:54 のジョブ: `16:9 (Widescreen)` として投入されていた。
+  - 17:02 以降のジョブ: ユーザーが意図した `16:9` ではなく、`9:16 (Portrait Widescreen)` に巻き戻って投入されていた。
+- `logs/app.jsonl` のリクエストログより、アスペクト比変更操作後の `PUT /api/workflow-presets/1506`（オートセーブ）と `POST /api/comfy/prompt`（生成投入）の間に微細なタイムラグが存在し、オートセーブが完了する前に旧値で投入されたり、再同期によってフロントのステートが旧値に巻き戻されていた痕跡を確認。
 
-### エビデンス②: データベース保存状態の確認（`db/prompt_surgeon.db`）
-- `snapshots` テーブルを調査：
-  - 正常時（ID <= 4107）:
-    - `image_path`: `/api/snapshots/images/ComfyUI_temp_xpuvb_00088__15c91cf5.webp`
-    - `thumbnail_path`: `/api/snapshots/images/thumb_ComfyUI_temp_xpuvb_00088__15c91cf5.webp`
-  - 異常時（ID >= 4108 〜 4177, 計 68 件）:
-    - `image_path`: `http://192.168.3.13:8188/view?filename=ComfyUI_temp_etsmj_00089_.png&subfolder=&type=temp&t=...`
-    - `thumbnail_path`: `NULL`
+### エビデンス②: ComfyUI 側の実行履歴（`/history` API）
+- ComfyUI の実行履歴（`/history`）を直接照合：
+  - ノード `1270:807`（`ResolutionSelector`）の投入パラメータ `aspect_ratio` が、実際に ComfyUI 内部へ `9:16` として渡されていたことを確認。
+  - ノード仕様として `width` / `height` を出力し `EmptyLatentImage`（ノード `1270:1231`）へ正常に伝搬するパイプライン接続となっており、ComfyUI 側のノード不具合ではなく、Prompt Surgeon から送信されたリクエストパラメータそのものが巻き戻っていたことを実証。
 
-### エビデンス③: バックエンドサーバーにおける ComfyUI 疎通確認
-- サーバーホスト（Windows）上で Python によるソケット疎通および `urllib` をテスト：
-  - `http://127.0.0.1:8188/view` : 即座に接続成功（ComfyUI が応答）。
-  - `http://192.168.3.13:8188/view` : **TimeoutError（10035 / timed out）** で失敗。
-- **理由**:
-  - ComfyUI は WSL2 内で稼働しており、Windows ホストでは `127.0.0.1` 経由のポートフォワーディングのみが自動構成されている。
-  - Windows ホスト自身の外部 LAN IP（`192.168.3.13`）宛ての通信は、Windows ファイアウォールおよびヘアピン NAT / ループバックルーティングの制約により WSL2 に転送されずタイムアウトする。
-
-### エビデンス④: 生成履歴（Generate ページ）が他端末でも表示される理由
-- [`frontend/src/pages/GeneratePage/components/DesktopLayout.tsx`](frontend/src/pages/GeneratePage/components/DesktopLayout.tsx) L819:
-  - サムネイル描画時に `toThumbnailUrl(img)` を適用している。
-- [`frontend/src/utils/thumbnailUrl.ts`](frontend/src/utils/thumbnailUrl.ts) L14:
-  - URL に `/view?` が含まれる場合、バックエンドのサムネイルプロキシ `/api/comfy/thumbnail?filename=...` に変換している。
-- このエンドポイントは FastAPI バックエンド（Port 8000）が受け持ち、内部設定 `settings.comfy_url`（`http://localhost:8188`）を通じて ComfyUI と通信するため、クライアントがどの端末であっても正常に表示される。
+### エビデンス③: プリセットデータ内の旧ロールキー残存
+- `db/prompt_surgeon.db` の `workflow_presets` を調査したところ、過去の設計・実装で発生した17文字切り捨てキー `'Resolution Selecto'` と正規キー `'Resolution Selector'` が同一プリセット内に混在（DB内 636 件のプリセットに残存）。
+- フロントエンドのパラメータロード時（`useWorkflowParams.ts`）において、キーの表記揺れによる意図しないフォールバックや初期値復帰が誘発されやすい土台となっていた。
 
 ---
 
 ## 4. 根本原因分析（Root Cause Analysis）
 
-### 根本原因 1: `SnapshotService.create_snapshot` におけるクライアント提供外部 URL の無検証利用
-- **該当箇所**: [`backend/app/services/snapshot_service.py`](backend/app/services/snapshot_service.py) L92-L116
-- **メカニズム**:
-  1. クライアント端末（`192.168.3.10`）が `resolveComfyUrl` によって解決された ComfyUI URL（`http://192.168.3.13:8188/view?...`）を `payload.image_path` に格納して `POST /api/snapshots` を呼び出す。
-  2. バックエンドは、自環境で ComfyUI と通信するための内部 URL（`settings.comfy_url = "http://localhost:8188"`）を持っているにもかかわらず、クライアントから渡された `payload.image_path`（`192.168.3.13:8188`）に直接 `urllib.request.urlopen` を試行する。
-  3. サーバーホスト内部からの自機 LAN IP（`192.168.3.13:8188`）宛て通信がタイムアウトし、画像ダウンロードが失敗する。
+本不具合は、以下の 3 つの複合要因によって発生している **Type A（実装バグ）** です。
 
-### 根本原因 2: 例外キャッチ時のサイレントフォールバックによる不正レコード永続化
-- **該当箇所**: [`backend/app/services/snapshot_service.py`](backend/app/services/snapshot_service.py) L114-L116, L138-L145
+### 根本原因 1: `updated_at` のシリアライズ形式不一致による不要なプリセット再同期（主因）
+- **該当箇所**: 
+  - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L931
+  - `backend/app/routers/presets.py` L106
 - **メカニズム**:
-  1. 画像ダウンロード失敗時、`except Exception as e:` でエラーログを出力するのみで、処理を中断・失敗させない。
-  2. 結果として `saved_image_path` はフォールバックとして外部 URL のまま維持され、`saved_thumbnail_path` は `None` のまま DB に登録される。
-  3. `../db/snapshots/` への WebP 変換・永続化保存も行われない。
+  1. プリセット更新時、バックエンドは `preset.updated_at = datetime.now(timezone.utc)` を保存し、API レスポンスとして ISO 文字列（末尾 `Z` または `+00:00` 付き）を返却する。
+  2. 一方、`GET /api/workflow-presets` 取得時は、SQLite から naive datetime として読み出されるため、末尾に `Z` のない文字列としてシリアライズされる。
+  3. フロントエンドの `usePresetState.ts` において、以下の比較ロジックが実行される：
+     ```typescript
+     if (presetUpdatedAtRef.current[activePreset.id] !== activePreset.updated_at)
+     ```
+  4. 「末尾 `Z` あり」と「末尾 `Z` なし」の違いにより、**常に別端末・他セッションからの更新があったと誤判定**される。
+  5. この結果、`!isDirty` 判定時やポーリング・フォーカス復帰時に `currentStore.loadPresetData(activePreset, defaultParams)` が発火し、UI 上で変更したパラメータがサーバー側の古い/遅延した値で強制上書きされる。
 
-### 根本原因 3: `HistoryPage.tsx` における絶対 URL / 相対パスの依存
-- **該当箇所**: [`frontend/src/pages/HistoryPage.tsx`](frontend/src/pages/HistoryPage.tsx) L523, L639, [`AlbumDetailView.tsx`](frontend/src/pages/HistoryPage/components/AlbumDetailView.tsx) L426
+### 根本原因 2: オートセーブ（1秒デバウンス）と即座の生成ボタン押下のタイミング競合
+- **該当箇所**:
+  - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`
 - **メカニズム**:
-  - `snap.thumbnail_path` が `NULL` の場合、`snap.image_path`（`http://192.168.3.13:8188/...`）がそのまま `<img>` の `src` に渡される。
-  - 保存端末（`192.168.3.10`）ではブラウザキャッシュまたは直接 LAN 通信により表示されるが、別端末（`127.0.0.1` やポート 8188 に直接到達できない端末）では画像の取得に失敗する。
+  - アスペクト比を変更した後、オートセーブがバックエンドに送信されるまで 1 秒のデバウンス待機時間がある。
+  - この 1 秒以内にユーザーが「生成」ボタンを押下するか、あるいは生成中に 5 秒間隔のプリセット一覧ポーリングやウィンドウフォーカスイベント（`refetchOnWindowFocus: true`）が発生すると、根本原因 1 の誤同期がトリガーされ、変更前の状態に巻き戻される。
+
+### 根本原因 3: 旧ロール名キー（`Resolution Selecto`）の混在
+- **該当箇所**:
+  - `frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts` L50-54
+  - `db/prompt_surgeon.db`（`workflow_presets`）
+- **メカニズム**:
+  - `'Resolution Selecto'`（末尾 r 欠落）と `'Resolution Selector'` の 2 重キーが存在し、プリセットロード時の初期値解決において、旧キーまたはデフォルト値へのフォールバックが誘発されやすい状態となっている。
 
 ---
 
-## 5. 影響データと復旧可能性
+## 5. 「遅れて反映される」メカニズムの解明
 
-- **影響件数**: 68 件（Snapshot ID: 4108 〜 4177）
-- **データ実体の残存状況**:
-  - `http://127.0.0.1:8188/view` 経由で対象画像（例: `ComfyUI_temp_etsmj_00089_.png`）の存在を確認したところ、HTTP 200（約 1.7〜1.8MB）で全量取得可能であることを実証済み。
-  - ComfyUI の一時フォルダ（`type=temp`）にまだ画像ファイルが残存しているため、マイグレーションスクリプトまたは修復処理によって、正規の WebP 画像およびサムネイルとして `db/snapshots/` に永続化し、DB のパスを修復することが可能。
+1. ユーザーがアスペクト比を変更する。
+2. 変更直後に生成ボタンを押すと、オートセーブ未完了または誤再同期により旧アスペクト比で生成される。
+3. 生成中または生成完了後に、1秒デバウンスを経た `PUT` リクエストがバックエンドに到達し、DB 側がようやく更新される。
+4. その後、何回か生成を繰り返すうちに、リフェッチされた最新データ（新アスペクト比）とフロントエンドの状態が一致し、以降の生成ジョブには変更後のアスペクト比が ComfyUI に送信されるようになる。
 
 ---
 
 ## 6. 是正方針（設計フェーズへの申し送り）
 
-1. **バックエンド ComfyUI 画像ダウンロード処理の是正** (`SnapshotService.create_snapshot`):
-   - クライアントから渡された `payload.image_path` が ComfyUI の `/view` URL である場合、ホスト名部分をサーバーの内部設定 `settings.comfy_url`（`http://localhost:8188` または `http://127.0.0.1:8188`）に正規化してダウンロードを行う。
-   - 万一ダウンロードに失敗した際のエラーハンドリングを強化し、サイレントな不正データ永続化を防止する。
-2. **既存 68 件のスナップショット修復マイグレーション**:
-   - `thumbnail_path IS NULL` かつ `image_path LIKE 'http%'` のレコードを対象に、内部 ComfyUI から実画像を取得して `db/snapshots/` に WebP 保存・サムネイル生成を行い、DB レコードを正規の相対 URI（`/api/snapshots/images/...`）に更新する修復スクリプトの作成・実行。
-3. **フロントエンド側の堅牢性向上**:
-   - `HistoryPage` や `HistoryModalPreview` においても、万一未保存の ComfyUI URL が渡された場合に備えた URL 解決またはフォールバックの検討。
+1. **`updated_at` 比較の正規化（タイムスタンプ値比較またはフォーマット統一）**:
+   - `usePresetState.ts` において、単純な文字列完全一致比較（`!==`）ではなく、`new Date(...).getTime()` によるエポックミリ秒比較を行うか、バックエンド側での ISO8601 シリアライズ（UTC `Z` 付与）を統一し、同一日時の誤検知を完全に防止する。
+2. **生成実行時の即時同期保証（フラッシュ処理）**:
+   - 「生成」ボタン押下時に、デバウンス待機中の未保存パラメータが存在する場合は即座に保存（フラッシュ）を完了させてからプロンプト投入を行うか、あるいは投入用ペイロードにはフロントエンドの最新ストア値を直接使用して送信を担保する。
+3. **プリセットデータのクリーンアップおよびキー正規化**:
+   - データベース内の `'Resolution Selecto'` を正規の `'Resolution Selector'` に統合するマイグレーションまたは補正処理を適用し、キーの揺らぎによるフォールバック発生を防止する。

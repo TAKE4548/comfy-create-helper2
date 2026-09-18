@@ -11,7 +11,15 @@ import { applyBypass } from '../../../utils/bypassUtils'
 import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
 import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 
-export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInfo: any = {}) {
+export interface UseGenerateActionOptions {
+  onBeforeGenerate?: () => void
+}
+
+export function useGenerateAction(
+  workflow: Workflow | undefined,
+  comfyObjectInfo: any = {},
+  options?: UseGenerateActionOptions
+) {
   const {
     paramValues: currentParamValues,
     promptChips,
@@ -50,6 +58,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
 
   const handleGenerate = async () => {
     if (!workflow) return
+    options?.onBeforeGenerate?.()
     const activeBypassNodeIds = Array.from(
       new Set(
         bypassProfiles
@@ -111,6 +120,7 @@ export function useGenerateAction(workflow: Workflow | undefined, comfyObjectInf
 
   const handleGenerateSets = async () => {
     if (!workflow) return
+    options?.onBeforeGenerate?.()
     const checkedSets = sets.filter((s) => s.checked)
     if (checkedSets.length === 0) {
       setErrorToast?.({ message: '生成対象のセットが選択されていません', type: 'error' })

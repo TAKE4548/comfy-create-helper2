@@ -78,19 +78,23 @@ export function useGeneratePageState() {
   const { loadSnapshotParams, handleSaveDefaultParams, handleResetDefaultParams, saveDefaultParamsMutation } =
     useWorkflowParams(workflowMgmt.workflow, selectedWorkflowId)
 
-  const { handleGenerateSets } = useGenerateAction(workflowMgmt.workflow, workflowMgmt.comfyObjectInfo)
+  // 3. Preset State & Operations
+  const presetState = usePresetState({
+    selectedWorkflowId,
+    workflow: workflowMgmt.workflow,
+  })
+
+  const { handleGenerateSets } = useGenerateAction(
+    workflowMgmt.workflow,
+    workflowMgmt.comfyObjectInfo,
+    { onBeforeGenerate: presetState.flushAutoSave }
+  )
 
   const promptTranslation = usePromptTranslation({ paramValues, setParamValues })
 
   const snapshotActions = useSnapshotActions(selectedWorkflowId)
   const auditAction = useAuditAction()
   const uploadAction = useWorkflowUpload()
-
-  // 3. Preset State & Operations
-  const presetState = usePresetState({
-    selectedWorkflowId,
-    workflow: workflowMgmt.workflow,
-  })
 
   // 4. Asset Selection & Snapshot Rebuild
   const assetSelection = useAssetSelectionState({

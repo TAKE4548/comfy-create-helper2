@@ -23,6 +23,15 @@ export {
   type WorkflowNode,
 }
 
+export function healLegacyParamKeys(params: Record<string, string>): Record<string, string> {
+  const result = { ...params }
+  if ('Resolution Selecto' in result && !('Resolution Selector' in result)) {
+    result['Resolution Selector'] = result['Resolution Selecto']
+    delete result['Resolution Selecto']
+  }
+  return result
+}
+
 export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkflowId: number | null) {
   const { setParamValues, paramValues, setSeed, setSeedMode, appliedAssets, setAppliedAssets, sets, setSets, activeSetId } = useGenerationStore()
   const qc = useQueryClient()
@@ -31,7 +40,7 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
   useEffect(() => {
     if (!workflow) return
 
-    const defaultParams = getInitialParams(workflow)
+    const defaultParams = healLegacyParamKeys(getInitialParams(workflow))
 
     // ─── 全セットへの新規ロール補完 ────────────────────────────
     const currentSets = sets || []
@@ -41,16 +50,19 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
     if (hasNewKeys && typeof setSets === 'function') {
       const updatedSets = currentSets.map((s) => ({
         ...s,
-        paramValues: { ...defaultParams, ...(s.paramValues || {}) }, // デフォルト値ベース、既存値優先
+        paramValues: healLegacyParamKeys({ ...defaultParams, ...(s.paramValues || {}) }), // デフォルト値ベース、既存値優先
       }))
       setSets(updatedSets)
     }
 
     const activeSet = currentSets.find((s) => String(s.id) === String(activeSetId)) || currentSets[0]
     const baseParams = (paramValues && Object.keys(paramValues).length > 0) ? paramValues : (activeSet?.paramValues || {})
-    const isParamValuesMissingKeys = Object.keys(defaultParams).some((k) => !(k in baseParams))
-    if (isParamValuesMissingKeys || Object.keys(baseParams).length === 0) {
-      setParamValues({ ...defaultParams, ...baseParams })
+    const healedBaseParams = healLegacyParamKeys(baseParams)
+    const isParamValuesMissingKeys = Object.keys(defaultParams).some((k) => !(k in healedBaseParams))
+    if (isParamValuesMissingKeys || Object.keys(healedBaseParams).length === 0) {
+      setParamValues(healLegacyParamKeys({ ...defaultParams, ...healedBaseParams }))
+    } else if ('Resolution Selecto' in baseParams) {
+      setParamValues(healedBaseParams)
     }
 
     // Initialize applied assets if empty and workflow has defaults
@@ -70,7 +82,7 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
     Object.entries(snapshotParams).forEach(([key, val]) => {
       newParams[key] = String(val)
     })
-    setParamValues(newParams)
+    setParamValues(healLegacyParamKeys(newParams))
 
     if (snapshotParams['Sampler_Seed'] !== undefined) {
       const seedVal = Number(snapshotParams['Sampler_Seed'])

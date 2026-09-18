@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { usePresetState } from '../usePresetState'
+import { usePresetState, normalizeTimestamp, isTimestampDifferent } from '../usePresetState'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { workflowPresetsApi } from '../../../../api/client'
 import type { WorkflowPreset } from '../../../../api/types'
@@ -480,5 +480,71 @@ describe('usePresetState multi-device sync and conflict handling', () => {
     expect(result.current.conflictData).not.toBeNull()
     expect(result.current.conflictData?.serverPreset.param_values?.prompt).toBe('remote modified prompt 2')
     expect(result.current.conflictData?.localDraft.paramValues.prompt).toBe('local dirty prompt 2')
+  })
+
+  describe('normalizeTimestamp & isTimestampDifferent', () => {
+    it('normalizes timestamps correctly with or without Z', () => {
+      const withZ = '2026-09-18T10:00:00Z'
+      const withoutZ = '2026-09-18T10:00:00'
+      expect(normalizeTimestamp(withZ)).toBe(normalizeTimestamp(withoutZ))
+      expect(isTimestampDifferent(withZ, withoutZ)).toBe(false)
+    })
+
+    it('detects difference when timestamps differ by more than thresholdMs', () => {
+      const ts1 = '2026-09-18T10:00:00Z'
+      const ts2 = '2026-09-18T10:00:05Z'
+      expect(isTimestampDifferent(ts1, ts2)).toBe(true)
+      expect(isTimestampDifferent(ts1, ts2, 10000)).toBe(false)
+    })
+
+    it('handles empty or missing timestamps properly', () => {
+      expect(isTimestampDifferent(null, null)).toBe(false)
+      expect(isTimestampDifferent('2026-09-18T10:00:00Z', null)).toBe(true)
+      expect(isTimestampDifferent(null, '2026-09-18T10:00:00Z')).toBe(true)
+    })
+
+    it('does not trigger reload when server updated_at only differs by formatting (Z suffix)', async () => {
+      const initialPreset: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Set 1',
+        param_values: { prompt: 'initial prompt' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00',
+        updated_at: '2026-09-08T10:00:00',
+      }
+
+      vi.mocked(workflowPresetsApi.list).mockResolvedValueOnce([initialPreset])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+
+      await waitFor(() => {
+        expect(result.current.presets).toBeDefined()
+      })
+
+      // Simulate loadPresetData spy or verification that state is not overwritten
+      const formattedPreset: WorkflowPreset = {
+        ...initialPreset,
+        updated_at: '2026-09-08T10:00:00Z', // identical instant, but with Z
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([formattedPreset])
+
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+      })
+
+      // Target preset tab select should not report conflict or change
+      act(() => {
+        result.current.handleSelectPresetTab(101)
+      })
+      expect(result.current.conflictData).toBeNull()
+    })
   })
 })

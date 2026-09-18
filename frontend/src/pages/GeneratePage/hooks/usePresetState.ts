@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowPresetsApi } from '../../../api/client'
 import type { Workflow, WorkflowPreset } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
-import { getInitialParams } from './useWorkflowParams'
+import { getInitialParams, healLegacyParamKeys } from './useWorkflowParams'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { prependToPrompt, appendToPrompt } from '../../../utils/promptUtils'
 import { parseToChips, TagChip } from '../../../components/TagChipEditor/useChipParser'
@@ -27,6 +27,23 @@ export interface PresetConflictData {
     seedMode: 'random' | 'fixed'
     seed: number
   }
+}
+
+export function normalizeTimestamp(ts?: string | null): number {
+  if (!ts) return 0
+  const trimmed = ts.trim()
+  const hasTz = trimmed.endsWith('Z') || trimmed.includes('+') || (trimmed.includes('-') && trimmed.lastIndexOf('-') > 10)
+  const normalized = hasTz ? trimmed : `${trimmed}Z`
+  const ms = new Date(normalized).getTime()
+  return isNaN(ms) ? 0 : ms
+}
+
+export function isTimestampDifferent(a?: string | null, b?: string | null, thresholdMs = 1000): boolean {
+  if (!a && !b) return false
+  if (!a || !b) return true
+  const msA = normalizeTimestamp(a)
+  const msB = normalizeTimestamp(b)
+  return Math.abs(msA - msB) >= thresholdMs
 }
 
 export interface UsePresetStateProps {
@@ -169,7 +186,6 @@ export function usePresetState({
           return old.map((p) => (p.id === updatedPreset.id ? updatedPreset : p))
         })
       }
-      qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
     onError: (err: any, variables) => {
       if (err?.message?.includes('409') || err?.status === 409) {
@@ -626,7 +642,7 @@ export function usePresetState({
       presetUpdatedAtRef.current[preset.id] = preset.updated_at
     }
     const defaultParams = workflow ? getInitialParams(workflow) : {}
-    const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
+    const mergedParamValues = healLegacyParamKeys({ ...defaultParams, ...(preset.param_values || {}) })
 
     lastSavedStateRef.current[preset.id] = {
       paramValues: mergedParamValues,
@@ -654,7 +670,7 @@ export function usePresetState({
     const serverChanged = !!(
       serverPreset?.updated_at &&
       prevUpdatedAt &&
-      serverPreset.updated_at !== prevUpdatedAt
+      isTimestampDifferent(serverPreset.updated_at, prevUpdatedAt)
     )
 
     const targetSet = storeRef.current.sets?.find((s) => String(s.id) === String(presetId))
@@ -814,10 +830,10 @@ export function usePresetState({
         id: p.id,
         name: p.name,
         // defaultParams < サーバーDB最新値 (SSoT)
-        paramValues: {
+        paramValues: healLegacyParamKeys({
           ...defaultParams,
           ...(p.param_values || {}),
-        },
+        }),
         appliedAssets: p.applied_assets || {},
         promptChips: existingSet?.promptChips,
         batchSize: p.batch_size || 1,
@@ -928,7 +944,7 @@ export function usePresetState({
         const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
         if (activePreset && activePreset.updated_at) {
           const prevUpdatedAt = presetUpdatedAtRef.current[activePreset.id]
-          if (prevUpdatedAt && activePreset.updated_at !== prevUpdatedAt) {
+          if (prevUpdatedAt && isTimestampDifferent(activePreset.updated_at, prevUpdatedAt)) {
             presetUpdatedAtRef.current[activePreset.id] = activePreset.updated_at
             const lastSaved = lastSavedStateRef.current[activePreset.id]
             const currentLocalState: HistoryState = {
@@ -978,6 +994,41 @@ export function usePresetState({
   }, [presets, selectedWorkflowId, workflow])
 
   // Autosave
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flushAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    if (!isInitialSyncRef.current) return
+    if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
+    const activePreset = presets?.find((p) => String(p.id) === String(activeSetId))
+    if (!activePreset) return
+
+    const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
+    const currentLastSaved = lastSavedStateRef.current[activeSetId]
+    if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
+
+    const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
+    if (currentLastSaved) {
+      const hist = getHistory(activeSetId)
+      hist.past.push(currentLastSaved)
+      hist.future = []
+      saveHistory(activeSetId, hist)
+    }
+    updatePresetMutation.mutate({
+      id: activePreset.id,
+      name: activePreset.name,
+      param_values: currentState.paramValues,
+      applied_assets: currentState.appliedAssets,
+      batch_size: currentState.batchSize,
+      seed_mode: currentState.seedMode,
+      seed: currentState.seed,
+      base_updated_at: latestBaseUpdatedAt,
+    })
+  }, [selectedWorkflowId, activeSetId, presets, paramValues, appliedAssets, batchSize, seedMode, seed, updatePresetMutation])
+
   useEffect(() => {
     if (!isInitialSyncRef.current) return
     if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
@@ -988,7 +1039,12 @@ export function usePresetState({
     const lastSaved = lastSavedStateRef.current[activeSetId]
     if (lastSaved && isStateEqual(lastSaved, currentState)) return
 
-    const timer = setTimeout(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null
       const currentLastSaved = lastSavedStateRef.current[activeSetId]
       if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
       const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
@@ -1010,7 +1066,12 @@ export function usePresetState({
       })
     }, 1000)
 
-    return () => clearTimeout(timer)
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
+    }
   }, [paramValues, appliedAssets, batchSize, seedMode, seed, activeSetId, presets, selectedWorkflowId])
 
   // Conflict Resolution Handlers
@@ -1088,5 +1149,6 @@ export function usePresetState({
     redo,
     canUndo,
     canRedo,
+    flushAutoSave,
   }
 }

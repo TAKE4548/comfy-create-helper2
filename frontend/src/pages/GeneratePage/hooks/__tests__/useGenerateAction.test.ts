@@ -809,6 +809,35 @@ describe('useGenerateAction', () => {
       const queuedPayload = mockStore.queuePrompt.mock.calls[0][0];
       expect(queuedPayload['4']).toBeUndefined();
     });
+
+    it('calls onBeforeGenerate callback and reflects active set params during handleGenerateSets', async () => {
+      const onBeforeGenerate = vi.fn();
+      mockStore.sets = [
+        {
+          id: 1,
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 42,
+          checked: true,
+          paramValues: {
+            Resolution_Selector: 'old_value',
+          },
+        },
+      ];
+      mockStore.activeSetId = 1;
+      mockStore.paramValues = {
+        Resolution_Selector: 'updated_value_within_1sec',
+      };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow, {}, { onBeforeGenerate });
+      await handleGenerateSets();
+
+      expect(onBeforeGenerate).toHaveBeenCalledTimes(1);
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.Resolution_Selector).toBe('updated_value_within_1sec');
+    });
   });
 });
 
