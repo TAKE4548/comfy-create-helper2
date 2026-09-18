@@ -1002,20 +1002,37 @@ export function usePresetState({
       autoSaveTimerRef.current = null
     }
     if (!isInitialSyncRef.current) return
-    if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
-    const activePreset = presets?.find((p) => String(p.id) === String(activeSetId))
+
+    // クロージャ変数ではなく、最新の Zustand ストアから状態を直接取得
+    const currentStore = useGenerationStore.getState()
+    let targetActiveId = currentStore.activeSetId
+    if ((targetActiveId === null || targetActiveId === undefined) && currentStore.sets?.length === 1) {
+      targetActiveId = currentStore.sets[0].id
+    }
+    if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
+    const activePreset = presets?.find((p) => String(p.id) === String(targetActiveId))
     if (!activePreset) return
 
-    const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
-    const currentLastSaved = lastSavedStateRef.current[activeSetId]
+    const currentState: HistoryState = {
+      paramValues: currentStore.paramValues,
+      appliedAssets: currentStore.appliedAssets,
+      batchSize: currentStore.batchSize,
+      seedMode: currentStore.seedMode,
+      seed: currentStore.seed,
+    }
+
+    // インメモリ上の activeSet を即時同期
+    updateActiveSet?.(currentState)
+
+    const currentLastSaved = lastSavedStateRef.current[targetActiveId]
     if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
 
     const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
     if (currentLastSaved) {
-      const hist = getHistory(activeSetId)
+      const hist = getHistory(targetActiveId)
       hist.past.push(currentLastSaved)
       hist.future = []
-      saveHistory(activeSetId, hist)
+      saveHistory(targetActiveId, hist)
     }
     updatePresetMutation.mutate({
       id: activePreset.id,
@@ -1027,7 +1044,7 @@ export function usePresetState({
       seed: currentState.seed,
       base_updated_at: latestBaseUpdatedAt,
     })
-  }, [selectedWorkflowId, activeSetId, presets, paramValues, appliedAssets, batchSize, seedMode, seed, updatePresetMutation])
+  }, [selectedWorkflowId, presets, updatePresetMutation, updateActiveSet])
 
   useEffect(() => {
     if (!isInitialSyncRef.current) return

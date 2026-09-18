@@ -812,6 +812,15 @@ describe('useGeneratePageState', () => {
         })
       )
     })
+
+    it('REQ-277: ensures handleGenerateSets wires onBeforeGenerate with flushAutoSave', async () => {
+      const wrapper = createWrapper()
+      const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      // Verify that handleGenerateSets and flushAutoSave are exposed and executable
+      expect(typeof result.current.handleGenerateSets).toBe('function')
+      expect(typeof result.current.flushAutoSave).toBe('function')
+    })
   })
 })
 

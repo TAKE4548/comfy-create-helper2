@@ -6,6 +6,8 @@ import type { Workflow } from '../../../../api/types';
 vi.mock('../../../../store/useGenerationStore', () => {
   const store = {
     paramValues: {},
+    promptChips: {},
+    activeSetId: null,
     batchSize: 1,
     seedMode: 'random',
     seed: 12345,
@@ -20,8 +22,10 @@ vi.mock('../../../../store/useGenerationStore', () => {
     fetchQueue: vi.fn(),
     setErrorToast: vi.fn(),
   };
+  const hook: any = () => store;
+  hook.getState = () => store;
   return {
-    useGenerationStore: () => store,
+    useGenerationStore: hook,
   };
 });
 
@@ -29,8 +33,10 @@ describe('useGenerateAction', () => {
   let mockStore: any;
 
   beforeEach(() => {
-    mockStore = useGenerationStore();
+    mockStore = (useGenerationStore as any)();
     mockStore.paramValues = {};
+    mockStore.promptChips = {};
+    mockStore.activeSetId = null;
     mockStore.batchSize = 1;
     mockStore.seedMode = 'random';
     mockStore.seed = 12345;
@@ -837,6 +843,381 @@ describe('useGenerateAction', () => {
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
       const metadata = mockStore.queuePrompt.mock.calls[0][1];
       expect(metadata.paramValues.Resolution_Selector).toBe('updated_value_within_1sec');
+    });
+  });
+
+  describe('REQ-277: Real-time parameter reflection and active set synchronization', () => {
+    it('Scenario 1: reflects latest paramValues immediately upon handleGenerateSets even when store was updated right before click', async () => {
+      mockStore.sets = [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 100,
+          checked: true,
+          paramValues: {
+            prompt: 'stale prompt in set',
+          },
+        },
+      ];
+      mockStore.activeSetId = 'set-1';
+      // Store state updated immediately before handleGenerateSets execution
+      mockStore.paramValues = {
+        prompt: 'fresh user typed prompt',
+      };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.prompt).toBe('fresh user typed prompt');
+    });
+
+    it('Scenario 2: merges current paramValues when activeSetId is null and single set exists (fallback protection)', async () => {
+      mockStore.sets = [
+        {
+          id: 'set-fallback-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+          paramValues: {
+            sampler: 'euler',
+            steps: '20',
+          },
+        },
+      ];
+      mockStore.activeSetId = null; // Unset / unsynced
+      mockStore.paramValues = {
+        sampler: 'dpmpp_2m',
+        steps: '30',
+      };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.sampler).toBe('dpmpp_2m');
+      expect(metadata.paramValues.steps).toBe('30');
+    });
+
+    it('Scenario 3: handles type mismatch between activeSetId (string) and setItem.id (number)', async () => {
+      mockStore.sets = [
+        {
+          id: 42, // numeric id
+          name: 'Set 42',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 999,
+          checked: true,
+          paramValues: {
+            cfg: '7.0',
+          },
+        },
+      ];
+      mockStore.activeSetId = '42'; // string id
+      mockStore.paramValues = {
+        cfg: '8.5',
+      };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.cfg).toBe('8.5');
+    });
+
+    it('Scenario 4: merges latest values into active set while preserving distinct values in non-active set', async () => {
+      mockStore.sets = [
+        {
+          id: 'set-active',
+          name: 'Active Set',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 1,
+          checked: true,
+          paramValues: {
+            prompt: 'original active prompt',
+            negative: 'original negative',
+          },
+        },
+        {
+          id: 'set-inactive',
+          name: 'Inactive Set',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 2,
+          checked: true,
+          paramValues: {
+            prompt: 'distinct inactive prompt',
+            negative: 'distinct inactive negative',
+          },
+        },
+      ];
+      mockStore.activeSetId = 'set-active';
+      mockStore.paramValues = {
+        prompt: 'updated active prompt',
+        negative: 'updated active negative',
+      };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+
+      // Call 0 (active set)
+      const call0Metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(call0Metadata.paramValues.prompt).toBe('updated active prompt');
+      expect(call0Metadata.paramValues.negative).toBe('updated active negative');
+
+      // Call 1 (inactive set)
+      const call1Metadata = mockStore.queuePrompt.mock.calls[1][1];
+      expect(call1Metadata.paramValues.prompt).toBe('distinct inactive prompt');
+      expect(call1Metadata.paramValues.negative).toBe('distinct inactive negative');
+    });
+
+    it('RT-1: does not corrupt multiple sets when activeSetId does not match any set', async () => {
+      mockStore.sets = [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 1,
+          checked: true,
+          paramValues: { prompt: 'set 1 prompt' },
+        },
+        {
+          id: 'set-2',
+          name: 'Set 2',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 2,
+          checked: true,
+          paramValues: { prompt: 'set 2 prompt' },
+        },
+      ];
+      mockStore.activeSetId = 'non-existent-id';
+      mockStore.paramValues = { prompt: 'orphaned input' };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.queuePrompt.mock.calls[0][1].paramValues.prompt).toBe('set 1 prompt');
+      expect(mockStore.queuePrompt.mock.calls[1][1].paramValues.prompt).toBe('set 2 prompt');
+    });
+
+    it('RT-2: handleGenerate single generation also fetches latest paramValues from store at trigger time', async () => {
+      mockStore.batchSize = 1;
+      mockStore.paramValues = {
+        prompt: 'original input',
+      };
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+
+      // Simulate state update happening right before user clicks generate
+      mockStore.paramValues = {
+        prompt: 'latest prompt right before click',
+      };
+
+      await handleGenerate();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.prompt).toBe('latest prompt right before click');
+    });
+
+    it('RT-3: single checked set fallback when activeSetId is not in checkedSets (merges latest values into the only checked set)', async () => {
+      mockStore.sets = [
+        {
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 1,
+          checked: false,
+          paramValues: { prompt: 'set 1 prompt' },
+        },
+        {
+          id: 'set-2',
+          name: 'Set 2',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 2,
+          checked: true,
+          paramValues: { prompt: 'set 2 original prompt' },
+        },
+      ];
+      // activeSetId points to set-1 which is unchecked
+      mockStore.activeSetId = 'set-1';
+      mockStore.paramValues = { prompt: 'newly typed prompt in UI' };
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      const metadata = mockStore.queuePrompt.mock.calls[0][1];
+      expect(metadata.paramValues.prompt).toBe('newly typed prompt in UI');
+    });
+
+    // 抜け道防止 5 大ルール (AL-1〜AL-5) 準拠テストスイート
+    describe('Strict Anti-Loophole wfJson Verification (AL-1 ~ AL-5)', () => {
+      const realisticWorkflow: Workflow = {
+        id: 1,
+        name: 'Realistic KSampler Workflow',
+        created_at: '',
+        json_body: {
+          '3': {
+            class_type: 'KSampler',
+            inputs: {
+              seed: 1000,
+              steps: 20,
+              cfg: 7.0,
+              sampler_name: 'euler',
+              scheduler: 'normal',
+            },
+          },
+          '6': {
+            class_type: 'CLIPTextEncode',
+            inputs: { text: 'prompt' },
+          },
+        },
+        mappings: [
+          { id: 1, master_id: 1, node_id: '3', role: 'Sampler_Seed', param_name: 'seed', input_type: 'int', display_name: 'Seed' },
+          { id: 2, master_id: 2, node_id: '3', role: 'Sampler_Steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+          { id: 3, master_id: 3, node_id: '3', role: 'Sampler_cfg', param_name: 'cfg', input_type: 'float', display_name: 'CFG' },
+          { id: 4, master_id: 4, node_id: '3', role: 'Sampler_Scheduler', param_name: 'scheduler', input_type: 'select_scheduler', display_name: 'Scheduler' },
+          { id: 5, master_id: 5, node_id: '6', role: 'Main_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Prompt' },
+        ],
+      };
+
+      it('Scenario 1: injects latest parameter values into wfJson inputs on immediate generation [AL-1, AL-2, AL-3, AL-4]', async () => {
+        mockStore.sets = [{
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 100,
+          checked: true,
+          paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0', Sampler_Scheduler: 'normal' },
+        }];
+        mockStore.activeSetId = 'set-1';
+
+        // AL-1: 最新ストア状態の更新
+        mockStore.paramValues = {
+          Sampler_Steps: '40',
+          Sampler_cfg: '8.5',
+          Sampler_Scheduler: 'karras',
+        };
+
+        // AL-4: onBeforeGenerate で先行オートセーブが走る協調動作をシミュレート
+        const onBeforeGenerate = vi.fn(() => {
+          const latest = (useGenerationStore as any).getState();
+          mockStore.sets[0].paramValues = { ...latest.paramValues };
+        });
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow, {}, { onBeforeGenerate });
+        await handleGenerateSets();
+
+        expect(onBeforeGenerate).toHaveBeenCalledTimes(1);
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+
+        // AL-2: 第1引数 wfJson を直接検証し、初期値フォールバックの偽陽性を二重アサートで遮断
+        const injectedWfJson = mockStore.queuePrompt.mock.calls[0][0];
+        expect(injectedWfJson['3'].inputs.steps).not.toBe(20);
+        expect(injectedWfJson['3'].inputs.steps).toBe(40);
+        expect(injectedWfJson['3'].inputs.cfg).not.toBe(7.0);
+        expect(injectedWfJson['3'].inputs.cfg).toBe(8.5);
+        expect(injectedWfJson['3'].inputs.scheduler).not.toBe('normal');
+        expect(injectedWfJson['3'].inputs.scheduler).toBe('karras');
+
+        // メタデータも正しく最新値になっていること
+        const metadata = mockStore.queuePrompt.mock.calls[0][1];
+        expect(metadata.paramValues.Sampler_Steps).toBe('40');
+      });
+
+      it('Scenario 2: fallback injection into wfJson when activeSetId is null and single set is checked [AL-1, AL-2]', async () => {
+        mockStore.sets = [{
+          id: 'set-single',
+          name: 'Single Set',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 100,
+          checked: true,
+          paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0', Sampler_Scheduler: 'normal' },
+        }];
+        mockStore.activeSetId = null; // unset
+        mockStore.paramValues = {
+          Sampler_Steps: '35',
+          Sampler_cfg: '9.0',
+          Sampler_Scheduler: 'karras',
+        };
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow);
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+        const injectedWfJson = mockStore.queuePrompt.mock.calls[0][0];
+        expect(injectedWfJson['3'].inputs.steps).not.toBe(20);
+        expect(injectedWfJson['3'].inputs.steps).toBe(35);
+        expect(injectedWfJson['3'].inputs.cfg).not.toBe(7.0);
+        expect(injectedWfJson['3'].inputs.cfg).toBe(9.0);
+      });
+
+      it('Scenario 3: preserves inactive set parameters without contamination from active set [AL-5]', async () => {
+        mockStore.sets = [
+          {
+            id: 'set-1',
+            name: 'Set 1 (Active)',
+            batchSize: 1,
+            seedMode: 'fixed',
+            seed: 1,
+            checked: true,
+            paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0', Sampler_Scheduler: 'normal' },
+          },
+          {
+            id: 'set-2',
+            name: 'Set 2 (Inactive)',
+            batchSize: 1,
+            seedMode: 'fixed',
+            seed: 2,
+            checked: true,
+            paramValues: { Sampler_Steps: '50', Sampler_cfg: '12.0', Sampler_Scheduler: 'exponential' },
+          },
+        ];
+        mockStore.activeSetId = 'set-1';
+        mockStore.paramValues = {
+          Sampler_Steps: '35',
+          Sampler_cfg: '8.5',
+          Sampler_Scheduler: 'karras',
+        };
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow);
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+
+        // Call 0 (Active set): 最新の変更値が wfJson に注入される
+        const call0Wf = mockStore.queuePrompt.mock.calls[0][0];
+        expect(call0Wf['3'].inputs.steps).toBe(35);
+        expect(call0Wf['3'].inputs.cfg).toBe(8.5);
+        expect(call0Wf['3'].inputs.scheduler).toBe('karras');
+
+        // Call 1 (Inactive set): 非アクティブセットの独自値が保持され、アクティブセットの値で汚染されない
+        const call1Wf = mockStore.queuePrompt.mock.calls[1][0];
+        expect(call1Wf['3'].inputs.steps).not.toBe(35);
+        expect(call1Wf['3'].inputs.steps).toBe(50);
+        expect(call1Wf['3'].inputs.cfg).not.toBe(8.5);
+        expect(call1Wf['3'].inputs.cfg).toBe(12.0);
+        expect(call1Wf['3'].inputs.scheduler).not.toBe('karras');
+        expect(call1Wf['3'].inputs.scheduler).toBe('exponential');
+      });
     });
   });
 });

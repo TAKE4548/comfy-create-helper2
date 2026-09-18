@@ -5,7 +5,7 @@
 
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { BatchJob } from '../../../store/useGenerationStore'
-import type { Workflow } from '../../../api/types'
+import type { Workflow, ParamSyncGroup } from '../../../api/types'
 import { getEffectiveParamValues } from '../../../store/slices/multiSetSlice'
 import { applyBypass } from '../../../utils/bypassUtils'
 import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
@@ -20,35 +20,33 @@ export function useGenerateAction(
   comfyObjectInfo: any = {},
   options?: UseGenerateActionOptions
 ) {
+  const hookStore = useGenerationStore()
   const {
-    paramValues: currentParamValues,
-    promptChips,
-    batchSize: currentBatchSize,
-    seedMode: currentSeedMode,
-    seed: currentSeed,
-    sets,
-    activeSetId,
     queuePrompt,
-    activeBatch,
     setActiveBatch,
-    appliedAssets,
-    bypassProfiles = [],
-    paramSyncGroups = [],
     setSubmissionAbortController,
     setIsBatchSubmitting,
     fetchQueue,
     setErrorToast,
-  } = useGenerationStore()
+  } = hookStore
 
-  const applyParamSync = (paramValues: Record<string, string>): Record<string, string> => {
-    const activeGroups = (paramSyncGroups || []).filter((g) => g.is_enabled)
+  const getLatestState = () =>
+    typeof useGenerationStore.getState === 'function'
+      ? useGenerationStore.getState()
+      : hookStore
+
+  const applyParamSync = (
+    paramValues: Record<string, string>,
+    groups: ParamSyncGroup[] = []
+  ): Record<string, string> => {
+    const activeGroups = (groups || []).filter((g) => g.is_enabled)
     if (activeGroups.length === 0) return paramValues
 
     const merged = { ...paramValues }
     activeGroups.forEach((g) => {
       const masterVal = merged[g.master_role]
       if (masterVal !== undefined) {
-        g.slave_roles.forEach((slaveRole) => {
+        g.slave_roles.forEach((slaveRole: string) => {
           merged[slaveRole] = masterVal
         })
       }
@@ -59,9 +57,20 @@ export function useGenerateAction(
   const handleGenerate = async () => {
     if (!workflow) return
     options?.onBeforeGenerate?.()
+
+    const state = getLatestState()
+    const currentParamValues = state.paramValues
+    const currentPromptChips = state.promptChips
+    const currentBatchSize = state.batchSize
+    const currentSeedMode = state.seedMode
+    const currentSeed = state.seed
+    const currentAppliedAssets = state.appliedAssets
+    const currentBypassProfiles = state.bypassProfiles || []
+    const currentParamSyncGroups = state.paramSyncGroups || []
+
     const activeBypassNodeIds = Array.from(
       new Set(
-        bypassProfiles
+        currentBypassProfiles
           .filter((p) => p.is_enabled)
           .flatMap((p) => p.bypassed_node_ids)
       )
@@ -76,8 +85,8 @@ export function useGenerateAction(
       return
     }
 
-    const effectiveParamValues = getEffectiveParamValues(currentParamValues, promptChips || {})
-    const syncedParamValues = applyParamSync(effectiveParamValues)
+    const effectiveParamValues = getEffectiveParamValues(currentParamValues, currentPromptChips || {})
+    const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
 
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
@@ -103,7 +112,7 @@ export function useGenerateAction(
         }
         await queuePrompt(
           wfJson,
-          { paramValues: syncedParamValues, appliedAssets },
+          { paramValues: syncedParamValues, appliedAssets: currentAppliedAssets },
           { signal: abortController.signal, skipQueueFetch: true }
         )
         if (abortController.signal.aborted) {
@@ -121,7 +130,16 @@ export function useGenerateAction(
   const handleGenerateSets = async () => {
     if (!workflow) return
     options?.onBeforeGenerate?.()
-    const checkedSets = sets.filter((s) => s.checked)
+
+    const state = getLatestState()
+    const currentParamValues = state.paramValues
+    const currentPromptChips = state.promptChips
+    const currentSets = state.sets
+    const currentActiveSetId = state.activeSetId
+    const currentParamSyncGroups = state.paramSyncGroups || []
+    const currentBypassProfiles = state.bypassProfiles || []
+
+    const checkedSets = currentSets.filter((s) => s.checked)
     if (checkedSets.length === 0) {
       setErrorToast?.({ message: '生成対象のセットが選択されていません', type: 'error' })
       return
@@ -129,7 +147,7 @@ export function useGenerateAction(
 
     const activeBypassNodeIds = Array.from(
       new Set(
-        bypassProfiles
+        currentBypassProfiles
           .filter((p) => p.is_enabled)
           .flatMap((p) => p.bypassed_node_ids)
       )
@@ -162,23 +180,36 @@ export function useGenerateAction(
     })
 
     // 既存の activeBatch があればマージして母数を合算
-    const existingActiveBatch = activeBatch ? [...activeBatch] : []
+    const existingActiveBatch = state.activeBatch ? [...state.activeBatch] : []
     const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
     setActiveBatch([...currentBatch])
 
     let currentIdx = existingActiveBatch.length
     try {
       for (const setItem of checkedSets) {
-        const isActive = activeSetId !== null && String(setItem.id) === String(activeSetId)
+        const isExplicitActive =
+          currentActiveSetId !== null &&
+          currentActiveSetId !== undefined &&
+          String(setItem.id) === String(currentActiveSetId)
+        // 単一チェック時、またはアクティブIDがセット一覧に見当たらない場合の安全フォールバック
+        const isActive =
+          isExplicitActive ||
+          (checkedSets.length === 1 &&
+            (!currentActiveSetId ||
+              !currentSets.some((s) => String(s.id) === String(currentActiveSetId)) ||
+              !checkedSets.some((s) => String(s.id) === String(currentActiveSetId))))
+
         const itemParams = isActive
           ? { ...setItem.paramValues, ...currentParamValues }
           : setItem.paramValues
         const itemChips = isActive
-          ? (promptChips || setItem.promptChips || {})
+          ? ((currentPromptChips && Object.keys(currentPromptChips).length > 0)
+              ? currentPromptChips
+              : (setItem.promptChips || {}))
           : (setItem.promptChips || {})
 
         const effectiveParamValues = getEffectiveParamValues(itemParams, itemChips)
-        const syncedParamValues = applyParamSync(effectiveParamValues)
+        const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
         for (let i = 0; i < setItem.batchSize; i++) {
           // キャンセル中断チェック
           if (abortController.signal.aborted) {
