@@ -1218,6 +1218,39 @@ describe('useGenerateAction', () => {
         expect(call1Wf['3'].inputs.scheduler).not.toBe('karras');
         expect(call1Wf['3'].inputs.scheduler).toBe('exponential');
       });
+
+      it('Scenario 4: continuous editing without reload propagates each update to wfJson inputs on consecutive generations (Phenomenon 5 prevention)', async () => {
+        mockStore.sets = [{
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'fixed',
+          seed: 100,
+          checked: true,
+          paramValues: { Sampler_Steps: '20' },
+        }];
+        mockStore.activeSetId = 'set-1';
+
+        // 1回目編集: Steps=35
+        mockStore.paramValues = { Sampler_Steps: '35' };
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow);
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+        const wf1 = mockStore.queuePrompt.mock.calls[0][0];
+        expect(wf1['3'].inputs.steps).not.toBe(20);
+        expect(wf1['3'].inputs.steps).toBe(35);
+
+        // 2回目連続編集: リロードなしで Steps=50 にさらに変更
+        mockStore.queuePrompt.mockClear();
+        mockStore.paramValues = { Sampler_Steps: '50' };
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+        const wf2 = mockStore.queuePrompt.mock.calls[0][0];
+        expect(wf2['3'].inputs.steps).not.toBe(35);
+        expect(wf2['3'].inputs.steps).toBe(50);
+      });
     });
   });
 });

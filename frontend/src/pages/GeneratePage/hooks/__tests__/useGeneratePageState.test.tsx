@@ -821,6 +821,52 @@ describe('useGeneratePageState', () => {
       expect(typeof result.current.handleGenerateSets).toBe('function')
       expect(typeof result.current.flushAutoSave).toBe('function')
     })
+
+    it('REQ-278: preserves in-memory edited parameters in setSets on preset sync', async () => {
+      const preset: WorkflowPreset = {
+        id: 10,
+        workflow_id: 1,
+        name: 'Preset 1',
+        param_values: { steps: '20' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-08-23T00:00:00Z',
+        updated_at: '2026-08-23T00:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset])
+
+      mockStore.sets = [
+        {
+          id: 10,
+          name: 'Preset 1',
+          paramValues: { steps: '40' },
+          appliedAssets: {},
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+        },
+      ]
+      mockStore.activeSetId = 10
+      mockStore.paramValues = { steps: '40' }
+
+      const wrapper = createWrapper()
+      renderHook(() => useGeneratePageState(), { wrapper })
+
+      await waitFor(() => {
+        expect(mockStore.setSets).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: 10,
+              paramValues: expect.objectContaining({ steps: '40' }),
+            }),
+          ])
+        )
+      })
+    })
   })
 })
 

@@ -547,4 +547,56 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       expect(result.current.conflictData).toBeNull()
     })
   })
+
+  describe('REQ-278: in-memory state preservation during preset re-sync', () => {
+    it('Scenario 3.1: preserves local edited steps (Steps=40) in sets when server re-syncs with DB values (Steps=20)', async () => {
+      const initialPreset: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Set 1',
+        param_values: { Sampler_Steps: '20' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([initialPreset])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+
+      await waitFor(() => {
+        expect(result.current.presets).toHaveLength(1)
+      })
+
+      // 1. 編集前のプリセットがセットにロードされている
+      expect(useGenerationStore.getState().sets[0].paramValues.Sampler_Steps).toBe('20')
+
+      // 2. ユーザー操作により Steps=40 に変更（インメモリ編集）
+      act(() => {
+        useGenerationStore.getState().setParamValues({ Sampler_Steps: '40' })
+        useGenerationStore.setState((prev) => ({
+          sets: prev.sets.map((s) => (s.id === 101 ? { ...s, paramValues: { Sampler_Steps: '40' } } : s)),
+        }))
+      })
+
+      // 3. サーバーから DB 値（Steps=20）を持つプリセットデータが再同期された際、インメモリのセットが Steps=40 を維持することを検証
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+      })
+
+      await waitFor(() => {
+        const currentSets = useGenerationStore.getState().sets
+        expect(currentSets[0].paramValues.Sampler_Steps).not.toBe('20')
+        expect(currentSets[0].paramValues.Sampler_Steps).toBe('40')
+      })
+    })
+  })
 })
+

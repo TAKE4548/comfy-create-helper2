@@ -814,31 +814,35 @@ export function usePresetState({
     }
 
     const currentStore = storeRef.current
-    const currentActiveSetId = currentStore.activeSetId
+    const existingSets = currentStore.sets || []
+    const existingSetsMap = new Map(existingSets.map((s) => [String(s.id), s]))
+
+    let currentActiveSetId = currentStore.activeSetId
+    if ((currentActiveSetId === null || currentActiveSetId === undefined) && existingSets.length === 1) {
+      currentActiveSetId = existingSets[0].id
+    }
     const currentOpenPresetIds = currentStore.openPresetIds || []
 
     const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
     const checkedPresets: (string | number)[] | null = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
     const defaultParams = workflow ? getInitialParams(workflow) : {}
 
-    const existingSets = currentStore.sets || []
-    const existingSetsMap = new Map(existingSets.map((s) => [String(s.id), s]))
-
     const rawMappedSets = presets.map((p) => {
       const existingSet = existingSetsMap.get(String(p.id))
       return {
         id: p.id,
         name: p.name,
-        // defaultParams < サーバーDB最新値 (SSoT)
+        // existingSet のローカル編集値を最優先し、未編集ならサーバーDB値、未設定ならデフォルト値
         paramValues: healLegacyParamKeys({
           ...defaultParams,
           ...(p.param_values || {}),
+          ...(existingSet?.paramValues || {}),
         }),
-        appliedAssets: p.applied_assets || {},
+        appliedAssets: existingSet?.appliedAssets || p.applied_assets || {},
         promptChips: existingSet?.promptChips,
-        batchSize: p.batch_size || 1,
-        seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
-        seed: p.seed !== undefined ? p.seed : 42,
+        batchSize: existingSet?.batchSize ?? p.batch_size ?? 1,
+        seedMode: (existingSet?.seedMode || p.seed_mode || 'random') as 'random' | 'fixed',
+        seed: existingSet?.seed !== undefined ? existingSet.seed : (p.seed !== undefined ? p.seed : 42),
         checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
       }
     })
@@ -894,26 +898,30 @@ export function usePresetState({
           if (p.updated_at) {
             presetUpdatedAtRef.current[p.id] = p.updated_at
           }
-          const pData = rawMappedSets.find((s) => String(s.id) === String(p.id))
-          if (pData && !lastSavedStateRef.current[p.id]) {
+          if (!lastSavedStateRef.current[p.id]) {
             lastSavedStateRef.current[p.id] = {
-              paramValues: pData.paramValues,
-              appliedAssets: pData.appliedAssets,
-              batchSize: pData.batchSize,
-              seedMode: pData.seedMode,
-              seed: pData.seed,
+              paramValues: healLegacyParamKeys({
+                ...defaultParams,
+                ...(p.param_values || {}),
+              }),
+              appliedAssets: p.applied_assets || {},
+              batchSize: p.batch_size ?? 1,
+              seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
+              seed: p.seed !== undefined ? p.seed : 42,
             }
           }
         })
         const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
-        const activePresetData = rawMappedSets.find((s) => String(s.id) === String(targetActiveId))
-        if (activePreset && activePresetData) {
+        if (activePreset) {
           lastSavedStateRef.current[targetActiveId] = {
-            paramValues: activePresetData.paramValues,
-            appliedAssets: activePresetData.appliedAssets,
-            batchSize: activePresetData.batchSize,
-            seedMode: activePresetData.seedMode,
-            seed: activePresetData.seed,
+            paramValues: healLegacyParamKeys({
+              ...defaultParams,
+              ...(activePreset.param_values || {}),
+            }),
+            appliedAssets: activePreset.applied_assets || {},
+            batchSize: activePreset.batch_size ?? 1,
+            seedMode: (activePreset.seed_mode as 'random' | 'fixed') || 'random',
+            seed: activePreset.seed !== undefined ? activePreset.seed : 42,
           }
           if (currentStore.loadPresetData) {
             currentStore.loadPresetData(activePreset, defaultParams)
@@ -936,7 +944,7 @@ export function usePresetState({
           if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
             currentStore.openPreset?.(targetActiveId)
           }
-        } else if (!currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
+        } else if (currentActiveSetId !== null && currentActiveSetId !== undefined && !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
           currentStore.openPreset?.(currentActiveSetId)
         }
 

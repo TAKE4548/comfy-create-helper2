@@ -93,7 +93,10 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - 現在のプロンプト値、パラメータ値、適用アセット、バッチ枚数、シード設定を一括で名前付きプリセットとして保存。
 - **端末間（マルチデバイス）同期とSSoT整合性 (REQ-229, REQ-255)**:
   - バックエンドDBを絶対的なSSoTとして扱い、5秒ポーリング（`refetchInterval: 5000`）およびウィンドウフォーカス時（`refetchOnWindowFocus: true`）に最新プリセットを取得。
-  - **マージ順序**: サーバー最新値（`param_values`, `applied_assets`, `batch_size`, `seed_mode`, `seed`）を直接マッピング。
+  - **マージ順序とローカル編集値保護 (REQ-278)**:
+    - サーバー同期時、`rawMappedSets` は `existingSet?.paramValues` が存在する場合にローカル編集値を最優先で継承し（`defaultParams` → サーバーDB値 → `existingSet.paramValues`）、オートセーブ完了前後の React Query 再同期やポーリング契機でのインメモリ編集値の上書き破棄を根絶。
+    - 単一セット利用時（`existingSets.length === 1`）の `activeSetId` 未確定時フォールバックをメイン Effect にも統一適用し、未保存セット全体の再初期化を抑止。
+    - 下流の `useGenerateAction.ts` からは過剰な対症療法的フォールバックをクリーンアップし、ストアが保持する最新の `GenerationSet` をシンプルかつ決定論的に ComfyUI 投入ペイロードへ注入する単一責任パイプラインを確立。
   - **Multi-Set タブ切り替えとメモリ内キャッシュ保護 (REQ-255)**:
     - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleLoadPreset` による古いサーバーキャッシュ（DB値）での強制上書きを行わず、`handleSelectPresetTab` によりメモリ内のセット編集状態（`activeSetId`）をアクティブ化・維持する。
     - 他端末での更新（`updated_at` の進み）が発生している場合、未編集（`!isDirty`）ならサーバー最新版を自動ロードし、編集中の未保存状態（`isDirty`）なら即座に競合解消モーダルを表示する。

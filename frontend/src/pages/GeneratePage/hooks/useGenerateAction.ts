@@ -191,13 +191,11 @@ export function useGenerateAction(
           currentActiveSetId !== null &&
           currentActiveSetId !== undefined &&
           String(setItem.id) === String(currentActiveSetId)
-        // 単一チェック時、またはアクティブIDがセット一覧に見当たらない場合の安全フォールバック
+        // 単一チェック時またはアクティブID一致時の安全かつシンプルなアクティブ判定
         const isActive =
           isExplicitActive ||
           (checkedSets.length === 1 &&
-            (!currentActiveSetId ||
-              !currentSets.some((s) => String(s.id) === String(currentActiveSetId)) ||
-              !checkedSets.some((s) => String(s.id) === String(currentActiveSetId))))
+            (!currentActiveSetId || String(checkedSets[0].id) === String(setItem.id)))
 
         const itemParams = isActive
           ? { ...setItem.paramValues, ...currentParamValues }

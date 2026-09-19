@@ -1,12 +1,11 @@
-# インシデントレポート: 生成パラメータ（アスペクト比）変更の遅延反映および巻き戻り事象
+# インシデントレポート: 生成パラメータ変更の未反映およびF5リロード依存の根本原因解明とクリーンアップ（REQ-276/277事後解析レポート）
 
-**日時**: 2026-09-18  
+**日時**: 2026-09-19  
 **報告者**: Incident Analyst  
 **対象コンポーネント**: 
-- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`（プリセット同期・`updated_at` 比較ロジック）
-- `backend/app/routers/presets.py`（プリセット更新 API・日時シリアライズ）
-- `frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts`（ワークフローパラメータ補完・フォールバック）
-- `db/prompt_surgeon.db`（`workflow_presets`, `workflow_mappings`）
+- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`（プリセット同期・React Query・rawMappedSets によるインメモリ上書き破壊）
+- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`（生成投入時の下流対症療法パッチ・isActive 判定・クリーンアップ対象）
+- `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` / `useGeneratePageState.test.tsx`（テストモックによる偽陽性検知ギャップ）
 **分類**: **Type A（実装バグ / Implementation Bug）**
 
 ---
@@ -14,92 +13,102 @@
 ## 1. 障害概要
 
 - **症状**:
-  - 生成画面においてアスペクト比（`aspect_ratio`）などの生成パラメータを変更した直後に「生成」ボタンを押しても変更が反映されず、以前の比率のまま画像が生成される。
-  - その後、何度か生成を繰り返していると、遅れて変更後のアスペクト比で生成されることがある。
+  - 生成画面（Generate ページ）において各種生成パラメータ（`Sampler_Steps`, `Sampler_cfg`, `Resolution Selector`, `LoraStack` 等）を変更した後、ブラウザをリロード（F5）せずに「生成（Generate Batch）」を実行すると、変更前の古いパラメータ値のまま ComfyUI にプロンプトが投入される。
+  - プロンプト入力欄（`promptChips`）で変更したテキストは、リロードなしでも即座に生成に反映されるが、パラメータのみが反映されない。
+  - ブラウザを明示的に F5 リロードした直後に「生成」を実行すると、SQLite DB に保存されていた最新パラメータで正常に生成されるが、リロード後に再度弄ると再発する。
+  - **特記事項**: REQ-276 および REQ-277 で「修正完了」と報告され、自動テストもすべて PASS していたにもかかわらず、本質的根本原因が見落とされ、下流に対症療法パッチが継ぎ足されていた。
+
 - **影響範囲**:
-  - ワークフロー 61（および `Resolution Selector` 等のプリセット連動パラメータを持つワークフロー全般）。
-  - パラメータ変更直後に即座に生成を実行した全セッション。
+  - プリセット機能を利用する全ワークフローおよびパラメータ変更操作。
+  - ページをリロードせずにパラメータを変更して連続生成を行う全ユーザー操作。
 
 ---
 
-## 2. 再現手順
+## 2. ログおよび静的解析によるフォレンジック検証
 
-1. 生成画面（Generate ページ）でワークフローおよびプリセット（例: プリセット 1506 "Set 1"）を選択する。
-2. アスペクト比パラメータを `9:16 (Portrait Widescreen)` から `16:9 (Widescreen)` に変更する。
-3. オートセーブ（1秒デバウンス）の完了前、あるいは生成中のポーリング（5秒間隔）やウィンドウフォーカス復帰のタイミングで「生成」ボタンを押下する。
-4. **結果**:
-   - フロントエンドのストア値がサーバー側の旧データで上書き再同期され、`9:16` のまま ComfyUI にプロンプトが投入される。
-   - 数回生成を試行している間にバックエンドへのオートセーブ `PUT` が完了し、その後のリフェッチタイミングと合致したタイミングでようやく `16:9` で生成される。
+### ログ証拠（Active Log Inspection: `logs/app.jsonl`）
+- `logs/app.jsonl` において、`GET /api/workflow-presets` のポーリング（例: `[2026-09-19T12:22:15.251+09:00] [INFO ] [backend ] [req-6e8680fe42dd] GET /api/workflow-presets -> 200 (8.15ms)`）が 5 秒間隔で定期実行されている。
+- パラメータ変更時のオートセーブ（`PUT /api/workflow-presets/:id`）は SQLite DB に正常保存（HTTP 200）されている。
+- しかし、フロントエンド側でポーリングやオートセーブ後の再同期（React Query）が走るたびに、以下のメカニズムでインメモリ状態が旧 DB 値で破壊されていた。
 
 ---
 
-## 3. 調査結果およびエビデンス
+## 3. 静的解析レポートに基づく根本原因分析（5大現象の符合検証）
 
-### エビデンス①: プロンプト投入履歴とパラメータ巻き戻り（`logs/app.jsonl`, `db/prompt_surgeon.db`）
-- `prompt_metadata` テーブルの投入履歴を抽出：
-  - 16:50〜16:54 のジョブ: `16:9 (Widescreen)` として投入されていた。
-  - 17:02 以降のジョブ: ユーザーが意図した `16:9` ではなく、`9:16 (Portrait Widescreen)` に巻き戻って投入されていた。
-- `logs/app.jsonl` のリクエストログより、アスペクト比変更操作後の `PUT /api/workflow-presets/1506`（オートセーブ）と `POST /api/comfy/prompt`（生成投入）の間に微細なタイムラグが存在し、オートセーブが完了する前に旧値で投入されたり、再同期によってフロントのステートが旧値に巻き戻されていた痕跡を確認。
+静的解析レポート（`tmp/REQ-276_277_Static_Analysis_Report.pdf`）およびコード検証により、実機現象の発生メカニズムが完全に特定されました。
 
-### エビデンス②: ComfyUI 側の実行履歴（`/history` API）
-- ComfyUI の実行履歴（`/history`）を直接照合：
-  - ノード `1270:807`（`ResolutionSelector`）の投入パラメータ `aspect_ratio` が、実際に ComfyUI 内部へ `9:16` として渡されていたことを確認。
-  - ノード仕様として `width` / `height` を出力し `EmptyLatentImage`（ノード `1270:1231`）へ正常に伝搬するパイプライン接続となっており、ComfyUI 側のノード不具合ではなく、Prompt Surgeon から送信されたリクエストパラメータそのものが巻き戻っていたことを実証。
-
-### エビデンス③: プリセットデータ内の旧ロールキー残存
-- `db/prompt_surgeon.db` の `workflow_presets` を調査したところ、過去の設計・実装で発生した17文字切り捨てキー `'Resolution Selecto'` と正規キー `'Resolution Selector'` が同一プリセット内に混在（DB内 636 件のプリセットに残存）。
-- フロントエンドのパラメータロード時（`useWorkflowParams.ts`）において、キーの表記揺れによる意図しないフォールバックや初期値復帰が誘発されやすい土台となっていた。
-
----
-
-## 4. 根本原因分析（Root Cause Analysis）
-
-本不具合は、以下の 3 つの複合要因によって発生している **Type A（実装バグ）** です。
-
-### 根本原因 1: `updated_at` のシリアライズ形式不一致による不要なプリセット再同期（主因）
-- **該当箇所**: 
-  - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L931
-  - `backend/app/routers/presets.py` L106
+### ① パラメータ欄を変更して生成しても反映されない根本原因
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L827–L844 (`rawMappedSets`)
 - **メカニズム**:
-  1. プリセット更新時、バックエンドは `preset.updated_at = datetime.now(timezone.utc)` を保存し、API レスポンスとして ISO 文字列（末尾 `Z` または `+00:00` 付き）を返却する。
-  2. 一方、`GET /api/workflow-presets` 取得時は、SQLite から naive datetime として読み出されるため、末尾に `Z` のない文字列としてシリアライズされる。
-  3. フロントエンドの `usePresetState.ts` において、以下の比較ロジックが実行される：
-     ```typescript
-     if (presetUpdatedAtRef.current[activePreset.id] !== activePreset.updated_at)
-     ```
-  4. 「末尾 `Z` あり」と「末尾 `Z` なし」の違いにより、**常に別端末・他セッションからの更新があったと誤判定**される。
-  5. この結果、`!isDirty` 判定時やポーリング・フォーカス復帰時に `currentStore.loadPresetData(activePreset, defaultParams)` が発火し、UI 上で変更したパラメータがサーバー側の古い/遅延した値で強制上書きされる。
+  ```typescript
+  const rawMappedSets = presets.map((p) => {
+    const existingSet = existingSetsMap.get(String(p.id))
+    return {
+      id: p.id,
+      name: p.name,
+      // defaultParams < サーバーDB最新値 (SSoT)
+      paramValues: healLegacyParamKeys({
+        ...defaultParams,
+        ...(p.param_values || {}), // ← existingSet.paramValues を無視してサーバーDB値で上書き！
+      }),
+      appliedAssets: p.applied_assets || {}, // ← 既存インメモリを無視
+      promptChips: existingSet?.promptChips, // ← ここだけ既存インメモリを保持！
+      batchSize: p.batch_size || 1,
+      seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
+      seed: p.seed !== undefined ? p.seed : 42,
+      checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
+    }
+  })
+  ```
+  `rawMappedSets` 生成時、`promptChips` は `existingSet?.promptChips` を保持しているのに対し、`paramValues` は `existingSet?.paramValues` を完全に破棄し、サーバーDB値 `p.param_values` で強制上書きしている。
+  さらに、`activeSetId` が未確定時や `isFirstSync` 時には `mappedSets = rawMappedSets` となり、ストアの `sets` 配列が旧値で破壊される。
 
-### 根本原因 2: オートセーブ（1秒デバウンス）と即座の生成ボタン押下のタイミング競合
-- **該当箇所**:
-  - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`
-- **メカニズム**:
-  - アスペクト比を変更した後、オートセーブがバックエンドに送信されるまで 1 秒のデバウンス待機時間がある。
-  - この 1 秒以内にユーザーが「生成」ボタンを押下するか、あるいは生成中に 5 秒間隔のプリセット一覧ポーリングやウィンドウフォーカスイベント（`refetchOnWindowFocus: true`）が発生すると、根本原因 1 の誤同期がトリガーされ、変更前の状態に巻き戻される。
+### ② リロードを挟めば反映されるメカニズム
+- パラメータ変更はバックグラウンドのオートセーブ（1 秒デバウンスの `updatePresetMutation`）により SQLite DB 側には正常に保存されている。
+- リロードすると DB から最新値として `presets` が取得されるため、`p.param_values` 自体が最新値となり、一時的に正常反映される。
 
-### 根本原因 3: 旧ロール名キー（`Resolution Selecto`）の混在
-- **該当箇所**:
-  - `frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts` L50-54
-  - `db/prompt_surgeon.db`（`workflow_presets`）
-- **メカニズム**:
-  - `'Resolution Selecto'`（末尾 r 欠落）と `'Resolution Selector'` の 2 重キーが存在し、プリセットロード時の初期値解決において、旧キーまたはデフォルト値へのフォールバックが誘発されやすい状態となっている。
+### ③ プロンプト欄だけはリロードしなくても反映されるメカニズム
+- `rawMappedSets`（L838）において `promptChips: existingSet?.promptChips` と記述されており、プロンプト構造体のみ既存インメモリ値が温存される。
+- さらに生成直前の `getEffectiveParamValues` で `promptChips` から平文が再生成され強制上書きされるため、旧値の影響を回避できていた。
+
+### ④ 入力欄の見た目上の巻き戻りが起きていないメカニズム
+- 画面の入力欄（`ParamPanel.tsx`）がバインドしているのは Zustand のルートプロパティ `state.paramValues` である。
+- `rawMappedSets` による上書き破壊は `state.sets` 配列にのみ作用し、`state.paramValues` は直接書き換えられないため、画面表示上は最新値が維持されていた。
+
+### ⑤ リロード後に再度弄った場合も再発するメカニズム
+- リロード直後は「DB 保存値 ＝ 画面値」となるため一度は反映されるが、再編集した瞬間に「クライアント編集値」と「rawMappedSets が保持する旧 DB 値」に乖離が生じ、同様の上書きサイクルに突入するため再発する。
 
 ---
 
-## 5. 「遅れて反映される」メカニズムの解明
+## 4. REQ-276 / REQ-277 の改修全量監査（妥当改修と余計な対症療法改修）
 
-1. ユーザーがアスペクト比を変更する。
-2. 変更直後に生成ボタンを押すと、オートセーブ未完了または誤再同期により旧アスペクト比で生成される。
-3. 生成中または生成完了後に、1秒デバウンスを経た `PUT` リクエストがバックエンドに到達し、DB 側がようやく更新される。
-4. その後、何回か生成を繰り返すうちに、リフェッチされた最新データ（新アスペクト比）とフロントエンドの状態が一致し、以降の生成ジョブには変更後のアスペクト比が ComfyUI に送信されるようになる。
+| 対象ファイル | 改修内容 | 判定 | 監査所見 |
+| :--- | :--- | :--- | :--- |
+| `backend/app/routers/presets.py` (REQ-276) | `updated_at` の UTC 付与（`_ensure_utc`）、ISO8601 シリアライズ統一 | 【妥当】 | SQLite の naive datetime に起因するタイムゾーンズレを根絶する必須の基盤修正。 |
+| `backend/app/routers/mapping_masters.py` (REQ-276) | ロール名変更時、全プリセットの JSON キーを自動置換するカスケード更新 | 【妥当】 | ロール名タイポ修正時のキー孤立を防止する恒久防壁。 |
+| `frontend/.../usePresetState.ts` (REQ-276: タイムスタンプ比較) | `isTimestampDifferent` 導入（1秒閾値・Z補正）、`setQueryData` による自己再フェッチ抑止 | 【妥当】 | 表記差異による不要な誤再同期を防止。他端末検知は維持されており健全。 |
+| `frontend/.../usePresetState.ts` (REQ-276/277: `flushAutoSave`) | クロージャ参照を排除し `useGenerationStore.getState()` から最新取得 | 【妥当】 | React の再レンダリング待ちクロージャトラップを回避する必須修正。 |
+| `frontend/.../multiSetSlice.ts` (REQ-277: `updateActiveSet`) | `activeSetId` 未確定時、`sets.length === 1` であれば唯一のセットを更新対象とする | 【妥当】 | 単一セット利用時の防御的フォールバックとして安全かつ有益。 |
+| `frontend/.../useGenerateAction.ts` (REQ-277: `isActive` 判定) | `checkedSets.length === 1` や非存在チェックによる複雑な `isActive` 判定と強制マージ | **【余計・過剰】（対症療法）** | **問題の改修**。本来 `sets` が最新値を保持していれば不要な下流パッチ。上流の `rawMappedSets` 破壊を放置したため、下流で無理やり `currentParamValues` をマージしようとしてロジックが肥大化・複雑化している。 |
+| `frontend/.../usePresetState.ts` (REQ-277: 片手落ちフォールバック) | `flushAutoSave` には単一セット保護を入れたが、メインの `useEffect` (L817/848) には入れず放置 | **【片手落ち】（不完全改修）** | **問題の改修**。同一ファイル内で `activeSetId` の解決方針が分裂。`useEffect` 側が `null` のまま `rawMappedSets` でセット全体を上書きする致命的隙間を残した。 |
 
 ---
 
-## 6. 是正方針（設計フェーズへの申し送り）
+## 5. テスト検証の偽陽性（Test Gap）
 
-1. **`updated_at` 比較の正規化（タイムスタンプ値比較またはフォーマット統一）**:
-   - `usePresetState.ts` において、単純な文字列完全一致比較（`!==`）ではなく、`new Date(...).getTime()` によるエポックミリ秒比較を行うか、バックエンド側での ISO8601 シリアライズ（UTC `Z` 付与）を統一し、同一日時の誤検知を完全に防止する。
-2. **生成実行時の即時同期保証（フラッシュ処理）**:
-   - 「生成」ボタン押下時に、デバウンス待機中の未保存パラメータが存在する場合は即座に保存（フラッシュ）を完了させてからプロンプト投入を行うか、あるいは投入用ペイロードにはフロントエンドの最新ストア値を直接使用して送信を担保する。
-3. **プリセットデータのクリーンアップおよびキー正規化**:
-   - データベース内の `'Resolution Selecto'` を正規の `'Resolution Selector'` に統合するマイグレーションまたは補正処理を適用し、キーの揺らぎによるフォールバック発生を防止する。
+- `REQ-277` の検証テスト（`useGenerateAction.test.ts: L1120`）では、先行オートセーブを検証するシナリオにおいて、実際の `usePresetState` フックを協調させず、テストコード内で手動で `mockStore.sets[0].paramValues = { ...latest.paramValues };` とストアへ直接代入していた。
+- このため、実機で発生していた「`useEffect` が走って `sets` を旧値で上書きする」というクリティカルな破壊現象をテストが完全にバイパスし、オールグリーン（偽陽性 PASS）となっていた。
+
+---
+
+## 6. 是正アクション要件（PBI 登録への申し送り事項）
+
+1. **Step 1: 上流の根本原因是正 (`usePresetState.ts` L827–L844)**
+   - `rawMappedSets` 生成時、`existingSet?.paramValues` が存在する場合はローカル編集値を最優先で継承（`...defaultParams`, `...(p.param_values || {})`, `...(existingSet?.paramValues || {})`）。
+   - `appliedAssets`, `batchSize`, `seedMode`, `seed` についても `existingSet` の値を安全にフォールバック・優先継承する。
+2. **Step 2: `usePresetState.ts` L817 の `activeSetId` 解決フォールバック**
+   - `currentActiveSetId` が `null` / `undefined` かつ `existingSets.length === 1` の場合、`existingSets[0].id` をアクティブとみなす保護を追加し、`flushAutoSave` との方針分裂を解消する。
+3. **Step 3: `useGenerateAction.ts` の過剰な対症療法コード整理（クリーンアップ）**
+   - Step 1 & 2 により `sets` の完全性が担保されるため、`useGenerateAction.ts` 内の肥大化したフォールバック判定（`checkedSets.length === 1` 時の無理やりなマージ等）を整理・一本化する。
+4. **Step 4: ライフサイクル結合テストの追加**
+   - ストア直接書き換えモックではなく、`usePresetState` の同期サイクルと `handleGenerateSets` を連携させた再現テスト・リグレッションテストを追加し、偽陽性を防ぐ。
