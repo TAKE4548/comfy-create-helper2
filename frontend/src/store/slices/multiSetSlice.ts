@@ -451,17 +451,11 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
     updateActiveSet: (updates) => {
       const activeSetId = get().activeSetId
+      if (activeSetId === null || activeSetId === undefined) return
       const currentSets = get().sets
 
-      let targetId = activeSetId
-      if ((targetId === null || targetId === undefined) && currentSets.length === 1) {
-        targetId = currentSets[0].id
-      }
-
-      if (targetId === null || targetId === undefined) return
-
       const updatedSets = currentSets.map((s) => {
-        if (String(s.id) === String(targetId)) {
+        if (String(s.id) === String(activeSetId)) {
           return { ...s, ...updates }
         }
         return s

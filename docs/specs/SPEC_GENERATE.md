@@ -220,17 +220,18 @@ frontend/src/store/
 3. **ComfyUI 接続復帰時の自動再検証・取得**:
    - ComfyUI 接続が確立（`isConnected: true`）された契機で `comfy-object-info` クエリを自動再検証（`invalidateQueries`）し、最新スキーマを同期する。
 
-### 5-3. パラメータ変更即時生成・セット整合性保証 (REQ-277)
+### 5-3. パラメータ変更即時生成・セット整合性保証 (REQ-277, REQ-279)
 
 1. **実行時最新ストア状態の取得 (`useGenerateAction`)**:
    - `handleGenerate` および `handleGenerateSets` の呼び出し時、フック生成時のクロージャスナップショットではなく、Zustand ストアから直接最新状態（`useGenerationStore.getState()`）を取得してキュー投入ペイロードを構築する。
-   - これにより、パラメータ変更直後（1秒未満・オートセーブ非同期通信中）に即座に生成ボタンが押下された場合でも、画面表示中の最新 `paramValues` が 100% 確実に ComfyUI へ投入される。
-2. **型安全なアクティブセット判定と単一セット救済フォールバック**:
+   - これにより、パラメータ変更直後（1秒未満・オートセーブ非同期通信中）に即座に生成ボタンが押下された場合でも、画面表示中の最新 `paramValues`、`batchSize`、`seedMode`、`seed` が 100% 確実に ComfyUI へ投入される。
+2. **厳格なアクティブセット特定と他セット汚染防止 (REQ-279)**:
    - セットごとのパラメータマージにおいて、`String(setItem.id) === String(currentActiveSetId)` による型安全比較を行う。
-   - 単一セット運用時、または `activeSetId` が未確定（`null` / `undefined`）あるいはセット一覧に見当たらない場合、唯一のセットに対して画面の `currentParamValues` をマージするセーフティネットを適用し、画面パラメータのサイレントな脱落を防止する。
+   - `currentActiveSetId` が `null` または未設定の場合、あるいはアクティブセットではないセットに対しては画面の入力値（`currentParamValues` や画面の `batchSize`/`seed`）を強制上書き・マージせず、各セット自身の保持パラメータ（`setItem.paramValues` 等）を忠実に尊重して投入する。
+   - チェック状態のセット数やセット総数に応じた安易なフォールバック（別セットへの画面値誤爆）を完全に遮断し、セット間の独立性を担保する。
 3. **インメモリ先行同期 (`multiSetSlice` / `usePresetState`)**:
    - オートセーブ（`flushAutoSave`）実行時、バックエンドへの非同期 PUT 完了を待たず即座にインメモリの activeSet を最新 `currentState` で更新し、ストア内の整合性を維持する。
-   - `multiSetSlice.updateActiveSet` においても、`activeSetId` が `null` の場合の単一セットフォールバックを備える。
+   - `multiSetSlice.updateActiveSet` においても、`activeSetId` が `null` の場合は安全にガードされ、他セットへの不要な上書きを防ぐ。
 
 
 ---

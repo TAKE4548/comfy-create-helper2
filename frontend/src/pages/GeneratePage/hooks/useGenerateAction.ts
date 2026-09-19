@@ -167,10 +167,15 @@ export function useGenerateAction(
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
 
-    // 新規投入分のジョブ枠を構築
+    // 新規投入分のジョブ枠を構築（画面最新のバッチサイズと整合させる）
     const newBatchJobs: BatchJob[] = []
     checkedSets.forEach((setItem) => {
-      for (let i = 0; i < setItem.batchSize; i++) {
+      const isTargetActive =
+        currentActiveSetId !== null &&
+        currentActiveSetId !== undefined &&
+        String(setItem.id) === String(currentActiveSetId)
+      const batchCount = isTargetActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
+      for (let i = 0; i < batchCount; i++) {
         newBatchJobs.push({
           promptId: `pending-${setItem.name}-${i}-${Date.now()}`,
           setName: setItem.name,
@@ -187,15 +192,10 @@ export function useGenerateAction(
     let currentIdx = existingActiveBatch.length
     try {
       for (const setItem of checkedSets) {
-        const isExplicitActive =
+        const isActive =
           currentActiveSetId !== null &&
           currentActiveSetId !== undefined &&
           String(setItem.id) === String(currentActiveSetId)
-        // 単一チェック時またはアクティブID一致時の安全かつシンプルなアクティブ判定
-        const isActive =
-          isExplicitActive ||
-          (checkedSets.length === 1 &&
-            (!currentActiveSetId || String(checkedSets[0].id) === String(setItem.id)))
 
         const itemParams = isActive
           ? { ...setItem.paramValues, ...currentParamValues }
@@ -208,7 +208,12 @@ export function useGenerateAction(
 
         const effectiveParamValues = getEffectiveParamValues(itemParams, itemChips)
         const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
-        for (let i = 0; i < setItem.batchSize; i++) {
+
+        const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
+        const effectiveSeedMode = isActive ? (state.seedMode ?? setItem.seedMode) : setItem.seedMode
+        const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
+
+        for (let i = 0; i < effectiveBatchSize; i++) {
           // キャンセル中断チェック
           if (abortController.signal.aborted) {
             console.log('Batch queueing aborted by user.')
@@ -219,8 +224,8 @@ export function useGenerateAction(
             workflow,
             paramValues: syncedParamValues,
             seedOptions: {
-              seedMode: setItem.seedMode,
-              seed: setItem.seed,
+              seedMode: effectiveSeedMode,
+              seed: effectiveSeed,
               index: i,
             },
             cloneJson: true,
@@ -258,7 +263,7 @@ export function useGenerateAction(
             }
             setActiveBatch([...currentBatch])
           } else {
-            const errorMsg = `[${setItem.name}] (${i + 1}/${setItem.batchSize}) のキュー投入に失敗しました`
+            const errorMsg = `[${setItem.name}] (${i + 1}/${effectiveBatchSize}) のキュー投入に失敗しました`
             setErrorToast?.({ message: errorMsg, type: 'error' })
             currentBatch[currentIdx] = {
               ...currentBatch[currentIdx],

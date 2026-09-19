@@ -1013,10 +1013,7 @@ export function usePresetState({
 
     // クロージャ変数ではなく、最新の Zustand ストアから状態を直接取得
     const currentStore = useGenerationStore.getState()
-    let targetActiveId = currentStore.activeSetId
-    if ((targetActiveId === null || targetActiveId === undefined) && currentStore.sets?.length === 1) {
-      targetActiveId = currentStore.sets[0].id
-    }
+    const targetActiveId = currentStore.activeSetId
     if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
     const activePreset = presets?.find((p) => String(p.id) === String(targetActiveId))
     if (!activePreset) return
@@ -1029,8 +1026,8 @@ export function usePresetState({
       seed: currentStore.seed,
     }
 
-    // インメモリ上の activeSet を即時同期
-    updateActiveSet?.(currentState)
+    // インメモリ上の activeSet を即時同期（ジョブ発行直前の必須処理）
+    currentStore.updateActiveSet?.(currentState)
 
     const currentLastSaved = lastSavedStateRef.current[targetActiveId]
     if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return

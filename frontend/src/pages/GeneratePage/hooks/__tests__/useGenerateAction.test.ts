@@ -41,6 +41,7 @@ describe('useGenerateAction', () => {
     mockStore.seedMode = 'random';
     mockStore.seed = 12345;
     mockStore.sets = [];
+    mockStore.activeBatch = [];
     mockStore.appliedAssets = {};
     mockStore.bypassProfiles = [];
     mockStore.paramSyncGroups = [];
@@ -875,7 +876,7 @@ describe('useGenerateAction', () => {
       expect(metadata.paramValues.prompt).toBe('fresh user typed prompt');
     });
 
-    it('Scenario 2: merges current paramValues when activeSetId is null and single set exists (fallback protection)', async () => {
+    it('Scenario 2: does not merge current paramValues when activeSetId is null (no active set)', async () => {
       mockStore.sets = [
         {
           id: 'set-fallback-1',
@@ -901,8 +902,8 @@ describe('useGenerateAction', () => {
 
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
       const metadata = mockStore.queuePrompt.mock.calls[0][1];
-      expect(metadata.paramValues.sampler).toBe('dpmpp_2m');
-      expect(metadata.paramValues.steps).toBe('30');
+      expect(metadata.paramValues.sampler).toBe('euler');
+      expect(metadata.paramValues.steps).toBe('20');
     });
 
     it('Scenario 3: handles type mismatch between activeSetId (string) and setItem.id (number)', async () => {
@@ -1033,7 +1034,7 @@ describe('useGenerateAction', () => {
       expect(metadata.paramValues.prompt).toBe('latest prompt right before click');
     });
 
-    it('RT-3: single checked set fallback when activeSetId is not in checkedSets (merges latest values into the only checked set)', async () => {
+    it('RT-3: does not overwrite checked set when activeSetId points to a different (unchecked) set', async () => {
       mockStore.sets = [
         {
           id: 'set-1',
@@ -1063,7 +1064,9 @@ describe('useGenerateAction', () => {
 
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
       const metadata = mockStore.queuePrompt.mock.calls[0][1];
-      expect(metadata.paramValues.prompt).toBe('newly typed prompt in UI');
+      // set-2 is checked, but NOT active, so its original values must remain intact
+      expect(metadata.paramValues.prompt).toBe('set 2 original prompt');
+      expect(metadata.paramValues.prompt).not.toBe('newly typed prompt in UI');
     });
 
     // 抜け道防止 5 大ルール (AL-1〜AL-5) 準拠テストスイート
@@ -1142,7 +1145,7 @@ describe('useGenerateAction', () => {
         expect(metadata.paramValues.Sampler_Steps).toBe('40');
       });
 
-      it('Scenario 2: fallback injection into wfJson when activeSetId is null and single set is checked [AL-1, AL-2]', async () => {
+      it('Scenario 2: does not inject screen params into wfJson when activeSetId is null (no active set) [AL-1, AL-2]', async () => {
         mockStore.sets = [{
           id: 'set-single',
           name: 'Single Set',
@@ -1164,10 +1167,10 @@ describe('useGenerateAction', () => {
 
         expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
         const injectedWfJson = mockStore.queuePrompt.mock.calls[0][0];
-        expect(injectedWfJson['3'].inputs.steps).not.toBe(20);
-        expect(injectedWfJson['3'].inputs.steps).toBe(35);
-        expect(injectedWfJson['3'].inputs.cfg).not.toBe(7.0);
-        expect(injectedWfJson['3'].inputs.cfg).toBe(9.0);
+        expect(injectedWfJson['3'].inputs.steps).toBe(20);
+        expect(injectedWfJson['3'].inputs.steps).not.toBe(35);
+        expect(injectedWfJson['3'].inputs.cfg).toBe(7.0);
+        expect(injectedWfJson['3'].inputs.cfg).not.toBe(9.0);
       });
 
       it('Scenario 3: preserves inactive set parameters without contamination from active set [AL-5]', async () => {
@@ -1250,6 +1253,143 @@ describe('useGenerateAction', () => {
         const wf2 = mockStore.queuePrompt.mock.calls[0][0];
         expect(wf2['3'].inputs.steps).not.toBe(35);
         expect(wf2['3'].inputs.steps).toBe(50);
+      });
+    });
+
+    describe('REQ-279: In-memory synchronous flush and race condition fix', () => {
+      const realisticWorkflow: Workflow = {
+        id: 1,
+        name: 'Realistic KSampler Workflow',
+        created_at: '',
+        json_body: {
+          '3': {
+            class_type: 'KSampler',
+            inputs: {
+              seed: 1000,
+              steps: 20,
+              cfg: 7.0,
+              sampler_name: 'euler',
+              scheduler: 'normal',
+            },
+          },
+          '6': {
+            class_type: 'CLIPTextEncode',
+            inputs: { text: 'prompt' },
+          },
+        },
+        mappings: [
+          { id: 1, master_id: 1, node_id: '3', role: 'Sampler_Seed', param_name: 'seed', input_type: 'int', display_name: 'Seed' },
+          { id: 2, master_id: 2, node_id: '3', role: 'Sampler_Steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+          { id: 3, master_id: 3, node_id: '3', role: 'Sampler_cfg', param_name: 'cfg', input_type: 'float', display_name: 'CFG' },
+          { id: 4, master_id: 4, node_id: '3', role: 'Sampler_Scheduler', param_name: 'scheduler', input_type: 'select_scheduler', display_name: 'Scheduler' },
+          { id: 5, master_id: 5, node_id: '6', role: 'Main_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Prompt' },
+        ],
+      };
+
+      it('TC-SYNC-1: verifies synchronous parameter injection on immediate generation before async HTTP completion [AL-1]', async () => {
+        mockStore.sets = [{
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+          paramValues: { Sampler_Steps: '20' },
+          appliedAssets: {},
+          promptChips: {},
+        }];
+        mockStore.activeSetId = 'set-1';
+        mockStore.paramValues = { Sampler_Steps: '40' };
+
+        // Simulates flushAutoSave running synchronously before queuePrompt while async HTTP remains unresolved
+        const onBeforeGenerate = vi.fn(() => {
+          mockStore.sets[0].paramValues = { ...mockStore.paramValues };
+        });
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow, {}, { onBeforeGenerate });
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+        const payload = mockStore.queuePrompt.mock.calls[0][0];
+        expect(payload['3'].inputs.steps).toBe(40);
+        expect(payload['3'].inputs.steps).not.toBe(20);
+      });
+
+      it('TC-SYNC-2: does not overwrite any set when activeSetId is null, and only overwrites active set when specified [AL-2]', async () => {
+        const setA = {
+          id: 'set-1',
+          name: 'Set 1',
+          paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0' },
+          appliedAssets: {},
+          promptChips: {},
+          batchSize: 1,
+          seedMode: 'random' as const,
+          seed: 42,
+          checked: true,
+        };
+        const setB = {
+          id: 'set-2',
+          name: 'Set 2',
+          paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0' },
+          appliedAssets: {},
+          promptChips: {},
+          batchSize: 1,
+          seedMode: 'random' as const,
+          seed: 42,
+          checked: true,
+        };
+
+        // 1. When activeSetId is null, neither set should be overwritten by screen paramValues
+        mockStore.sets = [setA, setB];
+        mockStore.activeSetId = null;
+        mockStore.paramValues = { Sampler_cfg: '8.5' };
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow);
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+        const call0 = mockStore.queuePrompt.mock.calls[0][0];
+        const call1 = mockStore.queuePrompt.mock.calls[1][0];
+        expect(call0['3'].inputs.cfg).toBe(7.0);
+        expect(call1['3'].inputs.cfg).toBe(7.0);
+
+        // 2. When activeSetId is explicitly set-1, only Set 1 receives screen paramValues
+        mockStore.queuePrompt.mockClear();
+        mockStore.activeSetId = 'set-1';
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+        const callActive0 = mockStore.queuePrompt.mock.calls[0][0];
+        const callActive1 = mockStore.queuePrompt.mock.calls[1][0];
+        expect(callActive0['3'].inputs.cfg).toBe(8.5);
+        expect(callActive1['3'].inputs.cfg).toBe(7.0);
+      });
+
+      it('TC-SYNC-3: immediately reflects updated batchSize and seed without delay [AL-3]', async () => {
+        mockStore.sets = [{
+          id: 'set-1',
+          name: 'Set 1',
+          batchSize: 1,
+          seedMode: 'random',
+          seed: 42,
+          checked: true,
+          paramValues: {},
+          appliedAssets: {},
+          promptChips: {},
+        }];
+        mockStore.activeSetId = 'set-1';
+        mockStore.batchSize = 3;
+        mockStore.seedMode = 'fixed';
+        mockStore.seed = 12345;
+
+        const { handleGenerateSets } = useGenerateAction(realisticWorkflow);
+        await handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
+        const lastBatchCall = mockStore.setActiveBatch.mock.calls[0][0];
+        expect(lastBatchCall).toHaveLength(3);
+        const call0 = mockStore.queuePrompt.mock.calls[0][0];
+        expect(call0['3'].inputs.seed).toBe(12345);
       });
     });
   });
