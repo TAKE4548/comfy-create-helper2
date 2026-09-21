@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { usePresetState, normalizeTimestamp, isTimestampDifferent } from '../usePresetState'
+import { usePresetState, normalizeTimestamp, isTimestampDifferent, isRecordEqual } from '../usePresetState'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { workflowPresetsApi } from '../../../../api/client'
 import type { WorkflowPreset } from '../../../../api/types'
@@ -596,6 +596,186 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         expect(currentSets[0].paramValues.Sampler_Steps).not.toBe('20')
         expect(currentSets[0].paramValues.Sampler_Steps).toBe('40')
       })
+    })
+  })
+
+  describe('REQ-280: Autosave serialization, timer isolation, and key-order insensitive equality', () => {
+    it('1. isRecordEqual returns true for objects with shuffled key order, preventing false conflict', () => {
+      const objA = { prompt: 'cat', steps: '20', cfg: '7.0' }
+      const objB = { cfg: '7.0', prompt: 'cat', steps: '20' }
+
+      expect(JSON.stringify(objA)).not.toBe(JSON.stringify(objB))
+      expect(isRecordEqual(objA, objB)).toBe(true)
+      expect(isRecordEqual(objA, { ...objA, steps: '21' })).toBe(false)
+      expect(isRecordEqual(objA, { prompt: 'cat', steps: '20' })).toBe(false)
+      expect(isRecordEqual(undefined, undefined)).toBe(true)
+      expect(isRecordEqual(objA, undefined)).toBe(false)
+    })
+
+    it('2. Serializes in-flight updates so rapid changes do not result in 409 and latest state is saved', async () => {
+      let resolveFirstUpdate: ((val: WorkflowPreset) => void) | null = null
+      const firstUpdatePromise = new Promise<WorkflowPreset>((resolve) => {
+        resolveFirstUpdate = resolve
+      })
+
+      const preset1: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Set 1',
+        param_values: { prompt: 'initial' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1])
+
+      let callCount = 0
+      vi.mocked(workflowPresetsApi.update).mockImplementation(async (id, data) => {
+        callCount++
+        if (callCount === 1) {
+          return firstUpdatePromise
+        }
+        return {
+          ...preset1,
+          id,
+          name: data.name || preset1.name,
+          param_values: data.param_values || preset1.param_values,
+          updated_at: '2026-09-08T10:00:02Z',
+        }
+      })
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+
+      await waitFor(() => {
+        expect(result.current.presets).toHaveLength(1)
+        expect(useGenerationStore.getState().activeSetId).toBe(101)
+        // Ensure firstSync has run: loadPresetData overwrites paramValues with preset's param_values
+        expect(useGenerationStore.getState().paramValues).toEqual({ prompt: 'initial' })
+      })
+
+      // First change -> user changes paramValues in store and calls flushAutoSave
+      await act(async () => {
+        useGenerationStore.getState().setParamValues({ prompt: 'update 1' })
+        result.current.flushAutoSave()
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledTimes(1)
+      expect(workflowPresetsApi.update).toHaveBeenLastCalledWith(
+        101,
+        expect.objectContaining({
+          param_values: { prompt: 'update 1' },
+          base_updated_at: '2026-09-08T10:00:00Z',
+        })
+      )
+
+      // Second change while first mutation is still in-flight
+      act(() => {
+        useGenerationStore.getState().setParamValues({ prompt: 'update 2' })
+        result.current.flushAutoSave()
+      })
+
+      // Since first mutation is in-flight, update should NOT be called immediately
+      expect(workflowPresetsApi.update).toHaveBeenCalledTimes(1)
+
+      // Now first mutation finishes with new updated_at
+      await act(async () => {
+        resolveFirstUpdate!({
+          ...preset1,
+          param_values: { prompt: 'update 1' },
+          updated_at: '2026-09-08T10:00:01Z',
+        })
+      })
+
+      // The onSettled should now have fired the second mutation with base_updated_at updated to '2026-09-08T10:00:01Z'
+      await waitFor(() => {
+        expect(workflowPresetsApi.update).toHaveBeenCalledTimes(2)
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenLastCalledWith(
+        101,
+        expect.objectContaining({
+          param_values: { prompt: 'update 2' },
+          base_updated_at: '2026-09-08T10:00:01Z',
+        })
+      )
+    })
+
+    it('3. Auto-save timer is not reset or extended by background preset polling', async () => {
+      vi.useFakeTimers()
+      try {
+        const preset1: WorkflowPreset = {
+          id: 101,
+          workflow_id: 1,
+          name: 'Set 1',
+          param_values: { prompt: 'initial' },
+          applied_assets: {},
+          batch_size: 1,
+          seed_mode: 'random',
+          seed: 42,
+          sort_order: 0,
+          created_at: '2026-09-08T10:00:00Z',
+          updated_at: '2026-09-08T10:00:00Z',
+        }
+
+        vi.mocked(workflowPresetsApi.list).mockResolvedValue([preset1])
+        vi.mocked(workflowPresetsApi.update).mockResolvedValue({
+          ...preset1,
+          param_values: { prompt: 'typing...' },
+          updated_at: '2026-09-08T10:00:01Z',
+        })
+
+        const { result } = renderHook(
+          () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+          { wrapper }
+        )
+
+        // Wait for initial load
+        await vi.advanceTimersByTimeAsync(10)
+        expect(result.current.presets).toBeDefined()
+
+        // User edits state (auto-save timer starts: 1000ms)
+        act(() => {
+          useGenerationStore.setState({
+            paramValues: { prompt: 'typing...' },
+          })
+        })
+
+        // Advance by 600ms
+        await vi.advanceTimersByTimeAsync(600)
+        expect(workflowPresetsApi.update).not.toHaveBeenCalled()
+
+        // Background polling triggers query invalidate and refetch
+        const polledPreset: WorkflowPreset = {
+          ...preset1,
+          updated_at: '2026-09-08T10:00:00Z',
+        }
+        vi.mocked(workflowPresetsApi.list).mockResolvedValue([polledPreset])
+        await act(async () => {
+          await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+        })
+
+        // Advance remaining 450ms (total 1050ms > 1000ms)
+        await vi.advanceTimersByTimeAsync(450)
+
+        // It should have executed auto-save without being cancelled or restarted by polling
+        expect(workflowPresetsApi.update).toHaveBeenCalledTimes(1)
+        expect(workflowPresetsApi.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
+            param_values: { prompt: 'typing...' },
+          })
+        )
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 })

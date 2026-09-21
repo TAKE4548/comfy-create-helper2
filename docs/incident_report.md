@@ -1,12 +1,11 @@
-# インシデントレポート: パラメータ変更後のインメモリ同期的フラッシュ欠落および非同期レースコンディション（REQ-278 事後解析）
+# インシデントレポート: プリセットオートセーブ時の競合検知（OCC）誤発火および定期ポーリングによる保存遅延不具合
 
-**日時**: 2026-09-19  
+**日時**: 2026-09-20  
 **報告者**: Incident Analyst  
 **対象コンポーネント**: 
-- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L1016–L1023: `flushAutoSave` の `activeSetId` ガードによる同期漏れ)
-- `frontend/src/store/slices/multiSetSlice.ts` (L456–L461: `updateActiveSet` の `activeSetId` ガード落ち)
-- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` (L132, L190–L202, L211–L227: ジョブ投入先行レースコンディションおよび `isActive` 判定落ち、バッチサイズ・シードの未同期)
-- `logs/app.jsonl` (HTTP 非同期通信とジョブ投入のタイミングトレース)
+- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L91-L99: `isStateEqual` キー順序依存、L190-L208: `updatePresetMutation.onError` 409処理、L951-L995: ポーリング時差分チェックと競合誤判定、L1054-L1097: オートセーブ `useEffect` の `presets` 依存)
+- `backend/app/routers/presets.py` (L86-L100: `update_preset` の `base_updated_at` による 0.01s 楽観的ロック検証)
+- `logs/app.jsonl` (単一端末操作中の連続 HTTP 409 Conflict 発生ログ)
 **分類**: **Type A（実装バグ / Implementation Bug）**
 
 ---
@@ -14,48 +13,54 @@
 ## 1. 障害概要
 
 - **症状**:
-  - 生成画面（Generate ページ）でパラメータ（Steps、CFG、シード、バッチサイズ等）を変更した直後、オートセーブ完了前（または画面リロードなし）に「生成（Generate Batch）」を実行すると、1回目の生成では変更前の古いパラメータ値のまま ComfyUI にジョブが投入される。
-  - ブラウザをリロードせずとも、2回目の生成ボタン押下時には最新パラメータが反映される。
-  - プロンプト入力欄（`promptChips`）のみ即時反映されるが、パラメータ値・バッチサイズ・シード値において「1回目未反映・2回目反映」の現象が発生する。
+  1. **【直接要因】単一端末での競合モーダル（PresetConflictModal）誤発火**:
+     他端末や別ブラウザでの同時編集が一切行われていないにもかかわらず、プロンプト編集やパラメータ調整中に「プリセットが他セッションで更新されました」という競合解決モーダルが頻発する。
+  2. **【独立した別問題】ポーリングによるデバウンスタイマーリセットと保存遅延**:
+     ユーザーが入力を終えて1秒以上経過したと認識して「生成（Generate）」を押下したにもかかわらず、定期ポーリング（5秒周期）によってオートセーブタイマーが不意に延命リセットされ、未保存（旧パラメータ）の状態でジョブが ComfyUI に投入される。
 
 - **影響範囲**:
-  - 複数セット読み込み時、または `activeSetId` が未確定（`null`）の状態でパラメータ・バッチサイズ・シードを変更して即時生成を行う全ユースケース。
+  - プロンプト入力（テキストモード／チップモード問わず）、パラメータ変更、シード・バッチサイズ編集を日常的に行うすべてのユーザー。作業の中断および意図せぬパラメータ巻き戻り（旧設定での画像生成）を引き起こす。
 
 ---
 
-## 2. ログおよび実行順序のフォレンジック検証
+## 2. ログおよび実行フォレンジック検証
 
 ### ログ証拠（Active Log Inspection: `logs/app.jsonl`）
 - `logs/app.jsonl` 調査結果:
-  - 定期ポーリング `GET /api/workflow-presets` が正常稼働中（例: `[2026-09-19T14:54:55.904+09:00] [INFO ] [backend ] [req-3cd7c1a14f79] GET /api/workflow-presets -> 200 (10.27ms)`）。
-  - エラーログ（ERROR レベル）は検知されず（0件）、通信自体は正常。
-- 実行順序（タイムライン）:
-  1. `T0 (編集)`: 画面上でパラメータを変更（`state.paramValues` は新値、`state.sets` は旧値、1秒デバウンスタイマー待機）。
-  2. `T1 (1回目生成)`: 生成ボタン押下により `handleGenerateSets` が発火。`onBeforeGenerate`（`flushAutoSave`）が呼ばれ `updatePresetMutation.mutate`（非同期 HTTP 通信）が開始されるが、await されず即時リターン。
-  3. `T2 (ジョブ投入)`: 非同期通信の完了（数十ms後）を待たずに、`handleGenerateSets` 内のキュー投入ループが先行して実行され、未更新の旧値で ComfyUI に投入される。
-  4. `T3 (保存・同期完了)`: 遅れてバックエンドから HTTP 200 が返り、React Query の `setQueryData` と `useEffect` を経てストアの `sets` に新値が同期される。
-  5. `T4 (2回目生成)`: 再度生成ボタンを押すと、T3 で同期済みの新値が参照されるため、リロードなしで反映される。
+  - 単一クライアントからの `PUT /api/workflow-presets/1506` に対して、数秒〜十数秒単位で `HTTP 409` が頻発して記録されている。
+  - 具体例（2026-09-20 21:08 〜 21:12）:
+    - `[2026-09-20T21:08:16.977+09:00] [INFO ] [backend ] [req-5f4b1fcb26f5] PUT /api/workflow-presets/1506 -> 409 (7.45ms)`
+    - `[2026-09-20T21:08:36.284+09:00] [INFO ] [backend ] [req-d6fa34e63f41] PUT /api/workflow-presets/1506 -> 409 (4.15ms)`
+    - `[2026-09-20T21:08:42.063+09:00] [INFO ] [backend ] [req-7abae6660a27] PUT /api/workflow-presets/1506 -> 409 (5.34ms)`
+    - `[2026-09-20T21:08:48.228+09:00] [INFO ] [backend ] [req-803438018a66] PUT /api/workflow-presets/1506 -> 409 (3.95ms)`
+    - `[2026-09-20T21:09:12.366+09:00] [INFO ] [backend ] [req-69754b02e512] PUT /api/workflow-presets/1506 -> 409 (3.51ms)`
+    - `[2026-09-20T21:09:13.603+09:00] [INFO ] [backend ] [req-3424adecb9ed] PUT /api/workflow-presets/1506 -> 409 (5.21ms)`
+    - `[2026-09-20T21:09:22.468+09:00] [INFO ] [backend ] [req-79bda66feafa] PUT /api/workflow-presets/1506 -> 409 (6.59ms)`
+    - `[2026-09-20T21:09:23.687+09:00] [INFO ] [backend ] [req-30346b19446d] PUT /api/workflow-presets/1506 -> 409 (5.48ms)`
+  - エラーログ（ERROR レベル）としては記録されず、HTTP 409 Conflict（INFO）として FastAPI から正常に返却されているため、バックエンドの例外ではなくクライアント側の通信レースが原因。
 
 ---
 
-## 3. 構造的根本原因（3つの要因）
+## 3. 根本原因の分離とメカニズム
 
-### 要因①: ジョブ発行とサーバー非同期通信の競合（Race Condition）
-- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` L132
-- **メカニズム**:
-  `options?.onBeforeGenerate?.()` の呼び出しが同期関数として通過し、戻り値の完了待ちが行われない。`flushAutoSave` 内部のサーバー更新 `updatePresetMutation.mutate(...)` は fire-and-forget の非同期通信であるため、サーバー保存と React Query/`useEffect` による store 更新を待たずに、直後の ComfyUI プロンプト投入ループが先行して走り、古いパラメータが送信される。
+ユーザー調査報告書（`tmp/Prompt_Surgeon_Prompt_Edit_Conflict_and_Autosave_Analysis.pdf`）およびコード検証により、問題は以下の2つの独立した課題に峻別される。
 
-### 要因②: インメモリ即時確定（updateActiveSet）のガード落ち
-- **該当箇所**:
-  - `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L1016–L1023
-  - `frontend/src/store/slices/multiSetSlice.ts` L456–L461
-- **メカニズム**:
-  `flushAutoSave` および `updateActiveSet` において、`targetActiveId` が `null` かつ `currentStore.sets.length > 1`（複数セット存在時）の場合に早期 `return` して終了するガードが存在する。このため、生成ボタン押下時のインメモリ `sets` への即時確定処理が完全に空振りしている。
+### 【直接要因】競合モーダル誤発火の2大メカニズム
+1. **直接要因①: 通信中（In-flight）の連続保存による BE の 409 Conflict**:
+   - `updatePresetMutation` が実行中（In-flight）であるにもかかわらず、ユーザー操作やタイマーにより2回目の PUT リクエストが発行される。
+   - 1回目の保存で DB の `updated_at` は新時刻 T1 に進むが、2回目のリクエストは1回目のレスポンス（T1）を受け取る前に送信されるため、古い `base_updated_at: T0` を保持したまま届く。
+   - `presets.py` (L96) の `(db_updated_at - base_updated_at).total_seconds() > 0.01` に引っかかり HTTP 409 Conflict が返却され、`updatePresetMutation.onError` (L190-L208) が競合モーダルを表示する。
+2. **直接要因②: 差分判定の不整合による「偽の isDirty 残留」と定期ポーリングの衝突**:
+   - `isStateEqual` (L91-L99) が `JSON.stringify` で比較しているため、オブジェクトのキー出現順序が入れ替わっただけで等価と判定されず、保存後も恒常的に `isDirty = true`（未保存状態）と誤認され続ける。
+   - テキスト入力時の末尾空白やカンマ等（`"1girl, solo, "`）の生文字列保存後、手元の正規化（`"1girl, solo"`）との間で不一致が生じ `isDirty` が解除されない。
+   - この状態で、自端末の保存によって進んだ BE の `updated_at` を 5秒周期のポーリングが拾うと、`usePresetState.ts` (L951-L995) は「他端末が更新し、手元にも未保存差分がある」と誤認して競合モーダルを発火させる。
 
-### 要因③: 下流の `isActive` 判定落ちおよびプロパティ未同期
-- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts` L190–L202, L211–L227
+### 【独立した別問題】ポーリングによるタイマーリセットと保存遅延
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L1097
 - **メカニズム**:
-  `checkedSets.length > 1` かつ `currentActiveSetId === null` の条件下では、`isActive` が `false` と評価される。これにより `itemParams` に `currentParamValues` がマージされず、古い `setItem.paramValues` が 100% 採用される。さらに、`batchSize` や `seedMode`、`seed` についても画面の最新状態（`state.batchSize` 等）ではなく `setItem` の旧値が参照されている。
+  - オートセーブ用の `useEffect` の依存配列に `presets` が含まれている。
+  - 5秒ごとの定期ポーリングで `presets` の参照が更新されるたびに `useEffect` のクリーンアップが走り、進行中だった 1秒デバウンスタイマーが不意にクリア・再セット（延命）される。
+  - ユーザーが「入力停止後1秒待った」と思って生成ボタンを押しても、実際にはリクエスト送信が遅延しており、保存前の古い値で生成が走る（REQ-278 の実害の一因）。
 
 ---
 
@@ -63,7 +68,10 @@
 
 - **分類**: **Type A（実装バグ / Implementation Bug）**
 - **判定理由**:
-  「生成実行時は画面上の最新インメモリ状態を即時反映して ComfyUI にジョブを投入する」という仕様に対し、非同期通信の完了待ちに依存したフロー構造、および複数セット時のアクティブID解決ガード不備・`isActive` 判定ロジックの不整合というフロントエンド実装上の瑕疵であるため。仕様自体の破綻ではなく、実装バグに該当する。
+  - 楽観的排他制御（OCC）の仕様自体（他セッションの更新を 409 で防ぐ）に破綻はなく、フロントエンド側における以下の実装上の瑕疵であるため：
+    1. オートセーブの In-flight 制御（直列化）が欠如している。
+    2. キー順序に影響される不適切な `JSON.stringify` 等価判定により偽の dirty 状態が残留している。
+    3. オートセーブタイマーがポーリングによる `presets` 更新の巻き添えでリセットされている。
 
 ---
 
@@ -71,6 +79,7 @@
 
 - **ルート**: **`/dev-design`**（開発設計・タスクカード作成）
 - **推奨 PBI 内容**:
-  - `flushAutoSave` および `updateActiveSet` におけるアクティブセット特定（複数セット時のフォールバック）とインメモリ同期的確定の徹底
-  - `useGenerateAction.ts` における `resolvedActiveSetId` の確実な解決、および `paramValues`・`batchSize`・`seed` の最新状態優先マージ
-  - 1回目即時生成・複数セット時の偽陽性を遮断する回帰防止テストの拡充
+  1. オートセーブ直列化（In-flight ガード）の実装（`isPending` 中の新規リクエスト待機・最新差分1回送信）。
+  2. `isRecordEqual` によるキー順序非依存の差分比較への移行（JSON.stringify の廃止）。
+  3. テキストモード保存時の文字列正規化同期。
+  4. オートセーブ `useEffect` の依存配列から `presets` を除外し、`presetsRef.current` 参照化。

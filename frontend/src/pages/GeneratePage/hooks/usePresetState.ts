@@ -29,6 +29,26 @@ export interface PresetConflictData {
   }
 }
 
+export interface UpdatePresetArgs {
+  id: number
+  name: string
+  param_values?: Record<string, string>
+  applied_assets?: Record<string, any[]>
+  batch_size?: number
+  seed_mode?: string
+  seed?: number
+  base_updated_at?: string
+}
+
+export const isRecordEqual = (a?: Record<string, any>, b?: Record<string, any>): boolean => {
+  if (a === b) return true
+  if (!a || !b) return false
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  return keysA.every((k) => a[k] === b[k])
+}
+
 export function normalizeTimestamp(ts?: string | null): number {
   if (!ts) return 0
   const trimmed = ts.trim()
@@ -90,7 +110,7 @@ export function usePresetState({
 
   const isStateEqual = (a: HistoryState, b: HistoryState) => {
     return (
-      JSON.stringify(a.paramValues) === JSON.stringify(b.paramValues) &&
+      isRecordEqual(a.paramValues, b.paramValues) &&
       JSON.stringify(a.appliedAssets) === JSON.stringify(b.appliedAssets) &&
       a.batchSize === b.batchSize &&
       a.seedMode === b.seedMode &&
@@ -107,7 +127,11 @@ export function usePresetState({
     refetchOnWindowFocus: true,
   })
 
+  const presetsRef = useRef<WorkflowPreset[] | undefined>(presets)
+  presetsRef.current = presets
+
   const presetUpdatedAtRef = useRef<Record<number, string>>({})
+  const pendingSaveArgsRef = useRef<UpdatePresetArgs | null>(null)
 
   // ── Mutations ──
   const createPresetMutation = useMutation({
@@ -190,7 +214,7 @@ export function usePresetState({
     onError: (err: any, variables) => {
       if (err?.message?.includes('409') || err?.status === 409) {
         qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
-        const serverPreset = presets?.find((p) => p.id === variables.id)
+        const serverPreset = (presetsRef.current || presets)?.find((p) => p.id === variables.id)
         if (serverPreset) {
           setConflictData({
             serverPreset,
@@ -206,7 +230,27 @@ export function usePresetState({
         }
       }
     },
+    onSettled: () => {
+      if (pendingSaveArgsRef.current) {
+        const nextArgs = pendingSaveArgsRef.current
+        pendingSaveArgsRef.current = null
+        const latestBaseUpdatedAt = presetUpdatedAtRef.current[nextArgs.id] || nextArgs.base_updated_at
+        updatePresetMutation.mutate({
+          ...nextArgs,
+          base_updated_at: latestBaseUpdatedAt,
+        })
+      }
+    },
   })
+
+  const performUpdatePresetRef = useRef<(args: UpdatePresetArgs) => void>(() => {})
+  performUpdatePresetRef.current = (args: UpdatePresetArgs) => {
+    if (updatePresetMutation.isPending) {
+      pendingSaveArgsRef.current = args
+      return
+    }
+    updatePresetMutation.mutate(args)
+  }
 
   const deletePresetMutation = useMutation({
     mutationFn: (id: number) => workflowPresetsApi.delete(id),
@@ -1015,7 +1059,8 @@ export function usePresetState({
     const currentStore = useGenerationStore.getState()
     const targetActiveId = currentStore.activeSetId
     if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
-    const activePreset = presets?.find((p) => String(p.id) === String(targetActiveId))
+    const currentPresets = presetsRef.current || presets
+    const activePreset = currentPresets?.find((p) => String(p.id) === String(targetActiveId))
     if (!activePreset) return
 
     const currentState: HistoryState = {
@@ -1039,7 +1084,7 @@ export function usePresetState({
       hist.future = []
       saveHistory(targetActiveId, hist)
     }
-    updatePresetMutation.mutate({
+    performUpdatePresetRef.current({
       id: activePreset.id,
       name: activePreset.name,
       param_values: currentState.paramValues,
@@ -1049,12 +1094,15 @@ export function usePresetState({
       seed: currentState.seed,
       base_updated_at: latestBaseUpdatedAt,
     })
-  }, [selectedWorkflowId, presets, updatePresetMutation, updateActiveSet])
+  }, [selectedWorkflowId, presets, updateActiveSet])
+
+
 
   useEffect(() => {
     if (!isInitialSyncRef.current) return
     if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
-    const activePreset = presets?.find((p) => String(p.id) === String(activeSetId))
+    const currentPresets = presetsRef.current || presets
+    const activePreset = currentPresets?.find((p) => String(p.id) === String(activeSetId))
     if (!activePreset) return
 
     const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
@@ -1069,16 +1117,17 @@ export function usePresetState({
       autoSaveTimerRef.current = null
       const currentLastSaved = lastSavedStateRef.current[activeSetId]
       if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
-      const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
+      const latestPreset = (presetsRef.current || presets)?.find((p) => String(p.id) === String(activeSetId)) || activePreset
+      const latestBaseUpdatedAt = presetUpdatedAtRef.current[latestPreset.id] || latestPreset.updated_at
       if (currentLastSaved) {
         const hist = getHistory(activeSetId)
         hist.past.push(currentLastSaved)
         hist.future = []
         saveHistory(activeSetId, hist)
       }
-      updatePresetMutation.mutate({
-        id: activePreset.id,
-        name: activePreset.name,
+      performUpdatePresetRef.current({
+        id: latestPreset.id,
+        name: latestPreset.name,
         param_values: currentState.paramValues,
         applied_assets: currentState.appliedAssets,
         batch_size: currentState.batchSize,
@@ -1094,7 +1143,7 @@ export function usePresetState({
         autoSaveTimerRef.current = null
       }
     }
-  }, [paramValues, appliedAssets, batchSize, seedMode, seed, activeSetId, presets, selectedWorkflowId])
+  }, [paramValues, appliedAssets, batchSize, seedMode, seed, activeSetId, selectedWorkflowId])
 
   // Conflict Resolution Handlers
   const handleResolveConflictUseServer = () => {
