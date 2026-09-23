@@ -1,11 +1,17 @@
-# インシデントレポート: プリセットオートセーブ時の競合検知（OCC）誤発火および定期ポーリングによる保存遅延不具合
+# インシデントレポート: プリセットプロンプトが別プリセットの内容で上書きされる不具合
 
-**日時**: 2026-09-20  
+**日時**: 2026-09-23  
 **報告者**: Incident Analyst  
 **対象コンポーネント**: 
-- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L91-L99: `isStateEqual` キー順序依存、L190-L208: `updatePresetMutation.onError` 409処理、L951-L995: ポーリング時差分チェックと競合誤判定、L1054-L1097: オートセーブ `useEffect` の `presets` 依存)
-- `backend/app/routers/presets.py` (L86-L100: `update_preset` の `base_updated_at` による 0.01s 楽観的ロック検証)
-- `logs/app.jsonl` (単一端末操作中の連続 HTTP 409 Conflict 発生ログ)
+- `frontend/src/pages/GeneratePage/hooks/usePresetState.ts`
+  - L163-L176: `createPresetMutation.onSuccess` での `sets` 未同期による別プリセットへの誤上書き
+  - L189-L198: `updatePresetMutation.mutationFn` の `param_values` フォールバックによる別プリセット上書き
+  - L710-L757: `handleSelectPresetTab` でのタブ切替時オートセーブ未フラッシュおよび未追跡プリセットの stale 読込
+  - L874-L892: `rawMappedSets` におけるサーバー DB 値に対するローカル既存値の無条件優先マージ（サーバー更新の上書き破棄）
+  - L995-L1040: ポーリング時の非アクティブプリセット更新追跡漏れ（`presetUpdatedAtRef` 更新漏れ）
+  - L1101-L1146: タブ切替時のデバウンスタイマークリアによる未保存差分の脱落
+- `frontend/src/store/slices/multiSetSlice.ts`
+  - L272-L289: `setActiveSetId` が未登録 ID に対して早期 return することによる `activeSetId` 不整合
 **分類**: **Type A（実装バグ / Implementation Bug）**
 
 ---
@@ -13,54 +19,70 @@
 ## 1. 障害概要
 
 - **症状**:
-  1. **【直接要因】単一端末での競合モーダル（PresetConflictModal）誤発火**:
-     他端末や別ブラウザでの同時編集が一切行われていないにもかかわらず、プロンプト編集やパラメータ調整中に「プリセットが他セッションで更新されました」という競合解決モーダルが頻発する。
-  2. **【独立した別問題】ポーリングによるデバウンスタイマーリセットと保存遅延**:
-     ユーザーが入力を終えて1秒以上経過したと認識して「生成（Generate）」を押下したにもかかわらず、定期ポーリング（5秒周期）によってオートセーブタイマーが不意に延命リセットされ、未保存（旧パラメータ）の状態でジョブが ComfyUI に投入される。
+  1. **プリセット間でのパラメータ・プロンプト誤上書き**:
+     プリセットの切り替えや新規作成、あるいは別端末との引き継ぎ操作を行った際、あるプリセットのプロンプトが別のプリセットの内容で上書き・保存されてしまう。
+  2. **タブ切替時の未保存差分消失（別端末引き継ぎ時の同期不整合）**:
+     プロンプト編集中にオートセーブ（1秒デバウンス）が完了する前に別のプリセットタブへ切り替えると、タイマーが破棄（clearTimeout）されサーバーへ送信されない。手元のメモリ上にのみ残った値が、別端末での編集・保存や定期ポーリングと衝突し、意図せぬ巻き戻りや上書きを引き起こす。
+  3. **他端末での更新の取り込み阻害（サーバー SSoT の無効化）**:
+     他端末で更新されたプリセットが存在しても、自端末の `rawMappedSets` がローカルのインメモリ値（`existingSet.paramValues`）を無条件に最優先マージするため、自端末側でサーバーの最新値が破棄される。
 
 - **影響範囲**:
-  - プロンプト入力（テキストモード／チップモード問わず）、パラメータ変更、シード・バッチサイズ編集を日常的に行うすべてのユーザー。作業の中断および意図せぬパラメータ巻き戻り（旧設定での画像生成）を引き起こす。
+  - 複数プリセットを運用する全ユーザー。特に複数タブ・複数端末（PC・スマホ等）でプリセット編集・切り替えを行うユーザーにおいて、プリセットデータの破壊的消失リスクが存在する。
 
 ---
 
 ## 2. ログおよび実行フォレンジック検証
 
-### ログ証拠（Active Log Inspection: `logs/app.jsonl`）
-- `logs/app.jsonl` 調査結果:
-  - 単一クライアントからの `PUT /api/workflow-presets/1506` に対して、数秒〜十数秒単位で `HTTP 409` が頻発して記録されている。
-  - 具体例（2026-09-20 21:08 〜 21:12）:
-    - `[2026-09-20T21:08:16.977+09:00] [INFO ] [backend ] [req-5f4b1fcb26f5] PUT /api/workflow-presets/1506 -> 409 (7.45ms)`
-    - `[2026-09-20T21:08:36.284+09:00] [INFO ] [backend ] [req-d6fa34e63f41] PUT /api/workflow-presets/1506 -> 409 (4.15ms)`
-    - `[2026-09-20T21:08:42.063+09:00] [INFO ] [backend ] [req-7abae6660a27] PUT /api/workflow-presets/1506 -> 409 (5.34ms)`
-    - `[2026-09-20T21:08:48.228+09:00] [INFO ] [backend ] [req-803438018a66] PUT /api/workflow-presets/1506 -> 409 (3.95ms)`
-    - `[2026-09-20T21:09:12.366+09:00] [INFO ] [backend ] [req-69754b02e512] PUT /api/workflow-presets/1506 -> 409 (3.51ms)`
-    - `[2026-09-20T21:09:13.603+09:00] [INFO ] [backend ] [req-3424adecb9ed] PUT /api/workflow-presets/1506 -> 409 (5.21ms)`
-    - `[2026-09-20T21:09:22.468+09:00] [INFO ] [backend ] [req-79bda66feafa] PUT /api/workflow-presets/1506 -> 409 (6.59ms)`
-    - `[2026-09-20T21:09:23.687+09:00] [INFO ] [backend ] [req-30346b19446d] PUT /api/workflow-presets/1506 -> 409 (5.48ms)`
-  - エラーログ（ERROR レベル）としては記録されず、HTTP 409 Conflict（INFO）として FastAPI から正常に返却されているため、バックエンドの例外ではなくクライアント側の通信レースが原因。
+### ログ検証（Active Log Inspection: `logs/app.jsonl`）
+- `python scripts/inspect_logs.py --summary` および `--errors --tail 10` の実行結果:
+  - 総ログエントリ: 26,846件（すべて INFO）
+  - 直近のエラーログ（ERROR レベル）: 0件
+  - バックエンドサーバー自体は HTTP 200/204 等を正常に応答しており、サーバークラッシュや例外ではなく、**フロントエンドの状態管理・ライフサイクル制御に起因する論理的バグ**であることを確認。
 
 ---
 
 ## 3. 根本原因の分離とメカニズム
 
-ユーザー調査報告書（`tmp/Prompt_Surgeon_Prompt_Edit_Conflict_and_Autosave_Analysis.pdf`）およびコード検証により、問題は以下の2つの独立した課題に峻別される。
+コードベースの静的解析およびデータフロー追跡により、以下の 4 つの結合的メカニズムが特定されました。
 
-### 【直接要因】競合モーダル誤発火の2大メカニズム
-1. **直接要因①: 通信中（In-flight）の連続保存による BE の 409 Conflict**:
-   - `updatePresetMutation` が実行中（In-flight）であるにもかかわらず、ユーザー操作やタイマーにより2回目の PUT リクエストが発行される。
-   - 1回目の保存で DB の `updated_at` は新時刻 T1 に進むが、2回目のリクエストは1回目のレスポンス（T1）を受け取る前に送信されるため、古い `base_updated_at: T0` を保持したまま届く。
-   - `presets.py` (L96) の `(db_updated_at - base_updated_at).total_seconds() > 0.01` に引っかかり HTTP 409 Conflict が返却され、`updatePresetMutation.onError` (L190-L208) が競合モーダルを表示する。
-2. **直接要因②: 差分判定の不整合による「偽の isDirty 残留」と定期ポーリングの衝突**:
-   - `isStateEqual` (L91-L99) が `JSON.stringify` で比較しているため、オブジェクトのキー出現順序が入れ替わっただけで等価と判定されず、保存後も恒常的に `isDirty = true`（未保存状態）と誤認され続ける。
-   - テキスト入力時の末尾空白やカンマ等（`"1girl, solo, "`）の生文字列保存後、手元の正規化（`"1girl, solo"`）との間で不一致が生じ `isDirty` が解除されない。
-   - この状態で、自端末の保存によって進んだ BE の `updated_at` を 5秒周期のポーリングが拾うと、`usePresetState.ts` (L951-L995) は「他端末が更新し、手元にも未保存差分がある」と誤認して競合モーダルを発火させる。
-
-### 【独立した別問題】ポーリングによるタイマーリセットと保存遅延
-- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` L1097
+### メカニズム 1: 新規プリセット作成時の `activeSetId` 不整合による既存プリセット破壊（直接の上書き）
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L163-L176) 及び `frontend/src/store/slices/multiSetSlice.ts` (L272-L289)
 - **メカニズム**:
-  - オートセーブ用の `useEffect` の依存配列に `presets` が含まれている。
-  - 5秒ごとの定期ポーリングで `presets` の参照が更新されるたびに `useEffect` のクリーンアップが走り、進行中だった 1秒デバウンスタイマーが不意にクリア・再セット（延命）される。
-  - ユーザーが「入力停止後1秒待った」と思って生成ボタンを押しても、実際にはリクエスト送信が遅延しており、保存前の古い値で生成が走る（REQ-278 の実害の一因）。
+  1. `createPresetMutation.onSuccess` で `newPreset` が返却された際、`setActiveSetId(newPreset.id)` を呼び出す。
+  2. しかし、この時点では `qc.invalidateQueries` が完了しておらず、Zustand ストアの `sets` 配列に `newPreset.id` はまだ存在しない。
+  3. `multiSetSlice.ts` の `setActiveSetId` は `const targetSet = get().sets.find(...)` が見つからないため **早期 return** し、ストアの `activeSetId` は「直前に開いていたプリセット（Preset X）」のまま維持される。
+  4. 直後に `setParamValues(newPreset.param_values)` が実行される。
+  5. `setParamValues` はストア内の `updateActiveSet` を呼ぶが、`activeSetId` は Preset X のままであるため、**Preset X のパラメータが `newPreset` の内容で書き換えられる**。
+  6. その後オートセーブが走り、Preset X が `newPreset` のプロンプトで DB に恒久保存される。
+
+### メカニズム 2: タブ切り替え時のオートセーブ破棄によるデータ脱落
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L710-L757, L1140-L1145)
+- **メカニズム**:
+  1. ユーザーが Preset A を編集中、1秒のオートセーブタイマー（`autoSaveTimerRef`）が起動する。
+  2. 1秒経過前にユーザーが Preset B のタブをクリック（`handleSelectPresetTab(B)`）すると、`activeSetId` が切り替わる。
+  3. `usePresetState` の `useEffect` クリーンアップにより `clearTimeout(autoSaveTimerRef.current)` が実行され、**Preset A の未保存データはサーバーに送信されずに破棄される**。
+  4. `handleSelectPresetTab` 内で `flushAutoSave()` などの同期保存処理が一切呼ばれていない。
+  5. これにより、Preset A は自端末のメモリ上にのみ残り、DB は古いままとなる。別端末で開いた際には古い値が表示され、別端末で編集・保存が行われると容易に同期不整合となる。
+
+### メカニズム 3: `rawMappedSets` によるサーバー SSoT の無条件上書き
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L874-L892)
+- **メカニズム**:
+  ```typescript
+  paramValues: healLegacyParamKeys({
+    ...defaultParams,
+    ...(p.param_values || {}),
+    ...(existingSet?.paramValues || {}), // ここでローカル値が無条件にサーバー値を上書き
+  })
+  ```
+  1. REQ-278 で導入されたこのマージロジックは、未保存のローカル編集値を保護する目的であったが、「ローカル編集が行われたか（isDirty）」の判定を行わずに `existingSet?.paramValues` を無条件に最上位でスプレッドしている。
+  2. 初回マウント以降、すべてのプリセットは `existingSets` に登録されるため、他端末でプリセットが更新されてサーバー DB の値 `p.param_values` が変化しても、自端末がポーリングした際に常に古い `existingSet.paramValues` で上書き破棄される。
+
+### メカニズム 4: 非アクティブプリセットのタイムスタンプ追跡漏れ
+- **該当箇所**: `frontend/src/pages/GeneratePage/hooks/usePresetState.ts` (L995-L1040)
+- **メカニズム**:
+  1. 5秒周期の定期ポーリング処理では、現在アクティブなプリセット（`targetActiveId`）についてのみ `presetUpdatedAtRef.current` を更新し、他端末での更新（`updated_at` の変化）を検知している。
+  2. 非アクティブなプリセットについては `presetUpdatedAtRef.current` が更新されない。
+  3. そのため、ユーザーが「ふと別のプリセットに切り替えた（`handleSelectPresetTab`）」際、`prevUpdatedAt` が存在しないか古いままとなり、サーバー更新判定や競合判定が正常に機能せず、メカニズム 3 の壊れたローカルメモリ値（stale data）のまま表示・編集が継続される。
 
 ---
 
@@ -68,18 +90,19 @@
 
 - **分類**: **Type A（実装バグ / Implementation Bug）**
 - **判定理由**:
-  - 楽観的排他制御（OCC）の仕様自体（他セッションの更新を 409 で防ぐ）に破綻はなく、フロントエンド側における以下の実装上の瑕疵であるため：
-    1. オートセーブの In-flight 制御（直列化）が欠如している。
-    2. キー順序に影響される不適切な `JSON.stringify` 等価判定により偽の dirty 状態が残留している。
-    3. オートセーブタイマーがポーリングによる `presets` 更新の巻き添えでリセットされている。
+  - 仕様（複数端末でのプリセット同期、タブ切り替え、オートセーブ）自体に問題はなく、フロントエンドにおける以下の 4 点の実装欠陥に起因しているため：
+    1. 新規作成時の `sets` 反映待ちを行わずに `setParamValues` を呼んでいること。
+    2. タブ切り替え時にオートセーブをフラッシュ（`flushAutoSave`）していないこと。
+    3. `rawMappedSets` で dirty 判定なしにローカル値を無条件優先マージしていること。
+    4. ポーリング時に非アクティブプリセットの `updated_at` を同期していないこと。
 
 ---
 
 ## 5. 推奨する次のアクション
 
 - **ルート**: **`/dev-design`**（開発設計・タスクカード作成）
-- **推奨 PBI 内容**:
-  1. オートセーブ直列化（In-flight ガード）の実装（`isPending` 中の新規リクエスト待機・最新差分1回送信）。
-  2. `isRecordEqual` によるキー順序非依存の差分比較への移行（JSON.stringify の廃止）。
-  3. テキストモード保存時の文字列正規化同期。
-  4. オートセーブ `useEffect` の依存配列から `presets` を除外し、`presetsRef.current` 参照化。
+- **PBI 対象スコープ**:
+  1. `createPresetMutation.onSuccess` において `sets` に新プリセットを確実に挿入してから `activeSetId` を更新する、または `loadPresetData` を用いた原子的初期化への修正。
+  2. `handleSelectPresetTab` におけるタブ切替前の `flushAutoSave` 呼出の徹底。
+  3. `rawMappedSets` におけるマージロジックの是正（未編集のプリセットはサーバーの最新 `param_values` を忠実に反映し、自端末で真に dirty なプリセットのみ保護）。
+  4. ポーリング時における全プリセットの `presetUpdatedAtRef` の確実な追跡同期。

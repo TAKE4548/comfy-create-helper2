@@ -271,12 +271,13 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
     setActiveSetId: (id) => {
       const activeWfId = get().selectedWorkflowId
-      if (activeWfId === null) return
 
       const targetSet = get().sets.find((s) => String(s.id) === String(id))
       if (!targetSet) return
 
-      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(id))
+      if (activeWfId !== null && activeWfId !== undefined) {
+        localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(id))
+      }
       set({
         activeSetId: id,
         paramValues: targetSet.paramValues,
@@ -289,8 +290,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     },
 
     loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>) => {
-      const activeWfId = get().selectedWorkflowId
-      if (activeWfId === null) return
+      const activeWfId = get().selectedWorkflowId ?? preset.workflow_id ?? null
 
       const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
       const appliedAssets = preset.applied_assets || {}
@@ -342,12 +342,15 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         },
       ]
 
-      localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(preset.id))
-      if (!openPresetIds.includes(preset.id)) {
-        localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
+      if (activeWfId !== null && activeWfId !== undefined) {
+        localStorage.setItem(LS_KEYS.ACTIVE_SET_PREFIX + activeWfId, String(preset.id))
+        if (!openPresetIds.includes(preset.id)) {
+          localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(nextOpenPresetIds))
+        }
       }
 
       set({
+        ...(get().selectedWorkflowId === null && preset.workflow_id !== undefined ? { selectedWorkflowId: preset.workflow_id } : {}),
         activeSetId: preset.id,
         paramValues: mergedParamValues,
         appliedAssets,

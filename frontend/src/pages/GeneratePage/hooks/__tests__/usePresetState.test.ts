@@ -778,5 +778,338 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       }
     })
   })
+
+  describe('REQ-281: プリセット同期・状態ライフサイクルの根本是正', () => {
+    it('AC-1: protects previous preset A when creating new preset B without contaminating A or firing false auto-save on A', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'A orig' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'B new' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:01:00Z',
+        updated_at: '2026-09-08T10:01:00Z',
+      }
+      vi.mocked(workflowPresetsApi.create).mockResolvedValue(presetB)
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB])
+
+      await act(async () => {
+        result.current.createPresetMutation.mutate({
+          name: 'Preset B',
+          paramValues: { prompt: 'B new' },
+        })
+      })
+
+      await waitFor(() => {
+        const state = useGenerationStore.getState()
+        expect(state.activeSetId).toBe(102)
+        expect(state.paramValues.prompt).toBe('B new')
+      })
+
+      const finalState = useGenerationStore.getState()
+      const setA = finalState.sets.find((s) => s.id === 101)
+      const setB = finalState.sets.find((s) => s.id === 102)
+      expect(setA?.paramValues.prompt).toBe('A orig')
+      expect(setB?.paramValues.prompt).toBe('B new')
+      expect(workflowPresetsApi.update).not.toHaveBeenCalled()
+    })
+
+    it('AC-2: immediately flushes unsaved edits of preset A when switching to preset B before debounce timer expires', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'A initial' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'B initial' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB])
+      vi.mocked(workflowPresetsApi.update).mockResolvedValue({
+        ...presetA,
+        param_values: { prompt: 'A edited' },
+        updated_at: '2026-09-08T10:02:00Z',
+      })
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      // Edit A in store
+      act(() => {
+        useGenerationStore.setState({
+          paramValues: { prompt: 'A edited' },
+        })
+      })
+
+      // Immediately switch to Preset B without waiting for debounce
+      await act(async () => {
+        result.current.handleSelectPresetTab(102)
+      })
+
+      // Flush should synchronously trigger update for Preset A
+      await waitFor(() => {
+        expect(workflowPresetsApi.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({
+            param_values: { prompt: 'A edited' },
+          })
+        )
+      })
+
+      // And activeSetId should now be 102
+      expect(useGenerationStore.getState().activeSetId).toBe(102)
+    })
+
+    it('AC-3: loads latest server params when switching to clean preset B that was updated remotely', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'A prompt' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'B old' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      // Preset B is updated on another device
+      const updatedPresetB: WorkflowPreset = {
+        ...presetB,
+        param_values: { prompt: 'B updated on device 2' },
+        updated_at: '2026-09-08T10:05:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, updatedPresetB])
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+      })
+
+      // Switch to Preset B
+      act(() => {
+        result.current.handleSelectPresetTab(102)
+      })
+
+      await waitFor(() => {
+        const state = useGenerationStore.getState()
+        expect(state.activeSetId).toBe(102)
+        expect(state.paramValues.prompt).toBe('B updated on device 2')
+      })
+    })
+
+    it('AC-4: background polling synchronizes clean presets into mappedSets without dropping them due to in-memory spread', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'A v1' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'B v1' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      // Remote updates Preset B while user is on Preset A (both clean)
+      const presetBv2: WorkflowPreset = {
+        ...presetB,
+        param_values: { prompt: 'B v2 by background polling' },
+        updated_at: '2026-09-08T10:10:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetBv2])
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['workflow-presets', 1] })
+      })
+
+      await waitFor(() => {
+        const setB = useGenerationStore.getState().sets.find((s) => s.id === 102)
+        expect(setB?.paramValues.prompt).toBe('B v2 by background polling')
+      })
+    })
+
+    it('AC-5: updatePresetMutation does not overwrite inactive preset with active preset params', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'Active A prompt' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'Inactive B prompt' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB])
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      // Update preset B (which is inactive) by specifying only name
+      await act(async () => {
+        result.current.updatePresetMutation.mutate({
+          id: 102,
+          name: 'Preset B Renamed',
+        })
+      })
+
+      expect(workflowPresetsApi.update).toHaveBeenCalledWith(
+        102,
+        expect.objectContaining({
+          name: 'Preset B Renamed',
+          param_values: { prompt: 'Inactive B prompt' },
+        })
+      )
+    })
+
+    it('Red Team: rapid tab switching (A -> B -> C) flushes unsaved edits sequentially without race conditions', async () => {
+      const presetA: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Preset A',
+        param_values: { prompt: 'A init' },
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetB: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Preset B',
+        param_values: { prompt: 'B init' },
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const presetC: WorkflowPreset = {
+        id: 103,
+        workflow_id: 1,
+        name: 'Preset C',
+        param_values: { prompt: 'C init' },
+        sort_order: 2,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      vi.mocked(workflowPresetsApi.list).mockResolvedValue([presetA, presetB, presetC])
+      vi.mocked(workflowPresetsApi.update).mockImplementation(async (id, data) => ({
+        id,
+        workflow_id: 1,
+        name: data.name,
+        param_values: data.param_values,
+        applied_assets: data.applied_assets,
+        batch_size: data.batch_size,
+        seed_mode: data.seed_mode,
+        seed: data.seed,
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:05:00Z',
+      }))
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.presets).toBeDefined())
+
+      // 1. Edit A
+      act(() => {
+        useGenerationStore.setState({ paramValues: { prompt: 'A edited rapid' } })
+      })
+
+      // 2. Switch to B
+      await act(async () => {
+        result.current.handleSelectPresetTab(102)
+      })
+      await waitFor(() => {
+        expect(workflowPresetsApi.update).toHaveBeenCalledWith(
+          101,
+          expect.objectContaining({ param_values: { prompt: 'A edited rapid' } })
+        )
+      })
+
+      // 3. Edit B
+      act(() => {
+        useGenerationStore.setState({ paramValues: { prompt: 'B edited rapid' } })
+      })
+
+      // 4. Switch to C
+      await act(async () => {
+        result.current.handleSelectPresetTab(103)
+      })
+      await waitFor(() => {
+        expect(workflowPresetsApi.update).toHaveBeenCalledWith(
+          102,
+          expect.objectContaining({ param_values: { prompt: 'B edited rapid' } })
+        )
+      })
+
+      expect(useGenerationStore.getState().activeSetId).toBe(103)
+    })
+  })
 })
 

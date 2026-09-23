@@ -132,6 +132,7 @@ export function usePresetState({
 
   const presetUpdatedAtRef = useRef<Record<number, string>>({})
   const pendingSaveArgsRef = useRef<UpdatePresetArgs | null>(null)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Mutations ──
   const createPresetMutation = useMutation({
@@ -160,15 +161,35 @@ export function usePresetState({
         seed: sd !== undefined ? sd : seed,
       }),
     onSuccess: (newPreset) => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
       if (newPreset?.id && selectedWorkflowId) {
-        localStorage.setItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`, String(newPreset.id))
+        const defaultParams = workflow ? getInitialParams(workflow) : {}
+        const mergedParamValues = healLegacyParamKeys({ ...defaultParams, ...(newPreset.param_values || {}) })
+
+        if (newPreset.updated_at) {
+          presetUpdatedAtRef.current[newPreset.id] = newPreset.updated_at
+        }
+        lastSavedStateRef.current[newPreset.id] = {
+          paramValues: mergedParamValues,
+          appliedAssets: newPreset.applied_assets || {},
+          batchSize: newPreset.batch_size ?? 1,
+          seedMode: (newPreset.seed_mode as 'random' | 'fixed') || 'random',
+          seed: newPreset.seed !== undefined ? newPreset.seed : 42,
+        }
+
+        qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
+          if (!old) return [newPreset]
+          if (old.some((p) => p.id === newPreset.id)) {
+            return old.map((p) => (p.id === newPreset.id ? newPreset : p))
+          }
+          return [...old, newPreset]
+        })
+
+        loadPresetData?.(newPreset, defaultParams)
         openPreset?.(newPreset.id)
-        setActiveSetId(newPreset.id)
-        if (newPreset.param_values) setParamValues(newPreset.param_values)
-        if (newPreset.applied_assets) setAppliedAssets(newPreset.applied_assets)
-        if (newPreset.batch_size !== undefined) setBatchSize(newPreset.batch_size)
-        if (newPreset.seed_mode) setSeedMode(newPreset.seed_mode as 'fixed' | 'random')
-        if (newPreset.seed !== undefined) setSeed(newPreset.seed)
       }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
       setNewPresetName('')
@@ -185,25 +206,45 @@ export function usePresetState({
       seed_mode?: string
       seed?: number
       base_updated_at?: string
-    }) =>
-      workflowPresetsApi.update(args.id, {
+    }) => {
+      const currentStore = storeRef.current
+      const isActive = String(args.id) === String(currentStore.activeSetId)
+      const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(args.id)) : undefined
+      const fallbackPreset = !isActive && !targetSet ? (presetsRef.current || presets)?.find((p) => p.id === args.id) : undefined
+
+      return workflowPresetsApi.update(args.id, {
         name: args.name,
-        param_values: args.param_values !== undefined ? args.param_values : paramValues,
-        applied_assets: args.applied_assets !== undefined ? args.applied_assets : appliedAssets,
-        batch_size: args.batch_size !== undefined ? args.batch_size : batchSize,
-        seed_mode: args.seed_mode !== undefined ? args.seed_mode : seedMode,
-        seed: args.seed !== undefined ? args.seed : seed,
+        param_values: args.param_values !== undefined
+          ? args.param_values
+          : (isActive ? currentStore.paramValues : (targetSet?.paramValues || fallbackPreset?.param_values)),
+        applied_assets: args.applied_assets !== undefined
+          ? args.applied_assets
+          : (isActive ? currentStore.appliedAssets : (targetSet?.appliedAssets || fallbackPreset?.applied_assets)),
+        batch_size: args.batch_size !== undefined
+          ? args.batch_size
+          : (isActive ? currentStore.batchSize : (targetSet?.batchSize ?? fallbackPreset?.batch_size)),
+        seed_mode: args.seed_mode !== undefined
+          ? args.seed_mode
+          : (isActive ? currentStore.seedMode : (targetSet?.seedMode || fallbackPreset?.seed_mode)),
+        seed: args.seed !== undefined
+          ? args.seed
+          : (isActive ? currentStore.seed : (targetSet?.seed ?? fallbackPreset?.seed)),
         base_updated_at: args.base_updated_at,
-      }),
+      })
+    },
     onSuccess: (updatedPreset, variables) => {
       if (updatedPreset?.id) {
         presetUpdatedAtRef.current[updatedPreset.id] = updatedPreset.updated_at
+        const currentStore = storeRef.current
+        const isActive = String(updatedPreset.id) === String(currentStore.activeSetId)
+        const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(updatedPreset.id)) : undefined
+
         lastSavedStateRef.current[updatedPreset.id] = {
-          paramValues: variables.param_values !== undefined ? variables.param_values : paramValues,
-          appliedAssets: (variables.applied_assets !== undefined ? variables.applied_assets : appliedAssets) as any,
-          batchSize: variables.batch_size !== undefined ? variables.batch_size : batchSize,
-          seedMode: (variables.seed_mode !== undefined ? variables.seed_mode : seedMode) as any,
-          seed: variables.seed !== undefined ? variables.seed : seed,
+          paramValues: updatedPreset.param_values ?? (variables.param_values !== undefined ? variables.param_values : (isActive ? currentStore.paramValues : (targetSet?.paramValues || {}))),
+          appliedAssets: (updatedPreset.applied_assets ?? (variables.applied_assets !== undefined ? variables.applied_assets : (isActive ? currentStore.appliedAssets : (targetSet?.appliedAssets || {})))) as any,
+          batchSize: updatedPreset.batch_size ?? (variables.batch_size !== undefined ? variables.batch_size : (isActive ? currentStore.batchSize : (targetSet?.batchSize ?? 1))),
+          seedMode: ((updatedPreset.seed_mode ?? (variables.seed_mode !== undefined ? variables.seed_mode : (isActive ? currentStore.seedMode : (targetSet?.seedMode || 'random')))) as any),
+          seed: updatedPreset.seed ?? (variables.seed !== undefined ? variables.seed : (isActive ? currentStore.seed : (targetSet?.seed ?? 42))),
         }
         qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
           if (!old) return old
@@ -216,15 +257,19 @@ export function usePresetState({
         qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
         const serverPreset = (presetsRef.current || presets)?.find((p) => p.id === variables.id)
         if (serverPreset) {
+          const currentStore = storeRef.current
+          const isActive = String(variables.id) === String(currentStore.activeSetId)
+          const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(variables.id)) : undefined
+
           setConflictData({
             serverPreset,
             localDraft: {
               name: variables.name,
-              paramValues: variables.param_values || paramValues,
-              appliedAssets: variables.applied_assets || appliedAssets,
-              batchSize: variables.batch_size ?? batchSize,
-              seedMode: (variables.seed_mode as 'random' | 'fixed') || seedMode,
-              seed: variables.seed ?? seed,
+              paramValues: variables.param_values || (isActive ? currentStore.paramValues : (targetSet?.paramValues || {})),
+              appliedAssets: variables.applied_assets || (isActive ? currentStore.appliedAssets : (targetSet?.appliedAssets || {})),
+              batchSize: variables.batch_size ?? (isActive ? currentStore.batchSize : (targetSet?.batchSize ?? 1)),
+              seedMode: ((variables.seed_mode as 'random' | 'fixed') || (isActive ? currentStore.seedMode : (targetSet?.seedMode || 'random'))),
+              seed: variables.seed ?? (isActive ? currentStore.seed : (targetSet?.seed ?? 42)),
             },
           })
         }
@@ -671,7 +716,46 @@ export function usePresetState({
   const handleUpdatePreset = (id: number, name: string) => {
     if (!selectedWorkflowId) return
     if (confirm(`現在の設定でプリセット「${name}」を上書き保存しますか？`)) {
-      updatePresetMutation.mutate({ id, name })
+      const currentStore = storeRef.current
+      const isActive = String(id) === String(currentStore.activeSetId)
+      const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(id)) : undefined
+      const baseUpdatedAt = presetUpdatedAtRef.current[id]
+
+      if (isActive) {
+        updatePresetMutation.mutate({
+          id,
+          name,
+          param_values: currentStore.paramValues,
+          applied_assets: currentStore.appliedAssets,
+          batch_size: currentStore.batchSize,
+          seed_mode: currentStore.seedMode,
+          seed: currentStore.seed,
+          base_updated_at: baseUpdatedAt,
+        })
+      } else if (targetSet) {
+        updatePresetMutation.mutate({
+          id,
+          name,
+          param_values: targetSet.paramValues,
+          applied_assets: targetSet.appliedAssets,
+          batch_size: targetSet.batchSize,
+          seed_mode: targetSet.seedMode,
+          seed: targetSet.seed,
+          base_updated_at: baseUpdatedAt,
+        })
+      } else {
+        const fallbackPreset = (presetsRef.current || presets)?.find((p) => p.id === id)
+        updatePresetMutation.mutate({
+          id,
+          name,
+          param_values: fallbackPreset?.param_values,
+          applied_assets: fallbackPreset?.applied_assets,
+          batch_size: fallbackPreset?.batch_size,
+          seed_mode: fallbackPreset?.seed_mode,
+          seed: fallbackPreset?.seed,
+          base_updated_at: baseUpdatedAt,
+        })
+      }
     }
   }
 
@@ -707,9 +791,88 @@ export function usePresetState({
     setIsPresetOpen(false)
   }
 
+  // ── Undo/Redo & History ──
+  const [historyVersion, setHistoryVersion] = useState(0)
+  const triggerHistoryChange = () => setHistoryVersion((v) => v + 1)
+
+  const getHistory = (id: string | number) => {
+    try {
+      const stored = sessionStorage.getItem(`prompt-surgeon-history-${id}`)
+      if (stored) {
+        return JSON.parse(stored)
+      }
+    } catch {}
+    return { past: [], future: [] }
+  }
+
+  const saveHistory = (id: string | number, hist: { past: HistoryState[]; future: HistoryState[] }) => {
+    try {
+      sessionStorage.setItem(`prompt-surgeon-history-${id}`, JSON.stringify(hist))
+    } catch {}
+    triggerHistoryChange()
+  }
+
+  const flushAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    if (!isInitialSyncRef.current) return
+
+    // 最新の Zustand ストアから状態を直接取得
+    const currentStore = useGenerationStore.getState ? useGenerationStore.getState() : storeRef.current
+    const targetActiveId = currentStore.activeSetId
+    if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
+    const currentPresets = presetsRef.current || presets
+    const activePreset = currentPresets?.find((p) => String(p.id) === String(targetActiveId))
+    if (!activePreset) return
+
+    const currentState: HistoryState = {
+      paramValues: currentStore.paramValues,
+      appliedAssets: currentStore.appliedAssets,
+      batchSize: currentStore.batchSize,
+      seedMode: currentStore.seedMode,
+      seed: currentStore.seed,
+    }
+
+    // インメモリ上の activeSet を即時同期（ジョブ発行直前・タブ切替直前の必須処理）
+    currentStore.updateActiveSet?.(currentState)
+
+    const currentLastSaved = lastSavedStateRef.current[targetActiveId]
+    if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
+
+    const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
+    if (currentLastSaved) {
+      const hist = getHistory(targetActiveId)
+      hist.past.push(currentLastSaved)
+      hist.future = []
+      saveHistory(targetActiveId, hist)
+    }
+
+    lastSavedStateRef.current[targetActiveId] = currentState
+
+    performUpdatePresetRef.current({
+      id: activePreset.id,
+      name: activePreset.name,
+      param_values: currentState.paramValues,
+      applied_assets: currentState.appliedAssets,
+      batch_size: currentState.batchSize,
+      seed_mode: currentState.seedMode,
+      seed: currentState.seed,
+      base_updated_at: latestBaseUpdatedAt,
+    })
+  }, [selectedWorkflowId, presets, updateActiveSet])
+
   const handleSelectPresetTab = (presetId: string | number) => {
+    const currentStore = useGenerationStore.getState ? useGenerationStore.getState() : storeRef.current
+    const currentActiveId = currentStore.activeSetId
+    if (currentActiveId !== null && currentActiveId !== undefined && String(currentActiveId) !== String(presetId)) {
+      flushAutoSave()
+    }
+
     const targetId = Number(presetId)
-    const serverPreset = presets?.find((p) => p.id === targetId)
+    const currentPresets = presetsRef.current || presets
+    const serverPreset = currentPresets?.find((p) => p.id === targetId)
     const prevUpdatedAt = presetUpdatedAtRef.current[targetId]
     const serverChanged = !!(
       serverPreset?.updated_at &&
@@ -738,14 +901,16 @@ export function usePresetState({
       return
     }
 
-    if (serverChanged && !isDirty && serverPreset) {
-      // 別端末で更新あり ＋ 自端末は未編集 → サーバー最新版をロード
-      presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
+    if (serverPreset && (serverChanged || !isDirty)) {
+      // 別端末で更新あり、または自端末未編集（クリーン） → サーバー最新版をロード
+      if (serverPreset.updated_at) {
+        presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
+      }
       handleLoadPreset(serverPreset)
       return
     }
 
-    // サーバー変更なし: 既に開いているタブならローカル状態をアクティブ化、未開放ならDBから初期ロード
+    // サーバー変更なし かつ ダーティな場合
     const isOpen = (storeRef.current.openPresetIds || []).map(String).includes(String(presetId))
     if (isOpen) {
       setActiveSetId(presetId)
@@ -757,26 +922,6 @@ export function usePresetState({
   }
 
   // ── Undo/Redo ──
-  const [historyVersion, setHistoryVersion] = useState(0)
-  const triggerHistoryChange = () => setHistoryVersion((v) => v + 1)
-
-  const getHistory = (id: string | number) => {
-    try {
-      const stored = sessionStorage.getItem(`prompt-surgeon-history-${id}`)
-      if (stored) {
-        return JSON.parse(stored)
-      }
-    } catch {}
-    return { past: [], future: [] }
-  }
-
-  const saveHistory = (id: string | number, hist: { past: HistoryState[]; future: HistoryState[] }) => {
-    try {
-      sessionStorage.setItem(`prompt-surgeon-history-${id}`, JSON.stringify(hist))
-    } catch {}
-    triggerHistoryChange()
-  }
-
   const canUndo = activeSetId !== null && getHistory(activeSetId).past.length > 0
   const canRedo = activeSetId !== null && getHistory(activeSetId).future.length > 0
 
@@ -786,7 +931,6 @@ export function usePresetState({
     const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
     hist.future.push(currentState)
     const prevState = hist.past.pop()!
-    lastSavedStateRef.current[presetId] = prevState
     saveHistory(presetId, hist)
     setParamValues(prevState.paramValues)
     setAppliedAssets(prevState.appliedAssets)
@@ -808,7 +952,6 @@ export function usePresetState({
     const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
     hist.past.push(currentState)
     const nextState = hist.future.pop()!
-    lastSavedStateRef.current[presetId] = nextState
     saveHistory(presetId, hist)
     setParamValues(nextState.paramValues)
     setAppliedAssets(nextState.appliedAssets)
@@ -876,46 +1019,105 @@ export function usePresetState({
       return {
         id: p.id,
         name: p.name,
-        // existingSet のローカル編集値を最優先し、未編集ならサーバーDB値、未設定ならデフォルト値
         paramValues: healLegacyParamKeys({
           ...defaultParams,
           ...(p.param_values || {}),
-          ...(existingSet?.paramValues || {}),
         }),
-        appliedAssets: existingSet?.appliedAssets || p.applied_assets || {},
+        appliedAssets: p.applied_assets || {},
         promptChips: existingSet?.promptChips,
-        batchSize: existingSet?.batchSize ?? p.batch_size ?? 1,
-        seedMode: (existingSet?.seedMode || p.seed_mode || 'random') as 'random' | 'fixed',
-        seed: existingSet?.seed !== undefined ? existingSet.seed : (p.seed !== undefined ? p.seed : 42),
+        batchSize: p.batch_size ?? 1,
+        seedMode: (p.seed_mode || 'random') as 'random' | 'fixed',
+        seed: p.seed !== undefined ? p.seed : 42,
         checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
       }
     })
 
     const isFirstSync = !isInitialSyncRef.current
     let mappedSets: import('../../../store/types').GenerationSet[] = rawMappedSets
-    if (!isFirstSync && currentActiveSetId !== null && currentActiveSetId !== undefined) {
+    if (!isFirstSync) {
       mappedSets = presets.map((p) => {
         const existing = existingSetsMap.get(String(p.id))
-        if (existing) {
-          if (String(p.id) === String(currentActiveSetId)) {
+        const isActive = currentActiveSetId !== null && currentActiveSetId !== undefined && String(p.id) === String(currentActiveSetId)
+        const lastSaved = lastSavedStateRef.current[p.id]
+
+        let isDirty = false
+        if (isActive) {
+          const currentLocalState: HistoryState = {
+            paramValues: currentStore.paramValues,
+            appliedAssets: currentStore.appliedAssets,
+            batchSize: currentStore.batchSize,
+            seedMode: currentStore.seedMode,
+            seed: currentStore.seed,
+          }
+          isDirty = lastSaved ? !isStateEqual(lastSaved, currentLocalState) : false
+        } else if (existing) {
+          const existingState: HistoryState = {
+            paramValues: existing.paramValues,
+            appliedAssets: existing.appliedAssets,
+            batchSize: existing.batchSize,
+            seedMode: existing.seedMode,
+            seed: existing.seed,
+          }
+          isDirty = lastSaved ? !isStateEqual(lastSaved, existingState) : false
+        }
+
+        if (isDirty) {
+          if (isActive) {
             return {
               ...existing,
+              id: p.id,
               name: p.name,
               paramValues: currentStore.paramValues,
               appliedAssets: currentStore.appliedAssets,
-              promptChips: currentStore.promptChips || existing.promptChips,
+              promptChips: currentStore.promptChips || existing?.promptChips,
               batchSize: currentStore.batchSize,
               seedMode: currentStore.seedMode,
               seed: currentStore.seed,
+              checked: existing?.checked ?? (checkedPresets === null ? true : checkedPresets.includes(p.id)),
+            }
+          } else {
+            return {
+              ...existing!,
+              id: p.id,
+              name: p.name,
             }
           }
-          return {
-            ...existing,
-            name: p.name,
+        }
+
+        // Clean: SSoT is server DB!
+        const serverParams = healLegacyParamKeys({
+          ...defaultParams,
+          ...(p.param_values || {}),
+        })
+        const serverAssets = p.applied_assets || {}
+        const serverBatchSize = p.batch_size ?? 1
+        const serverSeedMode = (p.seed_mode as 'random' | 'fixed') || 'random'
+        const serverSeed = p.seed !== undefined ? p.seed : 42
+
+        if (!isActive) {
+          lastSavedStateRef.current[p.id] = {
+            paramValues: serverParams,
+            appliedAssets: serverAssets,
+            batchSize: serverBatchSize,
+            seedMode: serverSeedMode,
+            seed: serverSeed,
+          }
+          if (p.updated_at) {
+            presetUpdatedAtRef.current[p.id] = p.updated_at
           }
         }
-        const raw = rawMappedSets.find((r) => String(r.id) === String(p.id))!
-        return raw
+
+        return {
+          id: p.id,
+          name: p.name,
+          paramValues: serverParams,
+          appliedAssets: serverAssets,
+          promptChips: existing?.promptChips,
+          batchSize: serverBatchSize,
+          seedMode: serverSeedMode,
+          seed: serverSeed,
+          checked: existing?.checked ?? (checkedPresets === null ? true : checkedPresets.includes(p.id)),
+        }
       })
     }
 
@@ -1046,55 +1248,7 @@ export function usePresetState({
   }, [presets, selectedWorkflowId, workflow])
 
   // Autosave
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const flushAutoSave = useCallback(() => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-      autoSaveTimerRef.current = null
-    }
-    if (!isInitialSyncRef.current) return
-
-    // クロージャ変数ではなく、最新の Zustand ストアから状態を直接取得
-    const currentStore = useGenerationStore.getState()
-    const targetActiveId = currentStore.activeSetId
-    if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
-    const currentPresets = presetsRef.current || presets
-    const activePreset = currentPresets?.find((p) => String(p.id) === String(targetActiveId))
-    if (!activePreset) return
-
-    const currentState: HistoryState = {
-      paramValues: currentStore.paramValues,
-      appliedAssets: currentStore.appliedAssets,
-      batchSize: currentStore.batchSize,
-      seedMode: currentStore.seedMode,
-      seed: currentStore.seed,
-    }
-
-    // インメモリ上の activeSet を即時同期（ジョブ発行直前の必須処理）
-    currentStore.updateActiveSet?.(currentState)
-
-    const currentLastSaved = lastSavedStateRef.current[targetActiveId]
-    if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
-
-    const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
-    if (currentLastSaved) {
-      const hist = getHistory(targetActiveId)
-      hist.past.push(currentLastSaved)
-      hist.future = []
-      saveHistory(targetActiveId, hist)
-    }
-    performUpdatePresetRef.current({
-      id: activePreset.id,
-      name: activePreset.name,
-      param_values: currentState.paramValues,
-      applied_assets: currentState.appliedAssets,
-      batch_size: currentState.batchSize,
-      seed_mode: currentState.seedMode,
-      seed: currentState.seed,
-      base_updated_at: latestBaseUpdatedAt,
-    })
-  }, [selectedWorkflowId, presets, updateActiveSet])
 
 
 

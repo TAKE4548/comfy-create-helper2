@@ -93,13 +93,15 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - 現在のプロンプト値、パラメータ値、適用アセット、バッチ枚数、シード設定を一括で名前付きプリセットとして保存。
 - **端末間（マルチデバイス）同期とSSoT整合性 (REQ-229, REQ-255)**:
   - バックエンドDBを絶対的なSSoTとして扱い、5秒ポーリング（`refetchInterval: 5000`）およびウィンドウフォーカス時（`refetchOnWindowFocus: true`）に最新プリセットを取得。
-  - **マージ順序とローカル編集値保護 (REQ-278)**:
-    - サーバー同期時、`rawMappedSets` は `existingSet?.paramValues` が存在する場合にローカル編集値を最優先で継承し（`defaultParams` → サーバーDB値 → `existingSet.paramValues`）、オートセーブ完了前後の React Query 再同期やポーリング契機でのインメモリ編集値の上書き破棄を根絶。
+  - **マージ順序とローカル編集値保護 (REQ-278, REQ-281)**:
+    - サーバー同期時、`rawMappedSets` は Dirty 認識型 SSoT 同期を採用。ローカルで未編集（Clean）のプリセットはサーバー（React Query / DB）の最新値でインメモリセット（`sets`）を自動更新し、編集中の未保存（Dirty）プリセットのみローカル差分を保持する。これにより他端末の更新をローカルの古いメモリ値で上書き破棄することを根絶。
+    - 新規プリセット作成（Add Set / 別名保存）時は `loadPresetData` により `paramValues`（L1 UI入力バッファ）と `sets`（L2 タブインメモリキャッシュ）をアトミックに同時更新し、React Query キャッシュ（L3）の同期注入および `presetUpdatedAtRef`（L4）の初期化を行うことで、直前に開いていたプリセットへの誤上書きや誤オートセーブ発火を完全に防ぐ。
     - 単一セット利用時（`existingSets.length === 1`）の `activeSetId` 未確定時フォールバックをメイン Effect にも統一適用し、未保存セット全体の再初期化を抑止。
     - 下流の `useGenerateAction.ts` からは過剰な対症療法的フォールバックをクリーンアップし、ストアが保持する最新の `GenerationSet` をシンプルかつ決定論的に ComfyUI 投入ペイロードへ注入する単一責任パイプラインを確立。
-  - **Multi-Set タブ切り替えとメモリ内キャッシュ保護 (REQ-255)**:
-    - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleLoadPreset` による古いサーバーキャッシュ（DB値）での強制上書きを行わず、`handleSelectPresetTab` によりメモリ内のセット編集状態（`activeSetId`）をアクティブ化・維持する。
-    - 他端末での更新（`updated_at` の進み）が発生している場合、未編集（`!isDirty`）ならサーバー最新版を自動ロードし、編集中の未保存状態（`isDirty`）なら即座に競合解消モーダルを表示する。
+  - **Multi-Set タブ切り替えとメモリ内キャッシュ保護 (REQ-255, REQ-281)**:
+    - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleSelectPresetTab` の先頭で `flushAutoSave` を同期実行し、進行中のデバウンスタイマーを即時キャンセルして未保存ドラフトをサーバーへ確実にフラッシュ永続化する。
+    - 切替先プリセットが他端末で更新されている場合（`updated_at` の進み）、自端末で未編集（Clean）ならサーバー最新版を自動ロードし、編集中の未保存状態（Dirty）なら即座に競合解消モーダルを表示する。
+    - 全プリセットの更新タイムスタンプ（`presetUpdatedAtRef`）をバックグラウンドポーリング時にも継続追跡し、非アクティブなプリセットに対する他端末更新の検知脱落を根絶。
   - **未保存ガード (`isDirty`)**:
     - ローカル編集がない状態（`!isDirty`）で他端末による更新（`updated_at` の進み）を受信した場合は、`currentStore.loadPresetData` によりUIおよびストアを即時自動同期。
     - ローカルに未保存の編集がある状態（`isDirty`）で他端末の更新を受信した場合、ローカルドラフトを勝手に上書きせず、競合状態へ移行。
