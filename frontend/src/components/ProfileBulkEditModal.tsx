@@ -299,7 +299,6 @@ export function ProfileBulkEditModal({
     !['textarea'].includes(m.input_type)
   );
   const loraRoles = mappingMasters.filter(m => m.input_type === 'lora_stack');
-  const allAssetTargetRoles = mappingMasters.filter(m => m.input_type === 'textarea' || m.input_type === 'lora_stack');
 
   const effectivePromptRoles = promptTargetAll ? textareaRoles.map(m => m.role) : Array.from(promptTargetFields);
   const computedCommonTags = computeCommonTags(selectedPresets, effectivePromptRoles);

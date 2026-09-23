@@ -503,12 +503,15 @@ export interface TagSetReorder {
 // 笏笏笏 Scene Generator 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface SceneItem {
-  id: string        // crypto.randomUUID() 縺ｧ逕滓・
-  summary: string   // 繝ｦ繝ｼ繧ｶ繝ｼ縺悟・蜉帙☆繧区律譛ｬ隱槭・讎りｦ・  name?: string
+  id: string        // crypto.randomUUID()
+  summary: string   // 概要
+  name?: string
 }
 
 export interface SceneGenerateRequest {
-  target_fields: string[]                 // 驕ｸ謚槭＆繧後◆繝輔ぅ繝ｼ繝ｫ繝峨・ role 蜷阪Μ繧ｹ繝・  base_params: Record<string, string>     // 繝輔ぅ繝ｼ繝ｫ繝牙錐 竊・迴ｾ蝨ｨ縺ｮ蛟､・域枚閼域ュ蝣ｱ・・  scenes: { id: string; summary: string }[]
+  target_fields: string[]
+  base_params: Record<string, string>
+  scenes: { id: string; summary: string }[]
   anima_mode?: boolean
 }
 
@@ -786,7 +789,7 @@ export interface SpeechBatchJobItemCreate {
   text: string
   scene_hint?: string
   include_image?: boolean
-  image_path?: string
+  image_path?: string | null
 }
 
 export interface SpeechBatchJobCreate {

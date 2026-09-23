@@ -1,4 +1,4 @@
-import React, { useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '4xl' | '5xl' | '7xl' | 'full'
 

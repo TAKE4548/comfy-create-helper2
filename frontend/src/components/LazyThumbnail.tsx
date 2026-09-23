@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react'
 export interface LazyThumbnailProps {
   src: string
   alt: string
-  containerRef?: React.RefObject<HTMLElement>
+  containerRef?: React.RefObject<HTMLElement | null>
   className?: string
   style?: React.CSSProperties
   rootMargin?: string

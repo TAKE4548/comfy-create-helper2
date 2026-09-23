@@ -381,7 +381,6 @@ function SortablePresetRow({
   isOpenAsTab,
   onToggleCheck,
   onDelete,
-  onOpenAsTab,
   onCloseTab,
   bulkMode = false,
   isBulkSelected = false,

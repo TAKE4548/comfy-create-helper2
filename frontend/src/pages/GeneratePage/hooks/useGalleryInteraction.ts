@@ -27,7 +27,7 @@ export interface UseGalleryInteractionReturn {
   handleSnapshotClick: (snapshotId: number) => void
   hoverPreviewImg: string | null
   setHoverPreviewImg: (img: string | null) => void
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  scrollContainerRef: React.RefObject<HTMLDivElement>
   handleWheelScroll: (e: React.WheelEvent<HTMLDivElement>) => void
 }
 
