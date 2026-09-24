@@ -270,14 +270,18 @@ frontend/src/store/
 ```
 pages/GeneratePage/
   components/
-    DesktopLayout.tsx          — PC/タブレット用 2カラムレイアウト
-    MobileLayout.tsx           — モバイル用シングルカラムレイアウト
+    DesktopLayout.tsx          — PC/タブレット用 2カラムレイアウト（配置特化）
+    MobileLayout.tsx           — モバイル用シングルカラムレイアウト（配置特化）
     AuditPanel.tsx             — LLM 診断パネル
     ParamPanel.tsx             — パラメータ入力フォーム群
     AddAssetModal.tsx          — LoRA/TagSet 追加モーダル
     AppliedAssetChips.tsx      — 適用アセットチップ一覧
     PromptTranslationModal.tsx — プロンプト日英翻訳
     SettingsPopover.tsx        — ComfyUI 接続設定
+  sections/
+    GenerateModalsOverlay.tsx   — 共通モーダル群・トースト通知の集約オーバーレイ（REQ-282）
+    SetTabsBar.tsx              — プリセットタブ一覧・追加・Undo/Redo制御バー（REQ-282）
+    GenerationGallerySection.tsx — 生成画像・履歴・スナップショットギャラリー & 追従制御（REQ-282）
   hooks/
     useGeneratePageState.ts    — Generate ページの全体状態統合
     useGenerateAction.ts       — 生成キュー投入・バッチ処理

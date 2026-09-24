@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
-  Loader2, Settings, ImageOff, Download, CheckSquare, Square, Plus,
-  ChevronRight, ChevronDown, Zap, Camera, X, Play, Pause
+  Loader2, Settings, ImageOff, Download, Plus,
+  ChevronRight, ChevronDown, Zap, Camera
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { SettingsPopover } from './SettingsPopover'
@@ -12,15 +12,10 @@ import { AuditPanel } from './AuditPanel'
 import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
-import { PromptTranslationModal } from './PromptTranslationModal'
-import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
-import { SaveAsTagSetModal } from './SaveAsTagSetModal'
-import { getPromptPrefix } from '../../../utils/formatUtils'
-import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
-import { ParamSyncModal } from '../../../components/ParamSyncModal'
+import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
+import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
-import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
@@ -32,7 +27,7 @@ export const MobileLayout = ({
 }) => {
   const {
     isConnected, isGenerating, progress, previewImage, activeClientId,
-    clientId, filterOwnSession, setFilterOwnSession,
+    clientId,
     selectedWorkflowId, setSelectedWorkflowId,
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
@@ -53,11 +48,9 @@ export const MobileLayout = ({
     isSettingsOpen, setIsSettingsOpen,
     localComfyUrl, setLocalComfyUrl,
     setComfyUrl,
-    thumbnailTab, setThumbnailTab,
     setModalPreviewIndex,
     setIsModalPreviewOpen,
     setIsJobModalOpen,
-    sortOrder, setSortOrder,
     setIsPresetManagerOpen,
     handleSelectPresetTab,
     baseModels,
@@ -73,10 +66,6 @@ export const MobileLayout = ({
     tagSets,
     presets,
     comfyObjectInfo,
-    sortedDisplayImages,
-    otherSessionCount,
-    getSetNameForImage,
-    sortedSnapshots,
     isMultiSelectMode,
     selectedIds,
     handleItemClick,
@@ -101,8 +90,6 @@ export const MobileLayout = ({
     handleLoadSnapshot,
     handleUpdateMapping,
     handleOpenModalPreview,
-    previewAutoFollow,
-    handleToggleAutoFollow,
     handleGenerateSets,
     getIsRoleCollapsed,
     setRoleCollapsed,
@@ -110,7 +97,6 @@ export const MobileLayout = ({
     handleResetDefaultParams,
     saveDefaultParamsMutation,
     updateWorkflowMutation,
-    handleCreatePreset,
     isAnimaMode,
     setIsAnimaMode,
     promptTranslation,
@@ -448,168 +434,7 @@ export const MobileLayout = ({
 
       {/* Thumbnail Strip */}
       {showStrip && (
-        <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-2 space-y-2">
-          <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1 flex-wrap gap-2">
-            <div className="flex gap-3">
-              {(['history', 'snapshots'] as const).map((tab) => (
-                <button key={tab} type="button" onClick={() => setThumbnailTab(tab)}
-                  className={`text-[11px] font-semibold pb-0.5 border-b-2 transition-all ${thumbnailTab === tab ? 'border-accent-green text-zinc-200' : 'border-transparent text-zinc-500'}`}>
-                  {tab === 'history' ? '履歴' : 'スナップショット'}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] bg-zinc-950/20">
-                {(['desc', 'asc'] as const).map((order) => (
-                  <button
-                    key={order}
-                    type="button"
-                    onClick={() => setSortOrder(order)}
-                    className={`px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors ${
-                      sortOrder === order ? 'bg-surface-2 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    {order === 'desc' ? '新しい順' : '古い順'}
-                  </button>
-                ))}
-              </div>
-              {handleToggleAutoFollow && (
-                <button
-                  type="button"
-                  id="preview-autofollow-toggle-mobile"
-                  onClick={handleToggleAutoFollow}
-                  className={`p-1 rounded-lg transition-colors flex items-center justify-center ${
-                    previewAutoFollow
-                      ? 'bg-accent-green/10 border border-accent-green/40 hover:bg-accent-green/20 text-accent-green'
-                      : 'bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700/80 text-zinc-400 hover:text-white'
-                  }`}
-                  title={previewAutoFollow ? '最新画像を自動追従中（タップで固定）' : '現在の画像に固定中（タップで自動追従）'}
-                  aria-label={previewAutoFollow ? '最新画像を自動追従中（タップで固定）' : '現在の画像に固定中（タップで自動追従）'}
-                >
-                  {previewAutoFollow ? <Play size={12} className="fill-accent-green" /> : <Pause size={12} />}
-                </button>
-              )}
-              {thumbnailTab === 'history' && (
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                  <input type="checkbox" id="session-filter-toggle-mobile" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer" />
-                  <span className="text-[10px] text-zinc-500">自セッションのみ</span>
-                </label>
-              )}
-            </div>
-          </div>
-          {thumbnailTab === 'history' ? (
-            sortedDisplayImages.length > 0 ? (
-              <div className="space-y-2">
-                {isMultiSelectMode && (
-                  <div className="flex flex-col gap-2 p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-300">
-                    <div className="flex items-center justify-between">
-                      <span>{selectedIds.size}枚選択中</span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={selectAll} className="text-purple-400 underline">すべて選択</button>
-                        <button type="button" onClick={clearSelection} className="text-purple-400 underline">選択解除</button>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsSaveModalOpen(true)}
-                        disabled={selectedIds.size === 0}
-                        className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold text-center disabled:opacity-50"
-                      >
-                        選択した {selectedIds.size} 枚を保存
-                      </button>
-                      <button type="button" onClick={exitMultiSelectMode} className="text-zinc-400">
-                        ✕ 閉じる
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                  {sortedDisplayImages.map((img, i) => {
-                    const isSel = isSelected(img)
-                    const itemProps = gallery.getThumbnailItemProps(img, i)
-                    return (
-                      <button
-                        key={img || i}
-                        type="button"
-                        id={`thumb-mobile-${i}`}
-                        {...itemProps}
-                        style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
-                        className={`flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative select-none ${
-                          isMultiSelectMode
-                            ? isSel
-                              ? 'border-purple-500 ring-2 ring-purple-500/30'
-                              : 'border-transparent'
-                            : selectedImg === img
-                              ? 'border-accent-green'
-                              : 'border-transparent hover:border-zinc-600'
-                        }`}
-                      >
-                        <LazyThumbnail
-                          src={toThumbnailUrl(img)}
-                          alt={`Generated ${i + 1}`}
-                          onError={() => {
-                            useGenerationStore.setState((state) => ({
-                              comfyHistoryImages: state.comfyHistoryImages.filter((x) => x !== img),
-                              batchImages: state.batchImages.filter((x) => x !== img),
-                            }))
-                          }}
-                          className="w-full h-full object-cover pointer-events-none select-none"
-                          style={{ WebkitTouchCallout: 'none' }}
-                        />
-                        {getSetNameForImage(img) && (
-                          <span className="absolute top-0.5 left-0.5 bg-black/75 text-accent-green text-[7px] font-bold px-1 rounded select-none truncate max-w-[90%] font-medium">
-                            {getSetNameForImage(img)}
-                          </span>
-                        )}
-                        {isMultiSelectMode && (
-                          <div className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-black/60 text-purple-400 border border-[rgba(255,255,255,0.08)]">
-                            {isSel ? <CheckSquare size={10} /> : <Square size={10} />}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : filterOwnSession && otherSessionCount > 0 ? (
-              <div className="flex flex-col items-center justify-center py-3 gap-1.5 text-center">
-                <p className="text-[11px] text-zinc-400">他セッションの履歴（{otherSessionCount}件）があります</p>
-                <button
-                  type="button"
-                  onClick={() => setFilterOwnSession(false)}
-                  className="px-2.5 py-0.5 bg-surface-2 border border-accent-green/30 text-accent-green hover:bg-accent-green/10 rounded text-[10px] font-semibold transition-all"
-                >
-                  自セッションのみ表示を解除
-                </button>
-              </div>
-            ) : <p className="text-[10px] text-zinc-500 py-1">No history images found for this session.</p>
-          ) : (
-            sortedSnapshots && sortedSnapshots.length > 0 ? (
-              <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                {sortedSnapshots.map((snap) => (
-                  <button key={snap.id} type="button" onClick={() => gallery.handleSnapshotClick(snap.id)}
-                    className="flex-shrink-0 flex flex-col items-center gap-1 p-1 rounded border border-[rgba(255,255,255,0.06)] bg-surface-2/40 hover:bg-surface-2 transition-all w-20 group">
-                    <div className="w-16 h-16 rounded overflow-hidden bg-black/40">
-                      {snap.image_path || snap.thumbnail_path ? (
-                        <img
-                          src={snap.thumbnail_path || snap.image_path!}
-                          alt="Snapshot"
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-650"><ImageOff size={14} /></div>
-                      )}
-                    </div>
-                    <span className="text-[8px] text-zinc-450 text-center truncate w-full font-mono">{getPromptPrefix(snap.params) || `Snap #${snap.id}`}</span>
-                  </button>
-                ))}
-              </div>
-            ) : <p className="text-[10px] text-zinc-500 py-1 italic">No snapshots available.</p>
-          )}
-        </div>
+        <GenerationGallerySection state={state} gallery={gallery} isMobile={true} />
       )}
 
       {/* Multi-Set Tab Bar (Mobile) */}
@@ -832,131 +657,24 @@ export const MobileLayout = ({
           <Camera size={15} />
         </button>
       </div>
-      {showCopyModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in px-4">
-          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-5 w-full max-w-sm space-y-4 text-left">
-            <h3 className="text-sm font-bold text-zinc-200">新規プロファイル作成 (Add Set)</h3>
-            <div className="space-y-1.5">
-              <label htmlFor="new-profile-name-mobile" className="text-xs text-zinc-400 font-semibold">プロファイル名</label>
-              <input
-                id="new-profile-name-mobile"
-                type="text"
-                value={newSetName}
-                onChange={(e) => setNewSetName(e.target.value)}
-                placeholder="プロファイル名を入力..."
-                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="copy-source-select-mobile" className="text-xs text-zinc-400 font-semibold">コピー元 (ベース設定)</label>
-              <select
-                id="copy-source-select-mobile"
-                value={copySourceId}
-                onChange={(e) => {
-                  const val = e.target.value
-                  const allNames = presets?.map((p) => p.name) || []
-                  if (val === 'default') {
-                    setCopySourceId('default')
-                    setNewSetName(generateNextProfileName('Set', allNames))
-                  } else {
-                    const numId = Number(val)
-                    setCopySourceId(numId)
-                    const selected = presets?.find((p) => p.id === numId)
-                    if (selected) {
-                      setNewSetName(generateNextProfileName(selected.name, allNames))
-                    }
-                  }
-                }}
-                className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/50"
-              >
-                <option value="default">ワークフローのデフォルト設定</option>
-                {presets?.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                id="cancel-add-set-btn-mobile"
-                onClick={() => setShowCopyModal(false)}
-                className="px-4 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-350 hover:text-white text-xs font-semibold transition-colors"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                id="confirm-add-set-btn-mobile"
-                onClick={() => {
-                  if (newSetName.trim()) {
-                    handleCreatePreset(newSetName.trim(), copySourceId)
-                    setShowCopyModal(false)
-                  }
-                }}
-                disabled={!newSetName.trim()}
-                className="px-4 py-1.5 rounded-lg bg-accent-green text-background hover:brightness-110 disabled:opacity-50 text-xs font-bold transition-all"
-              >
-                作成
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {isBypassSettingsOpen && (
-        <BypassSettingsModal 
-          onClose={() => setIsBypassSettingsOpen(false)} 
-          workflowJson={workflow?.json_body}
-        />
-      )}
-
-      {isParamSyncSettingsOpen && (
-        <ParamSyncModal
-          onClose={() => setIsParamSyncSettingsOpen(false)}
-        />
-      )}
-
-      {errorToast && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900 border border-red-800 text-red-100 px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-fade-in">
-          <span className="text-sm font-medium">{errorToast.message}</span>
-          <button
-            onClick={() => setErrorToast(null)}
-            className="p-1 hover:bg-white/10 rounded text-red-300 hover:text-red-100 transition-all"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {promptTranslation && (
-        <PromptTranslationModal
-          isOpen={promptTranslation.isOpen}
-          onClose={promptTranslation.closeTranslation}
-          roleDisplayName={
-            textMappings.find((m) => m.role === promptTranslation.activeRole)?.display_name ||
-            promptTranslation.activeRole ||
-            ''
-          }
-          mode={promptTranslation.mode}
-          onModeChange={promptTranslation.setMode}
-          sourceText={promptTranslation.sourceText}
-          onSourceTextChange={promptTranslation.setSourceText}
-          translatedText={promptTranslation.translatedText}
-          meta={promptTranslation.meta}
-          isTranslating={promptTranslation.isTranslating}
-          error={promptTranslation.error}
-          onTranslate={promptTranslation.executeTranslate}
-          onApply={promptTranslation.applyToPrompt}
-        />
-      )}
-
-      {saveAsTagSetRole && (
-        <SaveAsTagSetModal
-          role={saveAsTagSetRole}
-          promptText={paramValues[saveAsTagSetRole] ?? ''}
-          onClose={() => setSaveAsTagSetRole(null)}
-        />
-      )}
+      <GenerateModalsOverlay
+        state={state}
+        showCopyModal={showCopyModal}
+        setShowCopyModal={setShowCopyModal}
+        newSetName={newSetName}
+        setNewSetName={setNewSetName}
+        copySourceId={copySourceId}
+        setCopySourceId={setCopySourceId}
+        isBypassSettingsOpen={isBypassSettingsOpen}
+        setIsBypassSettingsOpen={setIsBypassSettingsOpen}
+        isParamSyncSettingsOpen={isParamSyncSettingsOpen}
+        setIsParamSyncSettingsOpen={setIsParamSyncSettingsOpen}
+        saveAsTagSetRole={saveAsTagSetRole}
+        setSaveAsTagSetRole={setSaveAsTagSetRole}
+        errorToast={errorToast}
+        setErrorToast={setErrorToast}
+      />
     </div>
   )
 }
