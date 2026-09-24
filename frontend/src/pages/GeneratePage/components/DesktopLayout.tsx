@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Settings, Plus, ChevronRight, ChevronDown,
-  Download, ImageOff, CheckSquare, Square, Camera, Loader2, X
+  Download, ImageOff, CheckSquare, Square, Camera, Loader2, X,
+  Play, Pause
 } from 'lucide-react'
 import { ResizableSplitLayout } from '../../../components/layout/ResizableSplitLayout'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
@@ -151,6 +152,8 @@ export const DesktopLayout = ({
     handleLoadSnapshot,
     handleUpdateMapping,
     handleOpenModalPreview,
+    previewAutoFollow,
+    handleToggleAutoFollow,
     handleGenerateSets,
     getIsRoleCollapsed,
     setRoleCollapsed,
@@ -755,6 +758,22 @@ export const DesktopLayout = ({
                         </button>
                       ))}
                     </div>
+                    {handleToggleAutoFollow && (
+                      <button
+                        type="button"
+                        id="preview-autofollow-toggle-desktop"
+                        onClick={handleToggleAutoFollow}
+                        className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                          previewAutoFollow
+                            ? 'bg-accent-green/10 border border-accent-green/40 hover:bg-accent-green/20 text-accent-green'
+                            : 'bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700/80 text-zinc-400 hover:text-white'
+                        }`}
+                        title={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
+                        aria-label={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
+                      >
+                        {previewAutoFollow ? <Play size={13} className="fill-accent-green" /> : <Pause size={13} />}
+                      </button>
+                    )}
                     {thumbnailTab === 'history' && (
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input type="checkbox" id="session-filter-toggle" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer" />

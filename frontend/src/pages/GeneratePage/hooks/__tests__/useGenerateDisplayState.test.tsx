@@ -26,6 +26,10 @@ vi.mock('../../../../store/useGenerationStore', () => {
     queueRunning: [],
     queuePending: [],
     previewImage: null,
+    previewAutoFollow: true,
+    togglePreviewAutoFollow: vi.fn(() => {
+      state.previewAutoFollow = !state.previewAutoFollow
+    }),
     fetchQueue: vi.fn(),
     fetchHistory: vi.fn(),
   }
@@ -58,6 +62,7 @@ describe('useGenerateDisplayState', () => {
       comfyHistoryImages: ['img-own-1.png', 'img-own-2.png', 'img-other-1.png', 'img-other-2.png'],
       filterOwnSession: false,
       previewImage: null,
+      previewAutoFollow: true,
     })
   })
 
@@ -272,4 +277,99 @@ describe('useGenerateDisplayState', () => {
       expect(ownSessionCache).toEqual(['fetched-1.png'])
     })
   })
+
+  describe('REQ-264: auto-follow and lock behavior in useGenerateDisplayState', () => {
+    it('exposes previewAutoFollow and handleToggleAutoFollow', () => {
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      expect(result.current.previewAutoFollow).toBe(true)
+      expect(typeof result.current.handleToggleAutoFollow).toBe('function')
+    })
+
+    it('toggling auto-follow from OFF to ON jumps to the latest image and updates selectedImg', () => {
+      useGenerationStore.setState({
+        previewAutoFollow: false,
+        batchImages: ['img-1.png', 'img-2.png'],
+        comfyHistoryImages: ['img-1.png', 'img-2.png'],
+        selectedImg: 'img-2.png',
+      })
+
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      expect(result.current.previewAutoFollow).toBe(false)
+
+      act(() => {
+        result.current.handleToggleAutoFollow()
+      })
+
+      // In desc sortOrder (default), index 0 is the newest image: 'img-1.png'
+      expect(useGenerationStore.getState().setSelectedImg).toHaveBeenCalledWith('img-1.png')
+    })
+
+    it('follows new image in modal preview when previewAutoFollow is true', async () => {
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      // Open modal preview
+      act(() => {
+        result.current.handleOpenModalPreview()
+      })
+      expect(result.current.isModalPreviewOpen).toBe(true)
+
+      // Dispatch executed event with new image
+      await act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('comfy-job-event', {
+            detail: {
+              type: 'executed',
+              images: ['img-newly-generated.png'],
+              isOwn: true,
+            },
+          })
+        )
+      })
+
+      // The modal should auto-follow to the newly added image at index 0 (desc sort)
+      await waitFor(() => {
+        expect(result.current.sortedDisplayImages[0]).toBe('img-newly-generated.png')
+        expect(result.current.modalPreviewIndex).toBe(0)
+      })
+    })
+
+    it('preserves current image in modal preview when previewAutoFollow is false (pinned mode)', async () => {
+      useGenerationStore.setState({
+        previewAutoFollow: false,
+        batchImages: ['img-initial.png'],
+        comfyHistoryImages: ['img-initial.png'],
+        selectedImg: 'img-initial.png',
+      })
+
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      // Open modal preview
+      act(() => {
+        result.current.handleOpenModalPreview()
+      })
+      expect(result.current.modalPreviewIndex).toBe(0)
+
+      // Dispatch executed event with new image
+      await act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('comfy-job-event', {
+            detail: {
+              type: 'executed',
+              images: ['img-incoming.png'],
+              isOwn: true,
+            },
+          })
+        )
+      })
+
+      // sortedDisplayImages now has ['img-incoming.png', 'img-initial.png']
+      // The viewed image 'img-initial.png' shifted to index 1, modalPreviewIndex should adjust to 1 to preserve it
+      await waitFor(() => {
+        expect(result.current.sortedDisplayImages).toContain('img-incoming.png')
+        expect(result.current.modalPreviewIndex).toBe(1)
+        expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe('img-initial.png')
+      })
+    })
+  })
 })
+

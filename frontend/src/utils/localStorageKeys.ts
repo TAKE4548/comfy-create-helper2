@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Centralized localStorage key constants.
  * All localStorage accesses in the app MUST use these keys.
  */
@@ -34,6 +34,7 @@ export const LS_KEYS = {
   THUMBNAIL_ASPECT_RATIO: 'prompt-surgeon-thumbnail-aspect-ratio',
   THUMBNAIL_ASPECT_RATIO_CUSTOM: 'prompt-surgeon-thumbnail-aspect-ratio-custom',
   ACTIVE_SPEECH_BATCH_JOB_ID: 'prompt-surgeon-active-speech-batch-job-id',
+  PREVIEW_AUTO_FOLLOW: 'prompt-surgeon-preview-auto-follow',
 } as const;
 
 export type LSKey = typeof LS_KEYS[keyof typeof LS_KEYS];

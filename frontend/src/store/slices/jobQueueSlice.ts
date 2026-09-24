@@ -21,10 +21,14 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
   const verifiedSelectedImg =
     storedSelectedImg && !storedSelectedImg.startsWith('blob:') ? storedSelectedImg : null
 
+  const storedAutoFollow = localStorage.getItem(LS_KEYS.PREVIEW_AUTO_FOLLOW)
+  const initialAutoFollow = storedAutoFollow !== null ? storedAutoFollow === 'true' : true
+
   return {
     filterOwnSession: storedFilterOwn,
     batchImages: storedBatchImages,
     selectedImg: verifiedSelectedImg,
+    previewAutoFollow: initialAutoFollow,
     comfyHistoryImages: [],
     queueRunning: [],
     queuePending: [],
@@ -34,6 +38,17 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
     setFilterOwnSession: (filter) => {
       set({ filterOwnSession: filter })
       localStorage.setItem(LS_KEYS.FILTER_OWN, String(filter))
+    },
+
+    setPreviewAutoFollow: (autoFollow) => {
+      set({ previewAutoFollow: autoFollow })
+      localStorage.setItem(LS_KEYS.PREVIEW_AUTO_FOLLOW, String(autoFollow))
+    },
+
+    togglePreviewAutoFollow: () => {
+      const next = !get().previewAutoFollow
+      set({ previewAutoFollow: next })
+      localStorage.setItem(LS_KEYS.PREVIEW_AUTO_FOLLOW, String(next))
     },
 
     setSelectedImg: (img) => {

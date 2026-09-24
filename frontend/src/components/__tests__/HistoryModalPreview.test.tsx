@@ -136,4 +136,37 @@ describe('HistoryModalPreview', () => {
     const closeButton = await screen.findByRole('button', { name: /close preview/i })
     expect(closeButton).toBeDefined()
   })
+
+  it('renders auto-follow toggle button and fires onToggleAutoFollow on click', async () => {
+    const onToggleAutoFollow = vi.fn()
+    const { rerender } = renderComponent({
+      previewAutoFollow: true,
+      onToggleAutoFollow,
+    })
+
+    const toggleBtn = screen.getByRole('button', { name: /最新画像を自動追従中/i })
+    expect(toggleBtn).toBeDefined()
+    expect(toggleBtn.id).toBe('preview-autofollow-toggle-modal')
+
+    fireEvent.click(toggleBtn)
+    expect(onToggleAutoFollow).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <HistoryModalPreview
+          isOpen={true}
+          onClose={vi.fn()}
+          images={['/output/image1.png?t=test-prompt-id-123']}
+          currentIndex={0}
+          onChangeIndex={vi.fn()}
+          previewAutoFollow={false}
+          onToggleAutoFollow={onToggleAutoFollow}
+        />
+      </QueryClientProvider>
+    )
+
+    const lockedBtn = screen.getByRole('button', { name: /現在の画像に固定中/i })
+    expect(lockedBtn).toBeDefined()
+  })
 })
+

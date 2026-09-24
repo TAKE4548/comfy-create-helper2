@@ -324,7 +324,12 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                       const nextImages = [...newUrls!, ...state.batchImages.filter((x) => !newUrls!.includes(x))].slice(0, 8)
                       const nextHistoryImages = [...newUrls!, ...state.comfyHistoryImages.filter((x) => !newUrls!.includes(x))].slice(0, 200)
                       localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextImages))
-                      localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
+
+                      const shouldFollow = state.previewAutoFollow ?? true
+                      const nextSelectedImg = shouldFollow ? firstUrl : (state.selectedImg || firstUrl)
+                      if (shouldFollow) {
+                        localStorage.setItem(LS_KEYS.SELECTED_IMG, firstUrl)
+                      }
 
                       const isStillGenerating = state.activeBatch
                         ? !state.activeBatch.every((job) => (job.promptId === promptId ? 'completed' : job.status) === 'completed' || (job.promptId === promptId ? 'completed' : job.status) === 'failed')
@@ -334,7 +339,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
                         previewImage: null,
                         batchImages: nextImages,
                         comfyHistoryImages: nextHistoryImages,
-                        selectedImg: firstUrl,
+                        selectedImg: nextSelectedImg,
                         isGenerating: isStillGenerating,
                         currentPromptId: null,
                         activeClientId: null,

@@ -1178,4 +1178,32 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
     revokeObjectURLSpy.mockRestore();
     createObjectURLSpy.mockRestore();
   });
+
+  describe('REQ-264: previewAutoFollow state, actions and localStorage persistence', () => {
+    it('initializes previewAutoFollow from localStorage or defaults to true', () => {
+      expect(useGenerationStore.getState().previewAutoFollow).toBe(true);
+    });
+
+    it('updates previewAutoFollow via setPreviewAutoFollow and persists to localStorage', () => {
+      useGenerationStore.getState().setPreviewAutoFollow(false);
+      expect(useGenerationStore.getState().previewAutoFollow).toBe(false);
+      expect(localStorage.getItem('prompt-surgeon-preview-auto-follow')).toBe('false');
+
+      useGenerationStore.getState().setPreviewAutoFollow(true);
+      expect(useGenerationStore.getState().previewAutoFollow).toBe(true);
+      expect(localStorage.getItem('prompt-surgeon-preview-auto-follow')).toBe('true');
+    });
+
+    it('toggles previewAutoFollow via togglePreviewAutoFollow and persists to localStorage', () => {
+      useGenerationStore.setState({ previewAutoFollow: true });
+      useGenerationStore.getState().togglePreviewAutoFollow();
+      expect(useGenerationStore.getState().previewAutoFollow).toBe(false);
+      expect(localStorage.getItem('prompt-surgeon-preview-auto-follow')).toBe('false');
+
+      useGenerationStore.getState().togglePreviewAutoFollow();
+      expect(useGenerationStore.getState().previewAutoFollow).toBe(true);
+      expect(localStorage.getItem('prompt-surgeon-preview-auto-follow')).toBe('true');
+    });
+  });
 });
+

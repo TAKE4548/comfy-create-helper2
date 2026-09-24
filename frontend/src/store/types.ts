@@ -126,11 +126,14 @@ export interface JobQueueState {
   queuePending: Array<[number, string, any, { client_id?: string }, any]>;
   isBatchSubmitting: boolean;
   activeBatch: BatchJob[] | null;
+  previewAutoFollow: boolean;
 }
 
 export interface JobQueueActions {
   setFilterOwnSession: (filter: boolean) => void;
   setSelectedImg: (img: string | null) => void;
+  setPreviewAutoFollow: (autoFollow: boolean) => void;
+  togglePreviewAutoFollow: () => void;
   setIsBatchSubmitting: (value: boolean) => void;
   setActiveBatch: (batch: BatchJob[] | null) => void;
   updateBatchJobStatus: (promptId: string, status: BatchJob['status']) => void;

@@ -37,6 +37,8 @@ export function useGenerateDisplayState({
     queueRunning = [],
     queuePending = [],
     previewImage,
+    previewAutoFollow,
+    togglePreviewAutoFollow,
   } = store
 
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
@@ -115,6 +117,11 @@ export function useGenerateDisplayState({
     [queryClient, comfyHistoryImages, batchImages]
   )
 
+  // Keep track of the currently viewed image in modal to protect context on list update
+  const currentModalUrlRef = useRef<string | null>(null)
+  // Track newest generated image URL to follow in modal preview
+  const pendingAutoFollowUrlRef = useRef<string | null>(null)
+
   // Listen to comfy-job-event for real-time image completion & history sync
   useEffect(() => {
     const handleJobEvent = (e: Event) => {
@@ -126,8 +133,12 @@ export function useGenerateDisplayState({
         ownImages?: string[]
       }>
       if (customEvent.detail?.type === 'executed' && customEvent.detail.images) {
+        const isOwn = customEvent.detail.isOwn ?? true
         for (const imgUrl of customEvent.detail.images) {
-          addHistoryImage(imgUrl, customEvent.detail.isOwn ?? true)
+          addHistoryImage(imgUrl, isOwn)
+        }
+        if (isOwn && previewAutoFollow && customEvent.detail.images.length > 0) {
+          pendingAutoFollowUrlRef.current = customEvent.detail.images[0]
         }
       } else if (customEvent.detail?.type === 'history-fetched') {
         const allImages = customEvent.detail.allImages
@@ -150,7 +161,7 @@ export function useGenerateDisplayState({
     return () => {
       window.removeEventListener('comfy-job-event', handleJobEvent)
     }
-  }, [addHistoryImage, queryClient])
+  }, [addHistoryImage, queryClient, previewAutoFollow])
 
   const otherSessionCount = useMemo(() => {
     const ownSet = new Set(batchImages)
@@ -251,9 +262,6 @@ export function useGenerateDisplayState({
   }, [store])
 
 
-  // Keep track of the currently viewed image in modal to protect context on list update
-  const currentModalUrlRef = useRef<string | null>(null)
-
   // Update currentModalUrlRef when user manually navigates in modal or opens modal
   useEffect(() => {
     if (isModalPreviewOpen) {
@@ -270,19 +278,47 @@ export function useGenerateDisplayState({
   }, [isModalPreviewOpen, modalPreviewIndex, sortedDisplayImages])
 
   // When sortedDisplayImages changes, adjust modalPreviewIndex so the viewed image remains the same
+  // or auto-follows newly generated image if previewAutoFollow is enabled
   useEffect(() => {
-    if (isModalPreviewOpen && currentModalUrlRef.current) {
-      const newIdx = sortedDisplayImages.indexOf(currentModalUrlRef.current)
-      if (newIdx !== -1 && newIdx !== modalPreviewIndex) {
-        setModalPreviewIndex(newIdx)
+    if (isModalPreviewOpen) {
+      if (previewAutoFollow && pendingAutoFollowUrlRef.current) {
+        const targetUrl = pendingAutoFollowUrlRef.current
+        pendingAutoFollowUrlRef.current = null
+        const idx = sortedDisplayImages.indexOf(targetUrl)
+        if (idx !== -1) {
+          setModalPreviewIndex(idx)
+          currentModalUrlRef.current = targetUrl
+          return
+        }
+      }
+      if (currentModalUrlRef.current) {
+        const newIdx = sortedDisplayImages.indexOf(currentModalUrlRef.current)
+        if (newIdx !== -1 && newIdx !== modalPreviewIndex) {
+          setModalPreviewIndex(newIdx)
+        }
       }
     }
   }, [sortedDisplayImages, isModalPreviewOpen])
 
+  const handleToggleAutoFollow = useCallback(() => {
+    const nextFollow = !previewAutoFollow
+    togglePreviewAutoFollow()
+    if (nextFollow && sortedDisplayImages.length > 0) {
+      const latestIdx = sortOrder === 'desc' ? 0 : sortedDisplayImages.length - 1
+      const latestUrl = sortedDisplayImages[latestIdx]
+      if (latestUrl) {
+        setSelectedImg(latestUrl)
+        if (isModalPreviewOpen) {
+          setModalPreviewIndex(latestIdx)
+          currentModalUrlRef.current = latestUrl
+        }
+      }
+    }
+  }, [previewAutoFollow, togglePreviewAutoFollow, sortedDisplayImages, sortOrder, setSelectedImg, isModalPreviewOpen])
+
   const handleOpenModalPreview = () => {
     const currentImg = previewImage || selectedImg
-    if (!currentImg) return
-    const idx = sortedDisplayImages.indexOf(currentImg)
+    const idx = currentImg ? sortedDisplayImages.indexOf(currentImg) : -1
     const targetIdx = idx >= 0 ? idx : 0
     setModalPreviewIndex(targetIdx)
     currentModalUrlRef.current = sortedDisplayImages[targetIdx] ?? null
@@ -320,6 +356,8 @@ export function useGenerateDisplayState({
     setModalPreviewIndex,
     effectiveModalIndex,
     handleOpenModalPreview,
+    previewAutoFollow,
+    handleToggleAutoFollow,
     filterOwnSession,
     setFilterOwnSession,
     addHistoryImage,

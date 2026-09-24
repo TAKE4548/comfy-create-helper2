@@ -74,6 +74,7 @@ export function GeneratePage() {
     workflowManageMode, setWorkflowManageMode, renameWorkflowMutation, copyWorkflowMutation, workflows,
     isPresetManagerOpen, setIsPresetManagerOpen, presets, renamePresetMutation, reorderPresetsMutation,
     isModalPreviewOpen, setIsModalPreviewOpen, modalPreviewIndex, setModalPreviewIndex, snapshotIdsForDisplay,
+    previewAutoFollow, handleToggleAutoFollow,
     isJobModalOpen, setIsJobModalOpen,
     isSceneGeneratorOpen, setIsSceneGeneratorOpen, paramValues, textMappings,
     sets, toggleSetChecked, handleDeletePreset, handleUpdatePreset, handleCreatePreset, activeSetId,
@@ -249,7 +250,8 @@ export function GeneratePage() {
         </div>
       )}
       <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
-        images={sortedDisplayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay} />
+        images={sortedDisplayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay}
+        previewAutoFollow={previewAutoFollow} onToggleAutoFollow={handleToggleAutoFollow} />
       <JobManagementModal isOpen={isJobModalOpen} onClose={() => setIsJobModalOpen(false)} />
       {isSceneGeneratorOpen && selectedWorkflowId && (
         <SceneGeneratorModal

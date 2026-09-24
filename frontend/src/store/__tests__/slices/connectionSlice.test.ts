@@ -215,5 +215,65 @@ describe('connectionSlice - WebSocket status event optimization', () => {
     )
     window.removeEventListener('comfy-job-event', eventSpy)
   })
+
+  it('REQ-264: executed event updates selectedImg when previewAutoFollow is true', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188')
+    useGenerationStore.getState().initialize()
+    const wsInstance = createdWsList[0]
+
+    useGenerationStore.setState({
+      currentPromptId: 'own-prompt-111',
+      isGenerating: true,
+      selectedImg: 'old_selected.png',
+      previewAutoFollow: true,
+    })
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          prompt_id: 'own-prompt-111',
+          output: {
+            images: [{ filename: 'new_gen.png', subfolder: '', type: 'output' }],
+          },
+        },
+      }),
+    })
+
+    const expectedUrl = 'http://localhost:3000/comfy/view?filename=new_gen.png&subfolder=&type=output&t=own-prompt-111'
+    expect(useGenerationStore.getState().selectedImg).toBe(expectedUrl)
+    expect(localStorage.getItem('prompt-surgeon-selected-img')).toBe(expectedUrl)
+  })
+
+  it('REQ-264: executed event preserves existing selectedImg when previewAutoFollow is false', () => {
+    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188')
+    useGenerationStore.getState().initialize()
+    const wsInstance = createdWsList[0]
+
+    useGenerationStore.setState({
+      currentPromptId: 'own-prompt-222',
+      isGenerating: true,
+      selectedImg: 'pinned_selected.png',
+      previewAutoFollow: false,
+    })
+    localStorage.setItem('prompt-surgeon-selected-img', 'pinned_selected.png')
+
+    wsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'executed',
+        data: {
+          prompt_id: 'own-prompt-222',
+          output: {
+            images: [{ filename: 'new_gen_2.png', subfolder: '', type: 'output' }],
+          },
+        },
+      }),
+    })
+
+    // selectedImg should stay pinned to old selectedImg
+    expect(useGenerationStore.getState().selectedImg).toBe('pinned_selected.png')
+    expect(localStorage.getItem('prompt-surgeon-selected-img')).toBe('pinned_selected.png')
+  })
 })
+
 

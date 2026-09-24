@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Loader2, Settings, ImageOff, Download, CheckSquare, Square, Plus,
-  ChevronRight, ChevronDown, Zap, Camera, X
+  ChevronRight, ChevronDown, Zap, Camera, X, Play, Pause
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { SettingsPopover } from './SettingsPopover'
@@ -101,6 +101,8 @@ export const MobileLayout = ({
     handleLoadSnapshot,
     handleUpdateMapping,
     handleOpenModalPreview,
+    previewAutoFollow,
+    handleToggleAutoFollow,
     handleGenerateSets,
     getIsRoleCollapsed,
     setRoleCollapsed,
@@ -471,6 +473,22 @@ export const MobileLayout = ({
                   </button>
                 ))}
               </div>
+              {handleToggleAutoFollow && (
+                <button
+                  type="button"
+                  id="preview-autofollow-toggle-mobile"
+                  onClick={handleToggleAutoFollow}
+                  className={`p-1 rounded-lg transition-colors flex items-center justify-center ${
+                    previewAutoFollow
+                      ? 'bg-accent-green/10 border border-accent-green/40 hover:bg-accent-green/20 text-accent-green'
+                      : 'bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700/80 text-zinc-400 hover:text-white'
+                  }`}
+                  title={previewAutoFollow ? '最新画像を自動追従中（タップで固定）' : '現在の画像に固定中（タップで自動追従）'}
+                  aria-label={previewAutoFollow ? '最新画像を自動追従中（タップで固定）' : '現在の画像に固定中（タップで自動追従）'}
+                >
+                  {previewAutoFollow ? <Play size={12} className="fill-accent-green" /> : <Pause size={12} />}
+                </button>
+              )}
               {thumbnailTab === 'history' && (
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input type="checkbox" id="session-filter-toggle-mobile" checked={filterOwnSession} onChange={(e) => setFilterOwnSession(e.target.checked)} className="w-3.5 h-3.5 rounded accent-accent-green cursor-pointer" />

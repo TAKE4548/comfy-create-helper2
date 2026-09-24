@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2, Info, Maximize2, Download } from 'lucide-react'
+import { X, Loader2, Info, Maximize2, Download, Play, Pause } from 'lucide-react'
 import { snapshotsApi, lorasApi, tagSetsApi, promptMetadataApi } from '../api/client'
 import type { Snapshot, Lora, TagSet } from '../api/types'
 
@@ -21,6 +21,8 @@ interface HistoryModalPreviewProps {
   currentIndex: number
   onChangeIndex: (index: number) => void
   snapshotIds?: (number | null)[]
+  previewAutoFollow?: boolean
+  onToggleAutoFollow?: () => void
 }
 
 export function HistoryModalPreview({
@@ -30,6 +32,8 @@ export function HistoryModalPreview({
   currentIndex,
   onChangeIndex,
   snapshotIds,
+  previewAutoFollow = true,
+  onToggleAutoFollow,
 }: HistoryModalPreviewProps) {
   const [viewMode, setViewMode] = useState<'full' | 'info'>('full')
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
@@ -398,13 +402,31 @@ export function HistoryModalPreview({
               </a>
             ) : null}
           </div>
-          <button
-            onClick={handleClose}
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
-            aria-label="Close preview"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {onToggleAutoFollow && (
+              <button
+                type="button"
+                id="preview-autofollow-toggle-modal"
+                onClick={onToggleAutoFollow}
+                className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                  previewAutoFollow
+                    ? 'bg-accent-green/10 border border-accent-green/40 hover:bg-accent-green/20 text-accent-green fill-accent-green'
+                    : 'bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700/80 text-zinc-400 hover:text-white'
+                }`}
+                title={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
+                aria-label={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
+              >
+                {previewAutoFollow ? <Play size={16} className="fill-accent-green" /> : <Pause size={16} />}
+              </button>
+            )}
+            <button
+              onClick={handleClose}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+              aria-label="Close preview"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       )}
 
