@@ -220,6 +220,28 @@ export interface ParamSyncActions {
   toggleParamSyncGroup: (id: number, isEnabled: boolean) => Promise<void>;
 }
 
+export interface SystemStats {
+  cpu_pct: number;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_pct: number;
+  gpu_pct: number | null;
+  vram_used_gb: number | null;
+  vram_total_gb: number | null;
+  vram_pct: number | null;
+  ts: number;
+}
+
+export interface SystemStatsState {
+  systemStats: SystemStats | null;
+  systemWsConnected: boolean;
+}
+
+export interface SystemStatsActions {
+  setSystemStats: (stats: SystemStats) => void;
+  setSystemWsConnected: (connected: boolean) => void;
+}
+
 export type GenerationState = ConnectionState &
   ConnectionActions &
   JobQueueState &
@@ -229,4 +251,6 @@ export type GenerationState = ConnectionState &
   BypassState &
   BypassActions &
   ParamSyncState &
-  ParamSyncActions;
+  ParamSyncActions &
+  SystemStatsState &
+  SystemStatsActions;

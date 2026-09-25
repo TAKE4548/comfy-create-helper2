@@ -33,6 +33,9 @@ from app.routers import (
     translate, speech_batch,
     prompt_metadata, system_logs,
 )
+from app.routers import ws as ws_router
+from app.services.resource_monitor import resource_monitor
+
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 import traceback
@@ -54,12 +57,17 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     logger.info("Prompt Surgeon API started.")
+    # ★ リソース監視サービス開始
+    await resource_monitor.start(ws_router.manager.broadcast)
     yield
+    # ★ リソース監視サービス停止
+    await resource_monitor.stop()
     try:
         await comfy.close_comfy_client()
     except Exception as e:
         logger.error(f"Failed to close Comfy client: {e}")
     logger.info("Prompt Surgeon API shutting down.")
+
 
 
 app = FastAPI(
@@ -133,9 +141,7 @@ app.include_router(speech_tone_presets.router)
 app.include_router(translate.router)
 app.include_router(speech_batch.router)
 app.include_router(prompt_metadata.router)
-
-
-
+app.include_router(ws_router.router)
 
 
 class CachedStaticFiles(StaticFiles):

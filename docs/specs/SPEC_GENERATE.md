@@ -164,7 +164,22 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 - ジョブ管理モーダル（`JobManagementModal.tsx`）: ComfyUI キュー一覧の確認、割り込み、キャンセル。
 - キーボードナビ: `←` / `→` キーでサムネイル切替。
 
-### 2-10. サムネイルストリップ
+### 2-10. PCリソース監視 HUD & モバイルチップ (REQ-288)
+
+ComfyUI と連携した画像生成実行時のハードウェアリソース（CPU, RAM, GPU, VRAM）消費状況をリアルタイムに可視化し、VRAM 逼迫によるクラッシュ（OOM）を未然に防止する機能。
+
+- **バックエンド配信基盤 (`/api/ws`)**:
+  - FastAPI WebSocket エンドポイント `/api/ws` から 2.5 秒間隔で `SYSTEM_STATS` メッセージを Discriminated Union 形式でブロードキャスト。
+  - CPU, RAM（使用量/総量/比率）、GPU 使用率、VRAM（使用量/総量/比率）をサンプリング。AMD SMI（`rocm-smi`）利用不可時は GPU/VRAM 項目を `null` としてフォールバック。
+- **フロントエンド連携 & 省電力設計 (`useSystemStats.ts`, `systemWsService.ts`)**:
+  - 再接続時に指数バックオフ（1s, 2s, 4s, 最大10s）を適用。
+  - Page Visibility API（`document.visibilityState === 'hidden'`）により、タブ非アクティブ時は接続を自動 suspend して CPU/GPU 負荷と描画を抑制し、タブ復帰時に resume。
+- **UI 表示コンポーネント**:
+  - **デスクトップ (`ResourceGaugeHUD.tsx`)**: プレビューエリア右上に半透明 HUD（`bg-[#18181C]/80 backdrop-blur-sm`）として重畳表示。各指標（CPU/RAM/GPU/VRAM）の現在値と詳細（使用GB/総GB）を表示。
+  - **モバイル (`ResourceGaugeChips.tsx`)**: 2段目サブヘッダーにコンパクトなチップ群（横スクロール対応）として表示。
+  - **段階的警告カラー**: 通常時は `zinc-400`、85% 超過時は警告カラー `amber-400`、95% 超過時は危険カラー `red-400` へ視覚的警告を通知。取得不可時は `--`（`zinc-500`）表示。
+
+### 2-11. サムネイルストリップ
 
 - 表示対象: `filterOwnSession`（自セッション）/ 全履歴切替。
 - タブ: `history`（生成履歴）/ `snapshots`（保存済みスナップショット）。

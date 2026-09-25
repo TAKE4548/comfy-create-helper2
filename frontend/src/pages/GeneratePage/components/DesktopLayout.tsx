@@ -19,6 +19,9 @@ import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
+import { ResourceGaugeHUD } from '../../../components/ResourceGauge/ResourceGaugeHUD'
+import { useSystemStats } from '../../../hooks/useSystemStats'
+
 
 interface SetTabItemProps {
   id: string | number
@@ -172,9 +175,12 @@ export const DesktopLayout = ({
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
 
+  useSystemStats()  // システムWS接続ライフサイクル管理
+
   const handleChipsChange = useCallback((role: string, chips: any) => {
     setPromptChips(role, chips)
   }, [setPromptChips])
+
 
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
@@ -675,7 +681,10 @@ export const DesktopLayout = ({
               <div className="w-full h-full relative overflow-hidden flex flex-col">
                 {/* Main Preview */}
                 <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none" tabIndex={0}>
+                  {/* ★ ResourceGaugeHUD をプレビューエリア右上に配置 */}
+                  <ResourceGaugeHUD />
                   {(previewImage || selectedImg) ? (
+
                     <div className="relative h-[70%] w-[70%] flex items-center justify-center border border-zinc-800 shadow-2xl rounded-lg bg-surface-2 overflow-hidden group cursor-pointer" onClick={handleOpenModalPreview}>
                       <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
                       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-6 gap-3 bg-black/40">

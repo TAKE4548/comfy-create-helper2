@@ -17,6 +17,7 @@ import { createJobQueueSlice } from './slices/jobQueueSlice'
 import { createMultiSetSlice } from './slices/multiSetSlice'
 import { createBypassSlice } from './slices/bypassSlice'
 import { createParamSyncSlice } from './slices/paramSyncSlice'
+import { createSystemStatsSlice } from './slices/systemStatsSlice'
 import { comfyWsService } from './services/comfyWebSocketService'
 
 // ─── Re-exports for 100% backward compatibility ─────────────────
@@ -35,4 +36,5 @@ export const useGenerationStore = create<GenerationState>((set, get, store) => (
   ...createMultiSetSlice(set, get, store),
   ...createBypassSlice(set, get, store),
   ...createParamSyncSlice(set, get, store),
+  ...createSystemStatsSlice(set, get, store),
 }))

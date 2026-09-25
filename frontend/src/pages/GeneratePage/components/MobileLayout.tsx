@@ -16,6 +16,8 @@ import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
+import { ResourceGaugeChips } from '../../../components/ResourceGauge/ResourceGaugeChips'
+
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
@@ -298,6 +300,8 @@ export const MobileLayout = ({
               />
             )}
           </div>
+          {/* ★ リソースチップ */}
+          <ResourceGaugeChips />
         </div>
       </div>
 
