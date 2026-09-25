@@ -4,7 +4,10 @@ import subprocess
 import time
 from typing import Callable
 
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore
 
 # ---------------------------------------------------------------------------
 # リソース監視サービス
@@ -34,14 +37,24 @@ class ResourceMonitorService:
             await asyncio.sleep(self.INTERVAL)
 
     async def _collect(self) -> dict:
-        cpu = psutil.cpu_percent(interval=None)
-        mem = psutil.virtual_memory()
+        if psutil is not None:
+            cpu = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory()
+            ram_used_gb = round(mem.used / 1e9, 1)
+            ram_total_gb = round(mem.total / 1e9, 1)
+            ram_pct = mem.percent
+        else:
+            cpu = 0.0
+            ram_used_gb = 0.0
+            ram_total_gb = 0.0
+            ram_pct = 0.0
+
         gpu_pct, vram_used, vram_total, vram_pct = await self._get_gpu_stats()
         return {
             "cpu_pct": cpu,
-            "ram_used_gb": round(mem.used / 1e9, 1),
-            "ram_total_gb": round(mem.total / 1e9, 1),
-            "ram_pct": mem.percent,
+            "ram_used_gb": ram_used_gb,
+            "ram_total_gb": ram_total_gb,
+            "ram_pct": ram_pct,
             "gpu_pct": gpu_pct,
             "vram_used_gb": vram_used,
             "vram_total_gb": vram_total,
