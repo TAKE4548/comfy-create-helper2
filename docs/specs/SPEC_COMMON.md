@@ -245,7 +245,20 @@ interface TagChipEventDetail {
 - 複数選択されたアイテムのフィールドを一括で更新するためのモーダルダイアログ。
 - カテゴリ、推奨強度範囲、テキスト入力、対象BaseModel等を一括更新（`Promise.all` で送信）。
 
-### 5-4. ドラッグ＆ドロップ（グループ移動オーバーレイ）
+### 5-4. プリセット一括編集モーダル (ProfileBulkEditModal) (REQ-283)
+- 複数選択されたワークフロープリセット（`WorkflowPreset[]`）に対するプロンプト操作およびパラメータ一括更新モーダル。
+- モジュール分割構成（`frontend/src/components/ProfileBulkEditModal/`）：
+  - `index.tsx`: モーダル枠・タブ切替（Prompt / Params）・プレビュー確認遷移
+  - `types.ts`: `BulkEditPayload`, `CommonTagItem`, `CommonLoraOp` 等の型定義
+  - `utils.ts`: 純粋計算関数（`parseTagWeight`, `formatTagWithWeight`, `computeCommonTags`, `computeCommonLoras`）
+  - `useProfileBulkEditState.ts`: モーダル内部状態管理フック
+  - `buildPayload.ts`: 送信用 `BulkEditPayload` 構築
+  - `BulkEditConfirmView.tsx`: 適用前変更サマリー確認画面
+  - `tabs/PromptBulkEditTab/`: プロンプト検索置換・追加・上書き・共通タグ強度変更/削除
+  - `tabs/ParamBulkEditTab/`: パラメータ型別一括編集・LoRAスタック（差分/上書き）・バッチサイズ
+- 全構成ファイルは単体責務に分離され最大250行以下を遵守。
+
+### 5-5. ドラッグ＆ドロップ（グループ移動オーバーレイ）
 - 複数選択モード中のドラッグ操作時は、ドラッグ中アイテムに加えて `+N` バッジが浮遊表示され、選択アイテムが並び順を維持したまま一括で移動・並び替え（`reorder`）される。
 
 ---
