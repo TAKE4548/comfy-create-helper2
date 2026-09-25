@@ -131,6 +131,14 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
         - **ComfyUIモデル連携**: 通常の `LoraStackEditor` と同様に、ComfyUI 側認識済みモデル（`/api/loras/comfy-models`）と連携し、DB未登録LoRA（`Unregistered` バッジ付き）も検索・選択・一括反映可能。登録済みLoRAは登録名（説明文・モデル名）を優先表示。
         - **完全上書きモード**: `LoraStackEditor` を用いて、既存LoRAスロットを全置換する新スロット群を一括設定可能（`activeBaseModelId` 連携対応）。
         - `usePresetState.handleBulkEditApply` により各プリセットへ `loraStackOps` が正確に反映・永続化される。
+  - **プリセット状態管理アーキテクチャの責務分離 (REQ-284)**:
+    - 巨大化していた `usePresetState.ts`（旧1,379行）を統合ファサードフックとして再設計し、以下の責務別サブフックおよび純粋サービスへ完全分離：
+      - `services/presetBulkPatcher.ts`: 一括編集適用ロジック（`computePresetPatch`）を外部APIやReact Hookから独立した純粋関数として抽出。
+      - `hooks/usePresetHistory.ts`: Undo/Redoスタックの `sessionStorage` 管理および入力要素フォーカス時ガード付き `Ctrl+Z` / `Ctrl+Y` キーボードショートカット制御。
+      - `hooks/usePresetConflict.ts`: 409 OCC 競合状態管理および「サーバー最新採用」「ローカル上書き」「別名新規保存」の3-way解決ハンドラ。
+      - `hooks/usePresetAutoSave.ts`: 1,000ms デバウンスタイマー、プロパティ順序非依存等価判定（`isStateEqual` / `isRecordEqual`）、およびジョブ投入直前の同期的インメモリ即時反映（`flushAutoSave`）。
+      - `hooks/usePresetStoreSync.ts`: Multi-Setタブ切り替え時の直前タブ先行フラッシュ、5秒間隔ポーリングによる他端末更新検知、およびSSoT同期。
+      - `hooks/presetStateUtils.ts`: 共通型定義（`HistoryState`, `PresetConflictData`, `UpdatePresetArgs`）およびタイムスタンプ正規化・差分判定。
 
 ### 2-7. ノードバイパス設定 (`BypassSettingsModal.tsx`)
 

@@ -1,80 +1,37 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowPresetsApi } from '../../../api/client'
 import type { Workflow, WorkflowPreset } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 import { getInitialParams, healLegacyParamKeys } from './useWorkflowParams'
-import { LS_KEYS } from '../../../utils/localStorageKeys'
-import { prependToPrompt, appendToPrompt } from '../../../utils/promptUtils'
 import { parseToChips, TagChip } from '../../../components/TagChipEditor/useChipParser'
+import {
+  isRecordEqual,
+  normalizeTimestamp,
+  isTimestampDifferent,
+  isStateEqual,
+  type HistoryState,
+  type PresetConflictData,
+  type UpdatePresetArgs,
+} from './presetStateUtils'
+import { usePresetHistory } from './usePresetHistory'
+import { usePresetConflict } from './usePresetConflict'
+import { usePresetAutoSave } from './usePresetAutoSave'
+import { usePresetStoreSync } from './usePresetStoreSync'
+import { computePresetPatch } from '../services/presetBulkPatcher'
+import type { BulkEditPayload } from '../../../components/ProfileBulkEditModal'
 
-export interface HistoryState {
-  paramValues: Record<string, string>
-  appliedAssets: Record<string, AppliedAsset[]>
-  batchSize: number
-  seedMode: 'random' | 'fixed'
-  seed: number
-}
-
-export interface PresetConflictData {
-  serverPreset: WorkflowPreset
-  localDraft: {
-    name: string
-    paramValues: Record<string, string>
-    appliedAssets: Record<string, any[]>
-    batchSize: number
-    seedMode: 'random' | 'fixed'
-    seed: number
-  }
-}
-
-export interface UpdatePresetArgs {
-  id: number
-  name: string
-  param_values?: Record<string, string>
-  applied_assets?: Record<string, any[]>
-  batch_size?: number
-  seed_mode?: string
-  seed?: number
-  base_updated_at?: string
-}
-
-export const isRecordEqual = (a?: Record<string, any>, b?: Record<string, any>): boolean => {
-  if (a === b) return true
-  if (!a || !b) return false
-  const keysA = Object.keys(a)
-  const keysB = Object.keys(b)
-  if (keysA.length !== keysB.length) return false
-  return keysA.every((k) => a[k] === b[k])
-}
-
-export function normalizeTimestamp(ts?: string | null): number {
-  if (!ts) return 0
-  const trimmed = ts.trim()
-  const hasTz = trimmed.endsWith('Z') || trimmed.includes('+') || (trimmed.includes('-') && trimmed.lastIndexOf('-') > 10)
-  const normalized = hasTz ? trimmed : `${trimmed}Z`
-  const ms = new Date(normalized).getTime()
-  return isNaN(ms) ? 0 : ms
-}
-
-export function isTimestampDifferent(a?: string | null, b?: string | null, thresholdMs = 1000): boolean {
-  if (!a && !b) return false
-  if (!a || !b) return true
-  const msA = normalizeTimestamp(a)
-  const msB = normalizeTimestamp(b)
-  return Math.abs(msA - msB) >= thresholdMs
-}
+// Re-exports for backward compatibility
+export { isRecordEqual, normalizeTimestamp, isTimestampDifferent, isStateEqual }
+export type { HistoryState, PresetConflictData, UpdatePresetArgs }
 
 export interface UsePresetStateProps {
   selectedWorkflowId: number | null
   workflow: Workflow | undefined
 }
 
-export function usePresetState({
-  selectedWorkflowId,
-  workflow,
-}: UsePresetStateProps) {
+export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateProps) {
   const qc = useQueryClient()
   const store = useGenerationStore()
   const {
@@ -90,7 +47,6 @@ export function usePresetState({
     setSeed,
     activeSetId,
     setActiveSetId,
-    updateActiveSet,
     loadPresetData,
     openPresetIds,
     openPreset,
@@ -102,21 +58,13 @@ export function usePresetState({
   const [isPresetOpen, setIsPresetOpen] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
   const [isPresetManagerOpen, setIsPresetManagerOpen] = useState(false)
-  // ── Conflict State & Saved State Tracking ──
-  const [conflictData, setConflictData] = useState<PresetConflictData | null>(null)
+
+  // Saved state and sync tracking
   const lastSavedStateRef = useRef<Record<string | number, HistoryState>>({})
   const isInitialSyncRef = useRef(false)
   const prevWorkflowIdRef = useRef<number | null>(null)
-
-  const isStateEqual = (a: HistoryState, b: HistoryState) => {
-    return (
-      isRecordEqual(a.paramValues, b.paramValues) &&
-      JSON.stringify(a.appliedAssets) === JSON.stringify(b.appliedAssets) &&
-      a.batchSize === b.batchSize &&
-      a.seedMode === b.seedMode &&
-      a.seed === b.seed
-    )
-  }
+  const presetUpdatedAtRef = useRef<Record<number, string>>({})
+  const pendingSaveArgsRef = useRef<UpdatePresetArgs | null>(null)
 
   // ── Queries ──
   const { data: presets } = useQuery({
@@ -129,10 +77,6 @@ export function usePresetState({
 
   const presetsRef = useRef<WorkflowPreset[] | undefined>(presets)
   presetsRef.current = presets
-
-  const presetUpdatedAtRef = useRef<Record<number, string>>({})
-  const pendingSaveArgsRef = useRef<UpdatePresetArgs | null>(null)
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Mutations ──
   const createPresetMutation = useMutation({
@@ -161,10 +105,7 @@ export function usePresetState({
         seed: sd !== undefined ? sd : seed,
       }),
     onSuccess: (newPreset) => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-        autoSaveTimerRef.current = null
-      }
+      autoSave.clearTimer()
       if (newPreset?.id && selectedWorkflowId) {
         const defaultParams = workflow ? getInitialParams(workflow) : {}
         const mergedParamValues = healLegacyParamKeys({ ...defaultParams, ...(newPreset.param_values || {}) })
@@ -192,6 +133,7 @@ export function usePresetState({
         openPreset?.(newPreset.id)
       }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+      setIsPresetOpen(false)
       setNewPresetName('')
     },
   })
@@ -261,7 +203,7 @@ export function usePresetState({
           const isActive = String(variables.id) === String(currentStore.activeSetId)
           const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(variables.id)) : undefined
 
-          setConflictData({
+          conflict.setConflictData({
             serverPreset,
             localDraft: {
               name: variables.name,
@@ -288,14 +230,22 @@ export function usePresetState({
     },
   })
 
-  const performUpdatePresetRef = useRef<(args: UpdatePresetArgs) => void>(() => {})
-  performUpdatePresetRef.current = (args: UpdatePresetArgs) => {
+  const performUpdatePreset = useCallback((args: UpdatePresetArgs) => {
     if (updatePresetMutation.isPending) {
       pendingSaveArgsRef.current = args
       return
     }
-    updatePresetMutation.mutate(args)
-  }
+    updatePresetMutation.mutate({
+      id: args.id,
+      name: args.name,
+      param_values: args.param_values,
+      applied_assets: args.applied_assets,
+      batch_size: args.batch_size,
+      seed_mode: args.seed_mode,
+      seed: args.seed,
+      base_updated_at: args.base_updated_at,
+    })
+  }, [updatePresetMutation])
 
   const deletePresetMutation = useMutation({
     mutationFn: (id: number) => workflowPresetsApi.delete(id),
@@ -325,6 +275,169 @@ export function usePresetState({
     },
   })
 
+  // ── Load Preset Handler ──
+  const handleLoadPreset = useCallback((preset: WorkflowPreset) => {
+    if (preset.updated_at) {
+      presetUpdatedAtRef.current[preset.id] = preset.updated_at
+    }
+    const defaultParams = workflow ? getInitialParams(workflow) : {}
+    const mergedParamValues = healLegacyParamKeys({ ...defaultParams, ...(preset.param_values || {}) })
+
+    lastSavedStateRef.current[preset.id] = {
+      paramValues: mergedParamValues,
+      appliedAssets: preset.applied_assets || {},
+      batchSize: preset.batch_size ?? 1,
+      seedMode: (preset.seed_mode as 'random' | 'fixed') || 'random',
+      seed: preset.seed !== undefined ? preset.seed : 42,
+    }
+
+    if (loadPresetData) {
+      loadPresetData(preset, defaultParams)
+    } else {
+      setActiveSetId(preset.id)
+      if (openPresetIds && !openPresetIds.includes(preset.id)) {
+        openPreset?.(preset.id)
+      }
+    }
+    setIsPresetOpen(false)
+  }, [workflow, loadPresetData, setActiveSetId, openPresetIds, openPreset])
+
+  // ── Sub-hooks ──
+  const currentState: HistoryState = {
+    paramValues,
+    appliedAssets,
+    batchSize,
+    seedMode,
+    seed,
+  }
+
+  const history = usePresetHistory({
+    activeSetId,
+    currentState,
+    onApplyState: useCallback((st: HistoryState) => {
+      setParamValues(st.paramValues)
+      setAppliedAssets(st.appliedAssets)
+      setBatchSize(st.batchSize)
+      setSeedMode(st.seedMode)
+      setSeed(st.seed)
+    }, [setParamValues, setAppliedAssets, setBatchSize, setSeedMode, setSeed]),
+  })
+
+  const conflict = usePresetConflict({
+    onLoadPreset: handleLoadPreset,
+    onUpdatePreset: (args) => updatePresetMutation.mutate(args),
+    onCreatePreset: (name, draft) => {
+      createPresetMutation.mutate({
+        name,
+        paramValues: draft.paramValues,
+        appliedAssets: draft.appliedAssets,
+        batchSize: draft.batchSize,
+        seedMode: draft.seedMode,
+        seed: draft.seed,
+      })
+    },
+  })
+
+  const autoSave = usePresetAutoSave({
+    selectedWorkflowId,
+    activeSetId,
+    currentState,
+    presets,
+    presetsRef,
+    isInitialSyncRef,
+    lastSavedStateRef,
+    presetUpdatedAtRef,
+    onPerformUpdatePreset: performUpdatePreset,
+    onRecordHistory: history.recordHistory,
+  })
+
+  const handleCreatePreset = useCallback((name?: string, copySourceId?: string | number) => {
+    const finalName = name ?? newPresetName
+    if (!finalName.trim() || !selectedWorkflowId) return
+    const currentStore = storeRef.current
+    const currentPresets = presetsRef.current
+
+    if (copySourceId === undefined) {
+      createPresetMutation.mutate({
+        name: finalName.trim(),
+        paramValues: currentStore.paramValues,
+        appliedAssets: currentStore.appliedAssets,
+        batchSize: currentStore.batchSize,
+        seedMode: currentStore.seedMode,
+        seed: currentStore.seed,
+      })
+    } else if (copySourceId === 'default') {
+      let initialParams: Record<string, string> = {}
+      let defaultAssets: Record<string, any> = {}
+      if (workflow) {
+        initialParams = getInitialParams(workflow)
+        if (workflow.default_applied_assets) {
+          try {
+            defaultAssets = JSON.parse(workflow.default_applied_assets)
+          } catch (e) {
+            console.error('Failed to parse default applied assets:', e)
+          }
+        }
+      }
+      createPresetMutation.mutate({
+        name: finalName.trim(),
+        paramValues: initialParams,
+        appliedAssets: defaultAssets,
+        batchSize: 1,
+        seedMode: 'random',
+        seed: 42,
+      })
+    } else {
+      if (String(copySourceId) === String(currentStore.activeSetId)) {
+        createPresetMutation.mutate({
+          name: finalName.trim(),
+          paramValues: currentStore.paramValues,
+          appliedAssets: currentStore.appliedAssets,
+          batchSize: currentStore.batchSize,
+          seedMode: currentStore.seedMode,
+          seed: currentStore.seed,
+        })
+      } else {
+        const source = currentPresets?.find((p) => String(p.id) === String(copySourceId))
+        if (source) {
+          createPresetMutation.mutate({
+            name: finalName.trim(),
+            paramValues: source.param_values,
+            appliedAssets: source.applied_assets,
+            batchSize: source.batch_size,
+            seedMode: source.seed_mode as 'random' | 'fixed',
+            seed: source.seed,
+          })
+        } else {
+          createPresetMutation.mutate({
+            name: finalName.trim(),
+            paramValues: currentStore.paramValues,
+            appliedAssets: currentStore.appliedAssets,
+            batchSize: currentStore.batchSize,
+            seedMode: currentStore.seedMode,
+            seed: currentStore.seed,
+          })
+        }
+      }
+    }
+  }, [newPresetName, selectedWorkflowId, createPresetMutation, workflow])
+
+  const storeSync = usePresetStoreSync({
+    selectedWorkflowId,
+    workflow,
+    presets,
+    presetsRef,
+    isInitialSyncRef,
+    prevWorkflowIdRef,
+    lastSavedStateRef,
+    presetUpdatedAtRef,
+    setConflictData: conflict.setConflictData,
+    handleLoadPreset,
+    handleCreatePreset,
+    flushAutoSave: autoSave.flushAutoSave,
+    isCreatePending: createPresetMutation.isPending,
+  })
+
   // ── Bulk Operations State ──
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false)
@@ -350,7 +463,7 @@ export function usePresetState({
     setIsBulkEditOpen(true)
   }
 
-  const handleBulkEditApply = async (payload: import('../../../components/ProfileBulkEditModal').BulkEditPayload) => {
+  const handleBulkEditApply = async (payload: BulkEditPayload) => {
     const latestPresets = qc.getQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId]) || presets
     if (!latestPresets || bulkTargetIds.length === 0) return
     setIsBulkApplying(true)
@@ -358,207 +471,11 @@ export function usePresetState({
       const selectedPresets = latestPresets.filter((p) => bulkTargetIds.includes(p.id))
       const updatedResults = await Promise.all(
         selectedPresets.map(async (preset) => {
-          let newParamValues = { ...preset.param_values }
-          let newAppliedAssets = { ...preset.applied_assets }
-          let newBatchSize = preset.batch_size
-
-          if (payload.promptOps) {
-            for (const op of payload.promptOps) {
-              const targetFields = op.fields ?? Object.keys(newParamValues)
-              for (const field of targetFields) {
-                if (!(field in newParamValues)) continue
-                const current = newParamValues[field]
-                if (op.op === 'search_replace') {
-                  newParamValues[field] = current.split(op.find!).join(op.replace ?? '')
-                } else if (op.op === 'overwrite') {
-                  newParamValues[field] = op.value!
-                  delete newAppliedAssets[field]
-                } else if (op.op === 'prefix') {
-                  newParamValues[field] = prependToPrompt(current, op.value ?? '')
-                } else if (op.op === 'suffix') {
-                  newParamValues[field] = appendToPrompt(current, op.value ?? '')
-                } else if (op.op === 'remove_tags') {
-                  if (op.commonTagOps && op.commonTagOps.length > 0) {
-                    const removeMap = new Map<string, string>()
-                    const updateMap = new Map<string, string>()
-                    for (const cOp of op.commonTagOps) {
-                      if (cOp.action === 'remove') {
-                        removeMap.set(cOp.originalBase.toLowerCase(), 'remove')
-                      } else if (cOp.action === 'update') {
-                        updateMap.set(cOp.originalBase.toLowerCase(), cOp.newFormattedTag)
-                      }
-                    }
-                    const currentTags = current.split(',').map((t) => t.trim()).filter(Boolean)
-                    const updatedTags: string[] = []
-                    for (const tag of currentTags) {
-                      const weightMatch = tag.match(/^\((.+?):[0-9.]+\)$/)
-                      const parenMatch = tag.match(/^\((.+?)\)$/)
-                      const base = (weightMatch ? weightMatch[1] : parenMatch ? parenMatch[1] : tag).trim().toLowerCase()
-                      if (removeMap.has(base)) continue
-                      if (updateMap.has(base)) {
-                        updatedTags.push(updateMap.get(base)!)
-                      } else {
-                        updatedTags.push(tag)
-                      }
-                    }
-                    newParamValues[field] = updatedTags.join(', ')
-                  } else if (op.tags && op.tags.length > 0) {
-                    const tagsToRemoveSet = new Set(op.tags.map((t) => t.trim().toLowerCase()))
-                    const currentTags = current.split(',').map((t) => t.trim()).filter(Boolean)
-                    const filteredTags = currentTags.filter((t) => !tagsToRemoveSet.has(t.toLowerCase()))
-                    newParamValues[field] = filteredTags.join(', ')
-                  }
-                }
-              }
-            }
-          }
-
-          if (payload.paramPatch) {
-            Object.keys(payload.paramPatch).forEach((key) => {
-              if (key.endsWith('_lora_count')) {
-                const role = key.replace('_lora_count', '')
-                const oldCount = parseInt(newParamValues[`${role}_lora_count`] || '0', 10)
-                delete newParamValues[`${role}_lora_count`]
-                for (let i = 1; i <= oldCount; i++) {
-                  delete newParamValues[`${role}_lora_name_${i}`]
-                  delete newParamValues[`${role}_lora_wt_${i}`]
-                  delete newParamValues[`${role}_model_str_${i}`]
-                  delete newParamValues[`${role}_clip_str_${i}`]
-                }
-              }
-            })
-            newParamValues = { ...newParamValues, ...payload.paramPatch }
-          }
-
-          if (payload.loraStackOps) {
-            for (const stackOp of payload.loraStackOps) {
-              const { role, mode } = stackOp
-              const oldCount = parseInt(newParamValues[`${role}_lora_count`] || '0', 10)
-              
-              // Extract current slots
-              const currentSlots: Array<{ name: string; weight: string; modelStrength: string; clipStrength: string }> = []
-              for (let i = 1; i <= oldCount; i++) {
-                currentSlots.push({
-                  name: newParamValues[`${role}_lora_name_${i}`] || '',
-                  weight: newParamValues[`${role}_lora_wt_${i}`] || '0.0',
-                  modelStrength: newParamValues[`${role}_model_str_${i}`] || '1.0',
-                  clipStrength: newParamValues[`${role}_clip_str_${i}`] || '1.0',
-                })
-              }
-
-              // Delete old slot keys from newParamValues
-              delete newParamValues[`${role}_lora_count`]
-              for (let i = 1; i <= oldCount; i++) {
-                delete newParamValues[`${role}_lora_name_${i}`]
-                delete newParamValues[`${role}_lora_wt_${i}`]
-                delete newParamValues[`${role}_model_str_${i}`]
-                delete newParamValues[`${role}_clip_str_${i}`]
-              }
-
-              let finalSlots: Array<{ name: string; weight: string; modelStrength: string; clipStrength: string }> = []
-
-              if (mode === 'overwrite') {
-                finalSlots = (stackOp.slots || []).filter(s => s.name.trim() !== '')
-              } else if (mode === 'differential') {
-                const removeSet = new Set<string>()
-                const updateMap = new Map<string, { weight?: string; modelStrength?: string; clipStrength?: string }>()
-                for (const cop of stackOp.commonOps || []) {
-                  if (cop.action === 'remove') {
-                    removeSet.add(cop.name.toLowerCase())
-                  } else if (cop.action === 'update') {
-                    updateMap.set(cop.name.toLowerCase(), {
-                      weight: cop.weight,
-                      modelStrength: cop.modelStrength,
-                      clipStrength: cop.clipStrength,
-                    })
-                  }
-                }
-
-                for (const slot of currentSlots) {
-                  if (removeSet.has(slot.name.toLowerCase())) {
-                    continue
-                  }
-                  const updates = updateMap.get(slot.name.toLowerCase())
-                  finalSlots.push({
-                    name: slot.name,
-                    weight: updates?.weight ?? slot.weight,
-                    modelStrength: updates?.modelStrength ?? slot.modelStrength,
-                    clipStrength: updates?.clipStrength ?? slot.clipStrength,
-                  })
-                }
-
-                for (const addSlot of stackOp.addSlots || []) {
-                  if (addSlot.name.trim() !== '') {
-                    finalSlots.push({
-                      name: addSlot.name.trim(),
-                      weight: addSlot.weight || '1.0',
-                      modelStrength: addSlot.modelStrength || '1.0',
-                      clipStrength: addSlot.clipStrength || '1.0',
-                    })
-                  }
-                }
-              }
-
-              // Clamp to maximum 10 slots
-              const clampedSlots = finalSlots.slice(0, 10)
-              newParamValues[`${role}_lora_count`] = String(clampedSlots.length)
-              clampedSlots.forEach((slot, idx) => {
-                const i = idx + 1
-                newParamValues[`${role}_lora_name_${i}`] = slot.name
-                newParamValues[`${role}_lora_wt_${i}`] = slot.weight
-                newParamValues[`${role}_model_str_${i}`] = slot.modelStrength
-                newParamValues[`${role}_clip_str_${i}`] = slot.clipStrength
-              })
-            }
-          }
-
-          if (payload.batchSize !== undefined) {
-            newBatchSize = payload.batchSize
-          }
-
-          if (payload.loraOps) {
-            for (const loraOp of payload.loraOps) {
-              const existing = newAppliedAssets[loraOp.role] ?? []
-              if (loraOp.mode === 'replace') {
-                newAppliedAssets[loraOp.role] = [loraOp.asset]
-              } else {
-                newAppliedAssets[loraOp.role] = [...existing, loraOp.asset]
-              }
-            }
-          }
-
-          if (payload.assetOps) {
-            for (const assetOp of payload.assetOps) {
-              const existingAssets = newAppliedAssets[assetOp.role] ?? []
-              const isOverwriteOp = payload.promptOps?.some((p) => p.op === 'overwrite')
-              let updatedAssets: AppliedAsset[] = assetOp.mode === 'replace' || isOverwriteOp ? [] : [...existingAssets]
-              for (const asset of assetOp.assets) {
-                const isDuplicate = updatedAssets.some(
-                  (existing) =>
-                    existing.type === asset.type &&
-                    existing.assetId === asset.assetId &&
-                    existing.name === asset.name &&
-                    existing.loraPromptString === asset.loraPromptString &&
-                    JSON.stringify(existing.tags) === JSON.stringify(asset.tags)
-                )
-                if (!isDuplicate) {
-                  updatedAssets.push(asset)
-                }
-              }
-              newAppliedAssets[assetOp.role] = updatedAssets
-            }
-          }
-
-          const res = await workflowPresetsApi.update(preset.id, {
-            param_values: newParamValues,
-            applied_assets: newAppliedAssets,
-            batch_size: newBatchSize,
-          })
-
+          const patch = computePresetPatch(preset, payload)
+          const res = await workflowPresetsApi.update(preset.id, patch)
           if (res?.id) {
             presetUpdatedAtRef.current[res.id] = res.updated_at
           }
-
           return res
         })
       )
@@ -625,7 +542,6 @@ export function usePresetState({
           setSeed(activeUpdatedPreset.seed)
         }
 
-        // 全ロールの promptChips を一括更新
         storeRef.current.setAllPromptChips?.(initialPromptChips)
       }
 
@@ -640,76 +556,6 @@ export function usePresetState({
       setBulkTargetIds([])
     } finally {
       setIsBulkApplying(false)
-    }
-  }
-
-  // ── Actions ──
-  const handleCreatePreset = (name?: string, copySourceId?: string | number) => {
-    const finalName = name ?? newPresetName
-    if (!finalName.trim() || !selectedWorkflowId) return
-
-    if (copySourceId === undefined) {
-      createPresetMutation.mutate({
-        name: finalName.trim(),
-        paramValues,
-        appliedAssets,
-        batchSize,
-        seedMode,
-        seed,
-      })
-    } else if (copySourceId === 'default') {
-      let initialParams: Record<string, string> = {}
-      let defaultAssets: Record<string, any> = {}
-      if (workflow) {
-        initialParams = getInitialParams(workflow)
-        if (workflow.default_applied_assets) {
-          try {
-            defaultAssets = JSON.parse(workflow.default_applied_assets)
-          } catch (e) {
-            console.error('Failed to parse default applied assets:', e)
-          }
-        }
-      }
-      createPresetMutation.mutate({
-        name: finalName.trim(),
-        paramValues: initialParams,
-        appliedAssets: defaultAssets,
-        batchSize: 1,
-        seedMode: 'random',
-        seed: 42,
-      })
-    } else {
-      if (String(copySourceId) === String(activeSetId)) {
-        createPresetMutation.mutate({
-          name: finalName.trim(),
-          paramValues,
-          appliedAssets,
-          batchSize,
-          seedMode,
-          seed,
-        })
-      } else {
-        const source = presets?.find((p) => String(p.id) === String(copySourceId))
-        if (source) {
-          createPresetMutation.mutate({
-            name: finalName.trim(),
-            paramValues: source.param_values,
-            appliedAssets: source.applied_assets,
-            batchSize: source.batch_size,
-            seedMode: source.seed_mode as 'random' | 'fixed',
-            seed: source.seed,
-          })
-        } else {
-          createPresetMutation.mutate({
-            name: finalName.trim(),
-            paramValues,
-            appliedAssets,
-            batchSize,
-            seedMode,
-            seed,
-          })
-        }
-      }
     }
   }
 
@@ -765,584 +611,13 @@ export function usePresetState({
     }
   }
 
-  const handleLoadPreset = (preset: WorkflowPreset) => {
-    if (preset.updated_at) {
-      presetUpdatedAtRef.current[preset.id] = preset.updated_at
-    }
-    const defaultParams = workflow ? getInitialParams(workflow) : {}
-    const mergedParamValues = healLegacyParamKeys({ ...defaultParams, ...(preset.param_values || {}) })
-
-    lastSavedStateRef.current[preset.id] = {
-      paramValues: mergedParamValues,
-      appliedAssets: preset.applied_assets || {},
-      batchSize: preset.batch_size ?? 1,
-      seedMode: (preset.seed_mode as 'random' | 'fixed') || 'random',
-      seed: preset.seed !== undefined ? preset.seed : 42,
-    }
-
-    if (loadPresetData) {
-      loadPresetData(preset, defaultParams)
-    } else {
-      setActiveSetId(preset.id)
-      if (openPresetIds && !openPresetIds.includes(preset.id)) {
-        openPreset?.(preset.id)
-      }
-    }
-    setIsPresetOpen(false)
-  }
-
-  // ── Undo/Redo & History ──
-  const [historyVersion, setHistoryVersion] = useState(0)
-  const triggerHistoryChange = () => setHistoryVersion((v) => v + 1)
-
-  const getHistory = (id: string | number) => {
-    try {
-      const stored = sessionStorage.getItem(`prompt-surgeon-history-${id}`)
-      if (stored) {
-        return JSON.parse(stored)
-      }
-    } catch {}
-    return { past: [], future: [] }
-  }
-
-  const saveHistory = (id: string | number, hist: { past: HistoryState[]; future: HistoryState[] }) => {
-    try {
-      sessionStorage.setItem(`prompt-surgeon-history-${id}`, JSON.stringify(hist))
-    } catch {}
-    triggerHistoryChange()
-  }
-
-  const flushAutoSave = useCallback(() => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-      autoSaveTimerRef.current = null
-    }
-    if (!isInitialSyncRef.current) return
-
-    // 最新の Zustand ストアから状態を直接取得
-    const currentStore = useGenerationStore.getState ? useGenerationStore.getState() : storeRef.current
-    const targetActiveId = currentStore.activeSetId
-    if (!selectedWorkflowId || targetActiveId === null || targetActiveId === undefined) return
-    const currentPresets = presetsRef.current || presets
-    const activePreset = currentPresets?.find((p) => String(p.id) === String(targetActiveId))
-    if (!activePreset) return
-
-    const currentState: HistoryState = {
-      paramValues: currentStore.paramValues,
-      appliedAssets: currentStore.appliedAssets,
-      batchSize: currentStore.batchSize,
-      seedMode: currentStore.seedMode,
-      seed: currentStore.seed,
-    }
-
-    // インメモリ上の activeSet を即時同期（ジョブ発行直前・タブ切替直前の必須処理）
-    currentStore.updateActiveSet?.(currentState)
-
-    const currentLastSaved = lastSavedStateRef.current[targetActiveId]
-    if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
-
-    const latestBaseUpdatedAt = presetUpdatedAtRef.current[activePreset.id] || activePreset.updated_at
-    if (currentLastSaved) {
-      const hist = getHistory(targetActiveId)
-      hist.past.push(currentLastSaved)
-      hist.future = []
-      saveHistory(targetActiveId, hist)
-    }
-
-    lastSavedStateRef.current[targetActiveId] = currentState
-
-    performUpdatePresetRef.current({
-      id: activePreset.id,
-      name: activePreset.name,
-      param_values: currentState.paramValues,
-      applied_assets: currentState.appliedAssets,
-      batch_size: currentState.batchSize,
-      seed_mode: currentState.seedMode,
-      seed: currentState.seed,
-      base_updated_at: latestBaseUpdatedAt,
-    })
-  }, [selectedWorkflowId, presets, updateActiveSet])
-
-  const handleSelectPresetTab = (presetId: string | number) => {
-    const currentStore = useGenerationStore.getState ? useGenerationStore.getState() : storeRef.current
-    const currentActiveId = currentStore.activeSetId
-    if (currentActiveId !== null && currentActiveId !== undefined && String(currentActiveId) !== String(presetId)) {
-      flushAutoSave()
-    }
-
-    const targetId = Number(presetId)
-    const currentPresets = presetsRef.current || presets
-    const serverPreset = currentPresets?.find((p) => p.id === targetId)
-    const prevUpdatedAt = presetUpdatedAtRef.current[targetId]
-    const serverChanged = !!(
-      serverPreset?.updated_at &&
-      prevUpdatedAt &&
-      isTimestampDifferent(serverPreset.updated_at, prevUpdatedAt)
-    )
-
-    const targetSet = storeRef.current.sets?.find((s) => String(s.id) === String(presetId))
-    const lastSaved = lastSavedStateRef.current[targetId]
-    const isDirty = targetSet && lastSaved ? !isStateEqual(lastSaved, targetSet) : false
-
-    if (serverChanged && isDirty && serverPreset && targetSet) {
-      // 別端末で更新あり ＋ 自端末でも編集中 → 即座に競合解消モーダルを表示
-      presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
-      setConflictData({
-        serverPreset,
-        localDraft: {
-          name: targetSet.name,
-          paramValues: targetSet.paramValues,
-          appliedAssets: targetSet.appliedAssets,
-          batchSize: targetSet.batchSize,
-          seedMode: targetSet.seedMode,
-          seed: targetSet.seed,
-        },
-      })
-      return
-    }
-
-    if (serverPreset && (serverChanged || !isDirty)) {
-      // 別端末で更新あり、または自端末未編集（クリーン） → サーバー最新版をロード
-      if (serverPreset.updated_at) {
-        presetUpdatedAtRef.current[targetId] = serverPreset.updated_at
-      }
-      handleLoadPreset(serverPreset)
-      return
-    }
-
-    // サーバー変更なし かつ ダーティな場合
-    const isOpen = (storeRef.current.openPresetIds || []).map(String).includes(String(presetId))
-    if (isOpen) {
-      setActiveSetId(presetId)
-    } else if (serverPreset) {
-      handleLoadPreset(serverPreset)
-    } else {
-      setActiveSetId(presetId)
-    }
-  }
-
-  // ── Undo/Redo ──
-  const canUndo = activeSetId !== null && getHistory(activeSetId).past.length > 0
-  const canRedo = activeSetId !== null && getHistory(activeSetId).future.length > 0
-
-  const undo = (presetId: string | number) => {
-    const hist = getHistory(presetId)
-    if (hist.past.length === 0) return
-    const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
-    hist.future.push(currentState)
-    const prevState = hist.past.pop()!
-    saveHistory(presetId, hist)
-    setParamValues(prevState.paramValues)
-    setAppliedAssets(prevState.appliedAssets)
-    setBatchSize(prevState.batchSize)
-    setSeedMode(prevState.seedMode)
-    setSeed(prevState.seed)
-    updateActiveSet({
-      paramValues: prevState.paramValues,
-      appliedAssets: prevState.appliedAssets,
-      batchSize: prevState.batchSize,
-      seedMode: prevState.seedMode,
-      seed: prevState.seed,
-    })
-  }
-
-  const redo = (presetId: string | number) => {
-    const hist = getHistory(presetId)
-    if (hist.future.length === 0) return
-    const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
-    hist.past.push(currentState)
-    const nextState = hist.future.pop()!
-    saveHistory(presetId, hist)
-    setParamValues(nextState.paramValues)
-    setAppliedAssets(nextState.appliedAssets)
-    setBatchSize(nextState.batchSize)
-    setSeedMode(nextState.seedMode)
-    setSeed(nextState.seed)
-    updateActiveSet({
-      paramValues: nextState.paramValues,
-      appliedAssets: nextState.appliedAssets,
-      batchSize: nextState.batchSize,
-      seedMode: nextState.seedMode,
-      seed: nextState.seed,
-    })
-  }
-
-  // Keyboard shortcut listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA' ||
-        document.activeElement?.getAttribute('contenteditable') === 'true'
-      ) {
-        return
-      }
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'z' || e.key === 'Z') {
-          e.preventDefault()
-          if (activeSetId !== null) undo(activeSetId)
-        } else if (e.key === 'y' || e.key === 'Y') {
-          e.preventDefault()
-          if (activeSetId !== null) redo(activeSetId)
-        }
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeSetId, historyVersion, paramValues, appliedAssets, batchSize, seedMode, seed])
-
-  // Sync presets query with sets
-  useEffect(() => {
-    if (!selectedWorkflowId || !presets) return
-
-    if (prevWorkflowIdRef.current !== selectedWorkflowId) {
-      prevWorkflowIdRef.current = selectedWorkflowId
-      isInitialSyncRef.current = false
-    }
-
-    const currentStore = storeRef.current
-    const existingSets = currentStore.sets || []
-    const existingSetsMap = new Map(existingSets.map((s) => [String(s.id), s]))
-
-    let currentActiveSetId = currentStore.activeSetId
-    if ((currentActiveSetId === null || currentActiveSetId === undefined) && existingSets.length === 1) {
-      currentActiveSetId = existingSets[0].id
-    }
-    const currentOpenPresetIds = currentStore.openPresetIds || []
-
-    const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
-    const checkedPresets: (string | number)[] | null = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
-    const defaultParams = workflow ? getInitialParams(workflow) : {}
-
-    const rawMappedSets = presets.map((p) => {
-      const existingSet = existingSetsMap.get(String(p.id))
-      return {
-        id: p.id,
-        name: p.name,
-        paramValues: healLegacyParamKeys({
-          ...defaultParams,
-          ...(p.param_values || {}),
-        }),
-        appliedAssets: p.applied_assets || {},
-        promptChips: existingSet?.promptChips,
-        batchSize: p.batch_size ?? 1,
-        seedMode: (p.seed_mode || 'random') as 'random' | 'fixed',
-        seed: p.seed !== undefined ? p.seed : 42,
-        checked: checkedPresets === null ? true : checkedPresets.includes(p.id),
-      }
-    })
-
-    const isFirstSync = !isInitialSyncRef.current
-    let mappedSets: import('../../../store/types').GenerationSet[] = rawMappedSets
-    if (!isFirstSync) {
-      mappedSets = presets.map((p) => {
-        const existing = existingSetsMap.get(String(p.id))
-        const isActive = currentActiveSetId !== null && currentActiveSetId !== undefined && String(p.id) === String(currentActiveSetId)
-        const lastSaved = lastSavedStateRef.current[p.id]
-
-        let isDirty = false
-        if (isActive) {
-          const currentLocalState: HistoryState = {
-            paramValues: currentStore.paramValues,
-            appliedAssets: currentStore.appliedAssets,
-            batchSize: currentStore.batchSize,
-            seedMode: currentStore.seedMode,
-            seed: currentStore.seed,
-          }
-          isDirty = lastSaved ? !isStateEqual(lastSaved, currentLocalState) : false
-        } else if (existing) {
-          const existingState: HistoryState = {
-            paramValues: existing.paramValues,
-            appliedAssets: existing.appliedAssets,
-            batchSize: existing.batchSize,
-            seedMode: existing.seedMode,
-            seed: existing.seed,
-          }
-          isDirty = lastSaved ? !isStateEqual(lastSaved, existingState) : false
-        }
-
-        if (isDirty) {
-          if (isActive) {
-            return {
-              ...existing,
-              id: p.id,
-              name: p.name,
-              paramValues: currentStore.paramValues,
-              appliedAssets: currentStore.appliedAssets,
-              promptChips: currentStore.promptChips || existing?.promptChips,
-              batchSize: currentStore.batchSize,
-              seedMode: currentStore.seedMode,
-              seed: currentStore.seed,
-              checked: existing?.checked ?? (checkedPresets === null ? true : checkedPresets.includes(p.id)),
-            }
-          } else {
-            return {
-              ...existing!,
-              id: p.id,
-              name: p.name,
-            }
-          }
-        }
-
-        // Clean: SSoT is server DB!
-        const serverParams = healLegacyParamKeys({
-          ...defaultParams,
-          ...(p.param_values || {}),
-        })
-        const serverAssets = p.applied_assets || {}
-        const serverBatchSize = p.batch_size ?? 1
-        const serverSeedMode = (p.seed_mode as 'random' | 'fixed') || 'random'
-        const serverSeed = p.seed !== undefined ? p.seed : 42
-
-        if (!isActive) {
-          lastSavedStateRef.current[p.id] = {
-            paramValues: serverParams,
-            appliedAssets: serverAssets,
-            batchSize: serverBatchSize,
-            seedMode: serverSeedMode,
-            seed: serverSeed,
-          }
-          if (p.updated_at) {
-            presetUpdatedAtRef.current[p.id] = p.updated_at
-          }
-        }
-
-        return {
-          id: p.id,
-          name: p.name,
-          paramValues: serverParams,
-          appliedAssets: serverAssets,
-          promptChips: existing?.promptChips,
-          batchSize: serverBatchSize,
-          seedMode: serverSeedMode,
-          seed: serverSeed,
-          checked: existing?.checked ?? (checkedPresets === null ? true : checkedPresets.includes(p.id)),
-        }
-      })
-    }
-
-    currentStore.setSets?.(mappedSets)
-
-    if (presets && presets.length > 0) {
-      const storedActiveStr = selectedWorkflowId
-        ? localStorage.getItem(`${LS_KEYS.ACTIVE_SET_PREFIX}${selectedWorkflowId}`)
-        : null
-      const matchedByStored = storedActiveStr ? presets.find((p) => String(p.id) === String(storedActiveStr)) : undefined
-      const matchedByActive = currentActiveSetId ? presets.find((p) => String(p.id) === String(currentActiveSetId)) : undefined
-      const matchedPreset = matchedByStored || matchedByActive
-      const targetActiveId = matchedPreset
-        ? matchedPreset.id
-        : currentOpenPresetIds.length > 0 && presets.some((p) => String(p.id) === String(currentOpenPresetIds[0]))
-        ? currentOpenPresetIds[0]
-        : presets[0].id
-      const isInvalidActive =
-        currentActiveSetId === null || currentActiveSetId === undefined || !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))
-
-      if (isFirstSync) {
-        isInitialSyncRef.current = true
-        presets.forEach((p) => {
-          if (p.updated_at) {
-            presetUpdatedAtRef.current[p.id] = p.updated_at
-          }
-          if (!lastSavedStateRef.current[p.id]) {
-            lastSavedStateRef.current[p.id] = {
-              paramValues: healLegacyParamKeys({
-                ...defaultParams,
-                ...(p.param_values || {}),
-              }),
-              appliedAssets: p.applied_assets || {},
-              batchSize: p.batch_size ?? 1,
-              seedMode: (p.seed_mode as 'random' | 'fixed') || 'random',
-              seed: p.seed !== undefined ? p.seed : 42,
-            }
-          }
-        })
-        const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
-        if (activePreset) {
-          lastSavedStateRef.current[targetActiveId] = {
-            paramValues: healLegacyParamKeys({
-              ...defaultParams,
-              ...(activePreset.param_values || {}),
-            }),
-            appliedAssets: activePreset.applied_assets || {},
-            batchSize: activePreset.batch_size ?? 1,
-            seedMode: (activePreset.seed_mode as 'random' | 'fixed') || 'random',
-            seed: activePreset.seed !== undefined ? activePreset.seed : 42,
-          }
-          if (currentStore.loadPresetData) {
-            currentStore.loadPresetData(activePreset, defaultParams)
-          } else {
-            currentStore.setActiveSetId?.(targetActiveId)
-            if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
-              currentStore.openPreset?.(targetActiveId)
-            }
-          }
-        } else {
-          currentStore.setActiveSetId?.(targetActiveId)
-          if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
-            currentStore.openPreset?.(targetActiveId)
-          }
-        }
-      } else {
-        // Subsequent syncs (polling / window focus / invalid active)
-        if (isInvalidActive || String(currentActiveSetId) !== String(targetActiveId)) {
-          currentStore.setActiveSetId?.(targetActiveId)
-          if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
-            currentStore.openPreset?.(targetActiveId)
-          }
-        } else if (currentActiveSetId !== null && currentActiveSetId !== undefined && !currentOpenPresetIds.map(String).includes(String(currentActiveSetId))) {
-          currentStore.openPreset?.(currentActiveSetId)
-        }
-
-        // Check if server activePreset has updated_at newer than presetUpdatedAtRef
-        const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
-        if (activePreset && activePreset.updated_at) {
-          const prevUpdatedAt = presetUpdatedAtRef.current[activePreset.id]
-          if (prevUpdatedAt && isTimestampDifferent(activePreset.updated_at, prevUpdatedAt)) {
-            presetUpdatedAtRef.current[activePreset.id] = activePreset.updated_at
-            const lastSaved = lastSavedStateRef.current[activePreset.id]
-            const currentLocalState: HistoryState = {
-              paramValues: currentStore.paramValues,
-              appliedAssets: currentStore.appliedAssets,
-              batchSize: currentStore.batchSize,
-              seedMode: currentStore.seedMode,
-              seed: currentStore.seed,
-            }
-            const isDirty = !lastSaved || !isStateEqual(lastSaved, currentLocalState)
-
-            if (!isDirty) {
-              // Local is clean: auto-sync with SSoT
-              const activePresetData = rawMappedSets.find((s) => String(s.id) === String(activePreset.id))
-              if (activePresetData) {
-                lastSavedStateRef.current[activePreset.id] = {
-                  paramValues: activePresetData.paramValues,
-                  appliedAssets: activePresetData.appliedAssets,
-                  batchSize: activePresetData.batchSize,
-                  seedMode: activePresetData.seedMode,
-                  seed: activePresetData.seed,
-                }
-              }
-              currentStore.loadPresetData?.(activePreset, defaultParams)
-            } else {
-              // Local has unsaved edits: trigger conflict resolution
-              setConflictData({
-                serverPreset: activePreset,
-                localDraft: {
-                  name: activePreset.name,
-                  paramValues: currentStore.paramValues,
-                  appliedAssets: currentStore.appliedAssets,
-                  batchSize: currentStore.batchSize,
-                  seedMode: currentStore.seedMode,
-                  seed: currentStore.seed,
-                },
-              })
-            }
-          }
-        }
-      }
-    } else if (presets && presets.length === 0) {
-      if (!createPresetMutation.isPending) {
-        handleCreatePreset('Set 1')
-      }
-    }
-  }, [presets, selectedWorkflowId, workflow])
-
-  // Autosave
-
-
-
-
-  useEffect(() => {
-    if (!isInitialSyncRef.current) return
-    if (!selectedWorkflowId || activeSetId === null || activeSetId === undefined) return
-    const currentPresets = presetsRef.current || presets
-    const activePreset = currentPresets?.find((p) => String(p.id) === String(activeSetId))
-    if (!activePreset) return
-
-    const currentState: HistoryState = { paramValues, appliedAssets, batchSize, seedMode, seed }
-    const lastSaved = lastSavedStateRef.current[activeSetId]
-    if (lastSaved && isStateEqual(lastSaved, currentState)) return
-
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-    }
-
-    autoSaveTimerRef.current = setTimeout(() => {
-      autoSaveTimerRef.current = null
-      const currentLastSaved = lastSavedStateRef.current[activeSetId]
-      if (currentLastSaved && isStateEqual(currentLastSaved, currentState)) return
-      const latestPreset = (presetsRef.current || presets)?.find((p) => String(p.id) === String(activeSetId)) || activePreset
-      const latestBaseUpdatedAt = presetUpdatedAtRef.current[latestPreset.id] || latestPreset.updated_at
-      if (currentLastSaved) {
-        const hist = getHistory(activeSetId)
-        hist.past.push(currentLastSaved)
-        hist.future = []
-        saveHistory(activeSetId, hist)
-      }
-      performUpdatePresetRef.current({
-        id: latestPreset.id,
-        name: latestPreset.name,
-        param_values: currentState.paramValues,
-        applied_assets: currentState.appliedAssets,
-        batch_size: currentState.batchSize,
-        seed_mode: currentState.seedMode,
-        seed: currentState.seed,
-        base_updated_at: latestBaseUpdatedAt,
-      })
-    }, 1000)
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-        autoSaveTimerRef.current = null
-      }
-    }
-  }, [paramValues, appliedAssets, batchSize, seedMode, seed, activeSetId, selectedWorkflowId])
-
-  // Conflict Resolution Handlers
-  const handleResolveConflictUseServer = () => {
-    if (!conflictData) return
-    handleLoadPreset(conflictData.serverPreset)
-    setConflictData(null)
-  }
-
-  const handleResolveConflictOverwrite = () => {
-    if (!conflictData) return
-    const { serverPreset, localDraft } = conflictData
-    updatePresetMutation.mutate({
-      id: serverPreset.id,
-      name: localDraft.name,
-      param_values: localDraft.paramValues,
-      applied_assets: localDraft.appliedAssets,
-      batch_size: localDraft.batchSize,
-      seed_mode: localDraft.seedMode,
-      seed: localDraft.seed,
-      base_updated_at: serverPreset.updated_at,
-    })
-    setConflictData(null)
-  }
-
-  const handleResolveConflictSaveAsNew = (newName: string) => {
-    if (!conflictData) return
-    const { localDraft } = conflictData
-    createPresetMutation.mutate({
-      name: newName,
-      paramValues: localDraft.paramValues,
-      appliedAssets: localDraft.appliedAssets,
-      batchSize: localDraft.batchSize,
-      seedMode: localDraft.seedMode,
-      seed: localDraft.seed,
-    })
-    setConflictData(null)
-  }
-
   return {
     presets,
-    conflictData,
-    setConflictData,
-    handleResolveConflictUseServer,
-    handleResolveConflictOverwrite,
-    handleResolveConflictSaveAsNew,
+    conflictData: conflict.conflictData,
+    setConflictData: conflict.setConflictData,
+    handleResolveConflictUseServer: conflict.handleResolveConflictUseServer,
+    handleResolveConflictOverwrite: conflict.handleResolveConflictOverwrite,
+    handleResolveConflictSaveAsNew: conflict.handleResolveConflictSaveAsNew,
     createPresetMutation,
     updatePresetMutation,
     deletePresetMutation,
@@ -1363,17 +638,17 @@ export function usePresetState({
     handleUpdatePreset,
     handleDeletePreset,
     handleLoadPreset,
-    handleSelectPresetTab,
+    handleSelectPresetTab: storeSync.handleSelectPresetTab,
     isPresetOpen,
     setIsPresetOpen,
     newPresetName,
     setNewPresetName,
     isPresetManagerOpen,
     setIsPresetManagerOpen,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    flushAutoSave,
+    undo: history.undo,
+    redo: history.redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    flushAutoSave: autoSave.flushAutoSave,
   }
 }
