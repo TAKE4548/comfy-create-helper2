@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Tag, Copy, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical } from 'lucide-react'
+import { Plus, Search, Tag, Copy, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -10,13 +10,15 @@ import {
   useSensors,
   useSensor,
   MouseSensor,
-  TouchSensor
+  TouchSensor,
+  useDroppable
 } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
 import { tagSetsApi, tagsetCategoriesApi, baseModelsApi } from '../api/client'
 import type { TagSet, Category, BaseModel } from '../api/types'
+import { useAccordionSections } from '../hooks/useAccordionSections'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
 import {
@@ -74,6 +76,38 @@ function SortableTagSetCard({ id, children, disabled }: { id: number; children: 
   )
 }
 
+function CategorySectionDroppable({
+  containerId,
+  children,
+  isEmpty,
+}: {
+  containerId: string
+  children: React.ReactNode
+  isEmpty: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: containerId,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      id={containerId}
+      className={`min-h-[60px] rounded-xl transition-colors ${
+        isOver ? 'bg-[#7C6FDD]/5 ring-1 ring-[#7C6FDD]/30' : ''
+      }`}
+    >
+      {isEmpty ? (
+        <div className="py-8 text-center text-xs text-zinc-500 border border-dashed border-[rgba(255,255,255,0.08)] rounded-xl">
+          カードがありません（ここにドラッグ＆ドロップしてカテゴリ移動）
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  )
+}
+
 export function TagsPage() {
   const qc = useQueryClient()
 
@@ -105,8 +139,9 @@ export function TagsPage() {
     })
   )
   const [search, setSearch] = useState('')
-  const [selectedCat, setSelectedCat] = useState<number | null>(null)
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<(number | 'uncategorized')[]>([])
   const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
+  const { isExpanded, toggleSection } = useAccordionSections('ps_accordion_tagsets')
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
@@ -128,9 +163,9 @@ export function TagsPage() {
     queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
   })
   const { data: tagSets } = useQuery({
-    queryKey: ['tag-sets', selectedCat, selectedBaseModelIds],
+    queryKey: ['tag-sets', selectedBaseModelIds],
     queryFn: () => tagSetsApi.list(
-      selectedCat ?? undefined,
+      undefined,
       selectedBaseModelIds.length > 0 ? selectedBaseModelIds.join(',') : undefined
     ) as Promise<TagSet[]>,
   })
@@ -186,7 +221,8 @@ export function TagsPage() {
   })
 
   const reorderTagSets = useMutation({
-    mutationFn: (ordered_ids: number[]) => tagSetsApi.reorder(ordered_ids),
+    mutationFn: ({ ordered_ids, category_id }: { ordered_ids: number[]; category_id?: number | null }) =>
+      tagSetsApi.reorder(ordered_ids, category_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tag-sets'] }),
   })
 
@@ -289,7 +325,7 @@ export function TagsPage() {
       ts.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
   )
 
-  const isDndActive = !search && selectedCat === null && selectedBaseModelIds.length === 0
+  const isDndActive = !search && selectedBaseModelIds.length === 0
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as number)
@@ -300,24 +336,67 @@ export function TagsPage() {
     setActiveId(null)
     if (!over || active.id === over.id) return
 
-    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
-      if (selectedIds.has(over.id as number)) return
-      // グループ移動
-      const activeIdx = items.findIndex(i => i.id === active.id)
-      const overIdx = items.findIndex(i => i.id === over.id)
-      const selected = items.filter(i => selectedIds.has(i.id))
-      const nonSelected = items.filter(i => !selectedIds.has(i.id))
-      const overIdxInNonSelected = nonSelected.findIndex(i => i.id === over.id)
-      const insertAt = overIdx > activeIdx ? overIdxInNonSelected + 1 : overIdxInNonSelected
-      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
-      setItems(newOrder)
-      reorderTagSets.mutate(newOrder.map(i => i.id))
+    const activeItem = items.find((i) => i.id === Number(active.id))
+    if (!activeItem) return
+
+    const sourceCatId = activeItem.category_id ?? 'uncategorized'
+
+    // over 対象がコンテナ（'category-container-X'）かカードIDかを判定
+    let targetCatId: number | null = null
+    let targetCardId: number | null = null
+
+    if (typeof over.id === 'string' && over.id.startsWith('category-container-')) {
+      const raw = over.id.replace('category-container-', '')
+      targetCatId = raw === 'uncategorized' ? null : Number(raw)
     } else {
-      const oldIdx = items.findIndex((x) => x.id === Number(active.id))
-      const newIdx = items.findIndex((x) => x.id === Number(over.id))
-      const reordered = arrayMove(items, oldIdx, newIdx)
-      setItems(reordered)
-      reorderTagSets.mutate(reordered.map((x) => x.id))
+      const overItem = items.find((i) => i.id === Number(over.id))
+      if (!overItem) return
+      targetCatId = overItem.category_id ?? null
+      targetCardId = overItem.id
+    }
+
+    const previousItems = [...items]
+    const destCatKey = targetCatId ?? 'uncategorized'
+
+    if (sourceCatId === destCatKey) {
+      // 同一カテゴリ内の並び替え
+      const sectionCards = items.filter((i) => (i.category_id ?? null) === targetCatId)
+      const oldIdx = sectionCards.findIndex((i) => i.id === activeItem.id)
+      const newIdx = targetCardId ? sectionCards.findIndex((i) => i.id === targetCardId) : sectionCards.length - 1
+      if (oldIdx === newIdx || oldIdx === -1 || newIdx === -1) return
+
+      const reorderedSection = arrayMove(sectionCards, oldIdx, newIdx)
+      let sectionIdx = 0
+      const newItems = items.map((item) => {
+        if ((item.category_id ?? null) === targetCatId) {
+          return reorderedSection[sectionIdx++]
+        }
+        return item
+      })
+      setItems(newItems)
+      reorderTagSets.mutate(
+        { ordered_ids: reorderedSection.map((x) => x.id), category_id: targetCatId },
+        { onError: () => setItems(previousItems) }
+      )
+    } else {
+      // セクション間カテゴリ移動（楽観的更新 + ロールバック）
+      const destCards = items.filter((i) => (i.category_id ?? null) === targetCatId)
+      const insertIdx = targetCardId ? destCards.findIndex((i) => i.id === targetCardId) : destCards.length
+      const updatedActiveItem = { ...activeItem, category_id: targetCatId }
+
+      const newDestCards = [...destCards.slice(0, insertIdx), updatedActiveItem, ...destCards.slice(insertIdx)]
+      const newItems = items.map((i) => (i.id === activeItem.id ? updatedActiveItem : i))
+      setItems(newItems)
+
+      reorderTagSets.mutate(
+        { ordered_ids: newDestCards.map((x) => x.id), category_id: targetCatId },
+        {
+          onError: () => {
+            setItems(previousItems)
+            alert('カテゴリ移動の保存に失敗しました。元の位置に戻します。')
+          }
+        }
+      )
     }
   }
 
@@ -339,6 +418,119 @@ export function TagsPage() {
           </div>
         </div>
       </div>
+    )
+  }
+
+  const visibleCategories = (categories ?? []).filter((cat) =>
+    selectedCategoryIds.length === 0 || selectedCategoryIds.includes(cat.id)
+  )
+
+  const uncategorizedItems = filtered.filter((i) => !i.category_id)
+  const allUncategorizedItems = items.filter((i) => !i.category_id)
+  const showUncategorized =
+    selectedCategoryIds.includes('uncategorized') ||
+    (selectedCategoryIds.length === 0 && allUncategorizedItems.length > 0)
+
+  const renderTagSetCard = (ts: TagSet) => {
+    const catName = categories?.find((c) => c.id === ts.category_id)?.name
+    const longPressHandlers = getLongPressHandlers(ts.id)
+    return (
+      <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive}>
+        {({ listeners: touchHandleListeners }) => (
+          <div id={`tagset-card-${ts.id}`} 
+            onClick={(e) => {
+              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                e.stopPropagation()
+                handleItemClick(ts.id, e)
+              } else {
+                setSelectedTagSetForDetail(ts)
+              }
+            }}
+            onMouseDown={longPressHandlers.onMouseDown}
+            onMouseUp={longPressHandlers.onMouseUp}
+            onMouseLeave={longPressHandlers.onMouseLeave}
+            onTouchStart={longPressHandlers.onTouchStart}
+            onTouchEnd={longPressHandlers.onTouchEnd}
+            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+              isMultiSelectMode && isSelected(ts.id)
+                ? 'border-purple-500/50 ring-1 ring-purple-500/30 bg-surface'
+                : 'border-[rgba(255,255,255,0.06)] bg-surface'
+            }`}>
+            
+            {isMultiSelectMode && (
+              <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-purple-400 border border-[rgba(255,255,255,0.08)]">
+                {isSelected(ts.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+              </div>
+            )}
+
+            {/* タッチ用ドラッグハンドル */}
+            {!isMultiSelectMode && isDndActive && (
+              <button
+                type="button"
+                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                {...touchHandleListeners}
+                title="ドラッグして並び替え"
+                aria-label="並び替えハンドル"
+              >
+                <GripVertical size={14} />
+              </button>
+            )}
+
+            <ImageCarousel
+              thumbnailPath={ts.thumbnail_path}
+              snapshotPaths={ts.snapshot_paths}
+              alt={ts.name}
+              className="w-full"
+              style={aspectRatioStyle}
+            >
+              <button id={`tagset-edit-${ts.id}`}
+                onClick={(e) => { e.stopPropagation(); openEdit(ts) }}
+                className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-[#7C6FDD]/20 hover:text-[#7C6FDD]">
+                <Pencil size={13} />
+              </button>
+              <button id={`tagset-delete-${ts.id}`}
+                onClick={(e) => { e.stopPropagation(); if (confirm('Delete this tag set?')) deleteTagSet.mutate(ts.id) }}
+                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+                <Trash2 size={13} />
+              </button>
+            </ImageCarousel>
+
+            <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-xs font-semibold text-zinc-200 truncate flex-1" title={ts.name}>{ts.name}</p>
+                  {catName && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C6FDD]/15 text-[#a99ef7] border border-[#7C6FDD]/25">
+                      {catName}
+                    </span>
+                  )}
+                </div>
+                {ts.description && <p className="text-[10px] text-zinc-500 line-clamp-2" title={ts.description}>{ts.description}</p>}
+              </div>
+
+              <div className="flex flex-wrap gap-1 overflow-hidden max-h-[44px]">
+                {ts.tags.slice(0, 5).map((tag, i) => (
+                  <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-[rgba(124,111,221,0.06)] border border-[rgba(124,111,221,0.15)] text-[#a99ef7] font-mono truncate max-w-[80px]">{tag}</span>
+                ))}
+                {ts.tags.length > 5 && <span className="text-[9px] px-1 py-0.5 text-zinc-600 font-medium">+{ts.tags.length - 5}</span>}
+              </div>
+
+              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
+                <span className="text-[9px] text-zinc-600">{ts.tags.length} tags</span>
+                <button id={`copy-tagset-${ts.id}`}
+                  onClick={(e) => { e.stopPropagation(); handleCopy(ts.id, ts.tags) }}
+                  className={`text-[9px] px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${copiedId === ts.id ? 'bg-accent-green/20 text-accent-green border border-accent-green/30' : 'bg-surface-2 border border-[rgba(255,255,255,0.08)] text-zinc-500 hover:text-zinc-300'}`}>
+                  <Copy size={9} />{copiedId === ts.id ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </SortableTagSetCard>
     )
   }
 
@@ -392,17 +584,25 @@ export function TagsPage() {
             className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-[#7C6FDD]/40" />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
-          <button id="tag-filter-all" onClick={() => setSelectedCat(null)}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCat === null ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+          <button id="tag-filter-all" onClick={() => setSelectedCategoryIds([])}
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             All
           </button>
-          {categories?.map((cat) => (
-            <button key={cat.id} id={`tag-filter-${cat.id}`}
-              onClick={() => setSelectedCat(cat.id === selectedCat ? null : cat.id)}
-              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCat === cat.id ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
-              {cat.name}
-            </button>
-          ))}
+          {categories?.map((cat) => {
+            const isSelected = selectedCategoryIds.includes(cat.id)
+            return (
+              <button key={cat.id} id={`tag-filter-${cat.id}`}
+                onClick={() => setSelectedCategoryIds(prev => prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id])}
+                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${isSelected ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+                {cat.name}
+              </button>
+            )
+          })}
+          <button id="tag-filter-uncategorized"
+            onClick={() => setSelectedCategoryIds(prev => prev.includes('uncategorized') ? prev.filter(id => id !== 'uncategorized') : [...prev, 'uncategorized'])}
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            未分類
+          </button>
         </div>
       </div>
 
@@ -436,112 +636,63 @@ export function TagsPage() {
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <SortableContext items={filtered.map((x) => x.id)} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {filtered.map((ts) => {
-                const catName = categories?.find((c) => c.id === ts.category_id)?.name
-                const longPressHandlers = getLongPressHandlers(ts.id)
-                return (
-                  <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive}>
-                    {({ listeners: touchHandleListeners }) => (
-                    <div id={`tagset-card-${ts.id}`} 
-                      onClick={(e) => {
-                        if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
-                          e.stopPropagation()
-                          handleItemClick(ts.id, e)
-                        } else {
-                          setSelectedTagSetForDetail(ts)
-                        }
-                      }}
-                      onMouseDown={longPressHandlers.onMouseDown}
-                      onMouseUp={longPressHandlers.onMouseUp}
-                      onMouseLeave={longPressHandlers.onMouseLeave}
-                      onTouchStart={longPressHandlers.onTouchStart}
-                      onTouchEnd={longPressHandlers.onTouchEnd}
-                      className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
-                        isMultiSelectMode && isSelected(ts.id)
-                          ? 'border-purple-500/50 ring-1 ring-purple-500/30 bg-surface'
-                          : 'border-[rgba(255,255,255,0.06)] bg-surface'
-                      }`}>
-                      
-                      {isMultiSelectMode && (
-                        <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-purple-400 border border-[rgba(255,255,255,0.08)]">
-                          {isSelected(ts.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+          <div className="space-y-6">
+            {visibleCategories.map((cat) => {
+              const catKey = cat.id
+              const sectionCards = filtered.filter((ts) => ts.category_id === cat.id)
+              const expanded = isExpanded(catKey)
+
+              return (
+                <div key={catKey} className="space-y-3" id={`category-section-${catKey}`}>
+                  <button
+                    type="button"
+                    id={`category-section-header-${catKey}`}
+                    onClick={() => toggleSection(catKey)}
+                    className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                  >
+                    {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
+                    <span>{cat.name}</span>
+                    <span className="text-xs font-normal text-zinc-500">({sectionCards.length}件)</span>
+                  </button>
+
+                  {expanded && (
+                    <SortableContext items={sectionCards.map((x) => x.id)} strategy={rectSortingStrategy}>
+                      <CategorySectionDroppable containerId={`category-container-${catKey}`} isEmpty={sectionCards.length === 0}>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                          {sectionCards.map((ts) => renderTagSetCard(ts))}
                         </div>
-                      )}
+                      </CategorySectionDroppable>
+                    </SortableContext>
+                  )}
+                </div>
+              )
+            })}
 
-                      {/* タッチ用ドラッグハンドル */}
-                      {!isMultiSelectMode && isDndActive && (
-                        <button
-                          type="button"
-                          className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
-                          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                          onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
-                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                          {...touchHandleListeners}
-                          title="ドラッグして並び替え"
-                          aria-label="並び替えハンドル"
-                        >
-                          <GripVertical size={14} />
-                        </button>
-                      )}
+            {showUncategorized && (
+              <div key="uncategorized" className="space-y-3" id="category-section-uncategorized">
+                <button
+                  type="button"
+                  id="category-section-header-uncategorized"
+                  onClick={() => toggleSection('uncategorized')}
+                  className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                >
+                  {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
+                  <span>未分類</span>
+                  <span className="text-xs font-normal text-zinc-500">({uncategorizedItems.length}件)</span>
+                </button>
 
-                      <ImageCarousel
-                        thumbnailPath={ts.thumbnail_path}
-                        snapshotPaths={ts.snapshot_paths}
-                        alt={ts.name}
-                        className="w-full"
-                        style={aspectRatioStyle}
-                      >
-                        <button id={`tagset-edit-${ts.id}`}
-                          onClick={(e) => { e.stopPropagation(); openEdit(ts) }}
-                          className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-[#7C6FDD]/20 hover:text-[#7C6FDD]">
-                          <Pencil size={13} />
-                        </button>
-                        <button id={`tagset-delete-${ts.id}`}
-                          onClick={(e) => { e.stopPropagation(); if (confirm('Delete this tag set?')) deleteTagSet.mutate(ts.id) }}
-                          className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
-                          <Trash2 size={13} />
-                        </button>
-                      </ImageCarousel>
-
-                      <div className="p-3 flex-1 flex flex-col justify-between gap-2">
-                        <div className="space-y-1.5 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-xs font-semibold text-zinc-200 truncate flex-1" title={ts.name}>{ts.name}</p>
-                            {catName && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C6FDD]/15 text-[#a99ef7] border border-[#7C6FDD]/25">
-                                {catName}
-                              </span>
-                            )}
-                          </div>
-                          {ts.description && <p className="text-[10px] text-zinc-500 line-clamp-2" title={ts.description}>{ts.description}</p>}
-                        </div>
-
-                        <div className="flex flex-wrap gap-1 overflow-hidden max-h-[44px]">
-                          {ts.tags.slice(0, 5).map((tag, i) => (
-                            <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-[rgba(124,111,221,0.06)] border border-[rgba(124,111,221,0.15)] text-[#a99ef7] font-mono truncate max-w-[80px]">{tag}</span>
-                          ))}
-                          {ts.tags.length > 5 && <span className="text-[9px] px-1 py-0.5 text-zinc-600 font-medium">+{ts.tags.length - 5}</span>}
-                        </div>
-
-                        <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
-                          <span className="text-[9px] text-zinc-600">{ts.tags.length} tags</span>
-                          <button id={`copy-tagset-${ts.id}`}
-                            onClick={(e) => { e.stopPropagation(); handleCopy(ts.id, ts.tags) }}
-                            className={`text-[9px] px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${copiedId === ts.id ? 'bg-accent-green/20 text-accent-green border border-accent-green/30' : 'bg-surface-2 border border-[rgba(255,255,255,0.08)] text-zinc-500 hover:text-zinc-300'}`}>
-                            <Copy size={9} />{copiedId === ts.id ? 'Copied' : 'Copy'}
-                          </button>
-                        </div>
+                {isExpanded('uncategorized') && (
+                  <SortableContext items={uncategorizedItems.map((x) => x.id)} strategy={rectSortingStrategy}>
+                    <CategorySectionDroppable containerId="category-container-uncategorized" isEmpty={uncategorizedItems.length === 0}>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {uncategorizedItems.map((ts) => renderTagSetCard(ts))}
                       </div>
-
-                    </div>
-                    )}
-                  </SortableTagSetCard>
-                )
-              })}
-            </div>
-          </SortableContext>
+                    </CategorySectionDroppable>
+                  </SortableContext>
+                )}
+              </div>
+            )}
+          </div>
 
           <DragOverlay>
             {activeId && (

@@ -492,10 +492,12 @@ export interface WorkflowPresetBulkDeleteRequest {
 }
 
 export interface LoraReorder {
+  category_id?: number | null
   ordered_ids: number[]
 }
 
 export interface TagSetReorder {
+  category_id?: number | null
   ordered_ids: number[]
 }
 

@@ -1,21 +1,23 @@
-# Implementation Plan: REQ-285 SpeechBubbleEditorModal の Canvas 操作分離とセクション部品化
+﻿# Implementation Plan: REQ-269 タグセット・LoRAのカテゴリセクション化とセクション内スコープ並び替え（Phase 1）
 
 ## 1. Overview & Architectural Goals
-本実装計画は、プロジェクト最大規模の単一コンポーネントである `SpeechBubbleEditorModal.tsx`（1,553行）を対象とし、Canvas対話操作・永続化API処理・UIセクション群を独立したモジュールへ分離・部品化することで、保守性・可読性の向上およびAIコンテキスト消費の極小化を図るものである（リファクタ計画 PBI-REF-04 準拠）。
 
-### Target Architecture
-```
-frontend/src/components/SpeechBubbleEditorModal/
-├─ index.tsx                         # モーダル枠・全体State統合・ショートカット（約150行）
-├─ types.ts                          # 型定義（MobileTab, SpeechBubbleEditorProps等）（約60行）
-├─ hooks/
-│  ├─ useBubbleCanvasInteraction.ts  # Canvasマウス/タッチ操作・ROI描画・ドラッグ（約280行）
-│  └─ useSpeechBubblePersistence.ts  # 画像合成・下書きAPI呼出・保存処理（約140行）
-└─ sections/
-   ├─ CanvasViewportSection.tsx      # Canvas本体・しっぽ微調整ツールバー（約140行）
-   ├─ BubbleSaveExportBar.tsx        # 下部保存バー（保存モード・アルバム選択）（約110行）
-   └─ CandidateDebugDrawer.tsx       # 自動検出候補のフィルタ・ソートテーブル（約130行）
-```
+本実装計画は、`TagsPage` および `LoRAsPage` のカード一覧を従来の単一フラットグリッドから「カテゴリ別アコーディオンセクション」へと刷新し、カテゴリをスコープとした安全なドラッグ＆ドロップ（D&D）並び替えおよびセクション間カテゴリ移動を実現するものである（REQ-269 Phase 1）。
+
+### 主なアーキテクチャ目標
+1. **フラットリストからカテゴリ別セクションへの移行**:
+   - 登録済みカテゴリおよび「未分類（その他）」を独立したアコーディオンセクションとして縦スクロール表示。
+   - セクション開閉状態を `localStorage` に保持し、再訪・リロード時にも復元。
+   - 0件カテゴリを明示表示し、カードのドロップ受け入れ先として利用可能にする。
+2. **カテゴリ複数選択フィルタ（OR条件）**:
+   - 単一選択から複数選択への拡張。未分類（その他）も独立した選択肢として追加。
+   - 選択されたカテゴリに対応するセクションのみを表示・非表示制御。
+3. **スコープ化された安全な D&D 並び替え**:
+   - バックエンドの `/reorder` API を拡張し、`category_id` スコープ内でのみ `sort_order`（0, 1, 2...）を更新。他カテゴリの順序を一切破壊しない。
+   - セクション間ドラッグ時に `category_id` 更新とドロップ先位置への挿入を即時反映（楽観的更新 + 失敗時自動ロールバック）。
+   - 検索語句やBaseModelフィルタ適用時は、リストの部分抽出による順序崩壊を防ぐためD&Dを安全に不活性化。
+4. **完全な後方互換性とスキーマ維持**:
+   - DBスキーマ変更を行わず、レガシーリクエスト（`category_id` 省略時）の動作を100%維持。
 
 ---
 
@@ -23,21 +25,22 @@ frontend/src/components/SpeechBubbleEditorModal/
 
 ```mermaid
 graph TD
-    T1["REQ-285-T1<br/>型定義 (types.ts) &<br/>永続化フック (useSpeechBubblePersistence.ts)"]
-    T2["REQ-285-T2<br/>Canvas操作フック<br/>(useBubbleCanvasInteraction.ts)"]
-    T3["REQ-285-T3<br/>保存バー & 候補デバッグ<br/>(BubbleSaveExportBar / CandidateDebugDrawer)"]
-    T4["REQ-285-T4<br/>Canvasビューポート<br/>(CanvasViewportSection.tsx)"]
-    T5["REQ-285-T5<br/>モーダル統合 (index.tsx) &<br/>前方互換エクスポート (SpeechBubbleEditorModal.tsx)"]
+    T1["REQ-269-T1<br/>Backend: TagSet スコープ付き並び替え API<br/>(schemas/routers/tests)"]
+    T2["REQ-269-T2<br/>Backend: LoRA スコープ付き並び替え API<br/>(schemas/routers/tests)"]
+    T3["REQ-269-T3<br/>Frontend: API型拡張 & アコーディオン永続化フック<br/>(types/client/useAccordionSections)"]
+    T4["REQ-269-T4<br/>Frontend: TagsPage アコーディオン化 & D&D並び替え<br/>(TagsPage.tsx & test)"]
+    T5["REQ-269-T5<br/>Frontend: LoRAsPage アコーディオン化 & D&D並び替え<br/>(LoRAsPage.tsx & test)"]
 
-    T1 --> T2
-    T1 --> T3
-    T2 --> T4
+    T1 --> T4
+    T3 --> T4
+    T2 --> T5
     T3 --> T5
-    T4 --> T5
 ```
 
-- **並列性（Parallelism）**: T1完了後、Canvas操作フック（T2）と独立したUIセクション（T3: 保存バー・デバッグ候補）は並列に実装可能。
-- **最大階層深度（Max Depth）**: 4層（T1 → T2 → T4 → T5）。制約を満たす。
+- **並列性（Parallelism）**:
+  - レイヤー 1（T1, T2, T3）は完全に独立しており、バックエンド2件とフロントエンド基盤1件を並列実行可能。
+  - レイヤー 2（T4, T5）はそれぞれの依存関係（T1+T3, T2+T3）完了後、並列実行可能。
+- **最大階層深度（Max Depth）**: 2層（制約 <= 3-4層を満たす）。
 
 ---
 
@@ -45,45 +48,33 @@ graph TD
 
 | タスクID | タイトル | サブシステム | 対象ファイル | 変更行数目安 | 検証コマンド |
 |---|---|---|---|---|---|
-| **REQ-285-T1** | 型定義と永続化フックの抽出 | frontend | `frontend/src/components/SpeechBubbleEditorModal/types.ts`<br/>`frontend/src/components/SpeechBubbleEditorModal/hooks/useSpeechBubblePersistence.ts` | ~200行 | `cd frontend && npm run typecheck` |
-| **REQ-285-T2** | Canvas操作・描画ループフックの抽出 | frontend | `frontend/src/components/SpeechBubbleEditorModal/hooks/useBubbleCanvasInteraction.ts` | ~280行 | `cd frontend && npm run typecheck` |
-| **REQ-285-T3** | 保存バーと候補デバッグセクションの分離 | frontend | `frontend/src/components/SpeechBubbleEditorModal/sections/BubbleSaveExportBar.tsx`<br/>`frontend/src/components/SpeechBubbleEditorModal/sections/CandidateDebugDrawer.tsx` | ~240行 | `cd frontend && npm run typecheck` |
-| **REQ-285-T4** | Canvasビューポートセクションの分離 | frontend | `frontend/src/components/SpeechBubbleEditorModal/sections/CanvasViewportSection.tsx` | ~140行 | `cd frontend && npm run typecheck` |
-| **REQ-285-T5** | モーダル全体の統合と前方互換リダイレクト | frontend | `frontend/src/components/SpeechBubbleEditorModal/index.tsx`<br/>`frontend/src/components/SpeechBubbleEditorModal.tsx` | ~250行 | `cd frontend && npm run typecheck && npx vitest run src/components/__tests__/SpeechBubbleEditorModal.test.tsx` |
+| **REQ-269-T1** | Backend: TagSet スコープ付き並び替え API の拡張と単体テスト | backend | `backend/app/schemas/tag_set.py`<br/>`backend/app/routers/tag_sets.py`<br/>`backend/tests/test_tag_sets_reorder.py` [NEW] | ~120行 | `backend\.venv\Scripts\python -m pytest backend/tests/test_tag_sets_reorder.py` |
+| **REQ-269-T2** | Backend: LoRA スコープ付き並び替え API の拡張と単体テスト | backend | `backend/app/schemas/lora.py`<br/>`backend/app/routers/loras.py`<br/>`backend/tests/test_loras_reorder.py` [NEW] | ~120行 | `backend\.venv\Scripts\python -m pytest backend/tests/test_loras_reorder.py` |
+| **REQ-269-T3** | Frontend: APIクライアント型拡張 & カテゴリアコーディオン状態永続化フック | frontend | `frontend/src/api/types.ts`<br/>`frontend/src/api/client.ts`<br/>`frontend/src/hooks/useAccordionSections.ts` [NEW] | ~150行 | `cd frontend; npm run typecheck` |
+| **REQ-269-T4** | Frontend: TagsPage のカテゴリ別アコーディオンセクション化とセクション内・間D&D実装 | frontend | `frontend/src/pages/TagsPage.tsx`<br/>`frontend/src/pages/__tests__/TagsPage.test.tsx` | ~250行 | `cd frontend; npx.cmd vitest run src/pages/__tests__/TagsPage.test.tsx` |
+| **REQ-269-T5** | Frontend: LoRAsPage のカテゴリ別アコーディオンセクション化とセクション内・間D&D実装 | frontend | `frontend/src/pages/LoRAsPage.tsx`<br/>`frontend/src/pages/__tests__/LoRAsPage.test.tsx` | ~250行 | `cd frontend; npx.cmd vitest run src/pages/__tests__/LoRAsPage.test.tsx` |
 
 ---
 
 ## 4. Trade-off Disclosure & Architectural Considerations
 
-### トレードオフ 1: サブコンポーネントへの State リフトアップ vs 個別フック直結
-- **検討案 A**: `useBubbleCanvasInteraction` や `useSpeechBubblePersistence` の返り値をすべて各セクション（`CanvasViewportSection` や `BubbleSaveExportBar`）の内部で直接呼び出す。
-- **検討案 B（採用）**: モーダル最上位の `index.tsx` で両フックを呼び出し、Props 経由で各セクションに注入する（State Lift-up）。
-- **理由**:
-  - `bubbles` や `selectedBubbleId` は `SpeechBubbleControls`（既存コンポーネント）やキーボードショートカット、オフスクリーン合成保存処理の全域で同期して参照・更新される。
-  - セクション内部にフックを隠蔽すると、Stateの二重管理や不要な再レンダリングループが発生するリスクがあるため、Props バインディングによる単一情報源（SSoT）を維持する。
+### トレードオフ 1: 単一 API コールによるアトミックな並び替え＆カテゴリ移動 vs 2段階 API（移動 PATCH + 並び替え PUT）
+- **検討案 A（2段階 API）**: カードを移動した際に `PATCH /api/tag-sets/{id}/category` でカテゴリを変更し、その後 `PUT /api/tag-sets/reorder` で順序を確定する。
+  - *問題点*: 2回のリクエストが発生し、ネットワーク遅延による画面のチラつきや、片方だけ成功してもう片方が失敗する分散不整合リスクが生じる。
+- **検討案 B（採用: 単一 API でのアトミック更新）**:
+  - `PUT /api/tag-sets/reorder` のペイロードに `category_id` を含め、対象リスト内の全アイテムの `sort_order` と同時に `category_id` を1トランザクションで確定更新する。
+  - *メリット*: 1回の通信で完結し、失敗時の完全なDBロールバックとクライアント楽観的更新の即時ロールバックが保証される。
 
-### トレードオフ 2: 既存 `SpeechBubbleEditorModal.tsx` の削除 vs 再エクスポート転送層（Forwarder）
-- **検討案 A**: `frontend/src/components/SpeechBubbleEditorModal.tsx` を削除し、ディレクトリ `SpeechBubbleEditorModal/index.tsx` のみとする。
-- **検討案 B（採用）**: `frontend/src/components/SpeechBubbleEditorModal.tsx` を残し、`export * from './SpeechBubbleEditorModal/index'` とする。
-- **理由**:
-  - `HistoryPage.tsx` や `SpeechBubbleEditorModal.test.tsx` において、`import { SpeechBubbleEditorModal } from '../components/SpeechBubbleEditorModal'` 形式でインポートされており、ファイル拡張子省略のビルド設定・テストモックとの完全な互換性を担保できるため。
+### トレードオフ 2: フロントエンド一括取得・クライアントグルーピング vs カテゴリ毎の個別フェッチ
+- **検討案 A（個別フェッチ）**: セクションごとに個別の React Query を実行する。
+  - *問題点*: カテゴリ数（5〜10件）に応じた同時リクエストが発生し、N+1的な負荷とロード状態のバラつきが発生する。
+- **検討案 B（採用: クライアントサイド・セクショニング）**:
+  - ページ単位で全アイテムを一括取得（`tagSetsApi.list(undefined, baseModels)`）し、フロントエンド側で `category_id` に応じて各セクションへ高速分配する。
+  - *メリット*: リクエストは1回で済み、セクション間ドラッグ時の即時再レンダリングやフィルタ適用時のパフォーマンスが最も優れる。
 
-### トレードオフ 3: しっぽ微調整モードの配置場所
-- **検討案 A**: `SpeechBubbleControls.tsx`（右側パネル）に統合する。
-- **検討案 B（採用）**: `CanvasViewportSection.tsx`（Canvas上部オーバーレイ）に維持する。
-- **理由**:
-  - 現状のUI設計として、Canvasのすぐ上で接点ドラッグのON/OFFおよびリセットを行える視認性が確立されており、既存のUXとテスト（テストセレクタ `aria-label="しっぽ微調整モード"`）を崩さずにリファクタリングを完結させるため。
-
----
-
-## 5. Verification Plan & Quality Gates
-
-1. **Gate 1 (Typecheck)**:
-   - `cd frontend && npm run typecheck`
-   - 全ファイルでTypeScript型エラー 0 件を確認。
-2. **Gate 2 (Unit & Regression Tests)**:
-   - `cd frontend && npx vitest run src/components/__tests__/SpeechBubbleEditorModal.test.tsx`
-   - 既存の全24件以上の単体・結合テストが 100% PASS すること。
-3. **Gate 3 (Red Team & Boundary Verification)**:
-   - 微小ROI（10px未満）のリセット、空アルバム名バリデーション、画像未ロード時の保存抑止、エラー時のローディング復帰を保証。
-
+### トレードオフ 3: 検索/BaseModelフィルタ時の D&D 制御
+- **検討案 A**: 絞り込み表示中もD&Dを許可し、表示中のカードのみでインデックスを再計算する。
+  - *問題点*: 検索で非表示になっている同カテゴリのカードの間に割って入る場合の挙動が極めて曖昧になり、予期せぬ順序破壊を招く。
+- **検討案 B（採用）**:
+  - カテゴリフィルタ適用中はセクション内の全カードが表示されているため D&D を100%許可する（AC-7）。
+  - 一方、検索キーワードやBaseModelによる「カード内絞り込み」が有効な間は、D&D を安全に不活性化（`isDndActive = !search && selectedBaseModelIds.length === 0`）する（AC-9）。

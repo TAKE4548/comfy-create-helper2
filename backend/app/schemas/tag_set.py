@@ -44,4 +44,6 @@ class TagSetRead(BaseModel):
 
 
 class TagSetReorder(BaseModel):
+    category_id: Optional[int] = None
     ordered_ids: list[int]
+

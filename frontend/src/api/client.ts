@@ -149,7 +149,13 @@ export const lorasApi = {
   update: (id: number, data: unknown) => request<Lora>(`/loras/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/loras/${id}`, { method: 'DELETE' }),
   getComfyModels: () => request<ComfyLoraModel[]>('/loras/comfy-models'),
-  reorder: (ordered_ids: number[]) => request<void>('/loras/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
+  reorder: (ordered_ids: number[], category_id?: number | null) => {
+    const body: { ordered_ids: number[]; category_id?: number | null } = { ordered_ids }
+    if (category_id !== undefined) {
+      body.category_id = category_id
+    }
+    return request<void>('/loras/reorder', { method: 'PUT', body: JSON.stringify(body) })
+  },
 }
 
 // 笏笏笏 Tag Sets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -164,7 +170,13 @@ export const tagSetsApi = {
   create: (data: unknown) => request<TagSet>('/tag-sets', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: unknown) => request<TagSet>(`/tag-sets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/tag-sets/${id}`, { method: 'DELETE' }),
-  reorder: (ordered_ids: number[]) => request<void>('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),
+  reorder: (ordered_ids: number[], category_id?: number | null) => {
+    const body: { ordered_ids: number[]; category_id?: number | null } = { ordered_ids }
+    if (category_id !== undefined) {
+      body.category_id = category_id
+    }
+    return request<void>('/tag-sets/reorder', { method: 'PUT', body: JSON.stringify(body) })
+  },
 }
 
 // 笏笏笏 Categories 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏

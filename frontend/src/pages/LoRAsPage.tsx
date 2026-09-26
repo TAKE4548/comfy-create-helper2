@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical } from 'lucide-react'
+import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -10,13 +10,15 @@ import {
   useSensors,
   useSensor,
   MouseSensor,
-  TouchSensor
+  TouchSensor,
+  useDroppable,
 } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
 import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
 import type { Lora, Category, BaseModel } from '../api/types'
+import { useAccordionSections } from '../hooks/useAccordionSections'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
 import {
@@ -82,6 +84,38 @@ function SortableLoraCard({ id, children, disabled }: { id: number; children: (h
   )
 }
 
+function CategorySectionDroppable({
+  containerId,
+  children,
+  isEmpty,
+}: {
+  containerId: string
+  children: React.ReactNode
+  isEmpty: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: containerId,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      id={containerId}
+      className={`min-h-[60px] rounded-xl transition-colors ${
+        isOver ? 'bg-accent-green/5 ring-1 ring-accent-green/30' : ''
+      }`}
+    >
+      {isEmpty ? (
+        <div className="py-8 text-center text-xs text-zinc-500 border border-dashed border-[rgba(255,255,255,0.08)] rounded-xl">
+          カードがありません（ここにドラッグ＆ドロップしてカテゴリ移動）
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  )
+}
+
 export function LoRAsPage() {
   const qc = useQueryClient()
   
@@ -114,8 +148,9 @@ export function LoRAsPage() {
     })
   )
   const [search, setSearch] = useState('')
-  const [selectedCat, setSelectedCat] = useState<number | null>(null)
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<(number | 'uncategorized')[]>([])
   const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
+  const { isExpanded, toggleSection } = useAccordionSections('ps_accordion_loras')
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [tooltipLora, setTooltipLora] = useState<number | null>(null)
@@ -134,9 +169,9 @@ export function LoRAsPage() {
     queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
   })
   const { data: loras } = useQuery({
-    queryKey: ['loras', selectedCat, selectedBaseModelIds],
+    queryKey: ['loras', selectedBaseModelIds],
     queryFn: () => lorasApi.list(
-      selectedCat ?? undefined,
+      undefined,
       selectedBaseModelIds.length > 0 ? selectedBaseModelIds.join(',') : undefined
     ) as Promise<Lora[]>,
   })
@@ -176,7 +211,8 @@ export function LoRAsPage() {
   })
 
   const reorderLoras = useMutation({
-    mutationFn: (ordered_ids: number[]) => lorasApi.reorder(ordered_ids),
+    mutationFn: ({ ordered_ids, category_id }: { ordered_ids: number[]; category_id?: number | null }) =>
+      lorasApi.reorder(ordered_ids, category_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loras'] }),
   })
 
@@ -258,7 +294,7 @@ export function LoRAsPage() {
     (l.description ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
-  const isDndActive = !search && selectedCat === null && selectedBaseModelIds.length === 0
+  const isDndActive = !search && selectedBaseModelIds.length === 0
 
   const handleCopy = (id: number, words: string) => {
     navigator.clipboard.writeText(words)
@@ -275,24 +311,66 @@ export function LoRAsPage() {
     setActiveId(null)
     if (!over || active.id === over.id) return
 
-    if (isMultiSelectMode && selectedIds.has(active.id as number) && selectedIds.size > 1) {
-      if (selectedIds.has(over.id as number)) return
-      // グループ移動
-      const activeIdx = items.findIndex(i => i.id === active.id)
-      const overIdx = items.findIndex(i => i.id === over.id)
-      const selected = items.filter(i => selectedIds.has(i.id))
-      const nonSelected = items.filter(i => !selectedIds.has(i.id))
-      const overIdxInNonSelected = nonSelected.findIndex(i => i.id === over.id)
-      const insertAt = overIdx > activeIdx ? overIdxInNonSelected + 1 : overIdxInNonSelected
-      const newOrder = [...nonSelected.slice(0, insertAt), ...selected, ...nonSelected.slice(insertAt)]
-      setItems(newOrder)
-      reorderLoras.mutate(newOrder.map(i => i.id))
+    const activeItem = items.find((i) => i.id === Number(active.id))
+    if (!activeItem) return
+
+    const sourceCatId = activeItem.category_id ?? 'uncategorized'
+
+    let targetCatId: number | null = null
+    let targetCardId: number | null = null
+
+    if (typeof over.id === 'string' && over.id.startsWith('category-container-')) {
+      const raw = over.id.replace('category-container-', '')
+      targetCatId = raw === 'uncategorized' ? null : Number(raw)
     } else {
-      const oldIdx = items.findIndex((x) => x.id === Number(active.id))
-      const newIdx = items.findIndex((x) => x.id === Number(over.id))
-      const reordered = arrayMove(items, oldIdx, newIdx)
-      setItems(reordered)
-      reorderLoras.mutate(reordered.map((x) => x.id))
+      const overItem = items.find((i) => i.id === Number(over.id))
+      if (!overItem) return
+      targetCatId = overItem.category_id ?? null
+      targetCardId = overItem.id
+    }
+
+    const previousItems = [...items]
+    const destCatKey = targetCatId ?? 'uncategorized'
+
+    if (sourceCatId === destCatKey) {
+      // 同一カテゴリ内の並び替え
+      const sectionCards = items.filter((i) => (i.category_id ?? null) === targetCatId)
+      const oldIdx = sectionCards.findIndex((i) => i.id === activeItem.id)
+      const newIdx = targetCardId ? sectionCards.findIndex((i) => i.id === targetCardId) : sectionCards.length - 1
+      if (oldIdx === newIdx || oldIdx === -1 || newIdx === -1) return
+
+      const reorderedSection = arrayMove(sectionCards, oldIdx, newIdx)
+      let sectionIdx = 0
+      const newItems = items.map((item) => {
+        if ((item.category_id ?? null) === targetCatId) {
+          return reorderedSection[sectionIdx++]
+        }
+        return item
+      })
+      setItems(newItems)
+      reorderLoras.mutate(
+        { ordered_ids: reorderedSection.map((x) => x.id), category_id: targetCatId },
+        { onError: () => setItems(previousItems) }
+      )
+    } else {
+      // セクション間カテゴリ移動（楽観的更新 + ロールバック）
+      const destCards = items.filter((i) => (i.category_id ?? null) === targetCatId)
+      const insertIdx = targetCardId ? destCards.findIndex((i) => i.id === targetCardId) : destCards.length
+      const updatedActiveItem = { ...activeItem, category_id: targetCatId }
+
+      const newDestCards = [...destCards.slice(0, insertIdx), updatedActiveItem, ...destCards.slice(insertIdx)]
+      const newItems = items.map((i) => (i.id === activeItem.id ? updatedActiveItem : i))
+      setItems(newItems)
+
+      reorderLoras.mutate(
+        { ordered_ids: newDestCards.map((x) => x.id), category_id: targetCatId },
+        {
+          onError: () => {
+            setItems(previousItems)
+            alert('カテゴリ移動の保存に失敗しました。元の位置に戻します。')
+          }
+        }
+      )
     }
   }
 
@@ -320,6 +398,145 @@ export function LoRAsPage() {
           </div>
         </div>
       </div>
+    )
+  }
+
+  const visibleCategories = (categories ?? []).filter((cat) =>
+    selectedCategoryIds.length === 0 || selectedCategoryIds.includes(cat.id)
+  )
+
+  const uncategorizedItems = filteredLoras.filter((i) => !i.category_id)
+  const allUncategorizedItems = items.filter((i) => !i.category_id)
+  const showUncategorized =
+    selectedCategoryIds.includes('uncategorized') ||
+    (selectedCategoryIds.length === 0 && allUncategorizedItems.length > 0)
+
+  const renderLoraCard = (lora: Lora) => {
+    const catName = categories?.find((c) => c.id === lora.category_id)?.name
+    const longPressHandlers = getLongPressHandlers(lora.id)
+    return (
+      <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
+        {({ listeners: touchHandleListeners }) => (
+          <div
+            id={`lora-card-${lora.id}`}
+            onClick={(e) => {
+              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+                e.stopPropagation()
+                handleItemClick(lora.id, e)
+              } else {
+                setSelectedLoraForDetail(lora)
+              }
+            }}
+            onMouseDown={longPressHandlers.onMouseDown}
+            onMouseUp={longPressHandlers.onMouseUp}
+            onMouseLeave={longPressHandlers.onMouseLeave}
+            onTouchStart={longPressHandlers.onTouchStart}
+            onTouchEnd={longPressHandlers.onTouchEnd}
+            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+              isMultiSelectMode && isSelected(lora.id)
+                ? 'border-[#3ECF8E] ring-1 ring-[#3ECF8E]/30 bg-surface'
+                : 'border-[rgba(255,255,255,0.06)] bg-surface'
+            }`}
+          >
+            {/* Checkbox for multi-select */}
+            {isMultiSelectMode && (
+              <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-[#3ECF8E] border border-[rgba(255,255,255,0.08)]">
+                {isSelected(lora.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+              </div>
+            )}
+
+            {/* タッチ用ドラッグハンドル */}
+            {!isMultiSelectMode && isDndActive && (
+              <button
+                type="button"
+                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                {...touchHandleListeners}
+                title="ドラッグして並び替え"
+                aria-label="並び替えハンドル"
+              >
+                <GripVertical size={14} />
+              </button>
+            )}
+
+            <ImageCarousel
+              thumbnailPath={lora.thumbnail_path}
+              snapshotPaths={lora.snapshot_paths}
+              alt={lora.model_name}
+              className="w-full"
+              style={aspectRatioStyle}
+            >
+              <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
+                className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
+                <Pencil size={13} />
+              </button>
+              <button id={`lora-delete-${lora.id}`}
+                onClick={(e) => { e.stopPropagation(); if (confirm('Delete this LoRA?')) deleteLora.mutate(lora.id) }}
+                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+                <Trash2 size={13} />
+              </button>
+            </ImageCarousel>
+
+            <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+              <div className="space-y-1.5 min-w-0">
+                <div>
+                  <p className="text-xs font-medium text-zinc-200 truncate" title={lora.description || lora.model_name}>
+                    {lora.description || lora.model_name.split('/').pop()}
+                  </p>
+                  {lora.description && <p className="text-xs text-zinc-500 truncate mt-0.5" title={lora.model_name}>{lora.model_name.split('/').pop()}</p>}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {catName && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/10 text-accent-green border border-accent-green/20">{catName}</span>}
+                  {(lora.recommended_strength_min != null || lora.recommended_strength_max != null) && (
+                    <span className="text-xs text-zinc-500">
+                      {lora.recommended_strength_min === lora.recommended_strength_max
+                        ? `×${lora.recommended_strength_min}`
+                        : `${lora.recommended_strength_min ?? '?'}~${lora.recommended_strength_max ?? '?'}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {lora.trigger_word_sets.length > 0 && (
+                <div className="space-y-1">
+                  {lora.trigger_word_sets.slice(0, 2).map((tws) => (
+                    <div key={tws.id} className="flex items-center gap-1.5 group/tws">
+                      <p className="text-xs text-zinc-600 truncate flex-1">{tws.words.slice(0, 3).join(', ')}{tws.words.length > 3 ? '…' : ''}</p>
+                      <button id={`copy-trigger-${tws.id}`}
+                        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(tws.words.join(', ')) }}
+                        className="opacity-0 group-hover/tws:opacity-100 transition-opacity text-zinc-500 hover:text-zinc-300">
+                        <Copy size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
+                {lora.file_path ? (
+                  <div className="relative">
+                    <button id={`lora-path-${lora.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseEnter={() => setTooltipLora(lora.id)}
+                      onMouseLeave={() => setTooltipLora(null)}
+                      className="text-zinc-600 hover:text-zinc-400 transition-colors">
+                      <Folder size={13} />
+                    </button>
+                    {tooltipLora === lora.id && (
+                      <div className="absolute bottom-full left-0 mb-1 px-2 py-1 rounded bg-zinc-800 border border-[rgba(255,255,255,0.1)] text-xs text-zinc-300 whitespace-nowrap z-10">{lora.file_path}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div />
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+      </SortableLoraCard>
     )
   }
 
@@ -375,17 +592,25 @@ export function LoRAsPage() {
             className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/40" />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
-          <button id="lora-filter-all" onClick={() => setSelectedCat(null)}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCat === null ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+          <button id="lora-filter-all" onClick={() => setSelectedCategoryIds([])}
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             All
           </button>
-          {categories?.map((cat) => (
-            <button key={cat.id} id={`lora-filter-${cat.id}`}
-              onClick={() => setSelectedCat(cat.id === selectedCat ? null : cat.id)}
-              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCat === cat.id ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
-              {cat.name}
-            </button>
-          ))}
+          {categories?.map((cat) => {
+            const isSelected = selectedCategoryIds.includes(cat.id)
+            return (
+              <button key={cat.id} id={`lora-filter-${cat.id}`}
+                onClick={() => setSelectedCategoryIds(prev => prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id])}
+                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${isSelected ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+                {cat.name}
+              </button>
+            )
+          })}
+          <button id="lora-filter-uncategorized"
+            onClick={() => setSelectedCategoryIds(prev => prev.includes('uncategorized') ? prev.filter(id => id !== 'uncategorized') : [...prev, 'uncategorized'])}
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            未分類
+          </button>
         </div>
       </div>
 
@@ -420,138 +645,63 @@ export function LoRAsPage() {
       {/* Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <SortableContext items={filteredLoras.map((x) => x.id)} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {filteredLoras.map((lora) => {
-                const catName = categories?.find((c) => c.id === lora.category_id)?.name
-                const longPressHandlers = getLongPressHandlers(lora.id)
-                return (
-                  <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
-                    {({ listeners: touchHandleListeners }) => (
-                    <div
-                      id={`lora-card-${lora.id}`}
-                      onClick={(e) => {
-                        if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
-                          e.stopPropagation()
-                          handleItemClick(lora.id, e)
-                        } else {
-                          setSelectedLoraForDetail(lora)
-                        }
-                      }}
-                      onMouseDown={longPressHandlers.onMouseDown}
-                      onMouseUp={longPressHandlers.onMouseUp}
-                      onMouseLeave={longPressHandlers.onMouseLeave}
-                      onTouchStart={longPressHandlers.onTouchStart}
-                      onTouchEnd={longPressHandlers.onTouchEnd}
-                      className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
-                        isMultiSelectMode && isSelected(lora.id)
-                          ? 'border-[#3ECF8E] ring-1 ring-[#3ECF8E]/30 bg-surface'
-                          : 'border-[rgba(255,255,255,0.06)] bg-surface'
-                      }`}
-                    >
-                      {/* Checkbox for multi-select */}
-                      {isMultiSelectMode && (
-                        <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-[#3ECF8E] border border-[rgba(255,255,255,0.08)]">
-                          {isSelected(lora.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+          <div className="space-y-6">
+            {visibleCategories.map((cat) => {
+              const catKey = cat.id
+              const sectionCards = filteredLoras.filter((l) => l.category_id === cat.id)
+              const expanded = isExpanded(catKey)
+
+              return (
+                <div key={catKey} className="space-y-3" id={`category-section-${catKey}`}>
+                  <button
+                    type="button"
+                    id={`category-section-header-${catKey}`}
+                    onClick={() => toggleSection(catKey)}
+                    className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                  >
+                    {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
+                    <span>{cat.name}</span>
+                    <span className="text-xs font-normal text-zinc-500">({sectionCards.length}件)</span>
+                  </button>
+
+                  {expanded && (
+                    <SortableContext items={sectionCards.map((x) => x.id)} strategy={rectSortingStrategy}>
+                      <CategorySectionDroppable containerId={`category-container-${catKey}`} isEmpty={sectionCards.length === 0}>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                          {sectionCards.map((l) => renderLoraCard(l))}
                         </div>
-                      )}
+                      </CategorySectionDroppable>
+                    </SortableContext>
+                  )}
+                </div>
+              )
+            })}
 
-                      {/* タッチ用ドラッグハンドル */}
-                      {!isMultiSelectMode && isDndActive && (
-                        <button
-                          type="button"
-                          className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
-                          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                          onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
-                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                          {...touchHandleListeners}
-                          title="ドラッグして並び替え"
-                          aria-label="並び替えハンドル"
-                        >
-                          <GripVertical size={14} />
-                        </button>
-                      )}
-                      
-                      <ImageCarousel
-                        thumbnailPath={lora.thumbnail_path}
-                        snapshotPaths={lora.snapshot_paths}
-                        alt={lora.model_name}
-                        className="w-full"
-                        style={aspectRatioStyle}
-                      >
-                        <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
-                          className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
-                          <Pencil size={13} />
-                        </button>
-                        <button id={`lora-delete-${lora.id}`}
-                          onClick={(e) => { e.stopPropagation(); if (confirm('Delete this LoRA?')) deleteLora.mutate(lora.id) }}
-                          className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
-                          <Trash2 size={13} />
-                        </button>
-                      </ImageCarousel>
+            {showUncategorized && (
+              <div key="uncategorized" className="space-y-3" id="category-section-uncategorized">
+                <button
+                  type="button"
+                  id="category-section-header-uncategorized"
+                  onClick={() => toggleSection('uncategorized')}
+                  className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                >
+                  {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
+                  <span>未分類</span>
+                  <span className="text-xs font-normal text-zinc-500">({uncategorizedItems.length}件)</span>
+                </button>
 
-                      <div className="p-3 flex-1 flex flex-col justify-between gap-2">
-                        <div className="space-y-1.5 min-w-0">
-                          <div>
-                            <p className="text-xs font-medium text-zinc-200 truncate" title={lora.description || lora.model_name}>
-                              {lora.description || lora.model_name.split('/').pop()}
-                            </p>
-                            {lora.description && <p className="text-xs text-zinc-500 truncate mt-0.5" title={lora.model_name}>{lora.model_name.split('/').pop()}</p>}
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {catName && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/10 text-accent-green border border-accent-green/20">{catName}</span>}
-                            {(lora.recommended_strength_min != null || lora.recommended_strength_max != null) && (
-                              <span className="text-xs text-zinc-500">
-                                {lora.recommended_strength_min === lora.recommended_strength_max
-                                  ? `×${lora.recommended_strength_min}`
-                                  : `${lora.recommended_strength_min ?? '?'}~${lora.recommended_strength_max ?? '?'}`}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {lora.trigger_word_sets.length > 0 && (
-                          <div className="space-y-1">
-                            {lora.trigger_word_sets.slice(0, 2).map((tws) => (
-                              <div key={tws.id} className="flex items-center gap-1.5 group/tws">
-                                <p className="text-xs text-zinc-600 truncate flex-1">{tws.words.slice(0, 3).join(', ')}{tws.words.length > 3 ? '…' : ''}</p>
-                                <button id={`copy-trigger-${tws.id}`}
-                                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(tws.words.join(', ')) }}
-                                  className="opacity-0 group-hover/tws:opacity-100 transition-opacity text-zinc-500 hover:text-zinc-300">
-                                  <Copy size={11} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
-                          {lora.file_path ? (
-                            <div className="relative">
-                              <button id={`lora-path-${lora.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                onMouseEnter={() => setTooltipLora(lora.id)}
-                                onMouseLeave={() => setTooltipLora(null)}
-                                className="text-zinc-600 hover:text-zinc-400 transition-colors">
-                                <Folder size={13} />
-                              </button>
-                              {tooltipLora === lora.id && (
-                                <div className="absolute bottom-full left-0 mb-1 px-2 py-1 rounded bg-zinc-800 border border-[rgba(255,255,255,0.1)] text-xs text-zinc-300 whitespace-nowrap z-10">{lora.file_path}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <div />
-                          )}
-                        </div>
+                {isExpanded('uncategorized') && (
+                  <SortableContext items={uncategorizedItems.map((x) => x.id)} strategy={rectSortingStrategy}>
+                    <CategorySectionDroppable containerId="category-container-uncategorized" isEmpty={uncategorizedItems.length === 0}>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {uncategorizedItems.map((l) => renderLoraCard(l))}
                       </div>
-
-                    </div>
-                    )}
-                  </SortableLoraCard>
-                )
-              })}
-            </div>
-          </SortableContext>
+                    </CategorySectionDroppable>
+                  </SortableContext>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Drag Overlay */}
           <DragOverlay>

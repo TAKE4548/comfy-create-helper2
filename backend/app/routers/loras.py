@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 import httpx
 from sqlalchemy.orm import Session
@@ -101,8 +101,12 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
 
 @router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
 def reorder_loras(payload: schemas.LoraReorder, db: Session = Depends(get_db)):
+    is_category_scoped = "category_id" in payload.model_fields_set
     for idx, lora_id in enumerate(payload.ordered_ids):
-        db.query(models.Lora).filter(models.Lora.id == lora_id).update({"sort_order": idx})
+        update_dict: dict[str, Any] = {"sort_order": idx}
+        if is_category_scoped:
+            update_dict["category_id"] = payload.category_id
+        db.query(models.Lora).filter(models.Lora.id == lora_id).update(update_dict)
     db.commit()
 
 
