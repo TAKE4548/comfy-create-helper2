@@ -148,3 +148,4 @@ scratch/
 .vite/
 logs/
 
+*.db

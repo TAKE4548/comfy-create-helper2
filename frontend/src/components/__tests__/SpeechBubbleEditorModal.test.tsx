@@ -1019,4 +1019,197 @@ describe('SpeechBubbleEditorModal', () => {
       window.Image = OriginalImage
     }
   })
+
+  describe('Red Teaming (boundary & error cases)', () => {
+    it('Red-1: ignores and resets micro ROI (<10px) without calling API', async () => {
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      const canvas = document.querySelector('canvas')!
+      // Drag in empty area with micro delta (< 10px, e.g. 5px by 5px)
+      fireEvent.mouseDown(canvas, { clientX: 300, clientY: 300 })
+      fireEvent.mouseMove(canvas, { clientX: 305, clientY: 305 })
+      fireEvent.mouseUp(canvas)
+
+      expect(snapshotsApi.detectBubbleROI).not.toHaveBeenCalled()
+    })
+
+    it('Red-2: validates empty new album name and interrupts save with alert', async () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+      const OriginalImage = window.Image
+      class MockLoadedImage {
+        src = ''
+        naturalWidth = 500
+        naturalHeight = 500
+        onload: (() => void) | null = null
+        constructor() {
+          setTimeout(() => {
+            if (this.onload) this.onload()
+          }, 0)
+        }
+      }
+      window.Image = MockLoadedImage as any
+
+      try {
+        renderWithQuery(
+          <SpeechBubbleEditorModal
+            snapshot={mockSnapshot}
+            onClose={mockOnClose}
+            onSaved={mockOnSaved}
+          />
+        )
+
+        await waitFor(() => {
+          expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+        })
+
+        const albumSelect = screen.getByTestId('save-album-select')
+        fireEvent.change(albumSelect, { target: { value: 'new' } })
+
+        const newAlbumInput = screen.getByTestId('new-album-name-input')
+        fireEvent.change(newAlbumInput, { target: { value: '   ' } })
+
+        const saveBtn = await screen.findByTestId('speech-bubble-save-btn')
+        fireEvent.click(saveBtn)
+
+        await waitFor(() => {
+          expect(alertSpy).toHaveBeenCalledWith('新規アルバム名を入力してください')
+        })
+        expect(snapshotsApi.upload).not.toHaveBeenCalled()
+        expect(mockOnSaved).not.toHaveBeenCalled()
+      } finally {
+        window.Image = OriginalImage
+        alertSpy.mockRestore()
+      }
+    })
+
+    it('Red-3: disables save button when bubbles count is zero', async () => {
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+        />
+      )
+
+      await waitFor(() => {
+        expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+      })
+
+      const deleteBtn = await screen.findByRole('button', { name: /この吹き出しを削除/ })
+      fireEvent.click(deleteBtn)
+
+      await waitFor(() => {
+        const saveBtn = screen.getByTestId('speech-bubble-save-btn')
+        expect(saveBtn).toBeDisabled()
+      })
+    })
+
+    it('Red-4: handles API error safely, restores isSaving flag, and displays alert', async () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(snapshotsApi.upload).mockRejectedValueOnce(new Error('Network 500 Failure'))
+
+      const OriginalImage = window.Image
+      class MockLoadedImage {
+        src = ''
+        naturalWidth = 500
+        naturalHeight = 500
+        onload: (() => void) | null = null
+        constructor() {
+          setTimeout(() => {
+            if (this.onload) this.onload()
+          }, 0)
+        }
+      }
+      window.Image = MockLoadedImage as any
+
+      try {
+        renderWithQuery(
+          <SpeechBubbleEditorModal
+            snapshot={mockSnapshot}
+            onClose={mockOnClose}
+            onSaved={mockOnSaved}
+          />
+        )
+
+        await waitFor(() => {
+          expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+        })
+
+        const albumSelect = screen.getByTestId('save-album-select')
+        fireEvent.change(albumSelect, { target: { value: 'new' } })
+
+        const newAlbumInput = screen.getByTestId('new-album-name-input')
+        fireEvent.change(newAlbumInput, { target: { value: 'Valid Album' } })
+
+        const saveBtn = screen.getByTestId('speech-bubble-save-btn')
+        fireEvent.click(saveBtn)
+
+        await waitFor(() => {
+          expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Network 500 Failure'))
+        })
+
+        await waitFor(() => {
+          expect(saveBtn).not.toBeDisabled()
+        })
+        expect(mockOnClose).not.toHaveBeenCalled()
+      } finally {
+        window.Image = OriginalImage
+        alertSpy.mockRestore()
+        consoleErrorSpy.mockRestore()
+      }
+    })
+
+    it('Red-5: clamps bubble dimensions to minSize (30px) when resizing inwards', async () => {
+      const OriginalImage = window.Image
+      class MockLoadedImage {
+        src = ''
+        naturalWidth = 500
+        naturalHeight = 500
+        onload: (() => void) | null = null
+        constructor() {
+          setTimeout(() => {
+            if (this.onload) this.onload()
+          }, 0)
+        }
+      }
+      window.Image = MockLoadedImage as any
+
+      try {
+        renderWithQuery(
+          <SpeechBubbleEditorModal
+            snapshot={mockSnapshot}
+            onClose={mockOnClose}
+            onSaved={mockOnSaved}
+          />
+        )
+
+        await waitFor(() => {
+          expect(snapshotsApi.detectBubble).toHaveBeenCalled()
+        })
+
+        const canvas = document.querySelector('canvas')!
+        fireEvent.mouseDown(canvas, { clientX: 150, clientY: 130 })
+        fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20 })
+        fireEvent.mouseUp(canvas)
+
+        const wInput = screen.getByLabelText('吹き出し幅') as HTMLInputElement
+        const hInput = screen.getByLabelText('吹き出し高さ') as HTMLInputElement
+        expect(parseInt(wInput.value, 10)).toBeGreaterThanOrEqual(30)
+        expect(parseInt(hInput.value, 10)).toBeGreaterThanOrEqual(30)
+      } finally {
+        window.Image = OriginalImage
+      }
+    })
+  })
 })
