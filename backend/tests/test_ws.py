@@ -1,8 +1,9 @@
-"""Tests for /api/ws WebSocket endpoint (REQ-288)."""
+"""Tests for /api/ws WebSocket endpoint (REQ-288 / REQ-289)."""
 import asyncio
 import json
+import sys
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -35,9 +36,9 @@ def test_ws_stats_types():
             assert isinstance(stats["ram_pct"], (int, float))
             assert 0 <= stats["ram_pct"] <= 100
 
-# ── BE-04: AMD SMI 不可時のフォールバック ──
+# ── BE-04: SMI/GPU モニター不可時のフォールバック ──
 def test_ws_gpu_fallback_when_smi_unavailable():
-    """rocm-smi が利用できない場合 gpu_pct=null になること。"""
+    """GPU メトリクスが利用できない場合 gpu_pct=null になること。"""
     with patch(
         "app.services.resource_monitor.ResourceMonitorService._get_gpu_stats",
         new_callable=AsyncMock,
@@ -66,3 +67,41 @@ def test_ws_multiple_clients():
                 msg2 = json.loads(ws2.receive_text())
                 assert msg1["type"] == "SYSTEM_STATS"
                 assert msg2["type"] == "SYSTEM_STATS"
+
+# ── BE-07: Windows 実機または WindowsGpuMonitor 統合テスト (REQ-289) ──
+def test_ws_windows_gpu_monitor_metrics():
+    """Windows 環境で WindowsGpuMonitor が正常動作し、動的メトリクスが返却されること。"""
+    with TestClient(app) as client:
+        with client.websocket_connect("/api/ws") as ws:
+            data = ws.receive_text()
+            stats = json.loads(data)["data"]
+            if sys.platform == "win32":
+                # Windows 実機では gpu_pct, vram_used_gb, vram_total_gb, vram_pct が取得できる
+                assert stats["gpu_pct"] is not None
+                assert isinstance(stats["gpu_pct"], (int, float))
+                assert 0.0 <= stats["gpu_pct"] <= 100.0
+
+                assert stats["vram_total_gb"] is not None
+                assert stats["vram_total_gb"] > 0
+                assert isinstance(stats["vram_total_gb"], (int, float))
+
+                if stats["vram_used_gb"] is not None:
+                    assert isinstance(stats["vram_used_gb"], (int, float))
+                    assert 0.0 <= stats["vram_used_gb"] <= stats["vram_total_gb"] * 1.5
+
+# ── BE-08: WindowsGpuMonitor 例外発生時のフォールバック (Red Teaming) ──
+def test_ws_windows_gpu_monitor_exception_handling():
+    """WindowsGpuMonitor.collect が例外を発生させた場合でもクラッシュせずフォールバックすること。"""
+    mock_monitor = MagicMock()
+    mock_monitor.vram_total_gb = 16.0
+    mock_monitor.collect.side_effect = RuntimeError("PDH query error")
+
+    with patch("app.services.resource_monitor.resource_monitor._win_gpu_monitor", mock_monitor):
+        with TestClient(app) as client:
+            with client.websocket_connect("/api/ws") as ws:
+                data = ws.receive_text()
+                stats = json.loads(data)["data"]
+                # エラー時でも WebSocket は配信され、CPU/RAM は取得できる
+                assert "cpu_pct" in stats
+                assert stats["gpu_pct"] is None
+                assert stats["vram_total_gb"] == 16.0

@@ -170,13 +170,14 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 
 - **バックエンド配信基盤 (`/api/ws`)**:
   - FastAPI WebSocket エンドポイント `/api/ws` から 2.5 秒間隔で `SYSTEM_STATS` メッセージを Discriminated Union 形式でブロードキャスト。
-  - CPU, RAM（使用量/総量/比率）、GPU 使用率、VRAM（使用量/総量/比率）をサンプリング。AMD SMI（`rocm-smi`）利用不可時は GPU/VRAM 項目を `null` としてフォールバック。
+  - CPU, RAM（使用量/総量/比率）、GPU 使用率、VRAM（使用量/総量/比率）をサンプリング。
+  - Windows 環境（REQ-289）では `WindowsGpuMonitor`（DXGI による VRAM 総量動的検出 + PDH による専用 VRAM 実使用量 / 3D エンジン使用率）により、ComfyUI の稼働状態に依存せずホスト PC の GPU/VRAM 負荷を直接サンプリング。Linux/ROCm 環境では `rocm-smi` から取得し、取得不可時は `null`（UI 表示上は `--`）として安全にフォールバック。
 - **フロントエンド連携 & 省電力設計 (`useSystemStats.ts`, `systemWsService.ts`)**:
   - 再接続時に指数バックオフ（1s, 2s, 4s, 最大10s）を適用。
   - Page Visibility API（`document.visibilityState === 'hidden'`）により、タブ非アクティブ時は接続を自動 suspend して CPU/GPU 負荷と描画を抑制し、タブ復帰時に resume。
 - **UI 表示コンポーネント**:
   - **デスクトップ (`ResourceGaugeHUD.tsx`)**: プレビューエリア右上に半透明 HUD（`bg-[#18181C]/80 backdrop-blur-sm`）として重畳表示。各指標（CPU/RAM/GPU/VRAM）の現在値と詳細（使用GB/総GB）を表示。
-  - **モバイル (`ResourceGaugeChips.tsx`)**: 2段目サブヘッダーにコンパクトなチップ群（横スクロール対応）として表示。
+  - **モバイル (`ResourceGaugeChips.tsx`, REQ-289)**: `MobileLayout.tsx` マウント時に `useSystemStats()` を起動し、ヘッダー1段目（`<h1>Generate</h1>` の右側、`justify-between` スペース）にコンパクトなチップ群として表示。2段目のワークフロー/設定行との幅競合・押し潰れを解消。
   - **段階的警告カラー**: 通常時は `zinc-400`、85% 超過時は警告カラー `amber-400`、95% 超過時は危険カラー `red-400` へ視覚的警告を通知。取得不可時は `--`（`zinc-500`）表示。
 
 ### 2-11. サムネイルストリップ

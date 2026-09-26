@@ -17,6 +17,7 @@ import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { ResourceGaugeChips } from '../../../components/ResourceGauge/ResourceGaugeChips'
+import { useSystemStats } from '../../../hooks/useSystemStats'
 
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 
@@ -27,6 +28,7 @@ export const MobileLayout = ({
 }: {
   state: StateProps
 }) => {
+  useSystemStats()
   const {
     isConnected, isGenerating, progress, previewImage, activeClientId,
     clientId,
@@ -256,6 +258,7 @@ export const MobileLayout = ({
               <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
             )}
           </div>
+          <ResourceGaugeChips />
         </div>
         <div className="flex gap-2">
           <select id="workflow-select-mobile" value={selectedWorkflowId ?? ''}
@@ -300,8 +303,6 @@ export const MobileLayout = ({
               />
             )}
           </div>
-          {/* ★ リソースチップ */}
-          <ResourceGaugeChips />
         </div>
       </div>
 

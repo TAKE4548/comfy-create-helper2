@@ -338,5 +338,24 @@ describe('MobileLayout - TagChipEditor Integration', () => {
 
     expect(handleSelectPresetTabMock).toHaveBeenCalledWith('102')
   })
+
+  it('renders ResourceGaugeChips in the first line of the header next to Generate title', () => {
+    const state = createMockState()
+    render(<MobileLayout state={state} />)
+
+    const title = screen.getByText('Generate')
+    expect(title).toBeInTheDocument()
+
+    // 1段目の親コンテナ (justify-between)
+    const headerRow1 = title.closest('.justify-between')
+    expect(headerRow1).not.toBeNull()
+
+    // ResourceGaugeChips 内のチップ (CPU, RAM, GPU, VRAM) が 1段目ヘッダーに含まれること
+    expect(headerRow1).toHaveTextContent('CPU')
+    expect(headerRow1).toHaveTextContent('RAM')
+    expect(headerRow1).toHaveTextContent('GPU')
+    expect(headerRow1).toHaveTextContent('VRAM')
+  })
 })
+
 

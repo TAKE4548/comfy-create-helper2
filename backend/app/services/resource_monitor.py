@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+import sys
 import time
 from typing import Callable
 
@@ -8,6 +9,232 @@ try:
     import psutil
 except ImportError:
     psutil = None  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Windows 用 GPU / VRAM モニター (DXGI + PDH)
+# ---------------------------------------------------------------------------
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+    import uuid
+
+    HRESULT = ctypes.c_long
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+        @classmethod
+        def from_uuid(cls, u: uuid.UUID):
+            b = u.bytes_le
+            return cls(
+                int.from_bytes(b[0:4], "little"),
+                int.from_bytes(b[4:6], "little"),
+                int.from_bytes(b[6:8], "little"),
+                (ctypes.c_ubyte * 8)(*b[8:16]),
+            )
+
+    class LUID(ctypes.Structure):
+        _fields_ = [
+            ("LowPart", wintypes.DWORD),
+            ("HighPart", wintypes.LONG),
+        ]
+
+    class DXGI_ADAPTER_DESC1(ctypes.Structure):
+        _fields_ = [
+            ("Description", ctypes.c_uint16 * 128),
+            ("VendorId", wintypes.UINT),
+            ("DeviceId", wintypes.UINT),
+            ("SubSysId", wintypes.UINT),
+            ("Revision", wintypes.UINT),
+            ("DedicatedVideoMemory", ctypes.c_size_t),
+            ("DedicatedSystemMemory", ctypes.c_size_t),
+            ("SharedSystemMemory", ctypes.c_size_t),
+            ("AdapterLuid", LUID),
+            ("Flags", wintypes.UINT),
+        ]
+
+    class WindowsGpuMonitor:
+        """DXGI (総量取得) と PDH (使用量取得) を組み合わせた動的GPU/VRAMサンプラー"""
+
+        def __init__(self):
+            self._initialized = False
+            self._pdh = None
+            self._h_query = None
+            self._h_vram = None
+            self._h_gpu = None
+
+            # 起動時にDXGIからVRAM総量を動的検出（取得失敗時は16.0にフォールバック）
+            self.vram_total_gb: float = self._detect_total_vram_gb() or 16.0
+            self._init_pdh()
+
+        def _detect_total_vram_gb(self) -> float | None:
+            """DXGI API を叩いてプライマリGPUの DedicatedVideoMemory (VRAM総容量) を取得する"""
+            try:
+                dxgi = ctypes.windll.dxgi
+                IID_IDXGIFactory1 = GUID.from_uuid(uuid.UUID("{770aae78-f26f-4dba-a829-253c83d1b387}"))
+
+                pFactory = ctypes.c_void_p()
+                if dxgi.CreateDXGIFactory1(ctypes.byref(IID_IDXGIFactory1), ctypes.byref(pFactory)) != 0:
+                    return None
+
+                vtable_ptr = ctypes.cast(pFactory, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
+                vtable = vtable_ptr.contents
+
+                FN_Release = ctypes.WINFUNCTYPE(wintypes.ULONG, ctypes.c_void_p)
+                FN_EnumAdapters1 = ctypes.WINFUNCTYPE(HRESULT, ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(ctypes.c_void_p))
+                FN_GetDesc1 = ctypes.WINFUNCTYPE(HRESULT, ctypes.c_void_p, ctypes.POINTER(DXGI_ADAPTER_DESC1))
+
+                factory_release = FN_Release(vtable[2])
+                enum_adapters1 = FN_EnumAdapters1(vtable[12])
+
+                max_vram_bytes = 0
+                i = 0
+                while True:
+                    pAdapter = ctypes.c_void_p()
+                    if enum_adapters1(pFactory, i, ctypes.byref(pAdapter)) != 0 or not pAdapter.value:
+                        break
+
+                    adapter_vtable_ptr = ctypes.cast(pAdapter, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
+                    adapter_vtable = adapter_vtable_ptr.contents
+                    adapter_release = FN_Release(adapter_vtable[2])
+                    get_desc1 = FN_GetDesc1(adapter_vtable[10])
+
+                    desc = DXGI_ADAPTER_DESC1()
+                    if get_desc1(pAdapter, ctypes.byref(desc)) == 0:
+                        # ソフトウェアレンダラー（Flags & 2）を除外し、最大のVRAMを持つアダプタを採用
+                        if not (desc.Flags & 2):
+                            if desc.DedicatedVideoMemory > max_vram_bytes:
+                                max_vram_bytes = desc.DedicatedVideoMemory
+
+                    adapter_release(pAdapter)
+                    i += 1
+
+                factory_release(pFactory)
+
+                if max_vram_bytes > 0:
+                    raw_gb = max_vram_bytes / (1024 ** 3)
+                    rounded_gb = round(raw_gb)
+                    if abs(raw_gb - rounded_gb) < 0.3:
+                        return float(rounded_gb)
+                    return round(raw_gb, 1)
+                return None
+            except Exception:
+                return None
+
+        def _init_pdh(self):
+            try:
+                self._pdh = ctypes.windll.pdh
+
+                self.PDH_FMT_DOUBLE = 0x00000200
+                self.PDH_FMT_LARGE = 0x00000400
+
+                class PDH_FMT_COUNTERVALUE(ctypes.Structure):
+                    class _UNION(ctypes.Union):
+                        _fields_ = [
+                            ("longValue", ctypes.c_int32),
+                            ("doubleValue", ctypes.c_double),
+                            ("largeValue", ctypes.c_int64),
+                            ("AnsiStringValue", ctypes.c_char_p),
+                            ("WideStringValue", ctypes.c_wchar_p),
+                        ]
+                    _fields_ = [("CStatus", ctypes.c_uint32), ("val", _UNION)]
+
+                class PDH_FMT_COUNTERVALUE_ITEM(ctypes.Structure):
+                    _fields_ = [("szName", ctypes.c_wchar_p), ("FmtValue", PDH_FMT_COUNTERVALUE)]
+
+                self.ItemStruct = PDH_FMT_COUNTERVALUE_ITEM
+
+                h_query = wintypes.HANDLE()
+                if self._pdh.PdhOpenQueryW(None, 0, ctypes.byref(h_query)) != 0:
+                    return
+                self._h_query = h_query
+
+                h_vram = wintypes.HANDLE()
+                self._pdh.PdhAddEnglishCounterW(
+                    self._h_query, r"\GPU Adapter Memory(*)\Dedicated Usage", 0, ctypes.byref(h_vram)
+                )
+                self._h_vram = h_vram
+
+                h_gpu = wintypes.HANDLE()
+                self._pdh.PdhAddEnglishCounterW(
+                    self._h_query, r"\GPU Engine(*engtype_3D)\Utilization Percentage", 0, ctypes.byref(h_gpu)
+                )
+                self._h_gpu = h_gpu
+
+                self._pdh.PdhCollectQueryData(self._h_query)
+                self._initialized = True
+            except Exception:
+                self._initialized = False
+
+
+        def _get_sum(self, h_counter, fmt, is_double=False) -> float:
+            if not self._initialized or not h_counter:
+                return 0.0
+            try:
+                buf_size = ctypes.c_uint32(0)
+                item_count = ctypes.c_uint32(0)
+                self._pdh.PdhGetFormattedCounterArrayW(h_counter, fmt, ctypes.byref(buf_size), ctypes.byref(item_count), None)
+                if buf_size.value == 0:
+                    return 0.0
+
+                buf = ctypes.create_string_buffer(buf_size.value)
+                status = self._pdh.PdhGetFormattedCounterArrayW(
+                    h_counter, fmt, ctypes.byref(buf_size), ctypes.byref(item_count), ctypes.cast(buf, ctypes.c_void_p)
+                )
+                if status != 0:
+                    return 0.0
+
+                items = ctypes.cast(buf, ctypes.POINTER(self.ItemStruct))
+                total = 0.0
+                for i in range(item_count.value):
+                    item = items[i]
+                    if item.FmtValue.CStatus == 0:
+                        if is_double:
+                            total += item.FmtValue.val.doubleValue
+                        else:
+                            total += float(item.FmtValue.val.largeValue)
+                return total
+            except Exception:
+                return 0.0
+
+        def collect(self) -> tuple:
+            if not self._initialized:
+                return (None, None, self.vram_total_gb, None)
+            try:
+                self._pdh.PdhCollectQueryData(self._h_query)
+
+                gpu_pct = round(min(100.0, self._get_sum(self._h_gpu, self.PDH_FMT_DOUBLE, is_double=True)), 1)
+                vram_bytes = self._get_sum(self._h_vram, self.PDH_FMT_LARGE, is_double=False)
+
+                vram_used_gb = round(vram_bytes / (1024 ** 3), 1)
+                vram_pct = round((vram_used_gb / self.vram_total_gb) * 100, 1) if self.vram_total_gb else None
+
+                return (gpu_pct, vram_used_gb, self.vram_total_gb, vram_pct)
+            except Exception:
+                return (None, None, self.vram_total_gb, None)
+
+        def close(self):
+            if self._h_query and self._pdh:
+                try:
+                    self._pdh.PdhCloseQuery(self._h_query)
+                except Exception:
+                    pass
+else:
+    class WindowsGpuMonitor:  # type: ignore
+        def __init__(self):
+            self.vram_total_gb = 16.0
+
+        def collect(self) -> tuple:
+            return (None, None, None, None)
+
+        def close(self):
+            pass
 
 # ---------------------------------------------------------------------------
 # リソース監視サービス
@@ -20,6 +247,14 @@ class ResourceMonitorService:
     _task: asyncio.Task | None = None
     INTERVAL: float = 2.5
 
+    def __init__(self):
+        self._win_gpu_monitor: WindowsGpuMonitor | None = None
+        if sys.platform == "win32":
+            try:
+                self._win_gpu_monitor = WindowsGpuMonitor()
+            except Exception:
+                self._win_gpu_monitor = None
+
     async def start(self, broadcast_fn: Callable[[str], None]) -> None:
         """監視タスクを開始する。"""
         self._task = asyncio.create_task(self._run(broadcast_fn))
@@ -28,6 +263,8 @@ class ResourceMonitorService:
         """監視タスクをキャンセルする。"""
         if self._task:
             self._task.cancel()
+        if self._win_gpu_monitor:
+            self._win_gpu_monitor.close()
 
     async def _run(self, broadcast_fn: Callable[[str], None]) -> None:
         while True:
@@ -63,7 +300,13 @@ class ResourceMonitorService:
         }
 
     async def _get_gpu_stats(self) -> tuple:
-        """rocm-smi から GPU / VRAM 情報を取得する。失敗時は (None, None, None, None) を返す。"""
+        """Windows では WindowsGpuMonitor を、それ以外では rocm-smi から GPU / VRAM 情報を取得する。"""
+        if sys.platform == "win32" and self._win_gpu_monitor:
+            try:
+                return self._win_gpu_monitor.collect()
+            except Exception:
+                return (None, None, self._win_gpu_monitor.vram_total_gb, None)
+
         try:
             result = subprocess.run(
                 ["rocm-smi", "--showmeminfo", "vram", "--json"],
