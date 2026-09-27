@@ -34,6 +34,7 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
     queuePending: [],
     isBatchSubmitting: false,
     activeBatch: null,
+    vramWaitStatus: null,
 
     setFilterOwnSession: (filter) => {
       set({ filterOwnSession: filter })
@@ -77,6 +78,13 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       if (allFinished) {
         set({ isGenerating: false })
       }
+    },
+
+    setVramWaitStatus: (status) => set({ vramWaitStatus: status }),
+
+    cancelVramWait: () => {
+      set({ vramWaitStatus: null })
+      get().abortSubmission?.()
     },
 
     queuePrompt: async (workflow, metadata, options?: QueuePromptOptions) => {
@@ -438,6 +446,7 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
     },
 
     cancelAllJobs: async (): Promise<void> => {
+      get().cancelVramWait()
       get().abortSubmission()
       const activeSubmission = comfyWsService.getActiveSubmissionPromise()
       if (activeSubmission) {

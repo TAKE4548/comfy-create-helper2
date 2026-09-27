@@ -435,3 +435,20 @@ export const promptMetadataApi = {
   get: (promptId: string) =>
     request<PromptMetadataRead>(`/prompt-metadata/${encodeURIComponent(promptId)}`),
 }
+
+// ─── Settings API ──────────────────────────────────────────────────
+export interface VramSettings {
+  vram_min_free_gb: number
+  vram_guard_enabled: boolean
+  vram_free_gb?: number | null
+  vram_total_gb?: number | null
+}
+
+export const settingsApi = {
+  getVram: () => request<VramSettings>('/api/settings/vram'),
+  updateVram: (data: { vram_min_free_gb: number; vram_guard_enabled?: boolean }) =>
+    request<VramSettings>('/api/settings/vram', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+}

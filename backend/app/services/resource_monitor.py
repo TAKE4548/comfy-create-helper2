@@ -3,7 +3,7 @@ import json
 import subprocess
 import sys
 import time
-from typing import Callable
+from typing import Callable, Awaitable, Any
 
 try:
     import psutil
@@ -249,14 +249,54 @@ class ResourceMonitorService:
 
     def __init__(self):
         self._win_gpu_monitor: WindowsGpuMonitor | None = None
+        self._min_free_gb: float = 6.0  # デフォルト6.0GB
+        self._guard_enabled: bool = True
+        self._last_vram_safe: bool | None = None
+        self._last_vram_free_gb: float | None = None
+        self._last_vram_total_gb: float | None = None
+        self._broadcast_fn: Callable[[str], Awaitable[None]] | None = None
         if sys.platform == "win32":
             try:
                 self._win_gpu_monitor = WindowsGpuMonitor()
             except Exception:
                 self._win_gpu_monitor = None
 
-    async def start(self, broadcast_fn: Callable[[str], None]) -> None:
+    def _load_settings_from_db(self) -> None:
+        """起動時にDB app_settings から vram_min_free_gb / vram_guard_enabled を読み込む。"""
+        try:
+            from app.database import SessionLocal
+            from app.models import AppSetting
+            db = SessionLocal()
+            try:
+                setting_val = db.query(AppSetting).filter(AppSetting.key == "vram_min_free_gb").first()
+                if setting_val and setting_val.value is not None:
+                    self._min_free_gb = float(setting_val.value)
+                guard_val = db.query(AppSetting).filter(AppSetting.key == "vram_guard_enabled").first()
+                if guard_val and guard_val.value is not None:
+                    self._guard_enabled = guard_val.value.lower() in ("true", "1")
+            finally:
+                db.close()
+        except Exception:
+            pass
+
+    def update_threshold(self, min_free_gb: float, enabled: bool = True) -> None:
+        """VRAM監視の安全閾値とガード有効フラグを更新する。"""
+        self._min_free_gb = float(min_free_gb)
+        self._guard_enabled = bool(enabled)
+
+    def get_vram_status(self) -> dict:
+        """現在のVRAM状態と閾値設定を返す。"""
+        return {
+            "vram_min_free_gb": self._min_free_gb,
+            "vram_guard_enabled": self._guard_enabled,
+            "vram_free_gb": self._last_vram_free_gb,
+            "vram_total_gb": self._last_vram_total_gb,
+        }
+
+    async def start(self, broadcast_fn: Callable[[str], Awaitable[None]]) -> None:
         """監視タスクを開始する。"""
+        self._load_settings_from_db()
+        self._broadcast_fn = broadcast_fn
         self._task = asyncio.create_task(self._run(broadcast_fn))
 
     async def stop(self) -> None:
@@ -266,11 +306,28 @@ class ResourceMonitorService:
         if self._win_gpu_monitor:
             self._win_gpu_monitor.close()
 
-    async def _run(self, broadcast_fn: Callable[[str], None]) -> None:
+    async def _run(self, broadcast_fn: Callable[[str], Awaitable[None]]) -> None:
         while True:
             data = await self._collect()
             msg = json.dumps({"type": "SYSTEM_STATS", "data": data})
             await broadcast_fn(msg)
+
+            # VRAM回復検知: _last_vram_safe is False and vram_safe is True
+            vram_safe = data.get("vram_safe")
+            if self._last_vram_safe is False and vram_safe is True:
+                recovered_msg = json.dumps({
+                    "type": "VRAM_RECOVERED",
+                    "data": {
+                        "vram_free_gb": data.get("vram_free_gb"),
+                        "vram_min_free_gb": data.get("vram_min_free_gb"),
+                        "ts": data.get("ts"),
+                    },
+                })
+                await broadcast_fn(recovered_msg)
+
+            if vram_safe is not None:
+                self._last_vram_safe = vram_safe
+
             await asyncio.sleep(self.INTERVAL)
 
     async def _collect(self) -> dict:
@@ -287,6 +344,20 @@ class ResourceMonitorService:
             ram_pct = 0.0
 
         gpu_pct, vram_used, vram_total, vram_pct = await self._get_gpu_stats()
+
+        vram_free_gb: float | None = None
+        vram_safe: bool = True
+        if vram_total is not None and vram_used is not None:
+            vram_free_gb = round(max(0.0, vram_total - vram_used), 2)
+            self._last_vram_free_gb = vram_free_gb
+            self._last_vram_total_gb = vram_total
+            if self._guard_enabled:
+                vram_safe = bool(vram_free_gb >= self._min_free_gb)
+            else:
+                vram_safe = True
+        elif vram_total is not None:
+            self._last_vram_total_gb = vram_total
+
         return {
             "cpu_pct": cpu,
             "ram_used_gb": ram_used_gb,
@@ -295,6 +366,10 @@ class ResourceMonitorService:
             "gpu_pct": gpu_pct,
             "vram_used_gb": vram_used,
             "vram_total_gb": vram_total,
+            "vram_free_gb": vram_free_gb,
+            "vram_safe": vram_safe,
+            "vram_min_free_gb": self._min_free_gb,
+            "vram_guard_enabled": self._guard_enabled,
             "vram_pct": vram_pct,
             "ts": int(time.time() * 1000),
         }

@@ -28,12 +28,127 @@ export function useGenerateAction(
     setIsBatchSubmitting,
     fetchQueue,
     setErrorToast,
+    setVramWaitStatus,
   } = hookStore
 
   const getLatestState = () =>
     typeof useGenerationStore.getState === 'function'
       ? useGenerationStore.getState()
       : hookStore
+
+  const waitForVramRecovery = (signal: AbortSignal): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
+      if (signal.aborted) {
+        resolve(false)
+        return
+      }
+
+      const currentState = getLatestState()
+      const stats = currentState.systemStats
+
+      // systemStats が存在し、明示的に vram_safe === false の場合のみ待機
+      if (!stats || stats.vram_safe !== false) {
+        resolve(true)
+        return
+      }
+
+      let timer: any = null
+      let unsubscribe: (() => void) | null = null
+      let isSettled = false
+
+      let waitDurationSec = 0
+      let lastFreeGb = stats.vram_free_gb ?? null
+      let lastRequiredGb = stats.vram_min_free_gb ?? 6.0
+      let lastWaitSec = -1
+
+      const updateWaitStatus = (nextStats = getLatestState().systemStats) => {
+        const nextFree = nextStats?.vram_free_gb ?? lastFreeGb
+        const nextRequired = nextStats?.vram_min_free_gb ?? lastRequiredGb
+        if (
+          nextFree === lastFreeGb &&
+          nextRequired === lastRequiredGb &&
+          waitDurationSec === lastWaitSec
+        ) {
+          return
+        }
+        lastFreeGb = nextFree
+        lastRequiredGb = nextRequired
+        lastWaitSec = waitDurationSec
+
+        setVramWaitStatus?.({
+          isWaiting: true,
+          freeGb: nextFree,
+          requiredGb: nextRequired,
+          waitDurationSec,
+        })
+      }
+
+      updateWaitStatus(stats)
+
+      const cleanup = () => {
+        if (timer) {
+          clearInterval(timer)
+          timer = null
+        }
+        if (unsubscribe) {
+          unsubscribe()
+          unsubscribe = null
+        }
+        setVramWaitStatus?.(null)
+      }
+
+      const finish = (result: boolean) => {
+        if (isSettled) return
+        isSettled = true
+        cleanup()
+        resolve(result)
+      }
+
+      const onAbort = () => {
+        finish(false)
+      }
+
+      signal.addEventListener('abort', onAbort, { once: true })
+
+      timer = setInterval(() => {
+        if (isSettled) return
+        waitDurationSec += 1
+        updateWaitStatus()
+
+        if (waitDurationSec === 10) {
+          setErrorToast?.({
+            message: 'VRAM解放待ちが継続しています。他プロセスの終了待機中（キャンセル可能）',
+            type: 'warning' as any,
+          })
+        }
+      }, 1000)
+
+      let lastSeenStats = stats
+      // Guard against re-entrant execution: setVramWaitStatus triggers a store
+      // update which synchronously re-fires this subscriber. Without the flag,
+      // updateWaitStatus → setVramWaitStatus → subscriber → updateWaitStatus → …
+      // causes "Maximum call stack size exceeded".
+      let isUpdatingWaitStatus = false
+      unsubscribe = useGenerationStore.subscribe((state) => {
+        if (isSettled) return
+        // Only react when systemStats itself changes (not vramWaitStatus or other fields).
+        if (state.systemStats && state.systemStats !== lastSeenStats) {
+          if (isUpdatingWaitStatus) return
+          lastSeenStats = state.systemStats
+          const capturedStats = state.systemStats
+          isUpdatingWaitStatus = true
+          try {
+            updateWaitStatus(capturedStats)
+          } finally {
+            isUpdatingWaitStatus = false
+          }
+          if (capturedStats.vram_safe === true) {
+            finish(true)
+          }
+        }
+      })
+    })
+  }
 
   const applyParamSync = (
     paramValues: Record<string, string>,
@@ -97,6 +212,12 @@ export function useGenerateAction(
         if (abortController.signal.aborted) {
           return
         }
+
+        const isVramOk = await waitForVramRecovery(abortController.signal)
+        if (!isVramOk || abortController.signal.aborted) {
+          return
+        }
+
         let wfJson = injectWorkflowParams({
           workflow,
           paramValues: syncedParamValues,
@@ -217,6 +338,11 @@ export function useGenerateAction(
           // キャンセル中断チェック
           if (abortController.signal.aborted) {
             console.log('Batch queueing aborted by user.')
+            return
+          }
+
+          const isVramOk = await waitForVramRecovery(abortController.signal)
+          if (!isVramOk || abortController.signal.aborted) {
             return
           }
 

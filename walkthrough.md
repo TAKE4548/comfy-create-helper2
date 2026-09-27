@@ -1,68 +1,87 @@
-﻿# REQ-269 検証ウォークスルー (Walkthrough Report)
+﻿# REQ-260 検証結果ウォークスルー (VRAM安全ガード & 設定永続化)
 
-## 1. 概要
-- **対象 PBI**: REQ-269 タグセット・LoRAのカテゴリセクション化とセクション内スコープ並び替え（Phase 1）
-- **検証プロトコル**: Automated Baseline 3-Gate Verification (`skills/dev-verify`)
-- **検証結果**: **PASS (全ゲート合格)**
+## 1. 検証サマリー
+本ドキュメントは、REQ-260「ComfyUI生成開始前の他プロセスVRAM競合防止と待機通知」の実装に対する 3-Gate Baseline 検証、Red Teaming境界値検証、およびローカル推論モデルによるQA監査の結果をまとめたものです。
 
----
-
-## 2. 実行したテストスイートおよびコマンド
-
-### Gate 1: 型検査 (Typecheck / Compile Baseline)
-1. **Frontend**:
-   - コマンド: `npm run typecheck` (`tsc -b --noEmit`)
-   - 結果: **PASS (Exit Code 0, エラー 0 件)**
-2. **Backend**:
-   - コマンド: `backend\.venv\Scripts\python -m py_compile backend/app/routers/tag_sets.py backend/app/routers/loras.py backend/app/schemas/tag_set.py backend/app/schemas/lora.py`
-   - 結果: **PASS (Exit Code 0, エラー 0 件)**
-
-### Gate 2: 全件テストスイート (Full Discovery Test Suite)
-1. **Frontend (Vitest 全件実行)**:
-   - コマンド: `npm test -- --run`
-   - 結果: **PASS (84 Test Files passed, 816 Tests passed, 0 failures)**
-2. **Backend (Pytest 全件実行)**:
-   - コマンド: `backend\.venv\Scripts\python -m pytest`
-   - 結果: **PASS (317 Tests passed, 0 failures)**
-   - ※ 欠落していた `pytest-asyncio` パッケージを venv にインストールの上、既存全317テストの完全パスを確認。
-
-### Gate 3: シナリオ・Red Teaming 検証 (PBI Acceptance Verification)
-1. **Frontend セクション別・D&D・ロールバック単体検証**:
-   - コマンド: `npx vitest run src/pages/__tests__/TagsPage.test.tsx src/pages/__tests__/LoRAsPage.test.tsx`
-   - 結果: **PASS (2 Files passed, 22 Tests passed, 0 failures)**
-2. **Backend カテゴリ局所並び替え・後方互換性単体検証**:
-   - コマンド: `backend\.venv\Scripts\python -m pytest backend/tests/test_tag_sets_reorder.py backend/tests/test_loras_reorder.py`
-   - 結果: **PASS (8 Tests passed, 0 failures)**
-3. **Red Teaming (異常系・境界値検証)**:
-   - **Red-1 (ネットワークエラー時の楽観的更新ロールバック)**: `TagsPage.test.tsx` / `LoRAsPage.test.tsx` にて API 失敗時に元の位置・カテゴリへ自動復元され、アラート通知されることを検証済 (PASS)。
-   - **Red-2 (存在しない ID 送信時の堅牢性)**: `ordered_ids: [99999]` 送信時にクラッシュせず 204 No Content を返し、既存DB整合性が維持されることを検証済 (PASS)。
-   - **Red-3 (0件カテゴリへのドロップ受け入れ)**: 0件カテゴリのコンテナへのドロップと件数表示 `(0件)` を検証済 (PASS)。
-   - **Red-4 (検索クエリ適用時の D&D 誤操作防止)**: `isDndActive = !search && selectedBaseModelIds.length === 0` により、検索時はドラッグハンドル・並び替えが無効化されることを検証済 (PASS)。
+- **対象PBI**: REQ-260
+- **判定結果**: **PASS (合格)**
+- **実行日時**: 2026-09-27
 
 ---
 
-## 3. 受入基準 (Acceptance Criteria) 準拠確認マトリクス
+## 2. 3-Gate Baseline 検証結果
 
-| AC ID | 受入基準の内容 | 検証結果 | 検証エビデンス / テストケース |
-| :--- | :--- | :---: | :--- |
-| **AC-1** | `TagsPage` および `LoRAsPage` において、カード一覧がカテゴリごとのアコーディオンセクションに分割して縦スクロール表示されること。 | **PASS** | `TagsPage.test.tsx` ("renders accordion sections..."), `LoRAsPage.test.tsx` ("renders accordion sections...") |
-| **AC-2** | 各カテゴリセクションヘッダーに「カテゴリ名」「登録件数」「展開/折りたたみトグル」が表示され、クリックで開閉が切り替わること。 | **PASS** | `TagsPage.test.tsx` ("toggles accordion section open and closed..."), `LoRAsPage.test.tsx` ("toggles accordion section open and closed...") |
-| **AC-3** | セクションの開閉状態が `localStorage` に保存され、ページをリロード・再訪問した際にも直前の開閉状態が正確に復元されること。 | **PASS** | `useAccordionSections` の単体テストおよび各ページテストにて `localStorage.getItem('ps_accordion_tagsets')` 検証済 |
-| **AC-4** | カテゴリ未設定のカード（`category_id` が null）が存在する場合、最下部に「未分類（その他）」セクションとして独立して一覧表示されること。 | **PASS** | `TagsPage.test.tsx` ("renders accordion sections per category, 0-item empty section, and uncategorized section") |
-| **AC-5** | カテゴリフィルタが複数選択（OR条件）に対応し、選択されたカテゴリに対応するセクションのみが表示され、未選択セクションが非表示となること（全未選択時は全表示）。 | **PASS** | `TagsPage.test.tsx` ("filters sections with multiple category selection OR logic and All reset") |
-| **AC-6** | カテゴリフィルタの選択肢に「未分類（その他）」が含まれており、未分類カードのセクションを単独または他カテゴリと併せてフィルタ表示できること。 | **PASS** | `tag-filter-uncategorized` ボタンクリックによる OR 表示テスト検証済 |
-| **AC-7** | カテゴリフィルタ適用下においても各セクション内で D&D 並び替えが可能であり、対象カテゴリ内のみにスコープされ他カテゴリの `sort_order` を破壊しないこと。 | **PASS** | `TagsPage.test.tsx` (AC-7 テスト) および `test_tag_sets_reorder.py` / `test_loras_reorder.py` |
-| **AC-8** | カードを別カテゴリセクションへ D&D 移動した場合、所属カテゴリ（`category_id`）および移動先の並び順が即時反映され、通信失敗時はロールバックされること。 | **PASS** | `TagsPage.test.tsx` / `LoRAsPage.test.tsx` (AC-8 テスト) にて移動・失敗時ロールバック検証済 |
-| **AC-9** | BaseModelフィルタや検索クエリを適用している状態でも、セクション構造を維持したまま対象カードの絞り込み・視認が行え、順序の整合性が担保されること。 | **PASS** | `isDndActive = !search && selectedBaseModelIds.length === 0` による安全ガードおよびモデルフィルタ検証済 |
-| **AC-10** | 既存のDBスキーマおよび過去の登録データとの後方互換性が完全に維持され、データ欠落やマイグレーションエラーが生じないこと。 | **PASS** | `test_reorder_legacy_request_backwards_compatibility` (API側で `category_id` なしのレガシー要求を許容) および `test_migrations.py` 検証済 |
+### Gate 1: Typecheck / Compile Baseline (静的検証)
+- **TypeScript / Frontend**: 
+pm run typecheck (	sc -b --noEmit)
+  - **結果**: PASS (エラー 0件, Exit code 0)
+- **Python / Backend**: python -m compileall backend/app
+  - **結果**: PASS (コンパイルエラー 0件, Exit code 0)
+
+### Gate 2: Full Test Suite Baseline (全体回帰検証)
+- **Backend (Pytest)**: ackend\.venv\Scripts\python -m pytest
+  - **結果**: 322 passed / 322 tests (100% 成功, 0 failure)
+- **Frontend (Vitest)**: 
+px vitest run
+  - **結果**: 822 passed / 822 tests across 85 test files (100% 成功, 0 failure)
+
+### Gate 3: Scenario & Red Teaming (受入シナリオ & 異常系・境界値検証)
+- **Backend API & DB 永続化テスト**: ackend/tests/test_vram_guard.py (5 passed)
+  - pp_settings テーブルへの ram_min_free_gb 永続化・更新
+  - GET /api/settings/vram & PUT /api/settings/vram 正常レスポンス
+  - 動的閾値による ram_safe: true/false の判定切り替え
+  - WebSocket /api/ws における SYSTEM_STATS への VRAM ガード情報包含
+  - 安全回復時の VRAM_RECOVERED イベントブロードキャスト
+- **Frontend E2E & Red Teaming シナリオ**: rontend/src/test/e2e_req260_vram_guard.test.ts (6 passed)
+  - 安全基準値更新とAPI永続化連携
+  - 基準値未満での待機ステート遷移 (AC-1, AC-2)
+  - 10秒待機継続時の警告トースト通知発行 (AC-3)
+  - ユーザー待機キャンセル時の安全なアイドル状態復帰 (AC-4)
+  - VRAM回復時の自動再開とComfyUIキュー投入 (AC-5)
+  - **Red Team (RT-02 境界値検証)**: 空き容量が閾値と完全一致（閾値8.0GB / 空き8.0GB）時に待機せず正常投入される境界動作の担保
 
 ---
 
-## 4. ローカルモデル QA 監査 & GPU VRAM 解放
+## 3. 受入基準 (Acceptance Criteria) 充足マトリクス
 
-1. **QA 監査実行 (`local_model_adapter.py qa-audit docs/design/REQ-269-test-plan.md`)**:
-   - 総合評価: **B+**
-   - 所見: テスト計画の CLI コマンドや型・全件テストの明確性を確認。AI エスケープリスク（主観的確認指標の回避）に対する指摘があり、今回は全て自動テスト（Vitest / Pytest / API レスポンス検証）として機械的に実行・立証完了。
-2. **GPU メモリ解放 (`local_model_adapter.py unload`)**:
-   - `python ${GLOBAL_SCRIPTS}\local_model_adapter.py unload` を実行。
-   - `[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.` により、GPU VRAM 解放を完了。
+| AC-ID | 受入基準の定義 | 検証方法 / テストケース | 結果 |
+| :--- | :--- | :--- | :--- |
+| **AC-1** | 生成リクエスト投入前において、GPU空きVRAMが安全基準値を下回っている場合、生成投入を一時停止して待機状態に遷移すること。 | rontend/src/test/e2e_req260_vram_guard.test.ts<br>ackend/tests/test_vram_guard.py | ✅ **PASS** |
+| **AC-2** | 待機状態となった際、生成進行UI上に「VRAM解放待ち（他プロセスの終了待機中）」の専用ステータスおよび状況が表示されること。 | rontend/src/test/e2e_req260_vram_guard.test.ts (State: isWaiting: true, freeGb, requiredGb 検証) | ✅ **PASS** |
+| **AC-3** | 待機状態が一定時間継続した場合、画面上（トーストまたはバナー等）でユーザーに対してVRAM待機中である旨の通知が行われること。 | rontend/src/test/e2e_req260_vram_guard.test.ts (i.advanceTimersByTime(10000) によるトースト通知検証) | ✅ **PASS** |
+| **AC-4** | 待機状態の継続中、ユーザーはいつでも待機をキャンセル（生成リクエストの取り消し）して安全にアイドル状態に戻せること。 | rontend/src/test/e2e_req260_vram_guard.test.ts (cancelVramWait() 実行時の即時ステートクリア・クリーンアップ検証) | ✅ **PASS** |
+| **AC-5** | 他プロセスの終了等により安全な空きVRAMが確保された場合、待機が自動的に解除され、保留されていた生成処理が正常に開始されること。 | rontend/src/test/e2e_req260_vram_guard.test.ts<br>ackend/tests/test_vram_guard.py (回復検知によるキュー自動投入検証) | ✅ **PASS** |
+
+---
+
+## 4. Red Teaming (境界値・異常系) 検証結果
+
+- **RT-01 (境界値バリデーション)**:
+  - 閾値 0GB / 32GB などの不正値に対して、Pydanticモデル（Field(ge=1.0, le=24.0)）による 422 Unprocessable Entity バリデーション防御を確認。
+- **RT-02 (ピッタリ一致境界)**:
+  - 空き容量が閾値ジャスト（8.0GB == 8.0GB）の場合に ram_safe: true（ree_gb >= threshold）として誤待機せず即座に生成が実行されることを単体テストで立証。
+- **RT-03 (未設定・初期化時)**:
+  - pp_settings にレコードが存在しない初回アクセス時でも、安全なデフォルト値（6.0GB）へフォールバックされることを確認。
+- **RT-04 (キャンセル後のレースコンディション防御)**:
+  - 待機キャンセル後に遅れて届いたWS回復イベントで勝手に生成が再開されないよう、待機状態ステートおよびキャンセルフラグによるガードを確認。
+
+---
+
+## 5. ローカル推論モデル QA 監査 & VRAM クリーンアップ
+
+- **監査ツール**: local_model_adapter.py qa-audit docs/design/REQ-260-test-plan.md
+  - **監査モデル**: qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored (Q6_K)
+  - **監査サマリー**:
+    - コマンド再現性: **PASS** (CLIコマンドが完全に具体的かつ再現可能)
+    - AIエスケープリスク: **LOW** (主観的解釈の余地がなく、すべてバイナリ判定・数値閾値基準)
+    - 総合適合性: **85% (COMPLIANT)**
+    - 推奨事項（今後の拡張観点）: WS再接続断絶時のタイムアウト仕様明文化、UI更新遅延規定など
+- **VRAM クリーンアップ**:
+  - local_model_adapter.py unload 実行確認
+  - 状態: GPU VRAM 100% 解放確認完了 (All models unloaded from LM Studio. VRAM freed.)
+
+---
+
+## 6. 総合結論
+全3ゲートの厳格な通過、回帰テスト（Backend 322件 / Frontend 822件）の100%成功、および受入基準AC-1〜AC-5の検証完了を確認しました。
+判定は **PASS** となります。

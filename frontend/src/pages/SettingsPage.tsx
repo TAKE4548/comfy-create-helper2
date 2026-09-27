@@ -9,6 +9,7 @@ import { SpeechToneSection, SpeechTonePresetModal } from './SettingsPage/compone
 import { BubbleDetectionSection } from './SettingsPage/components/BubbleDetectionSection'
 import { MappingMasterSection } from './SettingsPage/components/MappingMasterSection'
 import { WorkflowConnectionSection } from './SettingsPage/components/WorkflowConnectionSection'
+import { VramGuardSection } from './SettingsPage/components/VramGuardSection'
 
 export { SpeechTonePresetModal }
 
@@ -25,6 +26,7 @@ export interface ExpandedSectionsState {
   speechDraft: boolean
   bubbleDetection: boolean
   speechTones: boolean
+  vramGuard: boolean
 }
 
 export function SettingsPage() {
@@ -45,6 +47,7 @@ export function SettingsPage() {
           speechDraft: false,
           bubbleDetection: false,
           speechTones: false,
+          vramGuard: true,
         }
   })
 
@@ -128,6 +131,12 @@ export function SettingsPage() {
             </div>
           )}
         </section>
+
+        {/* VRAM Safety Guard */}
+        <VramGuardSection
+          isExpanded={expandedSections.vramGuard}
+          onToggle={() => toggleSection('vramGuard')}
+        />
 
         {/* Long Press, Workflows & Connections */}
         <WorkflowConnectionSection

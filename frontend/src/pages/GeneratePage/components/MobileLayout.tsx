@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Loader2, Settings, ImageOff, Download, Plus,
-  ChevronRight, ChevronDown, Zap, Camera
+  ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { SettingsPopover } from './SettingsPopover'
@@ -123,6 +123,8 @@ export const MobileLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+  const vramWaitStatus = useGenerationStore((state) => state.vramWaitStatus)
+  const cancelVramWait = useGenerationStore((state) => state.cancelVramWait)
 
   const handleChipsChange = useCallback((role: string, chips: any) => {
     setPromptChips(role, chips)
@@ -308,7 +310,25 @@ export const MobileLayout = ({
 
       {/* Progress Line */}
       <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-2">
-        {isGeneratingHere ? (
+        {vramWaitStatus?.isWaiting ? (
+          <div className="flex items-center justify-between text-[10px]">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+              <span className="font-semibold text-yellow-300 truncate">VRAM解放待ち</span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-400 truncate">
+                空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'}GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)}GB ({vramWaitStatus.waitDurationSec}秒)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => cancelVramWait?.()}
+              className="px-2 py-0.5 text-[9px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded transition-colors flex-shrink-0"
+            >
+              キャンセル
+            </button>
+          </div>
+        ) : isGeneratingHere ? (
           <>
             {/* 全体バッチ進捗 */}
             <div className="space-y-1">
@@ -652,6 +672,31 @@ export const MobileLayout = ({
       </div>
 
       {/* Mobile Action Bar */}
+      {vramWaitStatus?.isWaiting && (
+        <div
+          data-testid="mobile-vram-wait-banner"
+          className="fixed bottom-[136px] left-0 right-0 z-45 mx-3 px-3.5 py-2.5 rounded-xl bg-yellow-500/15 border border-yellow-500/30 backdrop-blur-md flex items-center justify-between shadow-lg"
+        >
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <AlertTriangle size={16} className="text-yellow-400 animate-pulse flex-shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold text-yellow-300 truncate">
+                VRAM解放待ち（待機中）
+              </span>
+              <span className="text-[10px] text-zinc-400 truncate">
+                空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'} GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)} GB ({vramWaitStatus.waitDurationSec}s)
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => cancelVramWait?.()}
+            className="px-2.5 py-1 text-xs font-semibold text-yellow-200 hover:text-white bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 rounded-lg transition-colors flex-shrink-0"
+          >
+            待機キャンセル
+          </button>
+        </div>
+      )}
       <div className="fixed bottom-16 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
         <button id="generate-btn-mobile" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
           className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">

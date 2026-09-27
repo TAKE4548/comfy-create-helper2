@@ -99,7 +99,7 @@ comfy-create-helper2/
   │   │   │   ├─ HistoryPage/     # AlbumListView, AlbumDetailView, hooks
   │   │   │   ├─ HistoryPage.tsx
   │   │   │   ├─ LoRAsPage.tsx
-  │   │   │   ├─ SettingsPage/    # BaseModelSection, Translation, SpeechTone, Llm 等
+  │   │   │   ├─ SettingsPage/    # BaseModelSection, Translation, SpeechTone, Llm, VramGuard 等
   │   │   │   ├─ SettingsPage.tsx
   │   │   │   └─ TagsPage.tsx
   │   │   ├─ store/               # グローバル状態管理（Zustand スライス構成）

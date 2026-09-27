@@ -265,8 +265,22 @@ frontend/src/store/
    - オートセーブ（`flushAutoSave`）実行時、バックエンドへの非同期 PUT 完了を待たず即座にインメモリの activeSet を最新 `currentState` で更新し、ストア内の整合性を維持する。
    - `multiSetSlice.updateActiveSet` においても、`activeSetId` が `null` の場合は安全にガードされ、他セットへの不要な上書きを防ぐ。
 
+### 5-4. 生成前他プロセスVRAM競合防止と待機通知 (REQ-260)
+
+1. **VRAM事前検証（Preflight Guard）**:
+   - `handleGenerate` および `handleGenerateSets` において、`queuePrompt` 実行直前に WebSocket `SYSTEM_STATS` メトリクス（またはオンデマンド照会 `GET /api/comfy/vram-status`）を参照し、ホストGPUの空きVRAM量（`vram_free_gb`）を評価する。
+   - 空きVRAMが安全基準値（デフォルト 4.0GB、`settings.vram_min_free_gb`）を下回っている場合、ComfyUIへのキュー投入を一時停止し、待機状態（`vramWaitStatus.isWaiting = true`）へ遷移する。
+2. **専用ステータス表示 & UIフィードバック (AC-2)**:
+   - 待機状態中は生成進行UI上に専用ステータス「VRAM解放待ち（他プロセスの終了待機中）」および「空き容量 / 必要容量 / 待機経過秒数」をリアルタイム表示する。WebSocketからの2.5秒周期プッシュにより、空き容量表示は自動追従する。
+3. **長時間待機通知 (AC-3)**:
+   - 待機状態が10秒以上継続した場合、画面上へ警告トーストを発行し、他プロセス（ローカルLLM等）の完了待機中である旨をユーザーへ明示する。
+4. **即時待機キャンセル (AC-4)**:
+   - 待機中、ユーザーはステータスバーやアクションバーの「待機キャンセル」からいつでも生成を安全に取り消し、アイドル状態へ復帰できる。
+5. **WebSocketプッシュ駆動の自動再開 (AC-5)**:
+   - クライアント主体のHTTP定期ポーリングは行わず、バックエンドからのWebSocketイベント（`SYSTEM_STATS` の `vram_safe: true` または専用イベント `VRAM_RECOVERED`）を受信した契機で待機を即座に自動解除し、保留されていたワークフローを `queuePrompt` へ自動投入して生成を開始する。
 
 ---
+
 
 ## 6. スナップショット保存および生成時パラメータ永続化 (REQ-227)
 

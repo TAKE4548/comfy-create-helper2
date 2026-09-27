@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Settings, Plus, ChevronRight, ChevronDown,
-  Download, ImageOff, Camera, Loader2
+  Download, ImageOff, Camera, Loader2, AlertTriangle
 } from 'lucide-react'
 import { ResizableSplitLayout } from '../../../components/layout/ResizableSplitLayout'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
@@ -174,6 +174,8 @@ export const DesktopLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+  const vramWaitStatus = useGenerationStore((state) => state.vramWaitStatus)
+  const cancelVramWait = useGenerationStore((state) => state.cancelVramWait)
 
   useSystemStats()  // システムWS接続ライフサイクル管理
 
@@ -267,6 +269,30 @@ export const DesktopLayout = ({
     : null
 
   const renderStatusBar = () => {
+    if (vramWaitStatus?.isWaiting) {
+      return (
+        <div className="flex items-center justify-between text-[11px] py-0.5">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={14} className="text-yellow-400 animate-pulse flex-shrink-0" />
+            <span className="font-semibold text-yellow-300">
+              VRAM解放待ち（他プロセスの終了待機中）
+            </span>
+            <span className="text-zinc-600">|</span>
+            <span className="text-zinc-400">
+              空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'} GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)} GB (待機: {vramWaitStatus.waitDurationSec}秒)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => cancelVramWait?.()}
+            className="px-2.5 py-1 text-[10px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded transition-colors"
+          >
+            待機キャンセル
+          </button>
+        </div>
+      )
+    }
+
     if (isGeneratingHere) {
       return (
         <>

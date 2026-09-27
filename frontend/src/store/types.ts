@@ -117,6 +117,13 @@ export interface ConnectionActions {
 }
 
 
+export interface VramWaitStatus {
+  isWaiting: boolean;
+  freeGb: number | null;
+  requiredGb: number;
+  waitDurationSec: number;
+}
+
 export interface JobQueueState {
   filterOwnSession: boolean;
   batchImages: string[];
@@ -127,6 +134,7 @@ export interface JobQueueState {
   isBatchSubmitting: boolean;
   activeBatch: BatchJob[] | null;
   previewAutoFollow: boolean;
+  vramWaitStatus: VramWaitStatus | null;
 }
 
 export interface JobQueueActions {
@@ -137,6 +145,8 @@ export interface JobQueueActions {
   setIsBatchSubmitting: (value: boolean) => void;
   setActiveBatch: (batch: BatchJob[] | null) => void;
   updateBatchJobStatus: (promptId: string, status: BatchJob['status']) => void;
+  setVramWaitStatus: (status: VramWaitStatus | null) => void;
+  cancelVramWait: () => void;
   queuePrompt: (
     workflow: Record<string, unknown>,
     metadata?: {
@@ -229,6 +239,9 @@ export interface SystemStats {
   vram_used_gb: number | null;
   vram_total_gb: number | null;
   vram_pct: number | null;
+  vram_free_gb?: number | null;
+  vram_safe?: boolean;
+  vram_min_free_gb?: number;
   ts: number;
 }
 

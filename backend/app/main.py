@@ -32,6 +32,7 @@ from app.routers import (
     speech_bubble_presets, speech_tone_presets,
     translate, speech_batch,
     prompt_metadata, system_logs,
+    settings as settings_router,
 )
 from app.routers import ws as ws_router
 from app.services.resource_monitor import resource_monitor
@@ -141,6 +142,7 @@ app.include_router(speech_tone_presets.router)
 app.include_router(translate.router)
 app.include_router(speech_batch.router)
 app.include_router(prompt_metadata.router)
+app.include_router(settings_router.router)
 app.include_router(ws_router.router)
 
 

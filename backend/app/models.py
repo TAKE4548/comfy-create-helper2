@@ -406,3 +406,12 @@ class PromptMetadata(Base):
     param_values: Mapped[str] = mapped_column(Text, nullable=False)  # JSON serialized dict
     applied_assets: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON serialized dict
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+

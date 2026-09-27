@@ -14,6 +14,11 @@ export function useSystemStats(): void {
         if (typeof setSystemStats === 'function') {
           setSystemStats((data as { type: string; data: SystemStats }).data)
         }
+      } else if (data && (data as { type?: string }).type === 'VRAM_RECOVERED') {
+        const currentStats = useGenerationStore.getState().systemStats
+        if (currentStats && typeof setSystemStats === 'function') {
+          setSystemStats({ ...currentStats, vram_safe: true })
+        }
       }
     }
     const onOpen = () => {
