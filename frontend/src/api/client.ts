@@ -307,6 +307,8 @@ export const paramTypeMastersApi = {
 // 笏笏笏 Speech Bubble Presets 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 export const speechBubblePresetsApi = {
   list: () => request<SpeechBubblePreset[]>('/speech-bubble-presets'),
+  getByTagSetId: (tagSetId: number) =>
+    request<SpeechBubblePreset | null>(`/speech-bubble-presets/by-tagset/${tagSetId}`),
   create: (data: SpeechBubblePresetCreate) =>
     request<SpeechBubblePreset>('/speech-bubble-presets', {
       method: 'POST',

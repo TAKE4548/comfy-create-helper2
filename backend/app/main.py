@@ -30,7 +30,7 @@ from app.routers import (
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
     speech_bubble_presets, speech_tone_presets,
-    translate, speech_batch,
+    translate, speech_batch, speech_scene,
     prompt_metadata, system_logs,
     settings as settings_router,
 )
@@ -141,6 +141,7 @@ app.include_router(speech_bubble_presets.router)
 app.include_router(speech_tone_presets.router)
 app.include_router(translate.router)
 app.include_router(speech_batch.router)
+app.include_router(speech_scene.router)
 app.include_router(prompt_metadata.router)
 app.include_router(settings_router.router)
 app.include_router(ws_router.router)

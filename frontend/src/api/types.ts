@@ -659,6 +659,9 @@ export interface SpeechBubblePreset {
   sort_order: number
   effects?: MangaTextEffectConfig
   text?: string | null
+  tag_set_id?: number | null
+  is_default?: boolean
+  tone_preset_id?: number | null
   created_at: string
 }
 
@@ -675,6 +678,9 @@ export interface SpeechBubblePresetCreate {
   sort_order?: number
   effects?: MangaTextEffectConfig
   text?: string | null
+  tag_set_id?: number | null
+  is_default?: boolean
+  tone_preset_id?: number | null
 }
 
 export interface SpeechBubblePresetUpdate {
@@ -690,6 +696,9 @@ export interface SpeechBubblePresetUpdate {
   sort_order?: number
   effects?: MangaTextEffectConfig
   text?: string | null
+  tag_set_id?: number | null
+  is_default?: boolean
+  tone_preset_id?: number | null
 }
 
 // 笏笏笏 SpeechTonePreset 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -837,3 +846,55 @@ export interface SpeechBatchJob {
   created_at: string
   items: SpeechBatchJobItem[]
 }
+
+// ─── Speech Scene Draft Types ─────────────────────────
+
+export interface BubblePosition {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface BubbleTail {
+  direction: 'top' | 'bottom' | 'left' | 'right' | 'none'
+  tip_x: number
+  tip_y: number
+}
+
+export interface BubbleStyleConfig {
+  shape: 'oval' | 'round' | 'rounded-rect' | 'rect' | 'cloud' | 'burst' | 'none'
+  textColor: string
+  backgroundColor: string
+  borderColor: string
+  borderWidth: number
+  fontFamily: string
+  fontSize: number
+}
+
+export interface GeneratedSpeechBubbleRead {
+  id: string
+  text: string
+  role: 'main' | 'sub' | 'se'
+  speaker_name: string
+  speaker_tag_set_id?: number | null
+  is_se: boolean
+  position: BubblePosition
+  tail?: BubbleTail | null
+  style: BubbleStyleConfig
+}
+
+export interface SceneDraftRequest {
+  snapshot_id: number
+  target_tag_set_id?: number | null
+  explicit_preset_id?: number | null
+  scene_hint?: string | null
+}
+
+export interface SceneDraftResponse {
+  scene_interpretation: string
+  reference_tone_char?: string | null
+  reference_scene_prompt?: string | null
+  vram_unloaded: boolean
+  bubbles: GeneratedSpeechBubbleRead[]
+}

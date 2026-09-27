@@ -65,6 +65,11 @@
 - **文字組 & スタイル**: 縦書き / 横書き切替、フォント選択（Google Web Fonts / ローカル配信フォント）、文字色・背景色・枠線太さ・透明度
 - **漫画風エフェクト (`SpeechBubbleMangaFxControls.tsx`)**: 集中線、効果線、スクリーントーン風背景
 - **セリフ口調変換 (`SpeechBubbleToneControls.tsx`)**: LLM を用いた口調変換（ツンデレ、お嬢様、敬語等、`POST /api/speech-tone-presets/rewrite`）
+- **2系統参照型セリフ・SE一括自動生成 (REQ-291)**:
+  - 系統A（直近50件の同一キャラ確定セリフ抽出／TonePresetフォールバック）と系統B（SnowballStemmer単語類似度Top-1シーン）による2系統コンテキスト参照。
+  - Qwen3.5-9B-Claude との連携、推論完了後（例外時含む）の `finally` による即時アンロード（`POST /v1/models/unload` 1回リトライ付き）による VRAM 16GB 即時全量返却（`vram_unloaded` フラグ）。
+  - sub話者キャラ同定（`TagSet.name` 照合）、SE装飾（枠なし黄色文字）、および 1024×1024px 実ピクセル座標系への「80点ハイブリッド配置」変換。
+  - 初出キャラ時のプリセット作成モーダルと推論の並行オンボーディング、および `isCancelledRef` / `createdPresetIdRef` / `pendingDraftResultRef` による合流レース防止と先行キャンセル救済展開フック（`useSceneSpeechGeneration`）。
 - **フキダシ自動検出**: OpenCV による画像内フキダシ領域・ROI の自動検出 (`POST /api/snapshots/{id}/detect-bubble`)
 - **派生スナップショットの系譜管理 (Lineage)**:
   - 元の生成画像（親スナップショット）はそのまま非破壊で保持し、セリフ合成後の画像を**新しいスナップショット**として保存する。

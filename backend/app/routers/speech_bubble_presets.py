@@ -1,5 +1,6 @@
 """Speech Bubble Preset CRUD router."""
 import json
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -16,6 +17,17 @@ def list_speech_bubble_presets(db: Session = Depends(get_db)):
         .order_by(models.SpeechBubblePreset.sort_order.asc(), models.SpeechBubblePreset.id.asc())
         .all()
     )
+
+
+@router.get("/by-tagset/{tag_set_id}", response_model=Optional[schemas.SpeechBubblePresetRead])
+def get_preset_by_tagset(tag_set_id: int, db: Session = Depends(get_db)):
+    """指定TagSetのデフォルトプリセットを取得。未登録時は 200 OK (null) を返却"""
+    preset = (
+        db.query(models.SpeechBubblePreset)
+        .filter(models.SpeechBubblePreset.tag_set_id == tag_set_id, models.SpeechBubblePreset.is_default == True)
+        .first()
+    )
+    return preset  # 見つからない場合は None (JSON null)
 
 
 @router.post("", response_model=schemas.SpeechBubblePresetRead, status_code=status.HTTP_201_CREATED)
@@ -55,6 +67,9 @@ def create_speech_bubble_preset(
         sort_order=payload.sort_order,
         effects_json=effects_json,
         text=payload.text,
+        tag_set_id=payload.tag_set_id,
+        is_default=payload.is_default,
+        tone_preset_id=payload.tone_preset_id,
     )
     db.add(preset)
     db.commit()

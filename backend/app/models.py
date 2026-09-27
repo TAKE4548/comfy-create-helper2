@@ -300,6 +300,7 @@ class TagSet(Base):
     )
     snapshots: Mapped[list["SnapshotTagSet"]] = relationship(back_populates="tag_set")
     subsets: Mapped[list["TagSubset"]] = relationship(back_populates="tag_set", cascade="all, delete-orphan")
+    presets: Mapped[list["SpeechBubblePreset"]] = relationship(back_populates="tag_set")
 
 
 class TagSubset(Base):
@@ -384,7 +385,17 @@ class SpeechBubblePreset(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     effects_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="{}")
     text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    tag_set_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("tag_sets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    is_default: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tone_preset_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("speech_tone_presets.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    tag_set: Mapped[Optional["TagSet"]] = relationship(back_populates="presets")
+    tone_preset: Mapped[Optional["SpeechTonePreset"]] = relationship()
 
 
 class SpeechTonePreset(Base):

@@ -358,6 +358,20 @@ def step_011_create_workflow_history(conn: Connection, inspector: any) -> None:
         logger.info("Migrated: Created 'workflow_history' table.")
 
 
+def step_012_speech_bubble_presets_tag_set_id(conn: Connection, inspector: any) -> None:
+    if "speech_bubble_presets" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("speech_bubble_presets")]
+        if "tag_set_id" not in columns:
+            conn.execute(sa.text("ALTER TABLE speech_bubble_presets ADD COLUMN tag_set_id INTEGER REFERENCES tag_sets(id) ON DELETE SET NULL"))
+            logger.info("Migrated: Added 'tag_set_id' column to 'speech_bubble_presets' table.")
+        if "is_default" not in columns:
+            conn.execute(sa.text("ALTER TABLE speech_bubble_presets ADD COLUMN is_default BOOLEAN DEFAULT 1 NOT NULL"))
+            logger.info("Migrated: Added 'is_default' column to 'speech_bubble_presets' table.")
+        if "tone_preset_id" not in columns:
+            conn.execute(sa.text("ALTER TABLE speech_bubble_presets ADD COLUMN tone_preset_id INTEGER REFERENCES speech_tone_presets(id) ON DELETE SET NULL"))
+            logger.info("Migrated: Added 'tone_preset_id' column to 'speech_bubble_presets' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -370,6 +384,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("009", "workflow_presets_updated_at", step_009_workflow_presets_updated_at),
     MigrationStep("010", "create_prompt_metadata", step_010_create_prompt_metadata),
     MigrationStep("011", "create_workflow_history", step_011_create_workflow_history),
+    MigrationStep("012", "speech_bubble_presets_tag_set_id", step_012_speech_bubble_presets_tag_set_id),
 ]
 
 

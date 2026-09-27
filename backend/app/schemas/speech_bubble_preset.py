@@ -18,6 +18,9 @@ class SpeechBubblePresetBase(BaseModel):
     sort_order: int = 0
     effects: Optional[Dict[str, Any]] = None
     text: Optional[str] = None
+    tag_set_id: Optional[int] = None
+    is_default: bool = True
+    tone_preset_id: Optional[int] = None
 
 
 class SpeechBubblePresetCreate(SpeechBubblePresetBase):
@@ -37,6 +40,9 @@ class SpeechBubblePresetUpdate(BaseModel):
     sort_order: Optional[int] = None
     effects: Optional[Dict[str, Any]] = None
     text: Optional[str] = None
+    tag_set_id: Optional[int] = None
+    is_default: Optional[bool] = None
+    tone_preset_id: Optional[int] = None
 
 
 class SpeechBubblePresetRead(SpeechBubblePresetBase):
@@ -71,6 +77,9 @@ class SpeechBubblePresetRead(SpeechBubblePresetBase):
                 "sort_order": data.sort_order,
                 "effects": effects,
                 "text": getattr(data, "text", None),
+                "tag_set_id": getattr(data, "tag_set_id", None),
+                "is_default": getattr(data, "is_default", True),
+                "tone_preset_id": getattr(data, "tone_preset_id", None),
                 "created_at": data.created_at,
             }
         return data
