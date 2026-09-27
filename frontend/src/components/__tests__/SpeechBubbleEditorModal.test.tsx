@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SpeechBubbleEditorModal } from '../SpeechBubbleEditorModal'
-import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi } from '../../api/client'
+import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi, speechBubblePresetsApi } from '../../api/client'
 import type { SnapshotSummary } from '../../api/types'
 import { LAST_USED_STYLE_STORAGE_KEY } from '../../types/speechBubble'
 import { LS_KEYS } from '../../utils/localStorageKeys'
@@ -45,6 +45,7 @@ vi.mock('../../api/client', () => ({
     create: vi.fn().mockResolvedValue({ id: 1, name: 'Default', shape: 'oval', orientation: 'vertical', font_family: 'sans-serif', font_size: 0, text_color: 'rgba(0,0,0,1)', background_color: 'rgba(255,255,255,1)', border_color: 'rgba(0,0,0,1)', border_width: 2, sort_order: 0, created_at: '' }),
     update: vi.fn().mockResolvedValue({ id: 1, name: 'Default', shape: 'oval', orientation: 'vertical', font_family: 'sans-serif', font_size: 0, text_color: 'rgba(0,0,0,1)', background_color: 'rgba(255,255,255,1)', border_color: 'rgba(0,0,0,1)', border_width: 2, sort_order: 0, created_at: '' }),
     delete: vi.fn().mockResolvedValue(undefined),
+    getByTagSetId: vi.fn().mockResolvedValue(null),
   },
   speechTonePresetsApi: {
     list: vi.fn().mockResolvedValue([]),
@@ -1212,4 +1213,89 @@ describe('SpeechBubbleEditorModal', () => {
       }
     })
   })
+
+  describe('Scene Batch Generate (REQ-292)', () => {
+    it('TEST-UI-01: primaryTagSetId 付きでレンダーしたとき「シーン一括生成」ボタンが存在する', async () => {
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+          primaryTagSetId={1}
+          generateDraftApi={mockGenerateDraftApi}
+          applyPresetToBubbles={(b) => b}
+        />
+      )
+      expect(screen.getByTestId('scene-batch-generate-btn')).toBeDefined()
+    })
+
+    it('TEST-UI-02: ボタンクリックで generateDraftApi が発火する (primaryTagSetId あり)', async () => {
+      vi.mocked(speechBubblePresetsApi.getByTagSetId).mockResolvedValueOnce({
+        id: 1, name: 'Preset', is_default: false,
+      } as any)
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+          primaryTagSetId={1}
+          generateDraftApi={mockGenerateDraftApi}
+          applyPresetToBubbles={(b) => b}
+        />
+      )
+      fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+      await waitFor(() => {
+        expect(mockGenerateDraftApi).toHaveBeenCalledWith(
+          expect.objectContaining({ snapshot_id: expect.any(Number) })
+        )
+      })
+    })
+
+    it('TEST-UI-03: primaryTagSetId=null でも generateDraftApi が target_tag_set_id: null で呼ばれる', async () => {
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+          primaryTagSetId={null}
+          generateDraftApi={mockGenerateDraftApi}
+          applyPresetToBubbles={(b) => b}
+        />
+      )
+      fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+      await waitFor(() => {
+        expect(mockGenerateDraftApi).toHaveBeenCalledWith(
+          expect.objectContaining({ target_tag_set_id: null })
+        )
+      })
+      expect(speechBubblePresetsApi.getByTagSetId).not.toHaveBeenCalled()
+    })
+
+    it('TEST-UI-04: 「編集設定」タブ中に生成ボタンを押すと、完了後に preview タブへ遷移する', async () => {
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      renderWithQuery(
+        <SpeechBubbleEditorModal
+          snapshot={mockSnapshot}
+          onClose={mockOnClose}
+          onSaved={mockOnSaved}
+          primaryTagSetId={null}
+          generateDraftApi={mockGenerateDraftApi}
+          applyPresetToBubbles={(b) => b}
+        />
+      )
+      // モバイル「編集設定」タブへ切替
+      fireEvent.click(screen.getByText(/編集設定/))
+      // 一括生成ボタン押下
+      fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+      // 生成完了後、preview タブに戻る
+      await waitFor(() => {
+        // preview タブボタンが active スタイルを持つ
+        const previewTab = screen.getByText(/プレビュー/).closest('button')
+        expect(previewTab?.className).toContain('bg-blue-600')
+      })
+    })
+  }) // end describe('Scene Batch Generate')
 })

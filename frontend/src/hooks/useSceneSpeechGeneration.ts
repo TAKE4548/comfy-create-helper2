@@ -1,4 +1,4 @@
-﻿import { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { speechBubblePresetsApi } from '../api/client';
 import type { GeneratedSpeechBubbleRead } from '../api/types';
 
@@ -24,39 +24,57 @@ export function useSceneSpeechGeneration({
   const pendingDraftResultRef = useRef<{ bubbles: GeneratedSpeechBubbleRead[] } | null>(null);
   const isCancelledRef = useRef<boolean>(false);
 
-  const handleBatchGenerateClick = async () => {
-    if (!primaryTagSetId) return;
-    const existingPreset = await speechBubblePresetsApi.getByTagSetId(primaryTagSetId);
+  const handleBatchGenerateClick = async (): Promise<void> => {
+    // primaryTagSetId が有効値（非null・非undefined）のとき → 既存のプリセット検索ルート
+    // 注意: `!= null` は null と undefined の両方を除外するゆるい比較
+    if (primaryTagSetId != null) {
+      const existingPreset = await speechBubblePresetsApi.getByTagSetId(primaryTagSetId);
 
-    if (!existingPreset) {
-      // 初出キャラ: 並行オンボーディング発火
-      setIsModalOpen(true);
-      createdPresetIdRef.current = null;
-      pendingDraftResultRef.current = null;
-      isCancelledRef.current = false;
-      setIsGenerating(true);
+      if (!existingPreset) {
+        // 初出キャラ: 並行オンボーディング発火
+        setIsModalOpen(true);
+        createdPresetIdRef.current = null;
+        pendingDraftResultRef.current = null;
+        isCancelledRef.current = false;
+        setIsGenerating(true);
 
-      generateDraftApi({ snapshot_id: snapshotId, target_tag_set_id: primaryTagSetId })
-        .then((res) => {
-          if (createdPresetIdRef.current !== null) {
-            setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, createdPresetIdRef.current)]);
-          } else if (isCancelledRef.current) {
-            setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, null)]);
-          } else {
-            pendingDraftResultRef.current = res;
-          }
-        })
-        .finally(() => setIsGenerating(false));
+        generateDraftApi({ snapshot_id: snapshotId, target_tag_set_id: primaryTagSetId })
+          .then((res) => {
+            if (createdPresetIdRef.current !== null) {
+              setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, createdPresetIdRef.current)]);
+            } else if (isCancelledRef.current) {
+              setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, null)]);
+            } else {
+              pendingDraftResultRef.current = res;
+            }
+          })
+          .finally(() => setIsGenerating(false));
+      } else {
+        // 通常ルート: ワンクリック完全自動展開
+        setIsGenerating(true);
+        try {
+          const res = await generateDraftApi({
+            snapshot_id: snapshotId,
+            target_tag_set_id: primaryTagSetId,
+            explicit_preset_id: existingPreset.id,
+          });
+          setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, existingPreset.id)]);
+        } finally {
+          setIsGenerating(false);
+        }
+      }
     } else {
-      // 通常ルート: ワンクリック完全自動展開
+      // null/undefined ルート: プリセット検索をスキップして直接 API 呼出
+      // primaryTagSetId が undefined の場合も同じ処理（意図的動作）
       setIsGenerating(true);
       try {
         const res = await generateDraftApi({
           snapshot_id: snapshotId,
-          target_tag_set_id: primaryTagSetId,
-          explicit_preset_id: existingPreset.id,
+          target_tag_set_id: null,
         });
-        setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, existingPreset.id)]);
+        setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, null)]);
+      } catch (err) {
+        console.error('[useSceneSpeechGeneration] null-route API error:', err);
       } finally {
         setIsGenerating(false);
       }

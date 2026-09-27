@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, Image as ImageIcon } from 'lucide-react'
+import { X, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react'
 import { snapshotsApi, fontsApi } from '../../api/client'
 import { useAlbums } from '../../hooks/useAlbums'
 import { STALE_TIMES } from '../../constants/staleTimes'
@@ -20,6 +20,7 @@ import { useSpeechBubblePersistence } from './hooks/useSpeechBubblePersistence'
 import { CanvasViewportSection } from './sections/CanvasViewportSection'
 import { BubbleSaveExportBar } from './sections/BubbleSaveExportBar'
 import { CandidateDebugDrawer } from './sections/CandidateDebugDrawer'
+import { useSceneSpeechGeneration } from '../../hooks/useSceneSpeechGeneration'
 
 export type { SpeechBubbleEditorModalProps, MobileTab } from './types'
 
@@ -28,6 +29,9 @@ export function SpeechBubbleEditorModal({
   initialAlbumId,
   onClose,
   onSaved,
+  primaryTagSetId,
+  generateDraftApi,
+  applyPresetToBubbles,
 }: SpeechBubbleEditorModalProps) {
   const { albums } = useAlbums(true)
   const { data: fontList = [] } = useQuery<ServerFont[]>({
@@ -155,6 +159,17 @@ export function SpeechBubbleEditorModal({
   })
 
   const isDrafting = persistence.isDrafting || isDetecting
+
+  const {
+    isGenerating: isSceneGenerating,
+    handleBatchGenerateClick,
+  } = useSceneSpeechGeneration({
+    snapshotId: currentSourceSnapshotId,
+    primaryTagSetId,
+    setBubbles,
+    generateDraftApi: generateDraftApi ?? (() => Promise.resolve({ bubbles: [] })),
+    applyPresetToBubbles: applyPresetToBubbles ?? ((b) => b),
+  })
 
   const interaction = useBubbleCanvasInteraction({
     canvasRef,
@@ -394,6 +409,25 @@ export function SpeechBubbleEditorModal({
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              data-testid="scene-batch-generate-btn"
+              onClick={() => {
+                handleBatchGenerateClick().finally(() => {
+                  if (activeMobileTab === 'controls') {
+                    setActiveMobileTab('preview')
+                  }
+                })
+              }}
+              disabled={isSceneGenerating}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSceneGenerating
+                ? <Loader2 size={14} className="animate-spin" />
+                : <Sparkles size={14} />
+              }
+              <span>シーン一括生成</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsImageSelectOpen(true)}

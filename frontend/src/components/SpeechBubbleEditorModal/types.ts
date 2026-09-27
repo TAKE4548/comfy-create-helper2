@@ -8,6 +8,14 @@ export interface SpeechBubbleEditorModalProps {
   initialAlbumId?: number
   onClose: () => void
   onSaved: () => void
+  // ↓ T2 で追加
+  primaryTagSetId?: number | null
+  generateDraftApi?: (payload: {
+    snapshot_id: number;
+    target_tag_set_id?: number | null;
+    explicit_preset_id?: number | null;
+  }) => Promise<{ bubbles: any[] }>
+  applyPresetToBubbles?: (bubbles: any[], presetId: number | null) => any[]
 }
 
 export type DraggingType = 'bubble' | 'tail' | 'tail-base-1' | 'tail-base-2' | 'resize' | 'rotate'

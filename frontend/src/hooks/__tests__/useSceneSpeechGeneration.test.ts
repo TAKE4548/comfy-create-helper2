@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useSceneSpeechGeneration } from '../useSceneSpeechGeneration';
 import { speechBubblePresetsApi } from '../../api/client';
@@ -50,7 +50,8 @@ describe('useSceneSpeechGeneration', () => {
     );
   });
 
-  it('does nothing if primaryTagSetId is not provided', async () => {
+  it('calls generateDraftApi with target_tag_set_id: null when primaryTagSetId is not provided', async () => {
+    generateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] });
     const { result } = renderHook(() =>
       useSceneSpeechGeneration({
         snapshotId: 100,
@@ -66,7 +67,10 @@ describe('useSceneSpeechGeneration', () => {
     });
 
     expect(speechBubblePresetsApi.getByTagSetId).not.toHaveBeenCalled();
-    expect(generateDraftApi).not.toHaveBeenCalled();
+    expect(generateDraftApi).toHaveBeenCalledWith({
+      snapshot_id: 100,
+      target_tag_set_id: null,
+    });
   });
 
   it('normal path: preset exists -> directly generates and applies preset', async () => {
