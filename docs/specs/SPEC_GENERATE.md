@@ -171,7 +171,7 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 - **バックエンド配信基盤 (`/api/ws`)**:
   - FastAPI WebSocket エンドポイント `/api/ws` から 2.5 秒間隔で `SYSTEM_STATS` メッセージを Discriminated Union 形式でブロードキャスト。
   - CPU, RAM（使用量/総量/比率）、GPU 使用率、VRAM（使用量/総量/比率）をサンプリング。
-  - Windows 環境（REQ-289）では `WindowsGpuMonitor`（DXGI による VRAM 総量動的検出 + PDH による専用 VRAM 実使用量 / 3D エンジン使用率）により、ComfyUI の稼働状態に依存せずホスト PC の GPU/VRAM 負荷を直接サンプリング。Linux/ROCm 環境では `rocm-smi` から取得し、取得不可時は `null`（UI 表示上は `--`）として安全にフォールバック。
+  - Windows 環境（REQ-289, REQ-290）では `WindowsGpuMonitor`（DXGI による VRAM 総量動的検出およびプライマリ GPU LUID 抽出 + PDH による全エンジン網羅 `\GPU Engine(*)\Utilization Percentage` サンプリング）により、物理エンジン別プロセス合算の最大値（MAX across all engines）をタスクマネージャー準拠で算出。ComfyUI 画像生成やローカル LLM（LM Studio / Ollama）等のテンソル演算（Compute エンジン）負荷を確実に反映する。Linux/ROCm 環境では `rocm-smi` から取得し、取得不可時は `null`（UI 表示上は `--`）として安全にフォールバック。
 - **フロントエンド連携 & 省電力設計 (`useSystemStats.ts`, `systemWsService.ts`)**:
   - 再接続時に指数バックオフ（1s, 2s, 4s, 最大10s）を適用。
   - Page Visibility API（`document.visibilityState === 'hidden'`）により、タブ非アクティブ時は接続を自動 suspend して CPU/GPU 負荷と描画を抑制し、タブ復帰時に resume。

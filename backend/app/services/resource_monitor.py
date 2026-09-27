@@ -68,6 +68,7 @@ if sys.platform == "win32":
             self._h_query = None
             self._h_vram = None
             self._h_gpu = None
+            self.primary_luid_hex: str | None = None
 
             # 起動時にDXGIからVRAM総量を動的検出（取得失敗時は16.0にフォールバック）
             self.vram_total_gb: float = self._detect_total_vram_gb() or 16.0
@@ -94,6 +95,7 @@ if sys.platform == "win32":
                 enum_adapters1 = FN_EnumAdapters1(vtable[12])
 
                 max_vram_bytes = 0
+                selected_luid_hex = None
                 i = 0
                 while True:
                     pAdapter = ctypes.c_void_p()
@@ -111,11 +113,15 @@ if sys.platform == "win32":
                         if not (desc.Flags & 2):
                             if desc.DedicatedVideoMemory > max_vram_bytes:
                                 max_vram_bytes = desc.DedicatedVideoMemory
+                                selected_luid_hex = f"0x{desc.AdapterLuid.HighPart:08x}_0x{desc.AdapterLuid.LowPart:08x}".lower()
 
                     adapter_release(pAdapter)
                     i += 1
 
                 factory_release(pFactory)
+
+                if selected_luid_hex:
+                    self.primary_luid_hex = selected_luid_hex
 
                 if max_vram_bytes > 0:
                     raw_gb = max_vram_bytes / (1024 ** 3)
@@ -163,7 +169,7 @@ if sys.platform == "win32":
 
                 h_gpu = wintypes.HANDLE()
                 self._pdh.PdhAddEnglishCounterW(
-                    self._h_query, r"\GPU Engine(*engtype_3D)\Utilization Percentage", 0, ctypes.byref(h_gpu)
+                    self._h_query, r"\GPU Engine(*)\Utilization Percentage", 0, ctypes.byref(h_gpu)
                 )
                 self._h_gpu = h_gpu
 
@@ -174,7 +180,7 @@ if sys.platform == "win32":
 
 
         def _get_sum(self, h_counter, fmt, is_double=False) -> float:
-            if not self._initialized or not h_counter:
+            if not self._initialized or not h_counter or self._pdh is None:
                 return 0.0
             try:
                 buf_size = ctypes.c_uint32(0)
@@ -203,13 +209,66 @@ if sys.platform == "win32":
             except Exception:
                 return 0.0
 
+        def _get_engine_max(self, h_counter) -> float:
+            if not self._initialized or not h_counter or self._pdh is None:
+                return 0.0
+            try:
+                buf_size = ctypes.c_uint32(0)
+                item_count = ctypes.c_uint32(0)
+                self._pdh.PdhGetFormattedCounterArrayW(
+                    h_counter, self.PDH_FMT_DOUBLE, ctypes.byref(buf_size), ctypes.byref(item_count), None
+                )
+                if buf_size.value == 0:
+                    return 0.0
+
+                buf = ctypes.create_string_buffer(buf_size.value)
+                status = self._pdh.PdhGetFormattedCounterArrayW(
+                    h_counter,
+                    self.PDH_FMT_DOUBLE,
+                    ctypes.byref(buf_size),
+                    ctypes.byref(item_count),
+                    ctypes.cast(buf, ctypes.c_void_p),
+                )
+                if status != 0:
+                    return 0.0
+
+                items = ctypes.cast(buf, ctypes.POINTER(self.ItemStruct))
+                engine_totals: dict[str, float] = {}
+
+                for i in range(item_count.value):
+                    item = items[i]
+                    if item.FmtValue.CStatus != 0:
+                        continue
+                    name = item.szName
+                    if not name:
+                        continue
+                    name_lower = name.lower()
+
+                    # primary_luid_hex が設定されている場合は、別GPUのカウンターを除外
+                    if self.primary_luid_hex and self.primary_luid_hex not in name_lower:
+                        continue
+
+                    # engtype_<type> をキーとして抽出
+                    eng_type = "unknown"
+                    if "engtype_" in name:
+                        eng_type = name.split("engtype_")[1]
+
+                    engine_totals[eng_type] = engine_totals.get(eng_type, 0.0) + item.FmtValue.val.doubleValue
+
+                if not engine_totals:
+                    return 0.0
+
+                return round(min(100.0, max(engine_totals.values())), 1)
+            except Exception:
+                return 0.0
+
         def collect(self) -> tuple:
-            if not self._initialized:
+            if not self._initialized or self._pdh is None:
                 return (None, None, self.vram_total_gb, None)
             try:
                 self._pdh.PdhCollectQueryData(self._h_query)
 
-                gpu_pct = round(min(100.0, self._get_sum(self._h_gpu, self.PDH_FMT_DOUBLE, is_double=True)), 1)
+                gpu_pct = self._get_engine_max(self._h_gpu)
                 vram_bytes = self._get_sum(self._h_vram, self.PDH_FMT_LARGE, is_double=False)
 
                 vram_used_gb = round(vram_bytes / (1024 ** 3), 1)

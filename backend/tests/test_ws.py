@@ -105,3 +105,25 @@ def test_ws_windows_gpu_monitor_exception_handling():
                 assert "cpu_pct" in stats
                 assert stats["gpu_pct"] is None
                 assert stats["vram_total_gb"] == 16.0
+
+
+# ── BE-09: WindowsGpuMonitor 全エンジンMAX集計およびLUIDフィルタリング (REQ-290) ──
+def test_windows_gpu_monitor_engine_max_and_luid_filtering():
+    """WindowsGpuMonitor がプライマリLUIDを検出し、全エンジンMAX集計で正常にメトリクスを取得すること。"""
+    from app.services.resource_monitor import WindowsGpuMonitor
+    monitor = WindowsGpuMonitor()
+    try:
+        if sys.platform == "win32":
+            assert monitor.primary_luid_hex is not None
+            assert monitor.primary_luid_hex.startswith("0x")
+            # PDH サンプリングのために短時間待機
+            import time
+            time.sleep(0.1)
+            gpu_pct, vram_used_gb, vram_total_gb, vram_pct = monitor.collect()
+            assert gpu_pct is not None
+            assert 0.0 <= gpu_pct <= 100.0
+            assert vram_total_gb is not None and vram_total_gb > 0
+    finally:
+        if hasattr(monitor, "close"):
+            monitor.close()
+

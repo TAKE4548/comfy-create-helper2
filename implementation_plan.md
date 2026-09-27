@@ -1,72 +1,69 @@
-# Implementation Plan - REQ-286: HistoryPage のビュー分離（ギャラリー vs アルバム詳細）
+# Implementation Plan: REQ-290 リソース監視 GPU使用率算出是正 (3D偏重解消および全エンジンMAX採用)
 
-## Executive Summary
-`HistoryPage.tsx` は 842 行に及び、全スナップショット一覧（検索フィルタ、無限スクロール、一括操作、Lightbox、セリフ編集）と、アルバム詳細・並び替え（Dnd-kit、グループ移動、昇順降順、一括削除スコープ）という 2 つの独立したユースケースが 1 つのファイルに混在し、状態・JSX の肥大化を招いている（リファクタ計画 PBI-REF-05）。
-本計画では、以下の 4 タスクにアトミック分割し、物理的な責任分離を実施する：
-1. **Dnd並び替えロジックのカスタムフック化 (`useAlbumDndOrder.ts`)**: 単一ドラッグおよび複数選択グループ移動アルゴリズムを抽出し、単体テストを整備。
-2. **全スナップショット一覧のコンポーネント分離 (`SnapshotGalleryView.tsx`)**: フィルタバー・グリッド描画・無限スクロールを独立ビューとして切り離し。
-3. **アルバム詳細ビューの配置整理・フック統合 (`AlbumDetailView.tsx`)**: Dndフックとの結合とディレクトリ構造（`views/`）の適合。
-4. **親コンテナ軽量化とルーティング互換性担保 (`HistoryPage/index.tsx` & `HistoryPage.tsx`)**: 共通クエリ・モーダル制御に特化させ、既存エントリからの完全な後方互換 re-export を保証。
+## User Review Required
+
+> [!IMPORTANT]
+> **本改修の要点**:
+> - ComfyUI やローカル LLM（LM Studio / Ollama）等の AI 推論処理はグラフィックスパイプライン（3D エンジン）を使用せず、汎用計算ユニット（Compute エンジン）のみで動作します。
+> - 現行の Prompt Surgeon は PDH カウンターが `*engtype_3D` に固定されているため、推論フル稼働時でも使用率が 0% と誤認されていました。
+> - 本改修により、PDH カウンターを全エンジン監視（`\GPU Engine(*)\Utilization Percentage`）に拡張し、DXGI で特定したプライマリ GPU の LUID で他アダプターのノイズを除外した上で、物理エンジン毎のプロセス合算値から最大値（MAX across all engines）を抽出するタスクマネージャー準拠の算出ロジックへと刷新します。
 
 ---
 
-## Architectural Design & DAG Dependency Graph
+## Architectural Analysis & Trade-offs
+
+### 1. 算出方式のトレードオフ
+- **全エンジン単純合算 (SUM) vs エンジン別合算の最大値 (MAX)**:
+  - 単純合算を採用した場合、複数エンジン（3D + Compute + Copy）が同時に稼働した際に合計が容易に 100% を超過し、物理的な GPU 占有率として直感に反する値となります。
+  - Windows タスクマネージャーの「GPU 全体使用率 (Overall GPU Utilization)」は、物理エンジン単位でプロセスを合算した値のうち最も逼迫しているエンジンの値（MAX）を採用しています。本設計でもタスクマネージャーと完全準拠の MAX 方式を採用し、ComfyUI / LLM 推論時の負荷を正確に捉えます。
+
+### 2. マルチ GPU / マルチアダプター環境への対応
+- **無差別全取得 vs DXGI LUID フィルタリング**:
+  - `\GPU Engine(*)\Utilization Percentage` に拡張すると、CPU 内蔵グラフィックス（iGPU）や仮想ディスプレイドライバーのエンジンインスタンス（500件以上）も同時に列挙されます。
+  - アダプター不問で集計した場合、別 GPU の負荷が混入するリスクがあります。
+  - 本設計では、起動時に DXGI から特定したプライマリ GPU の `AdapterLuid`（例: `0x00000000_0x00011e9f`）を保持し、szName 文字列照合により他アダプターのインスタンスを厳密にスキップします。
+
+### 3. サンプリングオーバーヘッド
+- インスタンス数が約 50 件から 500 件超へと増加しますが、Ctypes ネイティブメモリ配列の線形走査（Python 内での文字列走査と辞書加算）は 0.3ms〜0.5ms 程度で完了し、2.5 秒のサンプリング周期および FastAPI イベントループに与える影響は皆無です。
+
+---
+
+## Dependency Analysis (DAG Topology)
 
 ```mermaid
 graph TD
-  REQ-286-T1["REQ-286-T1: useAlbumDndOrder Hook Extraction"] --> REQ-286-T3["REQ-286-T3: AlbumDetailView Refactor & views/ Alignment"]
-  REQ-286-T2["REQ-286-T2: SnapshotGalleryView Extraction"] --> REQ-286-T4["REQ-286-T4: HistoryPage/index.tsx & Route Compatibility"]
-  REQ-286-T3 --> REQ-286-T4
+    REQ-290-T1["REQ-290-T1: WindowsGpuMonitor 全エンジンMAX集計およびLUIDフィルタリング実装<br/>(backend/app/services/resource_monitor.py)"]
+    REQ-290-T2["REQ-290-T2: 仕様書 (SSoT: SPEC_GENERATE.md) 同期更新<br/>(docs/specs/SPEC_GENERATE.md)"]
+
+    REQ-290-T1 --> REQ-290-T2
 ```
 
-- **最大依存深度**: 2層（T1 -> T3 -> T4 / T2 -> T4）
-- **並行性**: T1（Dndフック分離）と T2（スナップショット一覧ビュー分離）は完全に直交しており並行着手可能。T3（アルバム詳細ビュー）は T1 完了後に着手し、T4（親コンテナ統合）で全体を統合。
+- **最大深度**: 2 レイヤー
+- **独立性**: T1（バックエンド実装）完了後、仕様書（T2）の SSoT 同期を実施する。
 
 ---
 
-## Task Decomposition & Atomicity Audit
+## Task List & Atomicity Audit
 
-| Task ID | タイトル | 変更対象ファイル (<= 3) | 推定行数 (<= 300) | 検証コマンド |
-|---|---|---|---|---|
-| **REQ-286-T1** | アルバム内Dnd並び替えロジックのカスタムフック（useAlbumDndOrder）分離 | `frontend/src/pages/HistoryPage/hooks/useAlbumDndOrder.ts`<br>`frontend/src/pages/HistoryPage/hooks/__tests__/useAlbumDndOrder.test.ts` | 約90行 | `cd frontend && npx vitest run src/pages/HistoryPage/hooks/__tests__/useAlbumDndOrder.test.ts` |
-| **REQ-286-T2** | 全スナップショット一覧ビュー（SnapshotGalleryView）のコンポーネント分離 | `frontend/src/pages/HistoryPage/views/SnapshotGalleryView.tsx`<br>`frontend/src/pages/HistoryPage/views/__tests__/SnapshotGalleryView.test.tsx` | 約250行 | `cd frontend && npx vitest run src/pages/HistoryPage/views/__tests__/SnapshotGalleryView.test.tsx` |
-| **REQ-286-T3** | アルバム詳細ビュー（AlbumDetailView）の配置整理とDndフック統合 | `frontend/src/pages/HistoryPage/views/AlbumDetailView.tsx`<br>`frontend/src/pages/HistoryPage/components/AlbumDetailView.tsx` | 約150行 | `cd frontend && npx vitest run src/pages/__tests__/HistoryPage.test.tsx` |
-| **REQ-286-T4** | HistoryPage親エントリの軽量化統合・ルーティング後方互換性担保 | `frontend/src/pages/HistoryPage/index.tsx`<br>`frontend/src/pages/HistoryPage.tsx` | 約140行 | `cd frontend && npm run typecheck && npx vitest run src/pages/__tests__/HistoryPage.test.tsx` |
-
-**アトミシティ判定**: 全タスクが「変更ファイル数 3以下」「総行数 300行以下」を満たしており **PASS**。
+| Task ID | タイトル | 変更対象ファイル | 変更行数見込み | アトミシティ判定 | 検証コマンド |
+|---|---|---|---|---|---|
+| **REQ-290-T1** | WindowsGpuMonitor 全エンジンMAX集計およびLUIDフィルタリング実装 | `backend/app/services/resource_monitor.py` (1ファイル) | 約40行 | **PASS** (<=3ファイル, <=300行) | `& "backend\.venv\Scripts\python.exe" -m pytest backend/tests/test_ws.py` |
+| **REQ-290-T2** | 仕様書 (SSoT: SPEC_GENERATE.md) 同期更新 | `docs/specs/SPEC_GENERATE.md` (1ファイル) | 約10行 | **PASS** (<=3ファイル, <=300行) | `python C:\Users\audih\.gemini\antigravity\scripts\doc_mapper.py docs/specs docs/backlog/pbi/active/REQ-290.md` |
 
 ---
 
-## Trade-off Disclosure & Technical Decisions
+## Verification Plan
 
-### 1. ディレクトリ構造とインポート互換性の両立
-- **検討**:
-  - `frontend/src/pages/HistoryPage.tsx` を直接 `frontend/src/pages/HistoryPage/index.tsx` に置き換えるか、あるいは既存ファイルを薄いラッパーとして残すか。
-- **決定理由**:
-  - `App.tsx` や既存の `HistoryPage.test.tsx` は `import { HistoryPage } from './pages/HistoryPage'` を参照している。
-  - `frontend/src/pages/HistoryPage/index.tsx` を真の SSoT 実装とし、`frontend/src/pages/HistoryPage.tsx` は `export * from './HistoryPage/index'` とする。
-  - さらに `toSafeImageUrl` と `toThumbnailUrl` も同時に re-export することで、外部モジュールやテストの型・関数参照を一切破壊しない。
+### 1. 自動テスト (Gate 2: Unit & Regression)
+- コマンド: `backend\.venv\Scripts\python -m pytest backend/tests/test_ws.py`
+- 期待値: 終了コード 0、全件 PASS。
 
-### 2. 共通モーダル（Lightbox / セリフ編集 / 一括削除）の状態保持レイヤー
-- **検討**:
-  - 各ビュー（`SnapshotGalleryView`, `AlbumDetailView`）の内部に各モーダルを持たせるか、親コンテナ（`HistoryPage/index.tsx`）で一括管理するか。
-- **決定理由**:
-  - セリフ編集モーダルや Lightbox、アルバム追加モーダルは、スナップショット一覧とアルバム詳細の両方から同一の操作体系でトリガーされる。
-  - モーダル状態をビュー側に重複配置すると、QueryClient の invalidate や状態同期が二重化してバグの原因になるため、親コンテナ（`index.tsx`）がモーダル群を一元ホストし、ビューにはトリガーコールバックを渡す設計とする。
+### 2. 実機サンプリング検証 (Gate 3: Baseline Integration)
+- コマンド:
+  ```powershell
+  & "c:\Users\audih\ws\comfy-create-helper2\backend\.venv\Scripts\python.exe" -c "import sys; sys.path.insert(0, 'backend'); from app.services.resource_monitor import WindowsGpuMonitor; import time; m = WindowsGpuMonitor(); assert m.primary_luid_hex is not None; time.sleep(0.2); res = m.collect(); print('collect:', res); assert res[0] is not None and 0.0 <= res[0] <= 100.0; m.close()"
+  ```
+- 期待値: プライマリ GPU の LUID が抽出され、`gpu_pct` が正常に取得されること。
 
-### 3. ビュー遷移時における MultiSelect 選択状態の残留防止
-- **検討**:
-  - スナップショット一覧で複数選択した状態で「Albums」タブへ遷移したり、アルバム詳細へ入った場合に選択状態が意図せず残存するリスク（BA 監査指摘事項）。
-- **決定理由**:
-  - タブ切り替え（`setView`）およびアルバム詳細進入/脱出（`setSelectedAlbumId`）のトリガー時に `exitMultiSelectMode()` を明示的に呼び出し、選択状態のリークを確実に防止する。
-
----
-
-## Local Model BA Audit Reflection
-- **実施モデル**: `qwen3.5-9b-claude-4.6-highiq-instruct-heretic-uncensored` (Domain: Reasoning, Verdict: Approved with Technical Edge-Case Guidance 88/100)
-- **監査結果の反映**:
-  1. **複数選択状態のリーク防止**: ビュー遷移（Snapshots ↔ Albums ↔ AlbumDetail）時の `exitMultiSelectMode` クリーンアップを設計に反映。
-  2. **ソート方向反転とDnd計算**: `useAlbumDndOrder` 内で `desc` ソート時の ID 反転計算をユニットテストで厳密にカバーすることをタスク要件に明記。
-  3. **ルーティング・ヘルパー互換性**: `toSafeImageUrl` / `toThumbnailUrl` の re-export を明示し、REQ-267 等の既存テストが一切壊れない構造を保証。
-- **GPUリソース解放**: `local_model_adapter.py unload` を実行し、VRAM 100% 解放確認完了（Exit Code 0）。
-
+### 3. Red Teaming (異常系フォールバック)
+- PDH クエリ取得例外注入時にも WebSocket 配信がクラッシュせず、`gpu_pct: None` として CPU/RAM 配信が安全に継続すること。
