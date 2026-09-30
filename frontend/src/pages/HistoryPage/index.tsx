@@ -228,6 +228,20 @@ export function HistoryPage() {
       ? sortedAlbumItems.map((item) => item.snapshot_id)
       : sortedSnapshots.map((s) => s.id) ?? []
 
+  const generateSceneDraft = async (payload: {
+    snapshot_id: number;
+    target_tag_set_id?: number | null;
+    explicit_preset_id?: number | null;
+  }) => {
+    const res = await fetch('/api/speech/scene-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {selectedAlbumId !== null ? (
@@ -445,6 +459,7 @@ export function HistoryPage() {
         <SpeechBubbleEditorModal
           snapshot={selectedForSpeech}
           initialAlbumId={selectedAlbumId ?? undefined}
+          generateDraftApi={generateSceneDraft}
           onClose={() => setSelectedForSpeech(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['snapshots'] })
