@@ -108,8 +108,8 @@ def patch_proactor_start_serving() -> bool:
 
             self.call_soon(loop)
 
-        target_cls._start_serving = patched_start_serving
-        target_cls._windows_defense_patched = True
+        setattr(target_cls, "_start_serving", patched_start_serving)
+        setattr(target_cls, "_windows_defense_patched", True)
         return True
     except Exception as e:
         logger.warning("Failed to apply proactor start_serving monkeypatch: %s", e)

@@ -14,8 +14,8 @@ def load_image_as_base64(image_path: str | Path, max_size: int = 1024) -> str:
     path = Path(image_path)
     if not path.exists():
         raise FileNotFoundError(f"Image not found at {image_path}")
-    with Image.open(path) as img:
-        img = img.convert("RGB")
+    with Image.open(path) as opened_image:
+        img = opened_image.convert("RGB")
         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=85)
@@ -26,9 +26,9 @@ async def call_llm(
     system_prompt: str,
     user_prompt: str,
     timeout: float = 180.0,
-    model: str = None,
-    llm_params: dict = None,
-    image_data: str = None,
+    model: str | None = None,
+    llm_params: dict[str, object] | None = None,
+    image_data: str | None = None,
 ) -> str:
     """Call the LLM server (OpenAI-compatible API) asynchronously. Supports text-only and multimodal vision payloads with fallback."""
     prompt_tokens = (len(system_prompt or "") + len(user_prompt or "")) / 3
@@ -51,14 +51,14 @@ async def call_llm(
 
     if image_data:
         data_url = image_data if image_data.startswith("data:") else f"data:image/jpeg;base64,{image_data}"
-        user_content = [
+        user_content: str | list[dict[str, object]] = [
             {"type": "text", "text": user_prompt},
             {"type": "image_url", "image_url": {"url": data_url}},
         ]
     else:
         user_content = user_prompt
 
-    payload = {
+    payload: dict[str, object] = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -109,4 +109,3 @@ async def get_available_models() -> list[str]:
     except Exception as e:
         logger.error(f"Failed to get available models from {url}: {e}")
         return []
-

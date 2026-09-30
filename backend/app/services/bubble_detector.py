@@ -17,7 +17,9 @@ def detect_bubble(
         return None
     
     # 1. カラー画像から直接「白い領域」の二値化マスクを作成 (BGRすべてがmin_brightness以上の領域)
-    white_mask = cv2.inRange(img, (min_brightness, min_brightness, min_brightness), (255, 255, 255))
+    lower_white = cv2.Mat(np.array([min_brightness] * 3, dtype=np.float64))
+    upper_white = cv2.Mat(np.array([255] * 3, dtype=np.float64))
+    white_mask = cv2.inRange(img, lower_white, upper_white)
     
     # 2. 輪郭抽出 (RETR_EXTERNAL を用いて最も外側の輪郭のみを抽出。これで中の文字は無視される)
     contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -77,7 +79,9 @@ def detect_bubble_candidates(
     if img is None:
         return []
     
-    white_mask = cv2.inRange(img, (min_brightness, min_brightness, min_brightness), (255, 255, 255))
+    lower_white = cv2.Mat(np.array([min_brightness] * 3, dtype=np.float64))
+    upper_white = cv2.Mat(np.array([255] * 3, dtype=np.float64))
+    white_mask = cv2.inRange(img, lower_white, upper_white)
     contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     candidates = []

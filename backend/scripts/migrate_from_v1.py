@@ -36,7 +36,7 @@ def migrate(src_path: str, dst_path: str):
     # ── 1. LoRA categories (mapping from old category TEXT → new category_id INT) ──
     src_cur.execute("SELECT DISTINCT category FROM loras WHERE category IS NOT NULL")
     old_lora_cats = [row[0] for row in src_cur.fetchall()]
-    lora_cat_map: dict[str, int] = {}
+    lora_cat_map: dict[str, int | None] = {}
     for cat_name in old_lora_cats:
         dst_cur.execute("SELECT id FROM lora_categories WHERE name = ?", (cat_name,))
         row = dst_cur.fetchone()
@@ -50,7 +50,7 @@ def migrate(src_path: str, dst_path: str):
     # ── 2. Tagset categories ─────────────────────────────────────
     src_cur.execute("SELECT name FROM custom_categories")
     old_tagset_cats = [row[0] for row in src_cur.fetchall()]
-    tagset_cat_map: dict[str, int] = {}
+    tagset_cat_map: dict[str, int | None] = {}
     for cat_name in old_tagset_cats:
         dst_cur.execute("SELECT id FROM tagset_categories WHERE name = ?", (cat_name,))
         row = dst_cur.fetchone()
@@ -64,7 +64,7 @@ def migrate(src_path: str, dst_path: str):
     # ── 3. LoRAs (name PK → id INT PK) ───────────────────────────
     src_cur.execute("SELECT name, description, recommended_strength, category FROM loras")
     old_loras = src_cur.fetchall()
-    lora_name_to_id: dict[str, int] = {}
+    lora_name_to_id: dict[str, int | None] = {}
     for row in old_loras:
         lora_name = row["name"]
         dst_cur.execute("SELECT id FROM loras WHERE model_name = ?", (lora_name,))
@@ -112,7 +112,7 @@ def migrate(src_path: str, dst_path: str):
     # ── 6. Workflows ──────────────────────────────────────────────
     src_cur.execute("SELECT id, name, json_body, created_at FROM workflows")
     old_workflows = src_cur.fetchall()
-    old_to_new_wf: dict[int, int] = {}
+    old_to_new_wf: dict[int, int | None] = {}
     for row in old_workflows:
         dst_cur.execute("SELECT id FROM workflows WHERE name = ?", (row["name"],))
         existing = dst_cur.fetchone()
@@ -140,7 +140,7 @@ def migrate(src_path: str, dst_path: str):
 
     # ── 8. Snapshots (prompt_data → params) ──────────────────────
     src_cur.execute("SELECT id, workflow_id, prompt_data, image_path, created_at FROM snapshots")
-    old_to_new_snap: dict[int, int] = {}
+    old_to_new_snap: dict[int, int | None] = {}
     for row in src_cur.fetchall():
         new_wf_id = old_to_new_wf.get(row["workflow_id"])
         if not new_wf_id:
@@ -160,7 +160,7 @@ def migrate(src_path: str, dst_path: str):
 
     # ── 9. Albums ─────────────────────────────────────────────────
     src_cur.execute("SELECT id, name, created_at FROM albums")
-    old_to_new_album: dict[int, int] = {}
+    old_to_new_album: dict[int, int | None] = {}
     for row in src_cur.fetchall():
         dst_cur.execute("SELECT id FROM albums WHERE name = ?", (row["name"],))
         existing = dst_cur.fetchone()

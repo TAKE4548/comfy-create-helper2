@@ -150,9 +150,8 @@ def download_snapshot(
     try:
         with Image.open(file_path) as img:
             out_io = io.BytesIO()
-            if pil_format == "JPEG" and img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            img.save(out_io, format=pil_format)
+            image_to_save = img.convert("RGB") if pil_format == "JPEG" and img.mode in ("RGBA", "P") else img
+            image_to_save.save(out_io, format=pil_format)
             out_io.seek(0)
             return Response(
                 content=out_io.getvalue(),
@@ -252,5 +251,4 @@ def detect_bubble_debug_endpoint(snapshot_id: int, payload: BubbleDebugRequest, 
         min_brightness=min_brightness
     )
     return {"candidates": candidates}
-
 

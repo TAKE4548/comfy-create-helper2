@@ -1,5 +1,5 @@
 import logging
-from typing import Literal, Optional
+from typing import Literal, Optional, TypedDict, cast
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,6 +19,14 @@ class PromptTranslateRequest(BaseModel):
 
 
 class TranslateMeta(BaseModel):
+    total_chunks: int
+    cached_chunks: int
+    api_requested_chunks: int
+    billed_characters: int
+    provider: str
+
+
+class TranslationMetaData(TypedDict):
     total_chunks: int
     cached_chunks: int
     api_requested_chunks: int
@@ -59,9 +67,16 @@ async def translate_prompt_endpoint(
             target_lang=payload.target_lang or "ja",
             db=db,
         )
+        meta_data = cast(TranslationMetaData, meta_dict)
         return PromptTranslateResponse(
             translated_prompt=translated_prompt,
-            meta=TranslateMeta(**meta_dict),
+            meta=TranslateMeta(
+                total_chunks=meta_data["total_chunks"],
+                cached_chunks=meta_data["cached_chunks"],
+                api_requested_chunks=meta_data["api_requested_chunks"],
+                billed_characters=meta_data["billed_characters"],
+                provider=meta_data["provider"],
+            ),
         )
     except Exception as e:
         logger.exception(f"Error during prompt translation: {e}")

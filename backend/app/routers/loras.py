@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 import httpx
 from sqlalchemy.orm import Session
@@ -103,10 +103,11 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
 def reorder_loras(payload: schemas.LoraReorder, db: Session = Depends(get_db)):
     is_category_scoped = "category_id" in payload.model_fields_set
     for idx, lora_id in enumerate(payload.ordered_ids):
-        update_dict: dict[str, Any] = {"sort_order": idx}
+        query = db.query(models.Lora).filter(models.Lora.id == lora_id)
         if is_category_scoped:
-            update_dict["category_id"] = payload.category_id
-        db.query(models.Lora).filter(models.Lora.id == lora_id).update(update_dict)
+            query.update({"sort_order": idx, "category_id": payload.category_id})
+        else:
+            query.update({"sort_order": idx})
     db.commit()
 
 
@@ -128,14 +129,14 @@ def update_lora(lora_id: int, payload: schemas.LoraCreate, db: Session = Depends
         lora.base_models = base_models
         
     # Replace trigger word sets
-    for tws in lora.trigger_word_sets:
-        db.delete(tws)
+    for existing_tws in lora.trigger_word_sets:
+        db.delete(existing_tws)
     db.flush()
-    for tws in payload.trigger_word_sets:
+    for trigger_word_set in payload.trigger_word_sets:
         db.add(models.LoraTriggerWordSet(
             lora_id=lora.id,
-            name=tws.name,
-            words=json.dumps(tws.words),
+            name=trigger_word_set.name,
+            words=json.dumps(trigger_word_set.words),
         ))
     db.commit()
     db.refresh(lora)
@@ -203,4 +204,3 @@ async def get_comfy_lora_models(db: Session = Depends(get_db)):
     # Sort: unregistered first, then alphabetical by file_path
     results.sort(key=lambda x: (x.is_registered, x.file_path))
     return results
-

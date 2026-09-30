@@ -5,7 +5,7 @@ import re
 
 def parse_interference(text: str) -> list[dict]:
     """Extract interference tag candidates from LLM output."""
-    results = []
+    results: list[dict[str, str]] = []
     block = re.search(r'<remove_tags>(.*?)</remove_tags>', text, re.DOTALL | re.IGNORECASE)
     if not block:
         return results
@@ -21,7 +21,7 @@ def parse_interference(text: str) -> list[dict]:
 
 def parse_vocabulary(text: str) -> list[dict]:
     """Extract vocabulary suggestion candidates from LLM output."""
-    results = []
+    results: list[dict[str, str]] = []
     block = re.search(r'<suggestions>(.*?)</suggestions>', text, re.DOTALL | re.IGNORECASE)
     if not block:
         return results

@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
-from app.database import get_db_context
+from app.database import engine, get_db_context
 from app.models import AppSetting
 from app.services.resource_monitor import resource_monitor
 
@@ -14,6 +14,7 @@ class TestVramGuardAPI:
     @pytest.fixture(autouse=True)
     def clean_settings(self):
         """Clean up settings before and after tests."""
+        AppSetting.__table__.create(bind=engine, checkfirst=True)
         with get_db_context() as db:
             db.query(AppSetting).filter(AppSetting.key.in_(["vram_min_free_gb", "vram_guard_enabled"])).delete()
             db.commit()
@@ -40,7 +41,11 @@ class TestVramGuardAPI:
 
     def test_get_put_vram_settings(self):
         """Test GET /api/settings/vram and PUT /api/settings/vram with dynamic threshold update."""
-        client = TestClient(app)
+        # Run lifespan setup so the request's database has its tables.
+        with TestClient(app) as client:
+            self._assert_vram_settings_round_trip(client)
+
+    def _assert_vram_settings_round_trip(self, client: TestClient):
 
         res = client.get("/api/settings/vram")
         assert res.status_code == 200

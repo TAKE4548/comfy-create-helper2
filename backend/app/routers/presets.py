@@ -13,9 +13,7 @@ from app import models, schemas
 router = APIRouter(prefix="/api/workflow-presets", tags=["workflow-presets"])
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
-    if dt is None:
-        return None
+def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt

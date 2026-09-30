@@ -108,7 +108,7 @@ class SpeechBatchManager:
 
     def __init__(self, max_history: int = 100):
         self._jobs: dict[str, schemas.SpeechBatchJobRead] = {}
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._max_history = max_history
 
@@ -156,7 +156,11 @@ class SpeechBatchManager:
             self._jobs[job_id] = job
             task = asyncio.create_task(run_batch_job(job_id))
             self._tasks[job_id] = task
-            task.add_done_callback(lambda t, jid=job_id: self._tasks.pop(jid, None))
+
+            def remove_completed_task(completed_task: asyncio.Task[None]) -> None:
+                self._tasks.pop(job_id, None)
+
+            task.add_done_callback(remove_completed_task)
             return job
 
     async def get_job(self, job_id: str) -> Optional[schemas.SpeechBatchJobRead]:
@@ -232,7 +236,11 @@ class SpeechBatchManager:
             if not task or task.done():
                 new_task = asyncio.create_task(run_batch_job(job_id))
                 self._tasks[job_id] = new_task
-                new_task.add_done_callback(lambda t, jid=job_id: self._tasks.pop(jid, None))
+
+                def remove_completed_task(completed_task: asyncio.Task[None]) -> None:
+                    self._tasks.pop(job_id, None)
+
+                new_task.add_done_callback(remove_completed_task)
             return job
 
 

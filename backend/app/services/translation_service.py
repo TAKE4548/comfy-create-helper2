@@ -327,7 +327,7 @@ async def translate_prompt(
     joined_prompt = ", ".join(chunk_translations)
     restored_prompt = restore_tokens(joined_prompt, tokens)
 
-    meta = {
+    meta: Dict[str, int | str] = {
         "total_chunks": total_chunks,
         "cached_chunks": cached_chunks,
         "api_requested_chunks": api_requested_chunks,

@@ -2,21 +2,22 @@ from typing import Callable, List
 import logging
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
+from sqlalchemy.engine.reflection import Inspector
 
 logger = logging.getLogger(__name__)
 
 
 class MigrationStep:
-    def __init__(self, step_id: str, name: str, apply_fn: Callable[[Connection, any], None]):
+    def __init__(self, step_id: str, name: str, apply_fn: Callable[[Connection, Inspector], None]):
         self.step_id = step_id
         self.name = name
         self.apply_fn = apply_fn
 
-    def apply(self, conn: Connection, inspector: any) -> None:
+    def apply(self, conn: Connection, inspector: Inspector) -> None:
         self.apply_fn(conn, inspector)
 
 
-def step_001_workflows_columns(conn: Connection, inspector: any) -> None:
+def step_001_workflows_columns(conn: Connection, inspector: Inspector) -> None:
     if "workflows" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("workflows")]
         if "default_applied_assets" not in columns:
@@ -27,7 +28,7 @@ def step_001_workflows_columns(conn: Connection, inspector: any) -> None:
             logger.info("Migrated: Added 'target_base_model_id' column to 'workflows' table.")
 
 
-def step_002_snapshot_loras_and_tag_sets_roles(conn: Connection, inspector: any) -> None:
+def step_002_snapshot_loras_and_tag_sets_roles(conn: Connection, inspector: Inspector) -> None:
     # snapshot_loras role column
     if "snapshot_loras" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("snapshot_loras")]
@@ -104,7 +105,7 @@ def step_002_snapshot_loras_and_tag_sets_roles(conn: Connection, inspector: any)
             logger.info("Migrated snapshot_tag_sets unique constraint.")
 
 
-def step_003_snapshots_source_and_thumbnail(conn: Connection, inspector: any) -> None:
+def step_003_snapshots_source_and_thumbnail(conn: Connection, inspector: Inspector) -> None:
     if "snapshots" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("snapshots")]
         if "source_snapshot_id" not in columns:
@@ -115,7 +116,7 @@ def step_003_snapshots_source_and_thumbnail(conn: Connection, inspector: any) ->
             logger.info("Migrated: Added 'thumbnail_path' column to 'snapshots' table.")
 
 
-def step_004_tag_sets_thumbnail_and_sort_order(conn: Connection, inspector: any) -> None:
+def step_004_tag_sets_thumbnail_and_sort_order(conn: Connection, inspector: Inspector) -> None:
     if "tag_sets" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("tag_sets")]
         if "thumbnail_path" not in columns:
@@ -131,7 +132,7 @@ def step_004_tag_sets_thumbnail_and_sort_order(conn: Connection, inspector: any)
             logger.info("Migrated: Added 'sort_order' column to 'tag_sets' table.")
 
 
-def step_005_master_tables_sort_order(conn: Connection, inspector: any) -> None:
+def step_005_master_tables_sort_order(conn: Connection, inspector: Inspector) -> None:
     if "mapping_master" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("mapping_master")]
         if "sort_order" not in columns:
@@ -188,7 +189,7 @@ def step_005_master_tables_sort_order(conn: Connection, inspector: any) -> None:
             logger.info("Migrated: Added 'sort_order' column to 'albums' table.")
 
 
-def step_006_create_param_type_masters(conn: Connection, inspector: any) -> None:
+def step_006_create_param_type_masters(conn: Connection, inspector: Inspector) -> None:
     if "param_type_masters" not in inspector.get_table_names():
         conn.execute(sa.text("""
             CREATE TABLE param_type_masters (
@@ -205,7 +206,7 @@ def step_006_create_param_type_masters(conn: Connection, inspector: any) -> None
         logger.info("Migrated: Created 'param_type_masters' table.")
 
 
-def step_007_speech_bubble_presets_and_constraints(conn: Connection, inspector: any) -> None:
+def step_007_speech_bubble_presets_and_constraints(conn: Connection, inspector: Inspector) -> None:
     if "speech_bubble_presets" not in inspector.get_table_names():
         conn.execute(sa.text("""
             CREATE TABLE speech_bubble_presets (
@@ -306,7 +307,7 @@ def step_007_speech_bubble_presets_and_constraints(conn: Connection, inspector: 
             logger.info("Migrated speech_bubble_presets unique constraint.")
 
 
-def step_008_create_speech_tone_presets(conn: Connection, inspector: any) -> None:
+def step_008_create_speech_tone_presets(conn: Connection, inspector: Inspector) -> None:
     if "speech_tone_presets" not in inspector.get_table_names():
         conn.execute(sa.text("""
             CREATE TABLE speech_tone_presets (
@@ -321,7 +322,7 @@ def step_008_create_speech_tone_presets(conn: Connection, inspector: any) -> Non
         logger.info("Migrated: Created 'speech_tone_presets' table.")
 
 
-def step_009_workflow_presets_updated_at(conn: Connection, inspector: any) -> None:
+def step_009_workflow_presets_updated_at(conn: Connection, inspector: Inspector) -> None:
     if "workflow_presets" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("workflow_presets")]
         if "updated_at" not in columns:
@@ -330,7 +331,7 @@ def step_009_workflow_presets_updated_at(conn: Connection, inspector: any) -> No
             logger.info("Migrated: Added 'updated_at' column to 'workflow_presets' table.")
 
 
-def step_010_create_prompt_metadata(conn: Connection, inspector: any) -> None:
+def step_010_create_prompt_metadata(conn: Connection, inspector: Inspector) -> None:
     if "prompt_metadata" not in inspector.get_table_names():
         conn.execute(sa.text("""
             CREATE TABLE prompt_metadata (
@@ -344,7 +345,7 @@ def step_010_create_prompt_metadata(conn: Connection, inspector: any) -> None:
         logger.info("Migrated: Created 'prompt_metadata' table.")
 
 
-def step_011_create_workflow_history(conn: Connection, inspector: any) -> None:
+def step_011_create_workflow_history(conn: Connection, inspector: Inspector) -> None:
     if "workflow_history" not in inspector.get_table_names():
         conn.execute(sa.text("""
             CREATE TABLE workflow_history (
@@ -358,7 +359,7 @@ def step_011_create_workflow_history(conn: Connection, inspector: any) -> None:
         logger.info("Migrated: Created 'workflow_history' table.")
 
 
-def step_012_speech_bubble_presets_tag_set_id(conn: Connection, inspector: any) -> None:
+def step_012_speech_bubble_presets_tag_set_id(conn: Connection, inspector: Inspector) -> None:
     if "speech_bubble_presets" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("speech_bubble_presets")]
         if "tag_set_id" not in columns:

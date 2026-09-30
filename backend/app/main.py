@@ -150,12 +150,12 @@ app.include_router(ws_router.router)
 class CachedStaticFiles(StaticFiles):
     def file_response(
         self,
-        path: str,
+        full_path: str | os.PathLike[str],
         stat_result: os.stat_result,
-        scope: dict,
+        scope: Scope,
         status_code: int = 200,
     ) -> Response:
-        response = super().file_response(path, stat_result, scope, status_code)
+        response = super().file_response(full_path, stat_result, scope, status_code)
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 

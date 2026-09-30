@@ -21,9 +21,8 @@ from PIL import Image
 
 def process_and_save_image(image_bytes: bytes, target_dir: Path, filename_base: str) -> tuple[str, str]:
     try:
-        img = Image.open(io.BytesIO(image_bytes))
-        if img.mode not in ("RGB", "RGBA"):
-            img = img.convert("RGBA")
+        opened_image = Image.open(io.BytesIO(image_bytes))
+        img = opened_image.convert("RGBA") if opened_image.mode not in ("RGB", "RGBA") else opened_image
         
         img_filename = f"{filename_base}.webp"
         img_path = target_dir / img_filename
@@ -226,8 +225,8 @@ class SnapshotService:
 
         if payload.lora_ids is not None:
             for lora_id in payload.lora_ids:
-                exists = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
-                if not exists:
+                existing_lora = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
+                if not existing_lora:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lora with ID {lora_id} does not exist")
             db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).delete()
             for lora_id in set(payload.lora_ids):
@@ -240,8 +239,8 @@ class SnapshotService:
 
         if payload.tag_set_ids is not None:
             for tag_set_id in payload.tag_set_ids:
-                exists = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
-                if not exists:
+                existing_tag_set = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
+                if not existing_tag_set:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"TagSet with ID {tag_set_id} does not exist")
             db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
             for tag_set_id in set(payload.tag_set_ids):

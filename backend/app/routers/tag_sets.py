@@ -1,7 +1,7 @@
 """TagSets router."""
 
 import json
-from typing import Any, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -99,10 +99,11 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
 def reorder_tag_sets(payload: schemas.TagSetReorder, db: Session = Depends(get_db)):
     is_category_scoped = "category_id" in payload.model_fields_set
     for idx, tag_set_id in enumerate(payload.ordered_ids):
-        update_dict: dict[str, Any] = {"sort_order": idx}
+        query = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id)
         if is_category_scoped:
-            update_dict["category_id"] = payload.category_id
-        db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).update(update_dict)
+            query.update({"sort_order": idx, "category_id": payload.category_id})
+        else:
+            query.update({"sort_order": idx})
     db.commit()
 
 

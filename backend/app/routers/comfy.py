@@ -44,9 +44,8 @@ async def close_comfy_client():
 
 def _convert_to_webp_thumbnail(image_bytes: bytes, size: int, quality: int) -> bytes:
     """CPU-bound Pillow conversion executed in worker thread."""
-    image = Image.open(io.BytesIO(image_bytes))
-    if image.mode not in ("RGB", "RGBA"):
-        image = image.convert("RGBA")
+    opened_image = Image.open(io.BytesIO(image_bytes))
+    image = opened_image.convert("RGBA") if opened_image.mode not in ("RGB", "RGBA") else opened_image
     image.thumbnail((size, size))
     buf = io.BytesIO()
     image.save(buf, format="WEBP", quality=quality)
