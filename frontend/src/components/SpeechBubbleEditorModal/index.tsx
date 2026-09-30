@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react'
-import { snapshotsApi, fontsApi } from '../../api/client'
+import { snapshotsApi, fontsApi, sceneSpeechApi } from '../../api/client'
 import { useAlbums } from '../../hooks/useAlbums'
 import { STALE_TIMES } from '../../constants/staleTimes'
 import type { BubbleCandidate, ServerFont } from '../../api/types'
@@ -20,6 +20,7 @@ import { useSpeechBubblePersistence } from './hooks/useSpeechBubblePersistence'
 import { CanvasViewportSection } from './sections/CanvasViewportSection'
 import { BubbleSaveExportBar } from './sections/BubbleSaveExportBar'
 import { CandidateDebugDrawer } from './sections/CandidateDebugDrawer'
+import { SceneSpeechModal } from './sections/SceneSpeechModal'
 import { useSceneSpeechGeneration } from '../../hooks/useSceneSpeechGeneration'
 
 export type { SpeechBubbleEditorModalProps, MobileTab } from './types'
@@ -163,12 +164,20 @@ export function SpeechBubbleEditorModal({
   const {
     isGenerating: isSceneGenerating,
     handleBatchGenerateClick,
+    modalState: sceneModalState,
+    onApply: onSceneApply,
+    onRetry: onSceneRetry,
+    onReferenceSwitch: onSceneReferenceSwitch,
+    onPresetCreatedAndApply: onScenePresetCreated,
+    onPresetSkipped: onScenePresetSkipped,
+    onModalCancel: onSceneModalCancel,
   } = useSceneSpeechGeneration({
     snapshotId: currentSourceSnapshotId,
     primaryTagSetId,
     setBubbles,
-    generateDraftApi: generateDraftApi ?? (() => Promise.resolve({ bubbles: [] })),
+    generateDraftApi: generateDraftApi ?? sceneSpeechApi.generateStream,
     applyPresetToBubbles: applyPresetToBubbles ?? ((b) => b),
+    setActiveMobileTab,
   })
 
   const interaction = useBubbleCanvasInteraction({
@@ -412,13 +421,7 @@ export function SpeechBubbleEditorModal({
             <button
               type="button"
               data-testid="scene-batch-generate-btn"
-              onClick={() => {
-                handleBatchGenerateClick().finally(() => {
-                  if (activeMobileTab === 'controls') {
-                    setActiveMobileTab('preview')
-                  }
-                })
-              }}
+              onClick={() => { void handleBatchGenerateClick() }}
               disabled={isSceneGenerating}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -622,6 +625,16 @@ export function SpeechBubbleEditorModal({
             onSelect={handleSelectNewBaseImage}
           />
         )}
+        <SceneSpeechModal
+          state={sceneModalState}
+          onClose={onSceneModalCancel}
+          onRetry={onSceneRetry}
+          onApply={onSceneApply}
+          onPresetCreated={onScenePresetCreated}
+          onPresetSkipped={onScenePresetSkipped}
+          onReferenceSwitch={onSceneReferenceSwitch}
+          fontList={fontList}
+        />
       </div>
     </div>
   )

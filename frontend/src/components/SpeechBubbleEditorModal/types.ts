@@ -1,4 +1,4 @@
-import type { SnapshotSummary, BubbleCandidate } from '../../api/types'
+import type { SnapshotSummary, BubbleCandidate, GeneratedSpeechBubbleRead, SceneDraftRequest, SceneDraftResponse, SceneSpeechStreamOptions } from '../../api/types'
 import type { SpeechBubble } from '../../types/speechBubble'
 
 export type MobileTab = 'preview' | 'controls'
@@ -8,14 +8,9 @@ export interface SpeechBubbleEditorModalProps {
   initialAlbumId?: number
   onClose: () => void
   onSaved: () => void
-  // ↓ T2 で追加
   primaryTagSetId?: number | null
-  generateDraftApi?: (payload: {
-    snapshot_id: number;
-    target_tag_set_id?: number | null;
-    explicit_preset_id?: number | null;
-  }) => Promise<{ bubbles: any[] }>
-  applyPresetToBubbles?: (bubbles: any[], presetId: number | null) => any[]
+  generateDraftApi?: (payload: SceneDraftRequest, options?: SceneSpeechStreamOptions) => Promise<SceneDraftResponse>
+  applyPresetToBubbles?: (bubbles: GeneratedSpeechBubbleRead[], presetId: number | null) => SpeechBubble[]
 }
 
 export type DraggingType = 'bubble' | 'tail' | 'tail-base-1' | 'tail-base-2' | 'resize' | 'rotate'

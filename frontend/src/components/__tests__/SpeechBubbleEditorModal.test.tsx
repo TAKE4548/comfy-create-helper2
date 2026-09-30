@@ -1,9 +1,9 @@
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SpeechBubbleEditorModal } from '../SpeechBubbleEditorModal'
-import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi, speechBubblePresetsApi } from '../../api/client'
+import { snapshotsApi, albumsApi, llmPromptsApi, fontsApi, speechBubblePresetsApi, sceneSpeechApi } from '../../api/client'
 import type { SnapshotSummary } from '../../api/types'
 import { LAST_USED_STYLE_STORAGE_KEY } from '../../types/speechBubble'
 import { LS_KEYS } from '../../utils/localStorageKeys'
@@ -19,6 +19,8 @@ vi.mock('../../api/client', () => ({
     create: vi.fn(),
     patch: vi.fn(),
   },
+  sceneSpeechApi: { generateStream: vi.fn() },
+  SceneSpeechStreamError: class SceneSpeechStreamError extends Error {},
   workflowsApi: {
     list: vi.fn().mockResolvedValue([]),
   },
@@ -1215,8 +1217,12 @@ describe('SpeechBubbleEditorModal', () => {
   })
 
   describe('Scene Batch Generate (REQ-292)', () => {
+    const emptySceneDraft = {
+      scene_interpretation: '', bubbles: [], vram_unloaded: true,
+      tone_samples: [], candidate_similar_scenes: [],
+    }
     it('TEST-UI-01: primaryTagSetId 付きでレンダーしたとき「シーン一括生成」ボタンが存在する', async () => {
-      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue(emptySceneDraft)
       renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
@@ -1234,7 +1240,7 @@ describe('SpeechBubbleEditorModal', () => {
       vi.mocked(speechBubblePresetsApi.getByTagSetId).mockResolvedValueOnce({
         id: 1, name: 'Preset', is_default: false,
       } as any)
-      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue(emptySceneDraft)
       renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
@@ -1248,13 +1254,14 @@ describe('SpeechBubbleEditorModal', () => {
       fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
       await waitFor(() => {
         expect(mockGenerateDraftApi).toHaveBeenCalledWith(
-          expect.objectContaining({ snapshot_id: expect.any(Number) })
+          expect.objectContaining({ snapshot_id: expect.any(Number) }),
+          expect.objectContaining({ signal: expect.any(AbortSignal), onProgress: expect.any(Function) })
         )
       })
     })
 
     it('TEST-UI-03: primaryTagSetId=null でも generateDraftApi が target_tag_set_id: null で呼ばれる', async () => {
-      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue(emptySceneDraft)
       renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
@@ -1268,14 +1275,15 @@ describe('SpeechBubbleEditorModal', () => {
       fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
       await waitFor(() => {
         expect(mockGenerateDraftApi).toHaveBeenCalledWith(
-          expect.objectContaining({ target_tag_set_id: null })
+          expect.objectContaining({ target_tag_set_id: null }),
+          expect.objectContaining({ signal: expect.any(AbortSignal), onProgress: expect.any(Function) })
         )
       })
       expect(speechBubblePresetsApi.getByTagSetId).not.toHaveBeenCalled()
     })
 
     it('TEST-UI-04: 「編集設定」タブ中に生成ボタンを押すと、完了後に preview タブへ遷移する', async () => {
-      const mockGenerateDraftApi = vi.fn().mockResolvedValue({ bubbles: [] })
+      const mockGenerateDraftApi = vi.fn().mockResolvedValue(emptySceneDraft)
       renderWithQuery(
         <SpeechBubbleEditorModal
           snapshot={mockSnapshot}
@@ -1298,4 +1306,101 @@ describe('SpeechBubbleEditorModal', () => {
       })
     })
   }) // end describe('Scene Batch Generate')
+
+  it('REQ-294 T16: default stream API receives progress and advances to review', async () => {
+    let onProgress: ((event: { type: 'progress'; step: 'reference' | 'vlm' | 'style' | 'vram'; status: 'active' | 'done' | 'error' }) => void) | undefined
+    let resolveStream!: (value: any) => void
+    vi.mocked(sceneSpeechApi.generateStream).mockImplementation((_payload, options) => {
+      onProgress = options?.onProgress
+      return new Promise((resolve) => { resolveStream = resolve })
+    })
+    renderWithQuery(
+      <SpeechBubbleEditorModal
+        snapshot={mockSnapshot}
+        primaryTagSetId={null}
+        onClose={mockOnClose}
+        onSaved={mockOnSaved}
+      />
+    )
+    fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+    await waitFor(() => {
+      expect(sceneSpeechApi.generateStream).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot_id: 1, target_tag_set_id: null }),
+        expect.objectContaining({ signal: expect.any(AbortSignal), onProgress: expect.any(Function) })
+      )
+    })
+    act(() => onProgress?.({ type: 'progress', step: 'reference', status: 'done' }))
+    expect(screen.getAllByLabelText('生成進捗')[0].textContent).toContain('参照抽出')
+    act(() => onProgress?.({ type: 'progress', step: 'vlm', status: 'active' }))
+    expect(screen.getAllByLabelText('生成進捗')[0].textContent).toContain('VLM推論')
+    await act(async () => resolveStream({ scene_interpretation: 'stream結果', bubbles: [], vram_unloaded: true, tone_samples: [], candidate_similar_scenes: [] }))
+    await waitFor(() => expect(screen.getAllByText('生成結果を確認').length).toBeGreaterThan(0))
+  })
+
+  it('REQ-294 T16: default stream rejection reaches the error and retry UI', async () => {
+    vi.mocked(sceneSpeechApi.generateStream).mockRejectedValueOnce(new Error('stream failed'))
+    renderWithQuery(<SpeechBubbleEditorModal snapshot={mockSnapshot} primaryTagSetId={null} onClose={mockOnClose} onSaved={mockOnSaved} />)
+    fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+    await waitFor(() => expect(screen.getAllByRole('alert')[0]).toHaveTextContent('stream failed'))
+    expect(screen.getAllByRole('button', { name: '再試行' }).length).toBeGreaterThan(0)
+  })
+
+  it('REQ-294 T16: closing progress cancels the stream and discards its late result', async () => {
+    let streamOptions: any
+    let resolveStream!: (value: any) => void
+    vi.mocked(sceneSpeechApi.generateStream).mockImplementation((_payload, options) => {
+      streamOptions = options
+      return new Promise((resolve) => { resolveStream = resolve })
+    })
+    renderWithQuery(<SpeechBubbleEditorModal snapshot={mockSnapshot} primaryTagSetId={null} onClose={mockOnClose} onSaved={mockOnSaved} />)
+    fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+    await waitFor(() => expect(sceneSpeechApi.generateStream).toHaveBeenCalled())
+    fireEvent.click(screen.getAllByLabelText('閉じる')[0])
+    expect(streamOptions.signal.aborted).toBe(true)
+    resolveStream({ scene_interpretation: 'stale', bubbles: [], vram_unloaded: true, tone_samples: [], candidate_similar_scenes: [] })
+    expect(screen.queryByTestId('scene-speech-modal')).toBeNull()
+  })
+
+  it('REQ-294: 生成結果の選択分だけをキャンバスへ反映する', async () => {
+    const generated = {
+      scene_interpretation: 'テストシーン', vram_unloaded: true,
+      tone_samples: [], candidate_similar_scenes: [],
+      bubbles: [
+        { id: 'draft-a', text: '選択する台詞' },
+        { id: 'draft-b', text: '除外する台詞' },
+      ],
+    }
+    const applyPresetToBubbles = vi.fn((bubbles) => bubbles)
+    renderWithQuery(
+      <SpeechBubbleEditorModal snapshot={mockSnapshot} onClose={mockOnClose} onSaved={mockOnSaved}
+        primaryTagSetId={null} generateDraftApi={vi.fn().mockResolvedValue(generated)}
+        applyPresetToBubbles={applyPresetToBubbles} />
+    )
+
+    fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+    await waitFor(() => expect(screen.getAllByText('生成結果を確認').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText('除外する台詞')[0])
+    fireEvent.click(screen.getAllByText('キャンバスに反映')[0])
+
+    expect(applyPresetToBubbles).toHaveBeenCalledWith([generated.bubbles[0]], null)
+    expect(screen.queryByTestId('scene-speech-modal')).toBeNull()
+  })
+
+  it('REQ-294: 結果を閉じた場合は生成バブルを反映しない', async () => {
+    const applyPresetToBubbles = vi.fn((bubbles) => bubbles)
+    renderWithQuery(
+      <SpeechBubbleEditorModal snapshot={mockSnapshot} onClose={mockOnClose} onSaved={mockOnSaved}
+        primaryTagSetId={null} generateDraftApi={vi.fn().mockResolvedValue({
+          scene_interpretation: '', vram_unloaded: true, tone_samples: [], candidate_similar_scenes: [],
+          bubbles: [{ id: 'draft-a', text: '反映しない台詞' }],
+        })} applyPresetToBubbles={applyPresetToBubbles} />
+    )
+
+    fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
+    await waitFor(() => expect(screen.getAllByText('生成結果を確認').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText('閉じる')[0])
+
+    expect(applyPresetToBubbles).not.toHaveBeenCalled()
+    expect(mockOnClose).not.toHaveBeenCalled()
+  })
 })

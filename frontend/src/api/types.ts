@@ -884,17 +884,62 @@ export interface GeneratedSpeechBubbleRead {
   style: BubbleStyleConfig
 }
 
+export interface ToneSampleItem {
+  snapshot_id?: number | null
+  thumbnail_url?: string | null
+  text: string
+  similarity_tier: 'high' | 'mid' | 'low' | 'fallback'
+}
+
+export interface SimilarSceneCandidate {
+  snapshot_id: number
+  thumbnail_url: string
+  score: number
+  matched_stems: string[]
+  prompt: string
+  bubble_count: number
+}
+
 export interface SceneDraftRequest {
   snapshot_id: number
   target_tag_set_id?: number | null
   explicit_preset_id?: number | null
   scene_hint?: string | null
+  override_similar_scene_snapshot_id?: number | null
 }
 
 export interface SceneDraftResponse {
   scene_interpretation: string
-  reference_tone_char?: string | null
-  reference_scene_prompt?: string | null
-  vram_unloaded: boolean
   bubbles: GeneratedSpeechBubbleRead[]
-}
+  vram_unloaded: boolean
+  tone_samples: ToneSampleItem[]
+  selected_similar_scene_id?: number | null
+  candidate_similar_scenes: SimilarSceneCandidate[]
+}
+
+export type SceneSpeechStreamErrorKind =
+  | 'lm_studio_400'
+  | 'connection_refused'
+  | 'timeout'
+  | 'unknown'
+  | 'invalid_request'
+  | 'vram_unload_failed'
+
+export type SceneSpeechProgressStep = 'reference' | 'vlm' | 'style' | 'vram'
+export type SceneSpeechProgressStatus = 'active' | 'done' | 'error'
+
+export interface SceneSpeechProgressEvent {
+  type: 'progress'
+  step: SceneSpeechProgressStep
+  status: SceneSpeechProgressStatus
+}
+
+export type SceneSpeechStreamEvent =
+  | SceneSpeechProgressEvent
+  | { type: 'result'; data: SceneDraftResponse }
+  | { type: 'error'; error_kind: SceneSpeechStreamErrorKind; message: string }
+
+export interface SceneSpeechStreamOptions {
+  onProgress?: (event: SceneSpeechProgressEvent) => void
+  signal?: AbortSignal
+}

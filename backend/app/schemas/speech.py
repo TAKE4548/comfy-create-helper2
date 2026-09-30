@@ -37,16 +37,35 @@ class GeneratedSpeechBubbleRead(BaseModel):
     style: BubbleStyleConfig
 
 
+class ToneSampleItem(BaseModel):
+    snapshot_id: Optional[int] = None
+    thumbnail_url: Optional[str] = None
+    text: str
+    similarity_tier: Literal['high', 'mid', 'low', 'fallback']
+
+
+class SimilarSceneCandidate(BaseModel):
+    snapshot_id: int
+    thumbnail_url: str
+    score: int
+    matched_stems: List[str]
+    prompt: str
+    bubble_count: int
+
+
 class SceneDraftRequest(BaseModel):
     snapshot_id: int
     target_tag_set_id: Optional[int] = None
     explicit_preset_id: Optional[int] = None
     scene_hint: Optional[str] = None
+    override_similar_scene_snapshot_id: Optional[int] = None
 
 
 class SceneDraftResponse(BaseModel):
     scene_interpretation: str
-    reference_tone_char: Optional[str] = None
-    reference_scene_prompt: Optional[str] = None
     vram_unloaded: bool = True
     bubbles: List[GeneratedSpeechBubbleRead]
+    tone_samples: List[ToneSampleItem] = []
+    selected_similar_scene_id: Optional[int] = None
+    candidate_similar_scenes: List[SimilarSceneCandidate] = []
+

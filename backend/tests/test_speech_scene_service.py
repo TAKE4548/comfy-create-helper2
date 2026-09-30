@@ -1,6 +1,10 @@
+import asyncio
 import json
+import base64
+import io
 import unittest
 from datetime import datetime, timezone
+from PIL import Image
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -13,10 +17,15 @@ from app.services.speech_scene_service import (
     parse_vlm_json_with_fallback,
     resolve_bubble_style,
     convert_items_to_bubbles,
-    unload_vlm_model_with_retry,
     generate_scene_script,
+    extract_character_tone_samples_high_mid_low,
+    extract_top3_similar_scenes,
+    load_image_as_base64,
     POSITION_MAP_1024,
+    SceneDraftError,
+    validate_scene_vlm_completion,
 )
+from app.services.speech_draft_service import SceneVlmCompletion, VlmResponseShapeError
 
 engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -176,6 +185,45 @@ The scene is emotional and intense. We need a sound effect and a main dialogue.
         # マークダウンなし・<think>なしのプレーンJSONもパースできること
         plain_json = '{"scene_interpretation": "Calm morning", "items": []}'
         self.assertEqual(parse_vlm_json_with_fallback(plain_json)["scene_interpretation"], "Calm morning")
+
+    def test_scene_completion_validation_accepts_valid_json_and_markdown(self):
+        content = '''```json
+{"scene_interpretation":"A scene","items":[{"role":"main","speaker":"Alice","text":"Hello","position":"top_left"}]}
+```'''
+        result = validate_scene_vlm_completion(SceneVlmCompletion(content, "stop"))
+        self.assertEqual(result["items"][0]["speaker"], "Alice")
+
+    def test_scene_completion_validation_classifies_non_json_description(self):
+        with self.assertRaises(SceneDraftError) as caught:
+            validate_scene_vlm_completion(
+                SceneVlmCompletion("この画像には人物が写っています。", "stop")
+            )
+        self.assertEqual(caught.exception.code, "vlm_invalid_json")
+        self.assertEqual(str(caught.exception), "vlm_invalid_json")
+
+    def test_scene_completion_validation_classifies_finish_and_shape_errors(self):
+        for reason, code in (("length", "vlm_truncated"), ("content_filter", "vlm_filtered"), (None, "vlm_empty"), ("tool_calls", "vlm_empty")):
+            with self.subTest(reason=reason):
+                with self.assertRaises(SceneDraftError) as caught:
+                    validate_scene_vlm_completion(SceneVlmCompletion("{}", reason))
+                self.assertEqual(caught.exception.code, code)
+        with self.assertRaises(SceneDraftError) as caught:
+            validate_scene_vlm_completion(VlmResponseShapeError())
+        self.assertEqual(caught.exception.code, "vlm_empty")
+
+    def test_scene_completion_validation_rejects_invalid_schema(self):
+        invalid_payloads = [
+            '{"scene_interpretation":"x","items":[]}',
+            '{"scene_interpretation":"x","items":[{"role":"other","speaker":"","text":"x","position":"top_left"}]}',
+            '{"scene_interpretation":"x","items":[{"role":[],"speaker":"","text":"x","position":"top_left"}]}',
+            '{"scene_interpretation":"x","items":[{"role":"main","speaker":"","text":3,"position":"top_left"}]}',
+            '{"scene_interpretation":"x","items":[{"role":"main","speaker":"","text":"x","position":"middle"}]}',
+        ]
+        for content in invalid_payloads:
+            with self.subTest(content=content):
+                with self.assertRaises(SceneDraftError) as caught:
+                    validate_scene_vlm_completion(SceneVlmCompletion(content, "stop"))
+                self.assertEqual(caught.exception.code, "vlm_schema_invalid")
 
 
 class TestSpeechSceneServiceStyleAndCoords(unittest.TestCase):
@@ -373,51 +421,15 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
         self.db.close()
         Base.metadata.drop_all(bind=engine)
 
-    async def test_vram_unload_success(self):
-        """CRIT-05 / TEST-VRAM-01: 正常系アンロード (200 OK)"""
-        from unittest.mock import patch, AsyncMock
-        import httpx
-
-        mock_resp = httpx.Response(200, json={"status": "ok"})
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value = mock_resp
-            result = await unload_vlm_model_with_retry(max_retries=1)
-            self.assertTrue(result)
-            self.assertEqual(mock_post.call_count, 1)
-
-    async def test_vram_unload_retry_and_success(self):
-        """CRIT-05 / TEST-VRAM-01: 初回失敗・リトライ成功 (1回リトライ付き)"""
-        from unittest.mock import patch, AsyncMock
-        import httpx
-
-        fail_resp = httpx.Response(500, text="Internal Server Error")
-        success_resp = httpx.Response(200, json={"status": "ok"})
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_post.side_effect = [httpx.ConnectError("Connection refused"), success_resp]
-            result = await unload_vlm_model_with_retry(max_retries=1)
-            self.assertTrue(result)
-            self.assertEqual(mock_post.call_count, 2)
-
-    async def test_vram_unload_failure_returns_false(self):
-        """CRIT-05 / TEST-VRAM-01: 全試行失敗時は False を返却しエラーログ"""
-        from unittest.mock import patch, AsyncMock
-        import httpx
-
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_post.side_effect = httpx.ConnectError("Connection refused")
-            result = await unload_vlm_model_with_retry(max_retries=1)
-            self.assertFalse(result)
-            self.assertEqual(mock_post.call_count, 2)
-
     async def test_vram_unload_lifecycle_in_generate_scene_script(self):
-        """generate_scene_script の finally 句で確実に unload_vlm_model_with_retry が実行される"""
+        """generate_scene_script の finally 句で対象IDが解放される"""
         from unittest.mock import patch, AsyncMock
         from app.config import settings
 
         # Setup dummy snapshot and image in settings.snapshot_path
         test_filename = "test_dummy_vram.png"
         test_img_path = settings.snapshot_path / test_filename
-        test_img_path.write_bytes(b"dummy image bytes")
+        Image.new("RGB", (16, 16)).save(test_img_path)
 
         snap = models.Snapshot(
             workflow_id=self.workflow_id,
@@ -436,22 +448,26 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
         })
 
         try:
-            with patch("app.services.speech_scene_service.call_vlm", new_callable=AsyncMock) as mock_call_vlm, \
-                 patch("app.services.speech_scene_service.unload_vlm_model_with_retry", new_callable=AsyncMock) as mock_unload:
-                mock_call_vlm.return_value = vlm_json_output
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as mock_call_vlm, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as mock_acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as mock_unload:
+                mock_acquire.return_value = "loaded-instance"
+                mock_call_vlm.return_value = SceneVlmCompletion(vlm_json_output, "stop")
                 mock_unload.return_value = True
 
-                interpretation, bubbles, vram_unloaded, tone_char, scene_prompt = await generate_scene_script(
+                interpretation, bubbles, vram_unloaded, tone_samples, selected_id, candidates = await generate_scene_script(
                     self.db, snap.id
                 )
 
                 self.assertEqual(interpretation, "A smiling girl in a sunny room.")
                 self.assertEqual(len(bubbles), 1)
                 self.assertTrue(vram_unloaded)
-                mock_unload.assert_called_once()
+                mock_unload.assert_called_once_with("loaded-instance")
+                self.assertEqual(mock_call_vlm.call_args.args[2], "loaded-instance")
         finally:
             if test_img_path.exists():
                 test_img_path.unlink()
+
 
     async def test_vram_unload_lifecycle_on_error(self):
         """generate_scene_script で VLM 推論エラーが発生しても finally 句でアンロードが発火する"""
@@ -460,7 +476,7 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
 
         test_filename = "test_dummy_vram_err.png"
         test_img_path = settings.snapshot_path / test_filename
-        test_img_path.write_bytes(b"dummy image bytes")
+        Image.new("RGB", (16, 16)).save(test_img_path)
 
         snap = models.Snapshot(
             workflow_id=self.workflow_id,
@@ -472,18 +488,76 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
         self.db.commit()
 
         try:
-            with patch("app.services.speech_scene_service.call_vlm", new_callable=AsyncMock) as mock_call_vlm, \
-                 patch("app.services.speech_scene_service.unload_vlm_model_with_retry", new_callable=AsyncMock) as mock_unload:
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as mock_call_vlm, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as mock_acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as mock_unload:
+                mock_acquire.return_value = "loaded-instance"
                 mock_call_vlm.side_effect = RuntimeError("VLM inference timeout")
                 mock_unload.return_value = True
 
                 with self.assertRaises(RuntimeError):
                     await generate_scene_script(self.db, snap.id)
 
-                mock_unload.assert_called_once()
+                mock_unload.assert_called_once_with("loaded-instance")
         finally:
             if test_img_path.exists():
                 test_img_path.unlink()
+
+    async def test_malformed_vlm_output_raises_and_unloads(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_malformed_vlm.png"
+        Image.new("RGB", (16, 16)).save(path)
+        try:
+            snap = models.Snapshot(
+                workflow_id=self.workflow_id,
+                params=json.dumps({"positive_prompt": "1girl smiling"}),
+                image_path=f"/api/snapshots/images/{path.name}",
+                created_at=datetime.now(timezone.utc),
+            )
+            self.db.add(snap)
+            self.db.commit()
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as call, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as unload:
+                acquire.return_value = "loaded-instance"
+                call.return_value = SceneVlmCompletion("not JSON", "stop")
+                unload.return_value = True
+                with self.assertRaises(SceneDraftError) as caught:
+                    await generate_scene_script(self.db, snap.id)
+                self.assertEqual(caught.exception.code, "vlm_invalid_json")
+                unload.assert_called_once_with("loaded-instance")
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_empty_vlm_items_raises_and_unloads(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_empty_vlm.png"
+        Image.new("RGB", (16, 16)).save(path)
+        try:
+            snap = models.Snapshot(
+                workflow_id=self.workflow_id,
+                params=json.dumps({"positive_prompt": "1girl smiling"}),
+                image_path=f"/api/snapshots/images/{path.name}",
+                created_at=datetime.now(timezone.utc),
+            )
+            self.db.add(snap)
+            self.db.commit()
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as call, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as unload:
+                acquire.return_value = "loaded-instance"
+                call.return_value = SceneVlmCompletion(json.dumps({"scene_interpretation": "ok", "items": []}), "stop")
+                unload.return_value = True
+                with self.assertRaises(SceneDraftError) as caught:
+                    await generate_scene_script(self.db, snap.id)
+                self.assertEqual(caught.exception.code, "vlm_schema_invalid")
+                unload.assert_called_once_with("loaded-instance")
+        finally:
+            path.unlink(missing_ok=True)
 
     async def test_endpoint_scene_draft(self):
         """POST /api/speech/scene-draft のエンドポイント統合テスト"""
@@ -497,7 +571,7 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
 
         test_filename = "test_dummy_endpoint.png"
         test_img_path = settings.snapshot_path / test_filename
-        test_img_path.write_bytes(b"dummy image bytes")
+        Image.new("RGB", (16, 16)).save(test_img_path)
 
         snap = models.Snapshot(
             workflow_id=self.workflow_id,
@@ -516,9 +590,11 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
         })
 
         try:
-            with patch("app.services.speech_scene_service.call_vlm", new_callable=AsyncMock) as mock_call_vlm, \
-                 patch("app.services.speech_scene_service.unload_vlm_model_with_retry", new_callable=AsyncMock) as mock_unload:
-                mock_call_vlm.return_value = vlm_json_output
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as mock_call_vlm, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as mock_acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as mock_unload:
+                mock_acquire.return_value = "loaded-instance"
+                mock_call_vlm.return_value = SceneVlmCompletion(vlm_json_output, "stop")
                 mock_unload.return_value = True
 
                 client = TestClient(app)
@@ -537,4 +613,343 @@ class TestSpeechSceneServiceVramUnload(unittest.IsolatedAsyncioTestCase):
             if test_img_path.exists():
                 test_img_path.unlink()
 
+    async def test_override_changes_inference_prompt_and_bubbles(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
 
+        path = settings.snapshot_path / "test_override_input.png"
+        Image.new("RGB", (16, 16)).save(path)
+        try:
+            snapshots = []
+            for prompt, line in [
+                ("battle angry scream victory", "Top one bubble"),
+                ("battle quiet", "Chosen second bubble"),
+                ("battle escape", "Third bubble"),
+            ]:
+                snap = models.Snapshot(
+                    workflow_id=self.workflow_id,
+                    params=json.dumps({"positive_prompt": prompt, "speech_bubbles": [{"text": line}]}),
+                    image_path=f"/api/snapshots/images/{path.name}",
+                    created_at=datetime.now(timezone.utc),
+                )
+                self.db.add(snap)
+                self.db.commit()
+                snapshots.append(snap)
+            with patch("app.services.speech_scene_service.call_scene_vlm", new_callable=AsyncMock) as call, \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new_callable=AsyncMock) as acquire, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new_callable=AsyncMock) as unload:
+                acquire.return_value = "loaded-instance"
+                call.return_value = SceneVlmCompletion(json.dumps({"scene_interpretation": "ok", "items": [
+                    {"role": "main", "speaker": "Hero", "text": "Ready", "position": "top_left"}
+                ]}), "stop")
+                unload.return_value = True
+                result = await generate_scene_script(
+                    self.db, snapshots[0].id,
+                    override_similar_scene_snapshot_id=snapshots[1].id,
+                )
+                self.assertEqual(result[4], snapshots[1].id)
+                prompt_used = call.call_args.args[1]
+                self.assertIn("Reference Scene: battle quiet", prompt_used)
+                self.assertIn("Chosen second bubble", prompt_used)
+                self.assertNotIn("Third bubble", prompt_used)
+        finally:
+            path.unlink(missing_ok=True)
+
+
+class TestSpeechSceneSelection(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        Base.metadata.create_all(bind=engine)
+        self.db = TestingSessionLocal()
+        wf = models.Workflow(name="selection", json_body="{}")
+        self.db.add(wf)
+        self.db.commit()
+        self.workflow_id = wf.id
+
+    def tearDown(self):
+        self.db.close()
+        Base.metadata.drop_all(bind=engine)
+
+    async def test_generate_scene_script_reports_real_progress_boundaries(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_progress_scene.png"
+        Image.new("RGB", (16, 16)).save(path)
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": "1girl smiling"}),
+            image_path=f"/api/snapshots/images/{path.name}",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        events = []
+        entered_vlm = asyncio.Event()
+        release_vlm = asyncio.Event()
+
+        async def call_vlm(*_args):
+            entered_vlm.set()
+            await release_vlm.wait()
+            return SceneVlmCompletion(json.dumps({"scene_interpretation": "ok", "items": [
+                {"role": "main", "speaker": "Hero", "text": "Ready", "position": "top_left"}
+            ]}), "stop")
+
+        async def unload(_instance_id):
+            events.append(("vram", "unload_started"))
+            return True
+
+        async def progress(step, status):
+            events.append((step, status))
+
+        try:
+            with patch("app.services.speech_scene_service.call_scene_vlm", side_effect=call_vlm), \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new=AsyncMock(return_value="loaded-instance")), \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", side_effect=unload):
+                task = asyncio.create_task(generate_scene_script(self.db, snap.id, progress_callback=progress))
+                await entered_vlm.wait()
+                self.assertEqual(events, [
+                    ("reference", "active"), ("reference", "done"), ("vlm", "active")
+                ])
+                release_vlm.set()
+                result = await task
+
+            self.assertEqual(result[0], "ok")
+            self.assertTrue(result[2])
+            self.assertEqual(events, [
+                ("reference", "active"), ("reference", "done"),
+                ("vlm", "active"), ("vlm", "done"),
+                ("style", "active"), ("style", "done"),
+                ("vram", "active"), ("vram", "unload_started"), ("vram", "done"),
+            ])
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_progress_reports_vlm_error_and_unloads_before_returning(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_progress_error.png"
+        Image.new("RGB", (16, 16)).save(path)
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": "1girl smiling"}),
+            image_path=f"/api/snapshots/images/{path.name}",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        events = []
+
+        async def progress(step, status):
+            events.append((step, status))
+
+        async def unload(_instance_id):
+            events.append(("unload", "completed"))
+            return True
+
+        try:
+            with patch("app.services.speech_scene_service.call_scene_vlm", side_effect=RuntimeError("inference failed")), \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new=AsyncMock(return_value="loaded-instance")), \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", side_effect=unload):
+                with self.assertRaisesRegex(RuntimeError, "inference failed"):
+                    await generate_scene_script(self.db, snap.id, progress_callback=progress)
+            self.assertEqual(events, [
+                ("reference", "active"), ("reference", "done"),
+                ("vlm", "active"), ("vlm", "error"),
+                ("vram", "active"), ("unload", "completed"), ("vram", "done"),
+            ])
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_cancellation_reports_error_and_waits_for_vram_unload(self):
+        from unittest.mock import patch, AsyncMock
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_progress_cancel.png"
+        Image.new("RGB", (16, 16)).save(path)
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": "1girl smiling"}),
+            image_path=f"/api/snapshots/images/{path.name}",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        events = []
+        entered_vlm = asyncio.Event()
+        unload_started = asyncio.Event()
+        release_unload = asyncio.Event()
+
+        async def call_vlm(*_args):
+            entered_vlm.set()
+            await asyncio.Future()
+
+        async def progress(step, status):
+            events.append((step, status))
+
+        async def unload(_instance_id):
+            events.append(("unload", "completed"))
+            unload_started.set()
+            await release_unload.wait()
+            return True
+
+        try:
+            with patch("app.services.speech_scene_service.call_scene_vlm", side_effect=call_vlm), \
+                 patch("app.services.speech_scene_service.acquire_model_instance", new=AsyncMock(return_value="loaded-instance")), \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", side_effect=unload):
+                task = asyncio.create_task(
+                    generate_scene_script(self.db, snap.id, progress_callback=progress)
+                )
+                await entered_vlm.wait()
+                task.cancel()
+                await unload_started.wait()
+                self.assertFalse(task.done())
+                release_unload.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+            self.assertEqual(events, [
+                ("reference", "active"), ("reference", "done"),
+                ("vlm", "active"), ("vlm", "error"),
+                ("vram", "active"), ("unload", "completed"), ("vram", "done"),
+            ])
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_instance_rejection_unload_failure_preserves_generation_error(self):
+        from unittest.mock import AsyncMock, patch
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_instance_rejection.png"
+        Image.new("RGB", (16, 16)).save(path)
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": "1girl smiling"}),
+            image_path=f"/api/snapshots/images/{path.name}",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        events = []
+
+        async def progress(step, status):
+            events.append((step, status))
+
+        try:
+            with patch("app.services.speech_scene_service.acquire_model_instance", new=AsyncMock(return_value="alias-instance")) as acquire, \
+                 patch("app.services.speech_scene_service.call_scene_vlm", new=AsyncMock(side_effect=RuntimeError("private ID rejection"))) as call, \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", new=AsyncMock(side_effect=RuntimeError("private unload failure"))) as unload:
+                with self.assertLogs("app.services.speech_scene_service", level="WARNING") as captured:
+                    with self.assertRaisesRegex(RuntimeError, "private ID rejection"):
+                        await generate_scene_script(self.db, snap.id, progress_callback=progress)
+
+            self.assertEqual(acquire.call_count, 1)
+            self.assertEqual(call.call_args.args[2], "alias-instance")
+            self.assertEqual(unload.call_args.args, ("alias-instance",))
+            self.assertEqual(events[-1], ("vram", "error"))
+            self.assertNotIn("private ID rejection", " ".join(captured.output))
+            self.assertNotIn("private unload failure", " ".join(captured.output))
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_same_model_scene_requests_do_not_overlap_instance_lifecycle(self):
+        from unittest.mock import AsyncMock, patch
+        from app.config import settings
+
+        path = settings.snapshot_path / "test_instance_concurrency.png"
+        Image.new("RGB", (16, 16)).save(path)
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": "1girl smiling"}),
+            image_path=f"/api/snapshots/images/{path.name}",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        first_call_entered = asyncio.Event()
+        release_first_call = asyncio.Event()
+        acquisition_ids = []
+        unload_ids = []
+        active_inferences = 0
+        max_active_inferences = 0
+
+        async def acquire(model_key):
+            acquisition_ids.append(model_key)
+            return "alias-instance"
+
+        async def infer(_image, _prompt, instance_id):
+            nonlocal active_inferences, max_active_inferences
+            self.assertEqual(instance_id, "alias-instance")
+            active_inferences += 1
+            max_active_inferences = max(max_active_inferences, active_inferences)
+            if len(acquisition_ids) == 1:
+                first_call_entered.set()
+                await release_first_call.wait()
+            active_inferences -= 1
+            return SceneVlmCompletion(json.dumps({
+                "scene_interpretation": "ok",
+                "items": [{"role": "main", "speaker": "Hero", "text": "Ready", "position": "top_left"}],
+            }), "stop")
+
+        async def unload(instance_id):
+            unload_ids.append(instance_id)
+            return True
+
+        try:
+            with patch("app.services.speech_scene_service.acquire_model_instance", side_effect=acquire), \
+                 patch("app.services.speech_scene_service.call_scene_vlm", side_effect=infer), \
+                 patch("app.services.speech_scene_service.unload_model_instance_with_retry", side_effect=unload):
+                first = asyncio.create_task(generate_scene_script(self.db, snap.id))
+                await first_call_entered.wait()
+                second = asyncio.create_task(generate_scene_script(self.db, snap.id))
+                await asyncio.sleep(0)
+                self.assertEqual(len(acquisition_ids), 1)
+                release_first_call.set()
+                await asyncio.gather(first, second)
+
+            self.assertEqual(len(acquisition_ids), 2)
+            self.assertEqual(len(unload_ids), 2)
+            self.assertEqual(unload_ids, ["alias-instance", "alias-instance"])
+            self.assertEqual(max_active_inferences, 1)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def add_snapshot(self, prompt, lines):
+        snap = models.Snapshot(
+            workflow_id=self.workflow_id,
+            params=json.dumps({"positive_prompt": prompt, "speech_bubbles": [
+                {"speaker_tag_set_id": 10, "text": line, "is_se": False}
+                for line in lines
+            ]}),
+            image_path="sample.png",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.db.add(snap)
+        self.db.commit()
+        return snap
+
+    def test_tone_tiers_have_distinct_snapshots(self):
+        self.add_snapshot("battle angry", ["battle angry one", "battle angry two", "battle angry three"])
+        self.add_snapshot("battle", ["battle phrase here"])
+        self.add_snapshot("quiet", ["quiet phrase here"])
+        items = extract_character_tone_samples_high_mid_low(self.db, 10, "battle angry")
+        self.assertEqual([item.similarity_tier for item in items], ["high", "mid", "low"])
+        self.assertEqual(len({item.snapshot_id for item in items}), 3)
+
+    def test_invalid_override_is_rejected(self):
+        selected = self.add_snapshot("battle angry", ["selected bubble"])
+        with self.assertRaises(ValueError):
+            extract_top3_similar_scenes(self.db, "battle angry", override_snapshot_id=999999)
+        with self.assertRaises(ValueError):
+            extract_top3_similar_scenes(self.db, "battle angry", exclude_snapshot_id=selected.id,
+                                        override_snapshot_id=selected.id)
+
+    def test_image_is_scaled_and_jpeg_encoded(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "large.png"
+            Image.new("RGB", (2000, 1000)).save(path)
+            encoded = load_image_as_base64(path)
+            with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
+                self.assertEqual(image.format, "JPEG")
+                self.assertEqual(image.size, (1024, 512))

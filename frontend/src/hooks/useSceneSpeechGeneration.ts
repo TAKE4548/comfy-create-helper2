@@ -1,109 +1,159 @@
-import { useState, useRef } from 'react';
-import { speechBubblePresetsApi } from '../api/client';
-import type { GeneratedSpeechBubbleRead } from '../api/types';
+import { useRef, useState } from 'react';
+import { SceneSpeechStreamError, speechBubblePresetsApi } from '../api/client';
+import type { GeneratedSpeechBubbleRead, SceneDraftRequest, SceneDraftResponse, SceneSpeechProgressEvent, SceneSpeechStreamOptions } from '../api/types';
+import type { SceneSpeechModalState } from '../components/SpeechBubbleEditorModal/sections/SceneSpeechModalState';
 
 interface UseSceneSpeechGenerationParams {
   snapshotId: number;
   primaryTagSetId?: number | null;
   setBubbles: React.Dispatch<React.SetStateAction<any[]>>;
-  generateDraftApi: (payload: { snapshot_id: number; target_tag_set_id?: number | null; explicit_preset_id?: number | null }) => Promise<{ bubbles: GeneratedSpeechBubbleRead[] }>;
+  generateDraftApi: (payload: SceneDraftRequest, options?: SceneSpeechStreamOptions) => Promise<SceneDraftResponse>;
   applyPresetToBubbles: (bubbles: GeneratedSpeechBubbleRead[], presetId: number | null) => any[];
+  setActiveMobileTab?: (tab: 'preview' | 'controls') => void;
+}
+
+function classifyError(err: unknown): 'lm_studio_400' | 'connection_refused' | 'timeout' | 'unknown' {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('lm studio error 400') || msg.includes('400')) return 'lm_studio_400';
+    if (msg.includes('failed to fetch') || msg.includes('econnrefused')) return 'connection_refused';
+    if (msg.includes('timeout') || msg.includes('aborted')) return 'timeout';
+  }
+  return 'unknown';
+}
+
+const initialProgress = (): SceneSpeechModalState => ({
+  type: 'progress',
+  steps: [
+    { key: 'reference', label: '参照抽出', status: 'active' },
+    { key: 'vlm', label: 'VLM推論', status: 'pending' },
+    { key: 'style', label: 'スタイル割当', status: 'pending' },
+    { key: 'vram', label: 'VRAM解放', status: 'pending' },
+  ],
+  elapsedSeconds: 0,
+});
+
+function progressWithEvent(state: SceneSpeechModalState, event: SceneSpeechProgressEvent): SceneSpeechModalState {
+  const progress = state.type === 'progress' ? state : initialProgress() as Extract<SceneSpeechModalState, { type: 'progress' }>;
+  return {
+    ...progress,
+    steps: progress.steps.map((step) => step.key === event.step ? { ...step, status: event.status } : step),
+  };
+}
+
+function streamError(err: unknown): { errorKind: 'lm_studio_400' | 'connection_refused' | 'timeout' | 'unknown'; message: string } {
+  if (err instanceof SceneSpeechStreamError) {
+    const errorKind = err.kind === 'lm_studio_400' || err.kind === 'connection_refused' || err.kind === 'timeout'
+      ? err.kind : 'unknown';
+    return { errorKind, message: err.message };
+  }
+  return { errorKind: classifyError(err), message: String(err) };
 }
 
 export function useSceneSpeechGeneration({
-  snapshotId,
-  primaryTagSetId,
-  setBubbles,
-  generateDraftApi,
-  applyPresetToBubbles,
+  snapshotId, primaryTagSetId, setBubbles, generateDraftApi, applyPresetToBubbles, setActiveMobileTab,
 }: UseSceneSpeechGenerationParams) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalState, setModalState] = useState<SceneSpeechModalState | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-
   const createdPresetIdRef = useRef<number | null>(null);
-  const pendingDraftResultRef = useRef<{ bubbles: GeneratedSpeechBubbleRead[] } | null>(null);
-  const isCancelledRef = useRef<boolean>(false);
+  const pendingDraftResultRef = useRef<SceneDraftResponse | null>(null);
+  const onboardingCompleteRef = useRef(false);
+  const generationIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const latestProgressRef = useRef<SceneSpeechModalState>(initialProgress());
 
-  const handleBatchGenerateClick = async (): Promise<void> => {
-    // primaryTagSetId が有効値（非null・非undefined）のとき → 既存のプリセット検索ルート
-    // 注意: `!= null` は null と undefined の両方を除外するゆるい比較
-    if (primaryTagSetId != null) {
-      const existingPreset = await speechBubblePresetsApi.getByTagSetId(primaryTagSetId);
+  const showReview = (result: SceneDraftResponse) => {
+    setModalState({ type: 'review', result });
+    setActiveMobileTab?.('preview');
+  };
 
-      if (!existingPreset) {
-        // 初出キャラ: 並行オンボーディング発火
-        setIsModalOpen(true);
-        createdPresetIdRef.current = null;
-        pendingDraftResultRef.current = null;
-        isCancelledRef.current = false;
-        setIsGenerating(true);
-
-        generateDraftApi({ snapshot_id: snapshotId, target_tag_set_id: primaryTagSetId })
-          .then((res) => {
-            if (createdPresetIdRef.current !== null) {
-              setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, createdPresetIdRef.current)]);
-            } else if (isCancelledRef.current) {
-              setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, null)]);
-            } else {
-              pendingDraftResultRef.current = res;
-            }
-          })
-          .finally(() => setIsGenerating(false));
-      } else {
-        // 通常ルート: ワンクリック完全自動展開
-        setIsGenerating(true);
-        try {
-          const res = await generateDraftApi({
-            snapshot_id: snapshotId,
-            target_tag_set_id: primaryTagSetId,
-            explicit_preset_id: existingPreset.id,
-          });
-          setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, existingPreset.id)]);
-        } finally {
-          setIsGenerating(false);
+  const handleBatchGenerateClick = async (overrideSimilarSceneSnapshotId?: number): Promise<void> => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const generationId = ++generationIdRef.current;
+    createdPresetIdRef.current = null;
+    pendingDraftResultRef.current = null;
+    onboardingCompleteRef.current = false;
+    latestProgressRef.current = initialProgress();
+    setModalState(latestProgressRef.current);
+    setIsGenerating(true);
+    try {
+      let existingPresetId: number | null = null;
+      if (primaryTagSetId != null) {
+        const existingPreset = await speechBubblePresetsApi.getByTagSetId(primaryTagSetId);
+        if (generationId !== generationIdRef.current) return;
+        if (existingPreset) {
+          existingPresetId = existingPreset.id;
+          createdPresetIdRef.current = existingPreset.id;
+          onboardingCompleteRef.current = true;
+        } else {
+          setModalState({ type: 'onboarding', tagSetId: primaryTagSetId });
         }
+      } else {
+        onboardingCompleteRef.current = true;
       }
-    } else {
-      // null/undefined ルート: プリセット検索をスキップして直接 API 呼出
-      // primaryTagSetId が undefined の場合も同じ処理（意図的動作）
-      setIsGenerating(true);
-      try {
-        const res = await generateDraftApi({
-          snapshot_id: snapshotId,
-          target_tag_set_id: null,
-        });
-        setBubbles((prev) => [...prev, ...applyPresetToBubbles(res.bubbles, null)]);
-      } catch (err) {
-        console.error('[useSceneSpeechGeneration] null-route API error:', err);
-      } finally {
+      const payload: SceneDraftRequest = { snapshot_id: snapshotId, target_tag_set_id: primaryTagSetId ?? null };
+      if (existingPresetId !== null) payload.explicit_preset_id = existingPresetId;
+      if (overrideSimilarSceneSnapshotId !== undefined) {
+        payload.override_similar_scene_snapshot_id = overrideSimilarSceneSnapshotId;
+      }
+      const result = await generateDraftApi(payload, {
+        signal: controller.signal,
+        onProgress: (event) => {
+          if (generationId !== generationIdRef.current) return;
+          latestProgressRef.current = progressWithEvent(latestProgressRef.current, event);
+          setModalState((current) => current?.type === 'onboarding' ? current : latestProgressRef.current);
+        },
+      });
+      if (generationId !== generationIdRef.current) return;
+      if (onboardingCompleteRef.current) showReview(result);
+      else pendingDraftResultRef.current = result;
+    } catch (err) {
+      if (generationId !== generationIdRef.current) return;
+      if (err instanceof Error && err.name === 'AbortError') return;
+      setModalState({ type: 'error', ...streamError(err) });
+    } finally {
+      if (generationId === generationIdRef.current) {
+        abortControllerRef.current = null;
         setIsGenerating(false);
       }
     }
   };
 
-  const onPresetCreatedAndApply = (newPresetId: number) => {
-    setIsModalOpen(false);
-    createdPresetIdRef.current = newPresetId;
-    if (pendingDraftResultRef.current) {
-      setBubbles((prev) => [...prev, ...applyPresetToBubbles(pendingDraftResultRef.current!.bubbles, newPresetId)]);
-      pendingDraftResultRef.current = null;
-    }
+  const finishOnboarding = (presetId: number | null) => {
+    createdPresetIdRef.current = presetId;
+    onboardingCompleteRef.current = true;
+    const pending = pendingDraftResultRef.current;
+    pendingDraftResultRef.current = null;
+    if (pending) showReview(pending);
+    else setModalState(latestProgressRef.current);
   };
 
   const onModalCancel = () => {
-    setIsModalOpen(false);
-    isCancelledRef.current = true;
-    if (pendingDraftResultRef.current) {
-      setBubbles((prev) => [...prev, ...applyPresetToBubbles(pendingDraftResultRef.current!.bubbles, null)]);
-      pendingDraftResultRef.current = null;
+    ++generationIdRef.current;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    pendingDraftResultRef.current = null;
+    setIsGenerating(false);
+    setModalState(null);
+  };
+
+  const onApply = (selectedBubbles: GeneratedSpeechBubbleRead[]) => {
+    if (modalState?.type !== 'review') return;
+    if (selectedBubbles.length > 0) {
+      setBubbles((previous) => [...previous, ...applyPresetToBubbles(selectedBubbles, createdPresetIdRef.current)]);
     }
+    onModalCancel();
   };
 
   return {
-    isModalOpen,
-    isGenerating,
-    handleBatchGenerateClick,
-    onPresetCreatedAndApply,
+    modalState, isModalOpen: modalState !== null, isGenerating, handleBatchGenerateClick,
+    onPresetCreatedAndApply: (id: number) => finishOnboarding(id),
+    onPresetSkipped: () => finishOnboarding(null),
     onModalCancel,
+    onRetry: () => handleBatchGenerateClick(),
+    onReferenceSwitch: (id: number) => { setModalState(null); return handleBatchGenerateClick(id); },
+    onApply,
   };
 }

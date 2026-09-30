@@ -3,11 +3,68 @@
  */
 
 import type { SpeechBatchJob, SpeechBatchJobCreate, SpeechBatchItemRetryRequest, MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse } from './types'
+import type {
+  SceneDraftRequest,
+  SceneDraftResponse,
+  SceneSpeechProgressEvent,
+  SceneSpeechStreamEvent,
+  SceneSpeechStreamErrorKind,
+  SceneSpeechStreamOptions,
+} from './types'
 export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse }
 
 
 
 const BASE_URL = '/api'
+
+export class SceneSpeechStreamError extends Error {
+  constructor(public readonly kind: SceneSpeechStreamErrorKind, message: string) {
+    super(message)
+    this.name = 'SceneSpeechStreamError'
+  }
+}
+
+function abortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason
+  return new DOMException('The operation was aborted', 'AbortError')
+}
+
+function parseSceneSpeechEvent(line: string): SceneSpeechStreamEvent {
+  let value: unknown
+  try {
+    value = JSON.parse(line)
+  } catch {
+    throw new Error('Invalid scene speech stream JSON line')
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid scene speech stream event')
+  }
+  const event = value as Record<string, unknown>
+  if (event.type === 'progress') {
+    const steps = ['reference', 'vlm', 'style', 'vram']
+    const statuses = ['active', 'done', 'error']
+    if (!steps.includes(String(event.step)) || !statuses.includes(String(event.status))) {
+      throw new Error('Invalid scene speech progress event')
+    }
+    return event as unknown as SceneSpeechProgressEvent
+  }
+  if (event.type === 'result') {
+    if (!event.data || typeof event.data !== 'object' || Array.isArray(event.data)) {
+      throw new Error('Invalid scene speech result event')
+    }
+    return event as unknown as SceneSpeechStreamEvent
+  }
+  if (event.type === 'error') {
+    const kinds: SceneSpeechStreamErrorKind[] = [
+      'lm_studio_400', 'connection_refused', 'timeout', 'unknown', 'invalid_request', 'vram_unload_failed',
+    ]
+    if (!kinds.includes(event.error_kind as SceneSpeechStreamErrorKind) || typeof event.message !== 'string') {
+      throw new Error('Invalid scene speech error event')
+    }
+    return event as unknown as SceneSpeechStreamEvent
+  }
+  throw new Error('Unknown scene speech stream event type')
+}
 
 
 async function request<T>(
@@ -36,6 +93,79 @@ async function request<T>(
     return res.json()
   }
   return undefined as T
+}
+
+export const sceneSpeechApi = {
+  generateStream: async (
+    payload: SceneDraftRequest,
+    options?: SceneSpeechStreamOptions,
+  ): Promise<SceneDraftResponse> => {
+    const signal = options?.signal
+    if (signal?.aborted) throw abortError(signal)
+
+    const response = await fetch(`${BASE_URL}/speech/scene-draft/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/x-ndjson',
+      },
+      body: JSON.stringify(payload),
+      signal,
+    })
+    if (!response.ok) {
+      const detail = typeof response.text === 'function' ? await response.text() : ''
+      throw new Error(`API error ${response.status}: ${detail}`)
+    }
+    if (!response.body) throw new Error('Scene speech stream response has no body')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result: SceneDraftResponse | undefined
+    let receivedResult = false
+    const cancelOnAbort = () => {
+      void reader.cancel(signal?.reason).catch(() => undefined)
+    }
+    signal?.addEventListener('abort', cancelOnAbort, { once: true })
+
+    const consumeLine = (rawLine: string) => {
+      if (receivedResult) throw new Error('Scene speech stream contained data after result')
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+      if (!line) throw new Error('Empty scene speech stream line')
+      const event: SceneSpeechStreamEvent = parseSceneSpeechEvent(line)
+      if (event.type === 'progress') {
+        options?.onProgress?.(event)
+      } else if (event.type === 'error') {
+        throw new SceneSpeechStreamError(event.error_kind, event.message)
+      } else {
+        receivedResult = true
+        result = event.data
+      }
+    }
+
+    try {
+      if (signal?.aborted) throw abortError(signal)
+      while (true) {
+        const { value, done } = await reader.read()
+        if (signal?.aborted) throw abortError(signal)
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let newline = buffer.indexOf('\n')
+        while (newline !== -1) {
+          consumeLine(buffer.slice(0, newline))
+          buffer = buffer.slice(newline + 1)
+          newline = buffer.indexOf('\n')
+        }
+      }
+      buffer += decoder.decode()
+      if (buffer.length > 0) consumeLine(buffer)
+      if (!result) throw new Error('Scene speech stream ended without a result')
+      return result
+    } finally {
+      signal?.removeEventListener('abort', cancelOnAbort)
+      await reader.cancel().catch(() => undefined)
+    }
+  },
 }
 
 // 笏笏笏 Workflows 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
