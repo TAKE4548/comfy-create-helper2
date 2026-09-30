@@ -32,9 +32,9 @@ related_paths:
 ### TEST-VRAM-01 (Backend/Pytest)
 - **対象**: `app.services.speech_scene_service.unload_vlm_model_with_retry`, `POST /api/speech/scene-draft`
 - **検証シナリオ**:
-  1. VLM正常推論時: 推論直後に `POST /v1/models/unload` が 1 回コールされ、`vram_unloaded=True` が返ること。
-  2. VLM例外発生時: `finally` 句内で `unload_vlm_model_with_retry` が発火し、例外送出時もアンロードが試行されること。
-  3. 初回リクエスト失敗時: 最大 1 回リトライが実行され、2回目成功時に `True`、全滅時に `False` が返ること。
+  1. VLM正常推論時: 対象 `instance_id` を `POST /api/v1/models/unload` に指定し、応答ID一致と `GET /api/v1/models` での消失確認後だけ `vram_unloaded=True` となること（REQ-296改訂）。
+  2. VLM例外発生時: `finally` で同じ `instance_id` のアンロードを試み、元の例外を保持すること。
+  3. 初回リクエスト失敗時: 最大1回リトライすること。HTTP 200でも本文不一致・ロード状態残存ならFalseとすること。
 - **検証コマンド**:
   ```bash
   cd backend && pytest tests/test_speech_scene_service.py -k test_vram_unload -v

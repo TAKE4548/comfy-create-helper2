@@ -67,7 +67,8 @@
 - **セリフ口調変換 (`SpeechBubbleToneControls.tsx`)**: LLM を用いた口調変換（ツンデレ、お嬢様、敬語等、`POST /api/speech-tone-presets/rewrite`）
 - **2系統参照型セリフ・SE一括自動生成 (REQ-291)**:
   - 系統A（直近50件の同一キャラ確定セリフ抽出／TonePresetフォールバック）と系統B（SnowballStemmer単語類似度Top-1シーン）による2系統コンテキスト参照。
-  - Qwen3.5-9B-Claude との連携、推論完了後（例外時含む）の `finally` による即時アンロード（`POST /v1/models/unload` 1回リトライ付き）による VRAM 16GB 即時全量返却（`vram_unloaded` フラグ）。
+  - Qwen3.5-9B-Claude との連携。REQ-296改訂: シーン生成専用のVLM要求はsystem/user双方を同一のJSON生成タスクとし、`response_format.json_schema` とサーバー側検証を使う。空応答、非JSON、スキーマ不一致、途中終了などは安全なエラー分類で扱い、生のモデル出力や入力内容をログ・API応答に含めない。
+  - REQ-296改訂: LM Studioのロード済みインスタンスIDを推論と解放で共用する。`POST /api/v1/models/unload` に `{"instance_id": "..."}` を渡し、HTTP成功に加えて応答IDの一致と `GET /api/v1/models` での対象ID消失を確認した場合だけ `vram_unloaded=true` とする。失敗時は1回再試行し、解放失敗で推論の元エラーを置き換えない。`/v1/models/unload` と空本文は現行契約ではない。フラグは対象インスタンスの消失を示し、GPU総使用量0を意味しない。
   - sub話者キャラ同定（`TagSet.name` 照合）、SE装飾（枠なし黄色文字）、および 1024×1024px 実ピクセル座標系への「80点ハイブリッド配置」変換。
   - 初出キャラ時のプリセット作成モーダルと推論の並行オンボーディング、および `isCancelledRef` / `createdPresetIdRef` / `pendingDraftResultRef` による合流レース防止と先行キャンセル救済展開フック（`useSceneSpeechGeneration`）。
 - **フキダシ自動検出**: OpenCV による画像内フキダシ領域・ROI の自動検出 (`POST /api/snapshots/{id}/detect-bubble`)
