@@ -87,7 +87,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         : 'scale(1.05)'
       : CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.8 : 1,
+    opacity: isDragging ? 0.6 : 1,
     zIndex: isDragging ? 50 : undefined,
     boxShadow: isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.3)' : undefined,
   };

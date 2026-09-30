@@ -5,6 +5,8 @@ import { TagChipEditor } from '../index';
 import { parseToChips } from '../useChipParser';
 import { setDeterministicMode, generateChipId } from '../idGenerator';
 
+let mockOnDragStartCallback: any = null;
+let mockOnDragCancelCallback: any = null;
 let mockOnDragEndCallback: any = null;
 
 vi.mock('@dnd-kit/core', async () => {
@@ -12,6 +14,8 @@ vi.mock('@dnd-kit/core', async () => {
   return {
     ...actual,
     DndContext: (props: any) => {
+      mockOnDragStartCallback = props.onDragStart;
+      mockOnDragCancelCallback = props.onDragCancel;
       mockOnDragEndCallback = props.onDragEnd;
       return <div>{props.children}</div>;
     },
@@ -41,6 +45,9 @@ describe('TagChipEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setDeterministicMode(true); // テスト時は決定論的モードをデフォルトにする
+    mockOnDragStartCallback = null;
+    mockOnDragCancelCallback = null;
+    mockOnDragEndCallback = null;
   });
 
   it('renders chips from initial value and placeholder', () => {
@@ -577,6 +584,188 @@ describe('TagChipEditor', () => {
 
       // 末尾のカンマとスペースが巻き戻されずに維持されること
       expect(textarea.value).toBe('apple, banana, ');
+    });
+  });
+
+  describe('REQ-298: Drag and drop tag chip reordering and collision handling', () => {
+    it('AC-1 & AC-2: drops chip onto another and updates chip order, calling onChipsChange and onChange', () => {
+      const onChipsChangeMock = vi.fn();
+      const onChangeMock = vi.fn();
+      const initialChips = [
+        { id: 'c1', text: 'apple', enabled: true },
+        { id: 'c2', text: 'banana', enabled: true },
+        { id: 'c3', text: 'cherry', enabled: true },
+      ];
+
+      render(
+        <TagChipEditor
+          chips={initialChips}
+          value="apple, banana, cherry"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // c1 を c2 の位置へドロップ（順序入れ替え）
+      act(() => {
+        mockOnDragEndCallback({
+          active: { id: 'c1' },
+          over: { id: 'c2' },
+        });
+      });
+
+      expect(onChipsChangeMock).toHaveBeenCalledWith([
+        { id: 'c2', text: 'banana', enabled: true },
+        { id: 'c1', text: 'apple', enabled: true },
+        { id: 'c3', text: 'cherry', enabled: true },
+      ]);
+      expect(onChangeMock).toHaveBeenCalledWith('banana, apple, cherry');
+    });
+
+    it('AC-4: maintains original chip order on drag cancel or when dropping outside (over is null or same)', () => {
+      const onChipsChangeMock = vi.fn();
+      const onChangeMock = vi.fn();
+      const initialChips = [
+        { id: 'c1', text: 'apple', enabled: true },
+        { id: 'c2', text: 'banana', enabled: true },
+      ];
+
+      render(
+        <TagChipEditor
+          chips={initialChips}
+          value="apple, banana"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // ドラッグキャンセル発火
+      act(() => {
+        mockOnDragCancelCallback();
+      });
+      expect(onChipsChangeMock).not.toHaveBeenCalled();
+      expect(onChangeMock).not.toHaveBeenCalled();
+
+      // 有効範囲外へのドロップ（over: null）
+      act(() => {
+        mockOnDragEndCallback({
+          active: { id: 'c1' },
+          over: null,
+        });
+      });
+      expect(onChipsChangeMock).not.toHaveBeenCalled();
+      expect(onChangeMock).not.toHaveBeenCalled();
+
+      // 同一要素上でのドロップ（active.id === over.id）
+      act(() => {
+        mockOnDragEndCallback({
+          active: { id: 'c1' },
+          over: { id: 'c1' },
+        });
+      });
+      expect(onChipsChangeMock).not.toHaveBeenCalled();
+      expect(onChangeMock).not.toHaveBeenCalled();
+    });
+
+    it('AC-5: preserves order for single chip on drag end, and blurs active element on drag start to commit inline edit', () => {
+      const onChipsChangeMock = vi.fn();
+      const onChangeMock = vi.fn();
+      const singleChip = [{ id: 'c1', text: 'solo', enabled: true }];
+
+      const { rerender } = render(
+        <TagChipEditor
+          chips={singleChip}
+          value="solo"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // チップが1件のみの状態で onDragEnd が実行されても例外なく元の順序が維持されること
+      act(() => {
+        mockOnDragEndCallback({
+          active: { id: 'c1' },
+          over: { id: 'c1' },
+        });
+      });
+      expect(onChipsChangeMock).not.toHaveBeenCalled();
+      expect(onChangeMock).not.toHaveBeenCalled();
+
+      // インライン編集用の input にフォーカスがある状態で onDragStart が発火した際、input が blur され編集内容が確定すること
+      const multiChips = [
+        { id: 'c1', text: 'apple', enabled: true },
+        { id: 'c2', text: 'banana', enabled: true },
+      ];
+      rerender(
+        <TagChipEditor
+          chips={multiChips}
+          value="apple, banana"
+          onChipsChange={onChipsChangeMock}
+          onChange={onChangeMock}
+        />
+      );
+
+      // apple をダブルクリックしてインライン編集を開始
+      const appleText = screen.getByText('apple');
+      fireEvent.doubleClick(appleText);
+
+      const inlineInput = screen.getByDisplayValue('apple');
+      expect(inlineInput).toBeInTheDocument();
+      inlineInput.focus();
+      expect(document.activeElement).toBe(inlineInput);
+
+      // 値を変更
+      fireEvent.change(inlineInput, { target: { value: 'orange' } });
+
+      // onDragStart 発火
+      act(() => {
+        mockOnDragStartCallback();
+      });
+
+      // input が blur されて編集内容が確定すること
+      expect(document.activeElement).not.toBe(inlineInput);
+      expect(screen.getByText('orange')).toBeInTheDocument();
+    });
+
+    it('AC-6: ensures existing chip interactions (submenu, delete, text mode) work without interference from drag and drop', () => {
+      const onChangeMock = vi.fn();
+
+      render(
+        <StatefulTagChipEditor
+          initialValue="apple, banana"
+          onChange={onChangeMock}
+        />
+      );
+
+      // 1. タグ名クリックでのサブメニュー開閉
+      const appleText = screen.getByText('apple');
+      fireEvent.click(appleText);
+      expect(screen.getByLabelText('タグ名編集')).toBeInTheDocument();
+      // もう一度クリックで閉じる
+      fireEvent.click(appleText);
+      expect(screen.queryByLabelText('タグ名編集')).not.toBeInTheDocument();
+
+      // 2. 削除ボタンクリックでのタグ削除
+      const deleteBanana = screen.getByLabelText('タグ banana を削除');
+      fireEvent.click(deleteBanana);
+      expect(onChangeMock).toHaveBeenLastCalledWith('apple');
+      expect(screen.queryByText('banana')).not.toBeInTheDocument();
+
+      // 3. テキスト編集モードへの切替と編集
+      const switchBtn = screen.getByRole('button', { name: 'テキスト入力モード切替' });
+      fireEvent.click(switchBtn);
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea).toBeInTheDocument();
+      expect(textarea.value).toBe('apple');
+      fireEvent.change(textarea, { target: { value: 'grape, kiwi' } });
+      expect(onChangeMock).toHaveBeenLastCalledWith('grape, kiwi');
+
+      // チップモードへ戻す
+      const switchBackBtn = screen.getByRole('button', { name: 'チップモード切替' });
+      fireEvent.click(switchBackBtn);
+      expect(screen.getByText('grape')).toBeInTheDocument();
+      expect(screen.getByText('kiwi')).toBeInTheDocument();
     });
   });
 });

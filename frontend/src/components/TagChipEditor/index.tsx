@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   DndContext,
-  closestCenter,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
@@ -9,6 +8,7 @@ import {
   useSensors,
   DragEndEvent,
 } from '@dnd-kit/core';
+import { tagChipCollisionDetection, resetCollisionHistory } from './tagChipCollisionDetection';
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -214,9 +214,25 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     };
   }, [setChips]);
 
+  // ドラッグ開始時の処理
+  const handleDragStart = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    resetCollisionHistory();
+  };
+
+  // ドラッグキャンセル時の処理
+  const handleDragCancel = () => {
+    resetCollisionHistory();
+  };
+
   // ドラッグ完了時の処理
   const handleDragEnd = (event: DragEndEvent) => {
+    resetCollisionHistory();
+
     const { active, over } = event;
+    if (state.length <= 1) return;
     if (!over || active.id === over.id) return;
 
     const oldIndex = state.findIndex((chip) => chip.id === active.id);
@@ -389,7 +405,9 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
         ) : (
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={tagChipCollisionDetection}
+            onDragStart={handleDragStart}
+            onDragCancel={handleDragCancel}
             onDragEnd={handleDragEnd}
           >
             <div className="tag-chip-editor-container">
