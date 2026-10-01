@@ -1,70 +1,77 @@
-# REQ-287 検証結果報告書 (Walkthrough)
+# REQ-300 検証結果報告書 (Walkthrough)
 
-## 1. 概要
-- **対象 PBI**: [REQ-287](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/pbi/active/REQ-287.md) TagSetModals & LoraModals の 1 コンポーネント 1 ファイル化と共通セレクター抽出
-- **テスト計画書**: [docs/design/REQ-287-test-plan.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-287-test-plan.md)
-- **判定結果**: **PASS**
-
----
-
-## 2. Acceptance Criteria (AC) 遵守状況検証テーブル
-
-| AC 番号 | 基準内容 | 検証結果 | 検証エビデンス・確認事項 |
-| :--- | :--- | :--- | :--- |
-| **AC-1** | TagSet および LoRA の新規作成、編集、詳細表示、スナップショット紐付けが正常に動作すること。 | **PASS** | 単体・結合テスト（TagSetModals.test.tsx 5件、LoraModals.test.tsx 6件、CategorySelect.test.tsx 5件、BaseModelSelect.test.tsx 7件）の全件通過を確認。既存の作成・編集・閲覧・コピー・削除シナリオがリファクタ後も完全に維持されている。 |
-| **AC-2** | TagSetModals.test.tsx および LoraModals.test.tsx が全件 PASS すること。 | **PASS** | 
-px vitest run src/components/__tests__/TagSetModals.test.tsx src/components/__tests__/LoraModals.test.tsx にて 11 件全件合格。 |
-| **AC-3** | cd frontend && npm run typecheck（	sc -b --noEmit）がエラー0件でPASSすること。 | **PASS** | 
-pm run typecheck 実行。エラー 0 件（Exit Code 0）。型定義の整合性を完全確認。 |
-| **AC-4** | cd frontend && npx vitest run で既存テストが全件PASSすること。 | **PASS** | ディスカバリ型フルテストスイート（95 test files, 901 tests）を実行し、全件 PASS（Exit Code 0）を確認。リグレッション 0 件。 |
+## 1. 概要 (Overview)
+- **対象PBI**: [REQ-300](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/pbi/active/REQ-300.md) (デスクトップ生成画面におけるプリセットタブバーの画面全幅化と操作ボタンの左ペイン集約)
+- **テスト計画書**: [REQ-300-test-plan.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-300-test-plan.md)
+- **検証判定**: **PASS** (3-Gate Baseline完全通過、AC 100%充足、Red Teaming境界値検証完了)
 
 ---
 
-## 3. 3-Gate Baseline 検証エビデンス
+## 2. 3-Gate Baseline 検証結果 (Verification Gates)
 
-### Gate 1: 静的型検査 (Typecheck Baseline)
-- **コマンド**: cd frontend && npm run typecheck
-- **結果**: PASS (エラー 0 件, Exit Code 0)
-- **ログ抜粋**:
-`
+### Gate 1: 型チェック・コンパイル (Static Typecheck)
+- **実行コマンド**: cd frontend; npm run typecheck
+- **結果**: **PASS (0 errors, Exit code 0)**
+- **実行証跡**:
+`	ext
 > frontend@0.0.0 typecheck
 > tsc -b --noEmit
 `
 
-### Gate 2: フルテストスイートベースライン (Full Test Suite Discovery)
-- **コマンド**: cd frontend && npx vitest run
-- **結果**: PASS (95 ファイル中 95 合格, 901 テスト中 901 合格, Exit Code 0)
-- **ログ抜粋**:
-`
- Test Files  95 passed (95)
-      Tests  901 passed (901)
-   Start at  21:42:19
-   Duration  40.27s (transform 37.76s, setup 46.18s, collect 143.47s, tests 53.28s, environment 202.68s, prepare 64.14s)
+### Gate 2: フルテストスイート回帰検証 (Full Test Suite Discovery)
+- **実行コマンド**: cd frontend; npm test (ファイル指定無しのフルスイート実行)
+- **結果**: **PASS (0 failures)**
+- **実行証跡**:
+`	ext
+ Test Files  96 passed (96)
+      Tests  907 passed (907)
+   Duration  34.53s
 `
 
-### Gate 3: シナリオ & Red Teaming (境界値・異常系検証)
-- **コマンド**: cd frontend && npx vitest run src/components/common/__tests__/CategorySelect.test.tsx src/components/common/__tests__/BaseModelSelect.test.tsx src/components/__tests__/TagSetModals.test.tsx src/components/__tests__/LoraModals.test.tsx
-- **結果**: PASS (4 ファイル中 4 合格, 23 テスト全件合格)
-- **検証項目と結果**:
-  1. CategorySelect:
-     - 空文字入力時のインラインバリデーションエラーメッセージ表示（Red Team 異常系 1）: PASS
-     - キャンセルボタンによる元のドロップダウン復帰動作: PASS
-     - 新規作成・選択通知（piCreateFn 連携）: PASS
-  2. BaseModelSelect:
-     - ベースモデル 0 件時のフォールバック「No base models configured.」描画（Red Team 境界値 3）: PASS
-     - 全選択・全解除時のチェックボックスおよび ID 配列更新（Red Team 境界値 4）: PASS
-     - アクセントカラー設定（purple / green）の適用: PASS
-  3. TagSetModals & LoraModals:
-     - 既存のモーダル全機能リグレッションなし: PASS
+### Gate 3: シナリオ・Red Teaming 検証 (Scenario & Red Teaming)
+- **実行コマンド**: cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx
+- **結果**: **PASS (6 passed / 6 tests)**
+- **実行証跡**:
+`	ext
+ ✓ src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx (6 tests)
+   ✓ AC-1: renders #desktop-preset-tabs-bar above ResizableSplitLayout spanning full width
+   ✓ AC-2: renders all open preset tabs inside an overflow-x-auto container within #desktop-preset-tabs-bar
+   ✓ AC-3: places #add-set-btn and #manage-presets-btn in #left-pane-toolbar and triggers callbacks
+   ✓ AC-4: handles tab selection, checkbox toggle, tab removal, and undo/redo clicks
+   ✓ Red Team: does not crash when sets is empty or activeSet is null, rendering left-pane-toolbar cleanly
+   ✓ Red Team: truncates long preset names properly with max-w-[140px] truncate and permits horizontal scrolling
+`
+- **生成画面総合回帰テスト**: cd frontend; npx vitest run src/pages/__tests__/GeneratePage.test.tsx
+  - 結果: **PASS (13 passed / 13 tests)**
 
 ---
 
-## 4. ローカルモデル QA 監査 & VRAM クリーンアップ
+## 3. 受入基準 (AC) 充足状況マトリクス (AC Compliance Table)
 
-- **監査ツール**: local_model_adapter.py qa-audit docs/design/REQ-287-test-plan.md
-- **使用モデル**: qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored (Domain: reasoning)
-- **監査所見**:
-  - コマンド具体性: 実テストコードおよびフルテストスイートの実行コマンドが明示されており、再現性が高い。
-  - テスト自動化チェック: 自己申告によるパス宣言ではなく、実際のテストランナーログの完全一致をもって検証を証明する方針を順守。
-- **GPU VRAM 解放確認**:
-  - python local_model_adapter.py unload を実行。LM Studio 上のモデルアンロードを完了し、VRAM 100% 解放確認済み。
+| AC番号 | 受入基準 (AC) 要件 | 検証手法・対象テスト | 結果 | 判定理由・エビデンス |
+| :--- | :--- | :--- | :---: | :--- |
+| **AC-1** | デスクトップにおけるタブバーの画面全幅表示 (#desktop-preset-tabs-bar が ResizableSplitLayout の上位に配置され画面横幅全体を展開) | 単体テスト (DesktopLayout.tabs.test.tsx - AC-1) | **PASS** | #desktop-preset-tabs-bar が ResizableSplitLayout よりも前に全幅独立要素として配置されていることをDOM階層で確認。 |
+| **AC-2** | 複数プリセットの拡張表示とスクロール性 (overflow-x-auto により多数のタブを省略なく表示し横スクロール可能) | 単体テスト (DesktopLayout.tabs.test.tsx - AC-2) | **PASS** | 登録された全プリセットタブがレンダリングされ、親コンテナが overflow-x-auto クラスを保持して画面外への不要なスクロールを起こさず水平スクロール可能であることを確認。 |
+| **AC-3** | 「Add Set」「管理」ボタンの左ペイン内ツールバー配置・操作性 (全幅タブバー右端ではなく左ペイン上部 #left-pane-toolbar 内に配置されクリックでモーダル等起動) | 単体テスト (DesktopLayout.tabs.test.tsx - AC-3) | **PASS** | #add-set-btn と #manage-presets-btn が #left-pane-toolbar 内に存在し、クリック時に各ハンドラー（onAddSet, onOpenPresetManager）が正確に呼び出されることを確認。 |
+| **AC-4** | タブ切り替え・Undo/Redo・一括生成チェック等の機能完全維持 (既存の全機能が破綻なく動作) | 単体テスト (DesktopLayout.tabs.test.tsx - AC-4) | **PASS** | タブクリック（onSelectSet）、チェックボックス切り替え（onToggleBatchCheck）、削除（onRemoveTab）、Undo/Redoボタン（onUndo, onRedo）の全イベント連動を確認。 |
+| **AC-5** | モバイルレイアウトの現状維持とブレークポイント整合 (DesktopLayout 固有の変更であり MobileLayout は影響を受けない) | フル回帰テスト (GeneratePage.test.tsx / DesktopLayout.tabs.test.tsx) | **PASS** | モバイル表示テスト（REQ-161等の既存テスト）がすべてパスし、DesktopLayout 内の変更がモバイル側に波及していないことを確認。 |
+| **AC-6** | 品質検証 (TypeScript型検査エラー0件、全テストパス) | 
+pm run typecheck, 
+pm test | **PASS** | 型チェック 0 エラー、96テストファイル・907件のテストすべて成功 (0 failures)。 |
+
+---
+
+## 4. Red Teaming (境界値・異常系) 検証
+
+1. **プリセットが空または未選択状態 (sets = [], ctiveSet = null)**:
+   - openPresetIds が空の場合でもクラッシュせず、左ペインの #add-set-btn および #manage-presets-btn が正常に描画され機能することを確認。
+2. **長大名プリセットの大量登録時**:
+   - 非常に長い名称のプリセットを登録しても、各タブのタイトルに max-w-[140px] truncate が適用され、レイアウト崩れを起こさず overflow-x-auto コンテナ内で安全にスクロール可能であることを検証済み。
+
+---
+
+## 5. Local Model QA Audit 結果
+- **実行モデル**: qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored (Reasoning Domain)
+- **監査結果**: CONDITIONALLY APPROVED (機械的実行可能性はPASS、テスト計画書に機械的セレクタ等の定量的記述を推奨)
+- **対応状況**: 推奨された exact CSS selector（#desktop-preset-tabs-bar, #left-pane-toolbar, #add-set-btn, #manage-presets-btn）および具体的なプロパティ（overflow-x-auto, max-w-[140px]）をテストコード（DesktopLayout.tabs.test.tsx）に組み込み、完全に決定論的・客観的テストとして検証を完了。
+- **GPU VRAM Cleanup**: 監査完了直後にモデルの完全アンロードを実行し、VRAM解放済みであることを確認 (No models currently loaded in LM Studio.)。

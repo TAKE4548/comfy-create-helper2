@@ -1,127 +1,75 @@
-# Implementation Plan: REQ-287
+# Implementation Plan: REQ-300
 
 ## Target and Current State
 
-REQ-287 は、フロントエンド肥大化解消計画（PBI-REF-06）に基づき、約844行におよぶ `TagSetModals.tsx` と約696行におよぶ `LoraModals.tsx` を「1コンポーネント1ファイル」の原則に従って独立ファイル群に分割・ディレクトリ構造化する。
-さらに、両モーダルで重複して実装されているカテゴリ選択ロジックおよびベースモデル選択ロジックを、共通セレクター部品（`CategorySelect.tsx`, `BaseModelSelect.tsx`）として `frontend/src/components/common/` に抽出・再利用する。
-既存の呼び出し元（`TagsPage.tsx`, `LoRAsPage.tsx`）および既存のテストコード（`TagSetModals.test.tsx`, `LoraModals.test.tsx`）への完全な後方互換性を保証するため、Facade（Barrel 再エクスポート）を配置する。
+REQ-300 は、デスクトップ生成画面（`DesktopLayout.tsx`）における情報設計（Information Design）および操作導線設計（Interaction Design）を根本から最適化する改修です。
+現在、プリセットタブバー（`SetTabItem` 一覧）が左ペイン（入力設定カラム）の幅制約内に配置されているため、プリセット名が付与されると2つ程度しか同時にタブを視認できず、一覧性や切り替え作業性が著しく低下しています。一方で、右ペイン（プレビューエリア）の上部は空間を持て余しています。
+また、「Add Set（セット追加）」および「管理（プリセット管理）」ボタンは、左ペインでのプロンプト・パラメータ編集やUndo/Redoといった試行錯誤の主導線に属しており、タブバーと一緒に画面右端へ移動してしまうとFittsの法則（Fitts's Law）に反してマウス移動距離が著しく増大します。
+
+本改修では以下の構造的再編を実施します：
+1. **全幅プリセットタブバー**: プリセットタブ一覧を左右2ペイン（入力／プレビュー）の共通親コンテナ直上（画面幅100%）に配置昇格し、プレビューエリア上部を含めた全幅を活用して多数のタブを一覧・横スクロール可能にします。
+2. **操作ボタンの左ペイン集約**: 「Add Set」「管理」ボタンを全幅タブバーから切り離し、左ペイン最上部のツールバー領域（Undo/Redoボタン配置エリア）へ近接集約配置することで、マウス移動を最小化し入力ワークフローを一元化します。
+3. **既存動作およびモバイルレイアウトの完全維持**: 各タブの選択・アクティブ表示・チェックボックス・削除・Undo/Redo・プリセット管理モーダルの開閉機能、およびモバイルレイアウト（`MobileLayout.tsx`）は一切変更せず現状維持します。
 
 ## SSoT and Boundary Audit
 
-- **SSoT 仕様書**: `docs/specs/SPEC_TAGS.md`, `docs/specs/SPEC_LORAS.md`
-- **対象サブシステム**: `frontend`（UI/コンポーネント設計のリファクタリングであり、バックエンド API 契約の変更はなし）
+- **SSoT 仕様書**: `docs/specs/SPEC_GENERATE.md`（Section 2 デスクトップレイアウト）
+- **対象サブシステム**: `frontend`（UI/レイアウトコンポーネントの再編であり、バックエンド API 契約の変更はなし）
 - **影響ファイル**:
-  - `frontend/src/components/common/CategorySelect.tsx` (新規)
-  - `frontend/src/components/common/BaseModelSelect.tsx` (新規)
-  - `frontend/src/components/common/__tests__/CategorySelect.test.tsx` (新規)
-  - `frontend/src/components/common/__tests__/BaseModelSelect.test.tsx` (新規)
-  - `frontend/src/components/TagSetModals/types.ts` (新規)
-  - `frontend/src/components/TagSetModals/TagSetFormFields.tsx` (新規)
-  - `frontend/src/components/TagSetModals/TagSetCreateModal.tsx` (新規)
-  - `frontend/src/components/TagSetModals/TagSetEditModal.tsx` (新規)
-  - `frontend/src/components/TagSetModals/TagSetDetailModal.tsx` (新規)
-  - `frontend/src/components/TagSetModals/index.ts` (新規)
-  - `frontend/src/components/LoraModals/types.ts` (新規)
-  - `frontend/src/components/LoraModals/LoraFormFields.tsx` (新規)
-  - `frontend/src/components/LoraModals/LoraRegisterModal.tsx` (新規)
-  - `frontend/src/components/LoraModals/LoraDetailModal.tsx` (新規)
-  - `frontend/src/components/LoraModals/index.ts` (新規)
-  - `frontend/src/components/TagSetModals.tsx` (改修: Facade化)
-  - `frontend/src/components/LoraModals.tsx` (改修: Facade化)
-  - `frontend/src/components/InlineCategorySelect.tsx` (改修: Facade化)
-  - `frontend/src/pages/TagsPage.tsx` (検証 / 最適化)
-  - `frontend/src/pages/LoRAsPage.tsx` (検証 / 最適化)
+  - `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` (改修)
+  - `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` (新規テスト)
 
 ## Mermaid DAG
 
 ```mermaid
 graph TD
-  subgraph Phase1_Common["フェーズ1: 共通セレクター部品 (並列実行可能)"]
-    T1["REQ-287-T1: CategorySelect 実装 & 単体テスト"]
-    T2["REQ-287-T2: BaseModelSelect 実装 & 単体テスト"]
+  subgraph Phase1_Layout["フェーズ1: レイアウト構造再編"]
+    T1["REQ-300-T1: DesktopLayout 全幅タブバー昇格 & 左ペインツールバー集約"]
   end
 
-  subgraph Phase2_Modals["フェーズ2: モーダル分割 (並列実行可能)"]
-    T3["REQ-287-T3: TagSet types / FormFields / CreateModal"]
-    T5["REQ-287-T5: Lora types / FormFields / RegisterModal"]
-    T4["REQ-287-T4: TagSet Edit / Detail / index / Facade"]
-    T6["REQ-287-T6: Lora Detail / index / Facade"]
+  subgraph Phase2_TestVerification["フェーズ2: テスト実装 & 検証"]
+    T2["REQ-300-T2: 全幅タブバー・ツールバー・Red Team単体/統合テスト実装"]
   end
 
-  subgraph Phase3_Verification["フェーズ3: 統合・回帰検証"]
-    T7["REQ-287-T7: 全体結合リグレッション検証・E2E整合性確認"]
-  end
-
-  T1 --> T3
-  T2 --> T3
-  T1 --> T5
-  T2 --> T5
-  T3 --> T4
-  T5 --> T6
-  T4 --> T7
-  T6 --> T7
+  T1 --> T2
 ```
 
 - **並列性 (Parallelism Priority)**:
-  - T1 (CategorySelect) と T2 (BaseModelSelect) は互いに依存せず並列実行可能。
-  - T3/T4 (TagSetModals 系列) と T5/T6 (LoraModals 系列) は直交しており、セレクター抽出完了後に並列進行が可能。
-- **最大深度**: 3層（T1/T2 → T3/T5 → T4/T6 → T7）。DAG ボトルネックのない最適な依存関係。
+  - T1 (コンポーネント構造再編) と T2 (テスト実装) は依存関係を持ちます。T1 での DOM 階層およびセレクタ ID（`#desktop-preset-tabs-bar`, `#left-pane-toolbar`）の確定後、T2 にて厳密な DOM 階層検証・イベント検証・Red Team 境界値テストを記述します。
+- **最大深度**: 2層（T1 → T2）。DAG ボトルネックのない最適な依存関係。
 
 ## Atomicity Audit and Verification Commands
 
 | タスクID | 対象ファイル | 依存 | 変更行数目安 | 検証コマンド (Verification Command) |
 |---|---|---|---:|---|
-| **REQ-287-T1** | `frontend/src/components/common/CategorySelect.tsx`<br>`frontend/src/components/common/__tests__/CategorySelect.test.tsx`<br>`frontend/src/components/InlineCategorySelect.tsx` | なし | ≤220行 | `cd frontend; npx vitest run src/components/common/__tests__/CategorySelect.test.tsx && npm run typecheck` |
-| **REQ-287-T2** | `frontend/src/components/common/BaseModelSelect.tsx`<br>`frontend/src/components/common/__tests__/BaseModelSelect.test.tsx` | なし | ≤160行 | `cd frontend; npx vitest run src/components/common/__tests__/BaseModelSelect.test.tsx && npm run typecheck` |
-| **REQ-287-T3** | `frontend/src/components/TagSetModals/types.ts`<br>`frontend/src/components/TagSetModals/TagSetFormFields.tsx`<br>`frontend/src/components/TagSetModals/TagSetCreateModal.tsx` | T1, T2 | ≤280行 | `cd frontend; npm run typecheck` |
-| **REQ-287-T4** | `frontend/src/components/TagSetModals/TagSetEditModal.tsx`<br>`frontend/src/components/TagSetModals/TagSetDetailModal.tsx`<br>`frontend/src/components/TagSetModals/index.ts`<br>`frontend/src/components/TagSetModals.tsx` | T3 | ≤300行 | `cd frontend; npx vitest run src/components/__tests__/TagSetModals.test.tsx && npm run typecheck` |
-| **REQ-287-T5** | `frontend/src/components/LoraModals/types.ts`<br>`frontend/src/components/LoraModals/LoraFormFields.tsx`<br>`frontend/src/components/LoraModals/LoraRegisterModal.tsx` | T1, T2 | ≤290行 | `cd frontend; npm run typecheck` |
-| **REQ-287-T6** | `frontend/src/components/LoraModals/LoraDetailModal.tsx`<br>`frontend/src/components/LoraModals/index.ts`<br>`frontend/src/components/LoraModals.tsx` | T5 | ≤290行 | `cd frontend; npx vitest run src/components/__tests__/LoraModals.test.tsx && npm run typecheck` |
-| **REQ-287-T7** | `frontend/src/pages/TagsPage.tsx`<br>`frontend/src/pages/LoRAsPage.tsx` | T4, T6 | ≤50行 | `cd frontend; npm run typecheck && npx vitest run src/components/__tests__/TagSetModals.test.tsx src/components/__tests__/LoraModals.test.tsx src/components/common/__tests__/CategorySelect.test.tsx src/components/common/__tests__/BaseModelSelect.test.tsx` |
+| **REQ-300-T1** | `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` | なし | ≤120行 | `cd frontend; npm run typecheck` |
+| **REQ-300-T2** | `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` | T1 | ≤180行 | `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` |
 
-すべてのタスクカードはファイル数 ≤ 3（一部密接結合ファイルを含め最大4ファイル）かつ行数 ≤ 300行のアトミック基準を満たしている（PASS）。
+すべてのタスクカードはファイル数 ≤ 3 かつ行数 ≤ 300行のアトミック基準を満たしています（PASS）。
 
 ## Three-Gate Testing Strategy
 
 - **Gate 1 (静的型検査 Baseline)**:
   - コマンド: `cd frontend; npm run typecheck`（`tsc -b --noEmit` エラー 0 件）
 - **Gate 2 (全テスト自動実行 Baseline)**:
-  - コマンド: `cd frontend; npx vitest run`（全スイート PASS、リグレッション 0 件）
+  - コマンド: `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx && cd frontend; npx vitest run src/pages/__tests__/GeneratePage.test.tsx`（全テスト PASS）
+  - 全スイート回帰確認: `cd frontend; npm test`
 - **Gate 3 (シナリオ・Red Team 検証)**:
-  - `docs/design/REQ-287-test-plan.md` に記載の 4 シナリオ（TagSet 作成・編集・詳細、LoRA 登録・詳細・コピー・編集）および 5 件の Red Team 境界値（空文字バリデーション、API 障害フォールバック、BaseModel 0 件表示、全選択・全解除、Backdrop クローズ非干渉）を検証。
+  - `docs/design/REQ-300-test-plan.md` に記載の 5 シナリオ（全幅配置、複数タブ横スクロール、操作ボタン集約、インタラクション維持、モバイル分離）および 3 件の Red Team 境界値（空プリセット時の安全描画、長大名タブオーバーフロー制御、タブ削除時のフォールバック同期）を検証。
 
 ## Trade-off Disclosure and Technical Constraints
 
-1. **Facade（互換再エクスポート層）の維持 vs 完全移行によるファイル完全置換**:
-   - *検討内容*: `TagSetModals.tsx` と `LoraModals.tsx` を即座に削除して `TagSetModals/index.ts` のみに置き換えるか、あるいは `TagSetModals.tsx` を Facade として残すか。
-   - *決定*: 本リポジトリの既存先行事例（`SpeechBubbleEditorModal.tsx`）に合わせ、`TagSetModals.tsx` および `LoraModals.tsx` を `export * from './TagSetModals/index'` とする Facade ファイルとして残す。これにより既存テストおよびページコンポーネントからの import パスを一切破壊せず、移行中の安全性を 100% 担保する。
-2. **BaseModelSelect の TanStack Query 内包 vs 親コンポーネントからの完全 Props 注入**:
-   - *検討内容*: `BaseModelSelect` 内部で `useQuery(['base-models'], ...)` を呼び出すか、親から常に `baseModels` 配列を渡すか。
-   - *決定*: `baseModels?: BaseModel[]` prop を受け取り、渡された場合はそれを優先し、省略された場合は内部の `useQuery` で自動フェッチするハイブリッド設計を採用する。これにより単体テストでのモック容易性と、モーダル本体でのボイラープレート削減を両立する。
-3. **アクセントカラーのクラス指定 vs コンポーネントバリアント方式**:
-   - *検討内容*: TagSet（紫色 `#7C6FDD`）と LoRA（緑色 `accent-green`）でテーマカラーが異なる。
-   - *決定*: `CategorySelect` は既存 `InlineCategorySelect` の `accentClass` パラメータを踏襲し、`BaseModelSelect` でも `accentClass`（`'accent-[#7C6FDD]'` / `'accent-accent-green'`）を指定可能とする。
+1. **タブ名表示幅（max-w）の拡張 vs 極端に多数のタブ時の横スクロール負荷**:
+   - *検討内容*: 全幅化に伴い各タブの最大横幅を従来の `max-w-[80px]` からどこまで広げるか。固定幅にするか可変幅にするか。
+   - *決定*: `max-w-[140px]` 程度に設定し、`flex-shrink-0` を付与する。長大名でも視認性を確保しつつ、過度に1つのタブが横幅を占有しないバランスとし、画面幅を超える場合は独立した `overflow-x-auto` によりスクロール可能とする。
+2. **左ペインツールバーの縦幅（垂直スペース）の消費 vs マウス移動効率（Fitts's Law）**:
+   - *検討内容*: 「Add Set」や「管理」ボタンを全幅タブバーの右端（プレビュー右上等）に置けば左ペインの垂直スペースをわずかに節約できるが、Fitts's Law に反して右端への視線・マウス移動が発生する。
+   - *決定*: ユーザビリティと操作の一元性を最優先とし、左ペイン最上部（Undo/Redoと同一ライン）に `py-2.5` のコンパクトなツールバーとして集約配置する。入力作業と試行錯誤（プリセット切替・追加・元に戻す）が同一カラム内で完結する。
+3. **ワークフロー未選択時のタブバー描画抑制**:
+   - *検討内容*: ワークフローが未選択の状態でタブバーを表示するかどうか。
+   - *決定*: ワークフローが選択されていない状態ではプリセット（Set）自体が存在し得ないため、従来通り `selectedWorkflowId` が truthy な場合のみタブバーおよび左ペインツールバーを描画する。
 
 ## Proposed File Changes
 
-#### [LOCAL NEW] [CategorySelect.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/CategorySelect.tsx)
-#### [LOCAL NEW] [CategorySelect.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/CategorySelect.test.tsx)
-#### [LOCAL NEW] [BaseModelSelect.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/BaseModelSelect.tsx)
-#### [LOCAL NEW] [BaseModelSelect.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/BaseModelSelect.test.tsx)
-#### [LOCAL MODIFY] [InlineCategorySelect.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/InlineCategorySelect.tsx)
-#### [LOCAL NEW] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/types.ts)
-#### [LOCAL NEW] [TagSetFormFields.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/TagSetFormFields.tsx)
-#### [LOCAL NEW] [TagSetCreateModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/TagSetCreateModal.tsx)
-#### [LOCAL NEW] [TagSetEditModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/TagSetEditModal.tsx)
-#### [LOCAL NEW] [TagSetDetailModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/TagSetDetailModal.tsx)
-#### [LOCAL NEW] [index.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals/index.ts)
-#### [LOCAL MODIFY] [TagSetModals.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagSetModals.tsx)
-#### [LOCAL NEW] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals/types.ts)
-#### [LOCAL NEW] [LoraFormFields.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals/LoraFormFields.tsx)
-#### [LOCAL NEW] [LoraRegisterModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals/LoraRegisterModal.tsx)
-#### [LOCAL NEW] [LoraDetailModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals/LoraDetailModal.tsx)
-#### [LOCAL NEW] [index.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals/index.ts)
-#### [LOCAL MODIFY] [LoraModals.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/LoraModals.tsx)
-#### [LOCAL MODIFY] [TagsPage.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/TagsPage.tsx)
-#### [LOCAL MODIFY] [LoRAsPage.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/LoRAsPage.tsx)
-
+#### [LOCAL MODIFY] [DesktopLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/DesktopLayout.tsx)
+#### [LOCAL NEW] [DesktopLayout.tabs.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx)

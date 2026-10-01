@@ -44,7 +44,7 @@ const SetTabItem = memo(function SetTabItem({
   return (
     <div
       onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
         isActive
           ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
           : 'bg-surface-2 border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-400'
@@ -57,7 +57,7 @@ const SetTabItem = memo(function SetTabItem({
         onClick={(e) => e.stopPropagation()}
         className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
       />
-      <span className="truncate max-w-[80px]">{name}</span>
+      <span className="truncate max-w-[140px]">{name}</span>
       <button
         type="button"
         onClick={(e) => {
@@ -490,77 +490,33 @@ export const DesktopLayout = ({
         </div>
       </div>
 
-      {/* Multi-Set Tab Bar (Desktop only) */}
+      {/* Left Pane Toolbar: Add Set / 管理 / Undo / Redo */}
       {selectedWorkflowId && (
-        <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2.5 flex-wrap gap-2.5">
-          <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-1 scrollbar-thin">
-            {sets
-              .filter((s) => (openPresetIds || []).map(String).includes(String(s.id)))
-              .map((s) => (
-                <SetTabItem
-                  key={s.id}
-                  id={s.id}
-                  name={s.name}
-                  checked={s.checked}
-                  isActive={String(s.id) === String(activeSetId)}
-                  onClick={() => {
-                    handleSelectPresetTab(s.id)
-                  }}
-                  onToggleCheck={() => toggleSetChecked(s.id)}
-                  onRemove={() => removeSet(s.id)}
-                />
-              ))}
+        <div id="left-pane-toolbar" className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/30 px-4 py-2.5 flex items-center justify-between gap-2.5 flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {activeSet && (
+              <span className="text-[10px] text-zinc-500 px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded font-medium truncate max-w-[110px]" title={activeSet.name}>
+                {activeSet.name}
+              </span>
+            )}
+            {activeSet && (
+              <div className="flex items-center gap-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+                <button type="button" id="undo-btn" onClick={() => undo?.(activeSet.id)} disabled={!canUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↩</button>
+                <button type="button" id="redo-btn" onClick={() => redo?.(activeSet.id)} disabled={!canRedo} title="Redo (Ctrl+Y)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↪</button>
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button type="button" id="add-set-btn" onClick={() => {
               const allNames = presets?.map((p) => p.name) || []
               setNewSetName(generateNextProfileName('Set', allNames))
               setCopySourceId('default')
               setShowCopyModal(true)
-            }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all">
+            }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all">
               <Plus size={11} />Add Set
             </button>
-            <button
-              type="button"
-              id="manage-presets-btn"
-              onClick={() => setIsPresetManagerOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all"
-            >
+            <button type="button" id="manage-presets-btn" onClick={() => setIsPresetManagerOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all">
               📑 管理
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Set Specific Settings / Param Sync (Desktop only) */}
-      {selectedWorkflowId && activeSet && (
-        <div className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/20 px-5 py-3.5 flex items-center gap-3">
-          {activeSet && (
-            <span className="text-[10px] text-zinc-500 px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded font-medium truncate max-w-[120px]">
-              {activeSet.name}
-            </span>
-          )}
-          <div className="flex items-center gap-1 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
-            <button
-              type="button"
-              id="undo-btn"
-              onClick={() => undo?.(activeSet.id)}
-              disabled={!canUndo}
-              title="Undo (Ctrl+Z)"
-              className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-            >
-              ↩
-            </button>
-            <button
-              type="button"
-              id="redo-btn"
-              onClick={() => redo?.(activeSet.id)}
-              disabled={!canRedo}
-              title="Redo (Ctrl+Y)"
-              className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
-            >
-              ↪
             </button>
           </div>
         </div>
@@ -817,17 +773,31 @@ export const DesktopLayout = ({
   )
 
   return (
-    <div className="flex h-full overflow-hidden w-full relative">
-      <ResizableSplitLayout
-        direction="horizontal"
-        storageKey={LS_KEYS.LAYOUT_MAIN_SPLIT}
-        initialSize={420}
-        minSize={380}
-        maxSize={700}
-        first={leftPane}
-        second={rightPane}
-        className="w-full h-full"
-      />
+    <div className="flex flex-col h-full overflow-hidden w-full relative">
+      {/* Full-Width Preset Tabs Bar */}
+      {selectedWorkflowId && (
+        <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2 w-full overflow-hidden flex-shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto w-full py-1 scrollbar-thin">
+            {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
+              <SetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onClick={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dual-Pane Content Area */}
+      <div className="flex-1 min-h-0 relative w-full overflow-hidden">
+        <ResizableSplitLayout
+          direction="horizontal"
+          storageKey={LS_KEYS.LAYOUT_MAIN_SPLIT}
+          initialSize={420}
+          minSize={380}
+          maxSize={700}
+          first={leftPane}
+          second={rightPane}
+          className="w-full h-full"
+        />
+      </div>
 
       <GenerateModalsOverlay
         state={state}
