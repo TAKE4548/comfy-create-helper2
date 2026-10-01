@@ -146,26 +146,31 @@ interface TagChipEditorProps {
 
 | 操作 | 動作 |
 |---|---|
-| カンマ / Enter / Tab | カーソル前テキストをチップ化・確定 |
-| ペースト（カンマ区切り） | 複数チップを一括生成 |
+| カンマ / Enter / Tab | カーソル前テキストをチップ化・確定（カンマは除去） |
+| ピリオド（Animaモード時） | `isAnimaMode: true` かつ括弧ネスト外の場合、末尾ピリオドを保持したままチップ化・確定（例: `a cat.` → `[a cat.]`） |
+| ペースト（複合区切り） | 通常モード時はカンマ区切り、Animaモード時はカンマまたはピリオド（小数点除く）で複数チップを一括生成 |
 | Backspace（フィールドが空） | 直前チップを削除 |
 
 ### 3-7. テキスト変換とパース規則
 
-- **括弧・重み記法の保護**: `(tag:1.2)` や `(tag1, tag2:1.3)` のような括弧ネスト内のカンマは分割せず、1つのタグトークンとして保持する。
-- **空トークン除外**: 連続カンマ `,,` や空白のみのトークンは自動的に `trim()` され除外される。
+- **括弧・重み記法の保護**: `(tag:1.2)` や `(tag1, tag2:1.3)` のような括弧ネスト内のカンマおよびピリオドは分割せず、1つのタグトークンとして保持する。
+- **Animaモード（自然言語・文構造）のピリオド分割**:
+  - `isAnimaMode: true` の場合、括弧ネスト外のピリオド（`.`）を文区切りとして認識し、末尾にピリオドを保持したままチップ化する。
+  - 数字に挟まれたピリオド（例: `1.5`、`0.05`）は小数点として判定され分割から保護される。
+- **空トークン除外**: 連続カンマ `,,` や空白のみ、または区切り文字（`.`, `,`）と空白のみで実質的内容を含まないトークンは自動的に除外される。
+- **プロンプト文字列結合（chipsToString）**:
+  - 通常モード（`isAnimaMode: false` / デフォルト）: 後方互換性を保ち、有効チップを一律 `", "` で結合。
+  - Animaモード（`isAnimaMode: true`）: 直前の有効チップがピリオド（`.`）で終端している場合は半角空白 `" "` で後続チップと結合し、それ以外の場合は `", "` で結合。
 
 ```typescript
+// 文字列分割（カンマ / Anima時ピリオド）
+function splitTags(text: string, isAnimaMode: boolean = false): string[];
+
 // 文字列 → チップ配列
-function parseToChips(text: string): TagChip[] {
-  return text.split(",").map(s => s.trim()).filter(Boolean)
-    .map(text => ({ id: generateChipId(), text, enabled: true }));
-}
+function parseToChips(text: string, isAnimaMode: boolean = false): TagChip[];
 
 // チップ配列 → 文字列（ComfyUI 投入・onChange 用）
-function chipsToString(chips: TagChip[]): string {
-  return chips.filter(c => c.enabled).map(c => c.text).join(", ");
-}
+function chipsToString(chips: TagChip[], isAnimaMode: boolean = false): string;
 ```
 
 ### 3-8. Undo/Redo

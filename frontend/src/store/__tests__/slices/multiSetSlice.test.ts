@@ -63,6 +63,16 @@ describe('multiSetSlice helper functions', () => {
       ];
       expect(chipsToString(chips)).toBe('');
     });
+
+    it('joins chips with space if previous chip ends with dot in anima mode', () => {
+      const chips: TagChip[] = [
+        { id: '1', text: 'a photo of a cat.', enabled: true },
+        { id: '2', text: 'highly detailed', enabled: true },
+        { id: '3', text: '4k', enabled: true },
+      ];
+      expect(chipsToString(chips, true)).toBe('a photo of a cat. highly detailed, 4k');
+      expect(chipsToString(chips, false)).toBe('a photo of a cat., highly detailed, 4k');
+    });
   });
 
   describe('getEffectiveParamValues', () => {
@@ -82,6 +92,22 @@ describe('multiSetSlice helper functions', () => {
       const effective = getEffectiveParamValues(paramValues, promptChips);
       expect(effective.positive).toBe('masterpiece, best quality');
       expect(effective.negative).toBe('lowres, bad anatomy');
+    });
+
+    it('passes isAnimaMode flag to chipsToString correctly', () => {
+      const paramValues = { positive: 'default prompt' };
+      const promptChips: Record<string, TagChip[]> = {
+        positive: [
+          { id: '1', text: 'subject.', enabled: true },
+          { id: '2', text: 'lighting', enabled: true },
+        ],
+      };
+
+      const effectiveAnima = getEffectiveParamValues(paramValues, promptChips, true);
+      expect(effectiveAnima.positive).toBe('subject. lighting');
+
+      const effectiveStandard = getEffectiveParamValues(paramValues, promptChips, false);
+      expect(effectiveStandard.positive).toBe('subject., lighting');
     });
 
     it('preserves paramValues when promptChips is empty or undefined', () => {
@@ -244,5 +270,28 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
     expect(state.promptChips).toEqual(chips);
     const activeSet = state.sets.find((s) => s.id === state.activeSetId);
     expect(activeSet?.promptChips).toEqual(chips);
+  });
+
+  it('reflects isAnimaMode when calling store getEffectiveParamValues', () => {
+    useGenerationStore.setState({
+      paramValues: { positive: 'fallback' },
+      promptChips: {
+        positive: [
+          { id: '1', text: '1girl.', enabled: true },
+          { id: '2', text: 'smile', enabled: true },
+        ],
+      },
+      isAnimaMode: false,
+    });
+
+    expect(useGenerationStore.getState().getEffectiveParamValues().positive).toBe('1girl., smile');
+
+    useGenerationStore.getState().setIsAnimaMode?.(true);
+    expect(useGenerationStore.getState().isAnimaMode).toBe(true);
+    expect(useGenerationStore.getState().getEffectiveParamValues().positive).toBe('1girl. smile');
+
+    useGenerationStore.getState().setIsAnimaMode?.(false);
+    expect(useGenerationStore.getState().isAnimaMode).toBe(false);
+    expect(useGenerationStore.getState().getEffectiveParamValues().positive).toBe('1girl., smile');
   });
 });

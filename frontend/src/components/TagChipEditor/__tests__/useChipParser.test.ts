@@ -1,7 +1,55 @@
 import { describe, it, expect } from 'vitest';
-import { parseToChips, chipsToString, parseTagWeight, formatTagWeight, adjustWeight, useChipParser } from '../useChipParser';
+import { parseToChips, chipsToString, splitTags, parseTagWeight, formatTagWeight, adjustWeight, useChipParser } from '../useChipParser';
 
 describe('useChipParser', () => {
+  describe('splitTags', () => {
+    it('should split by comma in standard mode', () => {
+      expect(splitTags('apple, banana, cherry')).toEqual(['apple', 'banana', 'cherry']);
+      expect(splitTags('1girl. red dress', false)).toEqual(['1girl. red dress']);
+    });
+
+    it('should split by period and comma in anima mode, preserving trailing period', () => {
+      expect(splitTags('1girl, solo. red dress. (tag:1.2), masterpiece', true)).toEqual([
+        '1girl',
+        'solo.',
+        'red dress.',
+        '(tag:1.2)',
+        'masterpiece',
+      ]);
+    });
+
+    it('should protect periods inside parentheses, brackets, or braces', () => {
+      expect(splitTags('(tag:1.2), ((nested:1.5)), [tag:1.3], {tag:1.4}', true)).toEqual([
+        '(tag:1.2)',
+        '((nested:1.5))',
+        '[tag:1.3]',
+        '{tag:1.4}',
+      ]);
+      expect(splitTags('(girl. solo), tag.', true)).toEqual(['(girl. solo)', 'tag.']);
+    });
+
+    it('should protect decimals between digits (RT-2)', () => {
+      expect(splitTags('width 1.5 ratio. height 2.0 meter.', true)).toEqual([
+        'width 1.5 ratio.',
+        'height 2.0 meter.',
+      ]);
+    });
+
+    it('should handle repeated delimiters without creating empty chips (RT-1)', () => {
+      expect(splitTags('hello.... world,,  ..  ,, .  test.', true)).toEqual([
+        'hello.',
+        'world',
+        'test.',
+      ]);
+    });
+
+    it('should handle unbalanced parentheses safely without infinite loops or errors (RT-3)', () => {
+      expect(() => splitTags('((tag:1.2. unfinished bracket', true)).not.toThrow();
+      const result = splitTags('((tag:1.2. unfinished bracket', true);
+      expect(result.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('parseToChips', () => {
     it('should return empty array for empty string', () => {
       expect(parseToChips('')).toEqual([]);
@@ -35,24 +83,45 @@ describe('useChipParser', () => {
       expect(result[0].text).toBe('apple');
       expect(result[1].text).toBe('banana');
     });
+
+    it('should parse period delimiters when isAnimaMode is true', () => {
+      const result = parseToChips('1girl. solo. red dress.', true);
+      expect(result).toHaveLength(3);
+      expect(result[0].text).toBe('1girl.');
+      expect(result[1].text).toBe('solo.');
+      expect(result[2].text).toBe('red dress.');
+    });
   });
 
   describe('chipsToString', () => {
-    it('should join only enabled chips with comma and space', () => {
+    it('should join only enabled chips with comma and space in non-anima mode', () => {
       const chips = [
         { id: '1', text: 'apple', enabled: true },
         { id: '2', text: 'banana', enabled: false },
         { id: '3', text: 'cherry', enabled: true },
       ];
       expect(chipsToString(chips)).toBe('apple, cherry');
+      expect(chipsToString(chips, false)).toBe('apple, cherry');
     });
 
-    it('should return empty string if no chips are enabled', () => {
+    it('should join with space if previous chip ends with period in anima mode (AC-4, AC-5)', () => {
+      const chips = [
+        { id: '1', text: 'masterpiece', enabled: true },
+        { id: '2', text: '1girl.', enabled: true },
+        { id: '3', text: 'bad tag', enabled: false },
+        { id: '4', text: 'red dress.', enabled: true },
+      ];
+      expect(chipsToString(chips, true)).toBe('masterpiece, 1girl. red dress.');
+    });
+
+    it('should return empty string if no chips are enabled (RT-4)', () => {
       const chips = [
         { id: '1', text: 'apple', enabled: false },
         { id: '2', text: 'banana', enabled: false },
       ];
       expect(chipsToString(chips)).toBe('');
+      expect(chipsToString(chips, true)).toBe('');
+      expect(chipsToString([], true)).toBe('');
     });
   });
 
@@ -111,6 +180,7 @@ describe('useChipParser', () => {
       const hook = useChipParser();
       expect(typeof hook.parseToChips).toBe('function');
       expect(typeof hook.chipsToString).toBe('function');
+      expect(typeof hook.splitTags).toBe('function');
       expect(typeof hook.parseTagWeight).toBe('function');
       expect(typeof hook.formatTagWeight).toBe('function');
       expect(typeof hook.adjustWeight).toBe('function');

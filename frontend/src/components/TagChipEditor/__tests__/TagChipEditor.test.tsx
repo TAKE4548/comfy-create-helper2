@@ -767,6 +767,100 @@ describe('TagChipEditor', () => {
       expect(screen.getByText('grape')).toBeInTheDocument();
       expect(screen.getByText('kiwi')).toBeInTheDocument();
     });
+
+    describe('Anima mode support', () => {
+      it('AC-1 & AC-3: commits tag on period outside parenthesis in Anima mode, but ignores bare period and protects parenthesis', () => {
+        const onChangeMock = vi.fn();
+        render(
+          <StatefulTagChipEditor
+            initialValue=""
+            onChange={onChangeMock}
+            isAnimaMode={true}
+          />
+        );
+
+        const input = screen.getByRole('textbox');
+
+        // 1. 通常のピリオド入力でチップ化（末尾ピリオド保持）
+        fireEvent.change(input, { target: { value: 'masterpiece.' } });
+        expect(screen.getByText('masterpiece.')).toBeInTheDocument();
+        expect(input).toHaveValue('');
+        expect(onChangeMock).toHaveBeenCalledWith('masterpiece.');
+
+        // 2. 単なる '.' のみの入力はチップ化せず無視
+        fireEvent.change(input, { target: { value: '.' } });
+        expect(input).toHaveValue('');
+        expect(screen.queryByText('.')).not.toBeInTheDocument();
+
+        // 3. 括弧内のピリオドはチップ化せず入力継続
+        fireEvent.change(input, { target: { value: '(solo.' } });
+        expect(input).toHaveValue('(solo.');
+        expect(screen.queryByText('(solo.')).not.toBeInTheDocument();
+
+        // 4. カンマ入力はカンマを除去してチップ化
+        fireEvent.change(input, { target: { value: '1girl,' } });
+        expect(screen.getByText('1girl')).toBeInTheDocument();
+        expect(input).toHaveValue('');
+      });
+
+      it('AC-2: pastes text and splits tags respecting Anima periods and commas', () => {
+        const onChangeMock = vi.fn();
+        render(
+          <StatefulTagChipEditor
+            initialValue=""
+            onChange={onChangeMock}
+            isAnimaMode={true}
+          />
+        );
+
+        const input = screen.getByRole('textbox');
+        const pasteData = {
+          getData: vi.fn().mockReturnValue('1girl. red hair, (solo:1.2). blue eyes.'),
+        };
+
+        fireEvent.paste(input, { clipboardData: pasteData });
+
+        expect(screen.getByText('1girl.')).toBeInTheDocument();
+        expect(screen.getByText('red hair')).toBeInTheDocument();
+        expect(screen.getByText('(solo:1.2).')).toBeInTheDocument();
+        expect(screen.getByText('blue eyes.')).toBeInTheDocument();
+        expect(onChangeMock).toHaveBeenCalledWith('1girl. red hair, (solo:1.2). blue eyes.');
+      });
+
+      it('AC-3: supports roundtrip toggle between chip mode and text mode in Anima mode', () => {
+        const onChangeMock = vi.fn();
+        render(
+          <StatefulTagChipEditor
+            initialValue="1girl. red hair."
+            onChange={onChangeMock}
+            isAnimaMode={true}
+          />
+        );
+
+        expect(screen.getByText('1girl.')).toBeInTheDocument();
+        expect(screen.getByText('red hair.')).toBeInTheDocument();
+
+        // テキストモードへ切替
+        const switchBtn = screen.getByRole('button', { name: 'テキスト入力モード切替' });
+        fireEvent.click(switchBtn);
+
+        const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+        expect(textarea.value).toBe('1girl. red hair.');
+
+        // テキスト編集
+        fireEvent.change(textarea, { target: { value: '1girl. blue hair. masterpiece.' } });
+        expect(onChangeMock).toHaveBeenLastCalledWith('1girl. blue hair. masterpiece.');
+
+        // チップモードへ戻す
+        const switchBackBtn = screen.getByRole('button', { name: 'チップモード切替' });
+        fireEvent.click(switchBackBtn);
+
+        expect(screen.getByText('1girl.')).toBeInTheDocument();
+        expect(screen.getByText('blue hair.')).toBeInTheDocument();
+        expect(screen.getByText('masterpiece.')).toBeInTheDocument();
+      });
+    });
   });
 });
+
 

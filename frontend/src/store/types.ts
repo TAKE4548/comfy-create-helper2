@@ -168,6 +168,7 @@ export interface MultiSetState {
   paramValues: Record<string, string>;
   appliedAssets: Record<string, AppliedAsset[]>;
   promptChips: Record<string, TagChip[]>;
+  isAnimaMode?: boolean;
   batchSize: number;
   seedMode: 'random' | 'fixed';
   seed: number;
@@ -177,6 +178,7 @@ export interface MultiSetState {
 }
 
 export interface MultiSetActions {
+  setIsAnimaMode?: (isAnima: boolean) => void;
   setSelectedWorkflowId: (id: number | null) => void;
   setParamValues: (values: Record<string, string>) => void;
   setPromptChips: (role: string, chips: TagChip[]) => void;

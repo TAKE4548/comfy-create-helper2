@@ -2,7 +2,7 @@ import { StateCreator } from 'zustand'
 import type { WorkflowPreset } from '../../api/types'
 import { LS_KEYS } from '../../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../../utils/promptUtils'
-import { parseToChips, type TagChip } from '../../components/TagChipEditor/useChipParser'
+import { parseToChips, chipsToString as parseChipsToString, type TagChip } from '../../components/TagChipEditor/useChipParser'
 import type { GenerationState, MultiSetState, MultiSetActions, GenerationSet, AppliedAsset } from '../types'
 
 export const areChipsEqual = (a?: TagChip[], b?: TagChip[]): boolean => {
@@ -12,21 +12,19 @@ export const areChipsEqual = (a?: TagChip[], b?: TagChip[]): boolean => {
   return a.every((chip, idx) => chip.id === b[idx].id && chip.enabled === b[idx].enabled && chip.text === b[idx].text)
 }
 
-export const chipsToString = (chips: TagChip[]): string => {
-  return chips
-    .filter((chip) => chip.enabled)
-    .map((chip) => chip.text)
-    .join(', ')
+export const chipsToString = (chips: TagChip[], isAnimaMode?: boolean): string => {
+  return parseChipsToString(chips, isAnimaMode)
 }
 
 export function getEffectiveParamValues(
   paramValues: Record<string, string>,
-  promptChips: Record<string, TagChip[]>
+  promptChips: Record<string, TagChip[]>,
+  isAnimaMode?: boolean
 ): Record<string, string> {
   const effective = { ...paramValues }
   for (const [role, chips] of Object.entries(promptChips || {})) {
     if (chips && chips.length > 0) {
-      effective[role] = chipsToString(chips)
+      effective[role] = chipsToString(chips, isAnimaMode)
     }
   }
   return effective
@@ -69,12 +67,17 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     paramValues: storedParams,
     appliedAssets: storedAppliedAssets,
     promptChips: {},
+    isAnimaMode: false,
     batchSize: storedBatchSize,
     seedMode: storedSeedMode,
     seed: storedSeed,
     sets: [],
     activeSetId: initialActiveSetId,
     openPresetIds: initialOpenPresetIds,
+
+    setIsAnimaMode: (isAnima) => {
+      set({ isAnimaMode: isAnima })
+    },
 
     setSelectedWorkflowId: (id) => {
       set({ selectedWorkflowId: id })
@@ -148,7 +151,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     },
 
     getEffectiveParamValues: () => {
-      return getEffectiveParamValues(get().paramValues, get().promptChips)
+      return getEffectiveParamValues(get().paramValues, get().promptChips, get().isAnimaMode)
     },
 
     addAppliedAsset: (role, asset) => {

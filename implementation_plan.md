@@ -1,75 +1,105 @@
-# Implementation Plan: REQ-300
+# Implementation Plan: REQ-303 Animaモードにおけるピリオド区切りタグチップ分割とプロンプト結合制御
 
-## Target and Current State
+## User Review Summary
+Animaモード（自然言語/センテンス指向プロンプト）において、タグチップ入力およびプロンプト送信処理を自然言語構文に最適化します。
+ユーザーがタグ入力欄でピリオド（`.`）を入力またはペーストした際に、末尾のピリオドを保持したまま文単位でタグチップ化し、プロンプト生成時には直前のチップがピリオドで終わる場合にカンマではなく半角スペース（`" "`）で後続と結合する仕組みを導入します。
+括弧付きのタグ強度記号（`(tag:1.2)`）や文中の小数点（`1.5`）は区切りとして誤認されないよう保護され、通常モード（非Animaモード）では既存のカンマ区切りおよび一律カンマ結合の動作が100%維持されます。
 
-REQ-300 は、デスクトップ生成画面（`DesktopLayout.tsx`）における情報設計（Information Design）および操作導線設計（Interaction Design）を根本から最適化する改修です。
-現在、プリセットタブバー（`SetTabItem` 一覧）が左ペイン（入力設定カラム）の幅制約内に配置されているため、プリセット名が付与されると2つ程度しか同時にタブを視認できず、一覧性や切り替え作業性が著しく低下しています。一方で、右ペイン（プレビューエリア）の上部は空間を持て余しています。
-また、「Add Set（セット追加）」および「管理（プリセット管理）」ボタンは、左ペインでのプロンプト・パラメータ編集やUndo/Redoといった試行錯誤の主導線に属しており、タブバーと一緒に画面右端へ移動してしまうとFittsの法則（Fitts's Law）に反してマウス移動距離が著しく増大します。
+---
 
-本改修では以下の構造的再編を実施します：
-1. **全幅プリセットタブバー**: プリセットタブ一覧を左右2ペイン（入力／プレビュー）の共通親コンテナ直上（画面幅100%）に配置昇格し、プレビューエリア上部を含めた全幅を活用して多数のタブを一覧・横スクロール可能にします。
-2. **操作ボタンの左ペイン集約**: 「Add Set」「管理」ボタンを全幅タブバーから切り離し、左ペイン最上部のツールバー領域（Undo/Redoボタン配置エリア）へ近接集約配置することで、マウス移動を最小化し入力ワークフローを一元化します。
-3. **既存動作およびモバイルレイアウトの完全維持**: 各タブの選択・アクティブ表示・チェックボックス・削除・Undo/Redo・プリセット管理モーダルの開閉機能、およびモバイルレイアウト（`MobileLayout.tsx`）は一切変更せず現状維持します。
+## Proposed Changes
 
-## SSoT and Boundary Audit
+### Tag Parser & Serializer Core
+#### [LOCAL MODIFY] [useChipParser.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/useChipParser.ts)
+- `splitTags(text: string, isAnimaMode: boolean = false): string[]` を新規実装。
+  - 括弧ネスト（`()`, `[]`, `{}`）深度を追跡し、括弧内での区切り分割を抑止。
+  - `isAnimaMode: true` 時は、直前後の数字判定により小数点を保護しつつ、文末ピリオドをトークン末尾に残して分割。
+  - 連続区切りによる空トークンを除外。
+- `parseToChips(text: string, isAnimaMode: boolean = false): TagChip[]` を更新し、`splitTags` を用いてチップを生成。
+- `chipsToString(chips: TagChip[], isAnimaMode: boolean = false): string` を更新し、Animaモード時は直前チップが `.` 終端の場合に半角スペース `" "` で結合する動的ロジックを実装。
 
-- **SSoT 仕様書**: `docs/specs/SPEC_GENERATE.md`（Section 2 デスクトップレイアウト）
-- **対象サブシステム**: `frontend`（UI/レイアウトコンポーネントの再編であり、バックエンド API 契約の変更はなし）
-- **影響ファイル**:
-  - `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` (改修)
-  - `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` (新規テスト)
+#### [LOCAL MODIFY] [useChipParser.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/useChipParser.test.ts)
+- AC-1〜AC-6 および境界値 RT-1〜RT-4 に対する単体テストを追加。
 
-## Mermaid DAG
+---
+
+### UI Input & Component Integration
+#### [LOCAL MODIFY] [TagInput.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/TagInput.tsx)
+- Props に `isAnimaMode?: boolean` を追加。
+- `handleInputChange` で `isAnimaMode` かつ `val.endsWith('.')` の際に、括弧外であれば末尾ピリオドを保持してチップ確定。
+- `handlePaste` で `splitTags(text, isAnimaMode)` を使用して一括チップ生成。
+
+#### [LOCAL MODIFY] [index.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/index.tsx)
+- `<TagInput ... isAnimaMode={isAnimaMode} />` にモードを伝播。
+- テキストモード切替（`handleSwitchToTextMode`）およびチップ復帰（`handleSwitchToChipMode`）での `chipsToString` / `parseToChips` 呼び出しに `isAnimaMode` を適用。
+- 外部プロパティ同期および内部変更通知の `chipsToString` 呼び出しに `isAnimaMode` を適用。
+
+#### [LOCAL MODIFY] [TagChipEditor.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/TagChipEditor.test.tsx)
+- Animaモードでのピリオド確定、ペースト、テキストモード往復（AC-7）のコンポーネントテストを追加。
+
+---
+
+### Store & Effective Param Synchronization
+#### [LOCAL MODIFY] [multiSetSlice.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/slices/multiSetSlice.ts)
+- `chipsToString` を `useChipParser.ts` から再利用してコード重複を解消。
+- `MultiSetState` に `isAnimaMode: boolean`（デフォルト `false`）と `setIsAnimaMode` アクションを追加。
+- `getEffectiveParamValues(paramValues, promptChips, isAnimaMode?: boolean)` に `isAnimaMode` を伝播。
+
+#### [LOCAL MODIFY] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/types.ts)
+- `MultiSetState` および `MultiSetActions` の型定義に `isAnimaMode` / `setIsAnimaMode` を追加。
+
+#### [LOCAL MODIFY] [multiSetSlice.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/__tests__/slices/multiSetSlice.test.ts)
+- Animaモードでの有効パラメータ抽出（空白結合）のテストを追加。
+
+---
+
+### SSoT Documentation
+#### [LOCAL MODIFY] [SPEC_COMMON.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md)
+- 第3章「TagChipEditor コンポーネント」の仕様（TagInput入力ルール、パース規則、`chipsToString` 結合仕様）を更新。
+
+---
+
+## Task Dependency & Parallel Execution Plan
 
 ```mermaid
 graph TD
-  subgraph Phase1_Layout["フェーズ1: レイアウト構造再編"]
-    T1["REQ-300-T1: DesktopLayout 全幅タブバー昇格 & 左ペインツールバー集約"]
-  end
-
-  subgraph Phase2_TestVerification["フェーズ2: テスト実装 & 検証"]
-    T2["REQ-300-T2: 全幅タブバー・ツールバー・Red Team単体/統合テスト実装"]
-  end
-
-  T1 --> T2
+  REQ-303-T1["REQ-303-T1: useChipParser トークナイザー・パーサー拡張"] --> REQ-303-T2["REQ-303-T2: TagInput & TagChipEditor Anima連携"]
+  REQ-303-T1 --> REQ-303-T3["REQ-303-T3: multiSetSlice chipsToString統合"]
+  REQ-303-T2 --> REQ-303-T4["REQ-303-T4: SSoT SPEC_COMMON.md 同期"]
+  REQ-303-T3 --> REQ-303-T4
 ```
 
-- **並列性 (Parallelism Priority)**:
-  - T1 (コンポーネント構造再編) と T2 (テスト実装) は依存関係を持ちます。T1 での DOM 階層およびセレクタ ID（`#desktop-preset-tabs-bar`, `#left-pane-toolbar`）の確定後、T2 にて厳密な DOM 階層検証・イベント検証・Red Team 境界値テストを記述します。
-- **最大深度**: 2層（T1 → T2）。DAG ボトルネックのない最適な依存関係。
+| タスクID | タイトル | 担当スコープ | 依存関係 | 並列実行 |
+|---|---|---|---|---|
+| **REQ-303-T1** | useChipParser トークナイザー・パーサー拡張 | `useChipParser.ts`, テスト | なし (Root) | 単独先行 |
+| **REQ-303-T2** | TagInput & TagChipEditor Anima連携 | `TagInput.tsx`, `index.tsx`, テスト | T1 | **T3と並列可能** |
+| **REQ-303-T3** | multiSetSlice chipsToString統合 | `multiSetSlice.ts`, `types.ts`, テスト | T1 | **T2と並列可能** |
+| **REQ-303-T4** | SSoT SPEC_COMMON.md 同期 | `SPEC_COMMON.md` | T2, T3 | 最終同期 |
 
-## Atomicity Audit and Verification Commands
+---
 
-| タスクID | 対象ファイル | 依存 | 変更行数目安 | 検証コマンド (Verification Command) |
-|---|---|---|---:|---|
-| **REQ-300-T1** | `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` | なし | ≤120行 | `cd frontend; npm run typecheck` |
-| **REQ-300-T2** | `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` | T1 | ≤180行 | `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx` |
+## Verification Plan
 
-すべてのタスクカードはファイル数 ≤ 3 かつ行数 ≤ 300行のアトミック基準を満たしています（PASS）。
+### Automated Tests
+- **型チェック**: `cd frontend; npm run typecheck` (0 errors)
+- **T1 単体テスト**: `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/useChipParser.test.ts`
+- **T2 コンポーネントテスト**: `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/TagChipEditor.test.tsx`
+- **T3 ストアテスト**: `cd frontend; npx vitest run src/store/__tests__/slices/multiSetSlice.test.ts`
+- **リグレッション検証**: `cd frontend; npm test` (全スイートPASS)
 
-## Three-Gate Testing Strategy
+### Manual / Scenario Verification
+- **AC-1**: Animaモードの `TagInput` で `1girl.` と入力し、末尾ピリオド付きのタグが生成されることを確認。
+- **AC-2 & AC-3**: `1girl, solo. red dress. (tag:1.2), masterpiece` をペーストし、5つのチップに意図通り分割されることを確認。
+- **AC-4 & AC-5**: 有効チップ間に無効チップが挟まれている場合でも、`chipsToString` で末尾ピリオド直後が半角スペースで結合されることを確認。
+- **AC-6**: 通常モードにおいてピリオド付きテキストが分割されず、従来通りカンマ結合されることを確認。
+- **AC-7**: テキストモードとチップモードを往復した際、ピリオド付きチップの構造が維持されることを確認。
 
-- **Gate 1 (静的型検査 Baseline)**:
-  - コマンド: `cd frontend; npm run typecheck`（`tsc -b --noEmit` エラー 0 件）
-- **Gate 2 (全テスト自動実行 Baseline)**:
-  - コマンド: `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx && cd frontend; npx vitest run src/pages/__tests__/GeneratePage.test.tsx`（全テスト PASS）
-  - 全スイート回帰確認: `cd frontend; npm test`
-- **Gate 3 (シナリオ・Red Team 検証)**:
-  - `docs/design/REQ-300-test-plan.md` に記載の 5 シナリオ（全幅配置、複数タブ横スクロール、操作ボタン集約、インタラクション維持、モバイル分離）および 3 件の Red Team 境界値（空プリセット時の安全描画、長大名タブオーバーフロー制御、タブ削除時のフォールバック同期）を検証。
+---
 
-## Trade-off Disclosure and Technical Constraints
-
-1. **タブ名表示幅（max-w）の拡張 vs 極端に多数のタブ時の横スクロール負荷**:
-   - *検討内容*: 全幅化に伴い各タブの最大横幅を従来の `max-w-[80px]` からどこまで広げるか。固定幅にするか可変幅にするか。
-   - *決定*: `max-w-[140px]` 程度に設定し、`flex-shrink-0` を付与する。長大名でも視認性を確保しつつ、過度に1つのタブが横幅を占有しないバランスとし、画面幅を超える場合は独立した `overflow-x-auto` によりスクロール可能とする。
-2. **左ペインツールバーの縦幅（垂直スペース）の消費 vs マウス移動効率（Fitts's Law）**:
-   - *検討内容*: 「Add Set」や「管理」ボタンを全幅タブバーの右端（プレビュー右上等）に置けば左ペインの垂直スペースをわずかに節約できるが、Fitts's Law に反して右端への視線・マウス移動が発生する。
-   - *決定*: ユーザビリティと操作の一元性を最優先とし、左ペイン最上部（Undo/Redoと同一ライン）に `py-2.5` のコンパクトなツールバーとして集約配置する。入力作業と試行錯誤（プリセット切替・追加・元に戻す）が同一カラム内で完結する。
-3. **ワークフロー未選択時のタブバー描画抑制**:
-   - *検討内容*: ワークフローが未選択の状態でタブバーを表示するかどうか。
-   - *決定*: ワークフローが選択されていない状態ではプリセット（Set）自体が存在し得ないため、従来通り `selectedWorkflowId` が truthy な場合のみタブバーおよび左ペインツールバーを描画する。
-
-## Proposed File Changes
-
-#### [LOCAL MODIFY] [DesktopLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/DesktopLayout.tsx)
-#### [LOCAL NEW] [DesktopLayout.tabs.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx)
+## Trade-off Disclosure
+1. **ピリオド直後の単独入力確定と小数点入力の競合**:
+   - **トレードオフ**: `TagInput` においてユーザーが数字の直後に `.` を入力した際、それが文末ピリオドなのか小数点の途中入力（例: `1.` の後に `5` を入力しようとしている）なのかをリアルタイムに区別することは困難です。
+   - **採用方針**: 括弧ネスト外かつ単語末尾で `.` が入力された場合は即座にチップとして確定します。タグ内で小数を直接指定したい場合は、Stable Diffusion の標準記法である `(tag:1.5)` のように括弧で囲むか、ペーストによる入力を行うことで小数点が確実に保護されます。
+2. **`chipsToString` の重複解消とストア依存**:
+   - **トレードオフ**: `multiSetSlice.ts` に存在していた独自の `chipsToString` を `useChipParser.ts` からのインポートに統一します。これにより結合ロジックの二重管理を防ぎますが、ストアレイヤーがコンポーネント配下のユーティリティに依存する結合度が生じます。
+   - **採用方針**: `useChipParser.ts` の `chipsToString` は純粋関数（Pure Function）であり、Reactコンポーネントへの副作用を持たないため、単体ユーティリティ関数として安全に共有可能です。

@@ -48,7 +48,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   onTextModeToggle,
 }) => {
   const initialChips = useMemo(() => {
-    return chipsProp && chipsProp.length > 0 ? chipsProp : parseToChips(value);
+    return chipsProp && chipsProp.length > 0 ? chipsProp : parseToChips(value, isAnimaMode);
   }, []);
   const { state, setChips, undo, redo, canUndo, canRedo } = useChipHistory(initialChips);
   const [isTextMode, setIsTextMode] = useState(defaultTextMode);
@@ -87,7 +87,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
         if (chipsProp.length === 0 && value && value.trim() !== '') {
           // 下り同期の自己修復: chipsProp が空でも value が非空なら parseToChips(value) で復元
           isExternalUpdateRef.current = true;
-          const newChips = parseToChips(value);
+          const newChips = parseToChips(value, isAnimaMode);
           setChips(newChips, false);
           prevChipsString.current = value;
           if (isTextMode) {
@@ -102,17 +102,17 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
               prevChipsString.current = value;
             }
           } else {
-            prevChipsString.current = chipsToString(chipsProp);
+            prevChipsString.current = chipsToString(chipsProp, isAnimaMode);
           }
         }
       } else if (
         value &&
         value !== prevChipsString.current &&
-        value !== chipsToString(state)
+        value !== chipsToString(state, isAnimaMode)
       ) {
         // chipsProp の参照変化はないが、value (文字列) が外部から変更された場合 (セクションコピペ等)
         isExternalUpdateRef.current = true;
-        const newChips = parseToChips(value);
+        const newChips = parseToChips(value, isAnimaMode);
         setChips(newChips, false);
         prevChipsString.current = value;
         if (isTextMode) {
@@ -122,7 +122,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     } else {
       if (value !== prevChipsString.current) {
         isExternalUpdateRef.current = true;
-        const newChips = parseToChips(value);
+        const newChips = parseToChips(value, isAnimaMode);
         setChips(newChips, false);
         prevChipsString.current = value;
         if (isTextMode) {
@@ -130,13 +130,13 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
         }
       }
     }
-  }, [chipsProp, value, setChips, isTextMode]);
+  }, [chipsProp, value, setChips, isTextMode, isAnimaMode]);
 
   // 外部から defaultTextMode プロップスが更新されたら同期する
   useEffect(() => {
     setIsTextMode(defaultTextMode);
     if (defaultTextMode) {
-      setTextValue(chipsProp ? chipsToString(chipsProp) : value);
+      setTextValue(chipsProp ? chipsToString(chipsProp, isAnimaMode) : value);
     }
   }, [defaultTextMode]);
 
@@ -156,12 +156,12 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
     userEditedRef.current = false;
 
     onChipsChange?.(state);
-    const newStr = chipsToString(state);
+    const newStr = chipsToString(state, isAnimaMode);
     if (newStr !== value) {
       prevChipsString.current = newStr;
       onChange?.(newStr);
     }
-  }, [state, onChipsChange, onChange, value]);
+  }, [state, onChipsChange, onChange, value, isAnimaMode]);
 
   // イベントリスナー用に最新の state を保持
   const stateRef = useRef(state);
@@ -247,7 +247,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
 
   // テキストモードトグル処理
   const handleSwitchToTextMode = () => {
-    const currentStr = chipsToString(state);
+    const currentStr = chipsToString(state, isAnimaMode);
     setTextValue(currentStr);
     prevChipsString.current = currentStr;
     setIsTextMode(true);
@@ -262,7 +262,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   };
 
   const handleSwitchToChipMode = () => {
-    const newChips = parseToChips(textValue);
+    const newChips = parseToChips(textValue, isAnimaMode);
     userEditedRef.current = true;
     setChips(newChips, true); // 編集確定したテキストを履歴に積む
     setIsTextMode(false);
@@ -393,7 +393,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
                 userEditedRef.current = false;
                 setTextValue(nextVal);
                 prevChipsString.current = nextVal;
-                const newChips = parseToChips(nextVal);
+                const newChips = parseToChips(nextVal, isAnimaMode);
                 setChips(newChips, false);
                 onChange?.(nextVal);
                 onChipsChange?.(newChips);
@@ -434,6 +434,7 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
                 onAddTags={handleAddTags}
                 onRemoveLast={handleRemoveLast}
                 placeholder={state.length === 0 ? placeholder : ''}
+                isAnimaMode={isAnimaMode}
               />
             </div>
           </DndContext>

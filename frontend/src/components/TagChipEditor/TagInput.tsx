@@ -1,4 +1,4 @@
-import React from 'react';
+import { splitTags } from './useChipParser';
 
 interface TagInputProps {
   value: string;
@@ -6,6 +6,7 @@ interface TagInputProps {
   onAddTags: (tags: string[]) => void;
   onRemoveLast: () => void;
   placeholder?: string;
+  isAnimaMode?: boolean;
 }
 
 export const TagInput: React.FC<TagInputProps> = ({
@@ -14,6 +15,7 @@ export const TagInput: React.FC<TagInputProps> = ({
   onAddTags,
   onRemoveLast,
   placeholder = 'Add tag...',
+  isAnimaMode = false,
 }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -24,6 +26,24 @@ export const TagInput: React.FC<TagInputProps> = ({
         onAddTags([textBeforeComma]);
       }
       onChange('');
+    } else if (isAnimaMode && val.endsWith('.')) {
+      // 括弧深度チェック: ネスト内ならピリオド確定しない
+      let openCount = 0;
+      let closeCount = 0;
+      for (const ch of val) {
+        if (ch === '(' || ch === '[' || ch === '{') openCount++;
+        else if (ch === ')' || ch === ']' || ch === '}') closeCount++;
+      }
+
+      if (openCount <= closeCount) {
+        const substantive = val.trim().replace(/[.,\s]/g, '');
+        if (substantive.length > 0) {
+          onAddTags([val.trim()]);
+        }
+        onChange('');
+      } else {
+        onChange(val);
+      }
     } else {
       onChange(val);
     }
@@ -45,12 +65,8 @@ export const TagInput: React.FC<TagInputProps> = ({
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     const text = e.clipboardData.getData('text');
-    // カンマ区切りの文字列をパースしてトリミング、空文字を除外
-    const tags = text
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter((tag) => tag.length > 0);
-    
+    const tags = splitTags(text, isAnimaMode);
+
     if (tags.length > 0) {
       onAddTags(tags);
       onChange('');

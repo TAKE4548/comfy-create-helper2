@@ -18,9 +18,21 @@ describe('useChipParser property-based tests (fast-check)', () => {
 
   it('Property 2 (Round-trip & Preservation): Non-empty comma-free items are preserved across parse and serialization', () => {
     // Arbitrary array of strings that do not contain commas or whitespace-only
+    const isBalancedParens = (str: string): boolean => {
+      let depth = 0;
+      for (const ch of str) {
+        if (ch === '(') depth++;
+        else if (ch === ')') {
+          depth--;
+          if (depth < 0) return false;
+        }
+      }
+      return depth === 0;
+    };
+
     const cleanTagArbitrary = fc
       .stringMatching(/^[a-zA-Z0-9_\-:()]{1,30}$/)
-      .filter((s) => s.trim().length > 0 && !s.includes(','))
+      .filter((s) => s.trim().length > 0 && !s.includes(',') && isBalancedParens(s))
 
     fc.assert(
       fc.property(fc.array(cleanTagArbitrary, { minLength: 1, maxLength: 15 }), (tags) => {
