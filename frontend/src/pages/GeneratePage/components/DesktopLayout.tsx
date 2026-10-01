@@ -434,94 +434,33 @@ export const DesktopLayout = ({
 
   const leftPane = (
     <div className="w-full h-full flex flex-col overflow-hidden bg-surface-2/10">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-zinc-200">Generate</h1>
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
-          {isGenerating && activeClientId !== clientId && (
-            <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative flex items-center gap-1">
-            <select id="workflow-select" value={selectedWorkflowId ?? ''}
-              onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-              className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate">
-              <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
-              {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-          {selectedWorkflowId && (
-            <label className="flex items-center gap-1.5 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface-2/60 border border-[rgba(255,255,255,0.06)] rounded-md px-2 py-1 hover:bg-surface-2 transition-colors">
-              <input
-                id="anima-mode-toggle"
-                type="checkbox"
-                checked={isAnimaMode}
-                onChange={(e) => setIsAnimaMode(e.target.checked)}
-                className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
-              />
-              <span>Anima特化</span>
-            </label>
-          )}
-          <div className="relative flex-shrink-0 flex items-center">
-            <button id="settings-toggle-btn" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
-              <Settings size={14} />
-            </button>
-            {isSettingsOpen && (
-              <SettingsPopover
-                setIsSettingsOpen={setIsSettingsOpen}
-                localComfyUrl={localComfyUrl}
-                setLocalComfyUrl={setLocalComfyUrl}
-                setComfyUrl={setComfyUrl}
-                selectedWorkflowId={selectedWorkflowId}
-                workflow={workflow}
-                handleSaveDefaultParams={handleSaveDefaultParams}
-                isSavePending={saveDefaultParamsMutation.isPending}
-                handleResetDefaultParams={handleResetDefaultParams}
-                baseModels={baseModels}
-                updateWorkflowBaseModelMutation={updateWorkflowBaseModelMutation}
-                setWorkflowManageMode={setWorkflowManageMode}
-                setRescanOpen={setRescanOpen}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Left Pane Toolbar: Add Set / 管理 / Undo / Redo */}
       {selectedWorkflowId && (
-        <div id="left-pane-toolbar" className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/30 px-4 py-2.5 flex items-center justify-between gap-2.5 flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            {activeSet && (
-              <span className="text-[10px] text-zinc-500 px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded font-medium truncate max-w-[110px]" title={activeSet.name}>
-                {activeSet.name}
-              </span>
-            )}
-            {activeSet && (
-              <div className="flex items-center gap-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
-                <button type="button" id="undo-btn" onClick={() => undo?.(activeSet.id)} disabled={!canUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↩</button>
-                <button type="button" id="redo-btn" onClick={() => redo?.(activeSet.id)} disabled={!canRedo} title="Redo (Ctrl+Y)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↪</button>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button type="button" id="add-set-btn" onClick={() => {
-              const allNames = presets?.map((p) => p.name) || []
-              setNewSetName(generateNextProfileName('Set', allNames))
-              setCopySourceId('default')
-              setShowCopyModal(true)
-            }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all">
-              <Plus size={11} />Add Set
-            </button>
-            <button type="button" id="manage-presets-btn" onClick={() => setIsPresetManagerOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all">
-              📑 管理
-            </button>
-          </div>
+        <div id="left-pane-toolbar" className="border-b border-[rgba(255,255,255,0.06)] bg-surface-2/30 px-4 py-2.5 flex items-center justify-start gap-2 flex-nowrap flex-shrink-0">
+          {activeSet && (
+            <span className="text-[10px] text-zinc-500 px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded font-medium truncate max-w-[110px] flex-shrink-0" title={activeSet.name}>
+              {activeSet.name}
+            </span>
+          )}
+          {activeSet && (
+            <div className="flex items-center gap-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5 flex-shrink-0">
+              <button type="button" id="undo-btn" onClick={() => undo?.(activeSet.id)} disabled={!canUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↩</button>
+              <button type="button" id="redo-btn" onClick={() => redo?.(activeSet.id)} disabled={!canRedo} title="Redo (Ctrl+Y)" className="px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold">↪</button>
+            </div>
+          )}
+          <button type="button" id="add-set-btn" onClick={() => {
+            const allNames = presets?.map((p) => p.name) || []
+            setNewSetName(generateNextProfileName('Set', allNames))
+            setCopySourceId('default')
+            setShowCopyModal(true)
+          }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-accent-green hover:border-accent-green/30 text-xs font-semibold transition-all flex-shrink-0">
+            <Plus size={11} />Add Set
+          </button>
+          <button type="button" id="manage-presets-btn" onClick={() => setIsPresetManagerOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] text-zinc-300 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/30 text-xs font-semibold transition-all flex-shrink-0">
+            📑 管理
+          </button>
         </div>
       )}
-
       {/* Scrollable inputs panel */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
         <AuditPanel
@@ -774,9 +713,65 @@ export const DesktopLayout = ({
 
   return (
     <div className="flex flex-col h-full overflow-hidden w-full relative">
+    {/* Global Header */}
+    <div className="flex items-center justify-between px-5 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface/50 w-full flex-shrink-0 relative z-20">
+      <div className="flex items-center gap-3">
+        <h1 className="text-base font-semibold text-zinc-200">Generate</h1>
+        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
+        {isGenerating && activeClientId !== clientId && (
+          <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-1">
+          <select id="workflow-select" value={selectedWorkflowId ?? ''}
+            onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
+            className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 max-w-[130px] truncate">
+            <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
+            {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </div>
+        {selectedWorkflowId && (
+          <label className="flex items-center gap-1.5 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface-2/60 border border-[rgba(255,255,255,0.06)] rounded-md px-2 py-1 hover:bg-surface-2 transition-colors">
+            <input
+              id="anima-mode-toggle"
+              type="checkbox"
+              checked={isAnimaMode}
+              onChange={(e) => setIsAnimaMode(e.target.checked)}
+              className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
+            />
+            <span>Anima特化</span>
+          </label>
+        )}
+        <div className="relative flex-shrink-0 flex items-center">
+          <button id="settings-toggle-btn" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
+            <Settings size={14} />
+          </button>
+          {isSettingsOpen && (
+            <SettingsPopover
+              setIsSettingsOpen={setIsSettingsOpen}
+              localComfyUrl={localComfyUrl}
+              setLocalComfyUrl={setLocalComfyUrl}
+              setComfyUrl={setComfyUrl}
+              selectedWorkflowId={selectedWorkflowId}
+              workflow={workflow}
+              handleSaveDefaultParams={handleSaveDefaultParams}
+              isSavePending={saveDefaultParamsMutation.isPending}
+              handleResetDefaultParams={handleResetDefaultParams}
+              baseModels={baseModels}
+              updateWorkflowBaseModelMutation={updateWorkflowBaseModelMutation}
+              setWorkflowManageMode={setWorkflowManageMode}
+              setRescanOpen={setRescanOpen}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+
       {/* Full-Width Preset Tabs Bar */}
       {selectedWorkflowId && (
-        <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2 w-full overflow-hidden flex-shrink-0">
+        <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2 w-full overflow-hidden flex-shrink-0 relative z-10">
           <div className="flex items-center gap-2 overflow-x-auto w-full py-1 scrollbar-thin">
             {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
               <SetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onClick={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} />

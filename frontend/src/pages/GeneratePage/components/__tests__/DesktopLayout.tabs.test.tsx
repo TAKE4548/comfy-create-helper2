@@ -9,7 +9,6 @@ vi.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: '/' }),
 }))
 
-
 // Mock API client if called by stores
 vi.mock('../../../api/client', () => ({
   api: {
@@ -23,7 +22,7 @@ vi.mock('../../../api/client', () => ({
   },
 }))
 
-describe('DesktopLayout - Full-Width Preset Tabs Bar and Left Pane Toolbar', () => {
+describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -179,27 +178,36 @@ describe('DesktopLayout - Full-Width Preset Tabs Bar and Left Pane Toolbar', () 
     return { ...defaultState, ...overrides }
   }
 
-  // 1. AC-1 / Layout Hierarchy
-  it('AC-1: renders #desktop-preset-tabs-bar outside and above the dual-pane ResizableSplitLayout', () => {
+  // 1. AC-1 & AC-2 / Layout Hierarchy
+  it('AC-1 & AC-2: renders Global Header at top level before #desktop-preset-tabs-bar and ResizableSplitLayout', () => {
     const state = createMockState()
     const { container } = render(<DesktopLayout state={state} />)
 
-    const tabsBar = container.querySelector('#desktop-preset-tabs-bar')
-    expect(tabsBar).toBeInTheDocument()
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toBeInTheDocument()
+    const children = Array.from(root.children)
 
-    // Dual-pane content area is the sibling next to tabsBar
-    const rootContainer = tabsBar?.parentElement
-    expect(rootContainer).toBeInTheDocument()
-    expect(rootContainer?.children[0]).toBe(tabsBar)
+    // 1st child is Global Header spanning full width
+    const globalHeader = children[0] as HTMLElement
+    expect(globalHeader).toBeInTheDocument()
+    expect(globalHeader.querySelector('#workflow-select')).toBeInTheDocument()
+    expect(globalHeader.querySelector('#settings-toggle-btn')).toBeInTheDocument()
+    expect(globalHeader).toHaveClass('w-full')
 
-    // The dual-pane container is the second child and holds leftPane and rightPane
-    const dualPaneContainer = rootContainer?.children[1]
+    // 2nd child is #desktop-preset-tabs-bar
+    const tabsBar = children[1] as HTMLElement
+    expect(tabsBar).toHaveAttribute('id', 'desktop-preset-tabs-bar')
+    expect(tabsBar).toHaveClass('w-full')
+
+    // 3rd child is Dual-pane container holding ResizableSplitLayout
+    const dualPaneContainer = children[2] as HTMLElement
     expect(dualPaneContainer).toBeInTheDocument()
-    expect(dualPaneContainer?.contains(tabsBar)).toBe(false)
+    expect(dualPaneContainer.contains(tabsBar)).toBe(false)
+    expect(dualPaneContainer.contains(globalHeader)).toBe(false)
 
-    // Verify leftPane (containing left-pane-toolbar) is inside the dual-pane container
+    // Verify left-pane-toolbar is inside dualPaneContainer
     const leftToolbar = container.querySelector('#left-pane-toolbar')
-    expect(dualPaneContainer?.contains(leftToolbar)).toBe(true)
+    expect(dualPaneContainer.contains(leftToolbar)).toBe(true)
   })
 
   // 2. AC-2 / Multiple Presets
@@ -220,35 +228,43 @@ describe('DesktopLayout - Full-Width Preset Tabs Bar and Left Pane Toolbar', () 
     expect(tabsBar?.textContent).toContain('Preset Gamma')
   })
 
-  // 3. AC-3 / Left Pane Toolbar
-  it('AC-3: places #add-set-btn and #manage-presets-btn in #left-pane-toolbar and triggers callbacks', () => {
+  // 3. AC-3 & AC-4 / Left Pane Toolbar Order and Proximity
+  it('AC-3 & AC-4: renders #left-pane-toolbar with justify-start in exact order: name badge, undo/redo, add-set, manage', () => {
     const state = createMockState()
     const { container } = render(<DesktopLayout state={state} />)
 
-    const leftToolbar = container.querySelector('#left-pane-toolbar')
+    const leftToolbar = container.querySelector('#left-pane-toolbar') as HTMLElement
     expect(leftToolbar).toBeInTheDocument()
+    expect(leftToolbar).toHaveClass('justify-start')
+    expect(leftToolbar).toHaveClass('flex-nowrap')
+    expect(leftToolbar).not.toHaveClass('justify-between')
 
+    // Check sequential order of children inside left-pane-toolbar:
+    // 0: Preset Name Badge
+    // 1: Undo/Redo container
+    // 2: #add-set-btn
+    // 3: #manage-presets-btn
+    const elements = Array.from(leftToolbar.children)
+    expect(elements[0].textContent).toContain('Preset Alpha')
+    expect(elements[1].querySelector('#undo-btn')).toBeInTheDocument()
+    expect(elements[2]).toHaveAttribute('id', 'add-set-btn')
+    expect(elements[3]).toHaveAttribute('id', 'manage-presets-btn')
+
+    // Callback triggers
     const addSetBtn = container.querySelector('#add-set-btn')
     const manageBtn = container.querySelector('#manage-presets-btn')
-
-    expect(leftToolbar?.contains(addSetBtn)).toBe(true)
-    expect(leftToolbar?.contains(manageBtn)).toBe(true)
-
-    // Manage presets button opens preset manager
     if (manageBtn) {
       fireEvent.click(manageBtn)
       expect(state.setIsPresetManagerOpen).toHaveBeenCalledWith(true)
     }
-
-    // Add set button opens copy modal
     if (addSetBtn) {
       fireEvent.click(addSetBtn)
       expect(addSetBtn).toBeInTheDocument()
     }
   })
 
-  // 4. AC-4 / Interactions
-  it('AC-4: handles tab selection, checkbox toggle, tab removal, and undo/redo clicks', () => {
+  // 4. AC-5 / Interactions
+  it('AC-5: handles tab selection, checkbox toggle, tab removal, and undo/redo clicks', () => {
     const state = createMockState()
     const { container } = render(<DesktopLayout state={state} />)
 
@@ -312,13 +328,15 @@ describe('DesktopLayout - Full-Width Preset Tabs Bar and Left Pane Toolbar', () 
     expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument()
   })
 
-  it('Red Team: does not crash or render tabs bar when selectedWorkflowId is null', () => {
+  it('Red Team: does not crash or render tabs bar when selectedWorkflowId is null, but renders Global Header', () => {
     const state = createMockState({
       selectedWorkflowId: null,
-     })
+    })
 
     const { container } = render(<DesktopLayout state={state} />)
 
+    // Global Header still renders at root
+    expect(container.querySelector('#workflow-select')).toBeInTheDocument()
     expect(container.querySelector('#desktop-preset-tabs-bar')).not.toBeInTheDocument()
     expect(container.querySelector('#left-pane-toolbar')).not.toBeInTheDocument()
   })
