@@ -1,4 +1,4 @@
-﻿# ProcessStartInfo test for CreateNoWindow and WindowStyle
+# ProcessStartInfo test for CreateNoWindow and WindowStyle
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = "cmd.exe"
 $psi.Arguments = "/c exit 0"

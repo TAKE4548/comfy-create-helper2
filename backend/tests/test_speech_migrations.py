@@ -1,4 +1,4 @@
-﻿import json
+import json
 import unittest
 import sqlalchemy as sa
 from sqlalchemy import create_engine

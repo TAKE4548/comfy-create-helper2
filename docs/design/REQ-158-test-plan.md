@@ -1,4 +1,4 @@
-﻿# REQ-158 テスト計画書 (Test Plan)
+# REQ-158 テスト計画書 (Test Plan)
 
 ## 1. 自動テスト (Automated Tests)
 

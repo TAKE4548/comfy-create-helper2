@@ -1,4 +1,4 @@
-﻿---
+---
 id: REQ-293
 type: test-plan
 tags: [bug-fix, type-a, frontend, regression]

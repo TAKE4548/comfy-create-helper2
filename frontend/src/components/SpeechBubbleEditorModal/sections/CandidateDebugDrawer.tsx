@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react'
+import React, { useMemo } from 'react'
 import type { BubbleCandidate } from '../../../api/types'
 import type { FilterStatus, SortBy } from '../types'
 

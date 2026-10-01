@@ -1,4 +1,4 @@
-﻿import { useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { configApi } from '../api/client'
 import { STALE_TIMES } from '../constants/staleTimes'
 import type { AppConfig } from '../api/types'

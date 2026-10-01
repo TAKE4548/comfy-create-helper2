@@ -1,4 +1,4 @@
-﻿import warnings
+import warnings
 import pytest
 from app.config import settings
 from app import models

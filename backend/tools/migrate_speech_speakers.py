@@ -1,4 +1,4 @@
-﻿'''Speech bubble migration and backfill script for speaker tag set IDs.'''
+'''Speech bubble migration and backfill script for speaker tag set IDs.'''
 
 import json
 import logging

@@ -1,4 +1,4 @@
-﻿"""Router for managing prompt generation metadata."""
+"""Router for managing prompt generation metadata."""
 import json
 import logging
 from typing import Any, Dict, Optional

@@ -1,4 +1,4 @@
-﻿import React from 'react'
+import React from 'react'
 import { Loader2, Save } from 'lucide-react'
 
 export interface BubbleSaveExportBarProps {
