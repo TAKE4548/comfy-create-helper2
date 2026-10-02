@@ -62,12 +62,35 @@ export interface LoraStackOp {
 }
 
 export interface BulkEditPayload {
+  targetPresetIds?: number[];
   promptOps?: PromptOp[];
   paramPatch?: Record<string, string>;
   batchSize?: number;
   loraOps?: LoraOp[];
   assetOps?: AppliedAssetOp[];
   loraStackOps?: LoraStackOp[];
+}
+
+export interface BuildPayloadParams {
+  promptOp: PromptOpType;
+  promptFindText: string;
+  promptReplaceText: string;
+  promptValue: string;
+  promptTargetAll: boolean;
+  promptTargetFields: Set<string>;
+  commonTagItems: CommonTagItem[];
+  tagsToRemove: Set<string>;
+  textareaRoles: MappingMaster[];
+  assetOps: AppliedAssetOp[];
+  loraRoles: MappingMaster[];
+  enabledParams: Set<string>;
+  paramPatch: Record<string, string>;
+  batchSizeEnabled: boolean;
+  batchSizeInput: string;
+  loraStackModes: Record<string, 'differential' | 'overwrite'>;
+  commonLoraOps: Record<string, CommonLoraOp[]>;
+  addLoraSlots: Record<string, PresetLoraSlot[]>;
+  subsetPresetIds?: Set<number>;
 }
 
 export interface ProfileBulkEditModalProps {

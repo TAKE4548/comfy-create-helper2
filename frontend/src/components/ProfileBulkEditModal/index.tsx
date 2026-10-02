@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Loader2 } from 'lucide-react';
 import { lorasApi } from '../../api/client';
@@ -39,6 +39,26 @@ export function ProfileBulkEditModal({
 
   const state = useProfileBulkEditState(selectedPresets, mappingMasters, activeTab);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (state.isAddAssetOpen) {
+          state.setIsAddAssetOpen(false);
+        } else if (showConfirm) {
+          setShowConfirm(false);
+          setPendingPayload(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, showConfirm, state.isAddAssetOpen, onClose, state.setIsAddAssetOpen]);
+
   if (!isOpen) return null;
   const count = selectedPresets.length;
 
@@ -62,15 +82,17 @@ export function ProfileBulkEditModal({
       loraStackModes: state.loraStackModes,
       commonLoraOps: state.commonLoraOps,
       addLoraSlots: state.addLoraSlots,
+      subsetPresetIds: state.subsetPresetIds,
     });
     if (!payload) return;
     setPendingPayload(payload);
     setShowConfirm(true);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (pendingPayload) {
-      onApply(pendingPayload);
+      await onApply(pendingPayload);
+      state.resetParamSelection();
       setShowConfirm(false);
       setPendingPayload(null);
     }
@@ -148,11 +170,17 @@ export function ProfileBulkEditModal({
               tagsToRemove={state.tagsToRemove}
               setTagsToRemove={state.setTagsToRemove}
               toggleTagToRemove={state.toggleTagToRemove}
+              selectedPresets={selectedPresets}
+              subsetPresetIds={state.subsetPresetIds}
+              toggleSubsetPresetId={state.toggleSubsetPresetId}
+              selectAllSubsetPresets={state.selectAllSubsetPresets}
+              clearAllSubsetPresets={state.clearAllSubsetPresets}
               textareaRoles={state.textareaRoles}
               promptTargetAll={state.promptTargetAll}
               setPromptTargetAll={state.setPromptTargetAll}
               promptTargetFields={state.promptTargetFields}
               togglePromptField={state.togglePromptField}
+              selectSinglePromptField={state.selectSinglePromptField}
               assetOps={state.assetOps}
               onRemoveQueuedAsset={state.handleRemoveQueuedAsset}
             />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import type { MappingMaster } from '../../../../api/types';
+import type { MappingMaster, WorkflowPreset } from '../../../../api/types';
 import type { CommonTagItem, PromptOpType, AppliedAssetOp } from '../../types';
 import { PromptOperationForm } from './PromptOperationForm';
 import { CommonTagsSection } from './CommonTagsSection';
@@ -22,12 +22,18 @@ export interface PromptBulkEditTabProps {
   tagsToRemove: Set<string>;
   setTagsToRemove: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleTagToRemove: (tag: string) => void;
+  selectedPresets?: WorkflowPreset[];
+  subsetPresetIds?: Set<number>;
+  toggleSubsetPresetId?: (id: number) => void;
+  selectAllSubsetPresets?: () => void;
+  clearAllSubsetPresets?: () => void;
   // Target fields state
   textareaRoles: MappingMaster[];
   promptTargetAll: boolean;
   setPromptTargetAll: (val: boolean) => void;
   promptTargetFields: Set<string>;
   togglePromptField: (role: string) => void;
+  selectSinglePromptField?: (role: string) => void;
   // Asset ops queued
   assetOps: AppliedAssetOp[];
   onRemoveQueuedAsset: (role: string, assetId: string) => void;
@@ -48,11 +54,17 @@ export const PromptBulkEditTab: React.FC<PromptBulkEditTabProps> = ({
   tagsToRemove,
   setTagsToRemove,
   toggleTagToRemove,
+  selectedPresets,
+  subsetPresetIds,
+  toggleSubsetPresetId,
+  selectAllSubsetPresets,
+  clearAllSubsetPresets,
   textareaRoles,
   promptTargetAll,
   setPromptTargetAll,
   promptTargetFields,
   togglePromptField,
+  selectSinglePromptField,
   assetOps,
   onRemoveQueuedAsset,
 }) => {
@@ -72,6 +84,11 @@ export const PromptBulkEditTab: React.FC<PromptBulkEditTabProps> = ({
 
       {promptOp === 'remove_tags' && (
         <CommonTagsSection
+          selectedPresets={selectedPresets}
+          subsetPresetIds={subsetPresetIds}
+          toggleSubsetPresetId={toggleSubsetPresetId}
+          selectAllSubsetPresets={selectAllSubsetPresets}
+          clearAllSubsetPresets={clearAllSubsetPresets}
           commonTagItems={commonTagItems}
           setCommonTagItems={setCommonTagItems}
           tagsToRemove={tagsToRemove}
@@ -117,6 +134,8 @@ export const PromptBulkEditTab: React.FC<PromptBulkEditTabProps> = ({
         setPromptTargetAll={setPromptTargetAll}
         promptTargetFields={promptTargetFields}
         togglePromptField={togglePromptField}
+        promptOp={promptOp}
+        onSelectSingleField={selectSinglePromptField}
       />
     </div>
   );

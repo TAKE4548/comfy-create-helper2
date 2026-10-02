@@ -1,36 +1,13 @@
-import type { MappingMaster } from '../../api/types';
 import type {
-  PromptOpType,
-  CommonTagItem,
   CommonTagOp,
-  AppliedAssetOp,
-  CommonLoraOp,
   PresetLoraSlot,
   LoraStackOp,
   BulkEditPayload,
+  BuildPayloadParams,
 } from './types';
 import { parseTagWeight } from './utils';
 
-export interface BuildPayloadParams {
-  promptOp: PromptOpType;
-  promptFindText: string;
-  promptReplaceText: string;
-  promptValue: string;
-  promptTargetAll: boolean;
-  promptTargetFields: Set<string>;
-  commonTagItems: CommonTagItem[];
-  tagsToRemove: Set<string>;
-  textareaRoles: MappingMaster[];
-  assetOps: AppliedAssetOp[];
-  loraRoles: MappingMaster[];
-  enabledParams: Set<string>;
-  paramPatch: Record<string, string>;
-  batchSizeEnabled: boolean;
-  batchSizeInput: string;
-  loraStackModes: Record<string, 'differential' | 'overwrite'>;
-  commonLoraOps: Record<string, CommonLoraOp[]>;
-  addLoraSlots: Record<string, PresetLoraSlot[]>;
-}
+export type { BuildPayloadParams } from './types';
 
 export function buildBulkEditPayload(p: BuildPayloadParams): BulkEditPayload | null {
   const payload: BulkEditPayload = {};
@@ -76,6 +53,10 @@ export function buildBulkEditPayload(p: BuildPayloadParams): BulkEditPayload | n
         tags: legacyRemovedTags.length > 0 ? legacyRemovedTags : Array.from(p.tagsToRemove),
         commonTagOps: ops,
       }];
+    }
+
+    if (p.subsetPresetIds) {
+      payload.targetPresetIds = Array.from(p.subsetPresetIds);
     }
   } else {
     if (p.promptValue) {

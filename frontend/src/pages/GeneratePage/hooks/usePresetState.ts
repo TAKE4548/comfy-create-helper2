@@ -50,6 +50,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
     loadPresetData,
     openPresetIds,
     openPreset,
+    setErrorToast,
   } = store
 
   const storeRef = useRef(store)
@@ -465,10 +466,11 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
 
   const handleBulkEditApply = async (payload: BulkEditPayload) => {
     const latestPresets = qc.getQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId]) || presets
-    if (!latestPresets || bulkTargetIds.length === 0) return
+    const targetIds = payload.targetPresetIds && payload.targetPresetIds.length > 0 ? payload.targetPresetIds : bulkTargetIds
+    if (!latestPresets || targetIds.length === 0) return
     setIsBulkApplying(true)
     try {
-      const selectedPresets = latestPresets.filter((p) => bulkTargetIds.includes(p.id))
+      const selectedPresets = latestPresets.filter((p) => targetIds.includes(p.id))
       const updatedResults = await Promise.all(
         selectedPresets.map(async (preset) => {
           const patch = computePresetPatch(preset, payload)
@@ -552,8 +554,16 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       })
 
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
-      setIsBulkEditOpen(false)
-      setBulkTargetIds([])
+      setErrorToast?.({
+        message: `${selectedPresets.length} 件のプリセットに適用しました`,
+        type: 'success',
+      })
+    } catch (err: any) {
+      setErrorToast?.({
+        message: err?.message || '一括適用の保存に失敗しました',
+        type: 'error',
+      })
+      throw err
     } finally {
       setIsBulkApplying(false)
     }

@@ -53,7 +53,17 @@ export const PromptOperationForm: React.FC<PromptOperationFormProps> = ({
       {promptOp === 'search_replace' ? (
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">検索する文字列</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">検索する文字列</label>
+              <button
+                type="button"
+                onClick={() => setPromptFindText('')}
+                disabled={!promptFindText}
+                className="text-[11px] font-medium text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                クリア
+              </button>
+            </div>
             <input
               type="text"
               value={promptFindText}
@@ -64,7 +74,17 @@ export const PromptOperationForm: React.FC<PromptOperationFormProps> = ({
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">置換後の文字列</label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">置換後の文字列</label>
+                <button
+                  type="button"
+                  onClick={() => setPromptReplaceText('')}
+                  disabled={!promptReplaceText}
+                  className="text-[11px] font-medium text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                >
+                  クリア
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={onOpenAddAsset}
@@ -85,9 +105,19 @@ export const PromptOperationForm: React.FC<PromptOperationFormProps> = ({
       ) : (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {promptOp === 'overwrite' ? '置換するテキスト' : promptOp === 'prefix' ? '先頭に追加するテキスト' : '末尾に追加するテキスト'}
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                {promptOp === 'overwrite' ? '置換するテキスト' : promptOp === 'prefix' ? '先頭に追加するテキスト' : '末尾に追加するテキスト'}
+              </label>
+              <button
+                type="button"
+                onClick={() => setPromptValue('')}
+                disabled={!promptValue}
+                className="text-[11px] font-medium text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                クリア
+              </button>
+            </div>
             <button
               type="button"
               onClick={onOpenAddAsset}

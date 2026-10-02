@@ -1,5 +1,6 @@
 import React from 'react';
 import type { MappingMaster } from '../../../../api/types';
+import type { PromptOpType } from '../../types';
 
 export interface TargetFieldsSelectorProps {
   textareaRoles: MappingMaster[];
@@ -7,6 +8,8 @@ export interface TargetFieldsSelectorProps {
   setPromptTargetAll: (val: boolean) => void;
   promptTargetFields: Set<string>;
   togglePromptField: (role: string) => void;
+  promptOp: PromptOpType;
+  onSelectSingleField?: (role: string) => void;
 }
 
 export const TargetFieldsSelector: React.FC<TargetFieldsSelectorProps> = ({
@@ -15,24 +18,44 @@ export const TargetFieldsSelector: React.FC<TargetFieldsSelectorProps> = ({
   setPromptTargetAll,
   promptTargetFields,
   togglePromptField,
+  promptOp,
+  onSelectSingleField,
 }) => {
   if (textareaRoles.length === 0) return null;
+
+  const isExclusive = promptOp === 'overwrite' || promptOp === 'prefix' || promptOp === 'suffix';
+
+  const handleFieldSelect = (role: string) => {
+    if (isExclusive) {
+      if (onSelectSingleField) {
+        onSelectSingleField(role);
+      } else {
+        if (!promptTargetFields.has(role)) {
+          togglePromptField(role);
+        }
+      }
+    } else {
+      togglePromptField(role);
+    }
+  };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">対象フィールド</label>
-        <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={promptTargetAll}
-            onChange={e => setPromptTargetAll(e.target.checked)}
-            className="w-3.5 h-3.5 rounded accent-accent-green"
-          />
-          すべて対象
-        </label>
+        {!isExclusive && (
+          <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={promptTargetAll}
+              onChange={e => setPromptTargetAll(e.target.checked)}
+              className="w-3.5 h-3.5 rounded accent-accent-green"
+            />
+            すべて対象
+          </label>
+        )}
       </div>
-      {!promptTargetAll && (
+      {(isExclusive || !promptTargetAll) && (
         <div className="flex flex-wrap gap-2">
           {textareaRoles.map(m => (
             <label
@@ -44,9 +67,10 @@ export const TargetFieldsSelector: React.FC<TargetFieldsSelectorProps> = ({
               }`}
             >
               <input
-                type="checkbox"
+                type={isExclusive ? 'radio' : 'checkbox'}
+                name={isExclusive ? 'exclusive_target_field' : undefined}
                 checked={promptTargetFields.has(m.role)}
-                onChange={() => togglePromptField(m.role)}
+                onChange={() => handleFieldSelect(m.role)}
                 className="sr-only"
               />
               {m.display_name}

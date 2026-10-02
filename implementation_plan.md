@@ -1,129 +1,135 @@
-# Implementation Plan - REQ-304: FuguMT軽量和訳エンジン導入とドラッガブルタグチップ和訳プレビュー
+# Implementation Plan - REQ-297: プリセット一括編集モーダルの利便性向上 (入力クリア・自動閉じ抑止・サブセット抽出・対象排他制御・パラメータ検索・タグ操作統一)
 
-Prompt Surgeonおよびタグチップエディタにおいて、ComfyUIのGPU VRAMを一切消費（0MB）しないCPU常駐型の高速和訳エンジン（CTranslate2 / FuguMT）を導入し、タグチップサブメニューの幅拡張（360px）およびマウス・タッチ両対応のドラッガブル・フローティング和訳プレビューカード（`TagChipTranslationCard`）を実装します。
+プリセット一括編集モーダル（ProfileBulkEditModal）における連続作業の障害となっていた自動クローズを撤廃し、ワンクリック入力クリア、適用後のパラメータ選択自動解除、共通タグの動的サブセット抽出・再集計、プロンプト対象欄のモード別排他制御、パラメータのインクリメンタル検索フィルタ、および共通タグチップのポップオーバー編集サブメニュー統一を実装します。
 
 ---
 
 ## Proposed Changes
 
-### Backend Subsystem
+### Frontend Subsystem
 
-#### [LOCAL NEW] [fugumt_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/fugumt_service.py)
-- CTranslate2 `Translator`（CPU推論・`intra_threads=6`・`compute_type="int8"`）および MarianTokenizer / AutoTokenizer のライフサイクルを管理する `FuguMTService` シングルトンクラスを実装。
-- 前後空白トリムおよび連続スペース縮退を行う入力正規化関数 `normalize_input` を実装。
-- バッチ一括推論 `translate_batch` とテスト用モック注入メソッド `set_translator` を提供。
+#### [LOCAL MODIFY] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/types.ts)
+- BulkEditPayload に 	argetPresetIds?: number[] を追加し、サブセット指定のプリセットに対してのみパッチを適用可能にする。
+- BuildPayloadParams に subsetPresetIds?: Set<number> を追加。
 
-#### [LOCAL MODIFY] [requirements.txt](file:///c:/Users/audih/ws/comfy-create-helper2/backend/requirements.txt)
-- `ctranslate2>=4.0.0` および `transformers>=4.30.0` を追記。
+#### [LOCAL MODIFY] [buildPayload.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/buildPayload.ts)
+- promptOp === 'remove_tags' の場合、subsetPresetIds を payload.targetPresetIds として注入。
 
-#### [LOCAL NEW] [test_fugumt_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_fugumt_service.py)
-- `normalize_input`（空白・特殊記号・空文字処理）、`translate_batch`（モックバッチ推論・トークン保護）、`initialize`（モデル欠落時例外ハンドリング）の単体テスト。
+#### [LOCAL MODIFY] [useProfileBulkEditState.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/useProfileBulkEditState.ts)
+- subsetPresetIds: Set<number> の状態管理とトグル/全選択/全解除ハンドラを追加。
+- チェックされたプリセット群から動的に computedCommonTags を再計算。
+- パラメータ選択状態（enabledParams, atchSizeEnabled）を未選択に初期化する esetParamSelection() を提供。
+- setPromptOp において、overwrite / prefix / suffix への切り替え時に promptTargetAll を false とし、promptTargetFields を先頭1件にフォールバック（AC-5）。
 
-#### [LOCAL MODIFY] [translation_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/translation_service.py)
-- `provider == "fugumt"` 分岐を追加し、`FuguMTService.get_instance().translate_batch(missing_chunks_list)` を呼び出し。
-- チャンク入力正規化と SHA256 キャッシュキー照会を連携し、同一ハッシュ再リクエスト時の即時返却（0ms、AC-1）を保証。
-- `test_connection` において、`provider == "fugumt"` 時のテスト接続をサポート。
+#### [LOCAL MODIFY] [usePresetState.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/hooks/usePresetState.ts)
+- handleBulkEditApply において、payload.targetPresetIds が存在する場合はそのサブセットのみを更新対象にフィルタリング。
+- 適用成功時の setIsBulkEditOpen(false) および setBulkTargetIds([]) を削除し、モーダルを開いたまま維持。
+- 適用成功通知トースト（setErrorToast({ message: '...', type: 'success' })）を表示。
 
-#### [LOCAL MODIFY] [translate.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/translate.py)
-- `PromptTranslateRequest` に `provider: Optional[str] = None` を追加し、リクエスト単位のプロバイダー指定を許容。
-- `TranslateTestRequest` の `provider` Literalに `"fugumt"` を追加。
+#### [LOCAL MODIFY] [index.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/index.tsx)
+- handleConfirm で適用完了後に state.resetParamSelection() を呼び出し、パラメータチェック状態を自動解除。
+- モーダル全体に対する Escape キーリスナーを登録し、キー押下による明示的クローズに対応。
 
-#### [LOCAL MODIFY] [test_translation_proxy.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_translation_proxy.py)
-- `provider="fugumt"` 指定時の `translate_prompt` 統合テストおよび SHA256 キャッシュヒット検証テストを追加。
-- 既存プロバイダー（`google_cloud`, `deepl`, `llm`）の後方互換性を検証。
+#### [LOCAL MODIFY] [PromptOperationForm.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/tabs/PromptBulkEditTab/PromptOperationForm.tsx)
+- promptFindText, promptReplaceText, promptValue の各入力欄に「クリア」ボタンを追加。
+- 入力が空の場合はボタンを非活性または非表示とし、押下時に即時空文字へリセット。
+
+#### [LOCAL MODIFY] [TargetFieldsSelector.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/tabs/PromptBulkEditTab/TargetFieldsSelector.tsx)
+- promptOp に応じた排他制御：
+  - search_replace: 「すべて対象」チェックボックスおよび複数フィールド選択可能。
+  - overwrite / prefix / suffix: 「すべて対象」を非表示とし、単一選択ラジオボタン動作を強制。
+
+#### [LOCAL MODIFY] [CommonTagsSection.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/tabs/PromptBulkEditTab/CommonTagsSection.tsx)
+- 最上部に対象プリセット絞り込みセクション（チェックボックス一覧、全選択・全解除）を追加。
+- タグチップ本体クリック時の削除トグルを廃止し、クリックで編集ポップオーバーを展開。
+- 各タグチップ右端に独立した削除アイコン（X）を設置し、削除フラグのトグルに対応。
+
+#### [LOCAL NEW] [CommonTagSubmenu.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/tabs/PromptBulkEditTab/CommonTagSubmenu.tsx)
+- タグ文言編集、強度直接数値入力、ステップ増減ボタン（-0.3, -0.1, +0.1, +0.3）、削除ボタンを備えた軽量ポップオーバー。
+- Escape キー押下および外側クリック時にイベントのバブリングを防止して自身のみをクローズ。
+
+#### [LOCAL MODIFY] [ParamBulkEditTab/index.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ProfileBulkEditModal/tabs/ParamBulkEditTab/index.tsx)
+- パラメータ一覧最上部にインクリメンタル検索ボックスとクリアボタンを追加。
+- searchQuery による paramRoles およびバッチサイズ項目の部分一致フィルタリング。
+- 該当0件時の空メッセージ表示。
+- フィルタ状態とチェック状態（enabledParams）の完全独立性を保証。
+
+#### [LOCAL MODIFY] [ProfileBulkEditModal.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/ProfileBulkEditModal.test.tsx)
+- AC-1 〜 AC-7 の全振る舞いおよび Red Team 異常系ケースを検証する単体・統合テストを追加。
 
 ---
 
-### Frontend Subsystem
+### Documentation Subsystem
 
-#### [LOCAL NEW] [TagChipTranslationCard.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/TagChipTranslationCard.tsx)
-- フローティング和訳プレビューカード（`TagChipTranslationCard`）コンポーネントを新規作成。
-- Pointer Events（`onPointerDown`, `onPointerMove`, `onPointerUp`, `setPointerCapture` / `releasePointerCapture`）による滑らかなドラッグ移動機構。
-- ヘッダー部に `touch-action: none`（`touch-none`）を適用し、モバイルでのブラウザスクロール誤発火を防止。
-- 上下左右の移動可能範囲をビューポート境界内にクランプ（`Math.min/max`）。
-- 本文コンテナに `onPointerDown={(e) => e.stopPropagation()}` を適用し、本文の縦スクロール・テキスト選択とヘッダードラッグの操作を完全分離。
-- マウント時の `translateApi.translatePrompt` 非同期フェッチ、Loading/Error/Success 状態表現、1クリッククリップボードコピー（1.5秒チェックマーク表示）。
-- 閉じるボタン [✕]、`Escape` キー押下、外側クリック検知によるカードクローズ。
-
-#### [LOCAL NEW] [TagChipTranslationCard.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/TagChipTranslationCard.test.tsx)
-- 和訳取得ライフサイクル、エラーフォールバック、Pointer Eventsドラッグ・クランプ、本文操作分離、コピー機能、クローズトリガーの単体テストを網羅。
-
-#### [LOCAL MODIFY] [TagChip.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/TagChip.tsx)
-- サブメニュー外枠の横幅を `min-w-[220px]` から `w-[360px] max-w-[calc(100vw-24px)]` に拡張。
-- サブメニューヘッダーに `[翻訳]` ボタンを新設。
-- `isTranslationOpen` state を管理し、ボタンクリックで `TagChipTranslationCard` を開閉。
-- 親サブメニューが閉じた際（`isMenuOpen === false`）、連動して和訳カードを閉じるよう制御。
-
-#### [LOCAL MODIFY] [TagChip.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx)
-- サブメニュー横幅クラス `w-[360px] max-w-[calc(100vw-24px)]` の検証。
-- `[翻訳]` ボタンの描画およびクリック時の和訳カード表示トグルの検証。
-- 親サブメニュークローズ時の連動クローズ検証。
+#### [LOCAL MODIFY] [SPEC_COMMON.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md)
+- セクション 5-4 に REQ-297 で導入された全仕様（入力クリア、モーダル維持・ESC制御、パラメータ自動解除、共通タグ動的サブセット抽出、単一排他制御、インクリメンタル検索、サブメニュー統一）を同期反映。
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-1. **バックエンド単体・統合テスト**:
-   - `backend\.venv\Scripts\python -m pytest backend/tests/test_fugumt_service.py`
-   - `backend\.venv\Scripts\python -m pytest backend/tests/test_translation_proxy.py`
-2. **バックエンド型チェック**:
-   - `mypy backend`
-3. **フロントエンド単体・統合テスト**:
-   - `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/TagChipTranslationCard.test.tsx`
-   - `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/TagChip.test.tsx`
-4. **フロントエンド型チェック**:
-   - `cd frontend; npm run typecheck`
-5. **全体回帰テスト (Full Test Suite Baseline)**:
-   - `backend\.venv\Scripts\python -m pytest`
-   - `cd frontend; npm test`
+1. **フロントエンド型チェック (Static Typecheck)**:
+   - cd frontend; npm run typecheck (エラー 0 件)
+2. **コンポーネント・フック単体テスト (Unit Tests)**:
+   - cd frontend; npx vitest run src/components/__tests__/ProfileBulkEditModal.test.tsx
+   - cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx
+3. **全件回帰テスト (Full Test Suite Baseline)**:
+   - cd frontend; npm test (全件 PASS)
 
 ### Manual Verification
-1. ブラウザでタグチップをクリックし、サブメニューが横幅360pxでゆったり表示され、ヘッダーに `[翻訳]` ボタンが表示されることを確認。
-2. `[翻訳]` ボタンをクリックし、サブメニュー直下に和訳カードがスムーズに展開され、ローディング後に日本語訳が表示されることを確認。
-3. カード上部ヘッダーをマウスドラッグおよびタッチ操作で画面端まで動かし、ビューポート外に消えず適切に停止することを確認。
-4. 訳文本文をドラッグしてテキスト選択および縦スクロールを行い、カード全体のドラッグが誤発火しないことを確認。
-5. コピーボタンをクリックしてクリップボードに訳文がコピーされ、チェックアイコンが表示されることを確認。
-6. [✕] ボタン、Escキー、外側クリック、またはタグチップメニューを閉じた際に、和訳カードが連動して安全に閉じることを確認。
+1. プリセット一括編集モーダルを開き、プロンプト入力欄にテキスト入力後、「クリア」ボタンで即座に空になることを確認。入力したまま一度閉じて再表示した際に値が保持されることを確認（AC-1）。
+2. パラメータタブで複数項目にチェックを入れ適用を実行。適用成功後にモーダルが開いたままであること（AC-3）と、パラメータのチェックが自動で全て外れること（AC-2）を確認。
+3. 共通タグ編集タブでプリセットのチェックを一部外し、共通タグが即座にサブセット対象のみに再計算されることを確認。適用時に外したプリセットが変更されないことを確認（AC-4）。
+4. 操作タイプを「置換」から「上書き」に変更した際、対象フィールドが単一ラジオ選択に切り替わり先頭1件にフォールバックすることを確認（AC-5）。
+5. パラメータ検索欄に文字を入力してリアルタイム絞り込みを確認し、チェックを入れた状態で検索クリアしても選択が維持・適用されることを確認（AC-6）。
+6. 共通タグチップをクリックしてポップオーバーが開き、強度変更および文言編集ができること、チップ上の X ボタンで削除対象にマークできることを確認（AC-7）。
+7. ポップオーバー表示中に Escape を押すとポップオーバーのみが閉じ、再度 Escape を押すとモーダル本体が閉じることを確認（Red Team 3）。
 
 ---
 
 ## Task Dependency & Parallelization
 
-```mermaid
+`mermaid
 graph TD
-    subgraph Backend [Backend Subsystem]
-        REQ-304-T1["REQ-304-T1: FuguMT CPU和訳エンジン & 単体テスト<br/>(fugumt_service.py, test_fugumt_service.py)"]
-        REQ-304-T2["REQ-304-T2: Translation API FuguMTプロバイダー統合 & キャッシュ最適化<br/>(translation_service.py, translate.py)"]
-        REQ-304-T1 --> REQ-304-T2
-    end
+    T1["REQ-297-T1: 状態管理・ペイロード拡張<br/>(types.ts, buildPayload.ts, useProfileBulkEditState.ts)"]
+    T5["REQ-297-T5: パラメータ検索フィルタ<br/>(ParamBulkEditTab/index.tsx)"]
+    
+    T2["REQ-297-T2: モーダルライフサイクル・自動閉じ抑止<br/>(usePresetState.ts, index.tsx)"]
+    T3["REQ-297-T3: プロンプト入力クリア・対象欄排他制御<br/>(PromptOperationForm.tsx, TargetFieldsSelector.tsx, index.tsx)"]
+    T4["REQ-297-T4: 共通タグサブセット抽出・サブメニュー編集<br/>(CommonTagsSection.tsx, CommonTagSubmenu.tsx)"]
+    
+    T6["REQ-297-T6: 統合テスト拡充・SSoT仕様書同期<br/>(ProfileBulkEditModal.test.tsx, SPEC_COMMON.md)"]
 
-    subgraph Frontend [Frontend Subsystem]
-        REQ-304-T3["REQ-304-T3: TagChipTranslationCard ドラッガブルカード実装<br/>(TagChipTranslationCard.tsx, test)"]
-        REQ-304-T4["REQ-304-T4: TagChip サブメニュー360px拡張 & 和訳アクション統合<br/>(TagChip.tsx, test)"]
-        REQ-304-T3 --> REQ-304-T4
-    end
+    T1 --> T2
+    T1 --> T3
+    T1 --> T4
+    
+    T2 --> T6
+    T3 --> T6
+    T4 --> T6
+    T5 --> T6
+`
 
-    Backend -.->|並列開発可能 / 直交性担保| Frontend
-```
-
-| タスクID | サブシステム | 対象ファイル | 依存関係 | 並列実行 | 検証コマンド |
+| タスクID | サブシステム | 対象ファイル | 依存関係 | 並列実行性 | 単体検証コマンド |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **REQ-304-T1** | backend | `fugumt_service.py`, `test_fugumt_service.py`, `requirements.txt` | なし (Root) | 可 (T3と並列) | `backend\.venv\Scripts\python -m pytest backend/tests/test_fugumt_service.py` |
-| **REQ-304-T2** | backend | `translation_service.py`, `translate.py`, `test_translation_proxy.py` | `REQ-304-T1` | 順次 (T1後) | `backend\.venv\Scripts\python -m pytest backend/tests/test_translation_proxy.py` |
-| **REQ-304-T3** | frontend | `TagChipTranslationCard.tsx`, `TagChipTranslationCard.test.tsx` | なし (Root) | 可 (T1と並列) | `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/TagChipTranslationCard.test.tsx` |
-| **REQ-304-T4** | frontend | `TagChip.tsx`, `TagChip.test.tsx` | `REQ-304-T3` | 順次 (T3後) | `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/TagChip.test.tsx` |
+| **REQ-297-T1** | frontend | 	ypes.ts, uildPayload.ts, useProfileBulkEditState.ts | なし (Root) | 可 (T5と並列可能) | cd frontend; npx vitest run src/components/ProfileBulkEditModal/__tests__/utils.test.ts |
+| **REQ-297-T5** | frontend | 	abs/ParamBulkEditTab/index.tsx | なし (Root) | 可 (T1と完全並列) | cd frontend; npx vitest run src/components/__tests__/ProfileBulkEditModal.test.tsx |
+| **REQ-297-T2** | frontend | usePresetState.ts, index.tsx | REQ-297-T1 | 可 (T3, T4と並列) | cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx |
+| **REQ-297-T3** | frontend | PromptOperationForm.tsx, TargetFieldsSelector.tsx, PromptBulkEditTab/index.tsx | REQ-297-T1 | 可 (T2, T4と並列) | cd frontend; npx vitest run src/components/__tests__/ProfileBulkEditModal.test.tsx |
+| **REQ-297-T4** | frontend | CommonTagsSection.tsx, CommonTagSubmenu.tsx | REQ-297-T1 | 可 (T2, T3と並列) | cd frontend; npx vitest run src/components/__tests__/ProfileBulkEditModal.test.tsx |
+| **REQ-297-T6** | frontend/docs | ProfileBulkEditModal.test.tsx, SPEC_COMMON.md | T2, T3, T4, T5 | 順次 (全先行タスク完了後) | cd frontend; npm run typecheck && npm test |
 
 ---
 
 ## Trade-off Disclosure
 
-1. **CPU推論スレッド数とサーバーリソースのバランス**:
-   - **Trade-off**: `intra_threads=6` を割り当てることで推論速度を 20〜30ms に短縮できますが、推論実行の瞬間にCPUコア負荷が一時的に高まります。
-   - **Mitigation**: プロンプト翻訳は常時高頻度で実行されるものではなく（ユーザーのタグ確認時やプロンプト投入時のみ）、かつ SHA256 インメモリキャッシュにより同一フレーズは次回以降 0ms・CPU負荷ゼロで即時返却されるため、全体のCPU使用率は極めて低く抑えられます。
-2. **モデル初回ロード時の待機時間（遅延ロード）**:
-   - **Trade-off**: サーバー起動時に全モデルをロードしないため、初回和訳リクエスト時にモデル読込（約1〜2秒）の遅延が発生します。
-   - **Mitigation**: サーバー起動自体が軽快になり、かつ単体テスト実行時にモデルロードによる不要なオーバーヘッドやエラーを防ぐことができます。初回ロード完了後はCPUメモリに常駐するため、2回目以降は即座に応答します。
-3. **フローティングカードの初期位置と画面外はみ出し防止**:
-   - **Trade-off**: ポップオーバーが動的に任意位置へドラッグ可能になるため、初期配置時に画面端と被るリスクや、ドラッグによって見失われるリスクがあります。
-   - **Mitigation**: マウント時に `anchorRect` とビューポート残余領域を判定して上下位置を自動退避し、Pointer Events の移動ハンドラに厳格なビューポートクランプ（上下左右）を設けることで、画面外への消失を 100% 防止します。
+1. **適用後のモーダル維持に伴うキャッシュ同期と連続編集の整合性**:
+   - **Trade-off**: 一括適用成功後にモーダルを閉じない仕様としたことで、同一モーダル内で連続して編集・適用を行った際、プリセットのローカルキャッシュとサーバー側の最新状態（updated_at / OCC）にズレが生じ、409 Conflict が発生するリスクがあります。
+   - **Mitigation**: usePresetState.ts の handleBulkEditApply において、qc.setQueryData および presetUpdatedAtRef への最新タイムスタンプ同期を同期的かつ確実に実行し、後続の適用処理が常に最新バージョンを参照するよう保護します。
+2. **サブセット抽出時の動的共通タグ再計算コスト**:
+   - **Trade-off**: プリセットチェックのON/OFFの都度、クライアント側で全プロンプトのトークンパースおよび共通タグ積集合計算（computeCommonTags）が同期実行されるため、プリセット件数が多い場合にUIレスポンスが低下する懸念があります。
+   - **Mitigation**: computeCommonTags は純粋関数として最適化されており、数十件規模のプリセットであれば数ミリ秒以内で完了します。また、subsetPresetIds の変更時にのみ再計算を行うため、不要な再描画は最小限に抑えられます。
+3. **パラメータ検索による非表示項目の意図しない適用リスク**:
+   - **Trade-off**: 検索ボックスにより画面外に隠れたパラメータ項目も、チェックが入っていれば適用ペイロードに含まれる仕様であるため、ユーザーが以前の選択を忘れたまま適用してしまうリスクが存在します。
+   - **Mitigation**: AC-2 で定めた「適用成功時のパラメータ選択自動全解除」により、前回の選択が残留する根本原因を排除します。さらに、適用確認画面（BulkEditConfirmView）にて適用されるパラメータ件数を明示的に確認できるようにします。

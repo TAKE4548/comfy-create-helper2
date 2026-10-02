@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -274,9 +274,9 @@ describe('ProfileBulkEditModal Component', () => {
     expect(screen.getByText('1girl')).toBeInTheDocument();
     expect(screen.getByText('masterpiece')).toBeInTheDocument();
 
-    // Click on '1girl' to mark for removal
-    fireEvent.click(screen.getByText('1girl'));
-    expect(screen.getByText('※ 1 個のタグが対象プリセットから削除されます。')).toBeInTheDocument();
+    // Click on tag removal button for '1girl' to mark for removal (AC-7)
+    const removeButtons = screen.getAllByTitle('タグ削除');
+    fireEvent.click(removeButtons[0]);
 
     // Click apply in footer
     fireEvent.click(screen.getByRole('button', { name: /適用/i }));
@@ -297,6 +297,7 @@ describe('ProfileBulkEditModal Component', () => {
           ],
         },
       ],
+      targetPresetIds: [1, 2],
     });
   });
 
@@ -317,9 +318,12 @@ describe('ProfileBulkEditModal Component', () => {
     // Switch to remove_tags op
     fireEvent.click(screen.getByText('共通タグ編集・削除'));
 
-    // Find '+' button for first tag and click
-    const plusButtons = screen.getAllByTitle('強度変更 (+0.1)');
-    fireEvent.click(plusButtons[0]); // '1girl' -> '(1girl:1.1)'
+    // Click on '1girl' tag body to open submenu (AC-7)
+    fireEvent.click(screen.getByText('1girl'));
+
+    // Submenu is opened, click '+0.1' button in submenu
+    const plusButton = screen.getByRole('button', { name: '+0.1' });
+    fireEvent.click(plusButton); // '1girl' -> '(1girl:1.1)'
 
     // Click apply
     fireEvent.click(screen.getByRole('button', { name: /適用/i }));
@@ -337,6 +341,7 @@ describe('ProfileBulkEditModal Component', () => {
           ],
         },
       ],
+      targetPresetIds: [1, 2],
     });
   });
 
@@ -697,6 +702,400 @@ describe('ProfileBulkEditModal Component', () => {
           ],
         },
       ],
+    });
+  });
+
+  describe('REQ-297 Enhanced Bulk Edit Features (AC-1 to AC-7, Red Team)', () => {
+    it('AC-1: clears input on clear button click and retains state across reopen', () => {
+      const { rerender } = renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      // Find input for find text
+      const findInput = screen.getByPlaceholderText('例: <lora:characterA:1.0> またはタグ名');
+      fireEvent.change(findInput, { target: { value: 'cat' } });
+      expect(findInput).toHaveValue('cat');
+
+      // Click clear button
+      const clearButtons = screen.getAllByRole('button', { name: 'クリア' });
+      fireEvent.click(clearButtons[0]);
+      expect(findInput).toHaveValue('');
+
+      // Input replace text without clearing
+      const replaceInput = screen.getByPlaceholderText('置換後タグを入力（空欄で削除、カンマで確定）...');
+      fireEvent.change(replaceInput, { target: { value: 'dog' } });
+      fireEvent.keyDown(replaceInput, { key: 'Enter' });
+
+      // Simulate closing modal then reopening
+      rerender(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ProfileBulkEditModal
+            isOpen={false}
+            onClose={vi.fn()}
+            selectedPresets={mockPresets}
+            mappingMasters={mockMappings}
+            loras={[]}
+            onApply={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+      rerender(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ProfileBulkEditModal
+            isOpen={true}
+            onClose={vi.fn()}
+            selectedPresets={mockPresets}
+            mappingMasters={mockMappings}
+            loras={[]}
+            onApply={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+
+      // Value should be retained across reopen
+      expect(screen.getByText('dog')).toBeInTheDocument();
+    });
+
+    it('AC-2: automatically unchecks parameter checkboxes after applying changes', async () => {
+      const onApply = vi.fn().mockResolvedValue(undefined);
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          paramTypeMasters={mockParamTypeMasters}
+          loras={[]}
+          onApply={onApply}
+        />
+      );
+
+      // Go to Params tab
+      fireEvent.click(screen.getByText('パラメータ'));
+
+      // Check sampler
+      const samplerCheckbox = screen.getByLabelText('Sampler') as HTMLInputElement;
+      expect(samplerCheckbox.checked).toBe(false);
+      fireEvent.click(samplerCheckbox);
+      expect(samplerCheckbox.checked).toBe(true);
+
+      const samplerSelect = screen.getByDisplayValue('サンプラーを選択…');
+      fireEvent.change(samplerSelect, { target: { value: 'euler' } });
+
+      // Apply
+      fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+      expect(onApply).toHaveBeenCalled();
+
+      // Checkbox should now be unchecked
+      await waitFor(() => {
+        const checkbox = screen.getByLabelText('Sampler') as HTMLInputElement;
+        expect(checkbox.checked).toBe(false);
+      });
+    });
+
+    it('AC-3: keeps modal open after apply, closes modal on Escape key press', async () => {
+      const onClose = vi.fn();
+      const onApply = vi.fn().mockResolvedValue(undefined);
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={onClose}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={onApply}
+        />
+      );
+
+      // Fill and apply
+      const findInput = screen.getByPlaceholderText('例: <lora:characterA:1.0> またはタグ名');
+      fireEvent.change(findInput, { target: { value: 'cat' } });
+      fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+      // Modal should still be open (onClose was NOT called on apply)
+      expect(onClose).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.getByText('プロファイル一括編集')).toBeInTheDocument();
+      });
+
+      // Press Escape key
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('AC-4: dynamically recomputes common tags on subset toggle and passes targetPresetIds', () => {
+      const onApply = vi.fn();
+      const threePresets: WorkflowPreset[] = [
+        { id: 1, name: 'P1', workflow_id: 1, display_order: 1, is_default: false, param_values: { positive: 'cat, smile, hat' } },
+        { id: 2, name: 'P2', workflow_id: 1, display_order: 2, is_default: false, param_values: { positive: 'cat, smile, scarf' } },
+        { id: 3, name: 'P3', workflow_id: 1, display_order: 3, is_default: false, param_values: { positive: 'cat, frowning, boots' } },
+      ];
+
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={threePresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={onApply}
+        />
+      );
+
+      // Switch to remove_tags op
+      fireEvent.click(screen.getByText('共通タグ編集・削除'));
+
+      // Across 3 presets, only 'cat' is common
+      expect(screen.getByText('cat')).toBeInTheDocument();
+      expect(screen.queryByText('smile')).not.toBeInTheDocument();
+
+      // Uncheck P3 in subset presets
+      const p3Checkbox = screen.getByLabelText('P3');
+      fireEvent.click(p3Checkbox);
+
+      // Now between P1 and P2, 'smile' is also common!
+      expect(screen.getByText('cat')).toBeInTheDocument();
+      expect(screen.getByText('smile')).toBeInTheDocument();
+
+      // Click remove button on 'smile'
+      const removeButtons = screen.getAllByTitle('タグ削除');
+      // The second tag should be smile
+      fireEvent.click(removeButtons[1]);
+
+      // Apply
+      fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+      expect(onApply).toHaveBeenCalledWith({
+        promptOps: [
+          {
+            op: 'remove_tags',
+            fields: null,
+            tags: ['smile'],
+            commonTagOps: [
+              { originalBase: 'cat', newFormattedTag: 'cat', action: 'update' },
+              { originalBase: 'smile', newFormattedTag: 'smile', action: 'remove' },
+            ],
+          },
+        ],
+        targetPresetIds: [1, 2],
+      });
+    });
+
+    it('AC-5: allows multi-selection in search_replace, enforces single exclusive selection in overwrite/prefix/suffix', () => {
+      const multiFieldMappings: MappingMaster[] = [
+        { id: 1, workflow_id: 1, role: 'positive', display_name: 'Prompt', input_type: 'textarea', is_required: false, is_hidden: false, display_order: 1 },
+        { id: 2, workflow_id: 1, role: 'negative', display_name: 'Negative Prompt', input_type: 'textarea', is_required: false, is_hidden: false, display_order: 2 },
+      ];
+
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={multiFieldMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      // search_replace mode: "すべて対象" checkbox should exist
+      expect(screen.getByLabelText('すべて対象')).toBeInTheDocument();
+
+      // Switch to '先頭に追加' (prefix)
+      fireEvent.click(screen.getByText('先頭に追加'));
+
+      // "すべて対象" should be hidden in exclusive mode
+      expect(screen.queryByLabelText('すべて対象')).not.toBeInTheDocument();
+
+      // Only one field should be selected (fallback to first item: Prompt)
+      const promptRadio = screen.getByLabelText('Prompt') as HTMLInputElement;
+      const negativeRadio = screen.getByLabelText('Negative Prompt') as HTMLInputElement;
+      expect(promptRadio.checked).toBe(true);
+      expect(negativeRadio.checked).toBe(false);
+
+      // Selecting negative prompt should uncheck prompt
+      fireEvent.click(negativeRadio);
+      expect(negativeRadio.checked).toBe(true);
+      expect(promptRadio.checked).toBe(false);
+    });
+
+    it('AC-6: filters parameters in real time and retains non-visible parameter state on apply', () => {
+      const onApply = vi.fn();
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          paramTypeMasters={mockParamTypeMasters}
+          loras={[]}
+          onApply={onApply}
+        />
+      );
+
+      // Switch to Params tab
+      fireEvent.click(screen.getByText('パラメータ'));
+
+      // Filter by 'step'
+      const searchInput = screen.getByPlaceholderText('パラメータを検索... (名称・キー)');
+      fireEvent.change(searchInput, { target: { value: 'step' } });
+
+      // Steps is visible, Sampler is hidden
+      expect(screen.getByLabelText('Steps')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Sampler')).not.toBeInTheDocument();
+
+      // Check steps and input value
+      fireEvent.click(screen.getByLabelText('Steps'));
+      const stepsInput = screen.getByPlaceholderText('値を入力');
+      fireEvent.change(stepsInput, { target: { value: '30' } });
+
+      // Now filter by 'sampler', hiding steps
+      fireEvent.change(searchInput, { target: { value: 'sampler' } });
+      expect(screen.queryByLabelText('Steps')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Sampler')).toBeInTheDocument();
+
+      // Clear filter: both steps and sampler are visible
+      fireEvent.change(searchInput, { target: { value: '' } });
+      const stepsCheckbox = screen.getByLabelText('Steps') as HTMLInputElement;
+      expect(stepsCheckbox.checked).toBe(true);
+
+      // Apply
+      fireEvent.click(screen.getByRole('button', { name: /適用/i }));
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }));
+
+      // Payload should contain steps even if filter changed
+      expect(onApply).toHaveBeenCalledWith({
+        paramPatch: {
+          steps: '30',
+        },
+      });
+    });
+
+    it('AC-7: tag chip body click opens submenu for text/weight edit, and X button marks deletion', () => {
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('共通タグ編集・削除'));
+
+      // Submenu should not be open yet
+      expect(screen.queryByRole('dialog', { name: '共通タグ設定' })).not.toBeInTheDocument();
+
+      // Click tag chip body '1girl'
+      fireEvent.click(screen.getByText('1girl'));
+
+      // Submenu dialog opens
+      expect(screen.getByRole('dialog', { name: '共通タグ設定' })).toBeInTheDocument();
+
+      // Edit tag name in submenu
+      const tagInput = screen.getByLabelText('タグ名編集');
+      fireEvent.change(tagInput, { target: { value: '1girl, 20yo' } });
+      fireEvent.keyDown(tagInput, { key: 'Enter' });
+
+      // Submenu close
+      fireEvent.click(screen.getByLabelText('閉じる'));
+      expect(screen.queryByRole('dialog', { name: '共通タグ設定' })).not.toBeInTheDocument();
+
+      // New tag text should be reflected
+      expect(screen.getByText('1girl, 20yo')).toBeInTheDocument();
+
+      // Independent X button marks tag for deletion (line-through class)
+      const removeButtons = screen.getAllByTitle('タグ削除');
+      fireEvent.click(removeButtons[0]);
+      expect(screen.getByText('1girl, 20yo').closest('div')).toHaveClass('line-through');
+    });
+
+    it('Red Team 1: safe handling when all subset presets are cleared', () => {
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('共通タグ編集・削除'));
+
+      // Click "全解除" in subset presets
+      fireEvent.click(screen.getByRole('button', { name: '全解除' }));
+
+      // Does not throw and shows empty notice safely
+      expect(screen.getByText('選択されたプリセットの対象フィールドに共通するタグは見つかりませんでした。')).toBeInTheDocument();
+    });
+
+    it('Red Team 2: parameter search safely handles regex special characters', () => {
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('パラメータ'));
+
+      const searchInput = screen.getByPlaceholderText('パラメータを検索... (名称・キー)');
+      // Type regex meta-characters
+      fireEvent.change(searchInput, { target: { value: '[a-z*+\\?(' } });
+
+      // No crash, displays not found message
+      expect(screen.getByText('該当するパラメータが見つかりません')).toBeInTheDocument();
+    });
+
+    it('Red Team 3: ESC key closes only submenu first without closing modal', () => {
+      const onClose = vi.fn();
+      renderWithClient(
+        <ProfileBulkEditModal
+          isOpen={true}
+          onClose={onClose}
+          selectedPresets={mockPresets}
+          mappingMasters={mockMappings}
+          loras={[]}
+          onApply={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByText('共通タグ編集・削除'));
+
+      // Open submenu
+      fireEvent.click(screen.getByText('1girl'));
+      const submenu = screen.getByRole('dialog', { name: '共通タグ設定' });
+      expect(submenu).toBeInTheDocument();
+
+      // Press Escape inside submenu
+      fireEvent.keyDown(submenu, { key: 'Escape' });
+
+      // Submenu should be closed, but modal should remain open!
+      expect(screen.queryByRole('dialog', { name: '共通タグ設定' })).not.toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+
+      // Press Escape on modal now
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -43,12 +43,46 @@ export function useProfileBulkEditState(
   const [targetAssetRole, setTargetAssetRole] = useState<string>('');
   const [assetOps, setAssetOps] = useState<AppliedAssetOp[]>([]);
 
+  // Preset Subset state
+  const [subsetPresetIds, setSubsetPresetIds] = useState<Set<number>>(() => new Set(selectedPresets.map(p => p.id)));
+  const [prevPresetsKey, setPrevPresetsKey] = useState<string>(() => selectedPresets.map(p => p.id).join(','));
+
+  let currentSubsetPresetIds = subsetPresetIds;
+  const currentPresetsKey = selectedPresets.map(p => p.id).join(',');
+  if (currentPresetsKey !== prevPresetsKey) {
+    setPrevPresetsKey(currentPresetsKey);
+    const newSet = new Set(selectedPresets.map(p => p.id));
+    setSubsetPresetIds(newSet);
+    currentSubsetPresetIds = newSet;
+  }
+
+  const toggleSubsetPresetId = (id: number) => {
+    setSubsetPresetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAllSubsetPresets = () => {
+    setSubsetPresetIds(new Set(selectedPresets.map(p => p.id)));
+  };
+
+  const clearAllSubsetPresets = () => {
+    setSubsetPresetIds(new Set());
+  };
+
   const textareaRoles = mappingMasters.filter(m => m.input_type === 'textarea');
   const paramRoles = mappingMasters.filter(m => !['textarea'].includes(m.input_type));
   const loraRoles = mappingMasters.filter(m => m.input_type === 'lora_stack');
 
   const effectivePromptRoles = promptTargetAll ? textareaRoles.map(m => m.role) : Array.from(promptTargetFields);
-  const computedCommonTags = computeCommonTags(selectedPresets, effectivePromptRoles);
+  const subsetPresets = selectedPresets.filter(p => currentSubsetPresetIds.has(p.id));
+  const computedCommonTags = computeCommonTags(subsetPresets, effectivePromptRoles);
 
   // Sync commonTagItems when computedCommonTags change
   const currentKey = computedCommonTags.join('|||');
@@ -139,15 +173,40 @@ export function useProfileBulkEditState(
     });
   };
 
+  const resetParamSelection = () => {
+    setEnabledParams(new Set());
+    setBatchSizeEnabled(false);
+  };
+
+  const handleSetPromptOp = (action: PromptOpType | ((prev: PromptOpType) => PromptOpType)) => {
+    const nextOp = typeof action === 'function' ? action(promptOp) : action;
+    setPromptOp(nextOp);
+    if (nextOp === 'overwrite' || nextOp === 'prefix' || nextOp === 'suffix') {
+      setPromptTargetAll(false);
+      setPromptTargetFields(prev => {
+        const firstField = Array.from(prev)[0] || textareaRoles[0]?.role;
+        return firstField ? new Set([firstField]) : new Set();
+      });
+    }
+  };
+
+  const selectSinglePromptField = (role: string) => {
+    setPromptTargetFields(new Set([role]));
+  };
+
   return {
-    promptOp, setPromptOp,
+    promptOp, setPromptOp: handleSetPromptOp,
     promptFindText, setPromptFindText,
     promptReplaceText, setPromptReplaceText,
     promptValue, setPromptValue,
     promptTargetAll, setPromptTargetAll,
-    promptTargetFields, togglePromptField,
+    promptTargetFields, togglePromptField, selectSinglePromptField,
     tagsToRemove, setTagsToRemove, toggleTagToRemove,
     commonTagItems, setCommonTagItems,
+    subsetPresetIds: currentSubsetPresetIds, setSubsetPresetIds,
+    subsetPresets,
+    toggleSubsetPresetId, selectAllSubsetPresets, clearAllSubsetPresets,
+    resetParamSelection,
     enabledParams, toggleParamEnabled,
     paramPatch, setParamPatch,
     batchSizeEnabled, setBatchSizeEnabled,
