@@ -16,7 +16,7 @@ export interface UseChipParserReturn {
   chipsToString: (chips: TagChip[], isAnimaMode?: boolean) => string;
   splitTags: (text: string, isAnimaMode?: boolean) => string[];
   parseTagWeight: (text: string) => ParsedTagWeight;
-  formatTagWeight: (baseText: string, weight: number | null) => string;
+  formatTagWeight: (baseText: string, weight: number | null, isAnimaMode?: boolean) => string;
   adjustWeight: (currentWeight: number | null, delta: number) => number;
 }
 
@@ -140,15 +140,19 @@ export const chipsToString = (chips: TagChip[], isAnimaMode: boolean = false): s
 /**
  * タグ文字列からベーステキストと強度を抽出します。
  * 例: "(1girl:1.2)" -> { baseText: "1girl", weight: 1.2 }
+ * 例: "(1girl:1.2)." -> { baseText: "1girl.", weight: 1.2 }
  * 例: "1girl" -> { baseText: "1girl", weight: null }
  */
 export function parseTagWeight(text: string): ParsedTagWeight {
   const trimmed = text.trim();
-  const match = trimmed.match(/^\((.+):([0-9.]+)\)$/);
+  const match = trimmed.match(/^\((.+):([0-9.]+)\)\.?$/);
   if (match) {
-    const baseText = match[1].trim();
+    const rawBase = match[1].trim();
     const weightNum = parseFloat(match[2]);
     if (!isNaN(weightNum)) {
+      const hasPeriod = trimmed.endsWith('.') || rawBase.endsWith('.');
+      const cleanBase = rawBase.replace(/\.+$/, '');
+      const baseText = hasPeriod ? `${cleanBase}.` : cleanBase;
       return { baseText, weight: weightNum };
     }
   }
@@ -158,17 +162,25 @@ export function parseTagWeight(text: string): ParsedTagWeight {
 /**
  * ベーステキストと強度からSD形式のタグ文字列を整形します。
  * weightがnullまたは1.0の場合はベーステキストのみを返します。
+ * isAnimaModeがtrueの場合、またはbaseTextがピリオド終わりの場合は末尾ピリオドを付与・維持します。
  */
-export function formatTagWeight(baseText: string, weight: number | null): string {
+export function formatTagWeight(
+  baseText: string,
+  weight: number | null,
+  isAnimaMode: boolean = false
+): string {
   const trimmedBase = baseText.trim();
+  const hasPeriod = trimmedBase.endsWith('.') || isAnimaMode;
+  const cleanBase = trimmedBase.replace(/\.+$/, '');
+
   if (weight === null || isNaN(weight) || weight === 1) {
-    return trimmedBase;
+    return hasPeriod ? `${cleanBase}.` : cleanBase;
   }
   const rounded = parseFloat(weight.toFixed(2));
   if (rounded === 1) {
-    return trimmedBase;
+    return hasPeriod ? `${cleanBase}.` : cleanBase;
   }
-  return `(${trimmedBase}:${rounded})`;
+  return hasPeriod ? `(${cleanBase}:${rounded}).` : `(${cleanBase}:${rounded})`;
 }
 
 /**

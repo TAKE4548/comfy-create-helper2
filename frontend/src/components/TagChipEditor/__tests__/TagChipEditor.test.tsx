@@ -859,6 +859,44 @@ describe('TagChipEditor', () => {
         expect(screen.getByText('blue hair.')).toBeInTheDocument();
         expect(screen.getByText('masterpiece.')).toBeInTheDocument();
       });
+
+      it('AC-6: formats tag weight as (tag:x). in Anima mode and preserves space delimiter with subsequent tags', () => {
+        const onChangeMock = vi.fn();
+        render(
+          <StatefulTagChipEditor
+            initialValue="1girl. solo."
+            onChange={onChangeMock}
+            isAnimaMode={true}
+          />
+        );
+
+        // Click '1girl.' to open weight menu
+        fireEvent.click(screen.getByText('1girl.'));
+        const plusBtn = screen.getByRole('button', { name: '+0.5' });
+        fireEvent.click(plusBtn);
+
+        expect(screen.getByText('(1girl:1.5).')).toBeInTheDocument();
+        expect(onChangeMock).toHaveBeenLastCalledWith('(1girl:1.5). solo.');
+      });
+
+      it('AC-6: repairs legacy format (tag.:x) to (tag:x). on weight adjustment in Anima mode', () => {
+        const onChangeMock = vi.fn();
+        render(
+          <StatefulTagChipEditor
+            initialValue="(tag.:1.2), solo."
+            onChange={onChangeMock}
+            isAnimaMode={true}
+          />
+        );
+
+        // Click legacy formatted tag to open weight menu
+        fireEvent.click(screen.getByText('(tag.:1.2)'));
+        const plusBtn = screen.getByRole('button', { name: '+0.5' });
+        fireEvent.click(plusBtn);
+
+        expect(screen.getByText('(tag:1.7).')).toBeInTheDocument();
+        expect(onChangeMock).toHaveBeenLastCalledWith('(tag:1.7). solo.');
+      });
     });
   });
 });

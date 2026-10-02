@@ -21,7 +21,15 @@ export function useWorkflowManagement({
   const [isWorkflowMenuOpen, setIsWorkflowMenuOpen] = useState(false)
   const [activePromptTab, setActivePromptTabState] = useState<string>('')
   const [collapsedRoles, setCollapsedRoles] = useState<Record<string, boolean>>({})
-  const [isAnimaMode, setIsAnimaMode] = useState(false)
+  const [isAnimaMode, setIsAnimaModeState] = useState(false)
+
+  const setIsAnimaMode = (val: boolean | ((prev: boolean) => boolean)) => {
+    setIsAnimaModeState((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val
+      useGenerationStore.getState().setIsAnimaMode?.(next)
+      return next
+    })
+  }
 
   // ── Queries ──
   const { data: workflows } = useQuery({
@@ -82,7 +90,9 @@ export function useWorkflowManagement({
   useEffect(() => {
     if (workflow && baseModels) {
       const selectedModel = baseModels.find((m) => m.id === workflow.target_base_model_id)
-      setIsAnimaMode(!!selectedModel && selectedModel.name === 'Anima')
+      const isAnima = !!selectedModel && selectedModel.name === 'Anima'
+      setIsAnimaMode(isAnima)
+      useGenerationStore.getState().setIsAnimaMode?.(isAnima)
     }
   }, [workflow, baseModels])
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DesktopLayout } from '../DesktopLayout'
+import { useGenerationStore } from '../../../../store/useGenerationStore'
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -26,6 +27,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    useGenerationStore.setState({ roleTextModes: {} })
   })
 
   const createMockState = (overrides = {}) => {
@@ -339,5 +341,40 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     expect(container.querySelector('#workflow-select')).toBeInTheDocument()
     expect(container.querySelector('#desktop-preset-tabs-bar')).not.toBeInTheDocument()
     expect(container.querySelector('#left-pane-toolbar')).not.toBeInTheDocument()
+  })
+
+  it('AC-4: initial Anima mode displays TagChipEditor in chip mode, persists text mode across preset tab switches after manual toggle', () => {
+    const state = createMockState({
+      isAnimaMode: true,
+      activeSetId: 'set-1',
+    })
+
+    const { rerender } = render(<DesktopLayout state={state} />)
+
+    // 1. Initial render with Anima mode -> Chip mode by default
+    expect(screen.getByText('Chips Mode')).toBeInTheDocument()
+    expect(screen.getByText('テキスト入力モード切替')).toBeInTheDocument()
+
+    // 2. User manually switches to Text mode
+    fireEvent.click(screen.getByText('テキスト入力モード切替'))
+
+    // Text mode is now active
+    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.getByText('チップモード切替')).toBeInTheDocument()
+    expect(useGenerationStore.getState().roleTextModes?.Main_Positive_Prompt).toBe(true)
+
+    // 3. Switch to another preset tab ('set-2') -> TagChipEditor remounts due to key change
+    rerender(<DesktopLayout state={{ ...state, activeSetId: 'set-2' }} />)
+
+    // Text mode should be preserved (no regression / ancestor reverting)
+    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.getByText('チップモード切替')).toBeInTheDocument()
+
+    // 4. Switch back to 'set-1' -> TagChipEditor remounts again
+    rerender(<DesktopLayout state={{ ...state, activeSetId: 'set-1' }} />)
+
+    // Text mode is still preserved
+    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.getByText('チップモード切替')).toBeInTheDocument()
   })
 })

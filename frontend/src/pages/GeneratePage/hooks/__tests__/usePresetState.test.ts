@@ -1111,5 +1111,140 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       expect(useGenerationStore.getState().activeSetId).toBe(103)
     })
   })
+
+  describe('REQ-306: Anima mode preset bulk synchronization', () => {
+    it('AC-2: reflects isAnimaMode and protects period-delimited chips during preset bulk update/sync (resultMap)', async () => {
+      const preset1: WorkflowPreset = {
+        id: 101,
+        workflow_id: 1,
+        name: 'Set 1',
+        param_values: { prompt: '1girl. solo.' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 42,
+        sort_order: 0,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+      const preset2: WorkflowPreset = {
+        id: 102,
+        workflow_id: 1,
+        name: 'Set 2',
+        param_values: { prompt: 'cat. outdoor.' },
+        applied_assets: {},
+        batch_size: 1,
+        seed_mode: 'random',
+        seed: 43,
+        sort_order: 1,
+        created_at: '2026-09-08T10:00:00Z',
+        updated_at: '2026-09-08T10:00:00Z',
+      }
+
+      useGenerationStore.setState({
+        selectedWorkflowId: 1,
+        activeSetId: 101,
+        openPresetIds: [101, 102],
+        isAnimaMode: true,
+        sets: [
+          {
+            id: 101,
+            name: 'Set 1',
+            paramValues: { prompt: '1girl. solo.' },
+            appliedAssets: {},
+            batchSize: 1,
+            seedMode: 'random',
+            seed: 42,
+            checked: true,
+            promptChips: {
+              prompt: [
+                { id: 'c1', text: '1girl.', enabled: true },
+                { id: 'c2', text: 'solo.', enabled: true },
+              ],
+            },
+          },
+          {
+            id: 102,
+            name: 'Set 2',
+            paramValues: { prompt: 'cat. outdoor.' },
+            appliedAssets: {},
+            batchSize: 1,
+            seedMode: 'random',
+            seed: 43,
+            checked: true,
+            promptChips: {
+              prompt: [
+                { id: 'c3', text: 'cat.', enabled: true },
+                { id: 'c4', text: 'outdoor.', enabled: true },
+              ],
+            },
+          },
+        ],
+      })
+
+      let currentPresets = [preset1, preset2]
+      vi.mocked(workflowPresetsApi.list).mockImplementation(async () => currentPresets)
+      vi.mocked(workflowPresetsApi.update).mockImplementation(async (id, patch) => {
+        const base = currentPresets.find((p) => p.id === id) || (id === 101 ? preset1 : preset2)
+        const updated = {
+          ...base,
+          ...patch,
+          param_values: patch.param_values ?? base.param_values,
+          updated_at: '2026-09-08T10:01:00Z',
+        }
+        currentPresets = currentPresets.map((p) => (p.id === id ? updated : p))
+        return updated
+      })
+
+      const { result } = renderHook(
+        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        { wrapper }
+      )
+
+      await waitFor(() => {
+        expect(result.current.presets).toHaveLength(2)
+      })
+
+      await act(async () => {
+        await result.current.handleBulkEditApply({
+          targetPresetIds: [101, 102],
+          promptOps: [
+            {
+              op: 'overwrite',
+              value: '1girl. red hair. masterpiece.',
+              fields: ['prompt'],
+            },
+          ],
+        })
+      })
+
+      // Check that resultMap sync reflected isAnimaMode: true across sets
+      const state = useGenerationStore.getState()
+      const updatedSet1 = state.sets.find((s) => s.id === 101)
+      const updatedSet2 = state.sets.find((s) => s.id === 102)
+
+      expect(updatedSet1?.promptChips?.prompt).toHaveLength(3)
+      expect(updatedSet1?.promptChips?.prompt.map((c: any) => c.text)).toEqual([
+        '1girl.',
+        'red hair.',
+        'masterpiece.',
+      ])
+
+      expect(updatedSet2?.promptChips?.prompt).toHaveLength(3)
+      expect(updatedSet2?.promptChips?.prompt.map((c: any) => c.text)).toEqual([
+        '1girl.',
+        'red hair.',
+        'masterpiece.',
+      ])
+
+      // Active preset (101) promptChips should also be synced with 3 distinct chips
+      expect(state.promptChips.prompt).toHaveLength(3)
+      expect(state.promptChips.prompt.map((c: any) => c.text)).toEqual([
+        '1girl.',
+        'red hair.',
+        'masterpiece.',
+      ])
+    })
+  })
 })
 

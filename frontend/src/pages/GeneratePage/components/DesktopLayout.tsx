@@ -174,6 +174,8 @@ export const DesktopLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+  const roleTextModes = useGenerationStore((state) => state.roleTextModes)
+  const setRoleTextMode = useGenerationStore((state) => state.setRoleTextMode)
   const vramWaitStatus = useGenerationStore((state) => state.vramWaitStatus)
   const cancelVramWait = useGenerationStore((state) => state.cancelVramWait)
 
@@ -549,9 +551,12 @@ export const DesktopLayout = ({
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                     placeholder={`Enter ${m.display_name}…`}
                     variant={isNegative ? 'negative' : 'positive'}
-                    defaultTextMode={m.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
+                    defaultTextMode={roleTextModes?.[m.role!] ?? false}
                     isAnimaMode={isAnimaMode}
-                    onTextModeToggle={() => setRoleCollapsed(m.role!, false)}
+                    onTextModeToggle={(isText) => {
+                      setRoleCollapsed(m.role!, false)
+                      setRoleTextMode?.(m.role!, isText)
+                    }}
                   />
                   <AppliedAssetChips
                     role={m.role!}

@@ -224,19 +224,43 @@ describe('TagChip', () => {
 
     const plusPointFive = screen.getByRole('button', { name: '+0.5' });
     fireEvent.click(plusPointFive);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.5)');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.5).');
 
     const plusOne = screen.getByRole('button', { name: '+1.0' });
     fireEvent.click(plusOne);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:2)');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:2).');
 
     const minusPointFive = screen.getByRole('button', { name: '-0.5' });
     fireEvent.click(minusPointFive);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.5)');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.5).');
 
     const minusOne = screen.getByRole('button', { name: '-1.0' });
     fireEvent.click(minusOne);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0)');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0).');
+  });
+
+  it('adjusts weight by direct number input in submenu in anima mode', () => {
+    render(
+      <TagChip
+        id="1"
+        text="1girl"
+        enabled={true}
+        isAnimaMode={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('1girl'));
+    const numInput = screen.getByRole('spinbutton');
+    expect(numInput).toHaveValue(1);
+
+    fireEvent.change(numInput, { target: { value: '1.35' } });
+    fireEvent.keyDown(numInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.35).');
   });
 
   it('adjusts weight by direct number input in submenu', () => {

@@ -142,7 +142,7 @@ export const TagChip: React.FC<TagChipProps> = ({
     const { baseText: currentBase, weight: currentWeight } = parseTagWeight(text);
     const newWeight = adjustWeight(currentWeight, delta);
     setWeightInput(newWeight.toString());
-    const newFormatted = formatTagWeight(currentBase, newWeight);
+    const newFormatted = formatTagWeight(currentBase, newWeight, isAnimaMode);
     onEdit(id, newFormatted);
   };
 
@@ -156,7 +156,7 @@ export const TagChip: React.FC<TagChipProps> = ({
     if (!isNaN(parsed)) {
       const clamped = Math.max(0, parseFloat(parsed.toFixed(2)));
       setWeightInput(clamped.toString());
-      const newFormatted = formatTagWeight(currentBase, clamped);
+      const newFormatted = formatTagWeight(currentBase, clamped, isAnimaMode);
       onEdit(id, newFormatted);
     } else {
       const { weight: currentWeight } = parseTagWeight(text);
@@ -183,7 +183,7 @@ export const TagChip: React.FC<TagChipProps> = ({
     }
     if (trimmed !== baseText) {
       const { weight: currentWeight } = parseTagWeight(text);
-      const newFormatted = formatTagWeight(trimmed, currentWeight);
+      const newFormatted = formatTagWeight(trimmed, currentWeight, isAnimaMode);
       onEdit(id, newFormatted);
     }
   };

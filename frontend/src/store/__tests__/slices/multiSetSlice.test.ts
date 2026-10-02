@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useGenerationStore } from '../../useGenerationStore';
 import { getEffectiveParamValues, chipsToString, areChipsEqual } from '../../slices/multiSetSlice';
 import type { TagChip } from '../../../components/TagChipEditor/useChipParser';
+import type { WorkflowPreset } from '../../../api/types';
 
 describe('multiSetSlice helper functions', () => {
   describe('areChipsEqual', () => {
@@ -293,5 +294,159 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
     useGenerationStore.getState().setIsAnimaMode?.(false);
     expect(useGenerationStore.getState().isAnimaMode).toBe(false);
     expect(useGenerationStore.getState().getEffectiveParamValues().positive).toBe('1girl., smile');
+  });
+
+  describe('loadPresetData in Anima mode', () => {
+    const mockPreset: WorkflowPreset = {
+      id: 99,
+      workflow_id: 1,
+      name: 'Anima Test Preset',
+      param_values: { positive: '1girl., solo.' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    it('parses period-delimited tags (1girl., solo.) into distinct chips in Anima mode', () => {
+      useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
+      useGenerationStore.getState().loadPresetData(mockPreset, {});
+
+      const state = useGenerationStore.getState();
+      const chips = state.promptChips.positive;
+      expect(chips).toBeDefined();
+      expect(chips).toHaveLength(2);
+      expect(chips[0].text).toBe('1girl.');
+      expect(chips[1].text).toBe('solo.');
+    });
+
+    it('preserves existing promptChips non-destructively without recreating chip IDs when text matches', () => {
+      useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
+      useGenerationStore.getState().loadPresetData(mockPreset, {});
+
+      const initialChips = useGenerationStore.getState().promptChips.positive;
+      const initialIds = initialChips.map((c) => c.id);
+
+      // Subsequent call where preset param_values matches chipsToString of existing chips
+      const matchingPreset: WorkflowPreset = {
+        ...mockPreset,
+        param_values: { positive: chipsToString(initialChips, true) },
+      };
+
+      useGenerationStore.getState().loadPresetData(matchingPreset, {});
+
+      const preservedChips = useGenerationStore.getState().promptChips.positive;
+      expect(preservedChips.map((c) => c.id)).toEqual(initialIds);
+      expect(preservedChips[0]).toBe(initialChips[0]);
+    });
+
+    it('AC-1: maintains period-delimited chips without merging when switching between presets and back in Anima mode', () => {
+      useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
+      const presetA: WorkflowPreset = {
+        ...mockPreset,
+        id: 101,
+        name: 'Preset A',
+        param_values: { positive: '1girl. solo. red dress.' },
+      };
+      const presetB: WorkflowPreset = {
+        ...mockPreset,
+        id: 102,
+        name: 'Preset B',
+        param_values: { positive: '2boys. outdoors.' },
+      };
+
+      // 1. Load preset A
+      useGenerationStore.getState().loadPresetData(presetA, {});
+      const chipsA1 = useGenerationStore.getState().promptChips.positive;
+      expect(chipsA1).toHaveLength(3);
+      expect(chipsA1.map((c) => c.text)).toEqual(['1girl.', 'solo.', 'red dress.']);
+
+      // 2. Load preset B
+      useGenerationStore.getState().loadPresetData(presetB, {});
+      const chipsB = useGenerationStore.getState().promptChips.positive;
+      expect(chipsB).toHaveLength(2);
+      expect(chipsB.map((c) => c.text)).toEqual(['2boys.', 'outdoors.']);
+
+      // 3. Re-load preset A
+      useGenerationStore.getState().loadPresetData(presetA, {});
+      const chipsA2 = useGenerationStore.getState().promptChips.positive;
+      expect(chipsA2).toHaveLength(3);
+      expect(chipsA2.map((c) => c.text)).toEqual(['1girl.', 'solo.', 'red dress.']);
+      expect(chipsA2[0].id).toBe(chipsA1[0].id);
+    });
+
+    it('AC-5: parses comma-separated tags and maintains backwards compatibility in non-Anima mode', () => {
+      useGenerationStore.setState({ isAnimaMode: false, sets: [], openPresetIds: [] });
+      const legacyPreset: WorkflowPreset = {
+        ...mockPreset,
+        id: 201,
+        name: 'Legacy Preset',
+        param_values: { positive: '1girl, solo, red dress' },
+      };
+
+      useGenerationStore.getState().loadPresetData(legacyPreset, {});
+      const chips = useGenerationStore.getState().promptChips.positive;
+      expect(chips).toHaveLength(3);
+      expect(chips.map((c) => c.text)).toEqual(['1girl', 'solo', 'red dress']);
+    });
+
+    it('Red Teaming: protects decimal numbers (e.g. weight: 1.5, girl.) from accidental splitting', () => {
+      useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
+      const decimalPreset: WorkflowPreset = {
+        ...mockPreset,
+        id: 301,
+        name: 'Decimal Preset',
+        param_values: { positive: 'weight: 1.5, girl.' },
+      };
+
+      useGenerationStore.getState().loadPresetData(decimalPreset, {});
+      const chips = useGenerationStore.getState().promptChips.positive;
+      expect(chips).toHaveLength(2);
+      expect(chips[0].text).toBe('weight: 1.5');
+      expect(chips[1].text).toBe('girl.');
+    });
+
+    it('Red Teaming: safely handles invalid consecutive periods (e.g. "...  ..") without errors', () => {
+      useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
+      const invalidDotsPreset: WorkflowPreset = {
+        ...mockPreset,
+        id: 302,
+        name: 'Invalid Dots Preset',
+        param_values: { positive: '...  ..' },
+      };
+
+      expect(() => {
+        useGenerationStore.getState().loadPresetData(invalidDotsPreset, {});
+      }).not.toThrow();
+      const chips = useGenerationStore.getState().promptChips.positive;
+      expect(chips ?? []).toHaveLength(0);
+    });
+  });
+
+  describe('roleTextModes', () => {
+    it('initializes roleTextModes to empty object and updates mode per role via setRoleTextMode', () => {
+      useGenerationStore.setState({ roleTextModes: {} });
+      expect(useGenerationStore.getState().roleTextModes).toEqual({});
+
+      useGenerationStore.getState().setRoleTextMode?.('Main_Positive_Prompt', true);
+      expect(useGenerationStore.getState().roleTextModes).toEqual({
+        Main_Positive_Prompt: true,
+      });
+
+      useGenerationStore.getState().setRoleTextMode?.('Main_Negative_Prompt', false);
+      expect(useGenerationStore.getState().roleTextModes).toEqual({
+        Main_Positive_Prompt: true,
+        Main_Negative_Prompt: false,
+      });
+
+      useGenerationStore.getState().setRoleTextMode?.('Main_Positive_Prompt', false);
+      expect(useGenerationStore.getState().roleTextModes).toEqual({
+        Main_Positive_Prompt: false,
+        Main_Negative_Prompt: false,
+      });
+    });
   });
 });

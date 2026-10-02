@@ -68,6 +68,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     appliedAssets: storedAppliedAssets,
     promptChips: {},
     isAnimaMode: false,
+    roleTextModes: {},
     batchSize: storedBatchSize,
     seedMode: storedSeedMode,
     seed: storedSeed,
@@ -77,6 +78,15 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
     setIsAnimaMode: (isAnima) => {
       set({ isAnimaMode: isAnima })
+    },
+
+    setRoleTextMode: (role, isTextMode) => {
+      set((state) => ({
+        roleTextModes: {
+          ...state.roleTextModes,
+          [role]: isTextMode,
+        },
+      }))
     },
 
     setSelectedWorkflowId: (id) => {
@@ -306,10 +316,18 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         ? openPresetIds
         : [...openPresetIds, preset.id]
 
+      const isAnimaMode = get().isAnimaMode ?? false
+      const existingSet = get().sets.find((s) => String(s.id) === String(preset.id))
+
       const initialPromptChips: Record<string, TagChip[]> = {}
       for (const [role, val] of Object.entries(mergedParamValues)) {
         if (val) {
-          initialPromptChips[role] = parseToChips(val)
+          const existingChips = existingSet?.promptChips?.[role]
+          if (existingChips && existingChips.length > 0 && chipsToString(existingChips, isAnimaMode) === val) {
+            initialPromptChips[role] = existingChips
+          } else {
+            initialPromptChips[role] = parseToChips(val, isAnimaMode)
+          }
         }
       }
 

@@ -495,7 +495,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         const chips: Record<string, TagChip[]> = {}
         for (const [role, val] of Object.entries(mergedParams)) {
           if (val) {
-            chips[role] = parseToChips(val)
+            chips[role] = parseToChips(val, storeRef.current.isAnimaMode ?? false)
           }
         }
         return {
@@ -520,7 +520,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         const initialPromptChips: Record<string, TagChip[]> = {}
         for (const [role, val] of Object.entries(mergedParams)) {
           if (val) {
-            initialPromptChips[role] = parseToChips(val)
+            initialPromptChips[role] = parseToChips(val, storeRef.current.isAnimaMode ?? false)
           }
         }
 

@@ -147,6 +147,21 @@ describe('useChipParser', () => {
         weight: null,
       });
     });
+
+    it('should parse weighted tags with period outside or inside parentheses', () => {
+      expect(parseTagWeight('(1girl:1.2).')).toEqual({
+        baseText: '1girl.',
+        weight: 1.2,
+      });
+      expect(parseTagWeight('(1girl.:1.2)')).toEqual({
+        baseText: '1girl.',
+        weight: 1.2,
+      });
+      expect(parseTagWeight('(1girl..:1.2)')).toEqual({
+        baseText: '1girl.',
+        weight: 1.2,
+      });
+    });
   });
 
   describe('formatTagWeight', () => {
@@ -159,6 +174,24 @@ describe('useChipParser', () => {
       expect(formatTagWeight('1girl', 1.0)).toBe('1girl');
       expect(formatTagWeight('1girl', 1)).toBe('1girl');
       expect(formatTagWeight('1girl', null)).toBe('1girl');
+    });
+
+    it('should preserve or add trailing period in anima mode', () => {
+      expect(formatTagWeight('1girl.', 1.2, true)).toBe('(1girl:1.2).');
+      expect(formatTagWeight('1girl', 1.2, true)).toBe('(1girl:1.2).');
+      expect(formatTagWeight('1girl.', 1.0, true)).toBe('1girl.');
+      expect(formatTagWeight('1girl', 1.0, true)).toBe('1girl.');
+    });
+
+    it('should format tag with trailing period in anima mode and join with space in chipsToString (AC)', () => {
+      const formatted = formatTagWeight('1girl.', 1.2, true);
+      expect(formatted).toBe('(1girl:1.2).');
+
+      const chips = [
+        { id: '1', text: formatted, enabled: true },
+        { id: '2', text: 'solo.', enabled: true },
+      ];
+      expect(chipsToString(chips, true)).toBe('(1girl:1.2). solo.');
     });
   });
 

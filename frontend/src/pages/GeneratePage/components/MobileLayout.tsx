@@ -123,6 +123,8 @@ export const MobileLayout = ({
   const setErrorToast = useGenerationStore((state) => state.setErrorToast)
   const promptChips = useGenerationStore((state) => state.promptChips)
   const setPromptChips = useGenerationStore((state) => state.setPromptChips)
+  const roleTextModes = useGenerationStore((state) => state.roleTextModes)
+  const setRoleTextMode = useGenerationStore((state) => state.setRoleTextMode)
   const vramWaitStatus = useGenerationStore((state) => state.vramWaitStatus)
   const cancelVramWait = useGenerationStore((state) => state.cancelVramWait)
 
@@ -611,9 +613,12 @@ export const MobileLayout = ({
                 onChange={(val) => setParamValues({ ...paramValues, [activePromptTabMapping.role!]: val })}
                 placeholder={`Enter ${activePromptTabMapping.display_name}…`}
                 variant={isNegative ? 'negative' : 'positive'}
-                defaultTextMode={activePromptTabMapping.role === 'Main_Positive_Prompt' ? isAnimaMode : undefined}
+                defaultTextMode={roleTextModes?.[activePromptTabMapping.role!] ?? false}
                 isAnimaMode={isAnimaMode}
-                onTextModeToggle={() => setRoleCollapsed(activePromptTabMapping.role!, false)}
+                onTextModeToggle={(isText) => {
+                  setRoleCollapsed(activePromptTabMapping.role!, false)
+                  setRoleTextMode?.(activePromptTabMapping.role!, isText)
+                }}
               />
               <AppliedAssetChips
                 role={activePromptTabMapping.role!}
