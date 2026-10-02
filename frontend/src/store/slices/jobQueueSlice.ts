@@ -5,6 +5,7 @@ import { LS_KEYS } from '../../utils/localStorageKeys'
 import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions } from '../types'
 import { comfyWsService } from '../services/comfyWebSocketService'
 import { resolveNodeTitle } from './connectionSlice'
+import { parseQueueSubmissionFailure } from '../../utils/queueSubmissionFailure'
 
 export type JobQueueSlice = JobQueueState & JobQueueActions
 
@@ -93,6 +94,19 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       }
 
       const execute = async (): Promise<string | null> => {
+        const reportSubmissionFailure = (error: unknown) => {
+          const failure = parseQueueSubmissionFailure(error)
+          if (options?.onSubmissionFailure) {
+            try {
+              options.onSubmissionFailure(failure)
+            } catch (callbackError) {
+              console.error('Queue submission failure callback failed:', callbackError)
+            }
+          } else {
+            get().setErrorToast({ message: failure.reason, type: 'error' })
+          }
+        }
+
         try {
           const data = await comfyApi.queuePrompt({
             prompt: workflow,
@@ -104,14 +118,17 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
           }
 
           if (data.error) {
-            const errorMsg =
-              typeof data.error === 'object'
-                ? (data.error.message || data.error.details || JSON.stringify(data.error))
-                : String(data.error)
-            get().setErrorToast({ message: errorMsg, type: 'error' })
-            throw new Error(errorMsg)
+            const failureResponse = typeof data.error === 'string'
+              ? { ...data, error: { message: data.error } }
+              : data
+            throw new Error(JSON.stringify(failureResponse))
           }
           const promptId = data.prompt_id ?? null
+
+          if (!promptId) {
+            reportSubmissionFailure(null)
+            return null
+          }
 
           if (options?.signal?.aborted) {
             return null
@@ -187,7 +204,7 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
             return null
           }
           console.error('Failed to queue prompt:', e)
-          get().setErrorToast({ message: e.message || 'Failed to queue prompt', type: 'error' })
+          reportSubmissionFailure(e)
           return null
         }
       }

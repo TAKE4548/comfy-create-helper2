@@ -1207,3 +1207,122 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
   });
 });
 
+describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.mocked(comfyApi.queuePrompt).mockReset();
+  });
+
+  it('reports an explicit ComfyUI rejection once through the callback and suppresses the legacy toast', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ error: { message: 'Missing required input' } } as any);
+    const callback = vi.fn();
+    const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(result).toBeNull();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ reason: 'Missing required input', outcome: 'failed' });
+    expect(setErrorToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves error details and node_errors from a realistic 2xx rejection response', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({
+      error: { message: 'Prompt execution failed', details: 'Node 12 has invalid input' },
+      node_errors: { 12: { errors: [{ message: 'Node 12 has invalid input' }] } },
+    } as any);
+    const callback = vi.fn();
+
+    await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({
+      reason: 'Prompt execution failed\nNode 12 has invalid input',
+      outcome: 'failed',
+    });
+  });
+
+  it('preserves legacy string data.error values as the failure reason', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ error: 'Queue rejected by ComfyUI' } as any);
+    const callback = vi.fn();
+
+    await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ reason: 'Queue rejected by ComfyUI', outcome: 'failed' });
+  });
+
+  it('reports HTTP 400 response details and preserves the legacy toast when no callback is supplied', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('API error 400: {"error":{"message":"Invalid workflow"}}'));
+    const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    await useGenerationStore.getState().queuePrompt({ nodes: {} });
+
+    expect(setErrorToastSpy).toHaveBeenCalledTimes(1);
+    expect(setErrorToastSpy).toHaveBeenCalledWith({ message: 'Invalid workflow', type: 'error' });
+  });
+
+  it('passes the normalized HTTP 400 reason to the callback', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('API error 400: {"detail":"Node 12 input is invalid"}'));
+    const callback = vi.fn();
+
+    await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ reason: 'Node 12 input is invalid', outcome: 'failed' });
+  });
+
+  it('reports an unknown reason when the successful response has no prompt_id', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({} as any);
+    const callback = vi.fn();
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(result).toBeNull();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ reason: '理由を特定できませんでした', outcome: 'failed' });
+    expect(useGenerationStore.getState().isGenerating).toBe(false);
+  });
+
+  it('does not let a throwing failure callback change the failed submission result', async () => {
+    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('queue rejected'));
+    const callback = vi.fn(() => { throw new Error('callback failed') });
+    const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(result).toBeNull();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(setErrorToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not report an aborted request through the callback or legacy toast', async () => {
+    const abortError = new Error('The user aborted a request.');
+    abortError.name = 'AbortError';
+    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(abortError);
+    const callback = vi.fn();
+    const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    const result = await useGenerationStore.getState().queuePrompt(
+      { nodes: {} }, undefined, { onSubmissionFailure: callback }
+    );
+
+    expect(result).toBeNull();
+    expect(callback).not.toHaveBeenCalled();
+    expect(setErrorToastSpy).not.toHaveBeenCalled();
+  });
+});
+

@@ -24,7 +24,7 @@ export interface GenerateModalsOverlayProps {
   setIsParamSyncSettingsOpen: (open: boolean) => void
   saveAsTagSetRole: string | null
   setSaveAsTagSetRole: (role: string | null) => void
-  errorToast: { message: string; type?: 'error' | 'success' } | null
+  errorToast: { message: string; type?: 'error' | 'success'; persistent?: boolean } | null
   setErrorToast: (toast: any) => void
 }
 
@@ -141,11 +141,16 @@ export const GenerateModalsOverlay = memo(function GenerateModalsOverlay({
       )}
 
       {errorToast && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900 border border-red-800 text-red-100 px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-fade-in">
-          <span className="text-sm font-medium">{errorToast.message}</span>
+        <div
+          role="alert"
+          className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900 border border-red-800 text-red-100 px-4 py-2 rounded-lg shadow-lg flex items-start gap-3 animate-fade-in w-[calc(100vw-2rem)] max-w-xl max-h-[calc(100vh-2rem)] overflow-y-auto"
+        >
+          <span className="text-sm font-medium whitespace-pre-wrap break-words min-w-0 flex-1">{errorToast.message}</span>
           <button
+            type="button"
             onClick={() => setErrorToast(null)}
             className="p-1 hover:bg-white/10 rounded text-red-300 hover:text-red-100 transition-all"
+            aria-label="通知を閉じる"
           >
             <X size={14} />
           </button>

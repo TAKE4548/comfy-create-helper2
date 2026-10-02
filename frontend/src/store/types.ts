@@ -1,5 +1,8 @@
 import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, WorkflowPreset } from '../api/types'
 import type { TagChip } from '../components/TagChipEditor/useChipParser'
+import type { QueueSubmissionFailure } from '../utils/queueSubmissionFailure'
+
+export type { QueueSubmissionFailure } from '../utils/queueSubmissionFailure'
 
 export interface BatchJob {
   promptId: string;
@@ -90,6 +93,7 @@ export interface QueuePromptOptions {
   skipQueueFetch?: boolean;
   signal?: AbortSignal;
   isBatchIntermediate?: boolean;
+  onSubmissionFailure?: (failure: QueueSubmissionFailure) => void;
 }
 
 export interface ConnectionState {
@@ -210,11 +214,11 @@ export interface MultiSetActions {
 export interface BypassState {
   bypassProfiles: BypassProfile[];
   bypassProfilesCache: Record<number, BypassProfile[]>;
-  errorToast: { message: string; type: 'error' | 'success' } | null;
+  errorToast: { message: string; type: 'error' | 'success'; persistent?: boolean } | null;
 }
 
 export interface BypassActions {
-  setErrorToast: (toast: { message: string; type: 'error' | 'success' } | null) => void;
+  setErrorToast: (toast: { message: string; type: 'error' | 'success'; persistent?: boolean } | null) => void;
   fetchBypassProfiles: (workflowId: number) => Promise<void>;
   createBypassProfile: (workflowId: number, name: string, nodeIds: string[]) => Promise<void>;
   updateBypassProfile: (profileId: number, data: { name?: string; bypassed_node_ids?: string[]; is_enabled?: boolean }) => Promise<void>;

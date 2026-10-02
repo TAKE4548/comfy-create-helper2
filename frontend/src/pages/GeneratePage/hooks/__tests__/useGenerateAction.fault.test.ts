@@ -61,7 +61,8 @@ describe('useGenerateAction - Fault Injection Tests (MSW)', () => {
     expect(state.isBatchSubmitting).toBe(false)
     expect(state.errorToast).not.toBeNull()
     expect(state.errorToast?.type).toBe('error')
-    expect(state.errorToast?.message).toMatch(/503/)
+    expect(state.errorToast?.message).toContain('キュー投入に失敗しました')
+    expect(state.errorToast?.message).toContain('Service Unavailable')
   })
 
   it('handles network error (HttpResponse.error) during handleGenerate safely', async () => {

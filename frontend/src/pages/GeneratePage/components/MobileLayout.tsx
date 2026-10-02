@@ -166,7 +166,7 @@ export const MobileLayout = ({
   }, [selectedWorkflowId, fetchBypassProfiles])
 
   useEffect(() => {
-    if (errorToast && typeof setErrorToast === 'function') {
+    if (errorToast && errorToast.persistent !== true && typeof setErrorToast === 'function') {
       const timer = setTimeout(() => {
         setErrorToast(null)
       }, 5000)

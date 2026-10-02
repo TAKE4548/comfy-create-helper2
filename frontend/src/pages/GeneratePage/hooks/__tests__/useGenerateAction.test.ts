@@ -358,17 +358,17 @@ describe('useGenerateAction', () => {
       expect(mockStore.setSubmissionAbortController).toHaveBeenCalled();
       // 2 jobs for Set A + 1 job for Set C = 3 calls
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
-      expect(mockStore.queuePrompt.mock.calls[0][2]).toEqual({
+      expect(mockStore.queuePrompt.mock.calls[0][2]).toMatchObject({
         skipQueueFetch: true,
         signal: expect.any(AbortSignal),
         isBatchIntermediate: true,
       });
-      expect(mockStore.queuePrompt.mock.calls[1][2]).toEqual({
+      expect(mockStore.queuePrompt.mock.calls[1][2]).toMatchObject({
         skipQueueFetch: true,
         signal: expect.any(AbortSignal),
         isBatchIntermediate: true,
       });
-      expect(mockStore.queuePrompt.mock.calls[2][2]).toEqual({
+      expect(mockStore.queuePrompt.mock.calls[2][2]).toMatchObject({
         skipQueueFetch: true,
         signal: expect.any(AbortSignal),
         isBatchIntermediate: true,
@@ -538,7 +538,7 @@ describe('useGenerateAction', () => {
       expect(finalCallBatch[2].promptId).toBe('real-prompt-3');
     });
 
-    it('should set error toast and mark job status as failed when queuePrompt returns null or throws', async () => {
+    it('aggregates a set failure reason into a persistent toast and marks the job failed', async () => {
       mockStore.sets = [
         { id: '1', name: 'Set Fail', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
       ];
@@ -546,14 +546,17 @@ describe('useGenerateAction', () => {
       // Job 0 succeeds, Job 1 returns null (failure)
       mockStore.queuePrompt
         .mockResolvedValueOnce('prompt-success')
-        .mockResolvedValueOnce(null);
-
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'Node input is missing', outcome: 'failed' });
+          return null;
+        });
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set Fail] (2/2) のキュー投入に失敗しました',
+        message: '[Set Fail] (2/2) のキュー投入に失敗しました: Node input is missing',
         type: 'error',
+        persistent: true,
       });
 
       // Check final activeBatch has status: 'failed' for second job
@@ -564,7 +567,7 @@ describe('useGenerateAction', () => {
       expect(finalBatch[1].status).toBe('failed');
     });
 
-    it('should handle thrown exception from queuePrompt, set toast and mark job as failed', async () => {
+    it('uses the thrown queuePrompt error when the failure callback was not invoked', async () => {
       mockStore.sets = [
         { id: '1', name: 'Set Error', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
       ];
@@ -575,13 +578,143 @@ describe('useGenerateAction', () => {
       await handleGenerateSets();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set Error] (1/1) のキュー投入に失敗しました',
+        message: '[Set Error] (1/1) のキュー投入を確認できませんでした: Network error',
         type: 'error',
+        persistent: true,
       });
 
       const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
       expect(finalBatch).toHaveLength(1);
       expect(finalBatch[0].status).toBe('failed');
+    });
+
+    it('aggregates failures from multiple sets into one toast with matching reasons', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set A', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
+        { id: '2', name: 'Set B', checked: true, batchSize: 1, seedMode: 'random', seed: 20, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'A failed', outcome: 'failed' });
+          return null;
+        })
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'B timed out', outcome: 'unconfirmed' });
+          return null;
+        });
+      mockStore.fetchQueue.mockRejectedValueOnce(new Error('Refresh failed'));
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledTimes(1);
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '[Set A] (1/1) のキュー投入に失敗しました: A failed\n[Set B] (1/1) のキュー投入を確認できませんでした: B timed out',
+        type: 'error',
+        persistent: true,
+      });
+      const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalBatch.map((job: any) => job.status)).toEqual(['failed', 'failed']);
+    });
+
+    it('shows every failed item reason once and emits no success notification when all items fail', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set Alpha', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
+        { id: '2', name: 'Set Beta', checked: true, batchSize: 1, seedMode: 'random', seed: 20, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'Alpha rejected', outcome: 'failed' });
+          return null;
+        })
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'Beta unavailable', outcome: 'failed' });
+          return null;
+        });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.setErrorToast).toHaveBeenCalledTimes(1);
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '[Set Alpha] (1/1) のキュー投入に失敗しました: Alpha rejected\n[Set Beta] (1/1) のキュー投入に失敗しました: Beta unavailable',
+        type: 'error',
+        persistent: true,
+      });
+      expect(mockStore.setErrorToast.mock.calls.every(([toast]: any[]) => toast.type === 'error')).toBe(true);
+      const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
+      expect(finalBatch.map((job: any) => job.status)).toEqual(['failed', 'failed']);
+    });
+
+    it('shows the unknown-reason fallback when a submission returns null without a reason', async () => {
+      mockStore.sets = [
+        { id: '1', name: 'Set Unknown', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt.mockResolvedValueOnce(null);
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '[Set Unknown] (1/1) のキュー投入に失敗しました: 理由を特定できませんでした',
+        type: 'error',
+        persistent: true,
+      });
+    });
+
+    it('does not notify when the submission is cancelled', async () => {
+      let controller: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((value: AbortController) => { controller = value; });
+      mockStore.sets = [
+        { id: '1', name: 'Set Cancel', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
+      ];
+      mockStore.queuePrompt.mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+        controller?.abort();
+        options.onSubmissionFailure({ reason: 'Cancelled', outcome: 'failed' });
+        return null;
+      });
+
+      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      await handleGenerateSets();
+
+      expect(mockStore.setErrorToast).not.toHaveBeenCalled();
+    });
+
+    it('passes the submission failure callback and omits the index for one generation request', async () => {
+      mockStore.batchSize = 1;
+      mockStore.queuePrompt.mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+        options.onSubmissionFailure({ reason: 'Invalid workflow', outcome: 'failed' });
+        return null;
+      });
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      await handleGenerate();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '生成のキュー投入に失敗しました: Invalid workflow',
+        type: 'error',
+        persistent: true,
+      });
+    });
+
+    it('includes the batch position when a single-generation batch has multiple requests', async () => {
+      mockStore.batchSize = 2;
+      mockStore.queuePrompt
+        .mockResolvedValueOnce('prompt-1')
+        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+          options.onSubmissionFailure({ reason: 'Rejected', outcome: 'failed' });
+          return null;
+        });
+
+      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      await handleGenerate();
+
+      expect(mockStore.setErrorToast).toHaveBeenCalledWith({
+        message: '生成 (2/2)のキュー投入に失敗しました: Rejected',
+        type: 'error',
+        persistent: true,
+      });
     });
   });
 
@@ -807,6 +940,7 @@ describe('useGenerateAction', () => {
           output: ['IMAGE'],
         },
       };
+      mockStore.queuePrompt.mockResolvedValueOnce('prompt-bypass');
 
       const { handleGenerate } = useGenerateAction(bypassWorkflow, mockComfyObjectInfo);
       await handleGenerate();
@@ -1394,4 +1528,3 @@ describe('useGenerateAction', () => {
     });
   });
 });
-

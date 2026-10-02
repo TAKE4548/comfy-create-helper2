@@ -1,114 +1,40 @@
-# Implementation Plan - REQ-306: Animaモードにおけるタブ切替時のタグチップ結合状態先祖返り不具合および強度書式不整合の修正
+# Implementation Plan - REQ-307: 生成キュー投入失敗理由の表示
 
-Animaモード（自然言語・ピリオド区切り対応モデル）において、プリセットタブ切替や画面遷移、ウィンドウフォーカス復帰時に分割されたタグチップが単一チップに再結合される、またはテキストモードへ先祖返りしてしまう不具合、ならびにピリオド区切りタグへの強度指定時に `(tag.:x), ` と不正フォーマットされる問題を包括的に修正します。
-
----
+生成時のキュー投入失敗について、失敗対象と取得できた理由を同じトーストに表示する。理由がない場合は「理由を特定できませんでした」を表示する。複数件は一つの通知に各件を対応づけ、長文も全文を読めるようにする。
 
 ## Proposed Changes
 
-### Frontend Subsystem
-
-#### [LOCAL MODIFY] [multiSetSlice.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/slices/multiSetSlice.ts)
-- `loadPresetData` において `get().isAnimaMode` を `parseToChips(val, isAnimaMode)` に渡し、ピリオド区切りのタグ分割を維持。
-- 既存の `existingSet?.promptChips?.[role]` が存在し、`chipsToString(existingChips, isAnimaMode) === val` の場合は不要に再パース・上書きせず既存チップ（enabled状態やメタデータ含む）を非破壊的に維持。
-- ロールごとの表示モード（Text/Chip）選択状態を保持する `roleTextModes: Record<string, boolean>` 状態および `setRoleTextMode(role: string, isTextMode: boolean)` アクションを追加。
-
-#### [LOCAL MODIFY] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/types.ts)
-- `MultiSetState` に `roleTextModes?: Record<string, boolean>` を追加。
-- `MultiSetActions` に `setRoleTextMode?: (role: string, isTextMode: boolean) => void` を追加。
-
-#### [LOCAL MODIFY] [useWorkflowManagement.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/hooks/useWorkflowManagement.ts)
-- BaseModel が "Anima" であるかの検知時（`selectedModel?.name === 'Anima'`）および手動切替時に、`useGenerationStore.getState().setIsAnimaMode?.(isAnima)` を確実に実行し、グローバルストアと常時同期。
-
-#### [LOCAL MODIFY] [usePresetState.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/hooks/usePresetState.ts)
-- プリセット一括更新・同期処理（L498, L523付近）における `parseToChips(val)` 呼び出しに `storeRef.current.isAnimaMode ?? false` を渡す。
-
-#### [LOCAL MODIFY] [DesktopLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/DesktopLayout.tsx)
-- `defaultTextMode` 解決時に `roleTextModes?.[m.role!] ?? false` を使用し、Animaモードを含む全モデルで初期表示をタグチップモードに統一。
-- `TagChipEditor` の `onTextModeToggle` コールバックで `(isText) => { setRoleCollapsed(m.role!, false); setRoleTextMode(m.role!, isText); }` を呼び出し、ユーザーが手動でテキストモードへ切り替えた選択状態を永続化。
-
-#### [LOCAL MODIFY] [MobileLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileLayout.tsx)
-- DesktopLayout と同様に `roleTextModes?.[role] ?? false` を参照し、`onTextModeToggle` で `setRoleTextMode` を呼び出してエディタ表示モードを維持。
-
-#### [LOCAL MODIFY] [useChipParser.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/useChipParser.ts)
-- `parseTagWeight`: `^\((.+):([0-9.]+)\)\.?$` に拡張し、末尾ピリオド付き `(tag:x).` および旧フォーマット `(tag.:x)` を自動認識して `cleanBase` を抽出。
-- `formatTagWeight`: `isAnimaMode` 引数を追加。ピリオド付きタグまたは Anima モード時、括弧の前の末尾ピリオドを除去し、`(${cleanBase}:${rounded}).` 形式として出力。強度 1.0 または null 時は元の末尾ピリオドを保持。
-
-#### [LOCAL MODIFY] [TagChip.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/TagChip.tsx)
-- `handleStepWeight`, `handleWeightSubmit`, `handleWordSubmit` の `formatTagWeight` 呼び出しに `isAnimaMode` を伝播。
-
-#### [LOCAL MODIFY] [useChipParser.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/useChipParser.test.ts)
-- Animaモードでの強度フォーマット（`formatTagWeight('1girl.', 1.2, true) -> '(1girl:1.2).'`）、パース修復、`chipsToString` での後続空白区切りテストを追加。
-
-#### [LOCAL MODIFY] [TagChip.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx)
-- Animaモードにおけるステップボタン・直接入力での `(tag:x).` 生成テストを追加。
-
-#### [LOCAL MODIFY] [multiSetSlice.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/store/__tests__/slices/multiSetSlice.test.ts)
-- Animaモードにおける `loadPresetData` のピリオド区切りタグチップ分割維持（AC-1）、既存チップ保持の非破壊性、Red Teaming 境界値（小数点・連続ピリオド）テストを追加。
-
-#### [LOCAL MODIFY] [DesktopLayout.tabs.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx)
-- Animaモードでチップモード切り替え後、プリセットタブを切り替えて復帰した際にチップモードが維持されるテスト（AC-4）を追加。
-
----
-
-## Verification Plan
-
-### Automated Tests
-1. **型チェック (Gate 1 Baseline)**:
-   - `cd frontend; npm run typecheck` (エラー 0 件)
-2. **単体テスト (Gate 2 TDD Baseline)**:
-   - `cd frontend; npx vitest run src/components/TagChipEditor/__tests__/useChipParser.test.ts src/components/TagChipEditor/__tests__/TagChip.test.tsx`
-   - `cd frontend; npx vitest run src/store/__tests__/slices/multiSetSlice.test.ts`
-   - `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx`
-   - `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx`
-   - `cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/usePresetState.test.ts`
-3. **全件回帰テスト (Full Discovery Run)**:
-   - `cd frontend; npm test` (全テスト通過)
-
-### Manual Verification
-1. Animaモデルのワークフローを選択し、`useGenerationStore.getState().isAnimaMode` が `true` に同期されていることを確認（AC-3）。
-2. Generate画面の初期表示時点で、プロンプト入力欄がデフォルトでタグチップモード（TagChip一覧）としてレンダリングされることを確認（AC-4）。
-3. `Main_Positive_Prompt` に `1girl., solo., red dress.` を入力し、3つのチップとして分割表示されることを確認。
-4. `1girl.` チップの強度を 1.5 に変更し、チップが `(1girl:1.5).` と表示され、文字列化した際に `(1girl:1.5). solo. red dress.`（空白区切り、カンマなし）となることを確認（AC-6）。
-5. プリセットタブを Set 2 に切り替えた後、再度 Set 1 に戻し、各チップおよび強度が維持されていることを確認（AC-1）。
-6. 手動で「テキストモード」に切り替えた後、History 画面へ遷移して Generate 画面に戻り、選択したテキストモードが維持されていることを確認（AC-2, AC-4）。
-7. 非Animaモデルのワークフローに切り替え、従来のカンマ区切りによるタグチップ分割・強度指定が正常に動作することを確認（AC-5）。
-
----
+- `frontend/src/utils/queueSubmissionFailure.ts`: ComfyUI のエラー応答、proxy の `detail`、通信タイムアウトを正規化。説明のない番号・空値は理由不明へフォールバック。
+- `frontend/src/store/types.ts` と `jobQueueSlice.ts`: `queuePrompt` から失敗理由を呼び出し元へ渡すコールバックと、生成失敗通知の `persistent` 属性を追加。中断は通知しない。
+- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`: 単一・複数セットの各投入で対象と理由を固定し、失敗を一つのトーストへ集約。REQ-141 の failed 状態を維持。
+- `frontend/src/pages/GeneratePage/sections/GenerateModalsOverlay.tsx`: 折返し・改行・縦スクロールで全文を表示。
+- Desktop/Mobile の Layout: 生成失敗通知を自動消去せず、他の通知は 5 秒のまま。
+- `docs/specs/SPEC_GENERATE.md`: 実装後に失敗理由・応答未確認時の表現・通知寿命を同期。
 
 ## Task Dependency & Parallelization
 
 ```mermaid
 graph TD
-    T1["REQ-306-T1: Anima検知ストア同期 & multiSetSlice非破壊保護<br/>(multiSetSlice.ts, useWorkflowManagement.ts, usePresetState.ts)"]
-    T2["REQ-306-T2: TagChipEditor表示モード永続化 & タブ切替維持<br/>(multiSetSlice.ts, DesktopLayout.tsx, MobileLayout.tsx)"]
-    T3["REQ-306-T3: Animaタグ強度フォーマット正常化 ((tag:x). 整形)<br/>(useChipParser.ts, TagChip.tsx)"]
-    T4["REQ-306-T4: 全体結合テスト・境界値シナリオ（Red Teaming）検証<br/>(multiSetSlice.test.ts, usePresetState.test.ts, TagChipEditor.test.tsx)"]
-
-    T1 --> T2
-    T2 --> T4
-    T3 --> T4
+  T1[REQ-307-T1 理由正規化] --> T2[REQ-307-T2 store伝達]
+  T2 --> T3[REQ-307-T3 生成操作集約]
+  T2 --> T4[REQ-307-T4 通知表示]
+  T2 --> T5[REQ-307-T5 自動消去制御]
 ```
 
-| タスクID | サブシステム | 対象ファイル | 依存関係 | 並列実行性 | 単体検証コマンド |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **REQ-306-T1** | frontend | `useWorkflowManagement.ts`, `multiSetSlice.ts`, `usePresetState.ts` | なし (Root) | 可 (T3と並列可能) | `cd frontend; npm run typecheck && npx vitest run src/store/__tests__/slices/multiSetSlice.test.ts` |
-| **REQ-306-T3** | frontend | `useChipParser.ts`, `TagChip.tsx` | なし (Root) | 可 (T1と完全並列) | `cd frontend; npm run typecheck && npx vitest run src/components/TagChipEditor/__tests__/useChipParser.test.ts src/components/TagChipEditor/__tests__/TagChip.test.tsx` |
-| **REQ-306-T2** | frontend | `multiSetSlice.ts`, `DesktopLayout.tsx`, `MobileLayout.tsx` | REQ-306-T1 | T1完了後 | `cd frontend; npm run typecheck && npx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` |
-| **REQ-306-T4** | frontend | `multiSetSlice.test.ts`, `usePresetState.test.ts`, `TagChipEditor.test.tsx` | T2, T3 | 順次 (T2, T3完了後) | `cd frontend; npm run typecheck && npx vitest run src/store/__tests__/slices/multiSetSlice.test.ts src/pages/GeneratePage/hooks/__tests__/usePresetState.test.ts src/components/TagChipEditor/__tests__/TagChipEditor.test.tsx` |
+各 Task Card は `docs/backlog/task/active/REQ-307-T*.md` に作成済み。最大深度は 3 層。T3/T4/T5 は並行可能。各タスクの変更対象は 2〜3 ファイル、見積り 300 行以内。既存の通知型を変更する T2 が下流の共通依存となる。
 
----
+## Verification Plan
 
-## Trade-off Disclosure
+`docs/design/REQ-307-test-plan.md` に AC-1〜5、REQ-141 回帰、単一・複数セット、空理由、部分成功、全件失敗、タイムアウト、中断、長文・多数件の検証を定義した。各カード記載の局所 Vitest と `cd frontend; npm run typecheck` を実装後に実行する。最後に PC/モバイルで長文全文と 5 秒後の残存を確認する。
 
-1. **表示モード（Text/Chip）のグローバル状態保持スコープ**:
-   - **Trade-off**: `roleTextModes` を `useGenerationStore` に保持することで、プリセットタブ切替や画面遷移を跨いだモード維持を実現しますが、メモリ上の揮発性状態となるため、ブラウザ全体のリロード（F5）時には初期状態（Animaの場合デフォルトTextモード）へリセットされます。
-   - **Rationale**: ユーザーの一連の作業セッション中（タブ切替・History確認・生成実行）の利便性を損なうことなく解決でき、localStorage に無制限にキーが増殖する汚染リスクを防止できます。
-2. **既存 promptChips の非破壊的再利用と外部同期の整合性**:
-   - **Trade-off**: `chipsToString(existingChips, isAnimaMode) === val` の場合に既存チップを再利用する設計とすることで、enabled/disabled 状態やピリオド区切り構造を保持しますが、もし別端末等から文字列レベルで同一だが内部チップ構造が異なるプリセット同期が来た場合、ローカルのチップ構造が優先されます。
-   - **Rationale**: 同一セッションでのタブ切替やサーバー定期ポーリングによる意図しないチップ結合（マージ）破壊を防止するために必須の保護機構です。
-3. **Animaタグ強度フォーマットの末尾ピリオド位置統一**:
-   - **Trade-off**: `formatTagWeight` において `(tag:x).` 形式を出力することでピリオド文終端判定を維持しますが、手動テキスト入力で `(tag.:x)` や `(tag:x)` と書かれた古いプロンプトが混在する可能性があります。
-   - **Mitigation**: `parseTagWeight` にて括弧内外のいずれのピリオド位置も寛容にパースし、次回編集・フォーマット時に `(tag:x).` へ自動修復する堅牢な実装とします。
+## Trade-offs and Risks
 
+- 既存の `Promise<string | null>` を維持しコールバックで理由を渡すため、既存呼び出しの破壊を抑える。`null` だけ返る経路には必ず理由不明のフォールバックを使う。
+- 多数失敗は一つのスクロール可能な通知に全件を表示する。件数制限は対象と理由の対応を失わせるため設けない。
+- 失敗通知は手動で閉じる。5 秒の自動消去では長文の読了を保証できない。
+- 通信タイムアウトは投入結果が確認できないため、断定的な失敗表現や自動再投入を避ける。
+- 別操作のトーストが通知を上書きした場合の履歴保持は本要件に含めない。
 
+## Review Gate
+
+設計書、テスト計画、Task Card の内容を人間が確認した後に実装へ進める。`dev-design` の root 外参照禁止により `${GLOBAL_SCRIPTS}` の設計補助スクリプトと追加ローカルモデル BA 監査は実行していない。既存の BA 監査記録を参照し、条件付き承認の論点を設計で解決した。

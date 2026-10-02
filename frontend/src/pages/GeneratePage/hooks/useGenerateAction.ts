@@ -10,6 +10,32 @@ import { getEffectiveParamValues } from '../../../store/slices/multiSetSlice'
 import { applyBypass } from '../../../utils/bypassUtils'
 import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
 import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
+import type { QueueSubmissionFailure } from '../../../store/types'
+import { parseQueueSubmissionFailure } from '../../../utils/queueSubmissionFailure'
+
+type SubmissionFailureRecord = QueueSubmissionFailure & {
+  target: string
+  isSet: boolean
+  batchIndex: number | null
+  batchSize: number
+}
+
+function formatSubmissionFailures(failures: SubmissionFailureRecord[]): string {
+  return failures.map(({ target, isSet, batchIndex, batchSize, reason, outcome }) => {
+    const batchLabel = batchIndex === null
+      ? ''
+      : isSet || batchSize > 1
+        ? ` (${batchIndex + 1}/${batchSize})`
+        : ''
+    const targetLabel = isSet ? `[${target}]${batchLabel}` : `生成${batchLabel}`
+    const action = outcome === 'unconfirmed'
+      ? 'キュー投入を確認できませんでした'
+      : 'キュー投入に失敗しました'
+    return isSet
+      ? `${targetLabel} の${action}: ${reason}`
+      : `${targetLabel}の${action}: ${reason}`
+  }).join('\n')
+}
 
 export interface UseGenerateActionOptions {
   onBeforeGenerate?: () => void
@@ -206,6 +232,7 @@ export function useGenerateAction(
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
+    const submissionFailures: SubmissionFailureRecord[] = []
 
     try {
       for (let i = 0; i < currentBatchSize; i++) {
@@ -231,20 +258,46 @@ export function useGenerateAction(
         if (activeBypassNodeIds.length > 0) {
           wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
         }
-        await queuePrompt(
-          wfJson,
-          { paramValues: syncedParamValues, appliedAssets: currentAppliedAssets },
-          { signal: abortController.signal, skipQueueFetch: true }
-        )
+        let promptId: string | null = null
+        let submissionFailure: QueueSubmissionFailure | undefined
+        try {
+          promptId = await queuePrompt(
+            wfJson,
+            { paramValues: syncedParamValues, appliedAssets: currentAppliedAssets },
+            {
+              signal: abortController.signal,
+              skipQueueFetch: true,
+              onSubmissionFailure: (failure) => { submissionFailure = failure },
+            }
+          )
+        } catch (error) {
+          submissionFailure ??= parseQueueSubmissionFailure(error)
+        }
         if (abortController.signal.aborted) {
           return
+        }
+        if (!promptId) {
+          submissionFailures.push({
+            target: '生成',
+            isSet: false,
+            batchIndex: currentBatchSize === 1 ? null : i,
+            batchSize: currentBatchSize,
+            ...(submissionFailure ?? parseQueueSubmissionFailure(null)),
+          })
         }
       }
     } finally {
       setIsBatchSubmitting?.(false)
       if (!abortController.signal.aborted) {
-        await fetchQueue?.()
+        try {
+          await fetchQueue?.()
+        } catch (error) {
+          console.error('Failed to refresh queue after submission:', error)
+        }
       }
+    }
+    if (!abortController.signal.aborted && submissionFailures.length > 0) {
+      setErrorToast?.({ message: formatSubmissionFailures(submissionFailures), type: 'error', persistent: true })
     }
   }
 
@@ -309,6 +362,7 @@ export function useGenerateAction(
     const existingActiveBatch = state.activeBatch ? [...state.activeBatch] : []
     const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
     setActiveBatch([...currentBatch])
+    const submissionFailures: SubmissionFailureRecord[] = []
 
     let currentIdx = existingActiveBatch.length
     try {
@@ -361,6 +415,7 @@ export function useGenerateAction(
           }
           
           let promptId: string | null = null
+          let submissionFailure: QueueSubmissionFailure | undefined
           try {
             promptId = await queuePrompt(
               wfJson,
@@ -369,10 +424,12 @@ export function useGenerateAction(
                 skipQueueFetch: true,
                 signal: abortController.signal,
                 isBatchIntermediate: true,
+                onSubmissionFailure: (failure) => { submissionFailure = failure },
               }
             )
           } catch (err) {
             console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
+            submissionFailure ??= parseQueueSubmissionFailure(err)
           }
 
           // queuePrompt 完了後のキャンセルチェック
@@ -389,8 +446,13 @@ export function useGenerateAction(
             }
             setActiveBatch([...currentBatch])
           } else {
-            const errorMsg = `[${setItem.name}] (${i + 1}/${effectiveBatchSize}) のキュー投入に失敗しました`
-            setErrorToast?.({ message: errorMsg, type: 'error' })
+            submissionFailures.push({
+              target: setItem.name,
+              isSet: true,
+              batchIndex: i,
+              batchSize: effectiveBatchSize,
+              ...(submissionFailure ?? parseQueueSubmissionFailure(null)),
+            })
             currentBatch[currentIdx] = {
               ...currentBatch[currentIdx],
               status: 'failed',
@@ -407,8 +469,15 @@ export function useGenerateAction(
       // キャンセル中断時は setActiveBatch 上書きと fetchQueue を抑止
       if (!abortController.signal.aborted) {
         setActiveBatch([...currentBatch])
-        await fetchQueue?.()
+        try {
+          await fetchQueue?.()
+        } catch (error) {
+          console.error('Failed to refresh queue after set submission:', error)
+        }
       }
+    }
+    if (!abortController.signal.aborted && submissionFailures.length > 0) {
+      setErrorToast?.({ message: formatSubmissionFailures(submissionFailures), type: 'error', persistent: true })
     }
   }
 
