@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from app.services.fugumt_service import FuguMTService
 
 
@@ -88,12 +88,80 @@ def test_translate_batch_chunking_over_max_batch_size() -> None:
 
 
 def test_initialize_non_existent_directory() -> None:
-    service = FuguMTService(model_dir="non_existent_model_dir_path_xyz")
+    service = FuguMTService(model_dir="non_existent_model_dir_path_xyz", auto_download=False)
     assert service.initialize() is False
     assert service._is_initialized is False
 
     with pytest.raises(RuntimeError, match="FuguMT engine is not available"):
         service.translate_batch(["test"])
+
+
+@patch("os.path.exists", side_effect=[False, True])
+@patch("os.makedirs")
+@patch("huggingface_hub.snapshot_download")
+@patch("ctranslate2.Translator")
+@patch("transformers.AutoTokenizer.from_pretrained")
+def test_initialize_auto_download_success(
+    mock_auto_tokenizer: MagicMock,
+    mock_ct2_translator: MagicMock,
+    mock_snapshot: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    service = FuguMTService(model_dir="mock_model_dir", auto_download=True)
+    assert service.initialize() is True
+    assert service._is_initialized is True
+    mock_snapshot.assert_called_once_with(
+        repo_id="jkawamoto/fugumt-en-ja-ct2",
+        local_dir="mock_model_dir",
+    )
+    mock_ct2_translator.assert_called_once()
+    mock_auto_tokenizer.assert_called_once_with("mock_model_dir")
+
+
+@patch("os.path.exists", return_value=False)
+@patch("os.makedirs")
+@patch("huggingface_hub.snapshot_download", side_effect=RuntimeError("Download failed"))
+def test_initialize_auto_download_failure(
+    mock_snapshot: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    service = FuguMTService(model_dir="mock_model_dir", auto_download=True)
+    assert service.initialize() is False
+    assert service._is_initialized is False
+    mock_snapshot.assert_called_once_with(
+        repo_id="jkawamoto/fugumt-en-ja-ct2",
+        local_dir="mock_model_dir",
+    )
+    with pytest.raises(RuntimeError, match="FuguMT engine is not available"):
+        service.translate_batch(["test"])
+
+
+@patch("os.path.exists", return_value=False)
+@patch("huggingface_hub.snapshot_download")
+def test_initialize_auto_download_disabled(
+    mock_snapshot: MagicMock,
+    mock_exists: MagicMock,
+) -> None:
+    service = FuguMTService(model_dir="mock_model_dir", auto_download=False)
+    assert service.initialize() is False
+    assert service._is_initialized is False
+    mock_snapshot.assert_not_called()
+
+
+def test_init_auto_download_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FUGUMT_AUTO_DOWNLOAD", "false")
+    service1 = FuguMTService()
+    assert service1.auto_download is False
+
+    monkeypatch.setenv("FUGUMT_AUTO_DOWNLOAD", "0")
+    service2 = FuguMTService()
+    assert service2.auto_download is False
+
+    monkeypatch.setenv("FUGUMT_AUTO_DOWNLOAD", "1")
+    service3 = FuguMTService()
+    assert service3.auto_download is True
 
 
 def test_singleton_get_instance() -> None:

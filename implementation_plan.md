@@ -1,35 +1,96 @@
-# Implementation Plan - REQ-308: プロンプト区切り適用範囲と末尾ドット編集の修正
+# Implementation Plan - REQ-310: 設定画面における FuguMT プロバイダ統合
 
-Anima のピリオド区切りを textarea prompt role に限定し、プリセット読込・一括更新・生成で checkpoint や LoRA の値を保持する。サブメニュー編集では編集後の文字列に残るドットだけを次のタグとの結合規則に使う。
+設定画面（`TranslationSettingsSection.tsx`）の翻訳プロバイダー選択肢に、CPU常駐・超低レイテンシ（20〜30ms）・VRAM消費ゼロ（0MB）の「FuguMT（推奨 (CPU)）」を追加し、初使用時の自動モデルダウンロード・配置、UIからの選択・保存・接続テストおよびGenerate画面への高速和訳ルーティングを可能にする。
 
 ## Proposed Changes
-- Store / preset paths: workflow mapping の `input_type === 'textarea'` role だけを chip 化・chip 値の反映対象にする。未知または未ロード mapping は安全に空集合として扱う。
-- Generation: 単一・複数セットとも textarea role allowlist と Anima 状態をシリアライズへ渡す。
-- Chip formatting: `formatTagWeight` が Anima モードだけを理由にピリオドを追加しない。
-- SSoT: REQ-303、REQ-306、SPEC_COMMON を明示的ドット状態と prompt mapping 範囲へ整合。
+
+#### [LOCAL MODIFY] [fugumt_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/fugumt_service.py)
+- `FuguMTService` に `HF_REPO_ID = "jkawamoto/fugumt-en-ja-ct2"` を定義。
+- `initialize()` メソッドにおいて、モデルディレクトリ（`models/fugumt-en-ja`）が存在しない場合に `huggingface_hub.snapshot_download` を用いて自動ダウンロード＆配置するロジックを実装。
+- オフライン時や通信失敗時の例外安全ハンドリング（`return False`）を保証。
+
+#### [LOCAL MODIFY] [test_fugumt_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_fugumt_service.py)
+- ディレクトリ未配置時の自動ダウンロード成功、失敗時の例外安全、および自動ダウンロード無効化の単体テストを追加。
+
+#### [LOCAL MODIFY] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/types.ts)
+- `TranslateTestRequest.provider` 型定義に `'fugumt'` を追加。
+
+#### [LOCAL MODIFY] [TranslationSettingsSection.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx)
+- `provider` state 型を `'google_cloud' | 'deepl' | 'llm' | 'fugumt'` に拡張。
+- 翻訳プロバイダー選択カードに FuguMT（「推奨 (CPU)」バッジ付き）を追加（AC-1）。
+- FuguMT 選択時に API キーおよびカスタム API URL 入力欄を非表示化し、「完全オフライン・CPU常駐推論のため、APIキーや外部URLの設定は不要です（初回利用時にモデルが自動配置されます）。」という案内文を表示（AC-2）。
+- 保存処理（`saveSettingsMutation`）において、FuguMT 選択時は `llmPromptsApi.update('translation_provider', { content: 'fugumt' })` のみを実行し、不要な `translation_api_key` / `translation_api_url` ペイロードの送信を完全にスキップ（AC-2）。
+- 疎通テスト（`handleTestConnection`）において、FuguMT 選択時は `{ provider: 'fugumt' }`（apiKey, apiUrl なし）をバックエンドへ送信（AC-3）。
+
+#### [LOCAL MODIFY] [TranslationSettingsSection.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx)
+- FuguMT ラジオカードおよび「推奨 (CPU)」バッジのレンダリングテスト（AC-1）。
+- FuguMT 選択時の API キー・URL 入力欄非表示テスト（AC-2）。
+- FuguMT 保存時に `translation_provider` のみ更新され、apiKey / apiUrl が送信されないことの検証（AC-2）。
+- FuguMT 選択時の疎通テストペイロード（`{ provider: 'fugumt' }`）および成功結果描画の検証（AC-3）。
+- 初期ロード時に DB の `translation_provider = 'fugumt'` が正しく反映されることの検証。
+
+#### [LOCAL MODIFY] [SPEC_SETTINGS.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_SETTINGS.md)
+- 第2章「機能一覧」の翻訳設定説明に FuguMT（CPU常駐・推奨・初回自動配置・APIキー不要）を追記。
+- 第3章「レイアウト」および第6章「API呼び出し」テーブルに `fugumt` プロバイダ種別を同期。
+
+---
 
 ## Task Dependency & Parallelization
+
 ```mermaid
 graph TD
-  REQ308-T1[Store load and serialization boundary] --> REQ308-T2[Preset mapping propagation]
-  REQ308-T1 --> REQ308-T3[Generation payload boundary]
-  REQ308-T1 --> REQ308-T6[Initial store sync mapping propagation]
-  REQ308-T4[Explicit trailing period formatter]
-  REQ308-T4 --> REQ308-T5[Submenu regression test]
-  REQ308-T7[Align integration fixtures with textarea mapping contract]
-  REQ308-T6 --> REQ308-T8[Re-sync clean preset when mappings arrive]
-  REQ308-T9[Exact payload and save/reload regression assertions]
+  REQ310-T1["REQ-310-T1: Backend FuguMT 自動ダウンロード & 単体テスト"]
+  REQ310-T2["REQ-310-T2: Frontend 型定義拡張 & TranslationSettingsSection UI"]
+  REQ310-T3["REQ-310-T3: Frontend 設定画面 FuguMT 単体テスト実装・検証"]
+  REQ310-T4["REQ-310-T4: SSoT 仕様書同期 (SPEC_SETTINGS.md) & 3-Gate 検証"]
+
+  REQ310-T1 --> REQ310-T4
+  REQ310-T2 --> REQ310-T3
+  REQ310-T2 --> REQ310-T4
 ```
-T1 は T2/T3/T6 の前提。T4 は独立して開始でき、T5 はその後に検証する。T7 は旧統合テストの workflow fixture に明示的な mapping を追加し、全体テストを新しい role allowlist 仕様に合わせる。T8 は mapping 到着時に clean active preset を再同期し、T6 に続く。T9 は AC の文字列および保存・再読込に関する厳密な回帰アサーションを追加する。各カードは最大3ファイルで責務を限定する。
+
+- **並列性設計**:
+  - `REQ-310-T1`（Backend 自動ダウンロード）と `REQ-310-T2`（Frontend UI実装）は対象サブシステム・ファイルが完全に直交しているため、**完全並列に実行可能**。
+  - `REQ-310-T3`（Frontend 単体テスト）は `REQ-310-T2` 完了後に着手。
+  - `REQ-310-T4`（仕様書同期・全体検証）は `REQ-310-T1` および `REQ-310-T2` 完了後に統合検証を実施。
+- **タスク粒度**:
+  - 各 Task Card は修正対象ファイル数 1〜2 件、行数 100 行前後に厳密に収め、密閉コンテキスト（Hermetic Context）と検証コマンドを完備。
+
+---
 
 ## Verification Plan
-各カード記載の Vitest と `cd frontend; npm run typecheck` を実行する。完了後は全体 `cd frontend; npm run typecheck`、`cd frontend; npx vitest run`、テスト計画の AC と Red Team ケースを確認する。
 
-## Trade-offs and Risks
-- textarea mapping がないときは原値を保つ。プロンプトのチップ同期が遅れる可能性はあるが、ファイル名等を破損させるより安全である。
-- explicit period を使うことで、Anima の文末表現とユーザー編集の意図を両立する。末尾の連続ピリオドは一つに正規化する。
-- API/保存形式は変えず、workflow mapping と既存 chips を使う。
-- Regression coverage spans preset restoration, bulk update, single/multi-set generation and submenu editing. UI-level manual confirmation may still be needed if component simulation cannot cover actual popover focus behavior.
+### Gate 1: 静的型検査 (Baseline 0 errors)
+- `cd frontend; npm run typecheck`
+- `mypy backend`
 
-## Review Gate
-ユーザーの「これで進めよう」は事故報告に記載した scope を承認しており、この計画はその範囲を具体化したもの。追加の機能要件は含めない。
+### Gate 2: 単体テスト & 全体テストスイート (0 failures)
+- `backend\.venv\Scripts\python -m pytest backend/tests/test_fugumt_service.py`
+- `backend\.venv\Scripts\python -m pytest backend/tests/test_translation_proxy.py`
+- `cd frontend; npx vitest run src/pages/SettingsPage/components/__tests__/TranslationSettingsSection.test.tsx`
+- `cd frontend; npm test`
+- `backend\.venv\Scripts\python -m pytest`
+
+### Gate 3: シナリオ & Red Teaming (AC 100% 達成)
+- 設定画面での FuguMT ラジオカード・推奨バッジ表示確認（AC-1）
+- FuguMT 選択時の入力欄非表示および DB への `provider: "fugumt"` 保存確認（AC-2）
+- FuguMT 接続テスト押下時のモデル自動ダウンロード＆疎通確認・成功サンプル表示（AC-3）
+- Generate 画面での和訳実行時、ローカル LLM が呼び出されず FuguMT で 100ms 以内に高速応答することの確認（AC-4）
+- Red Teaming: 初回自動ダウンロードのネットワーク障害ハンドリング（RT-1）、既存クラウドAPIキーの保持（RT-2）、連続クリック耐性（RT-3）、完全オフライン動作（RT-4）
+
+---
+
+## Trade-off Disclosure (トレードオフとリスクの開示)
+
+1. **初回自動ダウンロードのサイズとレイテンシ**:
+   - `jkawamoto/fugumt-en-ja-ct2` は CTranslate2 最適化済み int8 モデル一式で合計約 125MB です。
+   - 一般的な光回線環境では 2〜5 秒程度でダウンロード完了しますが、初回のみ接続テストまたは初翻訳時に数秒のダウンロード待機が発生します。2回目以降はローカルキャッシュから 0ms でロードされるため、長期的な運用パフォーマンスへの悪影響はありません。
+2. **既存 API キー保持と非送信のトレードオフ**:
+   - FuguMT を選択して保存する際、DB 上の既存の `translation_api_key` / `translation_api_url` を空文字で上書き消去せず保持する設計としています。
+   - メリット: 将来ユーザーが DeepL や Google Cloud に戻した際、再度長い API キーを再入力する手間を防止できる。
+   - デメリット: DB レコード上には過去の API キーが残存するが、`translation_provider` が `'fugumt'` である限りバックエンドは API キーを参照しないためセキュリティ・動作上の実害はない。
+3. **オフライン環境での初回起動**:
+   - 初回モデルダウンロード前に PC が完全オフラインである場合、自動ダウンロードが失敗し、バックエンドは例外をキャッチして安全に `TranslateTestResponse(success=False, error="FuguMT engine is not available")` を返却します。
+   - UI はこれを赤色エラーバナーとして表示し、アプリのクラッシュを完全防止しながらネットワーク接続またはモデル配置の必要性を伝達します。
+
+

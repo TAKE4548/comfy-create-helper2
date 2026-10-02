@@ -35,7 +35,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
     queryFn: translateApi.getStats,
   })
 
-  const [provider, setProvider] = useState<'google_cloud' | 'deepl' | 'llm'>(
+  const [provider, setProvider] = useState<'google_cloud' | 'deepl' | 'llm' | 'fugumt'>(
     'google_cloud'
   )
   const [apiKey, setApiKey] = useState('')
@@ -71,11 +71,15 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      await Promise.all([
-        llmPromptsApi.update('translation_provider', { content: provider }),
-        llmPromptsApi.update('translation_api_key', { content: apiKey }),
-        llmPromptsApi.update('translation_api_url', { content: apiUrl }),
-      ])
+      if (provider === 'fugumt') {
+        await llmPromptsApi.update('translation_provider', { content: provider })
+      } else {
+        await Promise.all([
+          llmPromptsApi.update('translation_provider', { content: provider }),
+          llmPromptsApi.update('translation_api_key', { content: apiKey }),
+          llmPromptsApi.update('translation_api_url', { content: apiUrl }),
+        ])
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['llm-prompts'] })
@@ -95,11 +99,15 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
     setIsTesting(true)
     setTestResult(null)
     try {
-      const res = await translateApi.testConnection({
-        provider,
-        api_key: apiKey || undefined,
-        api_url: apiUrl || undefined,
-      })
+      const res = await translateApi.testConnection(
+        provider === 'fugumt'
+          ? { provider: 'fugumt' }
+          : {
+              provider,
+              api_key: apiKey || undefined,
+              api_url: apiUrl || undefined,
+            }
+      )
       setTestResult(res)
     } catch (err: any) {
       setTestResult({
@@ -159,7 +167,35 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                 <label className="block text-xs font-medium text-zinc-300">
                   翻訳プロバイダー <span className="text-[#7C6FDD]">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all ${
+                      provider === 'fugumt'
+                        ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-zinc-100'
+                        : 'border-[rgba(255,255,255,0.06)] bg-surface-2/40 text-zinc-400 hover:border-zinc-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="provider"
+                      value="fugumt"
+                      checked={provider === 'fugumt'}
+                      onChange={() => setProvider('fugumt')}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-zinc-200">FuguMT</span>
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          推奨 (CPU)
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-zinc-500 mt-0.5">
+                        CPU 常駐の staka/fugumt-en-ja (int8)。20〜30ms の超高速和訳。初使用時に自動配置・VRAM 0MB・API キー不要。
+                      </div>
+                    </div>
+                  </label>
+
                   <label
                     className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all ${
                       provider === 'google_cloud'
@@ -276,6 +312,12 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]/50"
                     />
                   </div>
+                </div>
+              )}
+
+              {provider === 'fugumt' && (
+                <div className="p-3 bg-surface-2/30 border border-[rgba(255,255,255,0.06)] rounded-lg text-xs text-zinc-400">
+                  完全オフライン・CPU常駐推論のため、APIキーや外部URLの設定は不要です（初回利用時にモデルが自動配置されます）。
                 </div>
               )}
 

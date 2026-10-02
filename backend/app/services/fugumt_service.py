@@ -9,12 +9,25 @@ logger = logging.getLogger(__name__)
 class FuguMTService:
     """FuguMT CPU-translation engine service."""
 
+    HF_REPO_ID: str = "jkawamoto/fugumt-en-ja-ct2"
     _instance: Optional["FuguMTService"] = None
     MAX_BATCH_SIZE: int = 100
 
-    def __init__(self, model_dir: Optional[str] = None, intra_threads: int = 6) -> None:
+    def __init__(
+        self,
+        model_dir: Optional[str] = None,
+        intra_threads: int = 6,
+        auto_download: bool = True,
+    ) -> None:
         self.model_dir: str = model_dir or os.environ.get("FUGUMT_MODEL_DIR", "models/fugumt-en-ja")
         self.intra_threads: int = intra_threads
+        if not auto_download:
+            self.auto_download: bool = False
+        elif "FUGUMT_AUTO_DOWNLOAD" in os.environ:
+            env_val = os.environ["FUGUMT_AUTO_DOWNLOAD"].strip().lower()
+            self.auto_download = env_val not in ("0", "false", "no", "off")
+        else:
+            self.auto_download = True
         self.translator: Any = None
         self.tokenizer: Any = None
         self._is_initialized: bool = False
@@ -31,9 +44,25 @@ class FuguMTService:
             return True
 
         if not os.path.exists(self.model_dir):
-            logger.warning("FuguMT model directory not found: %s", self.model_dir)
-            self._is_initialized = False
-            return False
+            if self.auto_download:
+                logger.info(
+                    "FuguMT model directory not found at %s. Attempting auto-download from %s...",
+                    self.model_dir,
+                    self.HF_REPO_ID,
+                )
+                try:
+                    os.makedirs(self.model_dir, exist_ok=True)
+                    from huggingface_hub import snapshot_download  # type: ignore[import-untyped]
+
+                    snapshot_download(repo_id=self.HF_REPO_ID, local_dir=self.model_dir)
+                except Exception as e:
+                    logger.error("Failed to auto-download FuguMT model: %s", e)
+                    self._is_initialized = False
+                    return False
+            else:
+                logger.warning("FuguMT model directory not found: %s", self.model_dir)
+                self._is_initialized = False
+                return False
 
         try:
             import ctranslate2  # type: ignore[import-untyped]

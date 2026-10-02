@@ -1,7 +1,17 @@
+---
+title: Settings ページ仕様書 (SPEC_SETTINGS)
+tags:
+  - settings
+  - REQ-310
+related_paths:
+  - docs/backlog/pbi/active/REQ-310.md
+  - frontend/src/pages/SettingsPage
+---
+
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 2.1  
-**最終更新**: 2026-09-01  
+**バージョン**: 2.2  
+**最終更新**: 2026-10-03  
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
@@ -19,7 +29,7 @@
 | セクション | 説明 |
 |---|---|
 | **LLM 設定** | 使用する LLM モデル（ローカル/外部）の選択、システムプロンプト編集、詳細パラメータ（Temperature、Top-P、MaxTokens 等）の調整 |
-| **翻訳設定** | プロンプト翻訳機能のプロバイダー設定（Google Cloud / DeepL / LLM）、APIキー、デバウンス時間、キャッシュクリア、翻訳統計確認 |
+| **翻訳設定** | プロンプト翻訳機能のプロバイダー設定（FuguMT [推奨・CPU常駐・初回自動配置・APIキー不要] / Google Cloud / DeepL / LLM）、APIキー、デバウンス時間、キャッシュクリア、翻訳統計確認 |
 | **フキダシ検出設定** | 画像内のフキダシ自動検出パラメータ（最小面積 `min_area`、輝度閾値 `min_brightness`）の調整 |
 | **セリフ口調プリセット** | キャラクター性に応じた口調変換プリセット（ツンデレ、お嬢様、敬語等）の CRUD とリアルタイム書き換えテスト |
 | **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D、`PUT /reorder`）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理 |
@@ -43,7 +53,10 @@
 │   - 詳細パラメータスライダー                            │
 ├─────────────────────────────────────────────────────────┤
 │ ▼ Translation Settings                                  │
-│   - プロバイダー選択 / API Key / キャッシュ統計         │
+│   - プロバイダー選択（FuguMT [推奨] / Google / DeepL / LLM）│
+│   - API Key（FuguMT 選択時は非表示）/ キャッシュ統計    │
+│   - ※FuguMT 選択時はモデル（jkawamoto/fugumt-en-ja-ct2） │
+│     が models/fugumt-en-ja に自動配置され CPU 常駐稼働   │
 ├─────────────────────────────────────────────────────────┤
 │ ▼ Bubble Detection Parameters                           │
 │   - 検出感度・二値化パラメータ                          │
@@ -128,6 +141,21 @@ interface SpeechTonePreset {
 }
 ```
 
+### 4-4. TranslationSettings
+
+```typescript
+interface TranslationSettings {
+  provider: 'fugumt' | 'google' | 'deepl' | 'llm';
+  api_key?: string;
+  api_url?: string;
+}
+```
+
+- **FuguMT 特記事項**:
+  - `provider: 'fugumt'` 選択時は、API キーおよびカスタム API URL の入力が不要（UI 上で入力欄非表示、保存ペイロードにも含めない）。
+  - 初回使用時に Hugging Face より `jkawamoto/fugumt-en-ja-ct2` がローカルの `models/fugumt-en-ja` へ自動ダウンロード・配置される。
+  - CTranslate2 による完全 CPU 常駐推論（約 20-30ms の超低レイテンシ）で動作し、VRAM を消費せず画像生成と並行して安定稼働する。
+
 ---
 
 ## 5. 接続ステータス (Connections)
@@ -153,7 +181,7 @@ interface SpeechTonePreset {
 | ワークフロー履歴状態確認 | `GET /api/workflows/{id}/history-status` | |
 | LLM プロンプト一覧・更新 | `GET/PUT /api/llm-prompts/{key}` | |
 | LLM モデル一覧取得・現在モデル切替 | `GET /api/llm-prompts/models`, `GET/PUT /api/llm-prompts/current-model` | |
-| 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` | |
+| 翻訳設定・テスト・キャッシュクリア | `POST /api/translate/prompt`, `POST /test`, `GET /stats`, `POST /clear-cache` | プロバイダー種別: `fugumt`（推奨・APIキー不要・`jkawamoto/fugumt-en-ja-ct2` 初回自動配置）, `google`, `deepl`, `llm` |
 | セリフ口調プリセット一覧・管理・テスト | `GET/POST/PUT/DELETE /api/speech-tone-presets` | `POST /rewrite` |
 | セリフ口調プリセット並び替え | `PUT /api/speech-tone-presets/reorder` | `{ "ordered_ids": number[] }` |
 
