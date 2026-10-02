@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { X, GripVertical, Copy, Check } from 'lucide-react';
 import { parseTagWeight, formatTagWeight, adjustWeight } from './useChipParser';
 import { usePromptClipboardStore } from '../../store/usePromptClipboardStore';
+import { TagChipTranslationCard } from './TagChipTranslationCard';
 
 export interface TagChipProps {
   id: string;
@@ -29,6 +30,7 @@ export const TagChip: React.FC<TagChipProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(text);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isTranslationOpen, setIsTranslationOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyText = usePromptClipboardStore((s) => s.copyText);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +64,13 @@ export const TagChip: React.FC<TagChipProps> = ({
     setWordInput(currentBase);
     setEditValue(text);
   }, [text]);
+
+  // 親サブメニューが閉じた際、和訳カード状態を確実にリセット（AC-8）
+  useEffect(() => {
+    if (!isMenuOpen) {
+      setIsTranslationOpen(false);
+    }
+  }, [isMenuOpen]);
 
   // サブメニュー外クリック・タップ検知
   useEffect(() => {
@@ -285,7 +294,7 @@ export const TagChip: React.FC<TagChipProps> = ({
       {isMenuOpen && !isEditing && (
         <div
           ref={menuRef}
-          className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
+          className="absolute top-full left-0 mt-1.5 z-50 w-[360px] max-w-[calc(100vw-24px)] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             e.stopPropagation();
@@ -295,7 +304,7 @@ export const TagChip: React.FC<TagChipProps> = ({
             }
           }}
         >
-          {/* ヘッダー: タグ名入力 + 有効/無効トグル + コピーボタン */}
+          {/* ヘッダー: タグ名入力 + コピーボタン + 翻訳ボタン + 有効/無効トグル */}
           <div className="flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.08)] pb-2">
             <input
               type="text"
@@ -315,6 +324,15 @@ export const TagChip: React.FC<TagChipProps> = ({
               aria-label="タグをコピー"
             >
               {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsTranslationOpen((prev) => !prev)}
+              className="px-2 py-1 rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] text-[11px] font-medium transition-colors shrink-0"
+              title="和訳プレビュー"
+              aria-label="タグの和訳を表示"
+            >
+              翻訳
             </button>
             <button
               type="button"
@@ -371,6 +389,14 @@ export const TagChip: React.FC<TagChipProps> = ({
               ))}
             </div>
           </div>
+
+          {isTranslationOpen && (
+            <TagChipTranslationCard
+              text={wordInput || baseText}
+              onClose={() => setIsTranslationOpen(false)}
+              anchorRect={menuRef.current?.getBoundingClientRect()}
+            />
+          )}
         </div>
       )}
     </div>

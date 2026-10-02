@@ -179,3 +179,106 @@ async def test_connection_service_llm():
         assert sample != ""
         assert error is None
 
+
+@pytest.mark.asyncio
+async def test_fugumt_translation_mock():
+    translation_service.clear_cache()
+    from unittest.mock import patch, MagicMock
+
+    with patch("app.services.fugumt_service.FuguMTService.get_instance") as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ["1人の女の子"]
+        mock_get_instance.return_value = mock_service
+
+        prompt = "1girl"
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang="en",
+            target_lang="ja",
+            provider="fugumt",
+        )
+
+        assert translated == "1人の女の子"
+        assert meta["provider"] == "fugumt"
+        assert meta["total_chunks"] == 1
+        assert meta["cached_chunks"] == 0
+        assert meta["api_requested_chunks"] == 1
+        mock_service.translate_batch.assert_called_once_with(["1girl"])
+
+
+@pytest.mark.asyncio
+async def test_fugumt_cache_normalization_ac1():
+    translation_service.clear_cache()
+    from unittest.mock import patch, MagicMock
+
+    with patch("app.services.fugumt_service.FuguMTService.get_instance") as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ["1人の女の子"]
+        mock_get_instance.return_value = mock_service
+
+        # First request with extra spaces: " 1girl "
+        translated1, meta1 = await translation_service.translate_prompt(
+            prompt=" 1girl ",
+            source_lang="en",
+            target_lang="ja",
+            provider="fugumt",
+        )
+        assert translated1 == "1人の女の子"
+        assert meta1["cached_chunks"] == 0
+        assert meta1["api_requested_chunks"] == 1
+        assert mock_service.translate_batch.call_count == 1
+
+        # Second request without spaces: "1girl" -> should hit cache, 0 API requests
+        translated2, meta2 = await translation_service.translate_prompt(
+            prompt="1girl",
+            source_lang="en",
+            target_lang="ja",
+            provider="fugumt",
+        )
+        assert translated2 == "1人の女の子"
+        assert meta2["cached_chunks"] == 1
+        assert meta2["api_requested_chunks"] == 0
+        assert mock_service.translate_batch.call_count == 1  # Not called again
+
+
+@pytest.mark.asyncio
+async def test_connection_service_fugumt():
+    translation_service.clear_cache()
+    from unittest.mock import patch, MagicMock
+
+    with patch("app.services.fugumt_service.FuguMTService.get_instance") as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ["1人の女の子", "美しい空"]
+        mock_get_instance.return_value = mock_service
+
+        success, sample, error = await translation_service.test_connection(
+            provider="fugumt",
+        )
+        assert success is True
+        assert sample != ""
+        assert error is None
+
+
+def test_translation_settings_default_fugumt():
+    settings = translation_service.get_translation_settings(None)
+    assert settings["provider"] == "fugumt"
+    assert settings["api_key"] is None
+    assert settings["api_url"] is None
+
+
+def test_router_models_fugumt_validation():
+    from app.routers.translate import PromptTranslateRequest, TranslateTestRequest
+
+    # Test PromptTranslateRequest accepts provider
+    req = PromptTranslateRequest(prompt="1girl", provider="fugumt")
+    assert req.provider == "fugumt"
+
+    req_default = PromptTranslateRequest(prompt="1girl")
+    assert req_default.provider is None
+
+    # Test TranslateTestRequest accepts "fugumt"
+    test_req = TranslateTestRequest(provider="fugumt")
+    assert test_req.provider == "fugumt"
+
+
+

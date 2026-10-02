@@ -2,6 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TagChip } from '../TagChip';
 
+vi.mock('../../../api/client', () => ({
+  translateApi: {
+    translatePrompt: vi.fn().mockReturnValue(new Promise(() => {})),
+  },
+}));
+
 describe('TagChip', () => {
   const mockOnEdit = vi.fn();
   const mockOnDelete = vi.fn();
@@ -507,5 +513,102 @@ describe('TagChip', () => {
     // Escape inside submenu container should close submenu without triggering parent shortcuts
     fireEvent.keyDown(submenuContainer, { key: 'Escape', code: 'Escape' });
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+  });
+
+  it('applies w-[360px] max-w-[calc(100vw-24px)] class to submenu container (AC-2)', () => {
+    render(
+      <TagChip
+        id="1"
+        text="width-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('width-tag'));
+    const submenuHeading = screen.getByText('強度 (Weight)');
+    const submenuContainer = submenuHeading.closest('.absolute')!;
+    expect(submenuContainer).toBeInTheDocument();
+    expect(submenuContainer.className).toContain('w-[360px]');
+    expect(submenuContainer.className).toContain('max-w-[calc(100vw-24px)]');
+  });
+
+  it('renders translation button in submenu header (AC-2)', () => {
+    render(
+      <TagChip
+        id="1"
+        text="translate-btn-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('translate-btn-tag'));
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
+    expect(translateBtn).toBeInTheDocument();
+    expect(translateBtn).toHaveTextContent('翻訳');
+  });
+
+  it('toggles TagChipTranslationCard when translation button is clicked (AC-3)', () => {
+    render(
+      <TagChip
+        id="1"
+        text="translate-open-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('translate-open-tag'));
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
+
+    // Initially translation card is not rendered
+    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+
+    // Click translation button -> opens translation card
+    fireEvent.click(translateBtn);
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+
+    // Click translation button again -> closes translation card
+    fireEvent.click(translateBtn);
+    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+  });
+
+  it('unmounts translation card when parent submenu is closed (AC-8)', () => {
+    render(
+      <TagChip
+        id="1"
+        text="translate-close-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    // Open submenu and open translation card
+    fireEvent.click(screen.getByText('translate-close-tag'));
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
+    fireEvent.click(translateBtn);
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+
+    // Close submenu via Escape on submenu container
+    const submenuHeading = screen.getByText('強度 (Weight)');
+    const submenuContainer = submenuHeading.closest('.absolute')!;
+    fireEvent.keyDown(submenuContainer, { key: 'Escape', code: 'Escape' });
+
+    // Both submenu and translation card should be unmounted
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
   });
 });

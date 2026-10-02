@@ -19,3 +19,5 @@ pytest-repeat>=0.9.3
 psutil>=5.9.0
 types-psutil
 nltk>=3.8.1
+ctranslate2>=4.0.0
+transformers>=4.30.0

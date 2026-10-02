@@ -16,6 +16,7 @@ class PromptTranslateRequest(BaseModel):
     prompt: str
     source_lang: Optional[str] = "en"
     target_lang: Optional[str] = "ja"
+    provider: Optional[str] = None
 
 
 class TranslateMeta(BaseModel):
@@ -40,7 +41,7 @@ class PromptTranslateResponse(BaseModel):
 
 
 class TranslateTestRequest(BaseModel):
-    provider: Literal["google_cloud", "deepl", "llm"]
+    provider: Literal["google_cloud", "deepl", "llm", "fugumt"]
     api_key: Optional[str] = None
     api_url: Optional[str] = None
 
@@ -65,6 +66,7 @@ async def translate_prompt_endpoint(
             prompt=payload.prompt,
             source_lang=payload.source_lang or "en",
             target_lang=payload.target_lang or "ja",
+            provider=payload.provider,
             db=db,
         )
         meta_data = cast(TranslationMetaData, meta_dict)

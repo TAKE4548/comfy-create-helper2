@@ -45,12 +45,12 @@ def restore_tokens(text: str, tokens: Dict[str, str]) -> str:
 
 
 def get_cache_key(chunk: str, target_lang: str, provider: str) -> str:
-    normalized = chunk.strip().lower()
+    normalized = re.sub(r"\s+", " ", chunk.strip()).lower()
     return hashlib.sha256(f"{normalized}:{target_lang.lower()}:{provider}".encode("utf-8")).hexdigest()
 
 
 def get_translation_settings(db: Optional[Session]) -> Dict[str, Optional[str]]:
-    provider = "google_cloud"
+    provider = "fugumt"
     api_key = None
     api_url = None
 
@@ -70,7 +70,7 @@ def get_translation_settings(db: Optional[Session]) -> Dict[str, Optional[str]]:
             if p and p != "google_free":
                 provider = p
             else:
-                provider = "google_cloud"
+                provider = "fugumt"
             api_key = settings_map.get("translation_api_key")
             api_url = settings_map.get("translation_api_url")
         except Exception as e:
@@ -220,13 +220,13 @@ async def translate_prompt(
             "cached_chunks": 0,
             "api_requested_chunks": 0,
             "billed_characters": 0,
-            "provider": provider or "google_cloud",
+            "provider": provider or "fugumt",
         }
 
     # Fetch settings from DB if not explicitly provided
     if not provider:
         settings = get_translation_settings(db)
-        provider = settings["provider"] or "google_cloud"
+        provider = settings["provider"] or "fugumt"
         api_key = api_key or settings["api_key"]
         api_url = api_url or settings["api_url"]
     elif provider == "google_free":
@@ -235,7 +235,7 @@ async def translate_prompt(
     sanitized, tokens = sanitize_and_tokenize(prompt)
 
     # Split into tags/chunks by commas and newlines
-    raw_chunks = [c.strip() for c in re.split(r"[,、\n]+", sanitized) if c.strip()]
+    raw_chunks = [re.sub(r"\s+", " ", c.strip()) for c in re.split(r"[,、\n]+", sanitized) if c.strip()]
     if not raw_chunks:
         return prompt, {
             "total_chunks": 0,
@@ -248,8 +248,8 @@ async def translate_prompt(
     total_chunks = len(raw_chunks)
     chunk_translations: List[str] = ["" for _ in range(total_chunks)]
 
-    # Track missing unique chunks and their mapped target indices
-    unique_missing: Dict[str, List[int]] = {}
+    # Track missing unique chunks by cache_key: cache_key -> (chunk, list_of_indices)
+    unique_missing: Dict[str, Tuple[str, List[int]]] = {}
     cached_chunks = 0
 
     for idx, chunk in enumerate(raw_chunks):
@@ -263,13 +263,14 @@ async def translate_prompt(
         if cache_key in TRANSLATION_CACHE:
             chunk_translations[idx] = TRANSLATION_CACHE[cache_key]
             cached_chunks += 1
-        elif chunk in unique_missing:
-            unique_missing[chunk].append(idx)
+        elif cache_key in unique_missing:
+            unique_missing[cache_key][1].append(idx)
             cached_chunks += 1  # Deduplicated within the same prompt
         else:
-            unique_missing[chunk] = [idx]
+            unique_missing[cache_key] = (chunk, [idx])
 
-    missing_chunks_list = list(unique_missing.keys())
+    missing_items = list(unique_missing.values())
+    missing_chunks_list = [item[0] for item in missing_items]
     api_requested_chunks = len(missing_chunks_list)
     billed_characters = sum(len(c) for c in missing_chunks_list)
 
@@ -314,14 +315,22 @@ async def translate_prompt(
                 except Exception as e:
                     logger.error(f"LLM translation error for '{chunk}': {e}")
                     raise e
+        elif provider == "fugumt":
+            from app.services.fugumt_service import FuguMTService
+
+            fugumt = FuguMTService.get_instance()
+            try:
+                translated_missing = fugumt.translate_batch(missing_chunks_list)
+            except Exception as e:
+                logger.error(f"FuguMT translation error: {e}")
+                raise e
         else:
             raise ValueError(f"Unsupported translation provider: {provider}")
 
         # Cache results and update chunk_translations for all target indices
-        for orig_chunk, trans in zip(missing_chunks_list, translated_missing):
-            cache_key = get_cache_key(orig_chunk, target_lang, provider)
+        for (cache_key, (orig_chunk, target_indices)), trans in zip(unique_missing.items(), translated_missing):
             TRANSLATION_CACHE[cache_key] = trans
-            for target_idx in unique_missing[orig_chunk]:
+            for target_idx in target_indices:
                 chunk_translations[target_idx] = trans
 
     joined_prompt = ", ".join(chunk_translations)
