@@ -127,6 +127,9 @@ export function usePresetStoreSync({
     const checkedPresetsRaw = localStorage.getItem(`prompt-surgeon-checked-presets-${selectedWorkflowId}`)
     const checkedPresets: (string | number)[] | null = checkedPresetsRaw ? JSON.parse(checkedPresetsRaw) : null
     const defaultParams = workflow ? getInitialParams(workflow) : {}
+    const promptRoles = workflow?.mappings
+      .filter((mapping) => mapping.role && mapping.input_type === 'textarea')
+      .map((mapping) => mapping.role!) ?? []
 
     const rawMappedSets = presets.map((p) => {
       const existingSet = existingSetsMap.get(String(p.id))
@@ -297,7 +300,7 @@ export function usePresetStoreSync({
             seed: activePreset.seed !== undefined ? activePreset.seed : 42,
           }
           if (currentStore.loadPresetData) {
-            currentStore.loadPresetData(activePreset, defaultParams)
+            currentStore.loadPresetData(activePreset, defaultParams, promptRoles)
           } else {
             currentStore.setActiveSetId?.(targetActiveId)
             if (!currentOpenPresetIds.map(String).includes(String(targetActiveId))) {
@@ -327,6 +330,7 @@ export function usePresetStoreSync({
 
         // Check if server activePreset has updated_at newer than presetUpdatedAtRef
         const activePreset = presets.find((p) => String(p.id) === String(targetActiveId))
+        let reloadedForServerUpdate = false
         if (activePreset && activePreset.updated_at) {
           const prevUpdatedAt = presetUpdatedAtRef.current[activePreset.id]
           if (prevUpdatedAt && isTimestampDifferent(activePreset.updated_at, prevUpdatedAt)) {
@@ -353,7 +357,8 @@ export function usePresetStoreSync({
                   seed: activePresetData.seed,
                 }
               }
-              currentStore.loadPresetData?.(activePreset, defaultParams)
+              currentStore.loadPresetData?.(activePreset, defaultParams, promptRoles)
+              reloadedForServerUpdate = true
             } else {
               // Local has unsaved edits: trigger conflict resolution
               setConflictData({
@@ -368,6 +373,28 @@ export function usePresetStoreSync({
                 },
               })
             }
+          }
+        }
+
+        // Workflow mappings can arrive after the first preset load. Reparse prompt chips
+        // with the new textarea roles only while the active preset remains clean.
+        if (activePreset && !reloadedForServerUpdate) {
+          const currentPromptRoles: string[] = currentStore.promptRoleAllowlist || []
+          const promptRolesChanged =
+            currentPromptRoles.length !== promptRoles.length ||
+            currentPromptRoles.some((role, index) => role !== promptRoles[index])
+          const lastSaved = lastSavedStateRef.current[activePreset.id]
+          const currentLocalState: HistoryState = {
+            paramValues: currentStore.paramValues,
+            appliedAssets: currentStore.appliedAssets,
+            batchSize: currentStore.batchSize,
+            seedMode: currentStore.seedMode,
+            seed: currentStore.seed,
+          }
+          const isClean = !!lastSaved && isStateEqual(lastSaved, currentLocalState)
+
+          if (promptRolesChanged && isClean) {
+            currentStore.loadPresetData?.(activePreset, defaultParams, promptRoles)
           }
         }
       }

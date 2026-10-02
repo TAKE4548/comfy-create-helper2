@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { usePresetState, normalizeTimestamp, isTimestampDifferent, isRecordEqual } from '../usePresetState'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { workflowPresetsApi } from '../../../../api/client'
-import type { WorkflowPreset } from '../../../../api/types'
+import type { Workflow, WorkflowPreset } from '../../../../api/types'
 
 vi.mock('../../../../api/client', () => ({
   workflowPresetsApi: {
@@ -107,6 +107,111 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       expect(state.paramValues.prompt).toBe('updated from device B')
     })
     expect(result.current.conflictData).toBeNull()
+  })
+
+  it('passes only textarea roles when loading a preset so dotted parameter values remain raw', async () => {
+    const workflow: Workflow = {
+      id: 1,
+      name: 'Workflow',
+      json_body: {},
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'prompt', param_name: null, input_type: 'textarea', display_name: null },
+        { id: 2, master_id: 2, node_id: '2', role: 'checkpoint', param_name: null, input_type: 'combo', display_name: null },
+        { id: 3, master_id: 3, node_id: '3', role: 'lora', param_name: null, input_type: 'text', display_name: null },
+      ],
+      created_at: '2026-09-08T10:00:00Z',
+    }
+    const preset: WorkflowPreset = {
+      id: 101,
+      workflow_id: 1,
+      name: 'Dotted values',
+      param_values: {
+        prompt: '1girl. solo.',
+        checkpoint: 'model.safetensors',
+        lora: 'style.safetensors',
+      },
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+
+    const { result } = renderHook(
+      () => usePresetState({ selectedWorkflowId: 1, workflow }),
+      { wrapper }
+    )
+
+    act(() => {
+      useGenerationStore.setState({ isAnimaMode: true })
+      result.current.handleLoadPreset(preset)
+    })
+
+    const state = useGenerationStore.getState()
+    expect(state.paramValues).toMatchObject(preset.param_values)
+    expect(state.promptChips.prompt.map((chip) => chip.text)).toEqual(['1girl.', 'solo.'])
+    expect(state.promptChips).not.toHaveProperty('checkpoint')
+    expect(state.promptChips).not.toHaveProperty('lora')
+  })
+
+  it('round-trips the exact prompt saved by updatePreset through prompt chips', async () => {
+    const workflow: Workflow = {
+      id: 1,
+      name: 'Workflow',
+      json_body: {},
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'prompt', param_name: null, input_type: 'textarea', display_name: null },
+      ],
+      created_at: '2026-09-08T10:00:00Z',
+    }
+    const preset: WorkflowPreset = {
+      id: 101,
+      workflow_id: 1,
+      name: 'Mixed separators',
+      param_values: { prompt: 'old prompt' },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 0,
+      created_at: '2026-09-08T10:00:00Z',
+      updated_at: '2026-09-08T10:00:00Z',
+    }
+    const savedPreset: WorkflowPreset = {
+      ...preset,
+      param_values: { prompt: 'first. second, third.' },
+      updated_at: '2026-09-08T10:01:00Z',
+    }
+    vi.mocked(workflowPresetsApi.update).mockResolvedValue(savedPreset)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+
+    const { result } = renderHook(
+      () => usePresetState({ selectedWorkflowId: 1, workflow }),
+      { wrapper }
+    )
+
+    act(() => {
+      useGenerationStore.setState({
+        isAnimaMode: true,
+        activeSetId: 101,
+        paramValues: { prompt: 'first. second, third.' },
+      })
+    })
+    act(() => {
+      result.current.handleUpdatePreset(101, 'Mixed separators')
+    })
+
+    await waitFor(() => {
+      expect(workflowPresetsApi.update).toHaveBeenCalled()
+    })
+    const updatePayload = vi.mocked(workflowPresetsApi.update).mock.calls[0][1]
+    expect(updatePayload.param_values?.prompt).toBe('first. second, third.')
+
+    act(() => {
+      result.current.handleLoadPreset({ ...savedPreset, param_values: updatePayload.param_values! })
+    })
+
+    const chips = useGenerationStore.getState().promptChips.prompt
+    expect(chips.map((chip) => chip.text)).toEqual(['first.', 'second', 'third.'])
+    expect(chips.filter((chip) => chip.text.endsWith('.'))).toHaveLength(2)
   })
 
   it('triggers conflictData when server updated_at advances and local has unsaved changes (isDirty)', async () => {
@@ -1118,7 +1223,7 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         id: 101,
         workflow_id: 1,
         name: 'Set 1',
-        param_values: { prompt: '1girl. solo.' },
+        param_values: { prompt: '1girl. solo.', checkpoint: 'model.safetensors', lora: 'style.safetensors' },
         applied_assets: {},
         batch_size: 1,
         seed_mode: 'random',
@@ -1131,7 +1236,7 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         id: 102,
         workflow_id: 1,
         name: 'Set 2',
-        param_values: { prompt: 'cat. outdoor.' },
+        param_values: { prompt: 'cat. outdoor.', checkpoint: 'model.safetensors', lora: 'style.safetensors' },
         applied_assets: {},
         batch_size: 1,
         seed_mode: 'random',
@@ -1139,6 +1244,17 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         sort_order: 1,
         created_at: '2026-09-08T10:00:00Z',
         updated_at: '2026-09-08T10:00:00Z',
+      }
+      const workflow: Workflow = {
+        id: 1,
+        name: 'Workflow',
+        json_body: {},
+        mappings: [
+          { id: 1, master_id: 1, node_id: '1', role: 'prompt', param_name: null, input_type: 'textarea', display_name: null },
+          { id: 2, master_id: 2, node_id: '2', role: 'checkpoint', param_name: null, input_type: 'combo', display_name: null },
+          { id: 3, master_id: 3, node_id: '3', role: 'lora', param_name: null, input_type: 'text', display_name: null },
+        ],
+        created_at: '2026-09-08T10:00:00Z',
       }
 
       useGenerationStore.setState({
@@ -1150,7 +1266,7 @@ describe('usePresetState multi-device sync and conflict handling', () => {
           {
             id: 101,
             name: 'Set 1',
-            paramValues: { prompt: '1girl. solo.' },
+            paramValues: { prompt: '1girl. solo.', checkpoint: 'model.safetensors', lora: 'style.safetensors' },
             appliedAssets: {},
             batchSize: 1,
             seedMode: 'random',
@@ -1166,7 +1282,7 @@ describe('usePresetState multi-device sync and conflict handling', () => {
           {
             id: 102,
             name: 'Set 2',
-            paramValues: { prompt: 'cat. outdoor.' },
+            paramValues: { prompt: 'cat. outdoor.', checkpoint: 'model.safetensors', lora: 'style.safetensors' },
             appliedAssets: {},
             batchSize: 1,
             seedMode: 'random',
@@ -1197,7 +1313,7 @@ describe('usePresetState multi-device sync and conflict handling', () => {
       })
 
       const { result } = renderHook(
-        () => usePresetState({ selectedWorkflowId: 1, workflow: undefined }),
+        () => usePresetState({ selectedWorkflowId: 1, workflow }),
         { wrapper }
       )
 
@@ -1236,6 +1352,10 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         'red hair.',
         'masterpiece.',
       ])
+      expect(updatedSet1?.paramValues).toMatchObject({ checkpoint: 'model.safetensors', lora: 'style.safetensors' })
+      expect(updatedSet2?.paramValues).toMatchObject({ checkpoint: 'model.safetensors', lora: 'style.safetensors' })
+      expect(updatedSet1?.promptChips).not.toHaveProperty('checkpoint')
+      expect(updatedSet1?.promptChips).not.toHaveProperty('lora')
 
       // Active preset (101) promptChips should also be synced with 3 distinct chips
       expect(state.promptChips.prompt).toHaveLength(3)
@@ -1244,6 +1364,9 @@ describe('usePresetState multi-device sync and conflict handling', () => {
         'red hair.',
         'masterpiece.',
       ])
+      expect(state.paramValues).toMatchObject({ checkpoint: 'model.safetensors', lora: 'style.safetensors' })
+      expect(state.promptChips).not.toHaveProperty('checkpoint')
+      expect(state.promptChips).not.toHaveProperty('lora')
     })
   })
 })

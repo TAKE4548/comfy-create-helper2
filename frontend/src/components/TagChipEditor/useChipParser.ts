@@ -162,15 +162,15 @@ export function parseTagWeight(text: string): ParsedTagWeight {
 /**
  * ベーステキストと強度からSD形式のタグ文字列を整形します。
  * weightがnullまたは1.0の場合はベーステキストのみを返します。
- * isAnimaModeがtrueの場合、またはbaseTextがピリオド終わりの場合は末尾ピリオドを付与・維持します。
+ * baseText が明示的にピリオド終わりの場合に末尾ピリオドを維持します。
  */
 export function formatTagWeight(
   baseText: string,
   weight: number | null,
-  isAnimaMode: boolean = false
+  _isAnimaMode: boolean = false
 ): string {
   const trimmedBase = baseText.trim();
-  const hasPeriod = trimmedBase.endsWith('.') || isAnimaMode;
+  const hasPeriod = trimmedBase.endsWith('.');
   const cleanBase = trimmedBase.replace(/\.+$/, '');
 
   if (weight === null || isNaN(weight) || weight === 1) {

@@ -351,9 +351,23 @@ describe('useGeneratePageState', () => {
     expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
-  it('should maintain independent prompts when switching presets (REQ-163)', () => {
+  it('should maintain independent prompts when switching presets (REQ-163)', async () => {
+    vi.mocked(workflowsApi.get).mockResolvedValue({
+      id: 1,
+      name: 'Workflow 1',
+      created_at: '',
+      json_body: {},
+      mappings: [
+        { id: 1, master_id: 101, node_id: '1', role: 'positive_prompt', input_type: 'textarea', display_name: 'Positive Prompt', param_name: 'value' },
+      ],
+    })
+
     const wrapper = createWrapper()
     const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalledWith(1))
+    await act(async () => {
+      await vi.mocked(workflowsApi.get).mock.results.at(-1)?.value
+    })
 
     const preset1: WorkflowPreset = {
       id: 10,
@@ -387,13 +401,13 @@ describe('useGeneratePageState', () => {
       result.current.handleLoadPreset(preset2)
     })
 
-    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset2, expect.anything())
+    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset2, expect.anything(), ['positive_prompt'])
 
     act(() => {
       result.current.handleLoadPreset(preset1)
     })
 
-    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset1, expect.anything())
+    expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset1, expect.anything(), ['positive_prompt'])
   })
 
   it('should handle OCC conflict (409) in updatePresetMutation (REQ-163)', async () => {
@@ -735,6 +749,16 @@ describe('useGeneratePageState', () => {
     })
 
     it('should immediately synchronize promptChips and sets in handleBulkEditApply', async () => {
+      vi.mocked(workflowsApi.get).mockResolvedValue({
+        id: 1,
+        name: 'Workflow 1',
+        created_at: '',
+        json_body: {},
+        mappings: [
+          { id: 1, master_id: 101, node_id: '1', role: 'positive_prompt', input_type: 'textarea', display_name: 'Positive Prompt', param_name: 'value' },
+        ],
+      })
+
       const mockPreset: WorkflowPreset = {
         id: 10,
         workflow_id: 1,
@@ -770,6 +794,10 @@ describe('useGeneratePageState', () => {
 
       const wrapper = createWrapper()
       const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+      await act(async () => {
+        await vi.mocked(workflowsApi.get).mock.results[0]?.value
+      })
 
       await waitFor(() => expect(workflowPresetsApi.list).toHaveBeenCalled())
 

@@ -202,6 +202,10 @@ export function useGenerateAction(
     const state = getLatestState()
     const currentParamValues = state.paramValues
     const currentPromptChips = state.promptChips
+    const isAnimaMode = state.isAnimaMode
+    const promptRoleAllowlist = (workflow.mappings || [])
+      .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
+      .map((mapping) => mapping.role as string)
     const currentBatchSize = state.batchSize
     const currentSeedMode = state.seedMode
     const currentSeed = state.seed
@@ -226,7 +230,12 @@ export function useGenerateAction(
       return
     }
 
-    const effectiveParamValues = getEffectiveParamValues(currentParamValues, currentPromptChips || {})
+    const effectiveParamValues = getEffectiveParamValues(
+      currentParamValues,
+      currentPromptChips || {},
+      isAnimaMode,
+      promptRoleAllowlist
+    )
     const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
 
     const abortController = new AbortController()
@@ -381,7 +390,14 @@ export function useGenerateAction(
               : (setItem.promptChips || {}))
           : (setItem.promptChips || {})
 
-        const effectiveParamValues = getEffectiveParamValues(itemParams, itemChips)
+        const effectiveParamValues = getEffectiveParamValues(
+          itemParams,
+          itemChips,
+          state.isAnimaMode,
+          (workflow.mappings || [])
+            .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
+            .map((mapping) => mapping.role as string)
+        )
         const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
 
         const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize

@@ -19,11 +19,13 @@ export const chipsToString = (chips: TagChip[], isAnimaMode?: boolean): string =
 export function getEffectiveParamValues(
   paramValues: Record<string, string>,
   promptChips: Record<string, TagChip[]>,
-  isAnimaMode?: boolean
+  isAnimaMode?: boolean,
+  promptRoleAllowlist: readonly string[] = []
 ): Record<string, string> {
   const effective = { ...paramValues }
+  const allowedRoles = new Set(promptRoleAllowlist)
   for (const [role, chips] of Object.entries(promptChips || {})) {
-    if (chips && chips.length > 0) {
+    if (allowedRoles.has(role) && chips && chips.length > 0) {
       effective[role] = chipsToString(chips, isAnimaMode)
     }
   }
@@ -67,6 +69,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     paramValues: storedParams,
     appliedAssets: storedAppliedAssets,
     promptChips: {},
+    promptRoleAllowlist: [],
     isAnimaMode: false,
     roleTextModes: {},
     batchSize: storedBatchSize,
@@ -118,6 +121,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
           paramValues: {},
           appliedAssets: {},
           promptChips: {},
+          promptRoleAllowlist: [],
           batchSize: defaultBatchSize,
           seedMode: defaultSeedMode,
           seed: defaultSeed,
@@ -132,6 +136,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
           paramValues: {},
           appliedAssets: {},
           promptChips: {},
+          promptRoleAllowlist: [],
           batchSize: 1,
           seedMode: 'random',
           seed: 42,
@@ -161,7 +166,12 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
     },
 
     getEffectiveParamValues: () => {
-      return getEffectiveParamValues(get().paramValues, get().promptChips, get().isAnimaMode)
+      return getEffectiveParamValues(
+        get().paramValues,
+        get().promptChips,
+        get().isAnimaMode,
+        get().promptRoleAllowlist,
+      )
     },
 
     addAppliedAsset: (role, asset) => {
@@ -276,6 +286,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
         paramValues: {},
         appliedAssets: {},
         promptChips: {},
+        promptRoleAllowlist: [],
         batchSize: defaultBatchSize,
         seedMode: defaultSeedMode,
         seed: defaultSeed,
@@ -302,7 +313,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
       })
     },
 
-    loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>) => {
+    loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>, promptRoleAllowlist: string[] = []) => {
       const activeWfId = get().selectedWorkflowId ?? preset.workflow_id ?? null
 
       const mergedParamValues = { ...defaultParams, ...(preset.param_values || {}) }
@@ -318,10 +329,11 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
 
       const isAnimaMode = get().isAnimaMode ?? false
       const existingSet = get().sets.find((s) => String(s.id) === String(preset.id))
+      const allowedRoles = new Set(promptRoleAllowlist)
 
       const initialPromptChips: Record<string, TagChip[]> = {}
       for (const [role, val] of Object.entries(mergedParamValues)) {
-        if (val) {
+        if (allowedRoles.has(role) && val) {
           const existingChips = existingSet?.promptChips?.[role]
           if (existingChips && existingChips.length > 0 && chipsToString(existingChips, isAnimaMode) === val) {
             initialPromptChips[role] = existingChips
@@ -373,6 +385,7 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
       set({
         ...(get().selectedWorkflowId === null && preset.workflow_id !== undefined ? { selectedWorkflowId: preset.workflow_id } : {}),
         activeSetId: preset.id,
+        promptRoleAllowlist,
         paramValues: mergedParamValues,
         appliedAssets,
         promptChips: initialPromptChips,

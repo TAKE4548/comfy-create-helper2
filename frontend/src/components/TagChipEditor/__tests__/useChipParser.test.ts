@@ -114,6 +114,21 @@ describe('useChipParser', () => {
       expect(chipsToString(chips, true)).toBe('masterpiece, 1girl. red dress.');
     });
 
+    it('round-trips chip separators from an explicit period to a comma after period removal', () => {
+      const dottedChips = [
+        { id: '1', text: 'word.', enabled: true },
+        { id: '2', text: 'next', enabled: true },
+      ];
+      const undottedChips = [
+        { id: '1', text: 'word', enabled: true },
+        { id: '2', text: 'next', enabled: true },
+      ];
+
+      expect(chipsToString(undottedChips, true)).toBe('word, next');
+      expect(parseToChips(chipsToString(undottedChips, true), true).map((chip) => chip.text)).toEqual(['word', 'next']);
+      expect(chipsToString(dottedChips, true)).toBe('word. next');
+    });
+
     it('should return empty string if no chips are enabled (RT-4)', () => {
       const chips = [
         { id: '1', text: 'apple', enabled: false },
@@ -176,14 +191,17 @@ describe('useChipParser', () => {
       expect(formatTagWeight('1girl', null)).toBe('1girl');
     });
 
-    it('should preserve or add trailing period in anima mode', () => {
+    it('should preserve only an explicitly entered trailing period in anima mode', () => {
       expect(formatTagWeight('1girl.', 1.2, true)).toBe('(1girl:1.2).');
-      expect(formatTagWeight('1girl', 1.2, true)).toBe('(1girl:1.2).');
+      expect(formatTagWeight('1girl', 1.2, true)).toBe('(1girl:1.2)');
       expect(formatTagWeight('1girl.', 1.0, true)).toBe('1girl.');
-      expect(formatTagWeight('1girl', 1.0, true)).toBe('1girl.');
+      expect(formatTagWeight('1girl', 1.0, true)).toBe('1girl');
+      expect(formatTagWeight('1girl.', null, true)).toBe('1girl.');
+      expect(formatTagWeight('1girl', null, true)).toBe('1girl');
+      expect(formatTagWeight('1girl...', 1.3, true)).toBe('(1girl:1.3).');
     });
 
-    it('should format tag with trailing period in anima mode and join with space in chipsToString (AC)', () => {
+    it('should keep a trailing period in anima mode and join with space in chipsToString (AC)', () => {
       const formatted = formatTagWeight('1girl.', 1.2, true);
       expect(formatted).toBe('(1girl:1.2).');
 
@@ -192,6 +210,12 @@ describe('useChipParser', () => {
         { id: '2', text: 'solo.', enabled: true },
       ];
       expect(chipsToString(chips, true)).toBe('(1girl:1.2). solo.');
+    });
+
+    it('should retain non-anima formatting compatibility', () => {
+      expect(formatTagWeight('1girl', 1.3, false)).toBe('(1girl:1.3)');
+      expect(formatTagWeight('1girl.', 1.3, false)).toBe('(1girl:1.3).');
+      expect(formatTagWeight('1girl...', null, false)).toBe('1girl.');
     });
   });
 

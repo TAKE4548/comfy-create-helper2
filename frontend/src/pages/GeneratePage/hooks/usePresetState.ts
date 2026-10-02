@@ -32,6 +32,9 @@ export interface UsePresetStateProps {
 }
 
 export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateProps) {
+  const promptRoles = workflow?.mappings.flatMap((mapping) =>
+    mapping.role && mapping.input_type === 'textarea' ? [mapping.role] : []
+  ) ?? []
   const qc = useQueryClient()
   const store = useGenerationStore()
   const {
@@ -130,7 +133,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
           return [...old, newPreset]
         })
 
-        loadPresetData?.(newPreset, defaultParams)
+        loadPresetData?.(newPreset, defaultParams, promptRoles)
         openPreset?.(newPreset.id)
       }
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
@@ -293,7 +296,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
     }
 
     if (loadPresetData) {
-      loadPresetData(preset, defaultParams)
+      loadPresetData(preset, defaultParams, promptRoles)
     } else {
       setActiveSetId(preset.id)
       if (openPresetIds && !openPresetIds.includes(preset.id)) {
@@ -301,7 +304,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       }
     }
     setIsPresetOpen(false)
-  }, [workflow, loadPresetData, setActiveSetId, openPresetIds, openPreset])
+  }, [workflow, promptRoles, loadPresetData, setActiveSetId, openPresetIds, openPreset])
 
   // ── Sub-hooks ──
   const currentState: HistoryState = {
@@ -494,7 +497,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         const mergedParams = { ...defaultParams, ...(updatedPreset.param_values || {}) }
         const chips: Record<string, TagChip[]> = {}
         for (const [role, val] of Object.entries(mergedParams)) {
-          if (val) {
+          if (promptRoles.includes(role) && val) {
             chips[role] = parseToChips(val, storeRef.current.isAnimaMode ?? false)
           }
         }
@@ -519,7 +522,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         const mergedParams = { ...defaultParams, ...(activeUpdatedPreset.param_values || {}) }
         const initialPromptChips: Record<string, TagChip[]> = {}
         for (const [role, val] of Object.entries(mergedParams)) {
-          if (val) {
+          if (promptRoles.includes(role) && val) {
             initialPromptChips[role] = parseToChips(val, storeRef.current.isAnimaMode ?? false)
           }
         }

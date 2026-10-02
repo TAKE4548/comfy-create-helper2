@@ -15,6 +15,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     appliedAssets: {},
     bypassProfiles: [],
     paramSyncGroups: [],
+    isAnimaMode: false,
     queuePrompt: vi.fn(),
     setActiveBatch: vi.fn(),
     setSubmissionAbortController: vi.fn(),
@@ -45,6 +46,7 @@ describe('useGenerateAction', () => {
     mockStore.appliedAssets = {};
     mockStore.bypassProfiles = [];
     mockStore.paramSyncGroups = [];
+    mockStore.isAnimaMode = false;
     mockStore.queuePrompt.mockReset();
     mockStore.setActiveBatch.mockReset();
     mockStore.setSubmissionAbortController.mockReset();
@@ -811,7 +813,13 @@ describe('useGenerateAction', () => {
         ],
       };
 
-      const { handleGenerate } = useGenerateAction(baseWorkflow);
+      const { handleGenerate } = useGenerateAction({
+        ...baseWorkflow,
+        mappings: [...baseWorkflow.mappings, {
+          id: 2, master_id: 2, node_id: '4', role: 'Main_Positive_Prompt',
+          param_name: 'value', input_type: 'textarea', display_name: 'Prompt',
+        }],
+      });
       await handleGenerate();
 
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
@@ -842,12 +850,89 @@ describe('useGenerateAction', () => {
         },
       ];
 
-      const { handleGenerateSets } = useGenerateAction(baseWorkflow);
+      const { handleGenerateSets } = useGenerateAction({
+        ...baseWorkflow,
+        mappings: [...baseWorkflow.mappings, {
+          id: 2, master_id: 2, node_id: '4', role: 'Main_Positive_Prompt',
+          param_name: 'value', input_type: 'textarea', display_name: 'Prompt',
+        }],
+      });
       await handleGenerateSets();
 
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
       const payloadMetadata = mockStore.queuePrompt.mock.calls[0][1];
       expect(payloadMetadata.paramValues.Main_Positive_Prompt).toBe('smile');
+    });
+  });
+
+  describe('REQ-308-T3: prompt chips are scoped to textarea roles at generation', () => {
+    const dottedValueWorkflow: Workflow = {
+      ...baseWorkflow,
+      mappings: [
+        ...baseWorkflow.mappings,
+        { id: 2, master_id: 2, node_id: '4', role: 'Main_Positive_Prompt', param_name: 'value', input_type: 'textarea', display_name: 'Prompt' },
+        { id: 3, master_id: 3, node_id: '4', role: 'Checkpoint_Name', param_name: 'checkpoint', input_type: 'string', display_name: 'Checkpoint' },
+        { id: 4, master_id: 4, node_id: '4', role: 'Lora_Stack', param_name: 'lora', input_type: 'lora_stack', display_name: 'LoRA' },
+      ],
+    };
+
+    it('single generation serializes prompt chips using Anima mode and preserves dotted parameter values', async () => {
+      mockStore.queuePrompt.mockResolvedValue('prompt-id');
+      mockStore.isAnimaMode = true;
+      mockStore.paramValues = {
+        Main_Positive_Prompt: 'raw prompt',
+        Checkpoint_Name: 'model.v2.safetensors',
+        Lora_Stack: 'style.v1.2.safetensors',
+      };
+      mockStore.promptChips = {
+        Main_Positive_Prompt: [
+          { id: '1', text: 'first.', enabled: true },
+          { id: '2', text: 'second', enabled: true },
+          { id: '5', text: 'third.', enabled: true },
+        ],
+        Checkpoint_Name: [{ id: '3', text: 'corrupted checkpoint', enabled: true }],
+        Lora_Stack: [{ id: '4', text: 'corrupted lora', enabled: true }],
+      };
+
+      await useGenerateAction(dottedValueWorkflow).handleGenerate();
+
+      const payload = mockStore.queuePrompt.mock.calls[0][1].paramValues;
+      expect(payload).toEqual({
+        Main_Positive_Prompt: 'first. second, third.',
+        Checkpoint_Name: 'model.v2.safetensors',
+        Lora_Stack: 'style.v1.2.safetensors',
+      });
+    });
+
+    it('multi-set generation serializes prompt chips using Anima mode and preserves dotted parameter values', async () => {
+      mockStore.queuePrompt.mockResolvedValue('prompt-id');
+      mockStore.isAnimaMode = true;
+      mockStore.sets = [{
+        id: 'set-1', name: 'Set 1', checked: true, batchSize: 1, seedMode: 'random', seed: 42, appliedAssets: {},
+        paramValues: {
+          Main_Positive_Prompt: 'raw prompt',
+          Checkpoint_Name: 'model.v2.safetensors',
+          Lora_Stack: 'style.v1.2.safetensors',
+        },
+        promptChips: {
+          Main_Positive_Prompt: [
+            { id: '1', text: 'first.', enabled: true },
+            { id: '2', text: 'second', enabled: true },
+            { id: '5', text: 'third.', enabled: true },
+          ],
+          Checkpoint_Name: [{ id: '3', text: 'corrupted checkpoint', enabled: true }],
+          Lora_Stack: [{ id: '4', text: 'corrupted lora', enabled: true }],
+        },
+      }];
+
+      await useGenerateAction(dottedValueWorkflow).handleGenerateSets();
+
+      const payload = mockStore.queuePrompt.mock.calls[0][1].paramValues;
+      expect(payload).toEqual({
+        Main_Positive_Prompt: 'first. second, third.',
+        Checkpoint_Name: 'model.v2.safetensors',
+        Lora_Stack: 'style.v1.2.safetensors',
+      });
     });
   });
 

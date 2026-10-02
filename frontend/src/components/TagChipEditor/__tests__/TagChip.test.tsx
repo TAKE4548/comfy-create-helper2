@@ -224,19 +224,19 @@ describe('TagChip', () => {
 
     const plusPointFive = screen.getByRole('button', { name: '+0.5' });
     fireEvent.click(plusPointFive);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.5).');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.5)');
 
     const plusOne = screen.getByRole('button', { name: '+1.0' });
     fireEvent.click(plusOne);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:2).');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:2)');
 
     const minusPointFive = screen.getByRole('button', { name: '-0.5' });
     fireEvent.click(minusPointFive);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.5).');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0.5)');
 
     const minusOne = screen.getByRole('button', { name: '-1.0' });
     fireEvent.click(minusOne);
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0).');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:0)');
   });
 
   it('adjusts weight by direct number input in submenu in anima mode', () => {
@@ -260,7 +260,7 @@ describe('TagChip', () => {
     fireEvent.change(numInput, { target: { value: '1.35' } });
     fireEvent.keyDown(numInput, { key: 'Enter', code: 'Enter' });
 
-    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.35).');
+    expect(mockOnEdit).toHaveBeenCalledWith('1', '(1girl:1.35)');
   });
 
   it('adjusts weight by direct number input in submenu', () => {
@@ -351,6 +351,69 @@ describe('TagChip', () => {
     fireEvent.blur(wordInput);
 
     expect(mockOnEdit).toHaveBeenCalledWith('1', '(solo:1.2)');
+  });
+
+  it('keeps a removed trailing period from returning after a submenu strength edit in anima mode', () => {
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const onToggle = vi.fn();
+    const onDuplicate = vi.fn();
+    const { rerender } = render(
+      <TagChip
+        id="period-tag"
+        text="word."
+        enabled={true}
+        isAnimaMode={true}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onToggle={onToggle}
+        onDuplicate={onDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('word.'));
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    fireEvent.change(wordInput, { target: { value: 'word' } });
+    fireEvent.keyDown(wordInput, { key: 'Enter', code: 'Enter' });
+
+    expect(onEdit).toHaveBeenLastCalledWith('period-tag', 'word');
+
+    rerender(
+      <TagChip
+        id="period-tag"
+        text="word"
+        enabled={true}
+        isAnimaMode={true}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onToggle={onToggle}
+        onDuplicate={onDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '+0.5' }));
+    expect(onEdit).toHaveBeenLastCalledWith('period-tag', '(word:1.5)');
+  });
+
+  it('preserves a trailing period when strength changes and the tag still has one', () => {
+    const onEdit = vi.fn();
+    render(
+      <TagChip
+        id="period-tag"
+        text="word."
+        enabled={true}
+        isAnimaMode={true}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+        onToggle={vi.fn()}
+        onDuplicate={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('word.'));
+    fireEvent.click(screen.getByRole('button', { name: '+0.5' }));
+
+    expect(onEdit).toHaveBeenCalledWith('period-tag', '(word:1.5).');
   });
 
   it('restores original baseText when word is cleared to empty in submenu', () => {

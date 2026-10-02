@@ -248,4 +248,210 @@ describe('usePresetStoreSync', () => {
 
     expect(handleCreatePresetMock).toHaveBeenCalledWith('Set 1')
   })
+
+  it('passes only textarea roles when loading a dotted preset on initial sync', () => {
+    const workflow: Workflow = {
+      ...mockWorkflow,
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'positive', param_name: 'prompt', input_type: 'textarea', display_name: 'Prompt' },
+        { id: 2, master_id: 2, node_id: '2', role: 'checkpoint', param_name: 'ckpt_name', input_type: 'select', display_name: 'Checkpoint' },
+      ],
+    }
+    const preset: WorkflowPreset = {
+      ...mockPresets[0],
+      param_values: {
+        positive: '1girl. solo.',
+        checkpoint: 'model.safetensors',
+      },
+    }
+    const props: UsePresetStoreSyncProps = {
+      selectedWorkflowId: 10,
+      workflow,
+      presets: [preset],
+      presetsRef: { current: [preset] },
+      isInitialSyncRef: { current: false },
+      prevWorkflowIdRef: { current: 10 },
+      lastSavedStateRef: { current: {} },
+      presetUpdatedAtRef: { current: {} },
+      setConflictData: setConflictDataMock,
+      handleLoadPreset: handleLoadPresetMock,
+      handleCreatePreset: handleCreatePresetMock,
+      flushAutoSave: flushAutoSaveMock,
+    }
+
+    renderHook(() => usePresetStoreSync(props))
+
+    expect(loadPresetDataMock).toHaveBeenCalledWith(preset, expect.any(Object), ['positive'])
+  })
+
+  it('passes an empty prompt role allowlist when workflow is unavailable', () => {
+    const props: UsePresetStoreSyncProps = {
+      selectedWorkflowId: 10,
+      workflow: undefined,
+      presets: mockPresets,
+      presetsRef: { current: mockPresets },
+      isInitialSyncRef: { current: false },
+      prevWorkflowIdRef: { current: 10 },
+      lastSavedStateRef: { current: {} },
+      presetUpdatedAtRef: { current: {} },
+      setConflictData: setConflictDataMock,
+      handleLoadPreset: handleLoadPresetMock,
+      handleCreatePreset: handleCreatePresetMock,
+      flushAutoSave: flushAutoSaveMock,
+    }
+
+    renderHook(() => usePresetStoreSync(props))
+
+    expect(loadPresetDataMock).toHaveBeenCalledWith(mockPresets[0], expect.any(Object), [])
+  })
+
+  it('rehydrates a clean active preset when textarea mappings arrive after the first sync', () => {
+    const state: Record<string, any> = {
+      activeSetId: 1,
+      openPresetIds: [1, 2],
+      sets: [],
+      paramValues: { prompt: 'cat' },
+      appliedAssets: {},
+      batchSize: 1,
+      seedMode: 'random',
+      seed: 123,
+      promptRoleAllowlist: [],
+      setActiveSetId: setActiveSetIdMock,
+      setSets: setSetsMock,
+      loadPresetData: loadPresetDataMock,
+      openPreset: vi.fn(),
+    }
+    loadPresetDataMock.mockImplementation((_preset, _defaults, roles) => {
+      state.promptRoleAllowlist = roles
+    })
+    vi.mocked(useGenerationStore.getState).mockReturnValue(state as any)
+
+    const props: UsePresetStoreSyncProps = {
+      selectedWorkflowId: 10,
+      workflow: undefined,
+      presets: mockPresets,
+      presetsRef: { current: mockPresets },
+      isInitialSyncRef: { current: false },
+      prevWorkflowIdRef: { current: 10 },
+      lastSavedStateRef: { current: {} },
+      presetUpdatedAtRef: { current: {} },
+      setConflictData: setConflictDataMock,
+      handleLoadPreset: handleLoadPresetMock,
+      handleCreatePreset: handleCreatePresetMock,
+      flushAutoSave: flushAutoSaveMock,
+    }
+    const { rerender } = renderHook(({ workflow }) => usePresetStoreSync({ ...props, workflow }), {
+      initialProps: { workflow: undefined as Workflow | undefined },
+    })
+
+    expect(loadPresetDataMock).toHaveBeenCalledTimes(1)
+    expect(loadPresetDataMock).toHaveBeenLastCalledWith(mockPresets[0], expect.any(Object), [])
+
+    const mappedWorkflow: Workflow = {
+      ...mockWorkflow,
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'positive', param_name: 'prompt', input_type: 'textarea', display_name: 'Prompt' },
+      ],
+    }
+    rerender({ workflow: mappedWorkflow })
+
+    expect(loadPresetDataMock).toHaveBeenCalledTimes(2)
+    expect(loadPresetDataMock).toHaveBeenLastCalledWith(mockPresets[0], expect.any(Object), ['positive'])
+    expect(state.promptRoleAllowlist).toEqual(['positive'])
+  })
+
+  it('preserves dirty active preset edits when textarea mappings arrive', () => {
+    const state: Record<string, any> = {
+      activeSetId: 1,
+      openPresetIds: [1, 2],
+      sets: [],
+      paramValues: { prompt: 'cat' },
+      appliedAssets: {},
+      batchSize: 1,
+      seedMode: 'random',
+      seed: 123,
+      promptRoleAllowlist: [],
+      setActiveSetId: setActiveSetIdMock,
+      setSets: setSetsMock,
+      loadPresetData: loadPresetDataMock,
+      openPreset: vi.fn(),
+    }
+    loadPresetDataMock.mockImplementation((_preset, _defaults, roles) => {
+      state.promptRoleAllowlist = roles
+    })
+    vi.mocked(useGenerationStore.getState).mockReturnValue(state as any)
+
+    const props: UsePresetStoreSyncProps = {
+      selectedWorkflowId: 10,
+      workflow: undefined,
+      presets: mockPresets,
+      presetsRef: { current: mockPresets },
+      isInitialSyncRef: { current: false },
+      prevWorkflowIdRef: { current: 10 },
+      lastSavedStateRef: { current: {} },
+      presetUpdatedAtRef: { current: {} },
+      setConflictData: setConflictDataMock,
+      handleLoadPreset: handleLoadPresetMock,
+      handleCreatePreset: handleCreatePresetMock,
+      flushAutoSave: flushAutoSaveMock,
+    }
+    const { rerender } = renderHook(({ workflow }) => usePresetStoreSync({ ...props, workflow }), {
+      initialProps: { workflow: undefined as Workflow | undefined },
+    })
+    state.paramValues = { prompt: 'locally edited prompt' }
+
+    const mappedWorkflow: Workflow = {
+      ...mockWorkflow,
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'positive', param_name: 'prompt', input_type: 'textarea', display_name: 'Prompt' },
+      ],
+    }
+    rerender({ workflow: mappedWorkflow })
+
+    expect(loadPresetDataMock).toHaveBeenCalledTimes(1)
+    expect(state.paramValues).toEqual({ prompt: 'locally edited prompt' })
+    expect(state.promptRoleAllowlist).toEqual([])
+  })
+
+  it('passes textarea roles when a clean active preset is refreshed from the list', () => {
+    const workflow: Workflow = {
+      ...mockWorkflow,
+      mappings: [
+        { id: 1, master_id: 1, node_id: '1', role: 'positive', param_name: 'prompt', input_type: 'textarea', display_name: 'Prompt' },
+        { id: 2, master_id: 2, node_id: '2', role: 'checkpoint', param_name: 'ckpt_name', input_type: 'select', display_name: 'Checkpoint' },
+      ],
+    }
+    const refreshedPreset: WorkflowPreset = {
+      ...mockPresets[0],
+      updated_at: '2026-09-02T00:00:00Z',
+    }
+    const props: UsePresetStoreSyncProps = {
+      selectedWorkflowId: 10,
+      workflow,
+      presets: [refreshedPreset, mockPresets[1]],
+      presetsRef: { current: [refreshedPreset, mockPresets[1]] },
+      isInitialSyncRef: { current: true },
+      prevWorkflowIdRef: { current: 10 },
+      lastSavedStateRef: {
+        current: {
+          1: {
+            paramValues: { prompt: 'cat' },
+            appliedAssets: {},
+            batchSize: 1,
+            seedMode: 'random',
+            seed: 123,
+          },
+        },
+      },
+      presetUpdatedAtRef: { current: { 1: '2026-09-01T00:00:00Z' } },
+      setConflictData: setConflictDataMock,
+      handleLoadPreset: handleLoadPresetMock,
+      handleCreatePreset: handleCreatePresetMock,
+      flushAutoSave: flushAutoSaveMock,
+    }
+
+    renderHook(() => usePresetStoreSync(props))
+
+    expect(loadPresetDataMock).toHaveBeenCalledWith(refreshedPreset, expect.any(Object), ['positive'])
+  })
 })

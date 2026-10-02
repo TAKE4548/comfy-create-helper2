@@ -172,6 +172,7 @@ export interface MultiSetState {
   paramValues: Record<string, string>;
   appliedAssets: Record<string, AppliedAsset[]>;
   promptChips: Record<string, TagChip[]>;
+  promptRoleAllowlist: string[];
   isAnimaMode?: boolean;
   roleTextModes?: Record<string, boolean>;
   batchSize: number;
@@ -199,7 +200,7 @@ export interface MultiSetActions {
   setSeed: (seed: number) => void;
   initSets: (workflowId: number) => void;
   setActiveSetId: (id: string | number) => void;
-  loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>) => void;
+  loadPresetData: (preset: WorkflowPreset, defaultParams: Record<string, string>, promptRoleAllowlist?: string[]) => void;
   addSet: () => void;
   removeSet: (id: string | number) => void;
   renameSet: (id: string | number, name: string) => void;

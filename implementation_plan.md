@@ -1,40 +1,35 @@
-# Implementation Plan - REQ-307: 生成キュー投入失敗理由の表示
+# Implementation Plan - REQ-308: プロンプト区切り適用範囲と末尾ドット編集の修正
 
-生成時のキュー投入失敗について、失敗対象と取得できた理由を同じトーストに表示する。理由がない場合は「理由を特定できませんでした」を表示する。複数件は一つの通知に各件を対応づけ、長文も全文を読めるようにする。
+Anima のピリオド区切りを textarea prompt role に限定し、プリセット読込・一括更新・生成で checkpoint や LoRA の値を保持する。サブメニュー編集では編集後の文字列に残るドットだけを次のタグとの結合規則に使う。
 
 ## Proposed Changes
-
-- `frontend/src/utils/queueSubmissionFailure.ts`: ComfyUI のエラー応答、proxy の `detail`、通信タイムアウトを正規化。説明のない番号・空値は理由不明へフォールバック。
-- `frontend/src/store/types.ts` と `jobQueueSlice.ts`: `queuePrompt` から失敗理由を呼び出し元へ渡すコールバックと、生成失敗通知の `persistent` 属性を追加。中断は通知しない。
-- `frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts`: 単一・複数セットの各投入で対象と理由を固定し、失敗を一つのトーストへ集約。REQ-141 の failed 状態を維持。
-- `frontend/src/pages/GeneratePage/sections/GenerateModalsOverlay.tsx`: 折返し・改行・縦スクロールで全文を表示。
-- Desktop/Mobile の Layout: 生成失敗通知を自動消去せず、他の通知は 5 秒のまま。
-- `docs/specs/SPEC_GENERATE.md`: 実装後に失敗理由・応答未確認時の表現・通知寿命を同期。
+- Store / preset paths: workflow mapping の `input_type === 'textarea'` role だけを chip 化・chip 値の反映対象にする。未知または未ロード mapping は安全に空集合として扱う。
+- Generation: 単一・複数セットとも textarea role allowlist と Anima 状態をシリアライズへ渡す。
+- Chip formatting: `formatTagWeight` が Anima モードだけを理由にピリオドを追加しない。
+- SSoT: REQ-303、REQ-306、SPEC_COMMON を明示的ドット状態と prompt mapping 範囲へ整合。
 
 ## Task Dependency & Parallelization
-
 ```mermaid
 graph TD
-  T1[REQ-307-T1 理由正規化] --> T2[REQ-307-T2 store伝達]
-  T2 --> T3[REQ-307-T3 生成操作集約]
-  T2 --> T4[REQ-307-T4 通知表示]
-  T2 --> T5[REQ-307-T5 自動消去制御]
+  REQ308-T1[Store load and serialization boundary] --> REQ308-T2[Preset mapping propagation]
+  REQ308-T1 --> REQ308-T3[Generation payload boundary]
+  REQ308-T1 --> REQ308-T6[Initial store sync mapping propagation]
+  REQ308-T4[Explicit trailing period formatter]
+  REQ308-T4 --> REQ308-T5[Submenu regression test]
+  REQ308-T7[Align integration fixtures with textarea mapping contract]
+  REQ308-T6 --> REQ308-T8[Re-sync clean preset when mappings arrive]
+  REQ308-T9[Exact payload and save/reload regression assertions]
 ```
-
-各 Task Card は `docs/backlog/task/active/REQ-307-T*.md` に作成済み。最大深度は 3 層。T3/T4/T5 は並行可能。各タスクの変更対象は 2〜3 ファイル、見積り 300 行以内。既存の通知型を変更する T2 が下流の共通依存となる。
+T1 は T2/T3/T6 の前提。T4 は独立して開始でき、T5 はその後に検証する。T7 は旧統合テストの workflow fixture に明示的な mapping を追加し、全体テストを新しい role allowlist 仕様に合わせる。T8 は mapping 到着時に clean active preset を再同期し、T6 に続く。T9 は AC の文字列および保存・再読込に関する厳密な回帰アサーションを追加する。各カードは最大3ファイルで責務を限定する。
 
 ## Verification Plan
-
-`docs/design/REQ-307-test-plan.md` に AC-1〜5、REQ-141 回帰、単一・複数セット、空理由、部分成功、全件失敗、タイムアウト、中断、長文・多数件の検証を定義した。各カード記載の局所 Vitest と `cd frontend; npm run typecheck` を実装後に実行する。最後に PC/モバイルで長文全文と 5 秒後の残存を確認する。
+各カード記載の Vitest と `cd frontend; npm run typecheck` を実行する。完了後は全体 `cd frontend; npm run typecheck`、`cd frontend; npx vitest run`、テスト計画の AC と Red Team ケースを確認する。
 
 ## Trade-offs and Risks
-
-- 既存の `Promise<string | null>` を維持しコールバックで理由を渡すため、既存呼び出しの破壊を抑える。`null` だけ返る経路には必ず理由不明のフォールバックを使う。
-- 多数失敗は一つのスクロール可能な通知に全件を表示する。件数制限は対象と理由の対応を失わせるため設けない。
-- 失敗通知は手動で閉じる。5 秒の自動消去では長文の読了を保証できない。
-- 通信タイムアウトは投入結果が確認できないため、断定的な失敗表現や自動再投入を避ける。
-- 別操作のトーストが通知を上書きした場合の履歴保持は本要件に含めない。
+- textarea mapping がないときは原値を保つ。プロンプトのチップ同期が遅れる可能性はあるが、ファイル名等を破損させるより安全である。
+- explicit period を使うことで、Anima の文末表現とユーザー編集の意図を両立する。末尾の連続ピリオドは一つに正規化する。
+- API/保存形式は変えず、workflow mapping と既存 chips を使う。
+- Regression coverage spans preset restoration, bulk update, single/multi-set generation and submenu editing. UI-level manual confirmation may still be needed if component simulation cannot cover actual popover focus behavior.
 
 ## Review Gate
-
-設計書、テスト計画、Task Card の内容を人間が確認した後に実装へ進める。`dev-design` の root 外参照禁止により `${GLOBAL_SCRIPTS}` の設計補助スクリプトと追加ローカルモデル BA 監査は実行していない。既存の BA 監査記録を参照し、条件付き承認の論点を設計で解決した。
+ユーザーの「これで進めよう」は事故報告に記載した scope を承認しており、この計画はその範囲を具体化したもの。追加の機能要件は含めない。

@@ -90,7 +90,7 @@ describe('multiSetSlice helper functions', () => {
         ],
       };
 
-      const effective = getEffectiveParamValues(paramValues, promptChips);
+      const effective = getEffectiveParamValues(paramValues, promptChips, false, ['positive']);
       expect(effective.positive).toBe('masterpiece, best quality');
       expect(effective.negative).toBe('lowres, bad anatomy');
     });
@@ -104,10 +104,10 @@ describe('multiSetSlice helper functions', () => {
         ],
       };
 
-      const effectiveAnima = getEffectiveParamValues(paramValues, promptChips, true);
+      const effectiveAnima = getEffectiveParamValues(paramValues, promptChips, true, ['positive']);
       expect(effectiveAnima.positive).toBe('subject. lighting');
 
-      const effectiveStandard = getEffectiveParamValues(paramValues, promptChips, false);
+      const effectiveStandard = getEffectiveParamValues(paramValues, promptChips, false, ['positive']);
       expect(effectiveStandard.positive).toBe('subject., lighting');
     });
 
@@ -154,7 +154,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
       ],
     };
 
-    const effective = getEffectiveParamValues(paramValues, promptChips);
+    const effective = getEffectiveParamValues(paramValues, promptChips, false, ['positive']);
     expect(effective.positive).toBe('masterpiece, best quality');
     expect(effective.negative).toBe('lowres, bad anatomy');
   });
@@ -241,7 +241,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
       seed: 42,
     };
 
-    useGenerationStore.getState().loadPresetData(mockPreset, {});
+    useGenerationStore.getState().loadPresetData(mockPreset, {}, ['positive']);
 
     const state = useGenerationStore.getState();
     const updatedSet = state.sets.find((s) => s.id === presetId);
@@ -251,6 +251,65 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
     expect(updatedSet?.promptChips?.positive?.length).toBe(3);
     expect(updatedSet?.promptChips?.positive?.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
     expect(state.promptChips.positive.map((c) => c.text)).toEqual(['solo', 'smile', '1girl']);
+  });
+
+  it('loads chips only for allowed prompt roles and preserves dotted parameter values', () => {
+    const preset: WorkflowPreset = {
+      id: 102,
+      workflow_id: 1,
+      name: 'Dotted parameter values',
+      param_values: {
+        positive: '1girl. solo.',
+        checkpoint: 'model.safetensors',
+        lora: '<lora:style.safetensors:0.8>',
+      },
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    useGenerationStore.setState({ isAnimaMode: true });
+    useGenerationStore.getState().loadPresetData(preset, {}, ['positive']);
+
+    const state = useGenerationStore.getState();
+    expect(state.promptChips.positive.map((chip) => chip.text)).toEqual(['1girl.', 'solo.']);
+    expect(state.promptChips).not.toHaveProperty('checkpoint');
+    expect(state.promptChips).not.toHaveProperty('lora');
+    expect(state.getEffectiveParamValues()).toEqual(preset.param_values);
+  });
+
+  it('fails closed when prompt role allowlist is missing and ignores stale non-prompt chips', () => {
+    const paramValues = { positive: '1girl. solo.', checkpoint: 'model.safetensors' };
+    const preset: WorkflowPreset = {
+      id: 103,
+      workflow_id: 1,
+      name: 'Missing allowlist',
+      param_values: paramValues,
+      applied_assets: {},
+      batch_size: 1,
+      seed_mode: 'random',
+      seed: 42,
+      sort_order: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const staleChips = {
+      positive: [{ id: '1', text: 'edited prompt', enabled: true }],
+      checkpoint: [{ id: '2', text: 'corrupted checkpoint', enabled: true }],
+    };
+
+    useGenerationStore.getState().loadPresetData(preset, {});
+    expect(useGenerationStore.getState().paramValues).toEqual(paramValues);
+    expect(useGenerationStore.getState().promptChips).toEqual({});
+    expect(getEffectiveParamValues(paramValues, staleChips)).toEqual(paramValues);
+    expect(getEffectiveParamValues(paramValues, staleChips, false, ['positive'])).toEqual({
+      ...paramValues,
+      positive: 'edited prompt',
+    });
   });
 
   it('setAllPromptChips updates promptChips and active set', () => {
@@ -283,6 +342,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
         ],
       },
       isAnimaMode: false,
+      promptRoleAllowlist: ['positive'],
     });
 
     expect(useGenerationStore.getState().getEffectiveParamValues().positive).toBe('1girl., smile');
@@ -313,7 +373,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
 
     it('parses period-delimited tags (1girl., solo.) into distinct chips in Anima mode', () => {
       useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
-      useGenerationStore.getState().loadPresetData(mockPreset, {});
+      useGenerationStore.getState().loadPresetData(mockPreset, {}, ['positive']);
 
       const state = useGenerationStore.getState();
       const chips = state.promptChips.positive;
@@ -325,7 +385,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
 
     it('preserves existing promptChips non-destructively without recreating chip IDs when text matches', () => {
       useGenerationStore.setState({ isAnimaMode: true, sets: [], openPresetIds: [] });
-      useGenerationStore.getState().loadPresetData(mockPreset, {});
+      useGenerationStore.getState().loadPresetData(mockPreset, {}, ['positive']);
 
       const initialChips = useGenerationStore.getState().promptChips.positive;
       const initialIds = initialChips.map((c) => c.id);
@@ -336,7 +396,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
         param_values: { positive: chipsToString(initialChips, true) },
       };
 
-      useGenerationStore.getState().loadPresetData(matchingPreset, {});
+      useGenerationStore.getState().loadPresetData(matchingPreset, {}, ['positive']);
 
       const preservedChips = useGenerationStore.getState().promptChips.positive;
       expect(preservedChips.map((c) => c.id)).toEqual(initialIds);
@@ -359,19 +419,19 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
       };
 
       // 1. Load preset A
-      useGenerationStore.getState().loadPresetData(presetA, {});
+      useGenerationStore.getState().loadPresetData(presetA, {}, ['positive']);
       const chipsA1 = useGenerationStore.getState().promptChips.positive;
       expect(chipsA1).toHaveLength(3);
       expect(chipsA1.map((c) => c.text)).toEqual(['1girl.', 'solo.', 'red dress.']);
 
       // 2. Load preset B
-      useGenerationStore.getState().loadPresetData(presetB, {});
+      useGenerationStore.getState().loadPresetData(presetB, {}, ['positive']);
       const chipsB = useGenerationStore.getState().promptChips.positive;
       expect(chipsB).toHaveLength(2);
       expect(chipsB.map((c) => c.text)).toEqual(['2boys.', 'outdoors.']);
 
       // 3. Re-load preset A
-      useGenerationStore.getState().loadPresetData(presetA, {});
+      useGenerationStore.getState().loadPresetData(presetA, {}, ['positive']);
       const chipsA2 = useGenerationStore.getState().promptChips.positive;
       expect(chipsA2).toHaveLength(3);
       expect(chipsA2.map((c) => c.text)).toEqual(['1girl.', 'solo.', 'red dress.']);
@@ -387,7 +447,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
         param_values: { positive: '1girl, solo, red dress' },
       };
 
-      useGenerationStore.getState().loadPresetData(legacyPreset, {});
+      useGenerationStore.getState().loadPresetData(legacyPreset, {}, ['positive']);
       const chips = useGenerationStore.getState().promptChips.positive;
       expect(chips).toHaveLength(3);
       expect(chips.map((c) => c.text)).toEqual(['1girl', 'solo', 'red dress']);
@@ -402,7 +462,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
         param_values: { positive: 'weight: 1.5, girl.' },
       };
 
-      useGenerationStore.getState().loadPresetData(decimalPreset, {});
+      useGenerationStore.getState().loadPresetData(decimalPreset, {}, ['positive']);
       const chips = useGenerationStore.getState().promptChips.positive;
       expect(chips).toHaveLength(2);
       expect(chips[0].text).toBe('weight: 1.5');
@@ -419,7 +479,7 @@ describe('useGenerationStore REQ-220 promptChips and effectiveParamValues', () =
       };
 
       expect(() => {
-        useGenerationStore.getState().loadPresetData(invalidDotsPreset, {});
+        useGenerationStore.getState().loadPresetData(invalidDotsPreset, {}, ['positive']);
       }).not.toThrow();
       const chips = useGenerationStore.getState().promptChips.positive;
       expect(chips ?? []).toHaveLength(0);
