@@ -39,6 +39,7 @@ class TestSnapshotsWebP(unittest.TestCase):
     def tearDown(self):
         self.db.close()
         models.Base.metadata.drop_all(bind=connection)
+        app.dependency_overrides.pop(get_db, None)
 
     def _create_sample_png_bytes(self) -> bytes:
         img = Image.new("RGBA", (400, 400), color=(255, 0, 0, 255))

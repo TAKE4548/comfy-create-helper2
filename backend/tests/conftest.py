@@ -6,6 +6,15 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.database import engine
+from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def clean_dependency_overrides():
+    """Ensure FastAPI dependency overrides are always cleaned up after each test."""
+    yield
+    app.dependency_overrides.clear()
+
 
 @pytest.fixture(autouse=True)
 def verify_db_pool_clean():

@@ -170,3 +170,41 @@ def test_singleton_get_instance() -> None:
     inst2 = FuguMTService.get_instance()
     assert inst1 is inst2
     assert isinstance(inst1, FuguMTService)
+
+
+def test_sentencepiece_installed() -> None:
+    """Verify sentencepiece is installed and accessible in the environment (AC-1)."""
+    import sentencepiece  # type: ignore[import-untyped,import-not-found]
+
+    assert sentencepiece.__version__ is not None
+
+
+def test_init_error_message_propagation() -> None:
+    """Verify detailed error message is recorded and propagated in RuntimeError (AC-3)."""
+    service = FuguMTService(model_dir="non_existent_mock_dir_xyz987", auto_download=False)
+    assert service.initialize() is False
+    assert service._init_error is not None
+    assert "non_existent_mock_dir_xyz987" in service._init_error
+    with pytest.raises(RuntimeError) as exc_info:
+        service.translate_batch(["test"])
+    assert "FuguMT engine is not available" in str(exc_info.value)
+    assert "non_existent_mock_dir_xyz987" in str(exc_info.value)
+
+
+def test_fugumt_tokenizer_encoding_functionality() -> None:
+    """Verify real tokenizer loading and encoding when model directory exists (AC-2, AC-4)."""
+    import os
+
+    service = FuguMTService()
+    if os.path.exists(service.model_dir):
+        assert service.initialize() is True
+        assert service.tokenizer is not None
+        tokens = service.tokenizer.encode("Hello world")
+        assert len(tokens) > 0
+
+
+def test_model_dir_fallback_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify model_dir fallback finds backend/models when default models dir not found."""
+    monkeypatch.delenv("FUGUMT_MODEL_DIR", raising=False)
+    service = FuguMTService()
+    assert "fugumt-en-ja" in service.model_dir

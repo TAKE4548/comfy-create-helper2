@@ -1,9 +1,9 @@
-# Incident Triage Report: REQ-303: タグチップのピリオド削除が区切りへ反映されない
+# Incident Triage Report: FuguMT翻訳実行時のsentencepiece依存欠落によるエンジン初期化失敗
 
 <incident_metadata>
-- Created_At: 2026-10-02 22:37:50
+- Created_At: 2026-10-03 13:29:18
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
-- Classification: Type B: Specification Gap
+- Classification: Type A: Implementation Defect
 </incident_metadata>
 
 ---
@@ -11,29 +11,29 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: Animaモードでタグチップのサブメニュー入力欄から末尾のピリオドを削除して編集すると、ピリオドが復活し、後続チップが空白区切りのままとなる。ユーザー確認では、テキストモードおよびタグチップのダブルクリック編集では発生しない。
-- Reproducibility: ユーザーがサブメニュー入力欄での編集で発生し、テキストモードとダブルクリック編集では発生しないことを確認。静的経路と既存TagChip.test.tsxでは、ドット無し1girlをAnimaモードで強度変更すると(1girl:1.5).が生成されることも確認。末尾ドット削除のUI一連操作は未自動化。
-- Impact_Scope: Animaモードのタグチップ単語編集・強度調整・プロンプト文字列化。ユーザーのカンマ区切り選択が保持されない。
+- Observed_Symptom: 翻訳実行時（POST /api/translate/prompt 等）に HTTP 500 エラーが発生し、'Translation failed: FuguMT engine is not available' が返却される。モデルファイル自体は配置されているにもかかわらず、エンジンが利用不可と判定される。
+- Reproducibility: 100%再現可能。backend/.venv 環境下で FuguMTService.initialize() を実行すると、AutoTokenizer.from_pretrained 呼び出し時に sentencepiece 未インストール起因のエラーが発生し False が返却される。
+- Impact_Scope: FuguMT を翻訳プロバイダーに設定している環境において、和訳機能（タグチップ翻訳プレビュー、Generate画面でのプロンプト和訳、設定画面での疎通テスト等）が HTTP 500 で全停止する。
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
-- Defect_Classification: Type B: Specification Gap
-- Root_Cause_Mechanism: TagChip.tsx:145,159,186はformatTagWeightにisAnimaModeを渡し、useChipParser.ts:173がisAnimaMode=trueだけでhasPeriodをtrueにするため、ドットを削除した編集値でも自動復活する。chipsToStringはuseChipParser.ts:129で末尾ドットを見て空白結合する。REQ-303.mdの末尾ドット有無による動的結合と、REQ-306.md:54-57のAnimaならドット自動付与がSSoT上で衝突する。
-- Failure_Location: `frontend/src/components/TagChipEditor/useChipParser.ts:173;frontend/src/components/TagChipEditor/TagChip.tsx:186;docs/design/REQ-306.md:54`
+- Defect_Classification: Type A: Implementation Defect
+- Root_Cause_Mechanism: FuguMTService.initialize() 内で MarianMT ベースのトークナイザーをロードする際、transformers.AutoTokenizer.from_pretrained は sentencepiece を必須とするが、backend/requirements.txt に定義されておらず仮想環境に未導入だったため例外が発生し、initialize() が False を返却。translate_batch() で RuntimeError('FuguMT engine is not available') が送出されていた。テストで AutoTokenizer がモックされていたためCI等で検知されなかった。
+- Failure_Location: `backend/requirements.txt:23, backend/app/services/fugumt_service.py:78`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: REQ-303とREQ-306およびSPEC_COMMONの仕様を、ユーザーが削除したピリオドを再付与しない方針へ整合する。formatTagWeightは入力チップの末尾ドット有無のみを保存し、word/weight編集後のカンマ・空白結合を回帰テストする。Type Aのパラメータ波及はdocs/incident_report_REQ-303-parameters.md参照。
-- SSoT_Update_Required: Yes (Requires updating specifications/OpenAPI)
-- Recommended_Route: architect (/sys-design or /dev-design)
+- Proposed_Action: 1. backend/requirements.txt に sentencepiece>=0.2.0 を追加し環境へインストールする。2. fugumt_service.py の initialize() で初期化失敗時の詳細原因メッセージを保持・伝播する。3. 依存ライブラリのインポート・ロードを検証するテストを追加する。
+- SSoT_Update_Required: No (Pure implementation bug fix)
+- Recommended_Route: engineer (/dev-impl)
 </remediation_strategy>
 
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: UNREGISTERED
+- PBI_ID: REQ-311
 </linked_artifacts>

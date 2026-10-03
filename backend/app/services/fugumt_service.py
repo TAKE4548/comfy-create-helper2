@@ -1,6 +1,8 @@
 import logging
 import os
+from pathlib import Path
 import re
+import threading
 from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,21 @@ class FuguMTService:
         intra_threads: int = 6,
         auto_download: bool = True,
     ) -> None:
-        self.model_dir: str = model_dir or os.environ.get("FUGUMT_MODEL_DIR", "models/fugumt-en-ja")
+        if model_dir is not None:
+            self.model_dir: str = model_dir
+        elif "FUGUMT_MODEL_DIR" in os.environ:
+            self.model_dir = os.environ["FUGUMT_MODEL_DIR"]
+        else:
+            default_dir = Path("models/fugumt-en-ja")
+            if default_dir.exists():
+                self.model_dir = str(default_dir)
+            else:
+                backend_model_dir = Path(__file__).resolve().parent.parent.parent / "models" / "fugumt-en-ja"
+                if backend_model_dir.exists():
+                    self.model_dir = str(backend_model_dir)
+                else:
+                    self.model_dir = "models/fugumt-en-ja"
+
         self.intra_threads: int = intra_threads
         if not auto_download:
             self.auto_download: bool = False
@@ -31,6 +47,8 @@ class FuguMTService:
         self.translator: Any = None
         self.tokenizer: Any = None
         self._is_initialized: bool = False
+        self._init_lock: threading.Lock = threading.Lock()
+        self._init_error: Optional[str] = None
 
     @classmethod
     def get_instance(cls) -> "FuguMTService":
@@ -39,49 +57,60 @@ class FuguMTService:
         return cls._instance
 
     def initialize(self) -> bool:
-        """Lazily initialize ctranslate2 Translator and HuggingFace AutoTokenizer."""
+        """Lazily initialize ctranslate2 Translator and HuggingFace AutoTokenizer / MarianTokenizer."""
         if self._is_initialized and self.translator is not None and self.tokenizer is not None:
             return True
 
-        if not os.path.exists(self.model_dir):
-            if self.auto_download:
-                logger.info(
-                    "FuguMT model directory not found at %s. Attempting auto-download from %s...",
-                    self.model_dir,
-                    self.HF_REPO_ID,
-                )
-                try:
-                    os.makedirs(self.model_dir, exist_ok=True)
-                    from huggingface_hub import snapshot_download  # type: ignore[import-untyped]
+        with self._init_lock:
+            if self._is_initialized and self.translator is not None and self.tokenizer is not None:
+                return True
 
-                    snapshot_download(repo_id=self.HF_REPO_ID, local_dir=self.model_dir)
-                except Exception as e:
-                    logger.error("Failed to auto-download FuguMT model: %s", e)
+            if not os.path.exists(self.model_dir):
+                if self.auto_download:
+                    logger.info(
+                        "FuguMT model directory not found at %s. Attempting auto-download from %s...",
+                        self.model_dir,
+                        self.HF_REPO_ID,
+                    )
+                    try:
+                        os.makedirs(self.model_dir, exist_ok=True)
+                        from huggingface_hub import snapshot_download  # type: ignore[import-untyped]
+
+                        snapshot_download(repo_id=self.HF_REPO_ID, local_dir=self.model_dir)
+                    except Exception as e:
+                        self._init_error = f"Auto-download failed: {str(e)}"
+                        logger.error("Failed to auto-download FuguMT model: %s", e)
+                        self._is_initialized = False
+                        return False
+                else:
+                    self._init_error = f"Model directory not found: {self.model_dir}"
+                    logger.warning("FuguMT model directory not found: %s", self.model_dir)
                     self._is_initialized = False
                     return False
-            else:
-                logger.warning("FuguMT model directory not found: %s", self.model_dir)
+
+            try:
+                import ctranslate2  # type: ignore[import-untyped,import-not-found]
+                from transformers import AutoTokenizer, MarianTokenizer
+
+                self.translator = ctranslate2.Translator(
+                    self.model_dir,
+                    device="cpu",
+                    intra_threads=self.intra_threads,
+                    inter_threads=1,
+                    compute_type="int8",
+                )
+                try:
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
+                except Exception:
+                    self.tokenizer = MarianTokenizer.from_pretrained(self.model_dir)
+                self._is_initialized = True
+                self._init_error = None
+                return True
+            except Exception as e:
+                self._init_error = str(e)
+                logger.error("Failed to initialize FuguMT engine: %s", e)
                 self._is_initialized = False
                 return False
-
-        try:
-            import ctranslate2  # type: ignore[import-untyped]
-            from transformers import AutoTokenizer
-
-            self.translator = ctranslate2.Translator(
-                self.model_dir,
-                device="cpu",
-                intra_threads=self.intra_threads,
-                inter_threads=1,
-                compute_type="int8",
-            )
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
-            self._is_initialized = True
-            return True
-        except Exception as e:
-            logger.error("Failed to initialize FuguMT engine: %s", e)
-            self._is_initialized = False
-            return False
 
     def set_translator(self, translator: Any, tokenizer: Any) -> None:
         """Inject translator and tokenizer instances (for testing or CI)."""
@@ -105,7 +134,8 @@ class FuguMTService:
 
         if not self._is_initialized or self.translator is None or self.tokenizer is None:
             if not self.initialize():
-                raise RuntimeError("FuguMT engine is not available")
+                err_detail = f": {self._init_error}" if self._init_error else ""
+                raise RuntimeError(f"FuguMT engine is not available{err_detail}")
 
         normalized_texts = [self.normalize_input(t) for t in texts]
         all_translations: List[str] = []
