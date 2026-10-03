@@ -17,6 +17,7 @@ class PromptTranslateRequest(BaseModel):
     source_lang: Optional[str] = "en"
     target_lang: Optional[str] = "ja"
     provider: Optional[str] = None
+    repack: Optional[bool] = True
 
 
 class TranslateMeta(BaseModel):
@@ -68,6 +69,7 @@ async def translate_prompt_endpoint(
             target_lang=payload.target_lang or "ja",
             provider=payload.provider,
             db=db,
+            repack=True if payload.repack is None else payload.repack,
         )
         meta_data = cast(TranslationMetaData, meta_dict)
         return PromptTranslateResponse(

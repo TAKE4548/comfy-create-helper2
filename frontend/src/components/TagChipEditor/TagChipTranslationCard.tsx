@@ -117,6 +117,7 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
         prompt: promptText,
         source_lang: 'en',
         target_lang: 'ja',
+        repack: false,
       });
       setTranslatedText(res.translated_prompt);
     } catch (err: any) {

@@ -61,12 +61,37 @@ describe('TagChipTranslationCard', () => {
       prompt: '1girl, solo',
       source_lang: 'en',
       target_lang: 'ja',
+      repack: false,
     });
 
     await waitFor(() => {
       expect(screen.getByText('1人の少女、ソロ')).toBeInTheDocument();
     });
     expect(screen.queryByText(/和訳を取得中/i)).not.toBeInTheDocument();
+  });
+
+  it('requests clean translation with repack: false when text has weight brackets (AC-5)', async () => {
+    vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce({
+      translated_prompt: 'アホ毛',
+    } as any);
+
+    render(
+      <TagChipTranslationCard
+        text="((ahoge:1.2))"
+        onClose={mockOnClose}
+      />
+    );
+
+    expect(translateApi.translatePrompt).toHaveBeenCalledWith({
+      prompt: '((ahoge:1.2))',
+      source_lang: 'en',
+      target_lang: 'ja',
+      repack: false,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('アホ毛')).toBeInTheDocument();
+    });
   });
 
   it('handles translation API failure and allows retry (AC-4)', async () => {

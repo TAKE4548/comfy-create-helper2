@@ -1,9 +1,14 @@
+import csv
 import hashlib
+import io
 import json
 import logging
+import os
 import re
 import urllib.parse
-from typing import Dict, List, Optional, Tuple, Literal
+import zipfile
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Literal, Union
 import httpx
 from sqlalchemy.orm import Session
 
@@ -14,11 +19,157 @@ logger = logging.getLogger(__name__)
 # In-memory chunk translation cache: hash -> translated_text
 TRANSLATION_CACHE: Dict[str, str] = {}
 
+DANBOORU_DICT: Dict[str, str] = {}
+_DICT_LOADED: bool = False
+
+# カンマ、読点、改行、句点、感嘆符/疑問符、および直後が空白または終端であるピリオド（小数点・三点リーダー除外）
+SPLIT_PATTERN = re.compile(r"([,、\n\r]+\s*|(?<![\d.])\.(?![\d.])(?:\s+|$)|[。！？!?]+\s*)")
+
+WEIGHT_TAG_REGEX = re.compile(r"^([(\[{]+)(.+?)(?::([0-9.]+))?([)\]}]+)$")
+
+
+def unpack_tag(chunk: str) -> Tuple[str, str, Optional[float], str]:
+    """
+    Unpacks prompt chunk wrapped in brackets/parentheses and weights into components:
+    (prefix, cleaned_core, weight_val, suffix).
+    If chunk is not wrapped, returns ("", chunk_cleaned, None, "").
+    """
+    stripped = chunk.strip()
+    if re.match(r"^__TOKEN_\d+__$", stripped):
+        return "", stripped, None, ""
+    match = WEIGHT_TAG_REGEX.match(stripped)
+    if match:
+        prefix = match.group(1)
+        core = match.group(2)
+        weight_str = match.group(3)
+        weight_val = float(weight_str) if weight_str is not None else None
+        suffix = match.group(4)
+        cleaned_core = core.replace("_", " ").strip()
+        return prefix, cleaned_core, weight_val, suffix
+    return "", stripped.replace("_", " "), None, ""
+
+
+def repack_tag(translated_core: str, prefix: str, weight: Optional[Union[float, str]], suffix: str) -> str:
+    """
+    Repacks translated core string with original prefix, weight, and suffix.
+    If prefix, suffix, and weight are empty/None, returns translated_core directly.
+    """
+    if not prefix and not suffix and (weight is None or str(weight).strip() == ""):
+        return translated_core
+    if weight is not None and str(weight).strip() != "":
+        return f"{prefix}{translated_core}:{weight}{suffix}"
+    return f"{prefix}{translated_core}{suffix}"
+
+
+def load_danbooru_dict(force_reload: bool = False) -> int:
+    """
+    Loads Danbooru tag dictionary from local disk or zip archive into DANBOORU_DICT.
+    Supports dual-key lookup (with underscore and with space).
+    Graceful degradation on missing or corrupt files.
+    """
+    global _DICT_LOADED, DANBOORU_DICT
+    if _DICT_LOADED and not force_reload:
+        return len(DANBOORU_DICT)
+
+    if force_reload:
+        DANBOORU_DICT.clear()
+        _DICT_LOADED = False
+
+    repo_root = Path(__file__).resolve().parents[3]
+    candidate_rel_paths: List[str] = []
+
+    env_path = os.environ.get("DANBOORU_DICT_PATH")
+    if env_path:
+        candidate_rel_paths.append(env_path)
+
+    candidate_rel_paths.extend([
+        "tmp/danbooruTagCompleteCsv_v1020250919.zip",
+        "tmp/danbooru_extracted/danbooru_translations_jp.csv",
+        "tmp/danbooru_translations_jp.csv",
+        "tmp/danbooru_ja.csv",
+        "tmp/danbooru.csv",
+        "data/dictionaries/danbooru_ja.csv",
+    ])
+
+    resolved_path: Optional[Path] = None
+    for cand in candidate_rel_paths:
+        p = Path(cand)
+        if p.is_file():
+            resolved_path = p
+            break
+        p_from_root = repo_root / cand
+        if p_from_root.is_file():
+            resolved_path = p_from_root
+            break
+
+    if not resolved_path:
+        logger.warning("Danbooru dictionary file not found in search paths. Operating without Danbooru dictionary.")
+        _DICT_LOADED = True
+        return 0
+
+    try:
+        raw_bytes: bytes
+        if str(resolved_path).lower().endswith(".zip"):
+            with zipfile.ZipFile(resolved_path, "r") as zf:
+                csv_name: Optional[str] = None
+                for target_name in ["danbooru_translations_jp.csv", "danbooru_ja.csv"]:
+                    if target_name in zf.namelist():
+                        csv_name = target_name
+                        break
+                if not csv_name:
+                    for name in zf.namelist():
+                        if name.lower().endswith(".csv"):
+                            csv_name = name
+                            break
+                if not csv_name:
+                    logger.warning(f"No CSV file found inside zip archive: {resolved_path}")
+                    _DICT_LOADED = True
+                    return 0
+                with zf.open(csv_name, "r") as zf_file:
+                    raw_bytes = zf_file.read()
+        else:
+            with open(resolved_path, "rb") as f:
+                raw_bytes = f.read()
+
+        try:
+            text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw_bytes.decode("cp932")
+            except UnicodeDecodeError:
+                text = raw_bytes.decode("utf-8-sig", errors="replace")
+
+        reader = csv.reader(io.StringIO(text))
+        loaded_count = 0
+        for row in reader:
+            if not row or len(row) < 2:
+                continue
+            tag = row[0].strip()
+            trans_raw = row[1].strip()
+            if not tag or not trans_raw:
+                continue
+            trans_val = trans_raw.split(",")[0].strip()
+            tag_lower = tag.lower()
+            tag_space = tag_lower.replace("_", " ")
+            DANBOORU_DICT[tag_lower] = trans_val
+            DANBOORU_DICT[tag_space] = trans_val
+            loaded_count += 1
+
+        _DICT_LOADED = True
+        logger.info(f"Loaded {loaded_count} tags from Danbooru dictionary: {resolved_path}")
+        return len(DANBOORU_DICT)
+
+    except Exception as e:
+        logger.warning(f"Failed to load Danbooru dictionary from {resolved_path}: {e}", exc_info=True)
+        _DICT_LOADED = True
+        return 0
+
+
 
 def sanitize_and_tokenize(text: str) -> Tuple[str, Dict[str, str]]:
     """
-    Protects LoRA tags, embeddings, weights, and syntax tokens by replacing them with placeholders.
-    e.g. <lora:name:0.8>, (masterpiece:1.2), (tag), {tag}, [tag], embedding:name
+    Protects LoRA tags, hypernetworks, and embeddings by replacing them with placeholders.
+    e.g. <lora:name:0.8>, <hypernet:name:0.5>, embedding:name
     """
     tokens: Dict[str, str] = {}
     counter = 0
@@ -30,9 +181,7 @@ def sanitize_and_tokenize(text: str) -> Tuple[str, Dict[str, str]]:
         counter += 1
         return placeholder
 
-    pattern = re.compile(
-        r"<lora:[^>]+>|\((?:[^:()]+:[0-9.]+)\)|\((?:[^()]+)\)|\{[^{}]+\}|\[[^\[\]]+\]|embedding:[^\s,]+"
-    )
+    pattern = re.compile(r"<lora:[^>]+>|<hypernet:[^>]+>|embedding:[^\s,]+")
     sanitized = pattern.sub(repl, text)
     return sanitized, tokens
 
@@ -213,6 +362,7 @@ async def translate_prompt(
     api_url: Optional[str] = None,
     db: Optional[Session] = None,
     client: Optional[httpx.AsyncClient] = None,
+    repack: bool = True,
 ) -> Tuple[str, Dict[str, int | str]]:
     if not prompt or not prompt.strip():
         return "", {
@@ -232,11 +382,18 @@ async def translate_prompt(
     elif provider == "google_free":
         provider = "google_cloud"
 
+    # Step 1: Protect pure meta syntax (<lora:...>, <hypernet:...>, embedding:...)
     sanitized, tokens = sanitize_and_tokenize(prompt)
 
-    # Split into tags/chunks by commas and newlines
-    raw_chunks = [re.sub(r"\s+", " ", c.strip()) for c in re.split(r"[,、\n]+", sanitized) if c.strip()]
-    if not raw_chunks:
+    # Step 2: Ensure Danbooru dictionary is loaded
+    load_danbooru_dict()
+
+    # Step 3: Split into chunks and delimiters preserving punctuation
+    parts = SPLIT_PATTERN.split(sanitized)
+
+    # Step 4: Extract non-empty even-index chunks and unpack them
+    chunk_indices: List[int] = [i for i in range(0, len(parts), 2) if parts[i].strip()]
+    if not chunk_indices:
         return prompt, {
             "total_chunks": 0,
             "cached_chunks": 0,
@@ -245,21 +402,37 @@ async def translate_prompt(
             "provider": provider,
         }
 
-    total_chunks = len(raw_chunks)
-    chunk_translations: List[str] = ["" for _ in range(total_chunks)]
-
-    # Track missing unique chunks by cache_key: cache_key -> (chunk, list_of_indices)
+    total_chunks = len(chunk_indices)
+    unpacked_info: Dict[int, Tuple[str, str, Optional[float], str]] = {}
+    chunk_translations: Dict[int, str] = {}
     unique_missing: Dict[str, Tuple[str, List[int]]] = {}
     cached_chunks = 0
 
-    for idx, chunk in enumerate(raw_chunks):
-        # If chunk is purely a placeholder token (e.g. __TOKEN_0__), no translation needed
-        if re.match(r"^__TOKEN_\d+__$", chunk):
-            chunk_translations[idx] = chunk
+    # Step 5: Check tokens, Danbooru dictionary, and cache for each chunk core
+    for idx in chunk_indices:
+        prefix, core, weight_val, suffix = unpack_tag(parts[idx])
+        unpacked_info[idx] = (prefix, core, weight_val, suffix)
+
+        # If placeholder token (__TOKEN_\d+__), skip translation
+        if re.match(r"^__TOKEN_\d+__$", core):
+            chunk_translations[idx] = core
             cached_chunks += 1
             continue
 
-        cache_key = get_cache_key(chunk, target_lang, provider)
+        # Danbooru dictionary lookup (English to Japanese)
+        core_clean = core.strip().lower()
+        danbooru_trans = (
+            (DANBOORU_DICT.get(core_clean) or DANBOORU_DICT.get(core_clean.replace(" ", "_")))
+            if target_lang.lower().startswith("ja")
+            else None
+        )
+        if danbooru_trans:
+            chunk_translations[idx] = danbooru_trans
+            cached_chunks += 1
+            continue
+
+        # Check translation cache
+        cache_key = get_cache_key(core, target_lang, provider)
         if cache_key in TRANSLATION_CACHE:
             chunk_translations[idx] = TRANSLATION_CACHE[cache_key]
             cached_chunks += 1
@@ -267,8 +440,9 @@ async def translate_prompt(
             unique_missing[cache_key][1].append(idx)
             cached_chunks += 1  # Deduplicated within the same prompt
         else:
-            unique_missing[cache_key] = (chunk, [idx])
+            unique_missing[cache_key] = (core, [idx])
 
+    # Step 6: Request translation for missing chunks
     missing_items = list(unique_missing.values())
     missing_chunks_list = [item[0] for item in missing_items]
     api_requested_chunks = len(missing_chunks_list)
@@ -328,12 +502,23 @@ async def translate_prompt(
             raise ValueError(f"Unsupported translation provider: {provider}")
 
         # Cache results and update chunk_translations for all target indices
-        for (cache_key, (orig_chunk, target_indices)), trans in zip(unique_missing.items(), translated_missing):
+        for (cache_key, (orig_core, target_indices)), trans in zip(unique_missing.items(), translated_missing):
             TRANSLATION_CACHE[cache_key] = trans
             for target_idx in target_indices:
                 chunk_translations[target_idx] = trans
 
-    joined_prompt = ", ".join(chunk_translations)
+    # Step 7: Repack chunks and reconstruct prompt
+    for idx in chunk_indices:
+        prefix, core, weight_val, suffix = unpacked_info[idx]
+        trans_core = chunk_translations.get(idx, core)
+        if re.match(r"^__TOKEN_\d+__$", core):
+            parts[idx] = trans_core
+        elif repack:
+            parts[idx] = repack_tag(trans_core, prefix, weight_val, suffix)
+        else:
+            parts[idx] = trans_core
+
+    joined_prompt = "".join(parts)
     restored_prompt = restore_tokens(joined_prompt, tokens)
 
     meta: Dict[str, int | str] = {

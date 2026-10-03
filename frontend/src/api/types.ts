@@ -752,6 +752,8 @@ export interface PromptTranslateRequest {
   prompt: string
   source_lang?: string
   target_lang?: string
+  provider?: string
+  repack?: boolean
 }
 
 export interface TranslateMeta {
