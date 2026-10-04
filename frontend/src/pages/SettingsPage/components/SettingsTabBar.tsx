@@ -1,0 +1,71 @@
+import { useRef } from 'react'
+import type { KeyboardEvent } from 'react'
+import type { SettingsTabId } from '../hooks/useSettingsTab'
+
+export interface SettingsTabBarProps {
+  activeTab: SettingsTabId
+  onSelect: (id: SettingsTabId) => void
+}
+
+const TABS: ReadonlyArray<{ id: SettingsTabId; label: string; shortLabel: string }> = [
+  { id: 'workflows', label: '① ワークフロー・モデル', shortLabel: '① モデル' },
+  { id: 'prompt', label: '② プロンプト支援', shortLabel: '② 呪文' },
+  { id: 'dialogue', label: '③ セリフ支援', shortLabel: '③ セリフ' },
+  { id: 'translation', label: '④ 翻訳', shortLabel: '④ 翻訳' },
+  { id: 'system', label: '⑤ システム・一般', shortLabel: '⑤ システム' },
+]
+
+export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): React.JSX.Element {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const selectAndFocus = (index: number) => {
+    const tab = TABS[index]
+    onSelect(tab.id)
+    const button = tabRefs.current[index]
+    button?.focus()
+    button?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % TABS.length
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TABS.length) % TABS.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = TABS.length - 1
+    if (nextIndex !== undefined) {
+      event.preventDefault()
+      selectAndFocus(nextIndex)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div role="tablist" aria-label="設定カテゴリー" className="flex snap-x snap-mandatory overflow-x-auto md:grid md:grid-cols-5">
+        {TABS.map((tab, index) => {
+          const selected = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              ref={(element) => { tabRefs.current[index] = element }}
+              id={`settings-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-label={tab.label}
+              aria-selected={selected}
+              aria-controls={`settings-panel-${tab.id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectAndFocus(index)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+              className="h-11 min-w-max snap-start px-3 md:min-w-0"
+            >
+              <span className="md:hidden">{tab.shortLabel}</span>
+              <span className="hidden md:inline">{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-3 bg-gradient-to-r from-background to-transparent md:hidden" />
+      <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-3 bg-gradient-to-l from-background to-transparent md:hidden" />
+    </div>
+  )
+}

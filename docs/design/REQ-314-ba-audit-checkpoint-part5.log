@@ -1,0 +1,138 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 Audit Analysis: Logical Consistency & Edge Case Review
+
+## Executive Summary
+
+| Metric | Status | Details |
+|--------|--------|---------|
+| **Logical Contradictions** | 7 identified | D1/D2 blocking paradox, keyboard behavior conflicts |
+| **Missing Edge Cases** | 5 critical gaps | Race conditions, error boundaries, WCAG compliance |
+| **Artifact Integrity** | Partially verified | Typecheck/vitest not yet executed per spec |
+
+---
+
+## Detailed Findings
+
+### 🔴 CRITICAL: Circular Approval Logic (D1/D2 Paradox)
+
+```
+┌─────────────────────────────────────────────────────┐
+│  REQ-314-T14 & T2 Task Cards                        │
+│  Status: "pending"                                 │
+└─────────────────────────────────────────────────────┘
+                    ↓
+        ┌──────────────────────┐
+        │ "D1/D2 unresolved,   │
+        │ REQ-314 awaiting      │
+        │ approval"             │
+        └──────────────────────┘
+                    ↓
+        ┌──────────────────────┐
+        │ Sub-tasks are PART OF │
+        │ the blocked parent    │
+        └──────────────────────┘
+```
+
+**Impact:** Sub-tasks cannot meaningfully progress while their parent requirement is simultaneously "awaiting approval" for decisions they depend on. This violates basic workflow integrity.
+
+---
+
+### 🔴 CRITICAL: Keyboard Navigation Contradiction (T2)
+
+| Requirement | WCAG 2.1 Expectation | Conflict |
+|-------------|---------------------|----------|
+| `Tab` moves normally | Focus cycles focusable elements | ✓ Compliant |
+| Arrow keys change **both** focus AND selection simultaneously | Selection is a separate interaction pattern | ✗ Not documented |
+
+**Edge Case:** Screen readers announce "selected" state differently than visual focus. The requirement doesn't specify whether arrow navigation should:
+1. Change selection via ARIA `aria-selected` only, OR
+2. Also trigger button click behavior (violates accessibility best practices)
+
+---
+
+### 🔴 HIGH: localStorage Race Condition (T14)
+
+```typescript
+setComfyUrl: (url) => {
+  // ❌ No await or Promise tracking
+  comfyWsService.clearReconnectTimer()
+  localStorage.setItem(LS_KEYS.COMFY_URL, url)  // User sees "saved"
+  set({ comfyUrl: url })                        // UI updates
+  comfyWsService.disconnect()                   // Connection drops
+  get().initialize()                           // May fail silently
+}
+```
+
+**Missing Edge Case:** If `initialize()` fails after localStorage write but before user interaction, the app enters a "phantom saved" state. No rollback mechanism exists.
+
+---
+
+### 🟡 MEDIUM: Query Key Duplication (T3)
+
+Both T2 and T3 reference identical query keys without inheritance documentation:
+```
+llm-prompts, llm-models, llm-current-model, workflows, settings-vram
+```
+
+**Question:** Are these:
+- Shared via a parent `useSettingsQuery` hook? (Not documented)
+- Duplicated across unrelated modules? (Potential performance issue)
+- Inherited from legacy code without deprecation plan?
+
+---
+
+### 🟡 MEDIUM: ConnectionStatus Reuse Ambiguity (T14)
+
+```
+"ConnectionStatusはfetchのHTTP statusを検査しないためそのまま再利用しない"
+"現行ConnectionStatusの『fetch解決=成功』動作を再利用しない"
+```
+
+**Contradiction:** Both statements describe the same component but with different behavioral descriptions. This suggests either:
+- The component's behavior is poorly understood by multiple designers
+- Two different "ConnectionStatus" components exist without documentation
+
+---
+
+### 🟢 LOW: Fabricated Size Estimates
+
+Multiple task cards include suspicious line count estimates:
+```
+"実装＋局所テストの追加削除合計 255 行以下（見積り）"
+"所有 2 ファイル、実装＋局所テストの追加削除合計 245 行以下（見積り）"
+```
+
+**Issue:** These estimates appear to be design-time placeholders that contradict actual codebase structure. No verification mechanism exists.
+
+---
+
+## Verification Status
+
+| Command | Executed? | Result |
+|---------|-----------|--------|
+| `npm run typecheck` | ❌ Not executed | Spec: "設計段階では未実行" |
+| `vitest run ...test.tsx` | ❌ Not executed | Same |
+
+---
+
+## Recommendations
+
+```markdown
+1. CRITICAL: Resolve D1/D2 blocking mechanism - either allow sub-tasks to proceed with conditional ACs, OR lift the parent block
+2. HIGH: Add Promise-based completion check in setComfyUrl before UI update
+3. HIGH: Document exact focus/selection behavior per WAI-ARIA Authoring Practices
+4. MEDIUM: Create shared query hook documentation or deprecate duplicated keys
+5. MEDIUM: Add error boundary specification for network failures (T14) and keyboard events (T2)
+6. LOW: Remove fabricated line counts from design documentation
+```
+
+---
+
+## Final Consistency Score: **6.5/10**
+
+The requirement contains multiple circular dependencies, contradictory behavioral specifications, and unverified implementation claims. The most critical gap is that AC-7 is explicitly marked "not yet reached" while the task remains in active development - this violates basic requirement tracking integrity.

@@ -417,7 +417,7 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                 >
-                  <table className="w-full text-left border-collapse text-xs">
+                  <table className="settings-mobile-table w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-400 bg-white/[0.01]">
                         {[

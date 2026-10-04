@@ -89,4 +89,4 @@ T16/T17/T18は承認済みAC-14/15の達成に限定したQA補正。各カー�
 人間は2026-10-04に改訂設計・テスト計画・T1〜T15実装を承認済み。T1〜T18とT8仕様同期、Gate 1/2/build、全ACの記録済み検証はPASS。ユーザーは手動clipboard確認と監査追加プロセス指摘の許容を明示承認。監査原判定（2件REQUIRES MODIFICATION/INCONCLUSIVE）は保持したままPhase 4を実施する。詳細は[walkthrough](docs/design/REQ-316-walkthrough.md)と[監査記録](docs/design/REQ-316-ba-audit.md)。
 
 ## REQ-314 Design Review Reference
-REQ-314は設計レビュー待ち。既存REQ-316計画は上記を維持し、REQ-314の独立計画を [REQ-314 implementation plan](docs/design/REQ-314-implementation_plan.md) に配置する。設計・テスト計画・14枚Task Card、D1（6/7 prompt）/D2（接続URL編集）の人間決定、BA監査とGPU解放証拠を同計画から参照する。
+REQ-314は人間「OK」で設計・実装開始を承認済み。既存REQ-316計画は上記を維持し、REQ-314の独立計画を [REQ-314 implementation plan](docs/design/REQ-314-implementation_plan.md) に配置する。D1は既存6種・D2は既存契約内に確定。承認範囲内でLLM設定・ページ実装とテストを分割し、Storage拒否時のfallbackとシステムカードの構成調整を追加した。現在は計19枚の物理Task Cardを参照する。BA監査とGPU解放の当時の証拠は保持する。

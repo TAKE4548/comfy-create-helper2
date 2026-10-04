@@ -1,0 +1,128 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314-T9 Audit Analysis Report
+
+## Executive Summary
+
+| Category | Findings | Severity |
+|----------|----------|----------|
+| Logical Contradictions | 2 | **HIGH** |
+| Missing Edge Cases | 6 | MEDIUM-HIGH |
+| Context Gaps | 4 | MEDIUM |
+| Testability Issues | 3 | LOW-MEDIUM |
+
+---
+
+## Detailed Findings
+
+### 🔴 HIGH SEVERITY - Logical Contradictions
+
+#### Finding H1: Type System Inconsistency
+```tsx
+input_type: 'textarea' | 'int' | 'float' | 'select' | 
+             'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean';
+```
+**Issue**: `'boolean'` is declared in the union but no corresponding UI component type exists in the existing codebase. The SettingsComponents.tsx fragment shows only: textarea, int, float, select, lora_stack, select_sampler, select_scheduler.
+
+**Impact**: Typecheck will pass, but runtime behavior for boolean inputs is undefined.
+
+---
+
+#### Finding H2: Mobile Responsiveness Ambiguity
+```
+"モバイル縦積み" (mobile vertical stacking) - no breakpoint defined
+```
+**Issue**: No CSS media query thresholds specified. The `settings-mobile-table` class addition lacks specificity about when mobile layout activates vs desktop.
+
+**Impact**: Inconsistent rendering across devices; may cause layout shifts during drag operations on tablets.
+
+---
+
+### 🟡 MEDIUM SEVERITY - Edge Cases
+
+#### Finding E1: Touch Event Interference
+```tsx
+longPressHandlers: {
+  onMouseDown, onMouseUp, onMouseLeave,
+  onTouchStart, onTouchEnd
+}
+```
+**Issue**: No debounce/throttle between touch and mouse events. On mobile devices, a "tap" can trigger both touch start/end AND mouse emulation, causing double-firing of selection logic.
+
+---
+
+#### Finding E2: Drag Performance at Scale
+| Scenario | Not Addressed |
+|----------|---------------|
+| 50+ MappingMaster rows | No virtualization mentioned |
+| Mobile viewport (320px) | Touch target minimums not specified |
+| Network latency during save | Optimistic UI updates undefined |
+
+---
+
+#### Finding E3: Accessibility Gap
+- `aria-label` is mentioned but no ARIA live region for drag completion
+- No keyboard navigation alternative to long-press selection
+- Color contrast for selected state (`bg-[#3ECF8E]/10`) not verified against WCAG 2.1 AA
+
+---
+
+### 🟠 LOW-MEDIUM SEVERITY - Context Gaps
+
+#### Finding C1: External Document Dependency
+| Referenced | Status | Risk |
+|------------|--------|------|
+| `REQ-314.md` | Not in context | MEDIUM |
+| `REQ-314-test-plan.md` | Not in context | MEDIUM |
+| "AC-4 seven" vs "six prompt keys" | Undefined | HIGH |
+
+---
+
+#### Finding C2: D1/D2 Decision Ambiguity
+```
+D1: 6/7 prompt keys - unresolved human decision
+D2: Backend/LM Studio URL editing vs unchanged API/schema
+```
+**Issue**: These decisions affect how MappingMaster data is persisted and retrieved. Without clarity, the component may assume a contract that doesn't exist.
+
+---
+
+### 🟢 LOW SEVERITY - Testability Issues
+
+#### Finding T1: Incomplete Verification Command Set
+```powershell
+npm run typecheck                    # ✅ Present
+npx vitest run ...                   # ✅ Present (unit only)
+# ❌ Missing: mobile viewport tests, touch event simulation
+```
+
+---
+
+## Architectural Integrity Check
+
+### Single Responsibility Analysis
+| Concern | Status | Evidence |
+|---------|--------|----------|
+| Sorting/Drag | ✅ Primary | DndContext/SortableContext used |
+| Selection State | ⚠️ Mixed | Handles both click AND long-press selection |
+| Mobile Layout | ⚠️ Secondary | CSS class injection without clear trigger |
+
+---
+
+## Recommendations (Priority Order)
+
+1. **Clarify D1/D2 decisions** before code review approval
+2. **Add touch event debouncing** to prevent double-firing on mobile
+3. **Define breakpoint thresholds** for `settings-mobile-table` activation
+4. **Add boolean input handling** - either extend UI types or remove from union
+5. **Include viewport test cases** in the test plan (T12 checklist reference incomplete)
+
+---
+
+## Final Verdict: **APPROVE WITH CONDITIONS**
+
+The fragment is logically consistent within its bounded scope but requires clarification on external dependencies before implementation proceeds. The 6/7 prompt key discrepancy and D1/D2 decisions must be resolved by the design owner to prevent downstream contract violations.

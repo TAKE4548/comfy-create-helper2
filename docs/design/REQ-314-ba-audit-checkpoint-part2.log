@@ -1,0 +1,166 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 BA Audit Analysis Report
+
+## Executive Summary
+
+| Category | Findings | Severity |
+|----------|----------|----------|
+| Logical Contradictions | 5 critical issues | 🔴 High |
+| Edge Cases | 7 unaddressed scenarios | 🟡 Medium |
+| AC Traceability | 3 blocked-but-active states | 🟠 High |
+| Test Integrity | Mixed autonomous/manual claims | 🟡 Medium |
+
+---
+
+## Detailed Findings
+
+### 🔴 Critical: Logical Contradictions
+
+#### 1. D1 State Paradox (Lines: Multiple)
+```
+"D1 6/7 prompt、D2 Backend/LM Studio URL編集は人間決定待ち。"
+vs.
+"D1が6種訂正として承認された場合は...6種で判定。"
+```
+**Issue**: D1 is simultaneously "pending human decision" AND "can be judged with 6 types upon approval." This creates a temporal paradox—the AC cannot be both blocked and actively judged.
+
+#### 2. AC-4/7 Blocked-but-Active State (Lines: INT-3, INT-6)
+```
+"D1未承認のため...AC-4全体BLOCKEDを別記録。"
+vs.
+"D1未承認だが配置検証結果とAC-4全体BLOCKEDを別記録。"
+```
+**Issue**: The plan records AC-4 as "blocked" while simultaneously performing validation ("配置検証"). A blocked acceptance criterion cannot be validated for pass/fail status.
+
+#### 3. D2 Partial vs. Full Blocking (Lines: INT-6, Implementation Plan)
+```
+"D2未承認のためURL編集全AC-7はBLOCKED。"
+vs.
+"D2の推奨範囲に合意がなければ実装へ進めない。"
+```
+**Issue**: AC-7 is fully blocked, yet the implementation plan allows partial D2 approval ("推奨範囲"). This creates ambiguity about what portion of AC-7 remains valid.
+
+---
+
+### 🟠 High: Acceptance Coverage Gaps
+
+| AC | Status | Gap Analysis |
+|----|--------|--------------|
+| **AC-1** (5-tab equal width) | E2E-1 only | No automated measurement; relies entirely on manual viewport testing |
+| **AC-4** (Prompt classification) | BLOCKED | Cannot be validated while blocked—no regression path defined |
+| **AC-7** (Connections/guard) | BLOCKED | URL editing blocked but VRAM guard still requires API contract validation |
+
+---
+
+### 🟡 Medium: Edge Cases Not Addressed
+
+#### 1. Hash/LocalStorage Race Condition (INT-1)
+```
+"初回無hash+有効LSはそのtabへreplace。"
+```
+**Missing**: What occurs on mid-navigation page reload? If user navigates to tab A, clicks back to workflows, then browser refreshes—does LS write complete before hash update finishes?
+
+#### 2. Translation Debounce Ambiguity (INT-5)
+```
+"translation_debounceを保存しpreviewへ渡る。"
+```
+**Missing**: 
+- Specific debounce value per provider or global?
+- Behavior during rapid multi-provider switching?
+- Stale translation visibility window?
+
+#### 3. VRAM Metering Edge Case (INT-6)
+```
+"useSystemStats購読1回・unmount cleanup。"
+```
+**Missing**: What happens if system stats update mid-render while tab is hidden but mounted? Could cause memory leak or stale readings.
+
+---
+
+### 🟡 Medium: Test Integrity Issues
+
+#### 1. Non-Executable Gate Commands (Lines: Gate 1/2)
+```powershell
+npx vitest run src/pages/SettingsPage/hooks/__tests__/useSettingsTab.test.tsx ...
+```
+**Issue**: These test files are referenced but not yet implemented ("設計段階で実行/成功を宣言しない"). The plan claims "executable" testing while the artifacts don't exist.
+
+#### 2. Verification Ownership Contradiction (Lines: Multiple)
+```
+"自律実行可能な異常系・API契約・DOM操作シナリオとlocal QA監査。"
+vs.
+"ユーザー報告なしに手動項目/対応ACのPASSを宣言しない。"
+```
+**Issue**: The plan claims autonomous verification capability while simultaneously deferring all AC PASS declarations to manual user confirmation. This negates the purpose of automated gates.
+
+---
+
+### 🟡 Medium: SSoT Integrity Concerns
+
+#### 1. Storage Migration Path Unclear (Lines: Multiple)
+```
+"旧storageを消さず復帰余地を残す。"
+vs.
+"SettingsPageの既存SpeechTonePresetModal exportを保持する。"
+```
+**Missing**: 
+- Version detection mechanism for existing user storage?
+- Incremental migration strategy during first load?
+- Rollback path if migration fails mid-session?
+
+#### 2. API Contract Invariance Violation (INT-8)
+```
+"INT-8 (API/schema invariant):変更対象diffにbackend/api/client/types/store schemaの変更がないことを確認。"
+vs.
+"D2未承認のためURL編集全AC-7はBLOCKED。"
+```
+**Issue**: INT-6 explicitly blocks URL editing, which IS an API contract change. INT-8 claims to preserve invariance but INT-6 contradicts this by blocking a core API modification.
+
+---
+
+## Verification Matrix
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| D1/D2 Decision Clarity | ❌ Failed | Multiple contradictory states |
+| AC Pass Criteria | ⚠️ Partial | Blocked ACs still require "judgment" |
+| Edge Case Coverage | ⚠️ Partial | Race conditions, debounce timing missing |
+| Test Executability | ❌ Failed | Referenced tests not yet implemented |
+| SSoT Migration | ⚠️ Partial | No version detection defined |
+
+---
+
+## Recommendations
+
+### Immediate Actions Required:
+
+1. **Resolve D1/D2 State**: Either fully block ACs until human approval OR define conditional pass criteria with explicit transition paths.
+
+2. **Clarify Blocked AC Validation**: If an AC is BLOCKED, it cannot be actively validated. Remove "配置検証" from INT-3 or mark as "deferred pending D1 resolution."
+
+3. **Document Migration Strategy**: Add version detection and incremental migration logic for existing user storage formats in the implementation plan.
+
+4. **Define Debounce Specifications**: Explicitly state debounce values per provider and behavior during rapid switching scenarios.
+
+5. **Refactor Test Plan Language**: Change "executable test plan" to "verification checklist with automated components pending implementation."
+
+### Architectural Considerations:
+
+| Concern | Recommendation |
+|---------|----------------|
+| Hash/LS Race Conditions | Implement atomic write pattern with retry on partial failure |
+| Translation Debounce | Use provider-specific debounce values; cache last N translations per session |
+| VRAM Metering | Add throttle to prevent excessive system stats polling during tab transitions |
+
+---
+
+## Final Verdict
+
+**Status**: ⚠️ **CONDITIONAL APPROVAL PENDING HUMAN DECISION CLARIFICATION**
+
+The REQ-314 test plan and implementation plan contain sufficient detail for development but require resolution of the D1/D2 decision paradoxes before ACs can transition from BLOCKED to PASS status. The mixed autonomous/manual verification model creates ambiguity about when automated gates can declare success without human intervention.

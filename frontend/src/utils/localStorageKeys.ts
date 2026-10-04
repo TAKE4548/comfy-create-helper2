@@ -26,6 +26,8 @@ export const LS_KEYS = {
   LAYOUT_MAIN_SPLIT: 'prompt-surgeon-layout-main-split',
   LAYOUT_PREVIEW_SPLIT: 'prompt-surgeon-layout-preview-split',
   SETTINGS_SECTIONS_EXPANDED: 'prompt-surgeon-settings-sections-expanded',
+  SETTINGS_ACTIVE_TAB: 'prompt-surgeon-settings-active-tab',
+  SETTINGS_DETAILS_EXPANDED_V2: 'prompt-surgeon-settings-details-expanded-v2',
   ACTIVE_PROMPT_TAB_PREFIX: 'prompt-surgeon-active-prompt-tab-',
   LAST_SAVE_ALBUM_ID: 'prompt-surgeon-last-save-album-id',
   LAST_SAVE_ALBUM_ID_GENERATE: 'prompt-surgeon-last-save-album-id-generate',

@@ -1,0 +1,21 @@
+{
+  "pbi_id": "REQ-314",
+  "recorded_date": "2026-10-04",
+  "implementation_approval": "User OK after final D1/D2 design review",
+  "phase": "pre-implementation baseline",
+  "typecheck": { "command": "npm run typecheck", "exit_code": 0 },
+  "vitest": {
+    "command": "npx vitest run",
+    "exit_code": 0,
+    "passed_files": 106,
+    "passed_tests": 1063,
+    "duration_seconds": 62.14,
+    "note": "Existing act/MSW fault-path stderr was emitted; no test failures."
+  },
+  "tracked_preexisting_changes": ["docs/specs/SPEC_COMMON.md"],
+  "verification_ownership": {
+    "autonomous": ["typecheck", "full Vitest", "DOM and API contract boundaries", "local QA audit"],
+    "user_manual": ["browser scenarios", "responsive measurements", "real external services", "screen reader behavior"]
+  },
+  "acceptance_criteria": "Not evaluated by baseline; manual browser checks pending."
+}

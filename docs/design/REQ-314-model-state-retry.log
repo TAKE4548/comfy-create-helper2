@@ -1,0 +1,7 @@
+Command: lms ps (local-network-enabled)
+Exit code: 0
+No models are currently loaded.
+
+To load a model, run:
+
+    lms load <model path>

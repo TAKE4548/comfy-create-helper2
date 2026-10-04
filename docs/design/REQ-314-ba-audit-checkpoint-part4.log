@@ -1,0 +1,203 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 Audit Analysis: Logical Consistency & SSoT Integrity Review
+
+## Executive Summary
+
+After thorough analysis of the requirement fragment, I've identified **5 critical logical contradictions**, **7 missing edge cases**, and **3 SSoT integrity violations** that could cause implementation failures or maintenance debt.
+
+---
+
+## 🔴 Critical Findings
+
+### 1. D1/D2 Paradox (Logical Contradiction - Severity: HIGH)
+
+| Location | Issue |
+|----------|-------|
+| T11 Review Gate, T12 Review Gate, T13 Review Gate | All three tasks state: *"D1（6/7 prompt）とD2（接続URL）が未決定のためREQ-314全体は承認待ち"* |
+
+**Contradiction**: The requirement simultaneously claims to be **implementable** (with specific code changes, test commands, and acceptance criteria) while being **blocked by unresolved human decisions**.
+
+**Impact**: Developers may implement features that cannot be validated against the pending decisions, leading to rework.
+
+---
+
+### 2. Test Execution Paradox (Logical Contradiction - Severity: MEDIUM)
+
+```
+"設計段階では未実行。"  ← Design phase not executed
+"期待: typecheck exit 0、指定test全件PASS。異常系も実行し、失敗原因と結果を記録。"  ← Runtime verification required
+```
+
+**Issue**: Type checking and test execution are **runtime activities**, not design-phase considerations. The statement conflates *design validation* with *implementation verification*.
+
+---
+
+### 3. SSoT Circular Dependency (SSoT Integrity - Severity: HIGH)
+
+```
+┌─────────────────────────────────────────┐
+│   T13 Implementation                    │
+│   "SPEC_SETTINGS を実装結果で更新"       │
+└──────────────┬──────────────────────────┘
+               ↓
+┌─────────────────────────────────────────┐
+│   SPEC_SETTINGS (Single Source of Truth)│
+│   "実装後同期"                          │
+└─────────────────────────────────────────┘
+```
+
+**Issue**: T13 treats SPEC files as **both source and target**, violating SSoT principle that the specification must be the immutable authority.
+
+---
+
+### 4. Dependency Chain Ambiguity (Logical Contradiction - Severity: MEDIUM)
+
+| Task | Depends On | Status |
+|------|------------|--------|
+| T12 | T7, T8, T9, T10 | ✅ Clear |
+| T13 | T7, T8, T9, T10 | ✅ Clear |
+| T11 | None | ⚠️ No ordering defined relative to T12/T13 |
+
+**Issue**: T11 modifies shared CSS and component contracts that T12 tests. Without explicit dependency on T11, test execution order becomes non-deterministic.
+
+---
+
+### 5. Query Key Stability Gap (Edge Case - Severity: MEDIUM)
+
+```tsx
+// Specified as immutable:
+query keys: `llm-prompts`, `llm-models`, `llm-current-model`, 
+            `workflows`, `settings-vram` を維持。
+```
+
+**Missing Edge Case**: What happens when:
+- Backend API deprecates a query key?
+- Frontend refactoring changes the key naming convention?
+- Multiple deployments have different key sets simultaneously?
+
+---
+
+## 🟡 Missing Edge Cases
+
+### 6. Browser Automation Failure Protocol (Edge Case - Severity: MEDIUM)
+
+**Question**: If Vitest/browser automation fails, is the build:
+- Blocked entirely?
+- Allowed to proceed with warnings?
+- Logged separately from critical failures?
+
+**Current State**: Not specified → Risk of silent test failures.
+
+---
+
+### 7. Cross-Task State Consistency (Edge Case - Severity: LOW)
+
+T11 modifies `BubbleDetectionSection.tsx` props while T13 references the same component in SPEC_SETTINGS. No mechanism ensures both stay synchronized during independent updates.
+
+---
+
+### 8. Hash Order Mutation Safety (Edge Case - Severity: MEDIUM)
+
+```
+"正規hash順序: workflows / prompt / dialogue / translation / system。"
+```
+
+**Missing**: What if content changes require reordering? Is the hash order **read-only** or can it be mutated by user action? Not specified.
+
+---
+
+### 9. localStorage Key Collision (Edge Case - Severity: LOW)
+
+T11 mentions `localStorage` for expanded state, but doesn't specify:
+- Key prefix to avoid collisions with existing settings keys
+- Migration strategy if key names change
+
+---
+
+### 10. Responsive Breakpoint Overlap (Edge Case - Severity: MEDIUM)
+
+| Breakpoint | Source |
+|------------|--------|
+| `<768px` | T11 Implementation Logic |
+| `desktop1280x900/768境界` | T12 Implementation Logic |
+| `mobile767/390/320px` | T12 Implementation Logic |
+
+**Issue**: Three different 768px boundaries could cause inconsistent rendering at the exact threshold.
+
+---
+
+## 🟢 SSoT Integrity Violations
+
+### 11. Specification as Source of Truth (SSoT - Severity: HIGH)
+
+```
+"出典: docs/specs/SPEC_SETTINGS.md（設計時点、27行）。新ファイルはこの既存契約に接続する。"
+```
+
+**Violation**: SPEC files are treated as **derived artifacts** that get updated by implementation, contradicting the definition of SSoT.
+
+---
+
+### 12. Missing Version Traceability (SSoT - Severity: MEDIUM)
+
+No versioning mechanism specified for:
+- Specification file changes
+- Query key evolution
+- Component contract versions
+
+---
+
+### 13. Audit Trail Incompleteness (SSoT - Severity: LOW)
+
+The requirement mentions "audit" multiple times but doesn't specify:
+- Who approves D1/D2 decisions?
+- When is REQ-314 considered "approved"?
+- What happens if approval is never granted?
+
+---
+
+## 📋 Recommendations
+
+### Immediate Actions Required:
+
+| Priority | Action | Owner |
+|----------|--------|-------|
+| P0 | Resolve D1/D2 decisions or explicitly block implementation | Product Manager |
+| P0 | Define test failure handling protocol in T12 | QA Lead |
+| P1 | Add explicit dependency on T11 in T12/T13 | Technical Lead |
+| P1 | Document hash order mutation policy | Architect |
+
+### Process Improvements:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  REQ-314 Approval Gate                              │
+├─────────────────────────────────────────────────────┤
+│  1. D1/D2 Resolution Required → Document Decision   │
+│  2. SSoT Version Tag → SPEC_SETTINGS v1.x           │
+│  3. Test Protocol Defined → Fail/Break/Warning     │
+│  4. Manual Checklist Signed Off → User Initials    │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Final Verdict
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| **Logical Consistency** | ⚠️ Needs Resolution | D1/D2 paradox must be addressed before implementation |
+| **Edge Case Coverage** | 🟡 Partially Addressed | 7 gaps identified, most are low-severity |
+| **SSoT Integrity** | 🔴 Violated | SPEC files treated as mutable targets |
+| **Testability** | 🟢 Acceptable | With protocol clarification |
+
+---
+
+## Conclusion
+
+REQ-314 contains **critical logical contradictions** (D1/D2 paradox) and **SSoT integrity violations** that should be resolved before full implementation. The requirement is **conditionally acceptable** for incremental development but requires approval gate refinement to prevent technical debt accumulation.

@@ -70,6 +70,8 @@
 - アイコン ＋ ラベルテキスト（Generate / LoRAs / Tags / History / Settings）を表示
 - 全ページで同一のルーティング（`/`, `/loras`, `/tags`, `/history`, `/settings`）を共有
 
+設定ページ固有のタブ、responsive、localStorage契約は [SPEC_SETTINGS.md](./SPEC_SETTINGS.md) を参照する。ここでは共通AppShellのナビゲーション境界を定義し、設定内のタブ状態や詳細開閉状態は定義しない。
+
 ---
 
 ## 3. TagChipEditor コンポーネント

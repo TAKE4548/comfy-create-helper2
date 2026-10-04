@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
 import { speechTonePresetsApi } from '../../../api/client'
@@ -20,6 +20,7 @@ export function SpeechTonePresetModal({
   onClose,
   onSubmit,
 }: SpeechTonePresetModalProps) {
+  const headingId = useId()
   const [name, setName] = useState(initial?.name || '')
   const [prompt, setPrompt] = useState(initial?.prompt || '')
   const [description, setDescription] = useState(initial?.description || '')
@@ -41,15 +42,20 @@ export function SpeechTonePresetModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
       data-testid="speech-tone-preset-modal"
     >
-      <div className="bg-[#18181C] border border-[rgba(255,255,255,0.12)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        className="bg-[#18181C] border border-[rgba(255,255,255,0.12)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4"
+      >
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-3">
-          <h3 className="text-sm font-semibold text-zinc-100">
+          <h3 id={headingId} className="text-sm font-semibold text-zinc-100">
             {mode === 'create' ? '新規口調プリセット作成' : '口調プリセット編集'}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1"
+            className="min-h-11 min-w-11 inline-flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1"
           >
             ✕
           </button>
@@ -66,7 +72,7 @@ export function SpeechTonePresetModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例: ツンデレ風, お嬢様風"
-              className="w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -80,7 +86,7 @@ export function SpeechTonePresetModal({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="例: ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回しに変換してください。"
-              className="w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -91,7 +97,7 @@ export function SpeechTonePresetModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="例: キャラクターAの標準的な口調"
-              className="w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -101,7 +107,7 @@ export function SpeechTonePresetModal({
               type="number"
               value={sortOrder}
               onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)}
-              className="w-28 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
+              className="min-h-11 w-28 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -109,14 +115,14 @@ export function SpeechTonePresetModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
+              className="min-h-11 min-w-11 px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
             >
               キャンセル
             </button>
             <button
               type="submit"
               disabled={isPending || !name.trim() || !prompt.trim()}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50 transition-colors"
+              className="min-h-11 min-w-11 px-4 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50 transition-colors"
             >
               {isPending ? '保存中...' : '保存'}
             </button>
@@ -174,32 +180,33 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
       className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden"
       data-testid="speech-tone-presets-settings-section"
     >
-      <div
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
-      >
-        <div className="flex items-center gap-2">
-          <Wand2 size={15} className="text-purple-400" />
-          <h2 className="text-sm font-semibold text-zinc-300">セリフ口調プリセット設定</h2>
-          <span className="text-xs text-zinc-600">— セリフ編集画面で使用する口調変換プリセットの管理</span>
-        </div>
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between px-4 py-2 bg-surface">
+        <h2 className="flex-1">
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            onClick={onToggle}
+            className="min-h-11 min-w-11 w-full flex items-center gap-2 text-left hover:bg-white/5 transition-colors select-none"
+          >
+            <Wand2 size={15} className="text-purple-400 shrink-0" />
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-zinc-300">セリフ口調プリセット設定</span>
+              <span className="text-xs text-zinc-600">— セリフ編集画面で使用する口調変換プリセットの管理</span>
+            </span>
+            <ChevronDown size={16} className={`ml-auto text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+          </button>
+        </h2>
+        <div className="flex items-center gap-3 pl-2">
           <button
             type="button"
             onClick={() => {
               setEditingTonePreset(null)
               setTonePresetModalMode('create')
             }}
-            className="flex items-center gap-1 text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-purple-500 transition-all"
+            className="min-h-11 min-w-11 flex items-center justify-center gap-1 text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-purple-500 transition-all"
           >
             <Plus size={12} />プリセット追加
           </button>
-          <ChevronDown
-            size={16}
-            className={`text-zinc-500 transition-transform duration-200 ${
-              isExpanded ? 'rotate-180' : ''
-            }`}
-          />
         </div>
       </div>
       {isExpanded && (
@@ -211,7 +218,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
           ) : (
             <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
-                <thead>
+                <thead className="sr-only">
                   <tr className="border-b border-[rgba(255,255,255,0.06)] text-zinc-400 bg-white/[0.01]">
                     <th className="px-4 py-3 font-medium">プリセット名</th>
                     <th className="px-4 py-3 font-medium">プロンプト指示</th>
@@ -222,20 +229,20 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                 </thead>
                 <tbody className="divide-y divide-[rgba(255,255,255,0.04)] text-zinc-300">
                   {tonePresets.map((tp) => (
-                    <tr key={tp.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3 font-medium text-zinc-100 whitespace-nowrap">
+                    <tr key={tp.id} className="block border-b border-[rgba(255,255,255,0.04)] md:table-row hover:bg-white/[0.02] transition-colors">
+                      <td data-label="プリセット名" className="relative block whitespace-normal py-2 pl-24 pr-4 text-zinc-100 before:absolute before:left-4 before:top-2 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:whitespace-nowrap md:px-4 md:py-3 md:before:hidden font-medium">
                         {tp.name}
                       </td>
-                      <td className="px-4 py-3 text-zinc-300 max-w-xs truncate" title={tp.prompt}>
+                      <td data-label="プロンプト指示" className="relative block whitespace-normal break-words py-2 pl-24 pr-4 text-zinc-300 before:absolute before:left-4 before:top-2 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:max-w-xs md:truncate md:px-4 md:py-3 md:before:hidden" title={tp.prompt}>
                         {tp.prompt}
                       </td>
-                      <td className="px-4 py-3 text-zinc-400 max-w-xs truncate">
+                      <td data-label="説明" className="relative block whitespace-normal break-words py-2 pl-24 pr-4 text-zinc-400 before:absolute before:left-4 before:top-2 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:max-w-xs md:truncate md:px-4 md:py-3 md:before:hidden">
                         {tp.description || '-'}
                       </td>
-                      <td className="px-4 py-3 text-zinc-500 font-mono text-center">
+                      <td data-label="順序" className="relative block py-2 pl-24 pr-4 text-zinc-500 before:absolute before:left-4 before:top-2 before:font-medium before:font-sans before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:text-center md:before:hidden font-mono">
                         {tp.sort_order}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <td data-label="操作" className="relative block py-2 pl-24 pr-4 text-right before:absolute before:left-4 before:top-3 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:hidden whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
@@ -243,7 +250,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                               setEditingTonePreset(tp)
                               setTonePresetModalMode('edit')
                             }}
-                            className="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
+                            className="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
                             title="編集"
                           >
                             <Pencil size={13} />
@@ -255,7 +262,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                                 deleteTonePresetMutation.mutate(tp.id)
                               }
                             }}
-                            className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            className="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                             title="削除"
                           >
                             <Trash2 size={13} />

@@ -57,7 +57,7 @@ export const ThumbnailSettingsSection: React.FC = () => {
                   value={customInput}
                   onChange={handleCustomChange}
                   placeholder="例: 5:7, 7:9, 0.71"
-                  className="px-3 py-1.5 text-xs bg-zinc-900 border border-[rgba(255,255,255,0.12)] rounded-lg text-zinc-200 focus:outline-none focus:border-accent-green w-48"
+                  className="px-3 py-1.5 text-xs bg-zinc-900 border border-[rgba(255,255,255,0.12)] rounded-lg text-zinc-200 focus:outline-none focus:border-accent-green w-full max-w-full sm:max-w-48"
                   data-testid="custom-aspect-ratio-input"
                 />
                 <span className="text-[11px] text-zinc-500">現在適用中: {ratioStr}</span>

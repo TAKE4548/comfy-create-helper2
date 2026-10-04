@@ -10,8 +10,11 @@ import { WorkflowManageModal } from '../../../components/WorkflowManageModal'
 import { WorkflowDiffReplaceModal } from '../../../components/WorkflowDiffReplaceModal'
 import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
+import { ServiceConnectionCard } from './ServiceConnectionCard'
 
 export interface WorkflowConnectionSectionProps {
+  group?: 'workflows' | 'system'
+  showConnections?: boolean
   isExpandedLongPress: boolean
   onToggleLongPress: () => void
   isExpandedWorkflows: boolean
@@ -21,6 +24,8 @@ export interface WorkflowConnectionSectionProps {
 }
 
 export function WorkflowConnectionSection({
+  group,
+  showConnections = true,
   isExpandedLongPress,
   onToggleLongPress,
   isExpandedWorkflows,
@@ -65,8 +70,18 @@ export function WorkflowConnectionSection({
   }, [config])
 
   useEffect(() => {
-    const msStored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT)
-    const cmStored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE)
+    let msStored: string | null = null
+    let cmStored: string | null = null
+    try {
+      msStored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT)
+    } catch {
+      // Keep the in-memory default when browser storage is unavailable.
+    }
+    try {
+      cmStored = localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE)
+    } catch {
+      // Keep the in-memory default when browser storage is unavailable.
+    }
     const msParsed = msStored !== null ? parseFloat(msStored) : NaN
     const cmParsed = cmStored !== null ? parseFloat(cmStored) : NaN
     if (!isNaN(msParsed)) setLongPressMultiSelect(msParsed)
@@ -76,17 +91,18 @@ export function WorkflowConnectionSection({
   const { data: workflows, isLoading: isLoadingWorkflows } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list() as Promise<WorkflowSummary[]>,
+    enabled: group !== 'system',
   })
 
   const { data: workflowPresets } = useQuery({
     queryKey: ['workflow-presets', expandedPresetWorkflowId],
     queryFn: () => workflowPresetsApi.list(expandedPresetWorkflowId!) as Promise<WorkflowPreset[]>,
-    enabled: !!expandedPresetWorkflowId,
+    enabled: group !== 'system' && !!expandedPresetWorkflowId,
   })
 
   // Fetch deletion metadata
   useEffect(() => {
-    if (!showWorkflowDeleteDialog || !selectedWorkflowId) return
+    if (group === 'system' || !showWorkflowDeleteDialog || !selectedWorkflowId) return
     let active = true
     setIsLoadingWorkflowDetails(true)
 
@@ -113,11 +129,11 @@ export function WorkflowConnectionSection({
     return () => {
       active = false
     }
-  }, [showWorkflowDeleteDialog, selectedWorkflowId])
+  }, [group, showWorkflowDeleteDialog, selectedWorkflowId])
 
   // Fetch rollback history statuses for workflows
   useEffect(() => {
-    if (!workflows || workflows.length === 0) return
+    if (group === 'system' || !workflows || workflows.length === 0) return
     let active = true
     Promise.all(
       workflows.map((wf) =>
@@ -138,7 +154,7 @@ export function WorkflowConnectionSection({
     return () => {
       active = false
     }
-  }, [workflows])
+  }, [group, workflows])
 
   const handleOpenDiffFilePicker = (wf: WorkflowSummary) => {
     setPendingDiffWorkflow(wf)
@@ -243,19 +259,38 @@ export function WorkflowConnectionSection({
   const handleLongPressChange = (key: 'multi-select' | 'card-move', value: number) => {
     if (key === 'multi-select') {
       setLongPressMultiSelect(value)
-      localStorage.setItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT, String(value))
     } else {
       setLongPressCardMove(value)
-      localStorage.setItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE, String(value))
     }
-    setSaved('longpress')
+    try {
+      localStorage.setItem(
+        key === 'multi-select'
+          ? LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT
+          : LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE,
+        String(value),
+      )
+      setSaved('longpress')
+    } catch {
+      // Keep the updated in-memory value when browser storage is unavailable.
+      setSaved(null)
+    }
     setTimeout(() => setSaved(null), 2000)
   }
 
   return (
     <>
       {/* Long Press Sensitivity */}
-      <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+      {group !== 'workflows' && <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
+        {group === 'system' ? (
+          <div className="flex items-center justify-between px-4 py-3.5 bg-surface">
+            <div className="flex items-center gap-2">
+              <Sliders size={15} className="text-[#7C6FDD]" />
+              <h2 className="text-sm font-semibold text-zinc-300">長押し感度設定（アプリ全体）</h2>
+              <span className="text-xs text-zinc-600">— ブラウザ（LocalStorage）に保存</span>
+            </div>
+            {saved === 'longpress' && <span className="text-xs text-accent-green">✓ 保存しました</span>}
+          </div>
+        ) : (
         <div
           onClick={onToggleLongPress}
           className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
@@ -277,7 +312,8 @@ export function WorkflowConnectionSection({
             />
           </div>
         </div>
-        {isExpandedLongPress && (
+        )}
+        {(group === 'system' || isExpandedLongPress) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-5">
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -326,8 +362,10 @@ export function WorkflowConnectionSection({
           </div>
         )}
       </section>
+      }
 
       {/* Workflows Section */}
+      {group !== 'system' && <>
       <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
         <button
           type="button"
@@ -468,8 +506,10 @@ export function WorkflowConnectionSection({
           </div>
         )}
       </section>
+      </>}
 
       {/* Connections */}
+      {group === 'system' ? (showConnections && <ServiceConnectionCard />) : group !== 'workflows' && <>
       <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
         <button
           type="button"
@@ -498,8 +538,9 @@ export function WorkflowConnectionSection({
           </div>
         )}
       </section>
+      </>}
 
-      {workflowManageMode && selectedWorkflowId && (
+      {group !== 'system' && workflowManageMode && selectedWorkflowId && (
         <WorkflowManageModal
           mode={workflowManageMode}
           currentName={workflows?.find((w) => w.id === selectedWorkflowId)?.name || ''}
@@ -518,7 +559,7 @@ export function WorkflowConnectionSection({
         />
       )}
 
-      {showWorkflowDeleteDialog && selectedWorkflowId && (
+      {group !== 'system' && showWorkflowDeleteDialog && selectedWorkflowId && (
         <WorkflowDeleteConfirmDialog
           workflowName={workflows?.find((w) => w.id === selectedWorkflowId)?.name || ''}
           isPending={deleteWorkflowMutation.isPending}
@@ -534,15 +575,15 @@ export function WorkflowConnectionSection({
         />
       )}
 
-      <input
+      {group !== 'system' && <input
         ref={diffFileInputRef}
         type="file"
         accept=".json"
         className="hidden"
         onChange={handleDiffFileSelected}
-      />
+      />}
 
-      {diffReplaceModalOpen && diffTargetWorkflow && (
+      {group !== 'system' && diffReplaceModalOpen && diffTargetWorkflow && (
         <WorkflowDiffReplaceModal
           isOpen={diffReplaceModalOpen}
           onClose={() => setDiffReplaceModalOpen(false)}

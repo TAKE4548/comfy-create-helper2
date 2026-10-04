@@ -1,9 +1,25 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter } from 'react-router-dom'
 import { SettingsPage } from '../SettingsPage'
+import { useGenerationStore } from '../../store/useGenerationStore'
 import { speechTonePresetsApi } from '../../api/client'
 import type { SpeechTonePreset } from '../../api/types'
+
+const systemStatsSubscription = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }))
+
+vi.mock('../../hooks/useSystemStats', async () => {
+  const React = await import('react')
+  return {
+    useSystemStats: () => {
+      React.useEffect(() => {
+        systemStatsSubscription.start()
+        return () => systemStatsSubscription.stop()
+      }, [])
+    },
+  }
+})
 
 vi.mock('../../api/client', () => ({
   llmPromptsApi: {
@@ -15,6 +31,10 @@ vi.mock('../../api/client', () => ({
   },
   configApi: {
     get: vi.fn().mockResolvedValue({ comfy_url: 'http://localhost:8188' }),
+  },
+  settingsApi: {
+    getVram: vi.fn().mockResolvedValue({ vram_min_free_gb: 4, vram_guard_enabled: true, vram_free_gb: 2, vram_total_gb: 12 }),
+    updateVram: vi.fn().mockResolvedValue({}),
   },
   mappingMastersApi: {
     list: vi.fn().mockResolvedValue([]),
@@ -94,6 +114,8 @@ describe('SettingsPage - Speech Tone Presets', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    useGenerationStore.setState({ systemStats: null })
+    window.location.hash = '#dialogue'
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -107,24 +129,133 @@ describe('SettingsPage - Speech Tone Presets', () => {
   const renderComponent = () => {
     return render(
       <QueryClientProvider client={queryClient}>
-        <SettingsPage />
+        <BrowserRouter>
+          <SettingsPage />
+        </BrowserRouter>
       </QueryClientProvider>
     )
   }
 
-  it('renders speech tone presets section and lists presets upon expanding', async () => {
+  it('mounts all five tab panels and makes only the selected panel visible and focusable', async () => {
+    window.location.hash = '#workflows'
+    renderComponent()
+
+    const tablist = screen.getByRole('tablist', { name: '設定カテゴリー' })
+    expect(tablist.querySelectorAll('[role="tab"]')).toHaveLength(5)
+    const workflows = document.getElementById('settings-panel-workflows')
+    const prompt = document.getElementById('settings-panel-prompt')
+    const dialogue = document.getElementById('settings-panel-dialogue')
+    const translation = document.getElementById('settings-panel-translation')
+    const system = document.getElementById('settings-panel-system')
+    expect([workflows, prompt, dialogue, translation, system].every(Boolean)).toBe(true)
+    expect(workflows).not.toHaveAttribute('hidden')
+    expect(workflows).toHaveAttribute('tabindex', '0')
+    for (const panel of [prompt, dialogue, translation, system]) {
+      expect(panel).toHaveAttribute('hidden')
+      expect(panel).toHaveAttribute('tabindex', '-1')
+    }
+  })
+
+  it('retains an open tone preset draft when switching tabs', async () => {
+    renderComponent()
+    fireEvent.click(await screen.findByText('プリセット追加'))
+    const nameInput = screen.getByPlaceholderText(/例: ツンデレ風/) as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: '未保存の口調' } })
+
+    fireEvent.click(screen.getByRole('tab', { name: '④ 翻訳' }))
+    await waitFor(() => expect(window.location.hash).toBe('#translation'))
+    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
+    await waitFor(() => expect(window.location.hash).toBe('#dialogue'))
+
+    expect(screen.getByPlaceholderText(/例: ツンデレ風/)).toHaveValue('未保存の口調')
+    expect(screen.getByTestId('speech-tone-preset-modal')).toBeInTheDocument()
+  })
+
+  it('uses only v2 detail flags and preserves them across tab changes', async () => {
+    localStorage.setItem('prompt-surgeon-settings-details-expanded-v2', JSON.stringify({ prompt: true, dialogue: false }))
+    localStorage.setItem('prompt-surgeon-settings-sections-expanded', JSON.stringify({ prompts: false, speechTones: true }))
+    window.location.hash = '#prompt'
+    renderComponent()
+
+    expect(screen.getByRole('button', { name: 'プロンプト診断・生成の詳細設定' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
+    await waitFor(() => expect(window.location.hash).toBe('#dialogue'))
+    expect(screen.getByRole('button', { name: 'セリフ生成の詳細設定' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('ignores malformed legacy and v2 disclosure data', () => {
+    localStorage.setItem('prompt-surgeon-settings-sections-expanded', '{broken')
+    localStorage.setItem('prompt-surgeon-settings-details-expanded-v2', '[]')
+    window.location.hash = '#prompt'
+    renderComponent()
+
+    expect(screen.getByRole('button', { name: 'プロンプト診断・生成の詳細設定' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('preserves the exact legacy section-expansion value on mount and section toggle', () => {
+    const legacySections = '{"prompts":false,"speechTones":true,"translation":false}'
+    localStorage.setItem('prompt-surgeon-settings-sections-expanded', legacySections)
+    window.location.hash = '#prompt'
+
+    renderComponent()
+    expect(localStorage.getItem('prompt-surgeon-settings-sections-expanded')).toBe(legacySections)
+
+    fireEvent.click(screen.getByRole('button', { name: 'プロンプト診断・生成の詳細設定' }))
+    expect(localStorage.getItem('prompt-surgeon-settings-sections-expanded')).toBe(legacySections)
+  })
+
+  it('keeps the settings page usable when browser storage access is denied', () => {
+    const denied = () => {
+      throw new DOMException('Storage access denied', 'SecurityError')
+    }
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(denied)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(denied)
+    try {
+      expect(() => renderComponent()).not.toThrow()
+      expect(screen.getByRole('tablist', { name: '設定カテゴリー' })).toBeInTheDocument()
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
+  })
+
+  it('subscribes to system stats for the page lifetime and cleans up on unmount', async () => {
+    window.location.hash = '#workflows'
+    const { unmount } = renderComponent()
+    await waitFor(() => expect(systemStatsSubscription.start).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('tab', { name: '⑤ システム・一般' }))
+    await waitFor(() => expect(window.location.hash).toBe('#system'))
+    expect(systemStatsSubscription.start).toHaveBeenCalledTimes(1)
+    expect(systemStatsSubscription.stop).not.toHaveBeenCalled()
+    act(() => useGenerationStore.getState().setSystemStats({
+      cpu_pct: 10,
+      ram_used_gb: 4,
+      ram_total_gb: 16,
+      ram_pct: 25,
+      gpu_pct: 20,
+      vram_used_gb: 3,
+      vram_total_gb: 12,
+      vram_pct: 25,
+      ts: Date.now(),
+    }))
+    expect(await screen.findByText('9.0 GB')).toBeInTheDocument()
+    unmount()
+    expect(systemStatsSubscription.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows speech tone presets by default and allows collapsing the section', async () => {
     renderComponent()
 
     expect(screen.getByText('セリフ口調プリセット設定')).toBeDefined()
-
-    // Expand section
-    fireEvent.click(screen.getByText('セリフ口調プリセット設定'))
 
     await waitFor(() => {
       expect(screen.getByText('ツンデレ風')).toBeDefined()
       expect(screen.getByText('お嬢様風')).toBeDefined()
       expect(screen.getByText('ツンデレ口調')).toBeDefined()
     })
+
+    fireEvent.click(screen.getByText('セリフ口調プリセット設定'))
+    await waitFor(() => expect(screen.queryByText('ツンデレ風')).not.toBeInTheDocument())
   })
 
   it('opens create modal, fills form and submits new tone preset', async () => {
@@ -159,7 +290,7 @@ describe('SettingsPage - Speech Tone Presets', () => {
     })
 
     // Submit
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    fireEvent.click(within(screen.getByTestId('speech-tone-preset-modal')).getByRole('button', { name: '保存' }))
 
     await waitFor(() => {
       expect(speechTonePresetsApi.create).toHaveBeenCalledWith({
@@ -181,7 +312,6 @@ describe('SettingsPage - Speech Tone Presets', () => {
     vi.mocked(speechTonePresetsApi.update).mockResolvedValue(updatedPreset)
 
     renderComponent()
-    fireEvent.click(screen.getByText('セリフ口調プリセット設定'))
 
     await waitFor(() => {
       expect(screen.getByText('ツンデレ風')).toBeDefined()
@@ -201,7 +331,7 @@ describe('SettingsPage - Speech Tone Presets', () => {
     const promptInput = screen.getByPlaceholderText(/例: ツンデレな口調で/)
     fireEvent.change(promptInput, { target: { value: 'さらにツンデレな口調で' } })
 
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    fireEvent.click(within(screen.getByTestId('speech-tone-preset-modal')).getByRole('button', { name: '保存' }))
 
     await waitFor(() => {
       expect(speechTonePresetsApi.update).toHaveBeenCalledWith(1, {
@@ -219,7 +349,6 @@ describe('SettingsPage - Speech Tone Presets', () => {
     vi.mocked(speechTonePresetsApi.delete).mockResolvedValue(undefined)
 
     renderComponent()
-    fireEvent.click(screen.getByText('セリフ口調プリセット設定'))
 
     await waitFor(() => {
       expect(screen.getByText('ツンデレ風')).toBeDefined()

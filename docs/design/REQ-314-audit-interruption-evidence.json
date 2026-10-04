@@ -1,0 +1,8 @@
+{
+  "audit_start_utc": "2026-10-04T06:20:59.9557490Z",
+  "explicit_cleanup_start_utc": "2026-10-04T06:24:49.0603825Z",
+  "audit_interruption_elapsed_upper_bound_seconds": 229.1046335,
+  "inference_completed": false,
+  "session_exit_code": 1,
+  "reason": "Manual interrupt after two model load failures, before 300-second overall cap"
+}

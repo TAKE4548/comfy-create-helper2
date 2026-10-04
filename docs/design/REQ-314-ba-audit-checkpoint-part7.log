@@ -1,0 +1,176 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 BA Audit Analysis Report
+
+## Executive Summary
+
+After thorough analysis of the requirement fragment against historical project context, I've identified **8 critical findings** across logical consistency, edge cases, and contract integrity. The most severe issues involve **contradictory UI patterns** and **incomplete API contracts**.
+
+---
+
+## Detailed Findings
+
+### 🔴 CRITICAL: Panel vs Accordion Pattern Contradiction (T7)
+
+| Aspect | Specified Behavior | Existing Implementation |
+|--------|-------------------|----------------------|
+| Component Type | Tab panels with simultaneous mount | Collapsible accordion sections |
+| Visibility Model | Single active panel, others hidden via `display:none` | Multiple sections independently expandable/collapsible |
+| State Management | Single `activeTab` state | Per-section `isExpanded` booleans |
+
+**Impact**: High. Implementing tabs would require:
+- Rewriting the section rendering logic entirely
+- Migrating existing accordion state to tab state
+- Potential breaking changes to user interaction patterns
+
+**Recommendation**: Explicitly confirm whether T7 intends to convert the UI pattern or if "tabpanel" was used loosely to mean "section panel."
+
+---
+
+### 🔴 CRITICAL: Translation API Contract Incompleteness
+
+```typescript
+// Defined but incomplete:
+interface PromptTranslateRequest { 
+  prompt: string; 
+  source_lang?: string; 
+  target_lang?: string; 
+  provider?: string; 
+  repack?: boolean 
+}
+
+// Missing complete definitions for:
+interface TranslateTestRequest { ... }    // Not defined anywhere
+interface TranslateTestResponse { ... }   // Not defined anywhere
+```
+
+**Edge Case**: The implementation logic references `provider` with `"enabled=false"` for unsaved providers, but there's no documented state machine for how a provider transitions between enabled/disabled states.
+
+---
+
+### 🟠 HIGH: Debounce Strategy Ambiguity
+
+> "debounce（300..2000、fallback500）"
+
+**Logical Gap**: The range notation `300..2000` is undefined:
+- Is this randomization for load distribution?
+- Does it scale with input length?
+- What triggers the 500ms fallback?
+
+**Edge Case Scenario**:
+```
+User Input Sequence:
+1. Type "Hello" → debounce at 300ms (min)
+2. Switch direction to EN→JP → new translation queued
+3. Continue typing rapidly → multiple translations in flight
+4. Provider changes mid-request → which provider handles pending request?
+```
+
+---
+
+### 🟠 HIGH: T8 Mobile Layout Specification Vagueness
+
+> "768px未満だけtable rowをカード縦積みにする"
+
+**Ambiguity Analysis**:
+- Does the entire table transform into stacked cards?
+- Are only certain columns wrapped differently?
+- How are scroll behaviors handled in the transformed state?
+
+---
+
+### 🟡 MEDIUM: Missing Abort Signal Handling
+
+The implementation logic states:
+> "API clientにAbortSignalを追加しない" (Do not add AbortSignal to API client)
+
+**Edge Case**: When user switches tabs or unmounts TranslationPreviewCard while a translation is in-flight, the request continues with no cleanup. This could cause:
+- Memory leaks from accumulated fetches
+- Stale responses being used after component unmount
+- Backend resource exhaustion under high concurrency
+
+---
+
+### 🟡 MEDIUM: Incomplete Acceptance Criteria Enumeration
+
+The verification section references **"9AC"** (9 Acceptance Criteria) but only 4 are actually defined:
+1. Card attribution ✓
+2. Non-selected focus prevention ✓  
+3. Draft round-trip preservation ✓
+4. Details v2 ✓
+5. Existing tone CRUD tests adapted to BrowserRouter ✗
+
+**Gap**: The fifth AC is mentioned but not elaborated, creating uncertainty about expected test behavior.
+
+---
+
+### 🟡 MEDIUM: Query Key Naming Inconsistency
+
+```typescript
+// Specified stable contracts:
+query keys: `llm-prompts`, `llm-models`, `llm-current-model`, 
+            `workflows`, `settings-vram` を維持
+
+// But T7 implementation logic uses:
+workflows = workflow/base/mapping
+prompt = group prompt  
+dialogue = tones＋group dialogue
+```
+
+**Risk**: These appear to be different naming layers (cache key vs. data structure). Without explicit mapping, there's risk of:
+- Cache invalidation failures
+- Data fetching race conditions
+- Debugging complexity when tracing state flow
+
+---
+
+### 🟢 LOW: Dependency Chain Gaps
+
+| Task | Dependencies | Notes |
+|------|-------------|-------|
+| T7 | T1, T2, T3, T4, T5, T11 | Complete chain documented |
+| T8 | None (`[]`) | Builds on tone presets from earlier tasks |
+| T9 | Not shown in fragment | Mapping section likely depends on prior work |
+
+**Issue**: Empty dependency array for T8 suggests either:
+- Independent implementation (unlikely given context)
+- Missing documentation of implicit dependencies
+
+---
+
+## Verification Command Analysis
+
+```powershell
+Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+npm run typecheck
+npx vitest run src/pages/SettingsPage/components/__tests__/TranslationPreviewCard.test.tsx
+```
+
+**Observations**:
+1. ✅ Path is specific and testable
+2. ⚠️ Test file path references `TranslationPreviewCard` but T7/T8 focus on `SettingsPage` components
+3. ⚠️ No mention of integration tests for the translation API flow itself
+
+---
+
+## Final Recommendations
+
+| Priority | Action | Effort Estimate |
+|----------|--------|-----------------|
+| P0 | Clarify panel vs accordion pattern intent | 2 hours |
+| P0 | Complete missing type definitions | 1 hour |
+| P1 | Document debounce strategy with edge cases | 2 hours |
+| P1 | Add abort signal handling or justify omission | 3 hours |
+| P2 | Enumerate all 9 ACs explicitly | 1 hour |
+
+---
+
+## Conclusion
+
+The requirement fragment shows **strong architectural awareness** (query key stability, API contract preservation) but has **critical gaps in UI pattern specification and error handling**. The translation feature implementation is particularly vulnerable due to incomplete type contracts and ambiguous debounce behavior.
+
+**Overall Assessment**: Ready for review with clarifications; not ready for implementation without addressing P0 items first.

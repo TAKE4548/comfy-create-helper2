@@ -9,18 +9,34 @@ import {
 
 const EVENT_NAME = 'thumbnail-aspect-ratio-changed'
 
+function readStorage(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Keep the hook usable for this session when browser storage is unavailable.
+  }
+}
+
 export function useThumbnailAspectRatio() {
-  const [presetId, setPresetIdState] = useState<string>(() => {
-    return localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO) || DEFAULT_ASPECT_RATIO_ID
-  })
-  const [customRatio, setCustomRatioState] = useState<string>(() => {
-    return localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM) || ''
-  })
+  const [presetId, setPresetIdState] = useState<string>(() =>
+    readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, DEFAULT_ASPECT_RATIO_ID),
+  )
+  const [customRatio, setCustomRatioState] = useState<string>(() =>
+    readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ''),
+  )
 
   useEffect(() => {
     const handleStorage = () => {
-      setPresetIdState(localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO) || DEFAULT_ASPECT_RATIO_ID)
-      setCustomRatioState(localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM) || '')
+      setPresetIdState((current) => readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, current))
+      setCustomRatioState((current) => readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, current))
     }
     window.addEventListener('storage', handleStorage)
     window.addEventListener(EVENT_NAME, handleStorage)
@@ -31,13 +47,13 @@ export function useThumbnailAspectRatio() {
   }, [])
 
   const setPreset = useCallback((id: string) => {
-    localStorage.setItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO, id)
+    writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, id)
     setPresetIdState(id)
     window.dispatchEvent(new Event(EVENT_NAME))
   }, [])
 
   const setCustomRatio = useCallback((ratio: string) => {
-    localStorage.setItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ratio)
+    writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ratio)
     setCustomRatioState(ratio)
     window.dispatchEvent(new Event(EVENT_NAME))
   }, [])

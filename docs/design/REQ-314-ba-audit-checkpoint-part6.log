@@ -1,0 +1,168 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 Audit Analysis Report
+
+## Executive Summary
+
+After thorough analysis of the requirement fragment, I identified **8 critical issues** spanning logical contradictions, edge cases, and integrity gaps. The most severe findings involve unresolved architectural decisions (D1/D2) that directly impact acceptance criteria validation.
+
+---
+
+## Critical Findings
+
+### 🔴 Issue #1: D1 - Prompt Key Count Contradiction
+| Aspect | Detail | Impact |
+|--------|--------|--------|
+| **Definition** | "6 real prompt keys versus AC-4 seven" | HIGH |
+| **Location** | REQ-314 main fragment, Implementation Logic | MEDIUM-HIGH |
+| **Contradiction** | AC-4 requires validation of 7 items but only 6 exist | Blocks AC pass/fail determination |
+
+**Evidence:**
+```
+D1: six real prompt keys versus AC-4 seven is an explicit unresolved human decision.
+Do not require approval bypass or falsely mark those AC passed.
+```
+
+---
+
+### 🔴 Issue #2: D2 - Backend URL Editing Ambiguity
+| Aspect | Detail | Impact |
+|--------|--------|--------|
+| **Definition** | "Backend/LM Studio URL editing versus unchanged API/schema" | HIGH |
+| **Location** | REQ-314 main fragment, Implementation Logic | MEDIUM-HIGH |
+| **Contradiction** | UI allows URL editing but schema remains static | Creates runtime inconsistency risk |
+
+---
+
+### 🟠 Issue #3: Query Key Inconsistency
+```tsx
+// Maintained list (REQ-314):
+query keys: `llm-prompts`, `llm-models`, `llm-current-model`, 
+             `workflows`, `settings-vram` を維持。
+
+// Actual usage in TranslationSettingsSection.tsx:
+const { data: cacheStats, refetch: refetchStats } = useQuery({
+  queryKey: ['translate-stats'],  // ❌ NOT in maintained list
+  queryFn: translateApi.getStats,
+});
+```
+
+**Impact:** Violates the "maintain query keys" contract; may cause caching inconsistencies.
+
+---
+
+### 🟠 Issue #4: Circular Task Dependency Risk
+```
+T4 depends_on: [REQ-314-T3, REQ-314-T6]  ✓ Valid
+T5 depends_on: [REQ-314-T14]             ⚠ T14 undefined in fragment
+T6 depends_on: []                       ✓ No dependencies
+```
+
+**Impact:** Implementation ordering unclear; T4 cannot be implemented without T3/T6 completion.
+
+---
+
+### 🟡 Issue #5: Dirty State Protection Undefined
+| Gap | Required Specification |
+|-----|----------------------|
+| Refresh behavior | Not specified - data loss risk? |
+| Serialization format | No schema defined for dirty keys |
+| Conflict resolution | Missing merge strategy |
+
+**Evidence:**
+```
+dirty key保護を入れる。query refetch時未保存paramsを上書きしない
+```
+The "how" is not documented.
+
+---
+
+### 🟡 Issue #6: Translation Debounce Edge Cases
+| Scenario | Not Addressed | Risk |
+|----------|---------------|------|
+| Provider switch during debounce | Cancel pending request? | Duplicate API calls |
+| Interrupted debounce on save | State consistency | Partial updates |
+| Debounce reset timing | When does timer restart? | UX inconsistency |
+
+---
+
+### 🟡 Issue #7: Incomplete Type Contracts
+```tsx
+// TranslationSettingsSectionProps - Missing required props:
+interface TranslationSettingsSectionProps { 
+  isExpanded: boolean; 
+  onToggle: () => void 
+} // ❌ No data prop, no onChange for settings
+```
+
+**Impact:** TypeScript compilation may fail at integration points.
+
+---
+
+### 🟡 Issue #8: Model Reference Ambiguity
+```tsx
+// models: dialogue=speech_draft_vlm_model/speech_draft_llm_model;
+// translation=translation_model; prompt=getCurrentModel/updateCurrentModel
+```
+
+**Questions:**
+- Are `speech_draft_vlm_model` and `speech_draft_llm_model` the same or different?
+- How does `prompt=getCurrentModel/updateCurrentModel` map to actual implementation?
+
+---
+
+## Edge Case Analysis Matrix
+
+| Feature | Edge Case | Status | Severity |
+|---------|-----------|--------|----------|
+| Provider Switching | Focus loss on hidden details | Partially addressed | MEDIUM |
+| Debounce Interruption | Cancel pending translation | ❌ Not addressed | HIGH |
+| Refetch + Dirty State | Server overwrites local draft | ❌ Not addressed | HIGH |
+| Keyboard Navigation | Arrow key state preservation | ❌ Not addressed | MEDIUM |
+| Save Failure Recovery | Rollback dirty state | ❌ Not addressed | HIGH |
+
+---
+
+## Acceptance Criteria Integrity Check
+
+| AC Item | Verifiable? | Issue |
+|---------|-------------|-------|
+| "typecheck exit 0" | ✅ Yes | Not a functional requirement |
+| "指定test全件PASS" | ❌ Vague | Which tests undefined |
+| "異常系も実行し" | ❌ Vague | No scenarios specified |
+| "6/7 prompt count" | ⚠️ Blocked | D1 unresolved |
+
+---
+
+## Recommendations
+
+### Immediate Actions Required:
+1. **Resolve D1/D2** - Document the 7th prompt key decision and URL editing behavior
+2. **Add `translate-stats` to maintained query keys list** or remove usage
+3. **Define dirty state serialization format** in design document
+4. **Complete T14 definition** before T5 can be implemented
+
+### Architectural Decisions Needed:
+```
+[ ] Debounce cancellation strategy (AbortController?)
+[ ] Dirty state merge algorithm on refetch
+[ ] Provider switch focus restoration mechanism
+[ ] Keyboard navigation preservation spec
+```
+
+---
+
+## Final Integrity Score
+
+| Metric | Score | Notes |
+|--------|-------|-------|
+| **Logical Consistency** | 7/10 | D1/D2 block full validation |
+| **Edge Case Coverage** | 5/10 | Critical scenarios missing |
+| **Type Contract Integrity** | 6/10 | Incomplete interfaces |
+| **Dependency Clarity** | 7/10 | T14 undefined is minor |
+
+**Overall: 6.25/10 - Requires resolution before implementation gate.**

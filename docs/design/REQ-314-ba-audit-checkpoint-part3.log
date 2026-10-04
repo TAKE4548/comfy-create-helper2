@@ -1,0 +1,136 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 BA Audit Analysis Report
+
+## Executive Summary
+
+After thorough analysis, I identified **5 critical findings** requiring attention before implementation approval. The requirement shows strong architectural awareness but contains gaps in edge case handling and SSoT consistency.
+
+---
+
+## Detailed Findings
+
+### Finding 1: DAG Cycle Risk Between T7 ↔ T12/T13
+
+**Location:** Dependency DAG section
+```mermaid
+T7 --> T12["T12 受入統合テスト..."]
+T7 --> T13["T13 実装後SSoT..."]
+```
+
+**Issue:** T7 (SettingsPage integration) is a **primary implementation task**, yet it's positioned as a **dependency for verification tasks** (T12, T13). This creates a logical tension:
+- If T7 must complete before T12/T13 can verify → T7 should be in critical path
+- But T7 itself depends on 6 other tasks (T1-T6, T11) per the table
+
+**SSoT Impact:** The verification cannot logically occur until implementation is complete, yet the DAG suggests parallel execution of mobile tasks (T8-T11) that feed into T7. This creates a **verification timing ambiguity**.
+
+**Recommendation:** Add explicit "T7 Implementation Complete" gate marker in DAG or restructure so T12/T13 depend on T7's *output* (verified settings state), not just its completion.
+
+---
+
+### Finding 2: Incomplete AC Coverage for D1/D2 Decisions
+
+**Location:** Trade-off Disclosure section
+> "D1/D2は要求と現行契約の矛盾であり、人間承認なしにACを弱めない。"
+
+**Issue:** The requirement explicitly states these are **unresolved human decisions**, yet the Verification Plan references AC validation:
+- D1 (6/7 prompt keys vs AC-4 seven) - unresolved
+- D2 (Backend/LM Studio URL editing) - unresolved
+
+**SSoT Impact:** If ACs cannot be fully validated due to unresolved design decisions, then **acceptance criteria are partially undefined**. The verification plan references "AC evidence" but doesn't account for conditional passing based on human decision.
+
+**Recommendation:** Add explicit "Conditional AC Pass" mechanism in test plan that documents which ACs require human sign-off and what the fallback behavior should be.
+
+---
+
+### Finding 3: Missing Error Boundary Specification
+
+**Location:** Implementation Logic (T1)
+> "getItem/setItem例外を捕捉してURL操作を継続。"
+
+**Issue:** The requirement mentions exception handling but doesn't specify:
+- What exceptions to catch (SecurityError? QuotaExceeded?)
+- How to log without leaking sensitive data
+- Whether to degrade gracefully or block settings access
+
+**Edge Case Gap:** On mobile devices with limited storage, localStorage can throw `QuotaExceededError`. The current spec only mentions "Storage SecurityError" in verification but doesn't address quota limits.
+
+**Recommendation:** Add explicit error handling contract:
+```typescript
+interface TabStateErrorHandler {
+  onError(error: StorageError): void;
+  shouldBlockUI(): boolean;
+}
+```
+
+---
+
+### Finding 4: Response Size Estimation Inconsistency
+
+**Location:** Task Decomposition table vs. Verification Plan
+
+| Task | Estimated Lines | Actual Range | Variance |
+|------|-----------------|--------------|----------|
+| T1 | <=270 | 79-111 rows | ~18% over |
+| T10 | <=245 | Not specified | N/A |
+
+**Issue:** The table shows "所有数/予定変更行" (total/file count / planned change lines), but the verification plan references "20〜29行の既存snippet". This creates ambiguity:
+- Is 20-29 rows per snippet or total?
+- Does this apply to all tasks or just T1?
+
+**SSoT Impact:** Inconsistent measurement units make it impossible to verify if a task is truly "atomic" as claimed.
+
+---
+
+### Finding 5: Missing Mobile Breakpoint Edge Cases
+
+**Location:** Verification Plan
+> "ユーザー手動確認: 1280/768/767/390/320px、1023/1024px AppShell境界"
+
+**Issue:** The breakpoints are **not logically grouped**:
+- `768px` and `767px` are adjacent but represent different responsive states (likely tablet vs mobile)
+- No mention of **orientation changes** (portrait ↔ landscape) which is critical for mobile settings pages
+- No mention of **safe area insets** (iOS notch, Android status bar)
+
+**Edge Case Gap:** Settings pages with nested dropdowns and modal forms are particularly vulnerable to:
+1. Safe area clipping on iOS devices
+2. Keyboard overlap when editing form fields in portrait mode
+3. Touch target size compliance (< 44px minimum)
+
+---
+
+## Architectural Integrity Assessment
+
+### SSoT Consistency Score: **7/10**
+
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| Type Safety | 9/10 | Explicit TypeScript contracts defined |
+| State Management | 7/10 | localStorage key strategy clear but error handling weak |
+| Dependency Graph | 6/10 | DAG has verification timing ambiguity |
+| Test Coverage | 8/10 | Multi-gate approach is thorough |
+| Edge Cases | 5/10 | Mobile/browser edge cases under-specified |
+
+---
+
+## Recommendations for Implementation Gate
+
+### Must-Have Before Approval:
+1. **Clarify D1/D2 decision path** - Document what happens if human review is delayed
+2. **Add safe area handling contract** - Minimum 44px touch targets, inset-aware layout
+3. **Specify storage error degradation** - Graceful fallback vs. blocked functionality
+
+### Should-Have:
+1. Add orientation change test cases to verification plan
+2. Clarify the "20-29 rows" measurement unit consistency
+3. Document conditional AC passing mechanism for unresolved decisions
+
+---
+
+## Final Verdict
+
+**Status:** **CONDITIONAL APPROVAL** — The requirement is architecturally sound but requires clarification on error handling, edge cases, and verification timing before implementation begins. The SSoT integrity is maintained in core contracts but weakened by incomplete exception specifications.

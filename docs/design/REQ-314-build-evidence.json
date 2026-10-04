@@ -1,0 +1,26 @@
+{
+  "pbi_id": "REQ-314",
+  "date": "2026-10-04",
+  "command": "npm run build",
+  "exit_code": 0,
+  "initial_sandbox_attempt": "EPERM realpath frontend/index.html; repeated same build with approved escalation",
+  "index_exists": true,
+  "assets": [
+    {
+      "name": "index-CLoDDw42.js",
+      "bytes": 1321985,
+      "sha256": "c4850ecd59b636fa65676874c5b1404f582f4cddad0b783190ee5e49e23414b8"
+    },
+    {
+      "name": "index-vF0RBO2Y.css",
+      "bytes": 90869,
+      "sha256": "b75cfeef1ffc6357f6be14f4d413bed74f60620babf6f002a51d472bb44034ff"
+    }
+  ],
+  "backend_dist_setting": "backend/app/config.py frontend_dist_dir=../frontend/dist; runtime property resolves to workspace frontend/dist",
+  "warning": "Existing large application bundle: generated JS1296.45kB; Vite500kB chunk warning",
+  "browser_verification": "User manual, not executed",
+  "final_rebuild_reason": "Include final speechTones default-expanded correction; exit0",
+  "page_source_sha256": "54243cbbebfcac5a485229cf9f352dbdb3c7ed97d879ad68b909fed07d89d01a",
+  "index_sha256": "c828e8bfe33d6613ddc335b66840f6d6c2356f30b1cd339ce1b9c49bfbcb0617"
+}

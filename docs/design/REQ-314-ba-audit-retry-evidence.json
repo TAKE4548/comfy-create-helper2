@@ -1,0 +1,31 @@
+{
+  "started_at_utc": "2026-10-04T06:36:53.802735+00:00",
+  "input": "docs\\design\\REQ-314-ba-audit-retry-input.md",
+  "artifact_sha256": {
+    "docs\\design\\REQ-314.md": "0a3d1198b0976c0bfeedb847c5ac6ce5951995c58bd7ef784da6c4f643207554",
+    "docs\\design\\REQ-314-test-plan.md": "0ebe0e02610fac8cc6273cbb85965b6b8047024eb8addfb71c6cb3a5d5070156",
+    "docs\\design\\REQ-314-implementation_plan.md": "233d3bd29f41c0d380db073e6d6d4d1a2b873ac2847e003a42baf3d7aa57fe66",
+    "docs\\backlog\\task\\active\\REQ-314-T1.md": "ae83d85baedaab402fe9929116b58a56e5ad00d5aefaea1edca10df33c367a57",
+    "docs\\backlog\\task\\active\\REQ-314-T10.md": "516c95df4aaa1b85d0fbd989c0d0d81d6da7312de63fef9c3570e1d8478a124e",
+    "docs\\backlog\\task\\active\\REQ-314-T11.md": "dca03d98e86bf99145250d82c80968b8cf6081a7ffc2febd1c60c5716c116559",
+    "docs\\backlog\\task\\active\\REQ-314-T12.md": "00db3a95677c897e1fdc0fe4e79c61bd033c29ea95ecb9bb8dca79773ec31d85",
+    "docs\\backlog\\task\\active\\REQ-314-T13.md": "5a69f201d40ad374fbf009ff385c73819d38f5a2d74f2afd00b667cca4daf2d4",
+    "docs\\backlog\\task\\active\\REQ-314-T14.md": "cee79f08f6f8b3dfa2d3ca940bd685e94ff59aeaa0fcc957504308846f96c591",
+    "docs\\backlog\\task\\active\\REQ-314-T2.md": "54566ad63e20ad157223ddf93d4947442d922ad7d947234fdf550625977e44e8",
+    "docs\\backlog\\task\\active\\REQ-314-T3.md": "ac85330f5cebfe33918711e890139f476a504105c263b8599cf05eaf532cf0fd",
+    "docs\\backlog\\task\\active\\REQ-314-T4.md": "5a6e96dd4cfe57cfa324cd55f17f55454e596e8025f4fd58f53532a83fcf4e7e",
+    "docs\\backlog\\task\\active\\REQ-314-T5.md": "13cf6c74b272ddbd8197b36909f998b203f3985e4482fa9be1e374e57935a070",
+    "docs\\backlog\\task\\active\\REQ-314-T6.md": "525ce4376c05a1fbe73124051fc68ee7022e28e8592ac2e522476fa0d1327c4a",
+    "docs\\backlog\\task\\active\\REQ-314-T7.md": "840bd3a9688638d89099631531395efda7c9005d5475975d3ff5f37cf5a7ce0c",
+    "docs\\backlog\\task\\active\\REQ-314-T8.md": "e84f2f3f5e175965393866f454dbff615bdd1481e003b144ba6c8cfe3002455b",
+    "docs\\backlog\\task\\active\\REQ-314-T9.md": "bec6b72cdfc98b6d43ec8c4c5898bd0cc4e726d26c77d5d3d7bae6a21bcb7ea2"
+  },
+  "overall_timeout_seconds": 300,
+  "execution": "local-network-enabled",
+  "pre_unload_exit_code": 0,
+  "audit_exit_code": null,
+  "audit_timed_out": true,
+  "elapsed_before_cleanup_seconds": 300.563,
+  "unload_exit_code": 0,
+  "finished_at_utc": "2026-10-04T06:41:58.599111+00:00"
+}

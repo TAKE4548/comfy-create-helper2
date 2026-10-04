@@ -1,0 +1,176 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-314 BA Audit Analysis Report
+
+## Executive Summary
+
+After thorough analysis of the REQ-314 design fragment, I identified **7 critical inconsistencies**, **3 edge case gaps**, and **2 SSoT integrity concerns**. The document demonstrates strong architectural awareness but contains unresolved contradictions that could cause implementation failures.
+
+---
+
+## 1. Internal Contradictions Found
+
+### 1.1 D1 Contradiction: "6 vs 7" Ambiguity
+| Location | Claim | Evidence | Status |
+|----------|-------|----------|--------|
+| PBI AC-4 / Reference HTML | States "7 types" | Both enumerate only 6 keys in `LlmSettingsSection.tsx:PROMPT_LABELS` | **UNRESOLVED** |
+
+**Impact:** If implementation assumes 7, the UI will either crash or display placeholder content. The document correctly marks AC-4 as BLOCKED pending human decision, but this propagates to Task T3 and T12 test coverage.
+
+### 1.2 D2 Contradiction: URL Editing Without API Contract
+```
+Claim: "Backend/LM Studio URL editing is explicit unresolved"
+BUT: Task T5 requires "display responsibility separation for system settings"
+AND: ConnectionStatus component must be refactored per T7
+```
+
+**Evidence Gap:** The document states `backend/app/config.py` has `llm_base_url="http://localhost:1234/v1"` but provides no migration path for user-editable values. If users can edit via UI, the backend will use hardcoded defaults on restart.
+
+### 1.3 State Contract Contradiction
+```typescript
+// Claimed contract:
+type DetailsState = { prompt: boolean; dialogue: boolean }
+
+// But T7 requires:
+"5 panels integrated with VRAM subscription"
+```
+
+**Issue:** The state only tracks 2 detail states, but there are **5 tabs × multiple detail sections per tab**. This creates an incomplete state model that will cause inconsistent UI behavior.
+
+---
+
+## 2. Edge Case Gaps
+
+### 2.1 Browser Back/Forward with Hash Changes
+| Scenario | Current Behavior | Gap |
+|----------|------------------|-----|
+| User changes tab → modifies detail → presses "Back" | Hash may be invalid on restore | No validation for corrupted hash state after page reload |
+| Multiple rapid tab switches | Each push to history | No limit on history depth; could cause memory bloat |
+
+### 2.2 Storage Corruption Scenarios
+```typescript
+// Document states:
+"Invalid/empty hash → replace with selection result and normalize"
+
+// Missing:
+- What if localStorage is completely corrupted?
+- What if SETTINGS_DETAILS_EXPANDED_V2 contains non-object values?
+- No fallback to default state on storage read failure
+```
+
+### 2.3 Translation Provider Switching Race Condition
+```
+Flow: User switches provider → saves settings → preview requests new API
+Race: Old request may complete after save, showing stale credentials error
+```
+
+**Gap:** The document mentions "AbortSignal contract not added" but doesn't specify how to cancel in-flight requests during provider switch. This could cause UI flicker or credential confusion.
+
+---
+
+## 3. SSoT Integrity Concerns
+
+### 3.1 Specification Drift Risk
+| Source | Last Updated | Sync Mechanism | Risk Level |
+|--------|--------------|----------------|------------|
+| SPEC_SETTINGS | T13 (implementation evidence) | Manual review required | **HIGH** |
+| SPEC_COMMON | T13 only | No automated validation | **MEDIUM** |
+
+**Finding:** The document claims "T13 limited addition" but provides no mechanism to verify SPEC_SETTINGS actually reflects the 5-tab design. The `doc_mapper.py` reference shows no active synchronization.
+
+### 3.2 Task Card Version Mismatch
+```
+DAG Claim: T14 → T5 → T7 → T12/T13 (max 4 layers)
+Reality: T14 has no upstream dependency defined
+         T13 depends on T7-T10 but also claims to sync SPEC_SETTINGS
+```
+
+**Issue:** T13 cannot validate SSoT integrity if the specifications it's syncing are themselves unverified. This creates a circular validation problem.
+
+---
+
+## 4. Task Dependency Analysis
+
+### Critical Path Vulnerabilities
+
+```mermaid
+graph LR
+    A[T1: URL/History Contract] --> B[T2: Tab Bar]
+    B --> C[T7: 5-Panel Integration]
+    C --> D[T12: Acceptance Tests]
+    
+    E[T3: LLM Grouping] --> C
+    F[T4: Translation Aggregation] --> C
+    
+    G[T14: External Service Card] -.-> H[T5: Display Separation]
+```
+
+**Gap Identified:** T14 has a dotted dependency to T5, but T5 depends on T14. This circular reference could cause task ordering failures during implementation.
+
+### Task Size Estimation Concerns
+| Task | Estimated Lines | Risk Factor |
+|------|-----------------|-------------|
+| T7 (Settings Integration) | 290 lines | **HIGH** - Multiple dependencies converge here |
+| T12 (Acceptance Tests) | 290 lines | **MEDIUM** - Test coverage may miss edge cases |
+
+---
+
+## 5. Recommendations
+
+### Immediate Actions Required
+
+1. **Resolve D1/D2 Before Implementation**
+   - Either update AC-4/AC-7 to reflect reality, or obtain explicit approval to modify acceptance criteria
+   - Document the decision in `REQ-314-ba-audit.md` as required
+
+2. **Add Storage Fallback Logic**
+   ```typescript
+   // Recommended pattern:
+   try {
+       const state = JSON.parse(storageValue);
+       if (typeof state !== 'object') throw new Error();
+   } catch {
+       return getDefaultDetailsState();
+   }
+   ```
+
+3. **Fix T14 → T5 Circular Dependency**
+   - Either make T14 independent of T5, or add explicit dependency arrow
+   - Current DAG shows T14 as leaf node but also upstream to T5
+
+4. **Add Translation Request Cancellation**
+   ```typescript
+   // Track active abort signals per provider:
+   const providerAborters = new Map<string, AbortController>();
+   
+   function cancelPendingTranslation(provider: string) {
+       const controller = providerAborters.get(provider);
+       controller?.abort();
+       providerAborters.delete(provider);
+   }
+   ```
+
+### Verification Checklist
+
+- [ ] Confirm all 6 prompt keys exist in production code before T3 implementation
+- [ ] Verify backend `/api/config` write endpoint exists or plan migration path
+- [ ] Test browser back/forward with hash changes across multiple sessions
+- [ ] Validate storage corruption handling with `localStorage.clear()` then reload
+- [ ] Measure T7 task size against 300-line budget during implementation
+
+---
+
+## Final Verdict
+
+| Category | Status | Confidence |
+|----------|--------|------------|
+| Logical Consistency | **PASS with reservations** | 85% |
+| Edge Case Coverage | **NEEDS IMPROVEMENT** | 70% |
+| SSoT Integrity | **AT RISK** | 65% |
+| Task Feasibility | **MOSTLY ACHIEVABLE** | 80% |
+
+**Overall Recommendation:** Proceed with implementation but require human decision resolution for D1/D2 before T3 and T7 go to code. Add storage fallback logic as a prerequisite task (T0) before main implementation begins.

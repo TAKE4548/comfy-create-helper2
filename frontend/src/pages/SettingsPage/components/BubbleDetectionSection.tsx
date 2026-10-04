@@ -4,6 +4,7 @@ import { Sliders, ChevronDown, Save } from 'lucide-react'
 import { llmPromptsApi } from '../../../api/client'
 import type { LlmPrompt } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
+import '../SettingsResponsive.css'
 
 export interface BubbleDetectionParams {
   min_area: number
@@ -13,9 +14,10 @@ export interface BubbleDetectionParams {
 export interface BubbleDetectionSectionProps {
   isExpanded: boolean
   onToggle: () => void
+  embedded?: boolean
 }
 
-export function BubbleDetectionSection({ isExpanded, onToggle }: BubbleDetectionSectionProps) {
+export function BubbleDetectionSection({ isExpanded, onToggle, embedded = false }: BubbleDetectionSectionProps) {
   const qc = useQueryClient()
   const [saved, setSaved] = useState(false)
   const [bubbleDetectionParams, setBubbleDetectionParams] = useState<BubbleDetectionParams>({
@@ -64,8 +66,8 @@ export function BubbleDetectionSection({ isExpanded, onToggle }: BubbleDetection
   }
 
   return (
-    <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
-      <button
+    <section className={embedded ? 'space-y-4 font-sans' : 'border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden'}>
+      {!embedded && <button
         type="button"
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none"
@@ -81,9 +83,9 @@ export function BubbleDetectionSection({ isExpanded, onToggle }: BubbleDetection
             isExpanded ? 'rotate-180' : ''
           }`}
         />
-      </button>
-      {isExpanded && (
-        <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4 font-sans">
+      </button>}
+      {(isExpanded || embedded) && (
+        <div className={embedded ? 'space-y-4' : 'p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4 font-sans'}>
           <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-4">
             <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.04)] pb-2 mb-2">
               <h3 className="text-xs font-semibold text-zinc-300">画像処理フィルタパラメータ</h3>

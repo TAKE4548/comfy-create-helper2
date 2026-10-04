@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wand2, Sliders, ChevronDown, Save, RefreshCw } from 'lucide-react'
 import { llmPromptsApi } from '../../../api/client'
 import type { LlmPrompt } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
+import { GROUP_PARAMS, GROUP_PROMPTS, type LlmSettingsGroup } from './llmSettingsGroups'
+export type { LlmSettingsGroup } from './llmSettingsGroups'
 
 export interface LlmParams {
   temperature: number
@@ -30,9 +32,9 @@ export const PROMPT_LABELS: Record<string, string> = {
   scene_generate_anima: 'Scene Generator プロンプト（Animaモード）',
   translation_ja_to_en: '翻訳システムプロンプト (日 -> 英)',
   translation_en_to_ja: '翻訳システムプロンプト (英 -> 日)',
-  speech_draft_vlm_prompt: 'セリフ下書き: VLM システムプロンプト',
-  speech_draft_llm_prompt: 'セリフ下書き: LLM システムプロンプト',
-  speech_rewrite_system_prompt: 'セリフ口調変換: システムプロンプト',
+  speech_draft_vlm_prompt: '画像シチュエーション読み取りプロンプト (VLM)',
+  speech_draft_llm_prompt: 'セリフ自動生成プロンプト (LLM)',
+  speech_rewrite_system_prompt: 'キャラクター口調変換プロンプト (LLM)',
 }
 
 export const PARAM_LABELS: Record<string, string> = {
@@ -51,6 +53,8 @@ export const PARAM_FIELDS: { key: keyof LlmParams; label: string; min: number; m
 ]
 
 export interface LlmSettingsSectionProps {
+  group?: LlmSettingsGroup
+  modelFooter?: React.ReactNode
   isExpandedModel: boolean
   onToggleModel: () => void
   isExpandedPrompts: boolean
@@ -60,6 +64,8 @@ export interface LlmSettingsSectionProps {
 }
 
 export function LlmSettingsSection({
+  group,
+  modelFooter,
   isExpandedModel,
   onToggleModel,
   isExpandedPrompts,
@@ -68,10 +74,16 @@ export function LlmSettingsSection({
   onToggleParams,
 }: LlmSettingsSectionProps) {
   const qc = useQueryClient()
+  const instanceId = useId()
+  const hasGroupedDetails = group === 'prompt' || group === 'dialogue'
+  const detailsExpanded = isExpandedPrompts
   const [expanded, setExpanded] = useState<string | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState<string | null>(null)
   const [llmParamsEdits, setLlmParamsEdits] = useState<Record<string, LlmParams>>({})
+  const llmParamsEditsRef = useRef(llmParamsEdits)
+  const dirtyParamsRef = useRef(new Set<string>())
+  const savedParamsRef = useRef<Record<string, string>>({})
 
   const { data: prompts, isLoading: isLoadingPrompts } = useQuery({
     queryKey: ['llm-prompts'],
@@ -111,14 +123,22 @@ export function LlmSettingsSection({
   useEffect(() => {
     if (prompts) {
       const initialEdits: Record<string, LlmParams> = {}
-      const keys = [
-        'llm_params_translation',
-        'llm_params_scene_generate',
-        'llm_params_audit',
-        'llm_params_speech_draft',
-      ]
+      const keys = Object.keys(PARAM_LABELS)
       keys.forEach((key) => {
         const record = prompts.find((p) => p.key === key)
+        const serverValue = record?.content || JSON.stringify(DEFAULT_PARAMS)
+        const pendingSave = savedParamsRef.current[key]
+        if (dirtyParamsRef.current.has(key)) {
+          if (
+            pendingSave === serverValue &&
+            JSON.stringify(llmParamsEditsRef.current[key]) === pendingSave
+          ) {
+            dirtyParamsRef.current.delete(key)
+            delete savedParamsRef.current[key]
+          } else {
+            return
+          }
+        }
         if (record && record.content) {
           try {
             initialEdits[key] = { ...DEFAULT_PARAMS, ...JSON.parse(record.content) }
@@ -129,34 +149,52 @@ export function LlmSettingsSection({
           initialEdits[key] = { ...DEFAULT_PARAMS }
         }
       })
-      setLlmParamsEdits(initialEdits)
+      setLlmParamsEdits((prev) => {
+        const next = { ...prev, ...initialEdits }
+        llmParamsEditsRef.current = next
+        return next
+      })
     }
   }, [prompts])
 
   const getContent = (p: LlmPrompt) => edits[p.key] ?? p.content
 
   const handleParamChange = (key: string, field: keyof LlmParams, val: number) => {
-    setLlmParamsEdits((prev) => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: val,
-      },
-    }))
+    dirtyParamsRef.current.add(key)
+    setLlmParamsEdits((prev) => {
+      const next = { ...prev, [key]: { ...prev[key], [field]: val } }
+      llmParamsEditsRef.current = next
+      return next
+    })
   }
 
   const handleSaveParams = (key: string) => {
     const params = llmParamsEdits[key] || DEFAULT_PARAMS
-    updatePrompt.mutate({ key, content: JSON.stringify(params) })
+    const content = JSON.stringify(params)
+    savedParamsRef.current[key] = content
+    updatePrompt.mutate({ key, content })
   }
+
+  const allowedPrompts = group ? new Set<string>(GROUP_PROMPTS[group]) : null
+  const allowedParams = group ? new Set<string>(GROUP_PARAMS[group]) : null
+  const showMainModel = !group || group === 'prompt'
+  const showTranslationModel = !group || group === 'translation'
+  const showDialogueModels = !group || group === 'dialogue'
+  const allAllowedPrompts = new Set<string>(Object.values(GROUP_PROMPTS).flat())
+  const visiblePrompts = prompts?.filter((prompt) =>
+    allowedPrompts ? allowedPrompts.has(prompt.key) : allAllowedPrompts.has(prompt.key)
+  )
+  const visibleParams = Object.entries(PARAM_LABELS).filter(
+    ([key]) => !allowedParams || allowedParams.has(key)
+  )
 
   return (
     <>
       {/* LLM Model Settings */}
       <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
         <div
-          onClick={onToggleModel}
-          className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
+          onClick={group ? undefined : onToggleModel}
+          className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left"
         >
           <div className="flex items-center gap-2">
             <Wand2 size={15} className="text-[#7C6FDD]" />
@@ -167,17 +205,17 @@ export function LlmSettingsSection({
             {saved === 'model' && (
               <span className="text-xs text-accent-green">✓ 保存しました</span>
             )}
-            <ChevronDown
+            {!group && <ChevronDown
               size={16}
               className={`text-zinc-500 transition-transform duration-200 ${
                 isExpandedModel ? 'rotate-180' : ''
               }`}
-            />
+            />}
           </div>
         </div>
-        {isExpandedModel && (
+        {(group || isExpandedModel) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
-            <div className="flex items-center gap-3">
+            {showMainModel && <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-xs text-zinc-400 mb-1">現在のモデル</label>
                 <select
@@ -217,10 +255,10 @@ export function LlmSettingsSection({
                   モデル一覧を取得
                 </button>
               </div>
-            </div>
+            </div>}
 
             {/* 翻訳用LLMモデル設定 */}
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
+            {showTranslationModel && <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
               <div className="flex-1">
                 <label className="block text-xs text-zinc-400 mb-1">翻訳用LLMモデル</label>
                 <select
@@ -242,10 +280,10 @@ export function LlmSettingsSection({
                   ))}
                 </select>
               </div>
-            </div>
+            </div>}
 
             {/* セリフ下書き VLMモデル設定 */}
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
+            {showDialogueModels && <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
               <div className="flex-1">
                 <label className="block text-xs text-zinc-400 mb-1">
                   セリフ下書き VLMモデル (画像認識用)
@@ -269,10 +307,10 @@ export function LlmSettingsSection({
                   ))}
                 </select>
               </div>
-            </div>
+            </div>}
 
             {/* セリフ下書き LLMモデル設定 */}
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
+            {showDialogueModels && <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
               <div className="flex-1">
                 <label className="block text-xs text-zinc-400 mb-1">
                   セリフ下書き LLMモデル (テキスト生成用)
@@ -296,10 +334,10 @@ export function LlmSettingsSection({
                   ))}
                 </select>
               </div>
-            </div>
+            </div>}
 
             {/* 翻訳デバウンス間隔設定 */}
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
+            {!group && <div className="flex items-center gap-3 mt-4 pt-4 border-t border-[rgba(255,255,255,0.04)]">
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs text-zinc-400">翻訳デバウンス間隔 (ms)</label>
@@ -331,31 +369,42 @@ export function LlmSettingsSection({
                   <span>2000ms</span>
                 </div>
               </div>
-            </div>
+            </div>}
+            {group === 'dialogue' && modelFooter}
           </div>
         )}
       </section>
 
-      {/* LLM System Prompts */}
-      <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
-        <button
+      <div className={hasGroupedDetails ? 'border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden' : 'contents'}>
+        {hasGroupedDetails && <button
+          id={`${instanceId}-details-toggle`}
           type="button"
           onClick={onTogglePrompts}
+          aria-expanded={detailsExpanded}
+          aria-controls={`${instanceId}-details-body`}
           className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans"
         >
           <div className="flex items-center gap-2">
             <Wand2 size={15} className="text-[#7C6FDD]" />
-            <h2 className="text-sm font-semibold text-zinc-300">LLM System Prompts</h2>
-            <span className="text-xs text-zinc-600">— DBに保存（再起動不要）</span>
+            <h2 className="text-sm font-semibold text-zinc-300">{group === 'prompt' ? 'プロンプト診断・生成の詳細設定' : 'セリフ生成の詳細設定'}</h2>
           </div>
           <ChevronDown
             size={16}
-            className={`text-zinc-500 transition-transform duration-200 ${
-              isExpandedPrompts ? 'rotate-180' : ''
-            }`}
+            className={`text-zinc-500 transition-transform duration-200 ${detailsExpanded ? 'rotate-180' : ''}`}
           />
-        </button>
-        {isExpandedPrompts && (
+        </button>}
+        <div id={`${instanceId}-details-body`} hidden={hasGroupedDetails && !detailsExpanded}>
+      {/* LLM System Prompts */}
+      <section className={hasGroupedDetails || group === 'translation' ? 'border-0 bg-transparent rounded-none overflow-visible' : 'border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden'}>
+        {!hasGroupedDetails && group !== 'translation' && <button
+          type="button"
+          onClick={onTogglePrompts}
+          className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans"
+        >
+          <div className="flex items-center gap-2"><Wand2 size={15} className="text-[#7C6FDD]" /><h2 className="text-sm font-semibold text-zinc-300">LLM System Prompts</h2><span className="text-xs text-zinc-600">— DBに保存（再起動不要）</span></div>
+          <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${isExpandedPrompts ? 'rotate-180' : ''}`} />
+        </button>}
+        {(group === 'translation' || (hasGroupedDetails ? true : isExpandedPrompts)) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30">
             {isLoadingPrompts ? (
               <div className="flex items-center gap-2 text-zinc-600 text-sm py-8">
@@ -363,7 +412,7 @@ export function LlmSettingsSection({
               </div>
             ) : (
               <div className="space-y-3">
-                {prompts?.map((p) => (
+                {visiblePrompts?.map((p) => (
                   <div
                     key={p.key}
                     id={`prompt-section-${p.key}`}
@@ -396,6 +445,9 @@ export function LlmSettingsSection({
                     </button>
                     {expanded === p.key && (
                       <div className="px-4 pb-4 space-y-3 border-t border-[rgba(255,255,255,0.04)] pt-3 animate-fade-in">
+                        {p.key === 'speech_draft_vlm_prompt' && <p className="text-xs text-zinc-500">画像理解：画像の状況や要素を読み取ります。</p>}
+                        {p.key === 'speech_draft_llm_prompt' && <p className="text-xs text-zinc-500">セリフ文章化：読み取った状況からセリフを作成します。</p>}
+                        {p.key === 'speech_rewrite_system_prompt' && <p className="text-xs text-zinc-500">口調変換：キャラクターに合わせてセリフを整えます。</p>}
                         <textarea
                           id={`prompt-content-${p.key}`}
                           value={getContent(p)}
@@ -447,8 +499,8 @@ export function LlmSettingsSection({
       </section>
 
       {/* LLM Detailed Parameters */}
-      <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
-        <button
+      <section className={hasGroupedDetails || group === 'translation' ? 'border-0 bg-transparent rounded-none overflow-visible' : 'border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden'}>
+        {!hasGroupedDetails && group !== 'translation' && <button
           type="button"
           onClick={onToggleParams}
           className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none"
@@ -464,8 +516,8 @@ export function LlmSettingsSection({
               isExpandedParams ? 'rotate-180' : ''
             }`}
           />
-        </button>
-        {isExpandedParams && (
+        </button>}
+        {(group === 'translation' || (hasGroupedDetails ? true : isExpandedParams)) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
             {isLoadingPrompts ? (
               <div className="flex items-center gap-2 text-zinc-600 text-sm py-8 font-sans">
@@ -474,7 +526,7 @@ export function LlmSettingsSection({
               </div>
             ) : (
               <div className="space-y-4 font-sans">
-                {Object.entries(PARAM_LABELS).map(([key, label]) => {
+                {visibleParams.map(([key, label]) => {
                   const params = llmParamsEdits[key] || DEFAULT_PARAMS
                   const isSaved = saved === key
                   return (
@@ -541,6 +593,8 @@ export function LlmSettingsSection({
           </div>
         )}
       </section>
+        </div>
+      </div>
     </>
   )
 }

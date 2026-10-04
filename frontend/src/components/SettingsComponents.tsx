@@ -65,9 +65,9 @@ export function MappingMasterModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-lg bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="mapping-master-modal-title" className="w-full max-w-lg bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-3">
-          <h3 className="text-sm font-semibold text-zinc-200">
+          <h3 id="mapping-master-modal-title" className="text-sm font-semibold text-zinc-200">
             {mode === 'create' ? 'Create Mapping Master' : 'Edit Mapping Master'}
           </h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={16} /></button>
@@ -180,9 +180,9 @@ export function MappingMasterDeleteModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="w-full max-w-md bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="mapping-master-delete-title" className="w-full max-w-md bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
         <div className="flex items-center gap-2.5 text-red-400">
-          <AlertTriangle size={18} /><h3 className="text-sm font-semibold">Delete Mapping Master?</h3>
+          <AlertTriangle size={18} /><h3 id="mapping-master-delete-title" className="text-sm font-semibold">Delete Mapping Master?</h3>
         </div>
         <p className="text-xs text-zinc-400 leading-relaxed">
           Are you sure you want to delete <span className="font-mono text-zinc-200 font-bold">{master.role}</span>? This action cannot be undone.
@@ -300,16 +300,16 @@ export function SortableMasterRow({
           : 'hover:bg-white/[0.01]'
       }`}
     >
-      <td className="px-3 py-3 text-zinc-600">
+      <td data-label="Reorder" className="px-3 py-3 text-zinc-600">
         <div className="flex items-center gap-2">
           {isMultiSelectMode && (
-            <div className="w-[13px] h-[13px] border border-[rgba(255,255,255,0.15)] rounded flex items-center justify-center bg-zinc-800 flex-shrink-0">
+            <button type="button" role="checkbox" aria-checked={isSelected} aria-label={`${mm.role} を選択`} onClick={(e) => { e.stopPropagation(); onClick(e) }} className="w-[44px] h-[44px] border border-[rgba(255,255,255,0.15)] rounded flex items-center justify-center bg-zinc-800 flex-shrink-0">
               {isSelected && <div className="w-1.5 h-1.5 rounded-sm bg-[#3ECF8E]" />}
-            </div>
+            </button>
           )}
           <button
             type="button"
-            className="cursor-grab active:cursor-grabbing touch-none select-none p-1 hover:text-zinc-400 transition-colors focus:outline-none flex-shrink-0"
+            className="cursor-grab active:cursor-grabbing touch-none select-none min-w-[44px] min-h-[44px] flex items-center justify-center p-1 hover:text-zinc-400 transition-colors focus:outline-none flex-shrink-0"
             style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
             onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
             {...attributes}
@@ -321,31 +321,31 @@ export function SortableMasterRow({
           </button>
         </div>
       </td>
-      <td className="px-4 py-3 font-mono text-zinc-200">{mm.role}</td>
-      <td className="px-4 py-3">{mm.display_name}</td>
-      <td className="px-4 py-3 font-mono text-zinc-400">{mm.param_name}</td>
-      <td className="px-4 py-3">
+      <td data-label="Role" className="px-4 py-3 font-mono text-zinc-200 break-words">{mm.role}</td>
+      <td data-label="Display Name" className="px-4 py-3 break-words">{mm.display_name}</td>
+      <td data-label="Param Name" className="px-4 py-3 font-mono text-zinc-400 break-words">{mm.param_name}</td>
+      <td data-label="Input Type" className="px-4 py-3 break-words">
         <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px]">
           {mm.input_type}
         </span>
       </td>
-      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.expected_class_types?.join(', ')}>
+      <td data-label="Expected Class Types" className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] break-words" title={mm.expected_class_types?.join(', ')}>
         {mm.expected_class_types?.join(', ') || '-'}
       </td>
-      <td className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] truncate" title={mm.title_patterns?.join(', ')}>
+      <td data-label="Title Patterns" className="px-4 py-3 text-zinc-500 font-mono max-w-[150px] break-words" title={mm.title_patterns?.join(', ')}>
         {mm.title_patterns?.join(', ') || '-'}
       </td>
-      <td className="px-4 py-3 text-right">
+      <td data-label="Actions" className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-2">
           {!isMultiSelectMode && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); openEditModal(mm) }} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
+              <button type="button" aria-label={`${mm.role} を編集`} onClick={(e) => { e.stopPropagation(); openEditModal(mm) }} className="min-w-[44px] min-h-[44px] flex items-center justify-center p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="Edit">
                 <Edit2 size={13} />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); openCopyModal(mm) }} className="p-1 text-zinc-400 hover:text-accent-green transition-colors" title="Copy to New">
+              <button type="button" aria-label={`${mm.role} を複製`} onClick={(e) => { e.stopPropagation(); openCopyModal(mm) }} className="min-w-[44px] min-h-[44px] flex items-center justify-center p-1 text-zinc-400 hover:text-accent-green transition-colors" title="Copy to New">
                 <Copy size={13} />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); openDeleteModal(mm) }} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+              <button type="button" aria-label={`${mm.role} を削除`} onClick={(e) => { e.stopPropagation(); openDeleteModal(mm) }} className="min-w-[44px] min-h-[44px] flex items-center justify-center p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
                 <Trash2 size={13} />
               </button>
             </>
@@ -380,13 +380,13 @@ export function WorkflowDeleteConfirmDialog({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl space-y-4 relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="workflow-delete-title" className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl space-y-4 relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} disabled={isPending} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300">
           <X size={16} />
         </button>
         <div className="flex items-center gap-2 text-red-400">
           <AlertTriangle size={18} />
-          <h3 className="text-sm font-semibold text-zinc-200">
+          <h3 id="workflow-delete-title" className="text-sm font-semibold text-zinc-200">
             ワークフロー「{workflowName}」を削除しますか？
           </h3>
         </div>
@@ -445,5 +445,3 @@ export function WorkflowDeleteConfirmDialog({
     </div>
   );
 }
-
-

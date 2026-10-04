@@ -1,0 +1,211 @@
+REQ-314 local QA audit traces (2026-10-04)
+=========================================
+
+Attempt 1 — sandboxed; retained verbatim from command output
+Command:
+python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
+Exit: 0 (adapter returned no audit report)
+Output:
+[Model Auto-Router] Action 'qa-audit' requires model 'local-model'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'local-model' (GPU: max)...
+[Model Auto-Router ERROR] lms load returned code 1: Waking up LM Studio service...
+Error: Timed out waiting for LM Studio daemon to start.
+Error: Failed to start or connect to local LM Studio API server.
+
+[Model Auto-Router] No models currently loaded in LM Studio.
+<!-- [LLM Audit Trace: Action=qa-audit | Model=local-model | Domain=general | Params=8.0B | Quant=Unknown] -->
+Error querying LMStudio API: <urlopen error [WinError 10013] アクセス許可で禁じられた方法でソケットにアクセスしようとしました。>
+
+Explicit unload after attempt 1:
+Command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+Exit: 0
+Output: [Model Auto-Router] No models currently loaded in LM Studio.
+
+GPU query after attempt 1:
+Command: nvidia-smi
+Exit: 1
+Output: nvidia-smi is not recognized as a command. No numeric VRAM measurement was available.
+
+Attempt 2 — coordinator-approved elevated execution; complete raw command output
+Command:
+python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 1200 --unload-after qa-audit docs/design/REQ-314-test-plan.md
+Exit: 0
+Output:
+<!-- [LLM Audit Trace: Action=qa-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# Test Plan Audit Report: REQ-314 Execution Feasibility Analysis
+
+## Executive Summary
+
+| Category | Status | Risk Level |
+|----------|--------|------------|
+| Command Specificity | ✅ PASS | Low |
+| Metric Ambiguity | ⚠️ NEEDS FIX | Medium |
+| AI Escape Prevention | ⚠️ PARTIAL | Medium-High |
+| Evidence Traceability | ✅ MOSTLY PASS | Low-Medium |
+
+---
+
+## Detailed Findings
+
+### 1. Command Specificity Analysis ✓
+
+**Verified Executable Commands:**
+```powershell
+Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'
+npm run typecheck
+npx vitest run src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts ...
+```
+
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| Absolute paths provided | ✅ | `C:/Users/audih/ws/...` |
+| Exact npm scripts named | ✅ | `typecheck`, `vitest run`, `test` |
+| File globs specific | ⚠️ | Multiple test files listed explicitly |
+
+**Recommendation:** Add pre-flight check command to verify repo state before execution.
+
+---
+
+### 2. Metric Ambiguity Audit ⚠️
+
+#### Critical Ambiguities Requiring Clarification:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ METRIC #1: "2px within tolerance" for tab width             │
+│ ─────────────────────────────────────────────────────────── │
+│ Question: How measured? DOMRect? Visual diff? Pixel-perfect?│
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ METRIC #2: "44px hitbox with 1px error margin"               │
+│ ─────────────────────────────────────────────────────────── │
+│ Question: Automated measurement tool? Manual screenshot?    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ METRIC #3: "scroll into view" behavior                       │
+│ ─────────────────────────────────────────────────────────── │
+│ Question: What constitutes "into view"? 50%? 100%?         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. AI Escape Prevention Analysis ⚠️
+
+**Current Safeguards:**
+- ✅ Manual browser verification required for E2E paths
+- ✅ External API availability documented as INCONCLUSIVE condition
+- ✅ Timeout enforcement defined (120s/180s/600s)
+
+**Escape Vectors Identified:**
+
+```
+AI ESCAPE PATH:
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│  Mock API    │───▶│  Mock DOM   │───▶│  Mock Timer  │
+│  Responses   │    │  Measurements│    │  Extensions  │
+└──────────────┘    └──────────────┘    └──────────────┘
+       ▲                    ▲                    ▲
+       └────────────────────┴────────────────────┘
+                   ALL MOCKED - NO REAL BROWSER
+```
+
+**Recommendation:** Require actual viewport capture and DOM snapshot comparison for critical paths.
+
+---
+
+### 4. Evidence Traceability Matrix ✓
+
+| Evidence Type | Required | Verification Method | Status |
+|---------------|----------|---------------------|--------|
+| Tab width measurement | ✅ | Screenshot + computed CSS dump | Defined |
+| Hash/LS behavior | ✅ | Console logs + storage inspection | Defined |
+| API contract validation | ✅ | Request spy comparison | Defined |
+| Accessibility audit | ⚠️ | Screen reader test required | Not automated |
+
+---
+
+### 5. Critical Gaps Requiring Attention
+
+```
+GAP ANALYSIS:
+┌─────────────────────────────────────────────────────────────┐
+│ GAP #1: No automated metric capture for visual measurements │
+│ ─────────────────────────────────────────────────────────── │
+│ Impact: AI could report "2px within tolerance" without      │
+│ actually measuring anything.                                │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ GAP #2: Timeout handling lacks automatic extension logic    │
+│ ─────────────────────────────────────────────────────────── │
+│ Impact: Legitimate long-running tests may fail spuriously.  │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ GAP #3: "User OK" approval creates human-in-the-loop        │
+│ ─────────────────────────────────────────────────────────── │
+│ Impact: Plan not fully automated; requires manual sign-off. │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Final Audit Verdict
+
+### Overall Score: 78/100
+
+| Dimension | Score | Weight | Weighted |
+|-----------|-------|--------|----------|
+| Command Specificity | 95/100 | 15% | 14.25 |
+| Metric Clarity | 65/100 | 25% | 16.25 |
+| AI Escape Prevention | 70/100 | 20% | 14.00 |
+| Evidence Traceability | 85/100 | 20% | 17.00 |
+| Auditability | 80/100 | 20% | 16.00 |
+
+---
+
+## Required Remediation Actions
+
+```
+PRIORITY #1 - Metric Automation:
+└── Add automated DOM measurement utilities for all pixel-based metrics
+└── Implement screenshot diffing with tolerance thresholds
+
+PRIORITY #2 - AI Hardening:
+└── Require real viewport capture (not mocked)
+└── Add DOM snapshot comparison against golden master
+
+PRIORITY #3 - Timeout Logic:
+└── Implement automatic extension only on partial progress detection
+└── Log timeout events with context for post-mortem analysis
+```
+
+---
+
+## Conclusion
+
+The test plan is **mechanically executable** but contains **metric ambiguities that could allow AI agents to fabricate compliance**. The manual browser verification requirement effectively prevents "brain-only" testing, but the measurement criteria themselves need automation to prevent mock-based escape paths.[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+
+Explicit unload after attempt 2:
+Command: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload
+Exit: 0
+Output: [Model Auto-Router] No models currently loaded in LM Studio.
+
+Model listing after attempt 2:
+Command: lms ps
+Sandbox attempt: interrupted after "Waking up LM Studio service..." with exit 1.
+Elevated attempt: exit 0
+Output:
+No models are currently loaded.
+
+To load a model, run:
+
+    lms load <model path>
+
+Physical GPU verification:
+Command: nvidia-smi
+Exit: 1; command not available. Adapter/unload and `lms ps` confirm no loaded LM Studio models, but physical GPU utilization could not be measured independently.

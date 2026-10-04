@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Languages,
@@ -13,6 +13,10 @@ import {
 } from 'lucide-react'
 import { llmPromptsApi, translateApi } from '../../../api/client'
 import type { LlmPrompt, TranslateTestResponse } from '../../../api/types'
+import { LlmSettingsSection } from './LlmSettingsSection'
+import { TranslationPreviewCard } from './TranslationPreviewCard'
+
+type TranslationProvider = 'google_cloud' | 'deepl' | 'llm' | 'fugumt'
 
 interface TranslationSettingsSectionProps {
   isExpanded: boolean
@@ -25,7 +29,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
 }) => {
   const qc = useQueryClient()
 
-  const { data: prompts, isLoading: isLoadingPrompts } = useQuery<LlmPrompt[]>({
+  const { data: prompts, isLoading: isLoadingPrompts, dataUpdatedAt: promptsDataUpdatedAt } = useQuery<LlmPrompt[]>({
     queryKey: ['llm-prompts'],
     queryFn: () => llmPromptsApi.list() as Promise<LlmPrompt[]>,
   })
@@ -35,11 +39,17 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
     queryFn: translateApi.getStats,
   })
 
-  const [provider, setProvider] = useState<'google_cloud' | 'deepl' | 'llm' | 'fugumt'>(
-    'google_cloud'
-  )
+  const [provider, setProvider] = useState<TranslationProvider>('google_cloud')
+  const [savedProvider, setSavedProvider] = useState<TranslationProvider | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState('')
+  const [savedCredentials, setSavedCredentials] = useState<{ apiKey: string; apiUrl: string } | null>(null)
+  const [providerDirty, setProviderDirty] = useState(false)
+  const [credentialsDirty, setCredentialsDirty] = useState(false)
+  const [translationExpanded, setTranslationExpanded] = useState(false)
+  const [debounceDraft, setDebounceDraft] = useState<number | null>(null)
+  const savedSnapshotRef = useRef<{ provider: TranslationProvider; apiKey: string; apiUrl: string; after: number } | null>(null)
+  const providerRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -50,38 +60,97 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   // Sync state from fetched prompts
   useEffect(() => {
     if (prompts) {
+      const snapshot = savedSnapshotRef.current
+      if (snapshot) {
+        if (promptsDataUpdatedAt <= snapshot.after) return
+        const remoteProvider = prompts.find((p) => p.key === 'translation_provider')?.content
+        const remoteKey = prompts.find((p) => p.key === 'translation_api_key')?.content
+        const remoteUrl = prompts.find((p) => p.key === 'translation_api_url')?.content
+        if (remoteProvider !== snapshot.provider ||
+          ((snapshot.provider === 'google_cloud' || snapshot.provider === 'deepl') &&
+            (remoteKey !== snapshot.apiKey || remoteUrl !== snapshot.apiUrl))) return
+        savedSnapshotRef.current = null
+      }
       const pRecord = prompts.find((p) => p.key === 'translation_provider')
-      if (pRecord?.content) {
+      if (pRecord?.content && !providerDirty) {
         if (pRecord.content === 'google_free') {
           setProvider('google_cloud')
+          setSavedProvider('google_cloud')
         } else {
-          setProvider(pRecord.content as any)
+          setProvider(pRecord.content as TranslationProvider)
+          setSavedProvider(pRecord.content as TranslationProvider)
         }
       }
       const kRecord = prompts.find((p) => p.key === 'translation_api_key')
-      if (kRecord?.content) {
+      if (kRecord && !credentialsDirty) {
         setApiKey(kRecord.content)
       }
       const uRecord = prompts.find((p) => p.key === 'translation_api_url')
-      if (uRecord?.content) {
+      if (uRecord && !credentialsDirty) {
         setApiUrl(uRecord.content)
       }
+      if (!credentialsDirty && kRecord && uRecord) {
+        setSavedCredentials({ apiKey: kRecord.content, apiUrl: uRecord.content })
+      }
     }
-  }, [prompts])
+  }, [prompts, promptsDataUpdatedAt, providerDirty, credentialsDirty])
+
+  useEffect(() => {
+    if (!prompts) return
+    const snapshot = savedSnapshotRef.current
+    if (snapshot) {
+      if (promptsDataUpdatedAt <= snapshot.after) return
+      const remoteProvider = prompts.find((p) => p.key === 'translation_provider')?.content
+      const remoteKey = prompts.find((p) => p.key === 'translation_api_key')?.content
+      const remoteUrl = prompts.find((p) => p.key === 'translation_api_url')?.content
+      if (remoteProvider !== snapshot.provider ||
+        ((snapshot.provider === 'google_cloud' || snapshot.provider === 'deepl') &&
+          (remoteKey !== snapshot.apiKey || remoteUrl !== snapshot.apiUrl))) return
+      savedSnapshotRef.current = null
+    }
+    const key = prompts.find((p) => p.key === 'translation_provider')?.content
+    const normalized = key === 'google_free' ? 'google_cloud' : key
+    if (providerDirty && normalized === provider) setProviderDirty(false)
+    if (credentialsDirty &&
+      prompts.find((p) => p.key === 'translation_api_key')?.content === apiKey &&
+      prompts.find((p) => p.key === 'translation_api_url')?.content === apiUrl) {
+      setCredentialsDirty(false)
+    }
+  }, [prompts, promptsDataUpdatedAt, providerDirty, credentialsDirty, provider, apiKey, apiUrl])
 
   const saveSettingsMutation = useMutation({
-    mutationFn: async () => {
-      if (provider === 'fugumt') {
-        await llmPromptsApi.update('translation_provider', { content: provider })
+    mutationFn: async (submitted: { provider: TranslationProvider; apiKey: string; apiUrl: string }) => {
+      if (submitted.provider === 'fugumt' || submitted.provider === 'llm') {
+        await llmPromptsApi.update('translation_provider', { content: submitted.provider })
       } else {
         await Promise.all([
-          llmPromptsApi.update('translation_provider', { content: provider }),
-          llmPromptsApi.update('translation_api_key', { content: apiKey }),
-          llmPromptsApi.update('translation_api_url', { content: apiUrl }),
+          llmPromptsApi.update('translation_provider', { content: submitted.provider }),
+          llmPromptsApi.update('translation_api_key', { content: submitted.apiKey }),
+          llmPromptsApi.update('translation_api_url', { content: submitted.apiUrl }),
         ])
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, submitted) => {
+      const upsert = (data: LlmPrompt[], key: string, content: string): LlmPrompt[] =>
+        data.some((prompt) => prompt.key === key)
+          ? data.map((prompt) => prompt.key === key ? { ...prompt, content } : prompt)
+          : [...data, { id: -1, key, content, description: null, updated_at: new Date().toISOString() }]
+      let updatedPrompts = upsert(qc.getQueryData<LlmPrompt[]>(['llm-prompts']) ?? [], 'translation_provider', submitted.provider)
+      if (submitted.provider === 'google_cloud' || submitted.provider === 'deepl') {
+        updatedPrompts = upsert(updatedPrompts, 'translation_api_key', submitted.apiKey)
+        updatedPrompts = upsert(updatedPrompts, 'translation_api_url', submitted.apiUrl)
+      }
+      qc.setQueryData(['llm-prompts'], updatedPrompts)
+      savedSnapshotRef.current = {
+        ...submitted,
+        after: qc.getQueryState(['llm-prompts'])?.dataUpdatedAt ?? Date.now(),
+      }
+      setSavedProvider(submitted.provider)
+      setProviderDirty(provider !== submitted.provider)
+      if (submitted.provider === 'google_cloud' || submitted.provider === 'deepl') {
+        setSavedCredentials({ apiKey: submitted.apiKey, apiUrl: submitted.apiUrl })
+        setCredentialsDirty(apiKey !== submitted.apiKey || apiUrl !== submitted.apiUrl)
+      }
       qc.invalidateQueries({ queryKey: ['llm-prompts'] })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -122,7 +191,34 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
-    saveSettingsMutation.mutate()
+    saveSettingsMutation.mutate({ provider, apiKey, apiUrl })
+  }
+
+  const setDraftProvider = (next: TranslationProvider) => {
+    setProvider(next)
+    setProviderDirty(next !== savedProvider)
+    if (provider === 'llm' && next !== 'llm') providerRef.current?.focus()
+    setTestResult(null)
+  }
+
+  const debounceMs = Math.min(2000, Math.max(300, Number.isFinite(debounceDraft)
+    ? debounceDraft as number
+    : Number(prompts?.find((p) => p.key === 'translation_debounce')?.content) || 500))
+  const authProvider = provider === 'google_cloud' || provider === 'deepl'
+  const configDirty = providerDirty || savedProvider === null ||
+    (authProvider && (credentialsDirty || (savedCredentials !== null &&
+      (apiKey !== savedCredentials.apiKey || apiUrl !== savedCredentials.apiUrl))))
+  const previewEnabled = !configDirty && !saveSettingsMutation.isPending && !saveSettingsMutation.isError
+
+  const handleDebounceChange = async (value: number) => {
+    const validated = Math.min(2000, Math.max(300, Math.round(value / 50) * 50))
+    setDebounceDraft(validated)
+    try {
+      await llmPromptsApi.update('translation_debounce', { content: String(validated) })
+      qc.invalidateQueries({ queryKey: ['llm-prompts'] })
+    } catch {
+      setDebounceDraft(null)
+    }
   }
 
   return (
@@ -177,10 +273,11 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                   >
                     <input
                       type="radio"
+                      ref={providerRef}
                       name="provider"
                       value="fugumt"
                       checked={provider === 'fugumt'}
-                      onChange={() => setProvider('fugumt')}
+                      onChange={() => setDraftProvider('fugumt')}
                       className="mt-0.5"
                     />
                     <div>
@@ -208,7 +305,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       name="provider"
                       value="google_cloud"
                       checked={provider === 'google_cloud'}
-                      onChange={() => setProvider('google_cloud')}
+                      onChange={() => setDraftProvider('google_cloud')}
                       className="mt-0.5"
                     />
                     <div>
@@ -233,7 +330,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       name="provider"
                       value="deepl"
                       checked={provider === 'deepl'}
-                      onChange={() => setProvider('deepl')}
+                      onChange={() => setDraftProvider('deepl')}
                       className="mt-0.5"
                     />
                     <div>
@@ -256,7 +353,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       name="provider"
                       value="llm"
                       checked={provider === 'llm'}
-                      onChange={() => setProvider('llm')}
+                      onChange={() => setDraftProvider('llm')}
                       className="mt-0.5"
                     />
                     <div>
@@ -282,7 +379,11 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       <input
                         type={showApiKey ? 'text' : 'password'}
                         value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setApiKey(value)
+                          setCredentialsDirty(savedCredentials === null || value !== savedCredentials.apiKey || apiUrl !== savedCredentials.apiUrl)
+                        }}
                         placeholder={
                           provider === 'deepl'
                             ? 'xxxx-xxxx-xxxx-xxxx:fx'
@@ -307,7 +408,11 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                     <input
                       type="text"
                       value={apiUrl}
-                      onChange={(e) => setApiUrl(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        setApiUrl(value)
+                        setCredentialsDirty(savedCredentials === null || apiKey !== savedCredentials.apiKey || value !== savedCredentials.apiUrl)
+                      }}
                       placeholder="https://api-free.deepl.com/v2/translate (省略時は自動判別)"
                       className="w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]/50"
                     />
@@ -320,6 +425,34 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                   完全オフライン・CPU常駐推論のため、APIキーや外部URLの設定は不要です（初回利用時にモデルが自動配置されます）。
                 </div>
               )}
+
+              <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3 space-y-3">
+                <h3 className="text-xs font-semibold text-zinc-200">翻訳プロバイダーと認証</h3>
+                {(configDirty || !previewEnabled) && (
+                  <p role="status" className="text-xs text-amber-300">設定を保存すると翻訳プレビューを利用できます。</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3">
+                <TranslationPreviewCard provider={provider} enabled={previewEnabled} debounceMs={debounceMs} />
+              </div>
+
+              <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3 space-y-2">
+                <button type="button" className="text-xs font-semibold text-zinc-200" aria-expanded={translationExpanded} onClick={() => setTranslationExpanded((value) => !value)}>
+                  翻訳用LLM詳細設定
+                </button>
+                <div hidden={provider !== 'llm' || !translationExpanded}>
+                  <LlmSettingsSection group="translation" isExpandedModel={translationExpanded} onToggleModel={() => setTranslationExpanded((value) => !value)} isExpandedPrompts={translationExpanded} onTogglePrompts={() => setTranslationExpanded((value) => !value)} isExpandedParams={translationExpanded} onToggleParams={() => setTranslationExpanded((value) => !value)} />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="translation-debounce" className="text-xs text-zinc-300">翻訳入力待ち時間</label>
+                  <span>{debounceMs}ms</span>
+                </div>
+                <input id="translation-debounce" type="range" min={300} max={2000} step={50} value={debounceMs} onChange={(event) => void handleDebounceChange(Number(event.target.value))} className="w-full" />
+              </div>
 
               {/* Action Buttons: Save & Test */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">

@@ -1,0 +1,27 @@
+{
+  "decision_date": "2026-10-04",
+  "D1": "six_existing_prompt_keys",
+  "D2": "existing_contracts_only",
+  "implementation_approval": "approved_by_user_OK_2026-10-04",
+  "artifact_sha256": {
+    "docs\\backlog\\pbi\\active\\REQ-314.md": "80d0287576549e64d52a82ef7eab47461b7c5a9e4faf649dcb69239148287bac",
+    "docs\\design\\REQ-314.md": "4f2d551800562ac696ca70372e04d61b62fbb3086e8ee6af3dbd47b65989c2fd",
+    "docs\\design\\REQ-314-test-plan.md": "448e4b0bf02a6d9748ebf7204caeb1dedcb193df92568d85b747ebab7fa8c8d1",
+    "docs\\design\\REQ-314-implementation_plan.md": "5ae529d231b96913e458a671f5b14cf2e945c280bd896a37bd3bc59a8df2ddb1",
+    "docs\\design\\REQ-314-decisions.md": "593ed35037d198720e4bef0a78649d5ef6269e2ace51319295306e4d4e272717",
+    "docs\\backlog\\task\\active\\REQ-314-T1.md": "3fb9e7c28f9efb6cb2b45c900af34ed73e045b48b6cbc9d0d9bb3de5efc6ee46",
+    "docs\\backlog\\task\\active\\REQ-314-T10.md": "741dee17b019da7941c9287a6b013c8345f09a6fe6ba52ffee4d4f47daa3caf3",
+    "docs\\backlog\\task\\active\\REQ-314-T11.md": "febc5ca7b5f8f7d6b32217f3cb38205a0b574783e5308a8d4fdab307999a9b4d",
+    "docs\\backlog\\task\\active\\REQ-314-T12.md": "bc526c1da52cf434e67fb4835397026cd9de9b71d57549316eb064cb4a30180c",
+    "docs\\backlog\\task\\active\\REQ-314-T13.md": "3bfb5558b5fbbf6b24854c5c2b14be0e5aa7b6a449b84e04239fc572f1556ea0",
+    "docs\\backlog\\task\\active\\REQ-314-T14.md": "bad9908ebf3c86afcc8d71a33137ae12caf5cdce4c6fe8287f94f6af1a8af87b",
+    "docs\\backlog\\task\\active\\REQ-314-T2.md": "bafbeaef76012b413e1fa40b3f9f7eca4d0f9bb0d87b8606c015853cc11c3576",
+    "docs\\backlog\\task\\active\\REQ-314-T3.md": "e746892b931341b6f9ecd3e24e3259143c225acab763f2e75f0f712b343a31f1",
+    "docs\\backlog\\task\\active\\REQ-314-T4.md": "edc8b52caa0ba83f030b4445522e6c32e92c607360d526c46d87419e8bab7ffb",
+    "docs\\backlog\\task\\active\\REQ-314-T5.md": "d36a61466295c9171e7035170c3e06e83597923f09a9bbceaea4f65085dccc1c",
+    "docs\\backlog\\task\\active\\REQ-314-T6.md": "69b9c14d487d9a0176098f86b9daa9da47f3809dd2e1a5c53cf9fde744b9bdca",
+    "docs\\backlog\\task\\active\\REQ-314-T7.md": "3e75b9cd1207d9ea2818f5d69f4a4ce1edcc640cd95f31a39ac68e7e58e3cc0a",
+    "docs\\backlog\\task\\active\\REQ-314-T8.md": "dfaeca7db85ee9c8517d3ed85229a02e69ebd584168dfad588b3860acfae6b24",
+    "docs\\backlog\\task\\active\\REQ-314-T9.md": "0c3c289be17bc4299abd7944bd577ce7cf659bb3b09977427e00b5379c51ba3a"
+  }
+}

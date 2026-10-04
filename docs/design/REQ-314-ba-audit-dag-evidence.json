@@ -1,0 +1,46 @@
+{
+  "task_count": 14,
+  "missing_dependencies": [],
+  "acyclic": true,
+  "max_depth": 4,
+  "dependencies": {
+    "REQ-314-T1": [],
+    "REQ-314-T10": [],
+    "REQ-314-T11": [],
+    "REQ-314-T12": [
+      "REQ-314-T7",
+      "REQ-314-T8",
+      "REQ-314-T9",
+      "REQ-314-T10"
+    ],
+    "REQ-314-T13": [
+      "REQ-314-T7",
+      "REQ-314-T8",
+      "REQ-314-T9",
+      "REQ-314-T10"
+    ],
+    "REQ-314-T14": [],
+    "REQ-314-T2": [
+      "REQ-314-T1"
+    ],
+    "REQ-314-T3": [],
+    "REQ-314-T4": [
+      "REQ-314-T3",
+      "REQ-314-T6"
+    ],
+    "REQ-314-T5": [
+      "REQ-314-T14"
+    ],
+    "REQ-314-T6": [],
+    "REQ-314-T7": [
+      "REQ-314-T1",
+      "REQ-314-T2",
+      "REQ-314-T3",
+      "REQ-314-T4",
+      "REQ-314-T5",
+      "REQ-314-T11"
+    ],
+    "REQ-314-T8": [],
+    "REQ-314-T9": []
+  }
+}
