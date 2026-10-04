@@ -1,4 +1,5 @@
 import unittest
+import json
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -81,3 +82,33 @@ class TestPromptMetadataRouter(unittest.TestCase):
     def test_get_not_found(self):
         res = self.client.get("/api/prompt-metadata/non-existent")
         self.assertEqual(res.status_code, 404)
+
+    def test_req316_full_unicode_record_and_json_roundtrip(self):
+        text = '日本語(重み:1.2)\r\n' * 200 + '末尾-REQ316'
+        record = {'version': 1, 'workflow_id': 1, 'workflow_name': '生成時名称',
+                  'completeness': 'complete', 'queued_at': '2026-10-03T17:00:00Z',
+                  'fields': [{'mapping_id': i, 'node_id': str(i), 'role': role,
+                              'param_name': 'text', 'input_type': 'textarea', 'display_name': role,
+                              'class_type': 'CLIPTextEncode', 'recorded': True, 'value': value,
+                              'status': 'submitted', 'value_kind': 'literal'}
+                             for i, (role, value) in enumerate([('Quality', text), ('Character', '人物'), ('Negative', '低品質'), ('Scene', '')], 1)],
+                  'parameters': [{'mapping_id': i, 'node_id': str(i), 'role': role, 'param_name': 'value',
+                                  'input_type': 'lora_stack' if role == 'LoRA' else 'number', 'display_name': role,
+                                  'class_type': None, 'recorded': True, 'value': value, 'status': 'submitted', 'value_kind': 'literal'}
+                                 for i, (role, value) in enumerate([('Sampler_Seed', 123456), ('Enabled', False), ('Zero', 0), ('Null', None),
+                                     ('Array', [0, False, None]), ('LoRA', {'lora_count': 1, 'lora_name_1': 'model', 'model_str_1': 0.4, 'clip_str_1': 0.8})], 5)],
+                  'assets': [{'type': 'lora', 'asset_id': 4, 'name': '名前', 'role': 'Quality', 'tags': [],
+                              'lora_prompt': None, 'origin': 'unknown', 'trigger_set_id': None, 'trigger_set_name': None}]}
+        raw = json.dumps(record, ensure_ascii=False)
+        params = {'Quality': text, 'seed': 123456, 'json': [False, 0, None, {'x': '日本語'}],
+                  '__prompt_surgeon_metadata_v1': raw,
+                  '__metadata_associations_v1': json.dumps({'version': 1, 'lora_trigger_sets': []})}
+        assets = {'Quality': [{'assetId': 4, 'tags': ['日本語'], 'enabled': True}]}
+        response = self.client.post('/api/prompt-metadata', json={
+            'prompt_id': 'req316', 'workflow_id': 1, 'param_values': params, 'applied_assets': assets})
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get('/api/prompt-metadata/req316').json()
+        self.assertEqual(saved['param_values'], params)
+        self.assertEqual(saved['applied_assets'], assets)
+        self.assertEqual(saved['param_values']['__prompt_surgeon_metadata_v1'], raw)
+        self.assertEqual(json.loads(saved['param_values']['__prompt_surgeon_metadata_v1']), record)

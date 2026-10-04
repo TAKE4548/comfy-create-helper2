@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
+import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
 import {
   extractGeneralParam,
   extractLoraStackParams,
@@ -80,6 +81,7 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
   const loadSnapshotParams = (snapshotParams: Record<string, any>) => {
     const newParams: Record<string, string> = {}
     Object.entries(snapshotParams).forEach(([key, val]) => {
+      if (key === PROMPT_RECORD_KEY || key === ASSOCIATIONS_KEY) return
       newParams[key] = String(val)
     })
     setParamValues(healLegacyParamKeys(newParams))

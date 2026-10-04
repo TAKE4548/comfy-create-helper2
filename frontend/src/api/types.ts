@@ -200,6 +200,12 @@ export interface SnapshotTagSetCreate {
   role?: string
 }
 
+export interface SnapshotTriggerAssociation {
+  lora_id: number
+  trigger_set_id: number
+  role: string
+}
+
 export interface SnapshotTagSetRead {
   id: number
   snapshot_id: number

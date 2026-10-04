@@ -1,11 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getInitialParams, extractGeneralParam, extractLoraStackParams, useWorkflowParams, healLegacyParamKeys } from '../useWorkflowParams';
 import { useGenerationStore } from '../../../../store/useGenerationStore';
 import { LS_KEYS } from '../../../../utils/localStorageKeys';
 import type { Workflow } from '../../../../api/types';
+import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../../utils/generationRecord';
+
+it('REQ-316 excludes both reserved keys from restored inputs, including unknown records', () => {
+  const source = { Quality: '', Sampler_Seed: 42, [PROMPT_RECORD_KEY]: '{broken', [ASSOCIATIONS_KEY]: '{"version":99}' };
+  const { result } = renderHook(() => useWorkflowParams(undefined, null), { wrapper: createWrapper() });
+  act(() => result.current.loadSnapshotParams(source));
+  expect(useGenerationStore.getState().paramValues).toEqual({ Quality: '', Sampler_Seed: '42' });
+  expect(useGenerationStore.getState().seed).toBe(42);
+  expect(useGenerationStore.getState().seedMode).toBe('fixed');
+  expect(source[PROMPT_RECORD_KEY]).toBe('{broken');
+});
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -304,4 +315,3 @@ describe('useWorkflowParams hook - remapping backfill', () => {
     });
   });
 });
-

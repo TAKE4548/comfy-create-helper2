@@ -4,11 +4,13 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { snapshotsApi, promptMetadataApi } from '../../../api/client'
+import { snapshotsApi } from '../../../api/client'
+import { getMetadataView, resolveRecordedMetadata } from '../../../utils/promptRecord'
+import { ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
 export function useSnapshotActions(selectedWorkflowId: number | null) {
-  const { selectedImg, paramValues, appliedAssets, setErrorToast } = useGenerationStore()
+  const { selectedImg, setErrorToast } = useGenerationStore()
   const qc = useQueryClient()
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
@@ -22,39 +24,15 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
 
       await Promise.all(
         targetImgs.map(async (img) => {
-          let resolvedParamValues = paramValues
-          let resolvedAppliedAssets = appliedAssets
-
-          // クエリパラメータ t から promptId を抽出してキャッシュからアセットメタデータを復元
-          try {
-            const urlObj = new URL(img, window.location.origin)
-            const t = urlObj.searchParams.get('t')
-            if (t) {
-              const cached = localStorage.getItem(`prompt-surgeon-meta-${t}`)
-              if (cached) {
-                const parsed = JSON.parse(cached)
-                if (parsed.paramValues && parsed.appliedAssets) {
-                  resolvedParamValues = parsed.paramValues
-                  resolvedAppliedAssets = parsed.appliedAssets
-                }
-              } else {
-                // 端末跨ぎ・別ブラウザ対応: サーバーDBから取得
-                try {
-                  const serverMeta = await promptMetadataApi.get(t)
-                  if (serverMeta && serverMeta.param_values) {
-                    resolvedParamValues = serverMeta.param_values
-                    resolvedAppliedAssets = serverMeta.applied_assets || {}
-                  }
-                } catch (err) {
-                  console.warn(`[Snapshot] Could not fetch server metadata for prompt ${t}:`, err)
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Failed to resolve metadata from image URL:', e)
-          }
-
-
+          let promptId: string | null = null
+          try { promptId = new URL(img, window.location.origin).searchParams.get('t') } catch {}
+          const recorded = await resolveRecordedMetadata(promptId)
+          const resolvedParamValues = JSON.parse(JSON.stringify(recorded?.paramValues ?? {}))
+          const resolvedAppliedAssets = recorded?.appliedAssets ?? {}
+          const view = getMetadataView(resolvedParamValues)
+          const triggers = view.record?.assets.filter(a => a.type === 'lora' && a.origin === 'lora-trigger' && a.trigger_set_id != null)
+            .map(a => ({ lora_id: a.asset_id, trigger_set_id: a.trigger_set_id, role: a.role })) ?? []
+          if (triggers.length) resolvedParamValues[ASSOCIATIONS_KEY] = JSON.stringify({ version: 1, lora_trigger_sets: triggers })
           const activeLoras: { lora_id: number; strength: number; role: string }[] = []
           const activeTagSets: { tag_set_id: number; role: string }[] = []
 
@@ -75,7 +53,7 @@ export function useSnapshotActions(selectedWorkflowId: number | null) {
           })
 
           return snapshotsApi.create({
-            workflow_id: selectedWorkflowId,
+            workflow_id: recorded?.workflowId ?? selectedWorkflowId,
             image_path: img,
             params: resolvedParamValues,
             album_id: albumId ?? undefined,

@@ -12,6 +12,10 @@ import { injectWorkflowParams } from '../../../utils/workflowParamInjector'
 import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 import type { QueueSubmissionFailure } from '../../../store/types'
 import { parseQueueSubmissionFailure } from '../../../utils/queueSubmissionFailure'
+import { buildGenerationRecord, PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
+
+const freeze = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const cleanParams = (values: Record<string, string>) => Object.fromEntries(Object.entries(values).filter(([key]) => key !== PROMPT_RECORD_KEY && key !== ASSOCIATIONS_KEY))
 
 type SubmissionFailureRecord = QueueSubmissionFailure & {
   target: string
@@ -195,23 +199,34 @@ export function useGenerateAction(
     return merged
   }
 
+  const captureWorkflow = (): Workflow | null => {
+    if (!workflow) return null
+    const captured = freeze(workflow)
+    try { buildGenerationRecord(captured, {}, {}, {}) }
+    catch (error) { setErrorToast?.({ message: error instanceof Error ? error.message : '生成時記録を作成できません', type: 'error' }); return null }
+    return captured
+  }
+
   const handleGenerate = async () => {
     if (!workflow) return
     options?.onBeforeGenerate?.()
 
+    const capturedWorkflow = captureWorkflow()
+    if (!capturedWorkflow) return
+
     const state = getLatestState()
-    const currentParamValues = state.paramValues
-    const currentPromptChips = state.promptChips
+    const currentParamValues = cleanParams(state.paramValues)
+    const currentPromptChips = freeze(state.promptChips || {})
     const isAnimaMode = state.isAnimaMode
-    const promptRoleAllowlist = (workflow.mappings || [])
+    const promptRoleAllowlist = (capturedWorkflow.mappings || [])
       .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
       .map((mapping) => mapping.role as string)
     const currentBatchSize = state.batchSize
     const currentSeedMode = state.seedMode
     const currentSeed = state.seed
-    const currentAppliedAssets = state.appliedAssets
+    const currentAppliedAssets = freeze(state.appliedAssets || {})
     const currentBypassProfiles = state.bypassProfiles || []
-    const currentParamSyncGroups = state.paramSyncGroups || []
+    const currentParamSyncGroups = freeze(state.paramSyncGroups || [])
 
     const activeBypassNodeIds = Array.from(
       new Set(
@@ -254,8 +269,8 @@ export function useGenerateAction(
           return
         }
 
-        let wfJson = injectWorkflowParams({
-          workflow,
+        const injectedGraph = injectWorkflowParams({
+          workflow: capturedWorkflow,
           paramValues: syncedParamValues,
           seedOptions: {
             seedMode: currentSeedMode,
@@ -264,6 +279,7 @@ export function useGenerateAction(
           },
           cloneJson: true,
         })
+        let wfJson = injectedGraph
         if (activeBypassNodeIds.length > 0) {
           wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
         }
@@ -272,7 +288,7 @@ export function useGenerateAction(
         try {
           promptId = await queuePrompt(
             wfJson,
-            { paramValues: syncedParamValues, appliedAssets: currentAppliedAssets },
+            { paramValues: { ...syncedParamValues, [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, wfJson, currentAppliedAssets)) }, appliedAssets: currentAppliedAssets, workflowId: capturedWorkflow.id },
             {
               signal: abortController.signal,
               skipQueueFetch: true,
@@ -314,12 +330,16 @@ export function useGenerateAction(
     if (!workflow) return
     options?.onBeforeGenerate?.()
 
+    const capturedWorkflow = captureWorkflow()
+    if (!capturedWorkflow) return
+
     const state = getLatestState()
-    const currentParamValues = state.paramValues
-    const currentPromptChips = state.promptChips
-    const currentSets = state.sets
+    const currentParamValues = cleanParams(state.paramValues)
+    const currentPromptChips = freeze(state.promptChips || {})
+    const currentSets = freeze(state.sets)
+    const currentAppliedAssets = freeze(state.appliedAssets || {})
     const currentActiveSetId = state.activeSetId
-    const currentParamSyncGroups = state.paramSyncGroups || []
+    const currentParamSyncGroups = freeze(state.paramSyncGroups || [])
     const currentBypassProfiles = state.bypassProfiles || []
 
     const checkedSets = currentSets.filter((s) => s.checked)
@@ -382,8 +402,9 @@ export function useGenerateAction(
           String(setItem.id) === String(currentActiveSetId)
 
         const itemParams = isActive
-          ? { ...setItem.paramValues, ...currentParamValues }
-          : setItem.paramValues
+          ? { ...cleanParams(setItem.paramValues), ...currentParamValues }
+          : cleanParams(setItem.paramValues)
+        const itemAssets = (isActive ? currentAppliedAssets : setItem.appliedAssets) || {}
         const itemChips = isActive
           ? ((currentPromptChips && Object.keys(currentPromptChips).length > 0)
               ? currentPromptChips
@@ -394,7 +415,7 @@ export function useGenerateAction(
           itemParams,
           itemChips,
           state.isAnimaMode,
-          (workflow.mappings || [])
+          (capturedWorkflow.mappings || [])
             .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
             .map((mapping) => mapping.role as string)
         )
@@ -416,8 +437,8 @@ export function useGenerateAction(
             return
           }
 
-          let wfJson = injectWorkflowParams({
-            workflow,
+          const injectedGraph = injectWorkflowParams({
+            workflow: capturedWorkflow,
             paramValues: syncedParamValues,
             seedOptions: {
               seedMode: effectiveSeedMode,
@@ -426,6 +447,7 @@ export function useGenerateAction(
             },
             cloneJson: true,
           })
+          let wfJson = injectedGraph
           if (activeBypassNodeIds.length > 0) {
             wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
           }
@@ -435,7 +457,7 @@ export function useGenerateAction(
           try {
             promptId = await queuePrompt(
               wfJson,
-              { paramValues: syncedParamValues, appliedAssets: setItem.appliedAssets },
+              { paramValues: { ...syncedParamValues, [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, wfJson, itemAssets)) }, appliedAssets: itemAssets, workflowId: capturedWorkflow.id },
               {
                 skipQueueFetch: true,
                 signal: abortController.signal,

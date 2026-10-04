@@ -6,6 +6,7 @@ import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem,
 import { comfyWsService } from '../services/comfyWebSocketService'
 import { resolveNodeTitle } from './connectionSlice'
 import { parseQueueSubmissionFailure } from '../../utils/queueSubmissionFailure'
+import { PROMPT_RECORD_KEY } from '../../utils/generationRecord'
 
 export type JobQueueSlice = JobQueueState & JobQueueActions
 
@@ -93,6 +94,16 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
         return null
       }
 
+      const frozenMetadata = JSON.parse(JSON.stringify({
+        paramValues: metadata?.paramValues ?? get().paramValues,
+        appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
+        workflowId: metadata?.workflowId ?? get().selectedWorkflowId,
+      }))
+      const reportPersistenceFailure = (error: unknown) => {
+        console.warn('[PromptMetadata] Failed to persist metadata:', error)
+        get().setErrorToast({ message: '生成時メタ情報の保存に失敗しました', type: 'error' })
+      }
+
       const execute = async (): Promise<string | null> => {
         const reportSubmissionFailure = (error: unknown) => {
           const failure = parseQueueSubmissionFailure(error)
@@ -135,24 +146,39 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
           }
 
           if (promptId) {
-            localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+            try {
+              localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
+            } catch (error) { reportPersistenceFailure(error) }
             const metaKey = `prompt-surgeon-meta-${promptId}`
+            const receivedAt = new Date().toISOString()
+            const recordJson = frozenMetadata.paramValues[PROMPT_RECORD_KEY]
+            if (typeof recordJson === 'string') {
+              try {
+                const record = JSON.parse(recordJson)
+                if (record?.version === 1) {
+                  frozenMetadata.paramValues[PROMPT_RECORD_KEY] = JSON.stringify({ ...record, queued_at: receivedAt, prompt_id: promptId })
+                }
+              } catch (error) { reportPersistenceFailure(error) }
+            }
             const promptMetadata = {
-              paramValues: metadata?.paramValues ?? get().paramValues,
-              appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
+              paramValues: frozenMetadata.paramValues,
+              appliedAssets: frozenMetadata.appliedAssets,
+              workflowId: frozenMetadata.workflowId,
               timestamp: Date.now(),
             }
-            localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+            try {
+              localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
+            } catch (error) { reportPersistenceFailure(error) }
 
             // サーバー側DBへ非同期保存 (端末間同期対応)
-            promptMetadataApi?.create?.({
+            try {
+              promptMetadataApi?.create?.({
               prompt_id: promptId,
-              workflow_id: get().selectedWorkflowId ?? undefined,
+              workflow_id: frozenMetadata.workflowId ?? undefined,
               param_values: promptMetadata.paramValues,
               applied_assets: promptMetadata.appliedAssets,
-            })?.catch?.((err: any) => {
-              console.warn('[PromptMetadata] Failed to persist metadata to server:', err)
-            })
+              })?.catch?.(reportPersistenceFailure)
+            } catch (error) { reportPersistenceFailure(error) }
 
 
             // 200件上限のLRUクリーンアップ (ローカルストレージ側)

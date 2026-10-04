@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from starlette.types import Scope
+from PIL import Image
 
 from app.config import settings
 from app.logging_config import setup_logging
@@ -156,6 +157,14 @@ class CachedStaticFiles(StaticFiles):
         status_code: int = 200,
     ) -> Response:
         response = super().file_response(full_path, stat_result, scope, status_code)
+        if response.headers.get("content-type") == "application/octet-stream":
+            try:
+                with Image.open(full_path) as image:
+                    media_type = Image.MIME.get(image.format or "")
+                if media_type and media_type.startswith("image/"):
+                    response.headers["Content-Type"] = media_type
+            except (OSError, Image.DecompressionBombError):
+                pass
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 

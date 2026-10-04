@@ -5,6 +5,7 @@ import React from 'react'
 import { useSnapshotActions } from '../useSnapshotActions'
 import { snapshotsApi, promptMetadataApi } from '../../../../api/client'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
+import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../../utils/generationRecord'
 
 vi.mock('../../../../api/client', () => ({
   snapshotsApi: {
@@ -63,7 +64,7 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     )
   })
 
-  it('Red Teaming: should fallback gracefully to current UI paramValues if server API fails', async () => {
+  it('REQ-316: keeps unrecorded params empty if server API fails', async () => {
     vi.mocked(promptMetadataApi.get).mockRejectedValueOnce(new Error('Network error'))
 
     const { result } = renderHook(() => useSnapshotActions(1), { wrapper })
@@ -78,10 +79,29 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     expect(promptMetadataApi.get).toHaveBeenCalledWith('prompt-999')
     expect(snapshotsApi.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: { aspect_ratio: '9:16', steps: '20' },
+        params: {},
       })
     )
   })
+
+  it('REQ-316 saves each image from its own frozen record and initializes known trigger associations', async () => {
+    const record = (id: number) => JSON.stringify({ version: 1, workflow_id: id, workflow_name: `WF${id}`,
+      fields: [], parameters: [], assets: [{ type: 'lora', asset_id: 10, name: 'Captured', role: 'Quality',
+        tags: ['captured'], origin: 'lora-trigger', trigger_set_id: 4, trigger_set_name: 'Set' }], queued_at: null, completeness: 'complete' });
+    for (const id of [7, 8]) localStorage.setItem(`prompt-surgeon-meta-p${id}`, JSON.stringify({
+      paramValues: { [PROMPT_RECORD_KEY]: record(id), Quality: `image${id}` },
+      appliedAssets: { Quality: [{ type: 'lora', assetId: 10, name: 'Captured', tags: [], enabled: true }] }, timestamp: 1,
+    }));
+    const { result } = renderHook(() => useSnapshotActions(99), { wrapper });
+    await act(async () => { await result.current.saveSnapshot.mutateAsync({ albumId: null,
+      imagePaths: ['http://localhost/view?t=p7', 'http://localhost/view?t=p8'] }); });
+    const calls = vi.mocked(snapshotsApi.create).mock.calls.map(([value]) => value);
+    expect(calls.map(c => c.workflow_id)).toEqual([7, 8]);
+    expect(calls.map(c => c.params.Quality)).toEqual(['image7', 'image8']);
+    expect(JSON.parse(calls[0].params[ASSOCIATIONS_KEY] as string)).toEqual({ version: 1,
+      lora_trigger_sets: [{ lora_id: 10, trigger_set_id: 4, role: 'Quality' }] });
+    expect(calls[0].params[PROMPT_RECORD_KEY]).toBe(record(7));
+  });
 
   it('REQ-267: should call setErrorToast when snapshotsApi.create fails', async () => {
     vi.mocked(snapshotsApi.create).mockRejectedValueOnce(new Error('Failed to fetch image from ComfyUI'))

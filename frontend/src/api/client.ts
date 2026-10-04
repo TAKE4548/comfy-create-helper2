@@ -4,6 +4,8 @@
 
 import type { SpeechBatchJob, SpeechBatchJobCreate, SpeechBatchItemRetryRequest, MappingMasterUsage, ComfyLoraModel, WorkflowPreset, WorkflowPresetCreate, WorkflowPresetUpdate, Category, Workflow, WorkflowSummary, Snapshot, SnapshotSummary, SceneGenerateRequest, SceneDiffParams, LlmPrompt, BypassProfile, BypassProfileCreate, BypassProfileUpdate, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, BaseModel, BaseModelCreate, CheckpointMapping, CheckpointMappingCreate, Lora, TagSet, BubbleDetectResponse, SpeechDraftResponse, BubbleCandidate, ServerFont, ParamTypeMaster, ParamTypeMasterCreate, SpeechBubblePreset, SpeechBubblePresetCreate, SpeechBubblePresetUpdate, Album, SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate, SpeechToneRewriteRequest, SpeechToneRewriteResponse, PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse } from './types'
 import type {
+  SnapshotTagSetCreate,
+  SnapshotTriggerAssociation,
   SceneDraftRequest,
   SceneDraftResponse,
   SceneSpeechProgressEvent,
@@ -219,6 +221,8 @@ export const snapshotsApi = {
     data: {
       lora_ids?: number[]
       tag_set_ids?: number[]
+      tag_sets?: SnapshotTagSetCreate[]
+      lora_trigger_sets?: SnapshotTriggerAssociation[]
       image_path?: string
       thumbnail_path?: string
       params?: any

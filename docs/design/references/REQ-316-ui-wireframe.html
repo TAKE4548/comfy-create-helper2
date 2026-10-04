@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PBI316 UI Wireframe (v2) - Prompt Surgeon</title>
+  <style>
+    :root {
+      --bg-base: #0F0F11;
+      --bg-surface: #18181C;
+      --bg-surface-2: #1F1F25;
+      --bg-surface-3: #26262E;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --border-focus: rgba(255, 255, 255, 0.14);
+      --accent-green: #3ecf8e;
+      --accent-green-bg: rgba(62, 207, 142, 0.08);
+      --accent-purple: #7C6FDD;
+      --accent-purple-bg: rgba(124, 111, 221, 0.1);
+      --accent-blue: #38bdf8;
+      --accent-blue-bg: rgba(56, 189, 248, 0.1);
+      --accent-amber: #f59e0b;
+      --accent-amber-bg: rgba(245, 158, 11, 0.1);
+      --text-main: #f4f4f5;
+      --text-body: #d4d4d8;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-body);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Wireframe Controller Bar */
+    .control-header {
+      background: #141418;
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      z-index: 100;
+    }
+    .badge-pbi {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: var(--accent-purple-bg);
+      border: 1px solid rgba(124, 111, 221, 0.25);
+      color: #b5a9ff;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .demo-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-toggle-demo {
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.15s;
+    }
+    .btn-toggle-demo.active {
+      background: var(--accent-green);
+      color: #0b2218;
+      border-color: var(--accent-green);
+      font-weight: 600;
+    }
+
+    /* Modal Layout */
+    .modal-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 500px;
+      height: calc(100vh - 53px);
+      overflow: hidden;
+      background: #000;
+    }
+
+    @media (max-width: 1024px) {
+      .modal-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 280px 1fr;
+        height: auto;
+      }
+    }
+
+    /* Left: Image View Mock */
+    .image-preview-area {
+      background: #0B0B0D;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 24px;
+      border-right: 1px solid var(--border-subtle);
+    }
+    .mock-image-frame {
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 2 / 3;
+      background: linear-gradient(135deg, #1b192e 0%, #151d26 50%, #13141f 100%);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .mock-image-inner {
+      text-align: center;
+      color: var(--text-dim);
+    }
+    .mock-image-badge {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      color: var(--text-body);
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Right: Metadata Panel */
+    .metadata-panel {
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Metadata Panel Header */
+    .panel-header {
+      padding: 14px 18px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: #16161A;
+    }
+    .provenance-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .provenance-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .provenance-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .workflow-pill {
+      background: var(--accent-purple-bg);
+      color: #c4bbfd;
+      border: 1px solid rgba(124, 111, 221, 0.25);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .provenance-sub {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .copy-id-link {
+      cursor: pointer;
+      color: var(--text-dim);
+      transition: color 0.15s;
+      font-family: monospace;
+      font-size: 10px;
+    }
+    .copy-id-link:hover {
+      color: var(--accent-green);
+    }
+
+    /* Tabs Bar */
+    .tabs-nav {
+      display: flex;
+      border-bottom: 1px solid var(--border-subtle);
+      background: #141417;
+      padding: 0 16px;
+    }
+    .tab-btn {
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover {
+      color: var(--text-body);
+    }
+    .tab-btn.active {
+      color: var(--accent-green);
+      border-bottom-color: var(--accent-green);
+    }
+    .tab-count {
+      background: var(--bg-surface-2);
+      padding: 1px 6px;
+      border-radius: 9999px;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .tab-btn.active .tab-count {
+      background: var(--accent-green-bg);
+      color: var(--accent-green);
+    }
+
+    /* Tab Content Area */
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Warning Banner */
+    .alert-banner {
+      background: var(--accent-amber-bg);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 11px;
+      color: #fcd34d;
+      line-height: 1.4;
+    }
+    .alert-banner svg {
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Sub-header toolbar */
+    .tab-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .btn-action-text {
+      background: none;
+      border: none;
+      color: var(--accent-purple);
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-action-text:hover {
+      text-decoration: underline;
+    }
+
+    /* Prompt Field Card (Accordion) */
+    .field-card {
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .field-card:hover {
+      border-color: var(--border-focus);
+    }
+    .field-header {
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.015);
+      border-bottom: 1px solid transparent;
+      gap: 8px;
+    }
+    .field-card.open .field-header {
+      border-bottom-color: var(--border-subtle);
+    }
+    .field-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .field-chevron {
+      color: var(--text-dim);
+      font-size: 11px;
+      transition: transform 0.2s;
+    }
+    .field-card.open .field-chevron {
+      transform: rotate(90deg);
+    }
+    .field-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-main);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .field-role-tag {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+      font-family: monospace;
+    }
+    .field-meta-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .char-badge {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: monospace;
+    }
+    .status-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .status-badge.empty {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-dim);
+    }
+    .status-badge.unrecorded {
+      background: var(--accent-amber-bg);
+      color: var(--accent-amber);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .btn-copy:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+    }
+
+    .field-body {
+      display: none;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.6;
+      color: var(--text-main);
+      white-space: pre-wrap;
+      word-break: break-all;
+      user-select: all;
+      background: #19191E;
+    }
+    .field-card.open .field-body {
+      display: block;
+    }
+    .field-body.is-empty {
+      color: var(--text-dim);
+      font-style: italic;
+      user-select: none;
+    }
+
+    /* Section Headers */
+    .section-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+
+    /* Parameters Grid - Clean Uniform Text Color */
+    .params-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 480px) {
+      .params-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .param-card {
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .param-label {
+      font-size: 9.5px;
+      font-weight: 500;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* 全パラメータの文字色を統一 (余計な着色を排除) */
+    .param-value {
+      font-family: ui-monospace, monospace;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+
+    /* Collapsible Group (Other Parameters) */
+    .collapse-group {
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      background: var(--bg-surface-2);
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .collapse-group-header {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .collapse-group.open .collapse-group-header {
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .collapse-group-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .collapse-group-body {
+      display: none;
+      padding: 12px;
+    }
+    .collapse-group.open .collapse-group-body {
+      display: block;
+    }
+
+    /* LoRA Table */
+    .lora-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 14px;
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .lora-table th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--text-dim);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+    .lora-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+      color: var(--text-body);
+    }
+    .lora-table tr:last-child td {
+      border-bottom: none;
+    }
+    .weight-tag {
+      font-family: monospace;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Asset Container Box */
+    .asset-block {
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .asset-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .asset-block-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* TagSets Pills */
+    .tagset-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tagset-pill {
+      background: var(--accent-purple-bg);
+      color: #c4bbfd;
+      border: 1px solid rgba(124, 111, 221, 0.25);
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 10.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .tagset-pill.lora-tagset {
+      background: var(--accent-blue-bg);
+      color: #93c5fd;
+      border-color: rgba(56, 189, 248, 0.25);
+    }
+    .origin-badge {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 3px;
+      padding: 0 4px;
+      font-size: 9px;
+      font-family: monospace;
+      color: #bae6fd;
+    }
+    .btn-remove-tag {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+      line-height: 1;
+      padding: 0 2px;
+      transition: color 0.15s;
+    }
+    .btn-remove-tag:hover {
+      color: #ef4444;
+    }
+
+    /* Edit Mode Box */
+    .edit-assets-panel {
+      display: none;
+      background: #151519;
+      border: 1px solid rgba(124, 111, 221, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+    .edit-assets-panel.active {
+      display: block;
+    }
+    .edit-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .select-custom {
+      width: 100%;
+      background: var(--bg-surface-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      color: var(--text-main);
+      padding: 6px 8px;
+      font-size: 11px;
+      outline: none;
+    }
+    .select-custom:focus {
+      border-color: var(--accent-purple);
+    }
+    .btn-save-assets {
+      background: var(--accent-green);
+      color: #0b2218;
+      border: none;
+      font-weight: 600;
+      font-size: 11px;
+      padding: 6px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-save-assets:hover {
+      opacity: 0.9;
+    }
+    .btn-cancel-edit {
+      background: var(--bg-surface-3);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      font-size: 11px;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .btn-cancel-edit:hover {
+      color: var(--text-main);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #18181C;
+      border: 1px solid var(--accent-green);
+      color: var(--accent-green);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Wireframe Control Header -->
+  <div class="control-header">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="badge-pbi">PBI316 UI Wireframe (v2)</span>
+      <span style="font-size: 12px; color: var(--text-muted);">Prompt Surgeon (comfy-create-helper2)</span>
+    </div>
+    <div class="demo-controls">
+      <span style="font-size: 11px; color: var(--text-dim);">データ状態:</span>
+      <button class="btn-toggle-demo active" onclick="setScenario('v1-normal')">① 通常 (全項目完備)</button>
+      <button class="btn-toggle-demo" onclick="setScenario('v1-partial')">② 欠損あり (Partial 警告)</button>
+      <button class="btn-toggle-demo" onclick="setScenario('legacy')">③ 旧画像 (レガシー形式)</button>
+    </div>
+  </div>
+
+  <!-- Modal Frame -->
+  <div class="modal-container">
+    
+    <!-- Left: Image Preview Area -->
+    <div class="image-preview-area">
+      <div class="mock-image-frame">
+        <div class="mock-image-inner">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 12px; opacity: 0.4;">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+          </svg>
+          <div style="font-weight: 600; font-size: 13px; color: var(--text-muted);">Generated Output Preview</div>
+          <div style="font-size: 11px; margin-top: 4px;">832 x 1216 • WebP (1.42 MB)</div>
+        </div>
+        <div class="mock-image-badge">
+          <span>Snapshot #142</span>
+          <span>•</span>
+          <span style="color: var(--accent-green);">Anima SDXL v2</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Metadata & Parameter Panel -->
+    <div class="metadata-panel">
+      
+      <!-- Panel Header: Provenance & Provenance Metadata -->
+      <div class="panel-header">
+        <div class="provenance-bar">
+          <div class="provenance-top">
+            <div class="provenance-title">
+              <span id="header-title">Generation Details</span>
+              <span class="workflow-pill" id="header-workflow">Anima_SDXL_Main_v2.1</span>
+            </div>
+            <span style="font-size: 10px; color: var(--text-dim);" id="header-album">📁 Favorites</span>
+          </div>
+          <div class="provenance-sub">
+            <span id="header-timestamp">🕒 2026-10-03 23:42:15</span>
+            <span>•</span>
+            <span class="copy-id-link" onclick="copyText('p-9f8e210a-3c44-42b9', 'Prompt IDをコピーしました')">
+              ID: p-9f8e210a... 📋
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="tabs-nav">
+        <button class="tab-btn active" id="tab-btn-prompts" onclick="switchTab('prompts')">
+          <span>Prompts</span>
+          <span class="tab-count" id="prompts-badge-count">4</span>
+        </button>
+        <button class="tab-btn" id="tab-btn-params" onclick="switchTab('params')">
+          <span>Parameters & Assets</span>
+          <span class="tab-count" id="params-badge-count">12</span>
+        </button>
+      </div>
+
+      <!-- Tab 1: Prompts Section -->
+      <div class="tab-content" id="tab-prompts">
+        
+        <!-- Warning Alert Banner (Conditional) -->
+        <div class="alert-banner" id="prompts-warning-banner" style="display: none;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span id="prompts-warning-text">未記録の項目がある可能性があります（生成時の全欄構成は特定できません）</span>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="tab-toolbar">
+          <span id="prompts-summary-label">マッピング済みプロンプト欄 (生成時順序)</span>
+          <button class="btn-action-text" id="toggle-all-btn" onclick="toggleAllPrompts()">すべて折りたたむ</button>
+        </div>
+
+        <!-- Prompt Cards Container -->
+        <div id="prompt-cards-container" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Card 1: Quality -->
+          <div class="field-card open" id="card-quality">
+            <div class="field-header" onclick="toggleCard('card-quality')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Quality</span>
+                <span class="field-role-tag">role: quality</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">482文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-quality')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">(masterpiece:1.2), best quality, ultra-detailed, 8k wallpaper, anime aesthetic, high-resolution illustration, sharp focus, vibrant and clean colors, beautiful atmospheric cinematic lighting, highly intricate details</div>
+          </div>
+
+          <!-- Card 2: Character -->
+          <div class="field-card open" id="card-character">
+            <div class="field-header" onclick="toggleCard('card-character')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Character</span>
+                <span class="field-role-tag">role: character</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">310文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-character')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">1girl, hatsune miku, long aqua twintails, glowing hair accessories, smiling softly, bright teal eyes, futuristic school uniform, black tie with teal trim, sleeveless collared shirt, pleated black mini skirt, studio microphone in hand</div>
+          </div>
+
+          <!-- Card 3: Scene / Background (Empty Example) -->
+          <div class="field-card" id="card-background">
+            <div class="field-header" onclick="toggleCard('card-background')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Background</span>
+                <span class="field-role-tag">role: scene</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="status-badge empty">空欄</span>
+              </div>
+            </div>
+            <div class="field-body is-empty">（生成時に入力された値はありませんでした）</div>
+          </div>
+
+          <!-- Card 4: Negative Prompt -->
+          <div class="field-card open" id="card-negative">
+            <div class="field-header" onclick="toggleCard('card-negative')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Negative Prompt</span>
+                <span class="field-role-tag">role: negative</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">145文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-negative')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">(worst quality:1.4), (low quality:1.4), blurry, bad anatomy, deformed limbs, extra fingers, mutated hands, poorly drawn face, text, signature, watermark</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab 2: Parameters & Assets Section -->
+      <div class="tab-content" id="tab-params" style="display: none;">
+        
+        <!-- Section: Basic Sampling Variables (着色を廃止し統一) -->
+        <div>
+          <div class="section-header-row">
+            <span class="section-title">Core Generation Parameters</span>
+          </div>
+          <div class="params-grid">
+            <div class="param-card">
+              <span class="param-label">Aspect Ratio</span>
+              <span class="param-value" title="832x1216 (2:3)">832x1216 (2:3)</span>
+            </div>
+            <div class="param-card">
+              <span class="param-label">Sampler</span>
+              <span class="param-value" title="euler_ancestral">euler_ancestral</span>
+            </div>
+            <div class="param-card">
+              <span class="param-label">Scheduler</span>
+              <span class="param-value" title="normal">normal</span>
+            </div>
+            <div class="param-card">
+              <span class="param-label">CFG Scale</span>
+              <span class="param-value">7.0</span>
+            </div>
+            <div class="param-card">
+              <span class="param-label">Steps</span>
+              <span class="param-value">28</span>
+            </div>
+            <div class="param-card">
+              <span class="param-label">Seed</span>
+              <span class="param-value" style="cursor: pointer;" onclick="copyText('4289102391', 'Seed値をコピーしました')">
+                4289102391 📋
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Other / Un-displayed Parameters (Accordion) -->
+        <div class="collapse-group open" id="group-other-params">
+          <div class="collapse-group-header" onclick="toggleCollapseGroup('group-other-params')">
+            <span class="collapse-group-title">
+              <span class="field-chevron">▶</span>
+              <span>Other Parameters (漏れ防止・動的グリッド)</span>
+            </span>
+            <span style="font-size: 10px; color: var(--text-dim);">4 items</span>
+          </div>
+          <div class="collapse-group-body">
+            <div class="params-grid" style="margin-bottom: 0;">
+              <div class="param-card">
+                <span class="param-label">Denoise</span>
+                <span class="param-value">0.70</span>
+              </div>
+              <div class="param-card">
+                <span class="param-label">Clip Skip</span>
+                <span class="param-value">2</span>
+              </div>
+              <div class="param-card">
+                <span class="param-label">Base Checkpoint</span>
+                <span class="param-value" title="anima_pencil_xl_v2.safetensors">anima_pencil_xl_v2</span>
+              </div>
+              <div class="param-card">
+                <span class="param-label">VAE Name</span>
+                <span class="param-value" title="sdxl_vae.safetensors">sdxl_vae</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Applied LoRA Models -->
+        <div>
+          <div class="section-header-row">
+            <span class="section-title">Applied LoRA Models</span>
+          </div>
+          <table class="lora-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Target</th>
+                <th style="text-align: right;">Strength</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 500;">detail_slider_v1.safetensors</td>
+                <td><span class="field-role-tag">positive</span></td>
+                <td style="text-align: right;" class="weight-tag">0.80</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 500;">flat_color_remover_v2.safetensors</td>
+                <td><span class="field-role-tag">positive</span></td>
+                <td style="text-align: right;" class="weight-tag">0.50</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Section: TagSets & LoRA TagSets (明確に分離 & 編集可能) -->
+        <div class="asset-block">
+          <div class="asset-block-header">
+            <div class="asset-block-title">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-purple);">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+              </svg>
+              <span>Applied TagSets & LoRA Trigger Sets</span>
+            </div>
+            <button class="btn-action-text" id="btn-toggle-asset-edit" onclick="toggleAssetEditMode()">
+              編集
+            </button>
+          </div>
+
+          <!-- View Mode: TagSets Display -->
+          <div id="assets-view-container">
+            <!-- 1. LoRA Trigger TagSets -->
+            <div style="margin-bottom: 10px;">
+              <span class="param-label" style="margin-bottom: 4px;">LoRA TagSets (LoRA付属トリガーワードセット)</span>
+              <div class="tagset-list" id="view-lora-tagsets">
+                <!-- Dynamic Pills -->
+              </div>
+            </div>
+
+            <!-- 2. Independent Applied TagSets -->
+            <div>
+              <span class="param-label" style="margin-bottom: 4px;">Applied TagSets (汎用タグセット)</span>
+              <div class="tagset-list" id="view-applied-tagsets">
+                <!-- Dynamic Pills -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Edit Mode: Add/Delete Panel -->
+          <div class="edit-assets-panel" id="assets-edit-container">
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-main); margin-bottom: 6px;">
+              タグセットの編集（追加・削除）
+            </div>
+
+            <!-- Edit: LoRA TagSets -->
+            <div style="margin-bottom: 10px;">
+              <label class="param-label">LoRA TagSets (選択中):</label>
+              <div class="tagset-list" id="edit-lora-tagsets" style="min-height: 24px; margin-bottom: 6px;">
+                <!-- Edit items with [x] -->
+              </div>
+              <select class="select-custom" id="select-add-lora-tagset" onchange="handleAddLoraTagSet(this)">
+                <option value="">＋ LoRA付属タグセットを追加...</option>
+                <option value="detail_boost">[detail_slider] detail_boost: (hyper_detail, 8k texture)</option>
+                <option value="flat_clean">[flat_color] clean_shading: (flat color, bold outline)</option>
+                <option value="miku_vocal">[miku_costume] stage_mic: (cyber dress, glowing hair ribbons)</option>
+              </select>
+            </div>
+
+            <!-- Edit: Applied TagSets -->
+            <div style="margin-bottom: 12px;">
+              <label class="param-label">Applied TagSets (選択中):</label>
+              <div class="tagset-list" id="edit-applied-tagsets" style="min-height: 24px; margin-bottom: 6px;">
+                <!-- Edit items with [x] -->
+              </div>
+              <select class="select-custom" id="select-add-tagset" onchange="handleAddAppliedTagSet(this)">
+                <option value="">＋ 汎用タグセットを追加...</option>
+                <option value="Cyberpunk Neon Aesthetic">Cyberpunk Neon Aesthetic</option>
+                <option value="Anime Eye Sparkle Details">Anime Eye Sparkle Details</option>
+                <option value="Masterpiece Quality Boilerplate">Masterpiece Quality Boilerplate</option>
+                <option value="Cinematic Lighting Setup">Cinematic Lighting Setup</option>
+              </select>
+            </div>
+
+            <!-- Edit Actions -->
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-subtle); pt-2; padding-top: 8px;">
+              <button class="btn-cancel-edit" onclick="cancelAssetEdit()">キャンセル</button>
+              <button class="btn-save-assets" onclick="saveAssetEdit()">変更を保存</button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">クリップボードにコピーしました</div>
+
+  <script>
+    // --- Data State for TagSets & LoRA TagSets ---
+    let activeLoraTagSets = [
+      { id: 'detail_boost', lora: 'detail_slider', name: 'detail_boost', words: 'hyper_detail, sharp texture' },
+      { id: 'flat_clean', lora: 'flat_color', name: 'clean_shading', words: 'flat color, bold outline' }
+    ];
+
+    let activeAppliedTagSets = [
+      { id: 'Cyberpunk Neon Aesthetic', name: 'Cyberpunk Neon Aesthetic' },
+      { id: 'Anime Eye Sparkle Details', name: 'Anime Eye Sparkle Details' }
+    ];
+
+    // Backup state for edit cancel
+    let editLoraBackup = [];
+    let editAppliedBackup = [];
+    let isEditingAssets = false;
+
+    function renderTagSets() {
+      // 1. Render View Mode
+      const viewLoraEl = document.getElementById('view-lora-tagsets');
+      if (activeLoraTagSets.length > 0) {
+        viewLoraEl.innerHTML = activeLoraTagSets.map(item => `
+          <span class="tagset-pill lora-tagset" title="Words: ${item.words}">
+            <span class="origin-badge">${item.lora}</span>
+            <span>${item.name}</span>
+          </span>
+        `).join('');
+      } else {
+        viewLoraEl.innerHTML = '<span style="font-size: 10px; color: var(--text-dim); font-style: italic;">紐付けなし</span>';
+      }
+
+      const viewAppliedEl = document.getElementById('view-applied-tagsets');
+      if (activeAppliedTagSets.length > 0) {
+        viewAppliedEl.innerHTML = activeAppliedTagSets.map(item => `
+          <span class="tagset-pill">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+            </svg>
+            <span>${item.name}</span>
+          </span>
+        `).join('');
+      } else {
+        viewAppliedEl.innerHTML = '<span style="font-size: 10px; color: var(--text-dim); font-style: italic;">紐付けなし</span>';
+      }
+
+      // 2. Render Edit Mode
+      const editLoraEl = document.getElementById('edit-lora-tagsets');
+      editLoraEl.innerHTML = activeLoraTagSets.map(item => `
+        <span class="tagset-pill lora-tagset">
+          <span class="origin-badge">${item.lora}</span>
+          <span>${item.name}</span>
+          <button class="btn-remove-tag" onclick="removeLoraTagSet('${item.id}')">×</button>
+        </span>
+      `).join('');
+
+      const editAppliedEl = document.getElementById('edit-applied-tagsets');
+      editAppliedEl.innerHTML = activeAppliedTagSets.map(item => `
+        <span class="tagset-pill">
+          <span>${item.name}</span>
+          <button class="btn-remove-tag" onclick="removeAppliedTagSet('${item.id}')">×</button>
+        </span>
+      `).join('');
+    }
+
+    function toggleAssetEditMode() {
+      isEditingAssets = !isEditingAssets;
+      const viewPanel = document.getElementById('assets-view-container');
+      const editPanel = document.getElementById('assets-edit-container');
+      const btnToggle = document.getElementById('btn-toggle-asset-edit');
+
+      if (isEditingAssets) {
+        editLoraBackup = JSON.parse(JSON.stringify(activeLoraTagSets));
+        editAppliedBackup = JSON.parse(JSON.stringify(activeAppliedTagSets));
+        viewPanel.style.display = 'none';
+        editPanel.classList.add('active');
+        btnToggle.textContent = 'キャンセル';
+      } else {
+        cancelAssetEdit();
+      }
+    }
+
+    function cancelAssetEdit() {
+      activeLoraTagSets = JSON.parse(JSON.stringify(editLoraBackup));
+      activeAppliedTagSets = JSON.parse(JSON.stringify(editAppliedBackup));
+      finishEditingUI();
+    }
+
+    function saveAssetEdit() {
+      finishEditingUI();
+      showToast('アセットの紐付けを更新しました');
+    }
+
+    function finishEditingUI() {
+      isEditingAssets = false;
+      document.getElementById('assets-view-container').style.display = 'block';
+      document.getElementById('assets-edit-container').classList.remove('active');
+      document.getElementById('btn-toggle-asset-edit').textContent = '編集';
+      renderTagSets();
+    }
+
+    function removeLoraTagSet(id) {
+      activeLoraTagSets = activeLoraTagSets.filter(item => item.id !== id);
+      renderTagSets();
+    }
+
+    function removeAppliedTagSet(id) {
+      activeAppliedTagSets = activeAppliedTagSets.filter(item => item.id !== id);
+      renderTagSets();
+    }
+
+    function handleAddLoraTagSet(selectEl) {
+      const val = selectEl.value;
+      if (!val) return;
+      if (!activeLoraTagSets.some(item => item.id === val)) {
+        if (val === 'detail_boost') {
+          activeLoraTagSets.push({ id: 'detail_boost', lora: 'detail_slider', name: 'detail_boost', words: 'hyper_detail' });
+        } else if (val === 'flat_clean') {
+          activeLoraTagSets.push({ id: 'flat_clean', lora: 'flat_color', name: 'clean_shading', words: 'flat color' });
+        } else if (val === 'miku_vocal') {
+          activeLoraTagSets.push({ id: 'miku_vocal', lora: 'miku_costume', name: 'stage_mic', words: 'cyber dress' });
+        }
+        renderTagSets();
+      }
+      selectEl.value = '';
+    }
+
+    function handleAddAppliedTagSet(selectEl) {
+      const val = selectEl.value;
+      if (!val) return;
+      if (!activeAppliedTagSets.some(item => item.id === val)) {
+        activeAppliedTagSets.push({ id: val, name: val });
+        renderTagSets();
+      }
+      selectEl.value = '';
+    }
+
+    // --- Tab Switching ---
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('tab-prompts').style.display = 'none';
+      document.getElementById('tab-params').style.display = 'none';
+
+      if (tabId === 'prompts') {
+        document.getElementById('tab-btn-prompts').classList.add('active');
+        document.getElementById('tab-prompts').style.display = 'flex';
+      } else {
+        document.getElementById('tab-btn-params').classList.add('active');
+        document.getElementById('tab-params').style.display = 'block';
+      }
+    }
+
+    function toggleCard(cardId) {
+      const card = document.getElementById(cardId);
+      card.classList.toggle('open');
+    }
+
+    function toggleCollapseGroup(groupId) {
+      const group = document.getElementById(groupId);
+      group.classList.toggle('open');
+    }
+
+    let allExpanded = true;
+    function toggleAllPrompts() {
+      allExpanded = !allExpanded;
+      document.querySelectorAll('.field-card').forEach(card => {
+        if (allExpanded) {
+          card.classList.add('open');
+        } else {
+          card.classList.remove('open');
+        }
+      });
+      document.getElementById('toggle-all-btn').textContent = allExpanded ? 'すべて折りたたむ' : 'すべて展開';
+    }
+
+    function copyCardPrompt(cardId) {
+      const card = document.getElementById(cardId);
+      const text = card.querySelector('.field-body').innerText;
+      copyText(text, 'プロンプトをコピーしました');
+    }
+
+    function copyText(text, message) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(message || 'コピーしました');
+      }).catch(() => {
+        showToast(message || 'コピーしました');
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 2000);
+    }
+
+    function setScenario(scenario) {
+      document.querySelectorAll('.btn-toggle-demo').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const warningBanner = document.getElementById('prompts-warning-banner');
+      const container = document.getElementById('prompt-cards-container');
+      const summaryLabel = document.getElementById('prompts-summary-label');
+
+      if (scenario === 'v1-normal') {
+        warningBanner.style.display = 'none';
+        summaryLabel.textContent = 'マッピング済みプロンプト欄 (生成時順序)';
+        container.innerHTML = `
+          <div class="field-card open" id="card-quality">
+            <div class="field-header" onclick="toggleCard('card-quality')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Quality</span>
+                <span class="field-role-tag">role: quality</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">482文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-quality')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">(masterpiece:1.2), best quality, ultra-detailed, 8k wallpaper, anime aesthetic, high-resolution illustration, sharp focus, vibrant and clean colors, beautiful atmospheric cinematic lighting, highly intricate details</div>
+          </div>
+          <div class="field-card open" id="card-character">
+            <div class="field-header" onclick="toggleCard('card-character')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Character</span>
+                <span class="field-role-tag">role: character</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">310文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-character')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">1girl, hatsune miku, long aqua twintails, glowing hair accessories, smiling softly, bright teal eyes, futuristic school uniform, black tie with teal trim, sleeveless collared shirt, pleated black mini skirt, studio microphone in hand</div>
+          </div>
+          <div class="field-card" id="card-background">
+            <div class="field-header" onclick="toggleCard('card-background')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Background</span>
+                <span class="field-role-tag">role: scene</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="status-badge empty">空欄</span>
+              </div>
+            </div>
+            <div class="field-body is-empty">（生成時に入力された値はありませんでした）</div>
+          </div>
+          <div class="field-card open" id="card-negative">
+            <div class="field-header" onclick="toggleCard('card-negative')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Negative Prompt</span>
+                <span class="field-role-tag">role: negative</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">145文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-negative')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">(worst quality:1.4), (low quality:1.4), blurry, bad anatomy, deformed limbs, extra fingers, mutated hands, poorly drawn face, text, signature, watermark</div>
+          </div>
+        `;
+      } else if (scenario === 'v1-partial') {
+        warningBanner.style.display = 'flex';
+        document.getElementById('prompts-warning-text').textContent = '未記録のプロンプト項目が含まれています（ノード欠落または記録不整合）';
+        summaryLabel.textContent = 'マッピング済みプロンプト欄 (一部未記録あり)';
+        container.innerHTML = `
+          <div class="field-card open" id="card-quality">
+            <div class="field-header" onclick="toggleCard('card-quality')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Quality</span>
+                <span class="field-role-tag">role: quality</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="char-badge">482文字</span>
+                <button class="btn-copy" onclick="copyCardPrompt('card-quality')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">(masterpiece:1.2), best quality, ultra-detailed...</div>
+          </div>
+          <div class="field-card" id="card-unrecorded">
+            <div class="field-header" onclick="toggleCard('card-unrecorded')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Custom Detail</span>
+                <span class="field-role-tag">role: detail_prompt</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <span class="status-badge unrecorded">未記録</span>
+              </div>
+            </div>
+            <div class="field-body is-empty" style="color: #f59e0b;">（生成時の値は記録されていません）</div>
+          </div>
+        `;
+      } else if (scenario === 'legacy') {
+        warningBanner.style.display = 'flex';
+        document.getElementById('prompts-warning-text').textContent = '未記録の項目がある可能性があります（旧形式のため生成時の欄構成は特定できません）';
+        summaryLabel.textContent = '記録済みの項目（生成時の欄構成は不明）';
+        container.innerHTML = `
+          <div class="field-card open" id="card-legacy-prompt">
+            <div class="field-header" onclick="toggleCard('card-legacy-prompt')">
+              <div class="field-title-group">
+                <span class="field-chevron">▶</span>
+                <span class="field-name">Prompt (保存キー: prompt)</span>
+              </div>
+              <div class="field-meta-group" onclick="event.stopPropagation()">
+                <button class="btn-copy" onclick="copyCardPrompt('card-legacy-prompt')">📋 コピー</button>
+              </div>
+            </div>
+            <div class="field-body">1girl, solo, anime girl standing under sakura tree, spring breeze</div>
+          </div>
+        `;
+      }
+    }
+
+    // Initialize TagSets on load
+    renderTagSets();
+  </script>
+</body>
+</html>

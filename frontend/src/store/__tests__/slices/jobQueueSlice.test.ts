@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGenerationStore, _resetWebSocketForTesting } from '../../useGenerationStore';
-import { comfyApi } from '../../../api/client';
+import { comfyApi, promptMetadataApi } from '../../../api/client';
+import { PROMPT_RECORD_KEY } from '../../../utils/generationRecord';
 
 vi.mock('../../../api/client', () => {
   return {
@@ -1204,6 +1205,61 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
       expect(useGenerationStore.getState().previewAutoFollow).toBe(true);
       expect(localStorage.getItem('prompt-surgeon-preview-auto-follow')).toBe('true');
     });
+  });
+});
+
+describe('REQ-316 queue metadata persistence', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGenerationStore.setState({ isGenerating: false });
+  });
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    vi.mocked(comfyApi.queuePrompt).mockReset().mockResolvedValue({ prompt_id: 'recorded' });
+    vi.mocked(promptMetadataApi.create).mockReset().mockResolvedValue({ status: 'ok' } as any);
+  });
+  const metadata = () => ({ workflowId: 7, appliedAssets: {}, paramValues: {
+    Quality: 'original', [PROMPT_RECORD_KEY]: JSON.stringify({ version: 1, workflow_id: 7,
+      workflow_name: 'Frozen workflow', fields: [], parameters: [], assets: [], queued_at: null,
+      completeness: 'complete' }),
+  } });
+  it('freezes metadata before submission and stamps the same receipt time in both stores', async () => {
+    const source = metadata();
+    vi.mocked(comfyApi.queuePrompt).mockImplementationOnce(async () => {
+      source.paramValues.Quality = 'changed';
+      useGenerationStore.setState({ selectedWorkflowId: 99 });
+      return { prompt_id: 'recorded' };
+    });
+    expect(await useGenerationStore.getState().queuePrompt({}, source, { skipQueueFetch: true })).toBe('recorded');
+    const local = JSON.parse(localStorage.getItem('prompt-surgeon-meta-recorded')!);
+    const remote = vi.mocked(promptMetadataApi.create).mock.calls[0][0];
+    expect(local.paramValues.Quality).toBe('original');
+    expect(local.workflowId).toBe(7);
+    expect(remote.workflow_id).toBe(7);
+    expect(remote.param_values).toEqual(local.paramValues);
+    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).queued_at).toMatch(/^\d{4}-.*Z$/);
+    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).prompt_id).toBe('recorded');
+    expect(JSON.parse(source.paramValues[PROMPT_RECORD_KEY]).queued_at).toBeNull();
+  });
+  it.each(['prompt-surgeon-current-prompt-id', 'prompt-surgeon-meta-recorded'])('still saves remotely when %s cannot be stored', async (key) => {
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (name, value) {
+      if (name === key) throw new Error('storage full');
+      original.call(this, name, value);
+    });
+    const failure = vi.fn();
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true, onSubmissionFailure: failure })).toBe('recorded');
+    expect(promptMetadataApi.create).toHaveBeenCalledTimes(1);
+    expect(failure).not.toHaveBeenCalled();
+  });
+  it('preserves local metadata and success when remote persistence rejects', async () => {
+    vi.mocked(promptMetadataApi.create).mockRejectedValueOnce(new Error('server unavailable'));
+    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('メタ情報') })));
+    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -63,6 +63,8 @@ export interface AppliedAsset {
   enabled: boolean;        // toggle state
   tags: string[];          // tagset tags or LoRA trigger words
   loraPromptString?: string; // LoRA prompt string `<lora:filename:strength>`
+  triggerSetId?: number | null;
+  triggerSetName?: string | null;
 }
 
 export interface GenerationSet {
@@ -156,6 +158,7 @@ export interface JobQueueActions {
     metadata?: {
       paramValues?: Record<string, string>;
       appliedAssets?: Record<string, AppliedAsset[]>;
+      workflowId?: number;
     },
     options?: QueuePromptOptions
   ) => Promise<string | null>;

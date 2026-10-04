@@ -14,6 +14,7 @@ from app.config import settings
 from app import models, schemas
 
 logger = logging.getLogger(__name__)
+ASSOCIATIONS_KEY = "__metadata_associations_v1"
 
 
 import io
@@ -223,11 +224,80 @@ class SnapshotService:
         if not s:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
 
+        bad_request = lambda detail: HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+        if payload.tag_sets is not None and payload.tag_set_ids is not None:
+            raise bad_request("Use either tag_sets or tag_set_ids")
         if payload.lora_ids is not None:
             for lora_id in payload.lora_ids:
-                existing_lora = db.query(models.Lora).filter(models.Lora.id == lora_id).first()
-                if not existing_lora:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lora with ID {lora_id} does not exist")
+                if not db.query(models.Lora).filter(models.Lora.id == lora_id).first():
+                    raise bad_request(f"Lora with ID {lora_id} does not exist")
+        if payload.tag_set_ids is not None:
+            for tag_set_id in payload.tag_set_ids:
+                if not db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first():
+                    raise bad_request(f"TagSet with ID {tag_set_id} does not exist")
+
+        if payload.tag_sets is not None:
+            tag_identities: set[tuple[int, str]] = set()
+            for tag_item in payload.tag_sets:
+                tag_identity = (tag_item.tag_set_id, tag_item.role)
+                if not tag_item.role.strip() or tag_identity in tag_identities:
+                    raise bad_request("tag_sets contains an empty role or duplicate association")
+                tag_identities.add(tag_identity)
+                if not db.query(models.TagSet).filter(models.TagSet.id == tag_item.tag_set_id).first():
+                    raise bad_request(f"TagSet with ID {tag_item.tag_set_id} does not exist")
+
+        association_params: Optional[dict[str, Any]] = None
+        previous_triggers: set[tuple[int, int, str]] = set()
+        if payload.lora_trigger_sets is not None:
+            try:
+                association_params = json.loads(s.params)
+                if not isinstance(association_params, dict):
+                    raise ValueError("params must be an object")
+                raw_associations = association_params.get(ASSOCIATIONS_KEY)
+                if raw_associations is not None:
+                    if not isinstance(raw_associations, str):
+                        raise ValueError("association record must be encoded JSON")
+                    record = json.loads(raw_associations)
+                    if not isinstance(record, dict) or type(record.get("version")) is not int or record["version"] != 1:
+                        raise ValueError("unknown association record version")
+                    stored = record.get("lora_trigger_sets")
+                    if not isinstance(stored, list):
+                        raise ValueError("association list is malformed")
+                    for item in stored:
+                        if not isinstance(item, dict):
+                            raise ValueError("association item is malformed")
+                        stored_lora_id, stored_trigger_id, stored_role = item.get("lora_id"), item.get("trigger_set_id"), item.get("role")
+                        if (type(stored_lora_id) is not int or type(stored_trigger_id) is not int
+                                or not isinstance(stored_role, str) or not stored_role.strip()):
+                            raise ValueError("association item is malformed")
+                        stored_identity: tuple[int, int, str] = (stored_lora_id, stored_trigger_id, stored_role)
+                        if stored_identity in previous_triggers:
+                            raise ValueError("association item is duplicated")
+                        previous_triggers.add(stored_identity)
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                raise bad_request("Stored trigger associations cannot be edited") from exc
+
+            trigger_identities: set[tuple[int, int, str]] = set()
+            for trigger_item in payload.lora_trigger_sets:
+                trigger_identity = (trigger_item.lora_id, trigger_item.trigger_set_id, trigger_item.role)
+                if not trigger_item.role.strip() or trigger_identity in trigger_identities:
+                    raise bad_request("lora_trigger_sets contains an empty role or duplicate association")
+                trigger_identities.add(trigger_identity)
+                trigger = db.query(models.LoraTriggerWordSet).filter(models.LoraTriggerWordSet.id == trigger_item.trigger_set_id).first()
+                if not trigger:
+                    if trigger_identity not in previous_triggers:
+                        raise bad_request(f"Trigger set with ID {trigger_item.trigger_set_id} does not exist")
+                    continue
+                if trigger.lora_id != trigger_item.lora_id:
+                    raise bad_request("Trigger set does not belong to the selected LoRA")
+                linked = db.query(models.SnapshotLora).filter(
+                    models.SnapshotLora.snapshot_id == snapshot_id,
+                    models.SnapshotLora.lora_id == trigger_item.lora_id,
+                ).first()
+                if not linked:
+                    raise bad_request("LoRA is not associated with this snapshot in the selected role")
+
+        if payload.lora_ids is not None:
             db.query(models.SnapshotLora).filter(models.SnapshotLora.snapshot_id == snapshot_id).delete()
             for lora_id in set(payload.lora_ids):
                 db.add(models.SnapshotLora(
@@ -238,10 +308,6 @@ class SnapshotService:
                 ))
 
         if payload.tag_set_ids is not None:
-            for tag_set_id in payload.tag_set_ids:
-                existing_tag_set = db.query(models.TagSet).filter(models.TagSet.id == tag_set_id).first()
-                if not existing_tag_set:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"TagSet with ID {tag_set_id} does not exist")
             db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
             for tag_set_id in set(payload.tag_set_ids):
                 db.add(models.SnapshotTagSet(
@@ -249,6 +315,18 @@ class SnapshotService:
                     tag_set_id=tag_set_id,
                     role="positive"
                 ))
+
+        if payload.tag_sets is not None:
+            db.query(models.SnapshotTagSet).filter(models.SnapshotTagSet.snapshot_id == snapshot_id).delete()
+            for tag_item in payload.tag_sets:
+                db.add(models.SnapshotTagSet(snapshot_id=snapshot_id, tag_set_id=tag_item.tag_set_id, role=tag_item.role))
+
+        if payload.lora_trigger_sets is not None and association_params is not None:
+            association_params[ASSOCIATIONS_KEY] = json.dumps({
+                "version": 1,
+                "lora_trigger_sets": [item.model_dump() for item in payload.lora_trigger_sets],
+            })
+            s.params = json.dumps(association_params)
 
         if payload.image_path is not None:
             s.image_path = payload.image_path

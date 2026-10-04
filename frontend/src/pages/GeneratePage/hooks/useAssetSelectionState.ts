@@ -33,16 +33,14 @@ export function useAssetSelectionState({
   const handleAddLoraAsset = (role: string, lora: Lora, strength: number, triggerSetId: number | 'default') => {
     const path = lora.file_path || lora.model_name || ''
     const filename = path.split('/').pop()?.split('\\').pop()?.replace(/\.[^/.]+$/, '') || 'lora'
-    let twsWords: string[] = []
-    if (triggerSetId !== 'default') {
-      const selectedSet = lora.trigger_word_sets?.find((s) => s.id === triggerSetId)
-      if (selectedSet) twsWords = selectedSet.words
-    }
+    const selectedSet = triggerSetId === 'default' ? undefined : lora.trigger_word_sets?.find((s) => s.id === triggerSetId)
     addAppliedAsset(role, {
       type: 'lora',
       assetId: lora.id,
       name: lora.description || filename,
-      tags: twsWords,
+      tags: [...(selectedSet?.words || [])],
+      triggerSetId: triggerSetId === 'default' ? null : selectedSet?.id,
+      triggerSetName: triggerSetId === 'default' ? null : selectedSet?.name,
       loraPromptString: `<lora:${filename}:${strength.toFixed(1)}>`,
     })
     setRoleCollapsed(role, false)

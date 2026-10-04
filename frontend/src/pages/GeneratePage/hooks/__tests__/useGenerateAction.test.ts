@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useGenerateAction } from '../useGenerateAction';
 import { useGenerationStore } from '../../../../store/useGenerationStore';
 import type { Workflow } from '../../../../api/types';
+import { PROMPT_RECORD_KEY } from '../../../../utils/generationRecord';
 
 vi.mock('../../../../store/useGenerationStore', () => {
   const store = {
@@ -83,6 +84,39 @@ describe('useGenerateAction', () => {
       },
     ],
   };
+
+  it('records the actual injected seed per job without leaking reserved metadata to the graph', async () => {
+    mockStore.seedMode = 'fixed'; mockStore.seed = 901; mockStore.batchSize = 2;
+    mockStore.queuePrompt.mockResolvedValue('p');
+    await useGenerateAction(baseWorkflow).handleGenerate();
+    for (const [graph, metadata] of mockStore.queuePrompt.mock.calls) {
+      const record = JSON.parse(metadata.paramValues[PROMPT_RECORD_KEY]);
+      expect(record.parameters[0].value).toBe(graph['3'].inputs.seed);
+      expect(metadata.workflowId).toBe(1);
+      expect(JSON.stringify(graph)).not.toContain(PROMPT_RECORD_KEY);
+    }
+  });
+
+  it('freezes workflow labels and each set before queue waits and subsequent input edits', async () => {
+    const wf = JSON.parse(JSON.stringify(baseWorkflow));
+    mockStore.sets = [100, 200].map((seed, i) => ({ id: String(i), name: `S${i}`, checked: true, batchSize: 2, seedMode: 'fixed', seed, paramValues: {}, appliedAssets: {} }));
+    mockStore.queuePrompt.mockImplementation(async () => {
+      wf.name = 'renamed'; wf.mappings[0].display_name = 'renamed seed'; mockStore.sets[1].seed = 999;
+      return 'p';
+    });
+    await useGenerateAction(wf).handleGenerateSets();
+    expect(mockStore.queuePrompt.mock.calls.map(([, m]: any[]) => JSON.parse(m.paramValues[PROMPT_RECORD_KEY]).parameters[0].value)).toEqual([100, 101, 200, 201]);
+    for (const [, metadata] of mockStore.queuePrompt.mock.calls) {
+      expect(JSON.parse(metadata.paramValues[PROMPT_RECORD_KEY]).workflow_name).toBe('Test Workflow');
+    }
+  });
+
+  it('reports reserved mapping collisions before submission', async () => {
+    const wf = { ...baseWorkflow, mappings: [{ ...baseWorkflow.mappings[0], role: PROMPT_RECORD_KEY }] };
+    await useGenerateAction(wf).handleGenerate();
+    expect(mockStore.queuePrompt).not.toHaveBeenCalled();
+    expect(mockStore.setErrorToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+  });
 
   it('should use seedNode.param_name when present in node inputs', async () => {
     mockStore.seedMode = 'fixed';
@@ -897,7 +931,7 @@ describe('useGenerateAction', () => {
       await useGenerateAction(dottedValueWorkflow).handleGenerate();
 
       const payload = mockStore.queuePrompt.mock.calls[0][1].paramValues;
-      expect(payload).toEqual({
+      expect(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== PROMPT_RECORD_KEY))).toEqual({
         Main_Positive_Prompt: 'first. second, third.',
         Checkpoint_Name: 'model.v2.safetensors',
         Lora_Stack: 'style.v1.2.safetensors',
@@ -928,7 +962,7 @@ describe('useGenerateAction', () => {
       await useGenerateAction(dottedValueWorkflow).handleGenerateSets();
 
       const payload = mockStore.queuePrompt.mock.calls[0][1].paramValues;
-      expect(payload).toEqual({
+      expect(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== PROMPT_RECORD_KEY))).toEqual({
         Main_Positive_Prompt: 'first. second, third.',
         Checkpoint_Name: 'model.v2.safetensors',
         Lora_Stack: 'style.v1.2.safetensors',

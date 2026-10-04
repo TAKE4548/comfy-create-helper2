@@ -27,6 +27,12 @@ class SnapshotTagSetCreate(BaseModel):
     role: str = "positive"
 
 
+class SnapshotTriggerAssociation(BaseModel):
+    lora_id: int
+    trigger_set_id: int
+    role: str
+
+
 class SnapshotTagSetRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -63,6 +69,8 @@ class SnapshotRead(BaseModel):
 class SnapshotUpdate(BaseModel):
     lora_ids: Optional[list[int]] = None
     tag_set_ids: Optional[list[int]] = None
+    tag_sets: Optional[list[SnapshotTagSetCreate]] = None
+    lora_trigger_sets: Optional[list[SnapshotTriggerAssociation]] = None
     image_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     params: Optional[dict[str, Any]] = None
@@ -78,6 +86,5 @@ class SnapshotSummary(BaseModel):
     created_at: datetime
     params: Optional[dict[str, Any]] = None
     source_snapshot_id: Optional[int] = None
-
 
 
