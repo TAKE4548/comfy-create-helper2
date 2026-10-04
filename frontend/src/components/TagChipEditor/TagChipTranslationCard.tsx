@@ -6,6 +6,7 @@ export interface TagChipTranslationCardProps {
   text: string;
   onClose: () => void;
   anchorRect?: DOMRect | null;
+  menuRef?: React.RefObject<HTMLDivElement>;
 }
 
 const CARD_WIDTH = 320;
@@ -15,6 +16,7 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
   text,
   onClose,
   anchorRect,
+  menuRef,
 }) => {
   const clampPos = useCallback((x: number, y: number) => {
     const maxX = Math.max(0, window.innerWidth - CARD_WIDTH);
@@ -53,6 +55,20 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
   const [copied, setCopied] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearRequestTimeout = useCallback(() => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+    clearRequestTimeout();
+  }, [clearRequestTimeout]);
 
   // Resize clamping
   useEffect(() => {
@@ -105,13 +121,24 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
 
   // Translation fetching
   const fetchTranslation = useCallback(async (promptText: string) => {
+    const requestId = ++requestIdRef.current;
+    clearRequestTimeout();
     if (!promptText || !promptText.trim()) {
       setTranslatedText('');
+      setError(null);
       setIsLoading(false);
       return;
     }
+    setTranslatedText('');
     setIsLoading(true);
     setError(null);
+    timeoutRef.current = setTimeout(() => {
+      if (requestIdRef.current !== requestId) return;
+      requestIdRef.current += 1;
+      timeoutRef.current = null;
+      setError('和訳の取得がタイムアウトしました');
+      setIsLoading(false);
+    }, 10_000);
     try {
       const res = await translateApi.translatePrompt({
         prompt: promptText,
@@ -119,13 +146,21 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
         target_lang: 'ja',
         repack: false,
       });
+      if (requestIdRef.current !== requestId) return;
+      clearRequestTimeout();
+      if (!res.translated_prompt || !res.translated_prompt.trim()) {
+        setError('和訳を取得できませんでした');
+        return;
+      }
       setTranslatedText(res.translated_prompt);
     } catch (err: any) {
+      if (requestIdRef.current !== requestId) return;
+      clearRequestTimeout();
       setError(err?.message || '和訳の取得に失敗しました');
     } finally {
-      setIsLoading(false);
+      if (requestIdRef.current === requestId) setIsLoading(false);
     }
-  }, []);
+  }, [clearRequestTimeout]);
 
   useEffect(() => {
     fetchTranslation(text);
@@ -153,7 +188,10 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
       }
     };
     const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const isInsideCard = !!cardRef.current?.contains(target);
+      const isInsideMenu = !!menuRef?.current?.contains(target);
+      if (!isInsideCard && !isInsideMenu) {
         onClose();
       }
     };
@@ -167,7 +205,7 @@ export const TagChipTranslationCard: React.FC<TagChipTranslationCardProps> = ({
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
     };
-  }, [onClose]);
+  }, [menuRef, onClose]);
 
   return (
     <div

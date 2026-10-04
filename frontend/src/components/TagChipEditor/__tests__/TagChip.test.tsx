@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
 import { TagChip } from '../TagChip';
+import { translateApi } from '../../../api/client';
 
 vi.mock('../../../api/client', () => ({
   translateApi: {
@@ -637,7 +639,7 @@ describe('TagChip', () => {
     );
 
     fireEvent.click(screen.getByText('translate-btn-tag'));
-    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を閉じる' });
     expect(translateBtn).toBeInTheDocument();
     expect(translateBtn).toHaveTextContent('翻訳');
   });
@@ -656,18 +658,19 @@ describe('TagChip', () => {
     );
 
     fireEvent.click(screen.getByText('translate-open-tag'));
-    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を閉じる' });
 
-    // Initially translation card is not rendered
-    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
-
-    // Click translation button -> opens translation card
-    fireEvent.click(translateBtn);
+    // Opening the submenu automatically opens its translation card.
     expect(screen.getByTestId('translation-card')).toBeInTheDocument();
 
-    // Click translation button again -> closes translation card
+    // The button still lets the user hide and show the card.
     fireEvent.click(translateBtn);
     expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'タグの和訳を表示' })).toBeInTheDocument();
+
+    // Click translation button again -> reopens translation card
+    fireEvent.click(screen.getByRole('button', { name: 'タグの和訳を表示' }));
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
   });
 
   it('unmounts translation card when parent submenu is closed (AC-8)', () => {
@@ -685,8 +688,7 @@ describe('TagChip', () => {
 
     // Open submenu and open translation card
     fireEvent.click(screen.getByText('translate-close-tag'));
-    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を表示' });
-    fireEvent.click(translateBtn);
+    const translateBtn = screen.getByRole('button', { name: 'タグの和訳を閉じる' });
     expect(screen.getByTestId('translation-card')).toBeInTheDocument();
 
     // Close submenu via Escape on submenu container
@@ -697,5 +699,105 @@ describe('TagChip', () => {
     // Both submenu and translation card should be unmounted
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
     expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+  });
+
+  it('translates only committed input and keeps the card open when focus leaves the input', () => {
+    const StatefulTagChip = () => {
+      const [text, setText] = useState('original-tag');
+      return (
+        <TagChip
+          id="1"
+          text={text}
+          enabled={true}
+          onEdit={(_, nextText) => setText(nextText)}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+    };
+
+    render(<StatefulTagChip />);
+    fireEvent.click(screen.getByText('original-tag'));
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+
+    const translatePrompt = vi.mocked(translateApi.translatePrompt);
+    translatePrompt.mockClear();
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    fireEvent.change(wordInput, { target: { value: 'edited-tag' } });
+    expect(translatePrompt).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(wordInput, { key: 'Enter', code: 'Enter' });
+    expect(translatePrompt).toHaveBeenCalled();
+    expect(JSON.stringify(translatePrompt.mock.calls)).toContain('edited-tag');
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+
+    const callCountAfterTextCommit = translatePrompt.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '+0.1' }));
+    expect(translatePrompt).toHaveBeenCalledTimes(callCountAfterTextCommit);
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+  });
+
+  it('commits on blur once, while Escape cancels the draft and closes both menu and card', () => {
+    const onEdit = vi.fn();
+    const StatefulTagChip = () => {
+      const [text, setText] = useState('blur-tag');
+      return (
+        <TagChip
+          id="1"
+          text={text}
+          enabled={true}
+          onEdit={(id, nextText) => {
+            onEdit(id, nextText);
+            setText(nextText);
+          }}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+    };
+
+    render(<StatefulTagChip />);
+    fireEvent.click(screen.getByText('blur-tag'));
+    const wordInput = screen.getByRole('textbox', { name: 'タグ名編集' });
+    fireEvent.change(wordInput, { target: { value: 'blurred-tag' } });
+    fireEvent.blur(wordInput);
+    fireEvent.keyDown(wordInput, { key: 'Enter', code: 'Enter' });
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith('1', 'blurred-tag');
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'タグ名編集' }), {
+      target: { value: 'discarded-tag' },
+    });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'タグ名編集' }), {
+      key: 'Escape',
+      code: 'Escape',
+    });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+  });
+
+  it('closes the submenu and translation card on an outside click', () => {
+    render(
+      <TagChip
+        id="1"
+        text="outside-click-tag"
+        enabled={true}
+        onEdit={mockOnEdit}
+        onDelete={mockOnDelete}
+        onToggle={mockOnToggle}
+        onDuplicate={mockOnDuplicate}
+      />
+    );
+
+    fireEvent.click(screen.getByText('outside-click-tag'));
+    expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
   });
 });

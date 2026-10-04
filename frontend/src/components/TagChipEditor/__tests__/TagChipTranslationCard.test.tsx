@@ -12,6 +12,12 @@ vi.mock('../../../api/client', () => ({
 describe('TagChipTranslationCard', () => {
   const mockOnClose = vi.fn();
   const originalClipboard = navigator.clipboard;
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
 
   beforeAll(() => {
     if (typeof window.PointerEvent === 'undefined') {
@@ -278,5 +284,106 @@ describe('TagChipTranslationCard', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(3);
 
     unmount();
+  });
+
+  it('keeps only the newest response when requests finish out of order', async () => {
+    const first = deferred<any>();
+    const second = deferred<any>();
+    vi.mocked(translateApi.translatePrompt)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const { rerender } = render(<TagChipTranslationCard text="first" onClose={mockOnClose} />);
+    rerender(<TagChipTranslationCard text="second" onClose={mockOnClose} />);
+
+    await act(async () => { second.resolve({ translated_prompt: '新しい訳' }); });
+    await act(async () => { first.resolve({ translated_prompt: '古い訳' }); });
+    expect(screen.getByText('新しい訳')).toBeInTheDocument();
+    expect(screen.queryByText('古い訳')).not.toBeInTheDocument();
+  });
+
+  it('ignores a late failure from an older request', async () => {
+    const first = deferred<any>();
+    const second = deferred<any>();
+    vi.mocked(translateApi.translatePrompt)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const { rerender } = render(<TagChipTranslationCard text="first" onClose={mockOnClose} />);
+    rerender(<TagChipTranslationCard text="second" onClose={mockOnClose} />);
+    await act(async () => { second.resolve({ translated_prompt: '最新訳' }); });
+    await act(async () => { first.reject(new Error('古い失敗')); });
+    expect(screen.getByText('最新訳')).toBeInTheDocument();
+    expect(screen.queryByText('古い失敗')).not.toBeInTheDocument();
+  });
+
+  it('uses the current text for retry and ignores the original request result', async () => {
+    const original = deferred<any>();
+    const retry = deferred<any>();
+    vi.mocked(translateApi.translatePrompt)
+      .mockReturnValueOnce(original.promise)
+      .mockRejectedValueOnce(new Error('失敗'))
+      .mockReturnValueOnce(retry.promise);
+    const { rerender } = render(<TagChipTranslationCard text="before" onClose={mockOnClose} />);
+    rerender(<TagChipTranslationCard text="current" onClose={mockOnClose} />);
+    await screen.findByRole('button', { name: /再試行/i });
+    fireEvent.click(screen.getByRole('button', { name: /再試行/i }));
+    expect(translateApi.translatePrompt).toHaveBeenLastCalledWith({
+      prompt: 'current', source_lang: 'en', target_lang: 'ja', repack: false,
+    });
+    await act(async () => { retry.resolve({ translated_prompt: '再試行訳' }); });
+    await act(async () => { original.resolve({ translated_prompt: '古い訳' }); });
+    expect(screen.getByText('再試行訳')).toBeInTheDocument();
+    expect(screen.queryByText('古い訳')).not.toBeInTheDocument();
+  });
+
+  it('ignores results after unmount and clears its timeout', async () => {
+    vi.useFakeTimers();
+    const request = deferred<any>();
+    vi.mocked(translateApi.translatePrompt).mockReturnValueOnce(request.promise);
+    const { unmount } = render(<TagChipTranslationCard text="pending" onClose={mockOnClose} />);
+    unmount();
+    await act(async () => { request.resolve({ translated_prompt: '遅延訳' }); });
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('shows an error for an empty translation response', async () => {
+    vi.mocked(translateApi.translatePrompt).mockResolvedValueOnce({ translated_prompt: '  ' } as any);
+    render(<TagChipTranslationCard text="nonempty" onClose={mockOnClose} />);
+    expect(await screen.findByText('和訳を取得できませんでした')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /再試行/i })).toBeInTheDocument();
+  });
+
+  it('shows timeout and ignores a response arriving after 10 seconds', async () => {
+    vi.useFakeTimers();
+    const request = deferred<any>();
+    vi.mocked(translateApi.translatePrompt).mockReturnValueOnce(request.promise);
+    render(<TagChipTranslationCard text="slow" onClose={mockOnClose} />);
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(screen.getByText('和訳の取得がタイムアウトしました')).toBeInTheDocument();
+    await act(async () => { request.resolve({ translated_prompt: '遅延訳' }); });
+    expect(screen.queryByText('遅延訳')).not.toBeInTheDocument();
+    expect(screen.getByText('和訳の取得がタイムアウトしました')).toBeInTheDocument();
+  });
+
+  it('treats menu interactions as inside and closes on true outside interaction', () => {
+    const menu = document.createElement('div');
+    menu.dataset.testid = 'menu';
+    const menuButton = document.createElement('button');
+    menuButton.textContent = 'menu action';
+    menu.appendChild(menuButton);
+    document.body.appendChild(menu);
+    const { container } = render(
+      <div>
+        <div data-testid="outside">outside</div>
+        <TagChipTranslationCard text="" onClose={mockOnClose} menuRef={{ current: menu }} />
+      </div>
+    );
+    fireEvent.mouseDown(menuButton);
+    fireEvent.touchStart(menuButton);
+    expect(mockOnClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(screen.getByTestId('outside'));
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    container.remove();
+    menu.remove();
   });
 });

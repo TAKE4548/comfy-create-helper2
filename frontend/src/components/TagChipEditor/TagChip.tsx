@@ -117,7 +117,9 @@ export const TagChip: React.FC<TagChipProps> = ({
   const handleChipClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isEditing) return;
-    setIsMenuOpen((prev) => !prev);
+    const next = !isMenuOpen;
+    setIsMenuOpen(next);
+    setIsTranslationOpen(next);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -330,7 +332,7 @@ export const TagChip: React.FC<TagChipProps> = ({
               onClick={() => setIsTranslationOpen((prev) => !prev)}
               className="px-2 py-1 rounded bg-[#1F1F25] border border-[rgba(255,255,255,0.12)] text-zinc-300 hover:text-white hover:border-[#7C6FDD] text-[11px] font-medium transition-colors shrink-0"
               title="和訳プレビュー"
-              aria-label="タグの和訳を表示"
+              aria-label={isTranslationOpen ? 'タグの和訳を閉じる' : 'タグの和訳を表示'}
             >
               翻訳
             </button>
@@ -392,9 +394,10 @@ export const TagChip: React.FC<TagChipProps> = ({
 
           {isTranslationOpen && (
             <TagChipTranslationCard
-              text={wordInput || baseText}
+              text={baseText}
               onClose={() => setIsTranslationOpen(false)}
               anchorRect={menuRef.current?.getBoundingClientRect()}
+              menuRef={menuRef}
             />
           )}
         </div>
