@@ -179,9 +179,15 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 - **フロントエンド連携 & 省電力設計 (`useSystemStats.ts`, `systemWsService.ts`)**:
   - 再接続時に指数バックオフ（1s, 2s, 4s, 最大10s）を適用。
   - Page Visibility API（`document.visibilityState === 'hidden'`）により、タブ非アクティブ時は接続を自動 suspend して CPU/GPU 負荷と描画を抑制し、タブ復帰時に resume。
+- **ブラウザー保存量の推定表示 (`useBrowserStorageUsage.ts`)**:
+  - localStorage と sessionStorage を別々に計測し、キーと値の文字列長合計に2 bytesを掛けて推定する（`Σ(key.length + value.length) × 2 bytes`）。これは各UTF-16コード単位の概算であり、ブラウザーの実使用容量・割当上限を示さない。
+  - localStorageは現在のorigin全体、sessionStorageは現在のタブの値を対象とする。保存内容そのものは表示しない。
+  - 初回表示時と可視状態で2.5秒ごとに計測する。hidden中は計測を停止し、visible復帰時に即時計測して周期を再開する。hardware stats用WebSocketの値や配信周期とは独立して計測する。
+  - APIへのアクセス、列挙・読み取りが拒否された場合、列挙中に内容が変化した場合、または安全な整数範囲を超える場合は「取得不可」と表示する。数値は1 MiB未満をKiB、それ以上をMiBで小数1桁表示する。
 - **UI 表示コンポーネント**:
   - **デスクトップ (`ResourceGaugeHUD.tsx`)**: プレビューエリア右上に半透明 HUD（`bg-[#18181C]/80 backdrop-blur-sm`）として重畳表示。各指標（CPU/RAM/GPU/VRAM）の現在値と詳細（使用GB/総GB）を表示。
   - **モバイル (`ResourceGaugeChips.tsx`, REQ-289)**: `MobileLayout.tsx` マウント時に `useSystemStats()` を起動し、ヘッダー1段目（`<h1>Generate</h1>` の右側、`justify-between` スペース）にコンパクトなチップ群として表示。2段目のワークフロー/設定行との幅競合・押し潰れを解消。
+  - localStorage/sessionStorageの推定量もデスクトップHUDとモバイルチップに表示する。REQ-312の表示整理方針に従って重複を抑え、表示行数を3行に固定しない。今回の指標追加による行数増加を許容する。
   - **段階的警告カラー**: 通常時は `zinc-400`、85% 超過時は警告カラー `amber-400`、95% 超過時は危険カラー `red-400` へ視覚的警告を通知。取得不可時は `--`（`zinc-500`）表示。
 
 ### 2-11. サムネイルストリップ
@@ -300,7 +306,8 @@ frontend/src/store/
 - **生成時メタデータ永続化とスナップショット復元**:
   - キュー投入時（バッチ中間ジョブを含む各ジョブ）、生成開始時に固定したワークフローから欄名・role・順序・mapping情報を保持し、実際に投入したgraph値と適用アセットを `__prompt_surgeon_metadata_v1` の生成記録としてprompt IDに対応付ける。ローカル保存とサーバーの `POST /api/prompt-metadata` は非同期で行い、片方の失敗で他方の保存を止めない。生成記録にはキュー受付時刻を記録するが、生成完了時刻は記録しない。
   - スナップショット保存時は画像 URL の `t` からローカル/server記録を照会して保存する。記録欠落時に現在の入力値から生成条件を補完しない。保存済み `params` は空値を含めて正本とし、保存後に元のメタデータ記録が整理されても保存内容は独立して残る。
-  - スナップショットの `params` には、保存時点の生成記録に含まれるLoRA付属trigger setを `__metadata_associations_v1` にも保持する。このキーは生成時の不変記録とは別の現在関連情報である。ローカル200件/server1000件の保持上限と非同期server保存を維持し、未保存画像の無期限保持は行わない。
+  - ローカルの `prompt-surgeon-meta-*` は生成時メタデータの一時キャッシュとして最大30件を保持する。新規記録の書き込み前に整理し、incoming record用の枠を先に確保して既存記録をtimestamp降順で残す（同時刻はkey順）。初回利用時も既存キャッシュをこの上限へ移行する。壊れたJSON、objectでない値、timestampが欠落・不正な記録は有効記録より先に削除する。保存済み画像のSnapshot `params` はキャッシュと独立した保存内容であり、キャッシュ整理の対象にしない。整理によりサーバー未保存の記録が失われる場合がある。サーバーのprompt metadataは最大1000件を維持し、非同期server保存を続ける。未保存画像の無期限保持は行わない。
+  - スナップショットの `params` には、保存時点の生成記録に含まれるLoRA付属trigger setを `__metadata_associations_v1` にも保持する。このキーは生成時の不変記録とは別の現在関連情報である。
 
 ---
 
@@ -320,7 +327,7 @@ frontend/src/store/
 - 生成記録は投入graphに含まれる実使用seed、欄構成、workflow ID/名前、適用アセットとLoRA値を保持する。生成時入力のbypass状態・graph値・記録不足を区別する。過去に記録されていない内容を現在のworkflow/master/inputから推定復元しない。
 - Workflow、Prompt ID、キュー受付時刻、メタ情報保存時刻、画像保存時刻は意味を分けて表示し、生成完了時刻は未記録とする。現在のアルバム所属は生成時の事実と混同しない。
 - LoRA、汎用適用TagSet、LoRA付属trigger setは別種の情報として表示する。保存済み画像では現在の汎用TagSet/trigger set関連をdraft編集し、追加・削除・保存・キャンセルできる。生成プレビューは読取専用。編集はtyped snapshot PATCHで関連だけを更新し、生成記録、LoRAのrole/strength、画像・アルバム等を変更しない。PATCH失敗時はdraftを保持して失敗を表示する。
-- ローカル200件/server1000件の保持上限と非同期server保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。
+- `prompt-surgeon-meta-*` のローカル生成時メタデータキャッシュは最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。Snapshot `params` はこのキャッシュ上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。
 - 実装は局所typecheck/対象テストで確認済み。統合3-Gate、全体回帰、ブラウザーシナリオおよび実際のComfyUI生成を含む検証は、最終確認の記録ができるまで完了扱いにしない。設計・AC・実装タスクは[REQ-316](../design/REQ-316.md)を参照。
 
 ## 7. コンポーネント & フック構成

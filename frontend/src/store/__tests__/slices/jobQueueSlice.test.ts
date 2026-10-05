@@ -86,7 +86,7 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
     vi.restoreAllMocks();
   });
 
-  it('should cache metadata and prune old cache when exceeding 200 items', async () => {
+  it('keeps the 29 newest existing entries plus the newly queued metadata within the 30 item limit', async () => {
     vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'mock-prompt-id' });
     vi.mocked(comfyApi.getQueue).mockResolvedValue({ queue_running: [], queue_pending: [] });
 
@@ -107,9 +107,9 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
     expect(parsed.paramValues).toEqual({ test: 'value' });
     expect(parsed.appliedAssets.role1[0].name).toBe('Lora1');
 
-    // Test pruning: insert 205 mock metadata items into localStorage
+    // Existing cache is larger than the limit before the next successful submission.
     localStorage.clear();
-    for (let i = 1; i <= 205; i++) {
+    for (let i = 1; i <= 200; i++) {
       localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({
         paramValues: {},
         appliedAssets: {},
@@ -120,16 +120,28 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
     vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'id-206' });
 
     await useGenerationStore.getState().queuePrompt({ nodes: {} });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
     const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'));
-    expect(keys.length).toBe(200);
+    expect(keys.length).toBe(30);
 
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 171; i++) {
       expect(localStorage.getItem(`prompt-surgeon-meta-id-${i}`)).toBeNull();
     }
-    expect(localStorage.getItem('prompt-surgeon-meta-id-7')).not.toBeNull();
+    expect(localStorage.getItem('prompt-surgeon-meta-id-172')).not.toBeNull();
     expect(localStorage.getItem('prompt-surgeon-meta-id-206')).not.toBeNull();
+  });
+
+  it('updates an existing prompt ID without counting it as a second cache entry', async () => {
+    for (let i = 1; i <= 30; i++) {
+      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i, paramValues: { old: 'yes' } }));
+    }
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'id-30' });
+
+    await useGenerationStore.getState().queuePrompt({}, { paramValues: { updated: 'yes' } }, { skipQueueFetch: true });
+
+    const keys = Object.keys(localStorage).filter((key) => key.startsWith('prompt-surgeon-meta-'));
+    expect(keys).toHaveLength(30);
+    expect(JSON.parse(localStorage.getItem('prompt-surgeon-meta-id-30')!).paramValues).toEqual({ updated: 'yes' });
+    expect(localStorage.getItem('prompt-surgeon-meta-id-1')).not.toBeNull();
   });
 });
 
@@ -717,6 +729,10 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
   it('should return null and not set isGenerating or save to localStorage if aborted before response', async () => {
     const controller = new AbortController();
 
+    for (let i = 1; i <= 30; i++) {
+      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
+    }
+
     vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => {
       // Abort during API execution
       controller.abort();
@@ -735,6 +751,7 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
     expect(useGenerationStore.getState().isGenerating).toBe(false);
     expect(useGenerationStore.getState().currentPromptId).toBeNull();
     expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBeNull();
+    expect(Object.keys(localStorage).filter((key) => key.startsWith('prompt-surgeon-meta-'))).toHaveLength(30);
   });
 
   it('cancelAllJobs waits for in-flight queuePrompt before calling deleteQueue and interrupt', async () => {
@@ -1261,6 +1278,44 @@ describe('REQ-316 queue metadata persistence', () => {
     await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('メタ情報') })));
     expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1);
   });
+  it('continues local and remote persistence when synchronous pruning throws', async () => {
+    for (let i = 1; i <= 30; i++) {
+      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
+    }
+    vi.spyOn(Storage.prototype, 'key').mockImplementation(() => { throw new Error('enumeration failed'); });
+    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
+    expect(promptMetadataApi.create).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('メタ情報') }));
+  });
+  it('frees cache space before storing the receipt ID and metadata', async () => {
+    for (let i = 1; i <= 30; i++) {
+      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i, filler: i === 1 ? 'x'.repeat(500) : '' }));
+    }
+    const original = Storage.prototype.setItem;
+    const initialBytes = Object.keys(localStorage).reduce((total, key) => total + key.length + (localStorage.getItem(key)?.length ?? 0), 0);
+    const byteLimit = initialBytes;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      const existingValue = this.getItem(key);
+      const currentBytes = Object.keys(this).reduce((total, item) => total + item.length + (this.getItem(item)?.length ?? 0), 0);
+      const nextBytes = currentBytes - key.length - (existingValue?.length ?? 0) + key.length + value.length;
+      if (nextBytes > byteLimit) {
+        throw new DOMException('storage full', 'QuotaExceededError');
+      }
+      original.call(this, key, value);
+    });
+    expect(() => localStorage.setItem('prompt-surgeon-current-prompt-id', 'recorded')).toThrowError(/storage full/);
+    expect(() => localStorage.setItem('prompt-surgeon-meta-recorded', JSON.stringify(metadata()))).toThrowError(/storage full/);
+    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
+    expect(toast).not.toHaveBeenCalled();
+  });
 });
 
 describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () => {
@@ -1381,4 +1436,3 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
     expect(setErrorToastSpy).not.toHaveBeenCalled();
   });
 });
-

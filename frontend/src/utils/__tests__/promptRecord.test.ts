@@ -12,6 +12,19 @@ const wf: Workflow = { id: 1, name: 'Original', created_at: '', json_body: {}, m
 const graph = { '1': { inputs: { text: '' } }, '2': { inputs: { seed: 812 } }, '3': { class_type: 'easy loraStack', inputs: { num_loras: 1, lora_1_name: 'frozen.safetensors', lora_1_strength: 0.6, lora_1_model_strength: 0.8, lora_1_clip_strength: 0.4 } } }
 const record = () => buildGenerationRecord(wf, graph, graph, {})
 const params = () => ({ [PROMPT_RECORD_KEY]: JSON.stringify(record()), quality: '', extra: { x: [false, 0, null] }, [ASSOCIATIONS_KEY]: '{}' })
+const generatedParams = (prompt: string, aspect: string, seed: number, steps: number) => {
+  const workflow: Workflow = { ...wf, mappings: [
+    { ...wf.mappings[0], role: 'positive', param_name: 'text', display_name: 'Prompt' },
+    { ...wf.mappings[1], role: 'Sampler_Seed', param_name: 'seed', display_name: 'Seed' },
+    { ...wf.mappings[2], role: 'resolution_aspect', input_type: 'combo', param_name: 'aspect', display_name: 'Aspect ratio' },
+    { id: 4, master_id: 4, node_id: '4', role: 'steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+  ] }
+  const submitted = {
+    '1': { inputs: { text: prompt } }, '2': { inputs: { seed } },
+    '3': { inputs: { aspect } }, '4': { inputs: { steps } },
+  }
+  return { [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(workflow, submitted, submitted, {})) }
+}
 beforeEach(() => { localStorage.clear(); get.mockReset(); get.mockRejectedValue(new Error('404')) })
 describe('getMetadataView', () => {
   it('shows empty prompts, typed extras and actual seed/LoRA strengths without exposing internal keys', () => {
@@ -56,5 +69,23 @@ describe('resolveRecordedMetadata', () => {
     get.mockResolvedValue({ prompt_id: 'other', param_values: params(), applied_assets: { another: [] } })
     expect(await resolveRecordedMetadata('p')).toMatchObject({ paramValues: { old: 'local' }, appliedAssets: {} })
     expect(await resolveRecordedMetadata(null)).toBeNull()
+  })
+  it('resolves all four generation facts from server metadata when the local cache is missing', async () => {
+    const expected = generatedParams('server prompt', '3:2', 99123, 27)
+    get.mockResolvedValue({ prompt_id: 'p', workflow_id: 1, param_values: expected, applied_assets: null, created_at: 'saved' })
+    const found = await resolveRecordedMetadata('p')
+    expect(found?.paramValues).toEqual(expected)
+    expect(get).toHaveBeenCalledWith('p')
+  })
+  it('continues server lookup when localStorage is unavailable and returns local facts when server lookup fails', async () => {
+    const expected = generatedParams('recorded prompt', '4:3', 8172, 31)
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('storage unavailable') })
+    get.mockResolvedValue({ prompt_id: 'p', workflow_id: 1, param_values: expected, applied_assets: null, created_at: 'saved' })
+    expect((await resolveRecordedMetadata('p'))?.paramValues).toEqual(expected)
+
+    vi.restoreAllMocks()
+    get.mockRejectedValue(new Error('server unavailable'))
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: expected, timestamp: 1000 }))
+    expect((await resolveRecordedMetadata('p'))?.paramValues).toEqual(expected)
   })
 })

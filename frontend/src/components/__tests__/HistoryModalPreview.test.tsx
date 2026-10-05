@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoryModalPreview } from '../HistoryModalPreview'
 import { promptMetadataApi, snapshotsApi } from '../../api/client'
+import type { Workflow } from '../../api/types'
+import { buildGenerationRecord, PROMPT_RECORD_KEY } from '../../utils/generationRecord'
 
 vi.mock('../../api/client', () => ({
   albumsApi: { list: vi.fn().mockResolvedValue([{ name: 'Album A', items: [{ snapshot_id: 1 }] }, { name: 'Album B', items: [{ snapshot_id: 1 }] }]) },
@@ -24,6 +26,16 @@ vi.mock('../../api/client', () => ({
 
 describe('HistoryModalPreview', () => {
   let queryClient: QueryClient
+  const generationParams = (prompt: string, aspect: string, seed: number, steps: number) => {
+    const workflow: Workflow = { id: 1, name: 'Recorded', created_at: '', json_body: {}, mappings: [
+      { id: 1, master_id: 1, node_id: '1', role: 'positive', param_name: 'text', input_type: 'textarea', display_name: 'Prompt' },
+      { id: 2, master_id: 2, node_id: '2', role: 'resolution_aspect', param_name: 'aspect', input_type: 'combo', display_name: 'Aspect ratio' },
+      { id: 3, master_id: 3, node_id: '3', role: 'Sampler_Seed', param_name: 'seed', input_type: 'int', display_name: 'Seed' },
+      { id: 4, master_id: 4, node_id: '4', role: 'steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+    ] }
+    const graph = { '1': { inputs: { text: prompt } }, '2': { inputs: { aspect } }, '3': { inputs: { seed } }, '4': { inputs: { steps } } }
+    return { [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(workflow, graph, graph, {})) }
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -150,6 +162,29 @@ describe('HistoryModalPreview', () => {
     expect(await screen.findByText('cyberpunk street')).toBeDefined()
     expect(screen.getByText('3:4')).toBeDefined()
     expect(screen.getByText('25')).toBeDefined()
+  })
+
+  it('keeps the new image isolated while its server metadata is pending, then shows its recorded facts', async () => {
+    localStorage.setItem('prompt-surgeon-meta-image-a', JSON.stringify({ paramValues: generationParams('A recorded prompt', '1:1', 111, 20) }))
+    let resolveB!: (value: { prompt_id: string; workflow_id: number; param_values: Record<string, unknown>; applied_assets: null; created_at: string }) => void
+    vi.mocked(promptMetadataApi.get).mockImplementation(() => new Promise((resolve) => { resolveB = resolve }))
+    const images = ['/a.png?t=image-a', '/b.png?t=image-b']
+    const { rerender } = renderComponent({ images, currentIndex: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /show info/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /Parameters & Assets/ }))
+    expect(await screen.findByText('A recorded prompt')).toBeDefined()
+
+    rerender(<QueryClientProvider client={queryClient}><HistoryModalPreview isOpen onClose={vi.fn()} images={images} currentIndex={1} onChangeIndex={vi.fn()} snapshotIds={[null, null]} /></QueryClientProvider>)
+    await waitFor(() => expect(promptMetadataApi.get).toHaveBeenCalledWith('image-b'))
+    expect(screen.queryByText('A recorded prompt')).toBeNull()
+    expect(screen.queryByText('B recorded prompt')).toBeNull()
+
+    resolveB({ prompt_id: 'image-b', workflow_id: 1, param_values: generationParams('B recorded prompt', '3:2', 99123, 27), applied_assets: null, created_at: 'saved' })
+    expect(await screen.findByText('B recorded prompt')).toBeDefined()
+    expect(screen.getByText('3:2')).toBeDefined()
+    expect(screen.getAllByText('99123').length).toBeGreaterThan(0)
+    expect(screen.getByText('27')).toBeDefined()
+    expect(screen.queryByText('A recorded prompt')).toBeNull()
   })
 
   it('renders correctly when toggled from isOpen=false to isOpen=true without hook mismatch error', async () => {

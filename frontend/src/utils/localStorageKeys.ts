@@ -15,6 +15,7 @@ export const LS_KEYS = {
   BATCH_IMAGES: 'prompt-surgeon-batch-images',
   SELECTED_IMG: 'prompt-surgeon-selected-img',
   CURRENT_PROMPT_ID: 'prompt-surgeon-current-prompt-id',
+  METADATA_PREFIX: 'prompt-surgeon-meta-',
   SIDEBAR_COLLAPSED: 'prompt-surgeon-sidebar-collapsed',
   // New LocalStorage Keys:
   SET_LONG_PRESS_MULTI_SELECT: 'prompt-surgeon-long-press-multi-select', // seconds

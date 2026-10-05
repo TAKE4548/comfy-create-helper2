@@ -7,6 +7,7 @@ import { comfyWsService } from '../services/comfyWebSocketService'
 import { resolveNodeTitle } from './connectionSlice'
 import { parseQueueSubmissionFailure } from '../../utils/queueSubmissionFailure'
 import { PROMPT_RECORD_KEY } from '../../utils/generationRecord'
+import { prunePromptMetadataCache } from '../../utils/promptMetadataCache'
 
 export type JobQueueSlice = JobQueueState & JobQueueActions
 
@@ -147,6 +148,10 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
 
           if (promptId) {
             try {
+              prunePromptMetadataCache(promptId)
+            } catch (error) { reportPersistenceFailure(error) }
+
+            try {
               localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
             } catch (error) { reportPersistenceFailure(error) }
             const metaKey = `prompt-surgeon-meta-${promptId}`
@@ -180,28 +185,6 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
               })?.catch?.(reportPersistenceFailure)
             } catch (error) { reportPersistenceFailure(error) }
 
-
-            // 200件上限のLRUクリーンアップ (ローカルストレージ側)
-            setTimeout(() => {
-              try {
-                const keys = Object.keys(localStorage).filter((k) => k.startsWith('prompt-surgeon-meta-'))
-                if (keys.length > 200) {
-                  const items = keys.map((k) => {
-                    try {
-                      const val = JSON.parse(localStorage.getItem(k) || '{}')
-                      return { key: k, timestamp: val.timestamp || 0 }
-                    } catch {
-                      return { key: k, timestamp: 0 }
-                    }
-                  })
-                  items.sort((a, b) => a.timestamp - b.timestamp)
-                  const toDelete = items.slice(0, items.length - 200)
-                  toDelete.forEach((item) => localStorage.removeItem(item.key))
-                }
-              } catch (e) {
-                console.error('Failed to prune prompt metadata:', e)
-              }
-            }, 0)
           }
           if (options?.isBatchIntermediate) {
             set({
