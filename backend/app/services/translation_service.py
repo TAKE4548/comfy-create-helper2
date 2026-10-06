@@ -8,7 +8,7 @@ import re
 import urllib.parse
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Literal, Union
+from typing import Any, Dict, List, Optional, Tuple, Literal, Union
 import httpx
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,9 @@ DANBOORU_DICT: Dict[str, str] = {}
 _DICT_LOADED: bool = False
 
 # カンマ、読点、改行、句点、感嘆符/疑問符、および直後が空白または終端であるピリオド（小数点・三点リーダー除外）
-SPLIT_PATTERN = re.compile(r"([,、\n\r]+\s*|(?<![\d.])\.(?![\d.])(?:\s+|$)|[。！？!?]+\s*)")
+SPLIT_PATTERN = re.compile(r'([,、\n\r]+\s*|(?<![\d.])\.(?![\d.])(?:\s+|$)|[。！？!?]+\s*)')
+SENTENCE_SPLIT_PATTERN = re.compile(r'((?<![\d.])\.(?:\s+|$)|[\n\r]+|[。！？!?]+\s*)')
+TAG_SPLIT_PATTERN = re.compile(r'([,、]+\s*)')
 
 WEIGHT_TAG_REGEX = re.compile(r"^([(\[{]+)(.+?)(?::([0-9.]+))?([)\]}]+)$")
 
@@ -50,17 +52,155 @@ def unpack_tag(chunk: str) -> Tuple[str, str, Optional[float], str]:
 
 
 def repack_tag(translated_core: str, prefix: str, weight: Optional[Union[float, str]], suffix: str) -> str:
-    """
-    Repacks translated core string with original prefix, weight, and suffix.
-    If prefix, suffix, and weight are empty/None, returns translated_core directly.
-    """
-    if not prefix and not suffix and (weight is None or str(weight).strip() == ""):
-        return translated_core
-    if weight is not None and str(weight).strip() != "":
-        return f"{prefix}{translated_core}:{weight}{suffix}"
-    return f"{prefix}{translated_core}{suffix}"
+    clean_core = translated_core.strip()
+    if not prefix and not suffix and (weight is None or str(weight).strip() == ''):
+        return clean_core
+    if weight is not None and str(weight).strip() != '':
+        return f'{prefix}{clean_core}:{weight}{suffix}'
+    return f'{prefix}{clean_core}{suffix}'
 
 
+def split_tags_respecting_brackets(text: str) -> List[str]:
+    parts: List[str] = []
+    current: List[str] = []
+    depth = 0
+    i = 0
+    tag_regex = re.compile(r'[,、]+\s*')
+    while i < len(text):
+        ch = text[i]
+        if ch in '([{':
+            depth += 1
+            current.append(ch)
+            i += 1
+        elif ch in ')]}':
+            depth = max(0, depth - 1)
+            current.append(ch)
+            i += 1
+        elif depth == 0 and tag_regex.match(text, i):
+            m = tag_regex.match(text, i)
+            if m:
+                parts.append(''.join(current))
+                current = []
+                parts.append(m.group(0))
+                i = m.end()
+            else:
+                current.append(ch)
+                i += 1
+        else:
+            current.append(ch)
+            i += 1
+    if current:
+        parts.append(''.join(current))
+    return parts
+
+
+SENTENCE_INDICATORS = {
+    'a', 'an', 'the', 'with', 'who', 'which', 'that', 'in', 'on',
+    'under', 'wearing', 'sitting', 'standing', 'is', 'are', 'was',
+    'were', 'and', 'by', 'of', 'to', 'for', 'from', 'at', 'smiles',
+    'smiling', 'looking', 'holding'
+}
+
+
+def should_rejoin_natural_group(items: List[Dict[str, Any]], has_sentence_terminator: bool) -> bool:
+    if len(items) <= 1:
+        return True
+    if any(item.get('weight_val') is not None for item in items):
+        return False
+    if has_sentence_terminator:
+        return True
+    for item in items:
+        words = item['core'].lower().split()
+        if len(words) >= 4:
+            return True
+        if any(w in SENTENCE_INDICATORS for w in words):
+            return True
+    return False
+
+
+def _flush_natural_group(
+    current_natural: List[Dict[str, Any]],
+    reconstructed_segments: List[Dict[str, Any]],
+    has_sentence_terminator: bool,
+) -> None:
+    if not current_natural:
+        return
+    if should_rejoin_natural_group(current_natural, has_sentence_terminator):
+        first_item = current_natural[0]
+        last_item = current_natural[-1]
+        joined_text = ', '.join(x['core'] for x in current_natural)
+        prefix = first_item['prefix'] if len(current_natural) == 1 else ''
+        suffix = last_item['suffix'] if len(current_natural) == 1 else ''
+        weight = first_item['weight_val'] if len(current_natural) == 1 else None
+        reconstructed_segments.append({
+            'type': 'natural',
+            'text': joined_text,
+            'prefix': prefix,
+            'suffix': suffix,
+            'weight_val': weight,
+            'delim_after': current_natural[-1]['delim_after'],
+            'items': list(current_natural),
+        })
+    else:
+        for it in current_natural:
+            reconstructed_segments.append({
+                'type': 'tag',
+                'item': it,
+                'delim_after': it['delim_after'],
+            })
+
+
+def process_sentence_block(
+    block_text: str, target_lang: str = 'ja', has_sentence_terminator: bool = False
+) -> List[Dict[str, Any]]:
+    parts = split_tags_respecting_brackets(block_text)
+    analyzed_items: List[Dict[str, Any]] = []
+    for i in range(0, len(parts), 2):
+        chunk = parts[i]
+        if not chunk.strip():
+            continue
+        delim_after = parts[i + 1] if i + 1 < len(parts) else ''
+        prefix, core, weight_val, suffix = unpack_tag(chunk)
+        is_token = bool(re.match(r'^__TOKEN_\d+__$', core))
+        core_clean = core.strip().lower()
+        dict_val = (
+            (DANBOORU_DICT.get(core_clean) or DANBOORU_DICT.get(core_clean.replace(' ', '_')))
+            if target_lang.lower().startswith('ja')
+            else None
+        )
+        is_tag = (dict_val is not None) or is_token
+        analyzed_items.append({
+            'raw': chunk,
+            'prefix': prefix,
+            'core': core,
+            'weight_val': weight_val,
+            'suffix': suffix,
+            'dict_val': dict_val,
+            'is_token': is_token,
+            'is_tag': is_tag,
+            'delim_after': delim_after,
+        })
+
+    reconstructed_segments: List[Dict[str, Any]] = []
+    current_natural: List[Dict[str, Any]] = []
+
+    for item in analyzed_items:
+        if item['is_tag']:
+            if current_natural:
+                _flush_natural_group(current_natural, reconstructed_segments, has_sentence_terminator)
+                current_natural = []
+            reconstructed_segments.append({
+                'type': 'tag',
+                'item': item,
+                'delim_after': item['delim_after'],
+            })
+        else:
+            current_natural.append(item)
+
+    if current_natural:
+        _flush_natural_group(current_natural, reconstructed_segments, has_sentence_terminator)
+
+    return reconstructed_segments
 def load_danbooru_dict(force_reload: bool = False) -> int:
     """
     Loads Danbooru tag dictionary from local disk or zip archive into DANBOORU_DICT.
@@ -388,59 +528,66 @@ async def translate_prompt(
     # Step 2: Ensure Danbooru dictionary is loaded
     load_danbooru_dict()
 
-    # Step 3: Split into chunks and delimiters preserving punctuation
-    parts = SPLIT_PATTERN.split(sanitized)
+    # Step 3: Split into sentence blocks preserving sentence-level delimiters
+    sentence_parts = SENTENCE_SPLIT_PATTERN.split(sanitized)
 
-    # Step 4: Extract non-empty even-index chunks and unpack them
-    chunk_indices: List[int] = [i for i in range(0, len(parts), 2) if parts[i].strip()]
-    if not chunk_indices:
-        return prompt, {
-            "total_chunks": 0,
-            "cached_chunks": 0,
-            "api_requested_chunks": 0,
-            "billed_characters": 0,
-            "provider": provider,
-        }
-
-    total_chunks = len(chunk_indices)
-    unpacked_info: Dict[int, Tuple[str, str, Optional[float], str]] = {}
-    chunk_translations: Dict[int, str] = {}
-    unique_missing: Dict[str, Tuple[str, List[int]]] = {}
+    all_blocks_segments: Dict[int, List[Dict[str, Any]]] = {}
+    total_chunks = 0
     cached_chunks = 0
+    unique_missing: Dict[str, Tuple[str, List[Dict[str, Any]]]] = {}
 
-    # Step 5: Check tokens, Danbooru dictionary, and cache for each chunk core
-    for idx in chunk_indices:
-        prefix, core, weight_val, suffix = unpack_tag(parts[idx])
-        unpacked_info[idx] = (prefix, core, weight_val, suffix)
-
-        # If placeholder token (__TOKEN_\d+__), skip translation
-        if re.match(r"^__TOKEN_\d+__$", core):
-            chunk_translations[idx] = core
-            cached_chunks += 1
+    for s_idx in range(0, len(sentence_parts), 2):
+        block_text = sentence_parts[s_idx]
+        if not block_text.strip():
             continue
-
-        # Danbooru dictionary lookup (English to Japanese)
-        core_clean = core.strip().lower()
-        danbooru_trans = (
-            (DANBOORU_DICT.get(core_clean) or DANBOORU_DICT.get(core_clean.replace(" ", "_")))
-            if target_lang.lower().startswith("ja")
-            else None
-        )
-        if danbooru_trans:
-            chunk_translations[idx] = danbooru_trans
-            cached_chunks += 1
+        delim_after_sentence = sentence_parts[s_idx + 1] if s_idx + 1 < len(sentence_parts) else ''
+        has_sentence_terminator = bool(re.search(r'[.。！？!?\n\r]', delim_after_sentence))
+        segments = process_sentence_block(block_text, target_lang=target_lang, has_sentence_terminator=has_sentence_terminator)
+        if not segments:
             continue
+        all_blocks_segments[s_idx] = segments
+        total_chunks += len(segments)
 
-        # Check translation cache
-        cache_key = get_cache_key(core, target_lang, provider)
-        if cache_key in TRANSLATION_CACHE:
-            chunk_translations[idx] = TRANSLATION_CACHE[cache_key]
-            cached_chunks += 1
-        elif cache_key in unique_missing:
-            unique_missing[cache_key][1].append(idx)
-            cached_chunks += 1  # Deduplicated within the same prompt
-        else:
-            unique_missing[cache_key] = (core, [idx])
+        for seg in segments:
+            if seg['type'] == 'tag':
+                item = seg['item']
+                core = item['core']
+                if item['is_token']:
+                    seg['translated_core'] = core
+                    cached_chunks += 1
+                elif item['dict_val']:
+                    seg['translated_core'] = item['dict_val']
+                    cached_chunks += 1
+                else:
+                    cache_key = get_cache_key(core, target_lang, provider)
+                    if cache_key in TRANSLATION_CACHE:
+                        seg['translated_core'] = TRANSLATION_CACHE[cache_key]
+                        cached_chunks += 1
+                    elif cache_key in unique_missing:
+                        unique_missing[cache_key][1].append(seg)
+                        cached_chunks += 1
+                    else:
+                        unique_missing[cache_key] = (core, [seg])
+            else:
+                text = seg['text']
+                cache_key = get_cache_key(text, target_lang, provider)
+                if cache_key in TRANSLATION_CACHE:
+                    seg['translated_core'] = TRANSLATION_CACHE[cache_key]
+                    cached_chunks += 1
+                elif cache_key in unique_missing:
+                    unique_missing[cache_key][1].append(seg)
+                    cached_chunks += 1
+                else:
+                    unique_missing[cache_key] = (text, [seg])
+
+    if total_chunks == 0:
+        return prompt, {
+            'total_chunks': 0,
+            'cached_chunks': 0,
+            'api_requested_chunks': 0,
+            'billed_characters': 0,
+            'provider': provider,
+        }
 
     # Step 6: Request translation for missing chunks
     missing_items = list(unique_missing.values())
@@ -502,23 +649,36 @@ async def translate_prompt(
             raise ValueError(f"Unsupported translation provider: {provider}")
 
         # Cache results and update chunk_translations for all target indices
-        for (cache_key, (orig_core, target_indices)), trans in zip(unique_missing.items(), translated_missing):
-            TRANSLATION_CACHE[cache_key] = trans
-            for target_idx in target_indices:
-                chunk_translations[target_idx] = trans
+        # Cache results and update translated_core for all target segments
+        for (cache_key, (orig_text, target_segments)), trans in zip(unique_missing.items(), translated_missing):
+            clean_trans = trans.strip()
+            TRANSLATION_CACHE[cache_key] = clean_trans
+            for target_seg in target_segments:
+                target_seg['translated_core'] = clean_trans
 
     # Step 7: Repack chunks and reconstruct prompt
-    for idx in chunk_indices:
-        prefix, core, weight_val, suffix = unpacked_info[idx]
-        trans_core = chunk_translations.get(idx, core)
-        if re.match(r"^__TOKEN_\d+__$", core):
-            parts[idx] = trans_core
-        elif repack:
-            parts[idx] = repack_tag(trans_core, prefix, weight_val, suffix)
-        else:
-            parts[idx] = trans_core
+    for s_idx, segments in all_blocks_segments.items():
+        block_translated_parts: List[str] = []
+        for seg in segments:
+            core_trans = seg.get('translated_core', '')
+            if seg['type'] == 'tag':
+                item = seg['item']
+                if item['is_token']:
+                    rendered = core_trans
+                elif repack:
+                    rendered = repack_tag(core_trans, item['prefix'], item['weight_val'], item['suffix'])
+                else:
+                    rendered = core_trans
+            else:
+                if repack:
+                    rendered = repack_tag(core_trans, seg['prefix'], seg['weight_val'], seg['suffix'])
+                else:
+                    rendered = core_trans
+            block_translated_parts.append(rendered)
+            block_translated_parts.append(seg.get('delim_after', ''))
+        sentence_parts[s_idx] = ''.join(block_translated_parts)
 
-    joined_prompt = "".join(parts)
+    joined_prompt = ''.join(sentence_parts)
     restored_prompt = restore_tokens(joined_prompt, tokens)
 
     meta: Dict[str, int | str] = {

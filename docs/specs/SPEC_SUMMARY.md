@@ -243,7 +243,7 @@ comfy-create-helper2/
 | カテゴリ（TagSet） | `/api/tagset-categories` | 一覧・登録・更新・削除 |
 | LLM プロンプト & 設定 | `/api/llm-prompts` | 一覧・更新・モデル一覧取得 (`/models`)・現在モデル取得/更新 (`/current-model`)・シーン生成 (`/scene-generate`)・スピーチ下書き (`/speech-draft`) |
 | LLM 監査実行 | `/api/audit` | プロンプト診断実行（POST） |
-| プロンプト翻訳 | `/api/translate` | プロンプト翻訳 (`/prompt`)・接続テスト (`/test`)・統計 (`/stats`)・キャッシュクリア (`/clear-cache`) |
+| プロンプト翻訳 | `/api/translate` | プロンプト翻訳 (`/prompt`)・接続テスト (`/test`)・統計 (`/stats`)・キャッシュクリア (`/clear-cache`)。Danbooru辞書即時引き＋FuguMT文単位フォールバックによりハイブリッド和訳対応 |
 | セリフ口調プリセット | `/api/speech-tone-presets` | 一覧・登録・更新・削除・並び替え (`/reorder`)・口調書き換え実行 (`/rewrite`) |
 | フキダシ装飾プリセット | `/api/speech-bubble-presets` | 一覧・登録・更新・削除 |
 | 漫画化一括バッチ | `/api/speech-batch` | ジョブ登録 (`/jobs`)・アクティブジョブ取得 (`/jobs/active`)・詳細取得・キャンセル・再試行 |
@@ -345,7 +345,7 @@ FastAPI が提供するエンドポイントの概要。詳細は `backend/opena
 | カテゴリ（TagSet） | `/api/tagset-categories` | 一覧・登録・更新・削除 |
 | LLM プロンプト & 設定 | `/api/llm-prompts` | 一覧・更新・モデル一覧取得 (`/models`)・現在モデル取得/更新 (`/current-model`)・シーン生成 (`/scene-generate`)・スピーチ下書き (`/speech-draft`) |
 | LLM 監査実行 | `/api/audit` | プロンプト診断実行（POST） |
-| プロンプト翻訳 | `/api/translate` | プロンプト翻訳 (`/prompt`)・接続テスト (`/test`)・統計 (`/stats`)・キャッシュクリア (`/clear-cache`) |
+| プロンプト翻訳 | `/api/translate` | プロンプト翻訳 (`/prompt`)・接続テスト (`/test`)・統計 (`/stats`)・キャッシュクリア (`/clear-cache`)。Danbooru辞書即時引き＋FuguMT文単位フォールバックによりハイブリッド和訳対応 |
 | セリフ口調プリセット | `/api/speech-tone-presets` | 一覧・登録・更新・削除・口調書き換え実行 (`/rewrite`) |
 | フキダシ装飾プリセット | `/api/speech-bubble-presets` | 一覧・登録・更新・削除 |
 | 漫画化一括バッチ | `/api/speech-batch` | ジョブ登録 (`/jobs`)・アクティブジョブ取得 (`/jobs/active`)・詳細取得・キャンセル・再試行 |

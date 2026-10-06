@@ -702,3 +702,152 @@ def test_redteam_3_consecutive_delimiters_decimals_ellipses():
     assert any("waiting..." in c for c in chunks)
     assert any(":1.2" in c for c in chunks)
     assert any("1.5" in c for c in chunks)
+
+@pytest.mark.asyncio
+async def test_sentence_rejoin_with_commas_for_natural_text():
+    from unittest.mock import patch, MagicMock
+
+    translation_service.clear_cache()
+    prompt = 'A cute girl with silver hair, who is reading a book under an oak tree, smiles gently.'
+
+    with patch('app.services.fugumt_service.FuguMTService.get_instance') as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ['オークの木の下で本を読んでいる銀髪のかわいい少女が、優しく微笑んでいる']
+        mock_get_instance.return_value = mock_service
+
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang='en',
+            target_lang='ja',
+            provider='fugumt',
+        )
+
+        assert mock_service.translate_batch.call_count == 1
+        called_batch = mock_service.translate_batch.call_args[0][0]
+        assert len(called_batch) == 1
+        assert 'A cute girl with silver hair, who is reading a book under an oak tree, smiles gently' in called_batch[0]
+        assert '優しく微笑んでいる' in translated
+        assert meta['total_chunks'] == 1
+
+
+@pytest.mark.asyncio
+async def test_hybrid_prompt_tags_dict_and_natural_sentence():
+    from unittest.mock import patch, MagicMock
+
+    translation_service.clear_cache()
+    translation_service.load_danbooru_dict(force_reload=True)
+    prompt = 'solo, 1girl, A girl wearing a white dress, sitting on a bench, looks at viewer. cat_ears'
+
+    with patch('app.services.fugumt_service.FuguMTService.get_instance') as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ['白いドレスを着てベンチに座っている少女が、こちらを見ている']
+        mock_get_instance.return_value = mock_service
+
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang='en',
+            target_lang='ja',
+            provider='fugumt',
+        )
+
+        assert mock_service.translate_batch.call_count == 1
+        called_batch = mock_service.translate_batch.call_args[0][0]
+        assert len(called_batch) == 1
+        assert 'A girl wearing a white dress, sitting on a bench, looks at viewer' in called_batch[0]
+
+        assert 'ソロ' in translated
+        assert '女の子' in translated or '少女' in translated
+        assert '白いドレスを着てベンチに座っている少女が、こちらを見ている' in translated
+        assert '猫耳' in translated
+
+
+@pytest.mark.asyncio
+async def test_weighted_natural_sentence_unpack_and_repack():
+    from unittest.mock import patch, MagicMock
+
+    translation_service.clear_cache()
+    prompt = '((A girl holding a cat, smiling happily:1.2)), solo'
+
+    with patch('app.services.fugumt_service.FuguMTService.get_instance') as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ['猫を抱いて幸せそうに微笑んでいる少女']
+        mock_get_instance.return_value = mock_service
+
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang='en',
+            target_lang='ja',
+            provider='fugumt',
+            repack=True,
+        )
+
+        assert '((猫を抱いて幸せそうに微笑んでいる少女:1.2))' in translated
+        assert 'ソロ' in translated
+
+
+@pytest.mark.asyncio
+async def test_period_boundary_multisentence_no_omission():
+    from unittest.mock import patch, MagicMock
+
+    translation_service.clear_cache()
+    prompt = 'The sun is rising over the mountains. A flock of birds flies across the sky.'
+
+    with patch('app.services.fugumt_service.FuguMTService.get_instance') as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ['山々の上に太陽が昇っている', '鳥の群れが空を飛んでいる']
+        mock_get_instance.return_value = mock_service
+
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang='en',
+            target_lang='ja',
+            provider='fugumt',
+        )
+
+        called_batch = mock_service.translate_batch.call_args[0][0]
+        assert len(called_batch) == 2
+        assert '太陽が昇っている' in translated
+        assert '鳥の群れが空を飛んでいる' in translated
+
+
+@pytest.mark.asyncio
+async def test_trailing_period_missing_fallback():
+    from unittest.mock import patch, MagicMock
+
+    translation_service.clear_cache()
+    prompt = 'A girl sitting on a chair, reading a book'
+
+    with patch('app.services.fugumt_service.FuguMTService.get_instance') as mock_get_instance:
+        mock_service = MagicMock()
+        mock_service.translate_batch.return_value = ['椅子に座って本を読んでいる少女']
+        mock_get_instance.return_value = mock_service
+
+        translated, meta = await translation_service.translate_prompt(
+            prompt=prompt,
+            source_lang='en',
+            target_lang='ja',
+            provider='fugumt',
+        )
+
+        called_batch = mock_service.translate_batch.call_args[0][0]
+        assert len(called_batch) == 1
+        assert 'A girl sitting on a chair, reading a book' in called_batch[0]
+        assert '椅子に座って本を読んでいる少女' in translated
+
+
+@pytest.mark.asyncio
+async def test_consecutive_and_trailing_commas_sanitized():
+    translation_service.clear_cache()
+    translation_service.load_danbooru_dict(force_reload=True)
+    prompt = '1girl, , solo, '
+
+    translated, meta = await translation_service.translate_prompt(
+        prompt=prompt,
+        source_lang='en',
+        target_lang='ja',
+        provider='fugumt',
+    )
+
+    assert '女の子' in translated or '少女' in translated
+    assert 'ソロ' in translated
+    assert meta['api_requested_chunks'] == 0
