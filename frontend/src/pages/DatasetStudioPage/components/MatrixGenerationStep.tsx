@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2 } from 'lucide-react'
 import { TagChipEditor } from '../../../components/TagChipEditor'
-import { datasetApi, workflowsApi, workflowPresetsApi } from '../../../api/client'
+import { datasetApi, workflowsApi, workflowPresetsApi, comfyApi } from '../../../api/client'
 import type { DatasetItem, Workflow, DatasetProject } from '../../../api/types'
 import { useStudioStore } from '../useStudioStore'
 import { OutfitMasterModal, distributeAltOutfits } from './OutfitMasterModal'
@@ -511,9 +511,8 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         await onDirectBatchSubmit(items)
         setBatchProgress(100)
       } else {
-        // Direct ComfyUI submission to port 8188
-        const comfyUrl = 'http://127.0.0.1:8188'
-        const clientId = 'lora-studio-' + Math.random().toString(36).slice(2, 9)
+        // Direct ComfyUI batch submission via proxy
+        const clientId = 'lora-studio-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
 
         // Fetch selected workflow JSON body and mappings if available
         let workflowPromptJson: Record<string, any> = {}
@@ -542,11 +541,18 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             negativePrompt: negativePrompt,
           })
 
-          await fetch(`${comfyUrl}/prompt`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: payload, client_id: clientId }),
+          const res = await comfyApi.queuePrompt({
+            prompt: payload,
+            client_id: clientId,
           })
+
+          if (res?.error) {
+            const errorMsg =
+              typeof res.error === 'string'
+                ? res.error
+                : res.error.message || JSON.stringify(res.error)
+            throw new Error(errorMsg)
+          }
 
           setBatchProgress(Math.round(((i + 1) / items.length) * 100))
         }
@@ -983,7 +989,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Send className="w-4 h-4" />
-            ComfyUIに20件直接投入 (Port 8188)
+            ComfyUIに20件直接投入
           </button>
         </div>
 

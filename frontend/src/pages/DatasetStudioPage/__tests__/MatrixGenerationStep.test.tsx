@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MatrixGenerationStep, injectPromptAndSeed } from '../components/MatrixGenerationStep'
 import { DatasetStudioPage } from '../index'
 import { useStudioStore } from '../useStudioStore'
-import { datasetApi, workflowsApi, mappingMastersApi } from '../../../api/client'
+import { datasetApi, workflowsApi, mappingMastersApi, comfyApi } from '../../../api/client'
 import type { DatasetItem, DatasetProject, Workflow, MappingMaster } from '../../../api/types'
 import { saveStudioDraft, saveActiveProjectId } from '../utils/studioDraftStorage'
 
@@ -25,6 +25,9 @@ vi.mock('../../../api/client', () => ({
   },
   mappingMastersApi: {
     list: vi.fn(),
+  },
+  comfyApi: {
+    queuePrompt: vi.fn(),
   },
 }))
 
@@ -355,14 +358,10 @@ describe('MatrixGenerationStep', () => {
     })
   })
 
-  it('AC-4: passes positiveNodeId, negativeNodeId, and negativePrompt when batch submitting to ComfyUI', async () => {
+  it('AC-4: passes positiveNodeId, negativeNodeId, and negativePrompt when batch submitting to ComfyUI via comfyApi.queuePrompt', async () => {
     useStudioStore.getState().setItems(mockItems)
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ prompt_id: 'pid-123' }),
-    })
-    globalThis.fetch = fetchMock
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'pid-123' })
 
     render(<MatrixGenerationStep />)
 
@@ -373,12 +372,55 @@ describe('MatrixGenerationStep', () => {
     fireEvent.click(screen.getByTestId('submit-batch-button'))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled()
+      expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(20)
     })
 
-    const firstCallBody = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(firstCallBody.prompt['6'].inputs.text).toBe(mockItems[0].raw_prompt)
-    expect(firstCallBody.prompt['7'].inputs.text).toBe('worst quality, bad anatomy')
+    const firstCallArgs = vi.mocked(comfyApi.queuePrompt).mock.calls[0][0]
+    expect(firstCallArgs.prompt['6'].inputs.text).toBe(mockItems[0].raw_prompt)
+    expect(firstCallArgs.prompt['7'].inputs.text).toBe('worst quality, bad anatomy')
+    expect(firstCallArgs.client_id).toMatch(/^lora-studio-/)
+  })
+
+  it('REQ-330-T1 (Red Teaming): displays error message when comfyApi.queuePrompt fails', async () => {
+    useStudioStore.getState().setItems(mockItems)
+
+    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('Connection refused to ComfyUI proxy'))
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-batch-button')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('submit-batch-button'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status-message')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('status-message')).toHaveTextContent('ComfyUI直接投入エラー: Connection refused to ComfyUI proxy')
+    expect(screen.getByTestId('submit-batch-button')).not.toBeDisabled()
+  })
+
+  it('REQ-330-T1 (Red Teaming): handles ComfyUI internal error in response object', async () => {
+    useStudioStore.getState().setItems(mockItems)
+
+    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({
+      error: { message: 'Invalid workflow node connection' },
+    } as any)
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-batch-button')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('submit-batch-button'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status-message')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('status-message')).toHaveTextContent('ComfyUI直接投入エラー: Invalid workflow node connection')
+    expect(screen.getByTestId('submit-batch-button')).not.toBeDisabled()
   })
 
   it('AC-5: persists prompt_negative when saving/updating dataset project', async () => {

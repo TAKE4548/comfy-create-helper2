@@ -1,7 +1,7 @@
-# Incident Triage Report: LoRA Studio 405 Method Not Allowed error on matrix calculation
+# Incident Triage Report: LoRA Studio マトリクス生成投入時の ComfyUI 直接投入エラー (Failed to fetch)
 
 <incident_metadata>
-- Created_At: 2026-10-07 22:09:10
+- Created_At: 2026-10-08 01:13:18
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
 - Classification: Type A: Implementation Defect
 </incident_metadata>
@@ -11,23 +11,23 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: Calculating orthogonal matrix in Dataset Studio fails with API error 405: Method Not Allowed.
-- Reproducibility: 100% (Confirmed)
-- Impact_Scope: Dataset project persistence, matrix calculation, training jobs, and benchmarks are blocked in LoRA Studio.
+- Observed_Symptom: Dataset Studio (Step 1) でマトリクス計算完了後、「ComfyUIに20件直接投入」を実行すると「ComfyUI直接投入エラー: Failed to fetch」が発生しキュー投入が失敗する。通常の生成画面では同一ワークフローで正常に生成可能。
+- Reproducibility: 100% (ブラウザからの http://127.0.0.1:8188 直接 fetch が CORS またはポート・ネットワーク制約によりブロックされる)
+- Impact_Scope: Dataset Studio の Step 1 から ComfyUI へのマトリクス画像20件直接投入が実行不可
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
 - Defect_Classification: Type A: Implementation Defect
-- Root_Cause_Mechanism: Endpoint paths in frontend/src/api/client.ts for datasetApi, trainingApi, benchmarkApi, and settingsApi are redundantly prefixed with /api, causing actual requests to be routed to /api/api/... which hits the fallback SPAStaticFiles handler and gets rejected with 405 Method Not Allowed.
-- Failure_Location: `frontend/src/api/client.ts:616-692`
+- Root_Cause_Mechanism: MatrixGenerationStep.tsx (L515-L549) において、アプリ標準のプロキシ (comfyApi.queuePrompt / /api/comfy/prompt) を経由せず、ブラウザから http://127.0.0.1:8188/prompt へ直接 fetch を行っているため。ComfyUI はデフォルトで CORS ヘッダーを返さないためブラウザ側で Failed to fetch となり遮断される。通常の生成画面ではバックエンド経由で通信するため問題なく動作する。
+- Failure_Location: `frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx:515-549`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: Remove redundant /api prefix from endpoint paths in frontend/src/api/client.ts and add corresponding client unit tests in frontend/src/api/__tests__/client.test.ts.
+- Proposed_Action: MatrixGenerationStep.tsx で comfyApi をインポートし、直接 fetch を comfyApi.queuePrompt({ prompt: payload, client_id: clientId }) に置き換えてバックエンドプロキシ経由に変更する。併せて MatrixGenerationStep.test.tsx のテストを追従させる。
 - SSoT_Update_Required: No (Pure implementation bug fix)
 - Recommended_Route: engineer (/dev-impl)
 </remediation_strategy>
@@ -35,5 +35,5 @@
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: REQ-322
+- PBI_ID: REQ-330
 </linked_artifacts>

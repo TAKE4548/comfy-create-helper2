@@ -16,6 +16,7 @@ vi.mock('../api/client', () => ({
     updateItem: vi.fn(),
     exportDataset: vi.fn(),
     listOutfits: vi.fn(),
+    getProjects: vi.fn().mockResolvedValue([]),
   },
   trainingApi: {
     createJob: vi.fn(),
