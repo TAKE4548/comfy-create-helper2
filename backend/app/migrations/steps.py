@@ -373,6 +373,98 @@ def step_012_speech_bubble_presets_tag_set_id(conn: Connection, inspector: Inspe
             logger.info("Migrated: Added 'tone_preset_id' column to 'speech_bubble_presets' table.")
 
 
+def step_025_lora_studio_tables(conn: Connection, inspector: Inspector) -> None:
+    tables = inspector.get_table_names()
+    if "dataset_projects" not in tables:
+        conn.execute(sa.text("""
+            CREATE TABLE dataset_projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(255) NOT NULL,
+                character_trigger VARCHAR(100) NOT NULL,
+                outfit_trigger VARCHAR(100) NOT NULL,
+                workflow_id INTEGER NOT NULL REFERENCES workflows(id),
+                prompt_meta TEXT NOT NULL,
+                prompt_physical TEXT NOT NULL,
+                prompt_exclusive_outfit TEXT NOT NULL,
+                selected_alt_outfits TEXT NOT NULL DEFAULT '[]',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        logger.info("Migrated: Created 'dataset_projects' table.")
+
+    if "dataset_items" not in tables:
+        conn.execute(sa.text("""
+            CREATE TABLE dataset_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES dataset_projects(id) ON DELETE CASCADE,
+                slot_index INTEGER NOT NULL,
+                factors_json TEXT NOT NULL,
+                raw_prompt TEXT NOT NULL,
+                caption_text TEXT NOT NULL,
+                image_path VARCHAR(500),
+                seed INTEGER NOT NULL,
+                status VARCHAR(50) DEFAULT 'APPROVED'
+            )
+        """))
+        logger.info("Migrated: Created 'dataset_items' table.")
+
+    if "outfit_master_presets" not in tables:
+        conn.execute(sa.text("""
+            CREATE TABLE outfit_master_presets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                category VARCHAR(50) NOT NULL,
+                prompt_tags TEXT NOT NULL,
+                is_builtin BOOLEAN DEFAULT 1 NOT NULL
+            )
+        """))
+        logger.info("Migrated: Created 'outfit_master_presets' table.")
+
+    presets = [
+        ("カジュアル (Casual Street)", "casual", "casual oversized hoodie, denim jeans, sneakers", 1),
+        ("シンプル部屋着 (Roomwear)", "roomwear", "plain white t-shirt, gray sweatpants, bare feet", 1),
+        ("水着 (Swimsuit)", "swimsuit", "simple two-piece bikini, sandals", 1),
+        ("フォーマルスーツ (Business Suit)", "formal", "formal suit, necktie, dress shirt, slacks", 1),
+    ]
+    for name, category, prompt_tags, is_builtin in presets:
+        existing = conn.execute(
+            sa.text("SELECT id FROM outfit_master_presets WHERE name = :name"),
+            {"name": name}
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                sa.text("""
+                    INSERT INTO outfit_master_presets (name, category, prompt_tags, is_builtin)
+                    VALUES (:name, :category, :prompt_tags, :is_builtin)
+                """),
+                {"name": name, "category": category, "prompt_tags": prompt_tags, "is_builtin": is_builtin}
+            )
+            logger.info("Migrated: Seeded built-in outfit preset '%s'.", name)
+
+    if "lora_training_jobs" not in tables:
+        conn.execute(sa.text("""
+            CREATE TABLE lora_training_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES dataset_projects(id),
+                lora_name VARCHAR(150) NOT NULL,
+                model_type VARCHAR(50) DEFAULT 'anima_2b' NOT NULL,
+                config_toml_content TEXT NOT NULL,
+                epochs INTEGER NOT NULL,
+                repeats INTEGER NOT NULL,
+                batch_size INTEGER NOT NULL,
+                total_steps INTEGER NOT NULL,
+                network_dim INTEGER NOT NULL,
+                network_alpha INTEGER NOT NULL,
+                learning_rate VARCHAR(50) NOT NULL,
+                status VARCHAR(50) DEFAULT 'IDLE' NOT NULL,
+                final_loss FLOAT,
+                pid INTEGER
+            )
+        """))
+        logger.info("Migrated: Created 'lora_training_jobs' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -386,6 +478,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("010", "create_prompt_metadata", step_010_create_prompt_metadata),
     MigrationStep("011", "create_workflow_history", step_011_create_workflow_history),
     MigrationStep("012", "speech_bubble_presets_tag_set_id", step_012_speech_bubble_presets_tag_set_id),
+    MigrationStep("025", "lora_studio_tables", step_025_lora_studio_tables),
 ]
 
 

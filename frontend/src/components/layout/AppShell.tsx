@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  Zap, Layers, Tag, Clock, Settings,
+  Zap, Layers, Tag, Clock, Settings, Sparkles,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', icon: Zap, label: 'Generate', id: 'nav-generate' },
+  { to: '/studio', icon: Sparkles, label: 'Studio', id: 'nav-studio' },
   { to: '/loras', icon: Layers, label: 'LoRAs', id: 'nav-loras' },
   { to: '/tags', icon: Tag, label: 'Tags', id: 'nav-tags' },
   { to: '/history', icon: Clock, label: 'History', id: 'nav-history' },

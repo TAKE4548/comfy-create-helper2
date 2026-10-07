@@ -951,3 +951,181 @@ export interface SceneSpeechStreamOptions {
   onProgress?: (event: SceneSpeechProgressEvent) => void
   signal?: AbortSignal
 }
+
+// ─── LoRA Studio / Dataset & Training & Benchmark Types ──────────
+
+export interface DatasetProject {
+  id: number
+  name: string
+  character_trigger: string
+  outfit_trigger: string
+  workflow_id: number
+  prompt_meta: string
+  prompt_physical: string
+  prompt_exclusive_outfit: string
+  selected_alt_outfits: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DatasetProjectCreate {
+  name: string
+  character_trigger: string
+  outfit_trigger: string
+  workflow_id: number
+  prompt_meta: string
+  prompt_physical: string
+  prompt_exclusive_outfit: string
+  selected_alt_outfits?: string
+}
+
+export interface DatasetProjectUpdate {
+  name?: string
+  character_trigger?: string
+  outfit_trigger?: string
+  workflow_id?: number
+  prompt_meta?: string
+  prompt_physical?: string
+  prompt_exclusive_outfit?: string
+  selected_alt_outfits?: string
+}
+
+export interface DatasetItemFactors {
+  shot: string
+  angle: string
+  expression: string
+  pose: string
+  outfit_type: 'default' | 'alt'
+}
+
+export interface DatasetItem {
+  id: number
+  project_id: number
+  slot_index: number
+  factors_json: string
+  raw_prompt: string
+  caption_text: string
+  image_path?: string | null
+  seed: number
+  status: 'APPROVED' | 'REJECTED' | 'REROLLING' | string
+}
+
+export interface DatasetItemUpdate {
+  factors_json?: string
+  raw_prompt?: string
+  caption_text?: string
+  image_path?: string | null
+  seed?: number
+  status?: string
+}
+
+export interface OutfitMasterPreset {
+  id: number
+  name: string
+  category: string
+  prompt_tags: string
+  is_builtin: boolean
+}
+
+export interface OutfitMasterPresetCreate {
+  name: string
+  category: string
+  prompt_tags: string
+  is_builtin?: boolean
+}
+
+export interface DatasetExportRequest {
+  export_dir?: string
+  output_dir?: string
+  status_filter?: string
+}
+
+export interface DatasetExportResponse {
+  status: string
+  project_id: number
+  export_dir: string
+  item_count: number
+  exported_files: string[]
+}
+
+export interface LoraTrainingJob {
+  id: number
+  project_id: number
+  lora_name: string
+  model_type: string
+  config_toml_content: string
+  epochs: number
+  repeats: number
+  batch_size: number
+  total_steps: number
+  network_dim: number
+  network_alpha: number
+  learning_rate: string
+  status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED' | string
+  final_loss?: number | null
+  pid?: number | null
+}
+
+export interface LoraTrainingJobCreate {
+  project_id: number
+  lora_name: string
+  model_type?: string
+  config_toml_content: string
+  epochs: number
+  repeats: number
+  batch_size: number
+  total_steps: number
+  network_dim: number
+  network_alpha: number
+  learning_rate: string
+  status?: string
+}
+
+export interface TrainingTelemetryMessage {
+  job_id: number
+  step: number
+  total_steps: number
+  epoch: number
+  epochs: number
+  loss: number
+  vram_used_gb?: number
+  gpu_temp?: number
+  status: string
+  log?: string
+}
+
+export interface StressTestPrompt {
+  axis_id: string
+  axis_title: string
+  weight: number
+  prompt: string
+  seed: number
+}
+
+export interface GenerateStressTestPromptsRequest {
+  lora_name: string
+  character_trigger: string
+  outfit_trigger: string
+}
+
+export interface GenerateStressTestPromptsResponse {
+  prompts: StressTestPrompt[]
+  total: number
+}
+
+export interface SweetSpotResult {
+  recommended_weight_min: number
+  recommended_weight_max: number
+  recommended_weight_display: string
+  reason: string
+}
+
+export interface EvaluateBenchmarkRequest {
+  results: Record<string, unknown>[]
+}
+
+export interface EvaluateBenchmarkResponse {
+  sweet_spot: SweetSpotResult
+  results: Record<string, unknown>[]
+}
+

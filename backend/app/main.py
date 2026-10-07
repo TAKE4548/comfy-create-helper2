@@ -34,6 +34,9 @@ from app.routers import (
     translate, speech_batch, speech_scene,
     prompt_metadata, system_logs,
     settings as settings_router,
+    dataset_router,
+    benchmark_router,
+    training_router,
 )
 from app.routers import ws as ws_router
 from app.services.resource_monitor import resource_monitor
@@ -146,6 +149,9 @@ app.include_router(speech_scene.router)
 app.include_router(prompt_metadata.router)
 app.include_router(settings_router.router)
 app.include_router(ws_router.router)
+app.include_router(dataset_router.router)
+app.include_router(benchmark_router.router)
+app.include_router(training_router.router)
 
 
 class CachedStaticFiles(StaticFiles):

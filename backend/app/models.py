@@ -426,3 +426,60 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
+
+class DatasetProject(Base):
+    __tablename__ = "dataset_projects"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    character_trigger: Mapped[str] = mapped_column(String(100), nullable=False)
+    outfit_trigger: Mapped[str] = mapped_column(String(100), nullable=False)
+    workflow_id: Mapped[int] = mapped_column(Integer, ForeignKey("workflows.id"), nullable=False)
+    prompt_meta: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_physical: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_exclusive_outfit: Mapped[str] = mapped_column(Text, nullable=False)
+    selected_alt_outfits: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+
+class DatasetItem(Base):
+    __tablename__ = "dataset_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("dataset_projects.id", ondelete="CASCADE"), nullable=False)
+    slot_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    factors_json: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    caption_text: Mapped[str] = mapped_column(Text, nullable=False)
+    image_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="APPROVED")
+
+
+class OutfitMasterPreset(Base):
+    __tablename__ = "outfit_master_presets"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    prompt_tags: Mapped[str] = mapped_column(Text, nullable=False)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class LoraTrainingJob(Base):
+    __tablename__ = "lora_training_jobs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("dataset_projects.id"), nullable=False)
+    lora_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    model_type: Mapped[str] = mapped_column(String(50), default="anima_2b")
+    config_toml_content: Mapped[str] = mapped_column(Text, nullable=False)
+    epochs: Mapped[int] = mapped_column(Integer, nullable=False)
+    repeats: Mapped[int] = mapped_column(Integer, nullable=False)
+    batch_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_steps: Mapped[int] = mapped_column(Integer, nullable=False)
+    network_dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    network_alpha: Mapped[int] = mapped_column(Integer, nullable=False)
+    learning_rate: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="IDLE")
+    final_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+

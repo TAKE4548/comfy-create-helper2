@@ -1,88 +1,187 @@
-# Implementation Plan: REQ-318 FuguMT 文脈保持型ハイブリッド和訳
+# Implementation Plan: REQ-319 Prompt Surgeon: LoRA Studio（素材直交生成・キュレーション・ローカル学習・4軸ストレステスト評価）統合機能
 
-Prompt Surgeon におけるプロンプト和訳処理を改修し、Danbooru タグの高速辞書引き（< 1ms）と、カンマを含む自然文の文単位 FuguMT 推論を統合した階層的ハイブリッドパイプラインを構築します。
-
-## Proposed Changes
-
-### Backend Subsystem
-
-#### [LOCAL MODIFY] [backend/app/services/translation_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/translation_service.py)
-- SENTENCE_SPLIT_PATTERN（ピリオド・改行・感嘆符・疑問符）と TAG_SPLIT_PATTERN（カンマ・読点）の分離定義。
-- 既存 SPLIT_PATTERN は後方互換性エイリアスとして維持。
-- process_sentence_block による文ブロック内パース・空要素フィルタ・非マッチ要素再結合の実装。
-- 強度構文（(( ... :1.2))）の最外周アンパックおよび翻訳後のホワイトスペーストリム・再パック処理の統合。
-- 再結合された自然文に対する文単位キャッシュキーの登録・照会最適化。
-
-#### [LOCAL MODIFY] [backend/tests/test_translation_proxy.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_translation_proxy.py)
-- カンマ付き自然文、ハイブリッド混在プロンプト、強度構文付き自然文、ピリオド複数文、末尾ピリオドなし、連続カンマサニタイズに関する新規単体テストケースの追加。
-- 既存テストの全件回帰検証。
-
-### Documentation / SSoT
-
-#### [LOCAL MODIFY] [docs/specs/SPEC_SETTINGS.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_SETTINGS.md)
-- FuguMT 翻訳機能の説明にハイブリッド和訳パイプライン仕様を追記。
-
-#### [LOCAL MODIFY] [docs/specs/SPEC_SUMMARY.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_SUMMARY.md)
-- /api/translate エンドポイント機能一覧記述の更新。
-
-#### [LOCAL NEW] [docs/design/REQ-318.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-318.md)
-- 詳細設計ドキュメント。
-
-#### [LOCAL NEW] [docs/design/REQ-318-test-plan.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-318-test-plan.md)
-- 実行可能テスト計画書。
-
-#### [LOCAL NEW] [docs/backlog/task/active/REQ-318-T1.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-318-T1.md)
-#### [LOCAL NEW] [docs/backlog/task/active/REQ-318-T2.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-318-T2.md)
-#### [LOCAL NEW] [docs/backlog/task/active/REQ-318-T3.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-318-T3.md)
-#### [LOCAL NEW] [docs/backlog/task/active/REQ-318-T4.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-318-T4.md)
-- 密閉コンテキスト付き物理 Task Card。
+Prompt Surgeon 内に、直交計画（DOE）に基づく素材バッチ生成、キャプション・自動デカップリング・キュレーション、ローカル学習ディスパッチ（WSL2/ROCm）、および4軸ストレステスト自動評価を一気通貫で完結できる専用ワークスペース「LoRA Studio」を新設・統合します。
 
 ---
 
-## Task Dependency & Parallel Execution Plan
+## Task Dependency & DAG Visualization
 
-`mermaid
+```mermaid
 graph TD
-    T1[REQ-318-T1: 文境界・タグ分離と再結合ロジック]
-    T2[REQ-318-T2: 強度構文保護・再パックとキャッシュ]
-    T3[REQ-318-T3: 単体テスト作成と回帰検証]
-    T4[REQ-318-T4: 仕様書 SSoT の同期・更新]
+    classDef backend fill:#1e293b,stroke:#3b82f6,stroke-width:2px;
+    classDef frontend fill:#1e293b,stroke:#10b981,stroke-width:2px;
+    classDef system fill:#1e293b,stroke:#8b5cf6,stroke-width:2px;
+
+    T1["REQ-319-T1: DB & Models & Migrations"]:::backend
+    T2["REQ-319-T2: DOE Solver & Matrix API"]:::backend
+    T3["REQ-319-T3: Training Manager & WS Telemetry"]:::backend
+    T4["REQ-319-T4: 4-Axis Benchmark Service"]:::backend
+    T5["REQ-319-T5: Frontend API Types & Store"]:::frontend
+    T6["REQ-319-T6: Step 1 Matrix UI & Comfy Direct"]:::frontend
+    T7["REQ-319-T7: Outfit Master Modal"]:::frontend
+    T8["REQ-319-T8: Step 2 Curator & Decoupling"]:::frontend
+    T9["REQ-319-T9: Step 3 Training Panel & Charts"]:::frontend
+    T10["REQ-319-T10: Step 4 Benchmark Grid & SweetSpot"]:::frontend
+    T11["REQ-319-T11: Routing & E2E Regression"]:::system
 
     T1 --> T2
-    T2 --> T3
-    T3 --> T4
-`
+    T1 --> T3
+    T1 --> T4
+    T1 --> T5
+    T2 --> T5
+    T3 --> T5
+    T4 --> T5
+    T5 --> T6
+    T6 --> T7
+    T5 --> T8
+    T5 --> T9
+    T5 --> T10
+    T6 --> T11
+    T7 --> T11
+    T8 --> T11
+    T9 --> T11
+    T10 --> T11
+```
 
-- **依存関係**:
-  - T1 が基底の分割・再結合ロジックを実装。
-  - T2 が T1 の基盤の上に強度構文とキャッシュ処理を拡張。
-  - T3 が T1, T2 の実装に対して包括的単体テストを実施。
-  - T4 が検証完了後にドキュメントを同期。
-- **並列性について**:
-  - バックエンド同一ファイル（	ranslation_service.py）への段階的機能追加およびテスト・ドキュメント更新であるため、直列パイプライン（T1 → T2 → T3 → T4）として競合なく安全に進行します。
+### 並行実行可能性 (Parallelism)
+- **Layer 1 (Backend Core)**: `REQ-319-T1` 完了後、`REQ-319-T2` (マトリクス)、`REQ-319-T3` (学習)、`REQ-319-T4` (評価) は完全に直交しており並行実装が可能。
+- **Layer 2 (Frontend Client & UI)**: `REQ-319-T5` 完了後、`REQ-319-T6` (Step 1)、`REQ-319-T8` (Step 2)、`REQ-319-T9` (Step 3)、`REQ-319-T10` (Step 4) は各ステップの責務が独立しており並行開発が可能。
+- **Layer 3 (Integration)**: 全タスク完了後に `REQ-319-T11` で全体の E2E シナリオとルーティングを検証。
+
+---
+
+## Proposed Changes
+
+### Subsystem: Backend
+
+#### [LOCAL NEW] [backend/app/schemas/dataset.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/schemas/dataset.py)
+- `DatasetProjectCreate`, `DatasetProjectResponse`
+- `DatasetItemUpdate`, `DatasetItemResponse`
+- `OutfitMasterPresetCreate`, `OutfitMasterPresetResponse`
+- `LoraTrainingJobCreate`, `LoraTrainingJobResponse`
+
+#### [LOCAL MODIFY] [backend/app/models.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/models.py)
+- `DatasetProject`, `DatasetItem`, `OutfitMasterPreset`, `LoraTrainingJob` の SQLAlchemy ORM モデル定義を追加。
+
+#### [LOCAL MODIFY] [backend/app/migrations/steps.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/migrations/steps.py)
+- `step_025_lora_studio_tables` を新設し、4テーブルの CREATE TABLE および内蔵別衣装プリセット（カジュアル、部屋着、水着、スーツ）を初期シード。
+
+#### [LOCAL NEW] [backend/app/services/matrix_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/matrix_service.py)
+- 因子プール（Shot, Angle, Expression, Pose, Outfit）の直積とハード制約フィルタ。
+- 周辺比率（本命15件/別衣装5件）および共起二乗誤差最小化による貪欲直交計画（DOE）ソルバー。
+
+#### [LOCAL NEW] [backend/app/services/training_manager.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/training_manager.py)
+- 学習スケジュール計算（Total Steps, Checkpoints）。
+- bf16, TE Freeze (lr=0), gradient_checkpointing 適用 TOML 生成。
+- 非同期サブプロセス管理、安全停止、WebSocket テレメトリ配信。
+
+#### [LOCAL NEW] [backend/app/services/benchmark_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/benchmark_service.py)
+- 4軸（衣装分離、衣装再現、ポーズ追従、アングル追従）× 3強度（0.6, 0.8, 1.0）の計12件プロンプト生成（シード `12345678`）。
+- スイートスポット推奨（0.75〜0.85）算出ロジック。
+
+#### [LOCAL NEW] [backend/app/routers/dataset_router.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/dataset_router.py)
+- プロジェクトCRUD、マトリクス算出、画像＋.txtペア一括出力API。
+
+#### [LOCAL NEW] [backend/app/routers/training_router.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/training_router.py)
+- 学習ジョブ作成・起動・停止APIおよび WebSocket テレメトリエンドポイント。
+
+#### [LOCAL NEW] [backend/app/routers/benchmark_router.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/benchmark_router.py)
+- ベンチマークプロンプト生成・評価API。
+
+#### [LOCAL MODIFY] [backend/app/main.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/main.py)
+- `dataset_router`, `training_router`, `benchmark_router` をインポートし、FastAPI アプリケーションに登録。
+
+---
+
+### Subsystem: Frontend
+
+#### [LOCAL MODIFY] [frontend/src/api/types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/types.ts)
+- `DatasetProject`, `DatasetItem`, `OutfitMasterPreset`, `LoraTrainingJob`, `StressTestPrompt`, `SweetSpotResult` 型定義を追加。
+
+#### [LOCAL MODIFY] [frontend/src/api/client.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/client.ts)
+- `datasetApi`, `trainingApi`, `benchmarkApi` のクライアント関数群を実装。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/useStudioStore.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/useStudioStore.ts)
+- スタジオウィザード状態（Step 1〜4）、選択中プロジェクト、生成アイテム、学習テレメトリを保持する Zustand ストア。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/index.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/index.tsx)
+- スタジオ親コンテナ。Step 1〜4 のウィザードヘッダーバーと各ステップのレンダリング制御。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx)
+- Step 1: キャラトリガー・衣装トリガー命名、3系統 `TagChipEditor`、直交マトリクス算出、ComfyUI（Port 8188）への直接バッチ投入。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/OutfitMasterModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/OutfitMasterModal.tsx)
+- 別衣装マスタ選択モーダル。プリセット選択および新規追加。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/CuratorGrid.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/CuratorGrid.tsx)
+- Step 2: 20枚サムネイル合否選定、単発リロール（↺）、学習フォルダ出力。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/utils/captionDecoupler.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/utils/captionDecoupler.ts)
+- 身体タグ・専用服装タグの自動ストリップとトリガー置換ロジック。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/TrainingConfigPanel.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/TrainingConfigPanel.tsx)
+- Step 3: パラメータ設定、総ステップ数動的計算、プロセス起動・停止、生成ガード。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/TrainingTooltip.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/TrainingTooltip.tsx)
+- 各ハイパーパラメータのホバー解説Tooltip。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/TelemetryLossChart.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/TelemetryLossChart.tsx)
+- SVG Loss 曲線グラフ、VRAM使用量バー、温度表示。
+
+#### [LOCAL NEW] [frontend/src/pages/DatasetStudioPage/components/BenchmarkGrid.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/BenchmarkGrid.tsx)
+- Step 4: 4列×3行のストレステスト比較マトリクス、セル拡大モーダル、推奨強度表示。
+
+#### [LOCAL MODIFY] [frontend/src/components/layout/AppShell.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/layout/AppShell.tsx)
+- サイドバーナビゲーションに「Studio」を追加。
+
+#### [LOCAL MODIFY] [frontend/src/App.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/App.tsx)
+- `/studio` ルートを登録。
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-1. **Gate 1 (Typecheck)**:
-   `ash
-   backend\\.venv\\Scripts\\python -m mypy backend/app/services/translation_service.py
-   `
-2. **Gate 2 (Unit Tests)**:
-   `ash
-   backend\\.venv\\Scripts\\python -m pytest backend/tests/test_translation_proxy.py -v
-   `
-3. **Gate 3 (Integration & Red Teaming)**:
-   - 全 AC-1 〜 AC-7 シナリオのパス確認。
-   - 連続カンマ・空チャンク、特殊構文（LoRA等）の境界値確認。
+1. **Frontend Typecheck & Unit Tests**:
+   ```bash
+   cd frontend; npm run typecheck
+   cd frontend; npx vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx \
+     src/pages/DatasetStudioPage/__tests__/OutfitMasterModal.test.tsx \
+     src/pages/DatasetStudioPage/__tests__/CuratorGrid.test.tsx \
+     src/pages/DatasetStudioPage/__tests__/TrainingConfigPanel.test.tsx \
+     src/pages/DatasetStudioPage/__tests__/BenchmarkGrid.test.tsx
+   ```
+2. **Backend Typecheck & Unit Tests**:
+   ```bash
+   mypy backend/app/services/matrix_service.py backend/app/services/training_manager.py backend/app/services/benchmark_service.py
+   backend\.venv\Scripts\python -m pytest backend/tests/test_dataset_db.py backend/tests/test_matrix_service.py backend/tests/test_dataset_router.py backend/tests/test_training_manager.py backend/tests/test_benchmark_service.py -v
+   ```
+3. **E2E Integration Tests**:
+   ```bash
+   cd frontend; npx vitest run src/test/e2e_req319_lora_studio.test.tsx
+   backend\.venv\Scripts\python -m pytest backend/tests/test_e2e_req319.py -v
+   ```
+
+### Manual & Acceptance Verification
+- **AC-1**: Step 1 で3枠の `TagChipEditor` が同一のチップ操作・テキスト切替を提供し、トリガー名と連動することを確認。
+- **AC-2**: 別衣装マスタから複数選択時、20件中5件に均等配分され専用服装タグが混入しないことを確認。
+- **AC-3**: バックエンドをプロキシせずブラウザから ComfyUI（Port 8188）へ直接バッチ投入され WebSocket 進捗が描画されることを確認。
+- **AC-4**: Step 2 で身体タグ・衣装タグが自動ストリップされトリガーに置換されることを確認。
+- **AC-5**: 不良画像の単発リロール（↺）で画像のみインプレース更新され、ペア出力で .png + .txt が書き出されることを確認。
+- **AC-6**: Step 3 で総ステップ数が「2,000 steps」と動的算出され、全項目のホバー解説Tooltipが表示されることを確認。
+- **AC-7**: 学習プロセス起動時に WebSocket で Loss グラフとテレメトリが更新され、停止ボタンで安全中断できることを確認。
+- **AC-8 & AC-9**: Step 4 で4軸×3強度（計12件）が自動投入され、4×3グリッドで並列比較および推奨強度（0.75〜0.85）がハイライトされることを確認。
 
 ---
 
 ## Trade-off Disclosure
 
-1. **キャッシュキーの文単位化と粒度**:
-   - カンマ付き自然文はカンマごとではなく文全体でキャッシュされます。文全体の一致時には最高精度の文脈翻訳が即時返却されますが、文の一部のみが一致した場合のキャッシュ再利用性は低下します。自然言語としての係り受け品質を優先したトレードオフです。
-2. **辞書未登録タグの推論レイテンシ**:
-   - Danbooru 辞書に未登録の未知タグは自然文として FuguMT 推論に送られます。辞書ヒット時（< 1ms）に比べてわずかな推論時間（20-30ms）が発生しますが、訳抜けを防ぐための意図的なフォールバックです。
+1. **ComfyUI への直接バッチ投入（FastAPI 画像プロキシの撤廃）**:
+   - **トレードオフ**: バックエンド側で生成画像の即時永続化やトランザクション管理を行わず、ブラウザが直接 Port 8188 と通信するため、ブラウザリロード時にインフライト中の未受領画像が一時的にロストするリスクがあります。
+   - **評価と対策**: 20枚の高解像度画像ストリームを FastAPI でプロキシすることは、サーバーメモリの逼迫と不要なレイテンシ増加を招きます。Prompt Surgeon の設計原則「ComfyUI 直接通信」を厳守し、フロントエンド側で IndexedDB / ローカル状態に即時保持するとともに、エクスポート時にバックエンドへ画像パスとキャプションを確定登録することで、パフォーマンスと耐障害性を両立します。
+2. **学習時の Text Encoder Freeze (TE LR = 0.0) 強制適用**:
+   - **トレードオフ**: テキストエンコーダを固定するため、まったく新しい概念や特殊な複合語の学習効率がわずかに低下する可能性があります。
+   - **評価と対策**: Anima 2B DiT は Qwen3 テキストエンコーダを採用しており、VRAM 16GB（RX 9070 XT）環境で TE をファインチューニングすると VRAM オーバーフロー（OOM）を引き起こすか、言語モデル本来の文脈理解が破壊されます。TE を Freeze することで VRAM を約 6GB 節約し、U-Net / Transformer 本体の LoRA 学習に専念させる設計が最も安定かつ高精度です。
+3. **直交計画（DOE）における貪欲法（Greedy Selection）の採用**:
+   - **トレードオフ**: 厳密な全探索や遺伝的アルゴリズム（GA）と比較して、数学的な「大域的最適解」ではなく「局所最適解」となる可能性があります。
+   - **評価と対策**: 候補空間（約768通り）から20件を選択する処理において、貪欲法はミリ秒未満（< 5ms）で計算が完了し、UI操作時のブロッキングがゼロです。実用上の交絡排除スコア（直交度 > 0.85）は十分に達成されるため、ユーザー体験と計算コストの観点から貪欲法が最適です。

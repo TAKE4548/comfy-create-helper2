@@ -9,6 +9,7 @@ import { LoRAsPage } from './pages/LoRAsPage'
 import { TagsPage } from './pages/TagsPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { DatasetStudioPage } from './pages/DatasetStudioPage'
 import { useGenerationStore } from './store/useGenerationStore'
 
 const queryClient = new QueryClient({
@@ -52,6 +53,7 @@ function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<GeneratePage />} />
+            <Route path="/studio" element={<DatasetStudioPage />} />
             <Route path="/loras" element={<LoRAsPage />} />
             <Route path="/tags" element={<TagsPage />} />
             <Route path="/history" element={<HistoryPage />} />

@@ -12,8 +12,40 @@ import type {
   SceneSpeechStreamEvent,
   SceneSpeechStreamErrorKind,
   SceneSpeechStreamOptions,
+  DatasetProject,
+  DatasetProjectCreate,
+  DatasetProjectUpdate,
+  DatasetItem,
+  DatasetItemUpdate,
+  OutfitMasterPreset,
+  OutfitMasterPresetCreate,
+  DatasetExportRequest,
+  DatasetExportResponse,
+  LoraTrainingJob,
+  LoraTrainingJobCreate,
+  GenerateStressTestPromptsRequest,
+  GenerateStressTestPromptsResponse,
+  EvaluateBenchmarkRequest,
+  EvaluateBenchmarkResponse,
 } from './types'
 export type { PromptTranslateRequest, PromptTranslateResponse, TranslateTestRequest, TranslateTestResponse, TranslateMeta, TranslationMode, DiffAnalyzeResponse, WorkflowRollbackResponse, WorkflowHistoryStatusResponse }
+export type {
+  DatasetProject,
+  DatasetProjectCreate,
+  DatasetProjectUpdate,
+  DatasetItem,
+  DatasetItemUpdate,
+  OutfitMasterPreset,
+  OutfitMasterPresetCreate,
+  DatasetExportRequest,
+  DatasetExportResponse,
+  LoraTrainingJob,
+  LoraTrainingJobCreate,
+  GenerateStressTestPromptsRequest,
+  GenerateStressTestPromptsResponse,
+  EvaluateBenchmarkRequest,
+  EvaluateBenchmarkResponse,
+}
 
 
 
@@ -588,3 +620,75 @@ export const settingsApi = {
       body: JSON.stringify(data),
     }),
 }
+
+// ─── LoRA Studio / Dataset API ─────────────────────────────────────
+export const datasetApi = {
+  getProjects: () => request<DatasetProject[]>('/api/dataset/projects'),
+  getProject: (projectId: number) => request<DatasetProject>(`/api/dataset/projects/${projectId}`),
+  createProject: (data: DatasetProjectCreate) =>
+    request<DatasetProject>('/api/dataset/projects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateProject: (projectId: number, data: DatasetProjectUpdate) =>
+    request<DatasetProject>(`/api/dataset/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteProject: (projectId: number) =>
+    request<{ message: string; id: number }>(`/api/dataset/projects/${projectId}`, {
+      method: 'DELETE',
+    }),
+  getOutfitMasters: (category?: string) => {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : ''
+    return request<OutfitMasterPreset[]>(`/api/dataset/outfits${qs}`)
+  },
+  calculateMatrix: (projectId: number) =>
+    request<DatasetItem[]>(`/api/dataset/projects/${projectId}/matrix`, {
+      method: 'POST',
+    }),
+  updateItem: (itemId: number, data: DatasetItemUpdate) =>
+    request<DatasetItem>(`/api/dataset/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  exportDataset: (projectId: number, data?: DatasetExportRequest) =>
+    request<DatasetExportResponse>(`/api/dataset/projects/${projectId}/export`, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    }),
+}
+
+// ─── LoRA Studio / Training API ────────────────────────────────────
+export const trainingApi = {
+  createJob: (data: LoraTrainingJobCreate) =>
+    request<LoraTrainingJob>('/api/training/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getJob: (jobId: number) => request<LoraTrainingJob>(`/api/training/jobs/${jobId}`),
+  startJob: (jobId: number) =>
+    request<{ status: string; job_id: number; pid?: number }>(`/api/training/jobs/${jobId}/start`, {
+      method: 'POST',
+    }),
+  stopJob: (jobId: number) =>
+    request<{ status: string; job_id: number }>(`/api/training/jobs/${jobId}/stop`, {
+      method: 'POST',
+    }),
+  getJobStatus: () => request<{ is_training_active: boolean }>('/api/training/status'),
+}
+
+// ─── LoRA Studio / Benchmark API ───────────────────────────────────
+export const benchmarkApi = {
+  generatePrompts: (data: GenerateStressTestPromptsRequest) =>
+    request<GenerateStressTestPromptsResponse>('/api/benchmark/generate-prompts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  evaluate: (data: EvaluateBenchmarkRequest) =>
+    request<EvaluateBenchmarkResponse>('/api/benchmark/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
