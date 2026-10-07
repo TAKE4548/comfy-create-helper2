@@ -5,7 +5,10 @@ import type {
   OutfitMasterPreset,
   LoraTrainingJob,
   TrainingTelemetryMessage,
+  StudioSaveStatus,
 } from '../../api/types'
+
+export type { StudioSaveStatus }
 
 export interface LossPoint {
   step: number
@@ -18,6 +21,12 @@ export interface StudioState {
 
   activeProject: DatasetProject | null
   setActiveProject: (project: DatasetProject | null) => void
+
+  saveStatus: StudioSaveStatus
+  setSaveStatus: (status: StudioSaveStatus) => void
+
+  projectsList: DatasetProject[]
+  setProjectsList: (projects: DatasetProject[]) => void
 
   items: DatasetItem[]
   setItems: (items: DatasetItem[]) => void
@@ -52,6 +61,12 @@ export const useStudioStore = create<StudioState>((set) => ({
 
   activeProject: null,
   setActiveProject: (project) => set({ activeProject: project }),
+
+  saveStatus: 'idle',
+  setSaveStatus: (saveStatus) => set({ saveStatus }),
+
+  projectsList: [],
+  setProjectsList: (projectsList) => set({ projectsList }),
 
   items: [],
   setItems: (items) => set({ items }),
@@ -118,6 +133,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     set({
       currentStep: 1,
       activeProject: null,
+      saveStatus: 'idle',
       items: [],
       selectedAltOutfits: [],
       activeJob: null,

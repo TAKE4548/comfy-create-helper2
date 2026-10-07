@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MatrixGenerationStep, injectPromptAndSeed } from '../components/MatrixGenerationStep'
+import { DatasetStudioPage } from '../index'
 import { useStudioStore } from '../useStudioStore'
 import { datasetApi, workflowsApi, mappingMastersApi } from '../../../api/client'
 import type { DatasetItem, DatasetProject, Workflow, MappingMaster } from '../../../api/types'
+import { saveStudioDraft, saveActiveProjectId } from '../utils/studioDraftStorage'
 
 vi.mock('../../../api/client', () => ({
   datasetApi: {
+    getProjects: vi.fn(),
     createProject: vi.fn(),
     updateProject: vi.fn(),
     calculateMatrix: vi.fn(),
@@ -97,7 +100,9 @@ describe('MatrixGenerationStep', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     useStudioStore.getState().resetStudio()
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(workflowsApi.get).mockResolvedValue(mockWorkflows[0])
     vi.mocked(mappingMastersApi.list).mockResolvedValue(mockMappingMasters)
@@ -441,6 +446,242 @@ describe('MatrixGenerationStep', () => {
     expect(screen.getByTestId('negative-tag-editor')).toHaveTextContent('restored')
     expect(screen.getByTestId('negative-tag-editor')).toHaveTextContent('negative')
     expect(screen.getByTestId('negative-tag-editor')).toHaveTextContent('tags')
+  })
+
+  it('restores draft and displays draft-restored-alert when a newer draft exists in sessionStorage (AC-3)', async () => {
+    saveStudioDraft({
+      projectId: 10,
+      name: 'Restored Draft Chara',
+      character_trigger: 'restored_chara',
+      outfit_trigger: 'restored_outfit',
+      workflow_id: 1,
+      prompt_meta: 'restored meta',
+      prompt_physical: 'restored physical',
+      prompt_exclusive_outfit: 'restored dress',
+      prompt_negative: 'restored negative',
+      selected_alt_outfits: '[]',
+      updated_at: '2026-02-01T00:00:00.000Z',
+      base_server_updated_at: '2026-01-01T00:00:00.000Z',
+      is_synced: false,
+    })
+
+    useStudioStore.getState().setActiveProject({
+      ...mockProject,
+      updated_at: '2026-01-01T00:00:00.000Z',
+    })
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-restored-alert')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('draft-restored-alert')).toHaveTextContent('未保存の下書きを復元しました')
+    expect(screen.getByTestId('project-name-input')).toHaveValue('Restored Draft Chara')
+    expect(screen.getByTestId('character-trigger-input')).toHaveValue('restored_chara')
+
+    // Dismiss alert
+    fireEvent.click(screen.getByText('閉じる'))
+    expect(screen.queryByTestId('draft-restored-alert')).not.toBeInTheDocument()
+  })
+
+  it('displays draft-conflict-alert and resolves conflict with draft (Red Team 5)', async () => {
+    saveStudioDraft({
+      projectId: 10,
+      name: 'Draft Overwrite Name',
+      character_trigger: 'draft_chara',
+      outfit_trigger: 'draft_outfit',
+      workflow_id: 1,
+      prompt_meta: 'draft meta',
+      prompt_physical: 'draft physical',
+      prompt_exclusive_outfit: 'draft dress',
+      prompt_negative: 'draft neg',
+      selected_alt_outfits: '[]',
+      updated_at: '2026-02-01T00:00:00.000Z',
+      base_server_updated_at: '2026-01-01T00:00:00.000Z',
+      is_synced: false,
+    })
+
+    const serverProject: DatasetProject = {
+      ...mockProject,
+      name: 'Server Latest Name',
+      updated_at: '2026-01-15T00:00:00.000Z',
+    }
+    useStudioStore.getState().setActiveProject(serverProject)
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-conflict-alert')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('resolve-conflict-draft-btn')).toBeInTheDocument()
+    expect(screen.getByTestId('resolve-conflict-server-btn')).toBeInTheDocument()
+
+    // Click "下書きで上書き"
+    fireEvent.click(screen.getByTestId('resolve-conflict-draft-btn'))
+
+    await waitFor(() => {
+      expect(datasetApi.updateProject).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ name: 'Draft Overwrite Name' })
+      )
+      expect(screen.queryByTestId('draft-conflict-alert')).not.toBeInTheDocument()
+    })
+  })
+
+  it('displays draft-conflict-alert and resolves conflict with server (Red Team 5)', async () => {
+    saveStudioDraft({
+      projectId: 10,
+      name: 'Draft Local Name',
+      character_trigger: 'draft_chara',
+      outfit_trigger: 'draft_outfit',
+      workflow_id: 1,
+      prompt_meta: 'draft meta',
+      prompt_physical: 'draft physical',
+      prompt_exclusive_outfit: 'draft dress',
+      prompt_negative: 'draft neg',
+      selected_alt_outfits: '[]',
+      updated_at: '2026-02-01T00:00:00.000Z',
+      base_server_updated_at: '2026-01-01T00:00:00.000Z',
+      is_synced: false,
+    })
+
+    const serverProject: DatasetProject = {
+      ...mockProject,
+      name: 'Server Kept Name',
+      character_trigger: 'server_chara',
+      prompt_negative: 'server neg',
+      updated_at: '2026-01-15T00:00:00.000Z',
+    }
+    useStudioStore.getState().setActiveProject(serverProject)
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-conflict-alert')).toBeInTheDocument()
+    })
+
+    // Click "サーバーの最新を読込"
+    fireEvent.click(screen.getByTestId('resolve-conflict-server-btn'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('draft-conflict-alert')).not.toBeInTheDocument()
+      expect(screen.getByTestId('project-name-input')).toHaveValue('Server Kept Name')
+      expect(screen.getByTestId('character-trigger-input')).toHaveValue('server_chara')
+    })
+  })
+
+  it('flushes auto-save before calculating matrix when activeProject exists (AC-6)', async () => {
+    useStudioStore.getState().setActiveProject(mockProject)
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('calculate-matrix-button')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('calculate-matrix-button'))
+
+    await waitFor(() => {
+      expect(datasetApi.updateProject).toHaveBeenCalledWith(
+        mockProject.id,
+        expect.objectContaining({ name: mockProject.name })
+      )
+      expect(datasetApi.calculateMatrix).toHaveBeenCalledWith(mockProject.id)
+    })
+  })
+
+  it('renders header with project selector, new project button, and autosave status badge in DatasetStudioPage (AC-6)', async () => {
+    const projectA: DatasetProject = {
+      ...mockProject,
+      id: 10,
+      name: 'Project Alpha',
+      prompt_negative: 'worst quality, bad anatomy',
+    }
+    const projectB: DatasetProject = {
+      ...mockProject,
+      id: 20,
+      name: 'Project Beta',
+      prompt_negative: 'worst quality, bad anatomy',
+    }
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([projectA, projectB])
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-selector')).toBeInTheDocument()
+      expect(screen.getByTestId('open-create-project-modal-btn')).toBeInTheDocument()
+      expect(screen.getByTestId('autosave-status')).toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+
+    // Check project list in select
+    const selector = screen.getByTestId('project-selector') as HTMLSelectElement
+    expect(selector.options).toHaveLength(2)
+    expect(selector.options[0].text).toBe('Project Alpha')
+    expect(selector.options[1].text).toBe('Project Beta')
+
+    // Change selected project
+    fireEvent.change(selector, { target: { value: '20' } })
+    expect(useStudioStore.getState().activeProject?.id).toBe(20)
+  })
+
+  it('transitions save status badge to unsaved, saving, and saved upon form editing in DatasetStudioPage (AC-6)', async () => {
+    useStudioStore.getState().setActiveProject({
+      ...mockProject,
+      prompt_negative: 'worst quality, bad anatomy',
+    })
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+    })
+
+    // Edit project name in form
+    const nameInput = screen.getByTestId('project-name-input')
+    fireEvent.change(nameInput, { target: { value: 'Modified Name' } })
+
+    // Immediately transitions to unsaved
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('未保存（下書き保持）')
+
+    // After debounce finishes (750ms), API call completes
+    await waitFor(() => {
+      expect(datasetApi.updateProject).toHaveBeenCalledWith(
+        mockProject.id,
+        expect.objectContaining({ name: 'Modified Name' })
+      )
+      expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+    }, { timeout: 3000 })
+  })
+
+  it('opens CreateProjectModal when clicking new project button and updates activeProject on creation (AC-6)', async () => {
+    const newCreatedProject: DatasetProject = {
+      ...mockProject,
+      id: 99,
+      name: 'Newly Created LoRA Project',
+    }
+    vi.mocked(datasetApi.createProject).mockResolvedValue(newCreatedProject)
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('open-create-project-modal-btn')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('open-create-project-modal-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-modal')).toBeInTheDocument()
+    })
+
+    // Submit modal
+    const submitBtn = screen.getByTestId('submit-create-project-btn')
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(useStudioStore.getState().activeProject?.id).toBe(99)
+      expect(screen.queryByTestId('create-project-modal')).not.toBeInTheDocument()
+    })
   })
 })
 

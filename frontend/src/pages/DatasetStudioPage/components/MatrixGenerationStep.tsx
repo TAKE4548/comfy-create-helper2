@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2 } from 'lucide-react'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { datasetApi, workflowsApi, workflowPresetsApi } from '../../../api/client'
-import type { DatasetItem, Workflow } from '../../../api/types'
+import type { DatasetItem, Workflow, DatasetProject } from '../../../api/types'
 import { useStudioStore } from '../useStudioStore'
 import { OutfitMasterModal, distributeAltOutfits } from './OutfitMasterModal'
 import { OutfitPresetBadge } from './OutfitPresetBadge'
 import { NodeRemapModal } from './NodeRemapModal'
+import { useStudioAutosave, type StudioFormData } from '../hooks/useStudioAutosave'
+import type { DatasetStudioDraft } from '../utils/studioDraftStorage'
 
 export interface MatrixGenerationStepProps {
   onDirectBatchSubmit?: (items: DatasetItem[], workflowPromptJson?: any) => Promise<void>
@@ -177,6 +179,149 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
       : 'worst quality, low quality, bad anatomy, blurry'
   )
 
+  // Synchronize form state when activeProject identity changes
+  const [prevActiveProjectId, setPrevActiveProjectId] = useState<number | null>(activeProject?.id ?? null)
+  if ((activeProject?.id ?? null) !== prevActiveProjectId) {
+    setPrevActiveProjectId(activeProject?.id ?? null)
+    if (activeProject) {
+      setProjectName(activeProject.name || 'My New Chara LoRA')
+      setCharacterTrigger(activeProject.character_trigger || 'mychara')
+      setOutfitTrigger(activeProject.outfit_trigger || 'mychara_outfit')
+      setSelectedWorkflowId(activeProject.workflow_id || 1)
+      setMetaTags(activeProject.prompt_meta || '1girl, solo, anime style, masterpiece, best quality')
+      setPhysicalTags(activeProject.prompt_physical || 'long silver hair, red eyes, ahoge, cat ears')
+      setExclusiveOutfitTags(
+        activeProject.prompt_exclusive_outfit || 'black gothic dress, lace collar, gold trim, ribbon'
+      )
+      setNegativePrompt(
+        activeProject.prompt_negative !== undefined
+          ? activeProject.prompt_negative
+          : 'worst quality, low quality, bad anatomy, blurry'
+      )
+    }
+  }
+
+  useEffect(() => {
+    if (activeProject) {
+      setProjectName(activeProject.name || 'My New Chara LoRA')
+      setCharacterTrigger(activeProject.character_trigger || 'mychara')
+      setOutfitTrigger(activeProject.outfit_trigger || 'mychara_outfit')
+      setSelectedWorkflowId(activeProject.workflow_id || 1)
+      setMetaTags(activeProject.prompt_meta || '1girl, solo, anime style, masterpiece, best quality')
+      setPhysicalTags(activeProject.prompt_physical || 'long silver hair, red eyes, ahoge, cat ears')
+      setExclusiveOutfitTags(
+        activeProject.prompt_exclusive_outfit || 'black gothic dress, lace collar, gold trim, ribbon'
+      )
+      setNegativePrompt(
+        activeProject.prompt_negative !== undefined
+          ? activeProject.prompt_negative
+          : 'worst quality, low quality, bad anatomy, blurry'
+      )
+      if (activeProject.selected_alt_outfits) {
+        try {
+          const parsed = JSON.parse(activeProject.selected_alt_outfits)
+          if (Array.isArray(parsed)) {
+            setSelectedAltOutfits(parsed)
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [activeProject?.id, setSelectedAltOutfits])
+
+  const altOutfitsPayload = useMemo(() => {
+    return JSON.stringify(
+      selectedAltOutfits.map((o) => ({
+        id: o.id,
+        name: o.name,
+        prompt_tags: o.prompt_tags,
+      }))
+    )
+  }, [selectedAltOutfits])
+
+  const formData = useMemo<StudioFormData>(
+    () => ({
+      name: projectName,
+      character_trigger: characterTrigger,
+      outfit_trigger: outfitTrigger,
+      workflow_id: selectedWorkflowId,
+      prompt_meta: metaTags,
+      prompt_physical: physicalTags,
+      prompt_exclusive_outfit: exclusiveOutfitTags,
+      prompt_negative: negativePrompt,
+      selected_alt_outfits: altOutfitsPayload,
+    }),
+    [
+      projectName,
+      characterTrigger,
+      outfitTrigger,
+      selectedWorkflowId,
+      metaTags,
+      physicalTags,
+      exclusiveOutfitTags,
+      negativePrompt,
+      altOutfitsPayload,
+    ]
+  )
+
+  const handleDraftRestored = useCallback((draft: DatasetStudioDraft) => {
+    setProjectName(draft.name)
+    setCharacterTrigger(draft.character_trigger)
+    setOutfitTrigger(draft.outfit_trigger)
+    setSelectedWorkflowId(draft.workflow_id)
+    setMetaTags(draft.prompt_meta)
+    setPhysicalTags(draft.prompt_physical)
+    setExclusiveOutfitTags(draft.prompt_exclusive_outfit)
+    setNegativePrompt(draft.prompt_negative)
+    if (draft.selected_alt_outfits) {
+      try {
+        const parsed = JSON.parse(draft.selected_alt_outfits)
+        if (Array.isArray(parsed)) {
+          setSelectedAltOutfits(parsed)
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [setSelectedAltOutfits])
+
+  const handleProjectUpdated = useCallback((updated: DatasetProject) => {
+    setActiveProject(updated)
+    setProjectName(updated.name)
+    setCharacterTrigger(updated.character_trigger)
+    setOutfitTrigger(updated.outfit_trigger)
+    setSelectedWorkflowId(updated.workflow_id)
+    setMetaTags(updated.prompt_meta)
+    setPhysicalTags(updated.prompt_physical)
+    setExclusiveOutfitTags(updated.prompt_exclusive_outfit)
+    setNegativePrompt(updated.prompt_negative ?? '')
+    if (updated.selected_alt_outfits) {
+      try {
+        const parsed = JSON.parse(updated.selected_alt_outfits)
+        if (Array.isArray(parsed)) {
+          setSelectedAltOutfits(parsed)
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [setActiveProject, setSelectedAltOutfits])
+
+  const {
+    hasConflict,
+    flushAutoSave,
+    resolveConflictWithDraft,
+    resolveConflictWithServer,
+    isRestoredFromDraft,
+    clearDraftStatus,
+  } = useStudioAutosave({
+    activeProject,
+    formData,
+    onProjectUpdated: handleProjectUpdated,
+    onDraftRestored: handleDraftRestored,
+  })
+
   // Workflows list & detailed active workflow
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [currentWorkflow, setCurrentWorkflow] = useState<Workflow | null>(null)
@@ -292,7 +437,8 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     setIsCalculating(true)
     setStatusMessage(null)
     try {
-      let project = activeProject
+      await flushAutoSave()
+      let project = useStudioStore.getState().activeProject || activeProject
       const altOutfitsPayload = JSON.stringify(
         selectedAltOutfits.map((o) => ({
           id: o.id,
@@ -422,6 +568,59 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
 
   return (
     <div className="space-y-6" data-testid="matrix-generation-step">
+      {/* Draft Restored Notification Alert */}
+      {isRestoredFromDraft && (
+        <div
+          data-testid="draft-restored-alert"
+          className="bg-indigo-950/70 border border-indigo-700/80 rounded-xl p-4 text-indigo-200 text-xs flex items-center justify-between gap-3 shadow-sm"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+            <span>未保存の下書きを復元しました</span>
+          </div>
+          <button
+            type="button"
+            onClick={clearDraftStatus}
+            className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1 rounded hover:bg-zinc-800 transition-colors"
+          >
+            閉じる
+          </button>
+        </div>
+      )}
+
+      {/* Draft Conflict Warning Banner */}
+      {hasConflict && (
+        <div
+          data-testid="draft-conflict-alert"
+          className="bg-amber-950/70 border border-amber-600/80 rounded-xl p-4 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              サーバー上のデータが更新されています。ローカルの下書きで上書きするか、サーバーの最新データを読み込むか選択してください。
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              data-testid="resolve-conflict-draft-btn"
+              onClick={() => resolveConflictWithDraft()}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-medium transition-colors shadow-sm"
+            >
+              下書きで上書き
+            </button>
+            <button
+              type="button"
+              data-testid="resolve-conflict-server-btn"
+              onClick={() => resolveConflictWithServer()}
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium border border-zinc-700 transition-colors"
+            >
+              サーバーの最新を読込
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Configuration Card */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-sm">
         <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mb-4">
@@ -659,7 +858,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             </span>
           </div>
           <span className="text-xs text-zinc-500">
-            {negativePrompt.length} 文字
+            {(negativePrompt || '').length} 文字
           </span>
         </div>
         <p className="text-xs text-zinc-400 mb-3">

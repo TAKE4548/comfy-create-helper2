@@ -969,6 +969,8 @@ export interface DatasetProject {
   updated_at: string
 }
 
+export type StudioSaveStatus = 'idle' | 'unsaved' | 'saving' | 'saved' | 'error'
+
 export interface DatasetProjectCreate {
   name: string
   character_trigger: string
