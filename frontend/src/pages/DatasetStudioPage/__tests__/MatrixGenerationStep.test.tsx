@@ -3,8 +3,8 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MatrixGenerationStep, injectPromptAndSeed } from '../components/MatrixGenerationStep'
 import { useStudioStore } from '../useStudioStore'
-import { datasetApi, workflowsApi } from '../../../api/client'
-import type { DatasetItem, DatasetProject, Workflow } from '../../../api/types'
+import { datasetApi, workflowsApi, mappingMastersApi } from '../../../api/client'
+import type { DatasetItem, DatasetProject, Workflow, MappingMaster } from '../../../api/types'
 
 vi.mock('../../../api/client', () => ({
   datasetApi: {
@@ -18,6 +18,9 @@ vi.mock('../../../api/client', () => ({
     update: vi.fn(),
   },
   workflowPresetsApi: {
+    list: vi.fn(),
+  },
+  mappingMastersApi: {
     list: vi.fn(),
   },
 }))
@@ -69,11 +72,35 @@ describe('MatrixGenerationStep', () => {
     status: 'APPROVED',
   }))
 
+  const mockMappingMasters: MappingMaster[] = [
+    {
+      id: 1,
+      role: 'Main_Positive_Prompt',
+      expected_class_types: ['CLIPTextEncode'],
+      param_name: 'text',
+      input_type: 'textarea',
+      display_name: 'Positive Prompt',
+      title_patterns: ['positive'],
+      sort_order: 1,
+    },
+    {
+      id: 2,
+      role: 'Negative_Prompt',
+      expected_class_types: ['CLIPTextEncode'],
+      param_name: 'text',
+      input_type: 'textarea',
+      display_name: 'Negative Prompt',
+      title_patterns: ['negative'],
+      sort_order: 2,
+    },
+  ]
+
   beforeEach(() => {
     vi.clearAllMocks()
     useStudioStore.getState().resetStudio()
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(workflowsApi.get).mockResolvedValue(mockWorkflows[0])
+    vi.mocked(mappingMastersApi.list).mockResolvedValue(mockMappingMasters)
     vi.mocked(datasetApi.createProject).mockResolvedValue(mockProject)
     vi.mocked(datasetApi.updateProject).mockResolvedValue(mockProject)
     vi.mocked(datasetApi.calculateMatrix).mockResolvedValue(mockItems)
@@ -207,6 +234,106 @@ describe('MatrixGenerationStep', () => {
         ],
       })
       expect(screen.queryByTestId('node-remap-modal')).not.toBeInTheDocument()
+    })
+  })
+
+  it('REQ-321-T3: remaps and saves mappings when workflow initially has empty mappings, and updates node badges from fresh workflow', async () => {
+    const unmappedWorkflow: Workflow = {
+      id: 1,
+      name: 'Unmapped Workflow',
+      description: '',
+      is_default: false,
+      json_body: {
+        '6': { inputs: { text: '' }, class_type: 'CLIPTextEncode', _meta: { title: 'Positive Prompt Node' } },
+        '7': { inputs: { text: '' }, class_type: 'CLIPTextEncode', _meta: { title: 'Negative Prompt Node' } },
+      },
+      mappings: [],
+      created_at: '2026-01-01',
+      updated_at: '2026-01-01',
+    }
+
+    const remappedWorkflow: Workflow = {
+      ...unmappedWorkflow,
+      mappings: [
+        { id: 201, master_id: 1, node_id: '6', role: 'Main_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Positive Prompt' },
+        { id: 202, master_id: 2, node_id: '7', role: 'Negative_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Negative Prompt' },
+      ],
+    }
+
+    vi.mocked(workflowsApi.list).mockResolvedValue([unmappedWorkflow])
+    vi.mocked(workflowsApi.get).mockResolvedValue(unmappedWorkflow)
+    vi.mocked(workflowsApi.update).mockImplementation(async () => {
+      vi.mocked(workflowsApi.get).mockResolvedValue(remappedWorkflow)
+      return remappedWorkflow
+    })
+
+    render(<MatrixGenerationStep />)
+
+    // Initial render with mappings: [] -> badges show #未設定
+    await waitFor(() => {
+      expect(screen.getByTestId('positive-node-badge')).toBeInTheDocument()
+      expect(screen.getByTestId('negative-node-badge')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('positive-node-badge')).toHaveTextContent('#未設定')
+    expect(screen.getByTestId('negative-node-badge')).toHaveTextContent('#未設定')
+
+    // Open remap modal
+    fireEvent.click(screen.getByTestId('open-remap-modal-button'))
+    await waitFor(() => {
+      expect(screen.getByTestId('node-remap-modal')).toBeInTheDocument()
+    })
+
+    // Select #6 for positive, #7 for negative
+    const posSelect = screen.getByTestId('remap-positive-select')
+    const negSelect = screen.getByTestId('remap-negative-select')
+    fireEvent.change(posSelect, { target: { value: '6' } })
+    fireEvent.change(negSelect, { target: { value: '7' } })
+
+    // Save
+    fireEvent.click(screen.getByTestId('save-remap-button'))
+
+    // Verify workflowsApi.update called with master_id resolved from mappingMastersApi.list
+    await waitFor(() => {
+      expect(workflowsApi.update).toHaveBeenCalledWith(1, {
+        mappings: [
+          { master_id: 1, node_id: '6' },
+          { master_id: 2, node_id: '7' },
+        ],
+      })
+    })
+
+    // Verify fresh workflow re-fetch and modal closure
+    await waitFor(() => {
+      expect(workflowsApi.get).toHaveBeenCalledWith(1)
+      expect(screen.queryByTestId('node-remap-modal')).not.toBeInTheDocument()
+    })
+
+    // Badges updated to #6 and #7
+    await waitFor(() => {
+      expect(screen.getByTestId('positive-node-badge')).toHaveTextContent('Positive:#6')
+      expect(screen.getByTestId('negative-node-badge')).toHaveTextContent('Negative:#7')
+    })
+  })
+
+  it('REQ-321-T3 (Red Teaming): displays error message and keeps modal open when workflowsApi.update fails', async () => {
+    vi.mocked(workflowsApi.update).mockRejectedValueOnce(new Error('Database update failed'))
+
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('open-remap-modal-button')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('open-remap-modal-button'))
+    await waitFor(() => {
+      expect(screen.getByTestId('node-remap-modal')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTestId('save-remap-button'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Database update failed')).toBeInTheDocument()
+      expect(screen.getByTestId('node-remap-modal')).toBeInTheDocument()
     })
   })
 

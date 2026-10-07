@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Check } from 'lucide-react'
-import { workflowsApi } from '../../../api/client'
-import type { Workflow } from '../../../api/types'
+import { workflowsApi, mappingMastersApi } from '../../../api/client'
+import type { Workflow, MappingMaster } from '../../../api/types'
 
 export interface TextCandidateNode {
   id: string
@@ -34,12 +34,35 @@ export interface NodeRemapModalProps {
 export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalProps) {
   const candidates = extractTextNodes(workflow.json_body as Record<string, any>)
 
+  const [mappingMasters, setMappingMasters] = useState<MappingMaster[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+    if (mappingMastersApi && typeof mappingMastersApi.list === 'function') {
+      mappingMastersApi.list().then((masters: any) => {
+        if (isMounted && Array.isArray(masters)) {
+          setMappingMasters(masters)
+        }
+      }).catch((err) => {
+        console.warn('Failed to fetch mapping masters:', err)
+      })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const positiveMapping = workflow.mappings?.find(
     (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
   )
   const negativeMapping = workflow.mappings?.find(
     (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
   )
+
+  const positiveMaster = mappingMasters.find((m) => m.role === 'Main_Positive_Prompt') ||
+    mappingMasters.find((m) => m.role && m.role.toLowerCase().includes('positive'))
+  const negativeMaster = mappingMasters.find((m) => m.role === 'Negative_Prompt') ||
+    mappingMasters.find((m) => m.role && m.role.toLowerCase().includes('negative'))
 
   const [selectedPositiveNodeId, setSelectedPositiveNodeId] = useState<string>(
     positiveMapping?.node_id || candidates[0]?.id || ''
@@ -51,6 +74,11 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
   const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
+    if (!selectedPositiveNodeId || !selectedNegativeNodeId) {
+      setError('Positive および Negative のノードを両方選択してください')
+      return
+    }
+
     setIsSaving(true)
     setError(null)
     try {
@@ -71,31 +99,29 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
         }
       }
 
-      if (!posHandled && positiveMapping) {
-        updatedMappingsList.push({ master_id: positiveMapping.master_id, node_id: selectedPositiveNodeId })
+      if (!posHandled) {
+        const posMasterId = positiveMapping?.master_id ?? positiveMaster?.id
+        if (posMasterId !== undefined) {
+          updatedMappingsList.push({ master_id: posMasterId, node_id: selectedPositiveNodeId })
+        }
       }
-      if (!negHandled && negativeMapping) {
-        updatedMappingsList.push({ master_id: negativeMapping.master_id, node_id: selectedNegativeNodeId })
+      if (!negHandled) {
+        const negMasterId = negativeMapping?.master_id ?? negativeMaster?.id
+        if (negMasterId !== undefined) {
+          updatedMappingsList.push({ master_id: negMasterId, node_id: selectedNegativeNodeId })
+        }
       }
 
       await workflowsApi.update(workflow.id, {
         mappings: updatedMappingsList,
       })
 
-      const updatedWf: Workflow = {
-        ...workflow,
-        mappings: existingMappings.map((m) => {
-          if (positiveMapping && m.master_id === positiveMapping.master_id) {
-            return { ...m, node_id: selectedPositiveNodeId }
-          }
-          if (negativeMapping && m.master_id === negativeMapping.master_id) {
-            return { ...m, node_id: selectedNegativeNodeId }
-          }
-          return m
-        }),
+      const freshWorkflow = await workflowsApi.get(workflow.id)
+      if (!freshWorkflow) {
+        throw new Error('ワークフローの再取得に失敗しました')
       }
 
-      onSaved(updatedWf)
+      onSaved(freshWorkflow)
       onClose()
     } catch (err: any) {
       setError(err.message || 'マッピングの保存に失敗しました')

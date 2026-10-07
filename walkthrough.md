@@ -1,55 +1,56 @@
-# REQ-320 検証結果報告書 (Walkthrough Report)
+# REQ-321 検証完了レポート (Walkthrough Report)
 
-## 1. 概要 (Executive Summary)
-PBI **REQ-320**「LoRAデータセットスタジオ: Negative Prompt設定 & ワークフローノード再割当 (Remap) UX」の実装に対する受け入れ検証を実施しました。
-3-Gate Baseline（型検査・全スイートテスト・シナリオ＆Red Teaming）およびローカルモデル（LLM）による QA 監査を実施し、すべてのテストおよび監査判定基準に合感（PASS）したことを為認しました。
-
----
-
-## 2. 3-Gate Baseline 検証結果
-
-### Gate 1: Typecheck / Compile Baseline (静的検証)
-- **Frontend Typecheck**: `npm --prefix frontend run typecheck`
-  - 結果: **PASS** (0 errors, Exit Code 0)
-- **Backend Typecheck**: `backend\.venv\Scripts\python -m mypy backend`
-  - 結果: **PASS** (0 errors, Exit Code 0, 151 source files passed)
-
-### Gate 2: Full Test Suite Baseline (ディスカバリ型全テストスイート)
-- **Frontend Full Test Suite**: `npm --prefix frontend test`
-  - 結果: **PASS** (129 test files, 1,224 tests passed, 0 failures)
-- **Backend Full Test Suite**: `backend\.venv\Scripts\python -m pytest`
-  - 結果: **PASS** (471 items passed, 0 failures)
-
-### Gate 3: Scenario & Red Teaming (結合・シナリオ・境界値検証)
-- **Frontend Targeted Tests**: `npx vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx`
-  - 結果: **PASS** (18 tests passed)
-- **Backend Targeted Tests**: `backend\.venv\Scripts\python -m pytest backend/tests/test_dataset_router.py backend/tests/test_dataset_db.py -v`
-  - 結果: **PASS** (8 tests passed)
+## 1. 概要 (Overview)
+- **対象 PBI**: [REQ-321](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/pbi/active/REQ-321.md)
+- **タイトル**: Fix Dataset Studio Node Remapping Save Failure and Incomplete State Update
+- **種別**: バグ改修 (Type A)
+- **判定結果**: **PASS**
 
 ---
 
-## 3. 受入れ基準 (Acceptance Criteria) 準拠確認表
+## 2. 受入基準 (Acceptance Criteria) 検証結果
 
-| AC ID | 受入れ基準 (要件) | 検証内容 / エビデンス | 判定 |
+| AC 番号 | 受入基準 (AC) の内容 | 検証結果 | 検証エビデンス |
 | :--- | :--- | :--- | :--- |
-| **AC-1** | ワークフロー選択時に対象Positiveノード・Negativeノード情報バッジが表示される | `MatrixGenerationStep.test.tsx` にて `positive-node-badge` および `negative-node-badge` が `Main_Positive_Prompt` / `Negative_Prompt` マッピングおよびノードタイトルを正しく表示することを確認 | **PASS** |
-| **AC-2** | 「再割当」ボタンよりノード変更モーダル (`NodeRemapModal`) を開き保存できる | モーダル表示、Positive/Negativeノード再割り当て選択、`workflowsApi.update` 経由でのマッピング更新およびUIバッジ即時反映を確認 | **PASS** |
-| **AC-3** | Negative Prompt 入力枠 (`TagChipEditor`) でタグ編集および文字数表示ができる | `TagChipEditor` の表示、タグ追加・削除・チップ操作、リアルタイム文字数もウント (`X 文字`) の動作を確認 | **PASS** |
-| **AC-4** | ComfyUI 投入時に Positive ノードと Negative ノードへ個別プロンプトが注入される | `injectPromptAndSeed` において `options.positiveNodeId` にバッチプロンプト、`options.negativeNodeId` に `negativePrompt` がそれざれ正確に注入されることを確認 | **PASS** |
-| **AC-5** | `prompt_negative` が DatasetProject に永続化され、リロード時に復元される | `dataset_router.py` / `test_dataset_db.py` における DB カラム `prompt_negative` のマイグレーションと CRUD 永続化、フロントエンド再読み込み時の復元を確認 | **PASS** |
-
-### Red Teaming (境界値・異常系検証)
-
-| ケース | 想定シナリオ / 境界条件 | 検証結果 | 判定 |
-| :--- | :--- | :--- | :--- |
-| **R-1** | 外部でマッピング先ノードが削除されたワークフロー | マッピングが存在しない共候でもフォールバック探索（CLIPTextEncode 探索）が機能し、クラッシュせず正常動作 | **PASS** |
-| **R-2** | テキスト入力ノードが一切存在しない空ワークフロー | `injectPromptAndSeed` が標準フォールバックノード（ID 6, 3）を自動構成して投入エラーを防止 | **PASS** |
-| **R-3** | Negative Prompt が空文字列の場合 | `inputs.text` に `undefined` や `null` ではなく空文字 `""` が安全に注入され、ComfyUI 側で型エラー・400エラーとならないことを確認 | **PASS** |
+| **AC-1** | NodeRemapModal において、mappingMastersApi.list() から Main_Positive_Prompt および Negative_Prompt の master_id を正しく特定し、既存マッピングに対象ロールが存在しない場合でも新規マッピングとして workflowsApi.update のためのペイロードに含めて保存できること。 | **PASS** | MatrixGenerationStep.test.tsx の REQ-321-T3 テストにて、マッピングが空の初期状態から mappingMastersApi.list() 由来の master_id: 1 (Main_Positive_Prompt) および master_id: 2 (Negative_Prompt) を解決し、workflowsApi.update にペイロードとして送信されることを検証済み。 |
+| **AC-2** | workflowsApi.update の保存完了後、最新のワークフロー情報（workflowsApi.get または完全な WorkflowRead）を取得して onSaved に渡し、親コンポーネント（MatrixGenerationStep）の currentWorkflow およびノードバッジ・プロンプト注入処理に即時反映されること。 | **PASS** | NodeRemapModal.tsx において保存後に workflowsApi.get(workflow.id) を再取得して onSaved をコール。MatrixGenerationStep.test.tsx の REQ-321-T3 テストにて、バッジ表示が #未設定 から Positive:#6 / Negative:#7 に即時反映され、モーダルが閉じることを検証済み。 |
+| **AC-3** | MatrixGenerationStep.test.tsx または NodeRemapModal.test.tsx において、マッピングが存在しない初期状態からのノード再割当・保存フロー、および最新ワークフロー再取得のテストケースが追加されパスすること。 | **PASS** | MatrixGenerationStep.test.tsx 内に REQ-321-T3 正常系テストおよび REQ-321-T3 (Red Teaming) 異常系テストを追加し、テストスイート全体（20テスト）を含め 100% PASS を確認。 |
 
 ---
 
-## 4. Local Model QA Audit & VRAM クリーンアップ
+## 3. 自動 3-Gate Baseline 検証ログ
 
-- **監査モデル**: `qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored` (Reasoning Domain)
-- **監査結果**: `APPROVED WITH CONDITIONS` (コマンド特異性 9/10, 全体実行可能性 7.5/10。CLI コマンドおよび自動テストコードが極めて具体的で完全再現可能であることを確認)
-- **VRAM クリーンアップ**: `python local_model_adapter.py unload` を実施し、GPU VRAM 解放 (Exit code 0) を完了。
+### Gate 1: 静的型検査 (Static Typecheck)
+- **実行コマンド**: 
+pm run typecheck (	sc -b --noEmit)
+- **結果**: **PASS (0 errors, Exit Code 0)**
+`
+> frontend@0.0.0 typecheck
+> tsc -b --noEmit
+`
+
+### Gate 2: 全体テストスイート (Full Discovery Test Suite)
+- **実行コマンド**: 
+px vitest run
+- **結果**: **PASS (0 failures, 129 test files passed, 1226 tests passed, Exit Code 0)**
+`
+Test Files  129 passed (129)
+     Tests  1226 passed (1226)
+  Duration  91.49s
+`
+
+### Gate 3: シナリオ & Red Teaming (Acceptance & Boundary Verification)
+- **実行コマンド**: 
+px vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx
+- **結果**: **PASS (0 failures, 20 tests passed, Exit Code 0)**
+- **Red Teaming (異常系) 検証**:
+  - REQ-321-T3 (Red Teaming): workflowsApi.update がネットワーク/DBエラー（500）で失敗した場合、モーダルが閉じずに残留し、エラーメッセージ「Database update failed」が表示され、親コンポーネントの状態が壊れないことを確認。
+  - R-1: ワークフロー JSON 内に存在しないノード ID がマッピングされていた場合のフォールバックバッジ表示テストも PASS。
+  - R-2: テキストやサンプラーノードが存在しない空ワークフローへのプロンプト注入フォールバック生成テストも PASS。
+
+---
+
+## 4. セキュリティ・ガバナンス監査
+- **pre_commit_linter**: 対象修正ファイル (NodeRemapModal.tsx, MatrixGenerationStep.test.tsx) において絶対パス、APIキー、シークレットの混入なし。
+- **エンコーディング標準**: UTF-8 without BOM, LF 改行コードの準拠を確認済み。
+- **GPU VRAM リソース**: ローカル推論モデル解放コマンド local_model_adapter.py unload を実行し、VRAM リソースの安全性を確認済み。
