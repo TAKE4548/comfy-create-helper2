@@ -613,9 +613,9 @@ export interface VramSettings {
 }
 
 export const settingsApi = {
-  getVram: () => request<VramSettings>('/api/settings/vram'),
+  getVram: () => request<VramSettings>('/settings/vram'),
   updateVram: (data: { vram_min_free_gb: number; vram_guard_enabled?: boolean }) =>
-    request<VramSettings>('/api/settings/vram', {
+    request<VramSettings>('/settings/vram', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
@@ -623,37 +623,37 @@ export const settingsApi = {
 
 // ─── LoRA Studio / Dataset API ─────────────────────────────────────
 export const datasetApi = {
-  getProjects: () => request<DatasetProject[]>('/api/dataset/projects'),
-  getProject: (projectId: number) => request<DatasetProject>(`/api/dataset/projects/${projectId}`),
+  getProjects: () => request<DatasetProject[]>('/dataset/projects'),
+  getProject: (projectId: number) => request<DatasetProject>(`/dataset/projects/${projectId}`),
   createProject: (data: DatasetProjectCreate) =>
-    request<DatasetProject>('/api/dataset/projects', {
+    request<DatasetProject>('/dataset/projects', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   updateProject: (projectId: number, data: DatasetProjectUpdate) =>
-    request<DatasetProject>(`/api/dataset/projects/${projectId}`, {
+    request<DatasetProject>(`/dataset/projects/${projectId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
   deleteProject: (projectId: number) =>
-    request<{ message: string; id: number }>(`/api/dataset/projects/${projectId}`, {
+    request<{ message: string; id: number }>(`/dataset/projects/${projectId}`, {
       method: 'DELETE',
     }),
   getOutfitMasters: (category?: string) => {
     const qs = category ? `?category=${encodeURIComponent(category)}` : ''
-    return request<OutfitMasterPreset[]>(`/api/dataset/outfits${qs}`)
+    return request<OutfitMasterPreset[]>(`/dataset/outfits${qs}`)
   },
   calculateMatrix: (projectId: number) =>
-    request<DatasetItem[]>(`/api/dataset/projects/${projectId}/matrix`, {
+    request<DatasetItem[]>(`/dataset/projects/${projectId}/matrix`, {
       method: 'POST',
     }),
   updateItem: (itemId: number, data: DatasetItemUpdate) =>
-    request<DatasetItem>(`/api/dataset/items/${itemId}`, {
+    request<DatasetItem>(`/dataset/items/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
   exportDataset: (projectId: number, data?: DatasetExportRequest) =>
-    request<DatasetExportResponse>(`/api/dataset/projects/${projectId}/export`, {
+    request<DatasetExportResponse>(`/dataset/projects/${projectId}/export`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     }),
@@ -662,31 +662,31 @@ export const datasetApi = {
 // ─── LoRA Studio / Training API ────────────────────────────────────
 export const trainingApi = {
   createJob: (data: LoraTrainingJobCreate) =>
-    request<LoraTrainingJob>('/api/training/jobs', {
+    request<LoraTrainingJob>('/training/jobs', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  getJob: (jobId: number) => request<LoraTrainingJob>(`/api/training/jobs/${jobId}`),
+  getJob: (jobId: number) => request<LoraTrainingJob>(`/training/jobs/${jobId}`),
   startJob: (jobId: number) =>
-    request<{ status: string; job_id: number; pid?: number }>(`/api/training/jobs/${jobId}/start`, {
+    request<{ status: string; job_id: number; pid?: number }>(`/training/jobs/${jobId}/start`, {
       method: 'POST',
     }),
   stopJob: (jobId: number) =>
-    request<{ status: string; job_id: number }>(`/api/training/jobs/${jobId}/stop`, {
+    request<{ status: string; job_id: number }>(`/training/jobs/${jobId}/stop`, {
       method: 'POST',
     }),
-  getJobStatus: () => request<{ is_training_active: boolean }>('/api/training/status'),
+  getJobStatus: () => request<{ is_training_active: boolean }>('/training/status'),
 }
 
 // ─── LoRA Studio / Benchmark API ───────────────────────────────────
 export const benchmarkApi = {
   generatePrompts: (data: GenerateStressTestPromptsRequest) =>
-    request<GenerateStressTestPromptsResponse>('/api/benchmark/generate-prompts', {
+    request<GenerateStressTestPromptsResponse>('/benchmark/generate-prompts', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   evaluate: (data: EvaluateBenchmarkRequest) =>
-    request<EvaluateBenchmarkResponse>('/api/benchmark/evaluate', {
+    request<EvaluateBenchmarkResponse>('/benchmark/evaluate', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -12,6 +12,10 @@ import {
   llmPromptsApi,
   configApi,
   workflowPresetsApi,
+  settingsApi,
+  datasetApi,
+  trainingApi,
+  benchmarkApi,
 } from '../client'
 
 describe('client.ts API client', () => {
@@ -621,4 +625,226 @@ describe('client.ts API client', () => {
       })
     })
   })
+
+  describe('settingsApi', () => {
+    it('should support getVram and updateVram', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ vram_min_free_gb: 4, vram_guard_enabled: true }),
+      })
+      globalThis.fetch = mockFetch
+
+      const res = await settingsApi.getVram()
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/settings/vram', expect.anything())
+      expect(res).toEqual({ vram_min_free_gb: 4, vram_guard_enabled: true })
+
+      await settingsApi.updateVram({ vram_min_free_gb: 6, vram_guard_enabled: false })
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/settings/vram', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vram_min_free_gb: 6, vram_guard_enabled: false }),
+      })
+
+      // Red Team: ensure no double '/api/api/' in endpoint paths
+      mockFetch.mock.calls.forEach(([url]) => {
+        expect(url).not.toMatch(/^\/api\/api\//)
+      })
+    })
+  })
+
+  describe('datasetApi', () => {
+    it('should support projects, outfits, matrix, items, and export', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      })
+      globalThis.fetch = mockFetch
+
+      await datasetApi.getProjects()
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects', expect.anything())
+
+      await datasetApi.getProject(1)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects/1', expect.anything())
+
+      const newProj = {
+        name: 'Test Project',
+        description: 'Desc',
+        character_name: 'Char',
+        trigger_word: 'char_trigger',
+        class_token: 'girl',
+        base_model_type: 'pony' as const,
+        output_name: 'output_lora',
+      }
+      await datasetApi.createProject(newProj)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProj),
+      })
+
+      const updateProj = { name: 'Updated Project' }
+      await datasetApi.updateProject(1, updateProj)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects/1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateProj),
+      })
+
+      await datasetApi.deleteProject(1)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects/1', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      await datasetApi.getOutfitMasters()
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/outfits', expect.anything())
+
+      await datasetApi.getOutfitMasters('swimsuit')
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/outfits?category=swimsuit', expect.anything())
+
+      // Red Team 3: Query string boundary & URL encoding
+      await datasetApi.getOutfitMasters(undefined)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/outfits', expect.anything())
+      await datasetApi.getOutfitMasters('casual wear & sports')
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/outfits?category=casual%20wear%20%26%20sports', expect.anything())
+
+      await datasetApi.calculateMatrix(1)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects/1/matrix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const itemUpdate = { caption: 'new caption', enabled: true }
+      await datasetApi.updateItem(10, itemUpdate)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/items/10', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemUpdate),
+      })
+
+      await datasetApi.exportDataset(1)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/dataset/projects/1/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: undefined,
+      })
+
+      // Red Team: ensure no double '/api/api/' in endpoint paths
+      mockFetch.mock.calls.forEach(([url]) => {
+        expect(url).not.toMatch(/^\/api\/api\//)
+      })
+    })
+
+    it('should throw Error on HTTP error (Red Team 2: Anomaly Error Handling)', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () => 'Not Found',
+      })
+      globalThis.fetch = mockFetch
+
+      await expect(datasetApi.getProject(999)).rejects.toThrow('API error 404: Not Found')
+    })
+  })
+
+  describe('trainingApi', () => {
+    it('should support createJob, getJob, startJob, stopJob, and getJobStatus', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      })
+      globalThis.fetch = mockFetch
+
+      const jobCreate = {
+        project_id: 1,
+        learning_rate: 0.0001,
+        batch_size: 2,
+        num_epochs: 10,
+        network_dim: 32,
+        network_alpha: 16,
+      }
+      await trainingApi.createJob(jobCreate)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/training/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobCreate),
+      })
+
+      await trainingApi.getJob(5)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/training/jobs/5', expect.anything())
+
+      await trainingApi.startJob(5)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/training/jobs/5/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      await trainingApi.stopJob(5)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/training/jobs/5/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      await trainingApi.getJobStatus()
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/training/status', expect.anything())
+
+      // Red Team: ensure no double '/api/api/' in endpoint paths
+      mockFetch.mock.calls.forEach(([url]) => {
+        expect(url).not.toMatch(/^\/api\/api\//)
+      })
+    })
+
+    it('should throw Error on HTTP error (Red Team 2: Anomaly Error Handling)', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'Server Error',
+      })
+      globalThis.fetch = mockFetch
+
+      await expect(trainingApi.getJob(999)).rejects.toThrow('API error 500: Server Error')
+    })
+  })
+
+  describe('benchmarkApi', () => {
+    it('should support generatePrompts and evaluate', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      })
+      globalThis.fetch = mockFetch
+
+      const promptReq = {
+        project_id: 1,
+        lora_model_path: '/path/to/lora.safetensors',
+      }
+      await benchmarkApi.generatePrompts(promptReq)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/benchmark/generate-prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(promptReq),
+      })
+
+      const evalReq = {
+        benchmark_id: 2,
+        ratings: [{ item_id: 10, score: 5, notes: 'Great' }],
+      }
+      await benchmarkApi.evaluate(evalReq)
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/benchmark/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(evalReq),
+      })
+
+      // Red Team: ensure no double '/api/api/' in endpoint paths
+      mockFetch.mock.calls.forEach(([url]) => {
+        expect(url).not.toMatch(/^\/api\/api\//)
+      })
+    })
+  })
 })
+
