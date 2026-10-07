@@ -46,6 +46,7 @@ class TestDatasetDB(unittest.TestCase):
             prompt_meta="masterpiece, best quality",
             prompt_physical="1girl, blue hair",
             prompt_exclusive_outfit="hoodie",
+            prompt_negative="lowres, bad anatomy, worst quality",
             selected_alt_outfits='["casual"]',
         )
         session.add(project)
@@ -53,6 +54,7 @@ class TestDatasetDB(unittest.TestCase):
         session.refresh(project)
         self.assertIsNotNone(project.id)
         self.assertEqual(project.name, "Test Character Project")
+        self.assertEqual(project.prompt_negative, "lowres, bad anatomy, worst quality")
 
         item = models.DatasetItem(
             project_id=project.id,
@@ -146,13 +148,16 @@ class TestDatasetDB(unittest.TestCase):
             "prompt_meta": "meta",
             "prompt_physical": "physical",
             "prompt_exclusive_outfit": "outfit",
+            "prompt_negative": "negative tags",
             "selected_alt_outfits": "[]",
         }
         proj_create = DatasetProjectCreate(**create_payload)
         self.assertEqual(proj_create.name, "Project 1")
+        self.assertEqual(proj_create.prompt_negative, "negative tags")
 
-        proj_update = DatasetProjectUpdate(name="Project Updated")
+        proj_update = DatasetProjectUpdate(name="Project Updated", prompt_negative="updated negative")
         self.assertEqual(proj_update.name, "Project Updated")
+        self.assertEqual(proj_update.prompt_negative, "updated negative")
         self.assertIsNone(proj_update.character_trigger)
 
         now = datetime.now(timezone.utc)
@@ -163,6 +168,7 @@ class TestDatasetDB(unittest.TestCase):
             **create_payload
         )
         self.assertEqual(proj_resp.id, 1)
+        self.assertEqual(proj_resp.prompt_negative, "negative tags")
 
         item_update = DatasetItemUpdate(caption_text="new caption", status="REJECTED")
         self.assertEqual(item_update.caption_text, "new caption")

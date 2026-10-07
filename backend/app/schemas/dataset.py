@@ -11,6 +11,7 @@ class DatasetProjectCreate(BaseModel):
     prompt_meta: str
     prompt_physical: str
     prompt_exclusive_outfit: str
+    prompt_negative: str = ""
     selected_alt_outfits: str = "[]"
 
 
@@ -22,6 +23,7 @@ class DatasetProjectUpdate(BaseModel):
     prompt_meta: Optional[str] = None
     prompt_physical: Optional[str] = None
     prompt_exclusive_outfit: Optional[str] = None
+    prompt_negative: Optional[str] = None
     selected_alt_outfits: Optional[str] = None
 
 
@@ -36,6 +38,7 @@ class DatasetProjectResponse(BaseModel):
     prompt_meta: str
     prompt_physical: str
     prompt_exclusive_outfit: str
+    prompt_negative: str = ""
     selected_alt_outfits: str
     created_at: datetime
     updated_at: datetime

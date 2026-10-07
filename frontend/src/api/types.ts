@@ -964,6 +964,7 @@ export interface DatasetProject {
   prompt_physical: string
   prompt_exclusive_outfit: string
   selected_alt_outfits: string
+  prompt_negative?: string
   created_at: string
   updated_at: string
 }
@@ -977,6 +978,7 @@ export interface DatasetProjectCreate {
   prompt_physical: string
   prompt_exclusive_outfit: string
   selected_alt_outfits?: string
+  prompt_negative?: string
 }
 
 export interface DatasetProjectUpdate {
@@ -988,6 +990,7 @@ export interface DatasetProjectUpdate {
   prompt_physical?: string
   prompt_exclusive_outfit?: string
   selected_alt_outfits?: string
+  prompt_negative?: string
 }
 
 export interface DatasetItemFactors {

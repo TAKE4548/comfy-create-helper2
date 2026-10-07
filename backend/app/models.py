@@ -437,6 +437,7 @@ class DatasetProject(Base):
     prompt_meta: Mapped[str] = mapped_column(Text, nullable=False)
     prompt_physical: Mapped[str] = mapped_column(Text, nullable=False)
     prompt_exclusive_outfit: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_negative: Mapped[str] = mapped_column(Text, nullable=False, default="")
     selected_alt_outfits: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)

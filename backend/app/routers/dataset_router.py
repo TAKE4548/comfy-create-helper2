@@ -40,6 +40,7 @@ def create_dataset_project(payload: DatasetProjectCreate, db: Session = Depends(
         prompt_meta=payload.prompt_meta,
         prompt_physical=payload.prompt_physical,
         prompt_exclusive_outfit=payload.prompt_exclusive_outfit,
+        prompt_negative=payload.prompt_negative,
         selected_alt_outfits=payload.selected_alt_outfits,
     )
     db.add(project)

@@ -465,6 +465,14 @@ def step_025_lora_studio_tables(conn: Connection, inspector: Inspector) -> None:
         logger.info("Migrated: Created 'lora_training_jobs' table.")
 
 
+def step_026_dataset_projects_prompt_negative(conn: Connection, inspector: Inspector) -> None:
+    if "dataset_projects" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("dataset_projects")]
+        if "prompt_negative" not in columns:
+            conn.execute(sa.text("ALTER TABLE dataset_projects ADD COLUMN prompt_negative TEXT NOT NULL DEFAULT ''"))
+            logger.info("Migrated: Added 'prompt_negative' column to 'dataset_projects' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -479,6 +487,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("011", "create_workflow_history", step_011_create_workflow_history),
     MigrationStep("012", "speech_bubble_presets_tag_set_id", step_012_speech_bubble_presets_tag_set_id),
     MigrationStep("025", "lora_studio_tables", step_025_lora_studio_tables),
+    MigrationStep("026", "dataset_projects_prompt_negative", step_026_dataset_projects_prompt_negative),
 ]
 
 

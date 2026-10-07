@@ -1,34 +1,80 @@
 import React, { useState, useEffect } from 'react'
-import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt } from 'lucide-react'
+import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2 } from 'lucide-react'
 import { TagChipEditor } from '../../../components/TagChipEditor'
-import { datasetApi, workflowsApi } from '../../../api/client'
+import { datasetApi, workflowsApi, workflowPresetsApi } from '../../../api/client'
 import type { DatasetItem, Workflow } from '../../../api/types'
 import { useStudioStore } from '../useStudioStore'
 import { OutfitMasterModal, distributeAltOutfits } from './OutfitMasterModal'
 import { OutfitPresetBadge } from './OutfitPresetBadge'
+import { NodeRemapModal } from './NodeRemapModal'
 
 export interface MatrixGenerationStepProps {
   onDirectBatchSubmit?: (items: DatasetItem[], workflowPromptJson?: any) => Promise<void>
+}
+
+export interface InjectPromptOptions {
+  positiveNodeId?: string | null
+  negativeNodeId?: string | null
+  negativePrompt?: string
+  seedNodeId?: string | null
 }
 
 /**
  * Injects prompt and seed into a ComfyUI workflow JSON prompt payload.
  * Clones the workflow, searches for positive prompt node (CLIPTextEncode)
  * and seed node (KSampler), and injects raw_prompt and seed.
+ * Supports targeted node IDs via options (positiveNodeId, negativeNodeId, seedNodeId).
  */
 export function injectPromptAndSeed(
   workflowPromptJson: Record<string, any> | undefined,
   rawPrompt: string,
-  seed: number
+  seed: number,
+  options?: InjectPromptOptions
 ): Record<string, any> {
   const payload = workflowPromptJson ? JSON.parse(JSON.stringify(workflowPromptJson)) : {}
 
   let promptInjected = false
+  let negativeInjected = false
   let seedInjected = false
 
+  // 1. Direct targeted injection if options provide specific node IDs
+  if (options?.positiveNodeId && payload[options.positiveNodeId]) {
+    const targetNode = payload[options.positiveNodeId]
+    if (targetNode && typeof targetNode === 'object') {
+      if (!targetNode.inputs) targetNode.inputs = {}
+      targetNode.inputs.text = rawPrompt
+      promptInjected = true
+    }
+  }
+
+  if (options?.negativeNodeId && options.negativePrompt !== undefined && payload[options.negativeNodeId]) {
+    const targetNode = payload[options.negativeNodeId]
+    if (targetNode && typeof targetNode === 'object') {
+      if (!targetNode.inputs) targetNode.inputs = {}
+      targetNode.inputs.text = options.negativePrompt
+      negativeInjected = true
+    }
+  }
+
+  if (options?.seedNodeId && payload[options.seedNodeId]) {
+    const targetNode = payload[options.seedNodeId]
+    if (targetNode && typeof targetNode === 'object') {
+      if (!targetNode.inputs) targetNode.inputs = {}
+      targetNode.inputs.seed = seed
+      seedInjected = true
+    }
+  }
+
+  // 2. Fallback search through nodes for any un-injected targets
+  const candidateTextNodes: string[] = []
   for (const nodeId of Object.keys(payload)) {
     const node = payload[nodeId]
     if (!node || typeof node !== 'object') continue
+
+    // Track CLIPTextEncode nodes for fallback negative injection
+    if (node.class_type === 'CLIPTextEncode' || node.class_type?.includes('CLIPText')) {
+      candidateTextNodes.push(nodeId)
+    }
 
     // Positive text prompt node (CLIPTextEncode)
     if (!promptInjected && (node.class_type === 'CLIPTextEncode' || node.class_type?.includes('CLIPText'))) {
@@ -47,6 +93,30 @@ export function injectPromptAndSeed(
     }
   }
 
+  // Negative prompt fallback search if negativePrompt provided but not yet injected
+  if (!negativeInjected && options?.negativePrompt !== undefined) {
+    // If negativeNodeId was not found or not specified, check candidates or titles
+    let targetNegId: string | null = null
+    for (const nodeId of Object.keys(payload)) {
+      const node = payload[nodeId]
+      if (!node || typeof node !== 'object') continue
+      const title = (node._meta?.title || node.title || '').toLowerCase()
+      if (title.includes('negative') && (node.class_type === 'CLIPTextEncode' || node.class_type?.includes('CLIPText'))) {
+        targetNegId = nodeId
+        break
+      }
+    }
+    // If not found by title, try second text node if different from first
+    if (!targetNegId && candidateTextNodes.length >= 2) {
+      targetNegId = candidateTextNodes[1]
+    }
+    if (targetNegId && payload[targetNegId]) {
+      if (!payload[targetNegId].inputs) payload[targetNegId].inputs = {}
+      payload[targetNegId].inputs.text = options.negativePrompt
+      negativeInjected = true
+    }
+  }
+
   // Fallback if no nodes matched: provide standard structure
   if (!promptInjected) {
     payload['6'] = {
@@ -58,6 +128,12 @@ export function injectPromptAndSeed(
     payload['3'] = {
       inputs: { seed },
       class_type: 'KSampler',
+    }
+  }
+  if (!negativeInjected && options?.negativePrompt !== undefined) {
+    payload['7'] = {
+      inputs: { text: options.negativePrompt },
+      class_type: 'CLIPTextEncode',
     }
   }
 
@@ -94,12 +170,21 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     activeProject?.prompt_exclusive_outfit || 'black gothic dress, lace collar, gold trim, ribbon'
   )
 
-  // Workflows list
+  // Negative prompt input
+  const [negativePrompt, setNegativePrompt] = useState<string>(
+    activeProject?.prompt_negative !== undefined
+      ? activeProject.prompt_negative
+      : 'worst quality, low quality, bad anatomy, blurry'
+  )
+
+  // Workflows list & detailed active workflow
   const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [currentWorkflow, setCurrentWorkflow] = useState<Workflow | null>(null)
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false)
 
-  // Modal state
+  // Modal states
   const [isOutfitModalOpen, setIsOutfitModalOpen] = useState(false)
+  const [isRemapModalOpen, setIsRemapModalOpen] = useState(false)
 
   // Operations state
   const [isCalculating, setIsCalculating] = useState(false)
@@ -136,6 +221,64 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     }
   }, [activeProject?.workflow_id])
 
+  // Fetch detailed workflow whenever selectedWorkflowId changes & load default negative prompt
+  useEffect(() => {
+    let isMounted = true
+    if (!selectedWorkflowId) return
+
+    workflowsApi
+      .get?.(selectedWorkflowId)
+      ?.then(async (wf) => {
+        if (!isMounted) return
+        setCurrentWorkflow(wf)
+
+        // Only auto-resolve negative prompt if user has not already saved one in the active project
+        if (activeProject?.prompt_negative === undefined) {
+          let resolvedNeg: string | null = null
+
+          // Try presets first
+          try {
+            const presets = await workflowPresetsApi.list(selectedWorkflowId)
+            if (Array.isArray(presets) && presets.length > 0) {
+              const pv = presets[0].param_values as Record<string, any>
+              if (pv?.Negative_Prompt || pv?.negative_prompt) {
+                resolvedNeg = pv.Negative_Prompt || pv.negative_prompt
+              }
+            }
+          } catch {
+            // Presets fetch failed, ignore
+          }
+
+          // Next try finding negative node text from workflow json
+          if (!resolvedNeg && wf?.json_body) {
+            const jsonBody = wf.json_body as Record<string, any>
+            const negMapping = wf.mappings?.find(
+              (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
+            )
+            const targetId = negMapping?.node_id
+            if (targetId && jsonBody[targetId]?.inputs?.text) {
+              resolvedNeg = jsonBody[targetId].inputs.text
+            }
+          }
+
+          if (resolvedNeg !== null && isMounted) {
+            setNegativePrompt(resolvedNeg)
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback if detailed workflow fetch fails
+        if (isMounted) {
+          const fallbackWf = workflows.find((w) => w.id === selectedWorkflowId) || null
+          setCurrentWorkflow(fallbackWf)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [selectedWorkflowId, activeProject?.prompt_negative, workflows])
+
   // Character trigger sync logic: keep outfitTrigger ending with _outfit if using default pattern
   const handleCharacterTriggerChange = (newCharTrigger: string) => {
     setCharacterTrigger(newCharTrigger)
@@ -168,6 +311,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
           prompt_meta: metaTags,
           prompt_physical: physicalTags,
           prompt_exclusive_outfit: exclusiveOutfitTags,
+          prompt_negative: negativePrompt,
           selected_alt_outfits: altOutfitsPayload,
         })
         setActiveProject(project)
@@ -180,6 +324,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
           prompt_meta: metaTags,
           prompt_physical: physicalTags,
           prompt_exclusive_outfit: exclusiveOutfitTags,
+          prompt_negative: negativePrompt,
           selected_alt_outfits: altOutfitsPayload,
         })
         setActiveProject(project)
@@ -224,18 +369,32 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         const comfyUrl = 'http://127.0.0.1:8188'
         const clientId = 'lora-studio-' + Math.random().toString(36).slice(2, 9)
 
-        // Fetch selected workflow JSON body if available
+        // Fetch selected workflow JSON body and mappings if available
         let workflowPromptJson: Record<string, any> = {}
+        let wfMappings: any[] = []
         try {
           const wf = await workflowsApi.get(selectedWorkflowId)
           workflowPromptJson = wf?.json_body || {}
+          wfMappings = wf?.mappings || []
         } catch {
-          workflowPromptJson = {}
+          workflowPromptJson = currentWorkflow?.json_body || {}
+          wfMappings = currentWorkflow?.mappings || []
         }
+
+        const posMapping = wfMappings.find(
+          (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
+        )
+        const negMapping = wfMappings.find(
+          (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
+        )
 
         for (let i = 0; i < items.length; i++) {
           const item = items[i]
-          const payload = injectPromptAndSeed(workflowPromptJson, item.raw_prompt, item.seed)
+          const payload = injectPromptAndSeed(workflowPromptJson, item.raw_prompt, item.seed, {
+            positiveNodeId: posMapping?.node_id,
+            negativeNodeId: negMapping?.node_id,
+            negativePrompt: negativePrompt,
+          })
 
           await fetch(`${comfyUrl}/prompt`, {
             method: 'POST',
@@ -317,22 +476,97 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             <label className="block text-xs font-medium text-zinc-400 mb-1">
               ComfyUI ワークフロー
             </label>
-            <select
-              data-testid="workflow-select"
-              value={selectedWorkflowId}
-              onChange={(e) => setSelectedWorkflowId(Number(e.target.value))}
-              disabled={isLoadingWorkflows}
-              className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
-            >
-              {workflows.map((wf) => (
-                <option key={wf.id} value={wf.id}>
-                  {wf.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2 items-center">
+              <select
+                data-testid="workflow-select"
+                value={selectedWorkflowId}
+                onChange={(e) => setSelectedWorkflowId(Number(e.target.value))}
+                disabled={isLoadingWorkflows}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+              >
+                {workflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {wf.name}
+                  </option>
+                ))}
+              </select>
+              {currentWorkflow && (
+                <button
+                  type="button"
+                  data-testid="open-remap-modal-button"
+                  onClick={() => setIsRemapModalOpen(true)}
+                  title="ノード再割当"
+                  className="px-2.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 flex-shrink-0 transition-colors"
+                >
+                  <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>再割当</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Workflow Node Mapping Information Badges */}
+        {currentWorkflow && (
+          <div className="mt-4 pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-zinc-500 font-medium">注入先ノード:</span>
+              {(() => {
+                const pos = currentWorkflow.mappings?.find(
+                  (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
+                )
+                const neg = currentWorkflow.mappings?.find(
+                  (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
+                )
+                const jsonBody = (currentWorkflow.json_body || {}) as Record<string, any>
+                const posNode = pos?.node_id ? jsonBody[pos.node_id] : null
+                const negNode = neg?.node_id ? jsonBody[neg.node_id] : null
+
+                const posTitle = posNode?._meta?.title || posNode?.title || (posNode?.class_type ? `${posNode.class_type} (#${pos?.node_id})` : `#${pos?.node_id || '未設定'}`)
+                const negTitle = negNode?._meta?.title || negNode?.title || (negNode?.class_type ? `${negNode.class_type} (#${neg?.node_id})` : `#${neg?.node_id || '未設定'}`)
+
+                return (
+                  <>
+                    <span
+                      data-testid="positive-node-badge"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-950/70 text-indigo-300 border border-indigo-800/80 text-[11px] font-mono"
+                    >
+                      <span className="font-sans font-medium text-indigo-400">Positive:</span>
+                      #{pos?.node_id || '未設定'} {posTitle}
+                    </span>
+                    <span
+                      data-testid="negative-node-badge"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-950/70 text-rose-300 border border-rose-800/80 text-[11px] font-mono"
+                    >
+                      <span className="font-sans font-medium text-rose-400">Negative:</span>
+                      #{neg?.node_id || '未設定'} {negTitle}
+                    </span>
+                  </>
+                )
+              })()}
+            </div>
+            <button
+              type="button"
+              data-testid="remap-trigger-link"
+              onClick={() => setIsRemapModalOpen(true)}
+              className="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium"
+            >
+              ノード再割当 (Remap)
+            </button>
+          </div>
+        )}
       </div>
+
+      {currentWorkflow && isRemapModalOpen && (
+        <NodeRemapModal
+          workflow={currentWorkflow}
+          onClose={() => setIsRemapModalOpen(false)}
+          onSaved={(updatedWf) => {
+            setCurrentWorkflow(updatedWf)
+            setWorkflows((prev) => prev.map((w) => (w.id === updatedWf.id ? updatedWf : w)))
+          }}
+        />
+      )}
 
       {/* 3-Section Tag Inputs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -413,7 +647,38 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         </div>
       </div>
 
-      {/* 4. Alt Outfits Library Integration */}
+      {/* ④ ネガティブプロンプト (Negative Prompt) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-zinc-200">
+              ④ ネガティブプロンプト (Negative Prompt)
+            </h3>
+            <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded">
+              全スロット共通
+            </span>
+          </div>
+          <span className="text-xs text-zinc-500">
+            {negativePrompt.length} 文字
+          </span>
+        </div>
+        <p className="text-xs text-zinc-400 mb-3">
+          画質崩れ、不要要素の排除タグ。ワークフローの指定 Negative ノードに全件注入されます。
+        </p>
+        <div
+          data-testid="negative-tag-editor"
+          className="min-h-[90px] bg-zinc-950/60 p-2 rounded-lg border border-zinc-800"
+        >
+          <TagChipEditor
+            id="negative-tag-editor"
+            value={negativePrompt}
+            onChange={setNegativePrompt}
+            placeholder="worst quality, low quality, bad anatomy, blurry..."
+          />
+        </div>
+      </div>
+
+      {/* 5. Alt Outfits Library Integration */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>

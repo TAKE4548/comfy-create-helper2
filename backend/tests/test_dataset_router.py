@@ -73,6 +73,7 @@ class TestDatasetRouter(unittest.TestCase):
             "prompt_meta": "masterpiece, best quality",
             "prompt_physical": "1girl, silver hair, blue eyes",
             "prompt_exclusive_outfit": "school uniform, pleated skirt",
+            "prompt_negative": "lowres, bad anatomy, worst quality",
             "selected_alt_outfits": json.dumps([self.outfit1.id, self.outfit2.id]),
         }
         # Create
@@ -81,6 +82,7 @@ class TestDatasetRouter(unittest.TestCase):
         proj_data = res.json()
         proj_id = proj_data["id"]
         self.assertEqual(proj_data["name"], "Test Character Project")
+        self.assertEqual(proj_data["prompt_negative"], "lowres, bad anatomy, worst quality")
 
         # List
         res = self.client.get("/api/dataset/projects")
@@ -91,16 +93,17 @@ class TestDatasetRouter(unittest.TestCase):
         res = self.client.get(f"/api/dataset/projects/{proj_id}")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["character_trigger"], "test_char")
-
+        self.assertEqual(res.json()["prompt_negative"], "lowres, bad anatomy, worst quality")
 
         # Update
         res = self.client.put(
             f"/api/dataset/projects/{proj_id}",
-            json={"name": "Renamed Project", "character_trigger": "renamed_char"},
+            json={"name": "Renamed Project", "character_trigger": "renamed_char", "prompt_negative": "updated negative prompt"},
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["name"], "Renamed Project")
         self.assertEqual(res.json()["character_trigger"], "renamed_char")
+        self.assertEqual(res.json()["prompt_negative"], "updated negative prompt")
 
         # Delete
         res = self.client.delete(f"/api/dataset/projects/{proj_id}")
