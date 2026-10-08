@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workflow } from '../../api/types'
 import { buildGenerationRecord, PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../generationRecord'
-import { getMetadataView, resolveRecordedMetadata } from '../promptRecord'
+import { getMetadataView, readLocalRecordedMetadata, resolveRecordedMetadata } from '../promptRecord'
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('../../api/client', () => ({ promptMetadataApi: { get } }))
 const wf: Workflow = { id: 1, name: 'Original', created_at: '', json_body: {}, mappings: [
@@ -52,6 +52,56 @@ describe('getMetadataView', () => {
   })
 })
 describe('resolveRecordedMetadata', () => {
+  it('reads matching v1 local records synchronously without calling the server and preserves falsy JSON values', () => {
+    const expected = { ...params(), empty: '', zero: 0, no: false, nil: null }
+    const generation = record()
+    generation.prompt_id = 'p'
+    expected[PROMPT_RECORD_KEY] = JSON.stringify(generation)
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: expected, timestamp: 1000 }))
+
+    const found = readLocalRecordedMetadata('p')
+    expect(found).not.toBeInstanceOf(Promise)
+    expect(found?.paramValues).toEqual(expected)
+    expect(found?.metadataSavedAt).toBeNull()
+    expect(get).not.toHaveBeenCalled()
+  })
+  it('returns null for legacy, corrupt, missing and prompt-mismatched local records', () => {
+    expect(readLocalRecordedMetadata('missing')).toBeNull()
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: { old: 'local' } }))
+    expect(readLocalRecordedMetadata('p')).toBeNull()
+    const mismatch = record()
+    mismatch.prompt_id = 'other'
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: { [PROMPT_RECORD_KEY]: JSON.stringify(mismatch) } }))
+    expect(readLocalRecordedMetadata('p')).toBeNull()
+    localStorage.setItem('prompt-surgeon-meta-p', '{broken')
+    expect(readLocalRecordedMetadata('p')).toBeNull()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('storage unavailable') })
+    expect(readLocalRecordedMetadata('p')).toBeNull()
+    vi.restoreAllMocks()
+  })
+  it('does not add a prompt id to a valid v1 record that did not store one', () => {
+    const noId = record()
+    delete noId.prompt_id
+    const paramValues = { [PROMPT_RECORD_KEY]: JSON.stringify(noId) }
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues }))
+    expect(readLocalRecordedMetadata('p')?.paramValues).toEqual(paramValues)
+    expect(JSON.parse(String(readLocalRecordedMetadata('p')?.paramValues[PROMPT_RECORD_KEY])).prompt_id).toBeUndefined()
+  })
+  it('ignores invalid timestamps and continues server lookup for a mismatched v1 prompt id', async () => {
+    const matching = record()
+    matching.prompt_id = 'p'
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: { [PROMPT_RECORD_KEY]: JSON.stringify(matching) }, timestamp: Number.MAX_VALUE }))
+    expect(readLocalRecordedMetadata('p')?.metadataSavedAt).toBeNull()
+
+    const mismatch = record()
+    mismatch.prompt_id = 'other'
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: { [PROMPT_RECORD_KEY]: JSON.stringify(mismatch) }, timestamp: Number.MAX_VALUE }))
+    expect(readLocalRecordedMetadata('p')).toBeNull()
+    const expected = generatedParams('server prompt', '3:2', 99123, 27)
+    get.mockResolvedValue({ prompt_id: 'p', workflow_id: 1, param_values: expected, applied_assets: null, created_at: 'saved' })
+    expect((await resolveRecordedMetadata('p'))?.paramValues).toEqual(expected)
+    expect(get).toHaveBeenCalledWith('p')
+  })
   it('uses valid local generation facts without fetching or requiring assets', async () => {
     localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: params(), timestamp: 1000 }))
     const found = await resolveRecordedMetadata('p')

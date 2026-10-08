@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.1  
-**最終更新**: 2026-09-01  
+**バージョン**: 2.2
+**最終更新**: 2026-10-08
 **ステータス**: 現行実装に完全準拠（TagChipパース規則・イベント型契約・キャッシュライフサイクル定義）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
 
 ---
 
@@ -285,13 +285,17 @@ interface TagChipEventDetail {
 ## 6. フロントエンドキャッシュ・データフェッチ仕様
 
 ### 6-1. キャッシュ基本方針
-- TanStack Query (React Query v5) + `PersistQueryClientProvider` による localStorage 永続化（10分間キャッシュ有効）。
-- Stale-While-Revalidate（SWR）モデルにより、UI 遷移時のフリッカーを排除しつつバックグラウンドで最新データを同期。
-- **永続化除外クエリ (`App.tsx` の `shouldDehydrateQuery`)**:
-  - `comfy-object-info`: ComfyUI の動的ノード定義。
-  - `snapshots`: 頻繁に更新されるスナップショット。
-  - `workflow-presets`: マルチデバイス間でのプリセット同期（REQ-229）において、アプリ起動時に古いローカルキャッシュが初期化ステートを上書き・破壊するのを防ぐため永続化から除外。
-- `Infinity` 設定の静的データ（`config`, `fonts`）は、アプリ再読み込み時または設定画面での明示的リフレッシュ時に再取得される。
+- TanStack Query v5 の成功query cacheは、`PersistQueryClientProvider` と custom IndexedDB persisterで永続化する。localStorageはAPI query cacheの保存先に使わない。
+- IndexedDB契約はDB `prompt-surgeon-api-cache-v1` v1、object store `client`、key `prompt-surgeon-rq-cache`、envelope `schemaVersion: 1`、buster `prompt-surgeon-api-cache-v1`。snapshotの `maxAge` は600000ms（10分）。これはqueryごとの `staleTime` と別の期限である。
+- Persister factory作成時にlocalStorageの完全一致キー `prompt-surgeon-rq-cache` を同期削除する。旧payloadは読み込まず、旧API cacheをfallbackに使わない。IndexedDBの拒否・quota・timeout時は永続cacheをskipし、通常のquery実行によるserver取得へ進む。全容量の保証や全データ削除後のAPI以外からの復元はしない。
+- dehydrated snapshotには既定の成功query条件を維持し、次のqueryを追加除外する。mutationsは永続化しない。
+  - `comfy-object-info`: ComfyUIの動的ノード定義。
+  - `snapshots`一覧: 頻繁に更新されるsnapshot。
+  - `workflow-presets`: 複数端末同期時の古いcacheによる初期化状態の上書きを避ける。
+  - `prompt-metadata`: 生成時metadata cacheは別の保存契約を持つ。
+- Stale-While-Revalidateにより、利用可能なquery cacheを初回表示に使い、stale queryは通常のquery動作で再検証する。`config` と `fonts` の `staleTime: Infinity` は別途記載の通りである。
+- ブラウザー保存量モニターは引き続きlocalStorage（現在origin全体）とsessionStorage（現在tab）を対象に、キーと値のUTF-16長×2 bytesで推定する。可視時2.5秒周期で計測し、1 MiB未満はKiB、それ以上はMiBで小数1桁表示する。拒否時等は「取得不可」とする。IndexedDBの使用量は測定せず、ブラウザー割当量を保証しない。詳細は[SPEC_GENERATE](./SPEC_GENERATE.md)を参照。
+- Studioのsession draft、同期済み状態、競合・復元の契約はAPI query cacheと独立し、sessionStorage上の既存動作を維持する。Studio draftをこのIndexedDB cacheへ移さない。
 
 ### 6-2. staleTime 定数テーブル (`frontend/src/constants/staleTimes.ts`)
 
@@ -305,4 +309,4 @@ interface TagChipEventDetail {
 
 ---
 
-*本ドキュメントは現行の共通コンポーネントおよびデザインシステム実装に準拠した正本です。*
+*本ドキュメントは共通仕様の正本です。キャッシュ実装は [`App.tsx`](../../frontend/src/App.tsx) と [`queryCachePersister.ts`](../../frontend/src/utils/queryCachePersister.ts) を参照する。*

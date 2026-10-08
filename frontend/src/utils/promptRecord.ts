@@ -84,22 +84,37 @@ function resolved(params: unknown, assets: unknown, workflowId: unknown, queuedA
   ])) as Record<string, AppliedAsset[]> : {}
   return { paramValues: params, appliedAssets: safeAssets, workflowId: record?.workflow_id ?? (typeof workflowId === 'number' ? workflowId : null), queuedAt: record?.queued_at ?? queuedAt, metadataSavedAt }
 }
-export async function resolveRecordedMetadata(promptId: string | null): Promise<ResolvedMetadata | null> {
+function readLocalMetadata(promptId: string | null): ResolvedMetadata | null {
   if (!promptId) return null
-  let local: ResolvedMetadata | null = null
   try {
     const raw = localStorage.getItem(`prompt-surgeon-meta-${promptId}`)
     const cache = raw ? JSON.parse(raw) : null
-    if (object(cache)) {
-      const stamp = typeof cache.timestamp === 'number' && Number.isFinite(cache.timestamp) ? new Date(cache.timestamp).toISOString() : null
-      local = resolved(cache.paramValues, cache.appliedAssets, cache.workflowId, stamp, null)
+    if (!object(cache)) return null
+    let stamp: string | null = null
+    if (typeof cache.timestamp === 'number' && Number.isFinite(cache.timestamp)) {
+      try { stamp = new Date(cache.timestamp).toISOString() } catch { /* Ignore timestamps outside the Date range. */ }
     }
-  } catch { /* Broken or unavailable local storage must not block server lookup. */ }
-  if (local && parseRecord(local.paramValues)) return local
+    return resolved(cache.paramValues, cache.appliedAssets, cache.workflowId, stamp, null)
+  } catch { return null }
+}
+export function readLocalRecordedMetadata(promptId: string | null): ResolvedMetadata | null {
+  const local = readLocalMetadata(promptId)
+  if (!local || !promptId) return null
+  const record = parseRecord(local.paramValues)
+  if (!record || (record.prompt_id !== undefined && record.prompt_id !== promptId)) return null
+  return local
+}
+export async function resolveRecordedMetadata(promptId: string | null): Promise<ResolvedMetadata | null> {
+  if (!promptId) return null
+  const local = readLocalMetadata(promptId)
+  const record = local ? parseRecord(local.paramValues) : null
+  if (local && record && (record.prompt_id === undefined || record.prompt_id === promptId)) return local
+  // Keep legacy local data only as the final fallback; a v1 record for another prompt is unsafe.
+  const legacyLocal = record ? null : local
   try {
     const remote = await promptMetadataApi.get(promptId)
-    if (remote.prompt_id !== promptId) return local
+    if (remote.prompt_id !== promptId) return legacyLocal
     const server = resolved(remote.param_values, remote.applied_assets, remote.workflow_id, null, remote.created_at)
-    return server && parseRecord(server.paramValues) ? server : local ?? server
-  } catch { return local }
+    return server && parseRecord(server.paramValues) ? server : legacyLocal ?? server
+  } catch { return legacyLocal }
 }

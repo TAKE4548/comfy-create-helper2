@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.1  
-**最終更新**: 2026-09-01  
+**バージョン**: 2.2
+**最終更新**: 2026-10-08
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
 
 ---
 
@@ -305,6 +305,7 @@ frontend/src/store/
 - **派生スナップショット**: 親スナップショット ID（`source_snapshot_id`）を保持。親スナップショット削除時も DB の `SET NULL` により派生画像は独立して保持される。
 - **生成時メタデータ永続化とスナップショット復元**:
   - キュー投入時（バッチ中間ジョブを含む各ジョブ）、生成開始時に固定したワークフローから欄名・role・順序・mapping情報を保持し、実際に投入したgraph値と適用アセットを `__prompt_surgeon_metadata_v1` の生成記録としてprompt IDに対応付ける。ローカル保存とサーバーの `POST /api/prompt-metadata` は非同期で行い、片方の失敗で他方の保存を止めない。生成記録にはキュー受付時刻を記録するが、生成完了時刻は記録しない。
+  - 生成記録のローカルreader `readLocalRecordedMetadata` は同期的にlocalStorageから一致する `prompt-surgeon-meta-*` 記録を読む。local記録がない場合の非同期resolverはserver metadataを照会する。prompt metadataはTanStack Queryの永続cacheには含めない。
   - スナップショット保存時は画像 URL の `t` からローカル/server記録を照会して保存する。記録欠落時に現在の入力値から生成条件を補完しない。保存済み `params` は空値を含めて正本とし、保存後に元のメタデータ記録が整理されても保存内容は独立して残る。
   - ローカルの `prompt-surgeon-meta-*` は生成時メタデータの一時キャッシュとして最大30件を保持する。新規記録の書き込み前に整理し、incoming record用の枠を先に確保して既存記録をtimestamp降順で残す（同時刻はkey順）。初回利用時も既存キャッシュをこの上限へ移行する。壊れたJSON、objectでない値、timestampが欠落・不正な記録は有効記録より先に削除する。保存済み画像のSnapshot `params` はキャッシュと独立した保存内容であり、キャッシュ整理の対象にしない。整理によりサーバー未保存の記録が失われる場合がある。サーバーのprompt metadataは最大1000件を維持し、非同期server保存を続ける。未保存画像の無期限保持は行わない。
   - スナップショットの `params` には、保存時点の生成記録に含まれるLoRA付属trigger setを `__metadata_associations_v1` にも保持する。このキーは生成時の不変記録とは別の現在関連情報である。
@@ -327,8 +328,8 @@ frontend/src/store/
 - 生成記録は投入graphに含まれる実使用seed、欄構成、workflow ID/名前、適用アセットとLoRA値を保持する。生成時入力のbypass状態・graph値・記録不足を区別する。過去に記録されていない内容を現在のworkflow/master/inputから推定復元しない。
 - Workflow、Prompt ID、キュー受付時刻、メタ情報保存時刻、画像保存時刻は意味を分けて表示し、生成完了時刻は未記録とする。現在のアルバム所属は生成時の事実と混同しない。
 - LoRA、汎用適用TagSet、LoRA付属trigger setは別種の情報として表示する。保存済み画像では現在の汎用TagSet/trigger set関連をdraft編集し、追加・削除・保存・キャンセルできる。生成プレビューは読取専用。編集はtyped snapshot PATCHで関連だけを更新し、生成記録、LoRAのrole/strength、画像・アルバム等を変更しない。PATCH失敗時はdraftを保持して失敗を表示する。
-- `prompt-surgeon-meta-*` のローカル生成時メタデータキャッシュは最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。Snapshot `params` はこのキャッシュ上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。
-- 実装は局所typecheck/対象テストで確認済み。統合3-Gate、全体回帰、ブラウザーシナリオおよび実際のComfyUI生成を含む検証は、最終確認の記録ができるまで完了扱いにしない。設計・AC・実装タスクは[REQ-316](../design/REQ-316.md)を参照。
+- `prompt-surgeon-meta-*` のローカル生成時メタデータcacheはlocalStorageで最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。同期readerによる初回表示と、local記録がない場合のserver fallbackを使う。Snapshot `params` はこのcache上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。API query cacheのIndexedDB保存契約は[SPEC_COMMON 6](./SPEC_COMMON.md)を参照する。
+- 実装は局所typecheck/対象テストで確認済み。統合3-Gate、全体回帰、ブラウザーシナリオ、quota拒否時の実ブラウザー動作および実際のComfyUI生成を含む検証は、最終確認の記録ができるまで完了扱いにしない。設計・AC・実装タスクは[REQ-316](../design/REQ-316.md)と[REQ-332](../design/REQ-332.md)を参照。
 
 ## 7. コンポーネント & フック構成
 

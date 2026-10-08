@@ -1,0 +1,68 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-332 Analysis Report: API Cache Storage Separation
+
+## Executive Summary
+REQ-332 proposes a significant architectural shift from `localStorage` to `IndexedDB` for API caching while attempting to maintain backward compatibility with existing metadata storage. While the operational logic is sound, there are **critical logical contradictions in Acceptance Criteria (AC)** regarding data visibility during network latency, and potential **SSoT integrity risks** during migration windows. The requirement relies heavily on implicit browser behaviors that vary across environments.
+
+---
+
+## 1. SSoT Integrity & Data Consistency Analysis
+
+### 1.1. The "Draft vs. Snapshot" Paradox
+*   **Observation:** `Inferred points` state that Studio Drafts are discarded upon DB sync (`SPEC_DATASET_STUDIO 2.5`), while Snapshots are preserved (`AC-12`). However, `AC-13` requires form values to match the "unsaved draft" after migration.
+*   **Risk:** If a user has an unsaved Studio Draft (SSoT = Local Memory) and the system simultaneously migrates persistent data (SSoT = IndexedDB), there is a race condition where the UI might render stale Snapshot data against new Draft state, causing confusion or data loss if the draft is auto-saved during migration.
+*   **Recommendation:** Explicitly define the priority order between "Studio Draft" and "Snapshot" in `AC-13`. If they conflict, which takes precedence?
+
+### 1.2. Metadata Source of Truth Ambiguity
+*   **Observation:** The requirement states metadata is kept in `localStorage` (Recent 30 items) while API Cache moves to `IndexedDB`. However, `AC-5` implies the UI reads "Recorded Values" immediately upon switching images.
+*   **Risk:** If the "Recorded Value" for an image resides in the new `IndexedDB` cache but the metadata lookup logic still queries the old `localStorage` structure (or vice versa), data desynchronization occurs. The requirement assumes a unified view without defining the query path clearly.
+
+---
+
+## 2. Logical Contradictions & Edge Cases
+
+### 2.1. AC-5 vs. AC-6: The Latency Visibility Conflict
+*   **The Contradiction:**
+    *   `AC-5` requires that when switching from Image A to B (with pending metadata response), the "first render matches B's recorded value."
+    *   `AC-6` states that frames showing A's value or an empty placeholder must be 0.
+*   **Logical Gap:** If the network request for B is pending, where does the "Recorded Value" come from? If it comes from cache, why isn't it guaranteed to exist (unlike AC-7 which handles missing data)? If it *is* in cache, `AC-6` is satisfied. However, if the cache miss occurs during migration (`AC-10`), `AC-5/6` become impossible to satisfy without a fallback UI state not defined here.
+*   **Edge Case:** What if B's metadata was deleted from the 30-item limit just before switching? The system must fetch it, but AC-5 demands immediate display.
+
+### 2.2. Migration Interruption & State Recovery (`AC-16`)
+*   **The Contradiction:** `AC-16` allows migration to interrupt and recover via server fetch upon restart. However, `AC-10` states that if workflows are unread, "Generate Batch" must be inactive.
+*   **Risk:** If a user interrupts migration while holding an active "Generate Batch" session (which relies on cached metadata), the batch might fail silently or corrupt the new cache structure because the system is in a hybrid state (partial migration). The requirement does not define how to handle *active* sessions during migration.
+
+### 2.3. Browser Quota Variability
+*   **The Contradiction:** `AC-1` calculates expected values based on specific data sizes ("4 MiB", "1.5 MiB"). However, the requirement explicitly states: *"IndexedDB real capacity follows browser quota... no guarantee of fixed 50MB."*
+*   **Edge Case:** On Safari or mobile browsers with lower default quotas (e.g., 50MB vs Chrome's 100MB+), `AC-1` might fail even if the logic is correct. The AC implies a deterministic calculation that ignores environmental variance.
+
+---
+
+## 3. Operational & Historical Context Overlaps
+
+### 3.1. REQ-161 Legacy Interference
+*   **Observation:** `Inferred points` admit this replaces localStorage caching from REQ-161, yet `AC-1` still references the "existing monitor's localStorage display value."
+*   **Impact:** This creates a dual-monitoring system where users might see two different capacity metrics (Old vs. New). If the migration logic fails to clear old data correctly (`AC-2`), the UI will show inflated storage usage, confusing operations teams monitoring disk/DB health.
+
+### 3.2. SPEC_COMMON 6 Compliance
+*   **Observation:** The requirement states it maintains "Server Metadata 1000 items" and "Studio Drafts" per `SPEC_COMMON 6`.
+*   **Risk:** If the migration logic (`AC-16`) clears old cache but fails to fetch the latest 1000 server metadata items before the user refreshes, the UI will show stale data. The requirement assumes "Server Fetch Success" is guaranteed during migration, which contradicts `AC-11` where server fallback is a contingency for storage failure.
+
+---
+
+## 4. Final Verdict & Recommendations
+
+### Status: **CONDITIONAL APPROVAL (Pending Clarification)**
+The requirement is logically consistent in its *intent* but lacks precision in its *execution guarantees*. The ACs are too strict regarding UI behavior during network latency (`AC-5/6`) and storage variability (`AC-1`).
+
+### Recommended Actions for BA Gate:
+1.  **Refine AC-5 & AC-6:** Clarify the source of "Recorded Value" when pending. If it relies on cache, add a precondition that B must exist in the local cache window. Otherwise, allow an "Empty Placeholder" state (contradicting `AC-6` but aligning with reality).
+2.  **Define Migration Lock:** Add a requirement for "Write-Lock during Migration." Prevent users from generating new batches (`AC-10`) while migration is in progress to prevent hybrid cache corruption.
+3.  **SSoT Priority Matrix:** Explicitly define the precedence between Studio Drafts and Snapshots in `AC-13` to resolve potential data conflicts during the transition window.
+4.  **Quota Fallback Logic:** Define behavior if IndexedDB quota is hit *during* migration (not just generation). Does it revert to server-only mode?
+
+---
+**Audit Log:** Reviewed against `SPEC_COMMON`, `REQ-161`, and `SPEC_DATASET_STUDIO`. No critical SSoT corruption found, but UI state consistency during migration requires further definition.

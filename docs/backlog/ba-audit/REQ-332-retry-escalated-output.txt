@@ -1,0 +1,77 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# Business Requirement Audit Report: REQ-332
+
+**Auditor:** Expert Business Analyst (Reasoning Gate)  
+**Date:** 2026-10-08  
+**Subject:** Logical Consistency, Edge Cases, and SSoT Integrity Analysis  
+
+---
+
+## Executive Summary
+REQ-332 proposes a storage architecture shift from `localStorage` to `IndexedDB` for API caching. While the intent (decoupling metadata from bulk cache) is logical, the implementation details contain **ambiguities regarding quota management** and **migration consistency**. The requirement relies heavily on existing specs (REQ-317, SPEC_COMMON 6) without explicitly defining how limits are enforced across two storage tiers.
+
+**Verdict:** **Conditional Pass.** Proceed to Design Phase only after resolving Storage Quota handling and Migration Atomicity questions.
+
+---
+
+## 1. Logical Contradictions & Integrity Gaps
+
+### A. The "Storage Tiering" Paradox
+*   **The Claim:** The requirement aims to separate API cache storage to stabilize metadata saving (Root Cause: Capacity pressure).
+*   **The Contradiction:** AC-1 and AC-2 validate the solution by checking `localStorage` values ("Expected value matches localStorage display"). However, if the API cache is moved *out* of `localStorage`, the monitoring logic in `localStorage` becomes decoupled from the actual data storage.
+    *   **Risk:** If the migration fails partially, the monitor might show "Normal" while the IndexedDB is corrupted or full. There is no AC verifying the integrity of the *new* storage tier itself.
+
+### B. Quota Limit Ambiguity (SSoT Integrity)
+*   **The Claim:** The system currently struggles with `localStorage` limits (REQ-161 context).
+*   **The Gap:** IndexedDB has its own quota (typically 50MB, but browser-dependent). REQ-332 does not define a limit for the new tier.
+    *   **Logical Flaw:** If the bulk cache moves to IndexedDB and grows unchecked, it will eventually hit the DB quota, causing `quota_exceeded` errors that are not handled in the ACs (unlike localStorage handling). This violates the "Operational Need" of continuous generation without manual intervention.
+
+### C. Migration Atomicity vs. Availability
+*   **The Claim:** AC-10 ensures workflows are inactive during migration ("Generate Batch state non-active").
+*   **The Gap:** The requirement states "Old API cache removal is allowed on first migration."
+    *   **Edge Case:** If a user has an active session with data in the old cache, and the migration script deletes it before the new IndexedDB entry is fully flushed/committed, data loss occurs. AC-12 assumes successful recovery but does not cover the "in-flight" state during migration.
+
+---
+
+## 2. Missing Edge Cases
+
+| Edge Case | Description | Impact |
+| :--- | :--- | :--- |
+| **Browser Quota Reset** | If a user clears IndexedDB data manually, does the app revert to `localStorage` or break? | High (Data Loss) |
+| **Concurrent Writes** | AC-13 mentions "no conflict" for Studio drafts. What if two tabs migrate simultaneously? | Medium (Corruption) |
+| **Version Mismatch** | If a user upgrades the browser but not the app, does IndexedDB schema migration exist? | High (Crash on Load) |
+| **Network Partition** | AC-14 handles server save success. What if `IndexedDB` write fails but Server write succeeds? | Medium (Inconsistency) |
+
+---
+
+## 3. Historical Context Alignment Check
+
+### A. REQ-317 (30 Item Retention)
+*   **Requirement:** "Maintain existing... 30 item retention."
+*   **Analysis:** Moving to IndexedDB changes the eviction strategy. If the old logic was in-memory or `localStorage` based, the new logic must explicitly handle LRU eviction for the 30 items *within* the IndexedDB tier. This is not specified in the ACs.
+
+### B. SPEC_COMMON 6 (Storage Destination)
+*   **Requirement:** "Server metadata storage destination description is subject to revision after approval."
+*   **Analysis:** REQ-332 effectively rewrites this spec by moving API cache to IndexedDB. The requirement correctly defers the spec update, but the implementation must ensure that `prompt-surgeon-rq-cache` (old) and `IndexedDB` (new) do not coexist indefinitely without a clear TTL for the old data.
+
+### C. REQ-161 (5MB Limit)
+*   **Requirement:** "localStorage cache save / 5MB limit."
+*   **Analysis:** REQ-332 introduces a new limit (IndexedDB). The lack of a defined limit creates an asymmetry in system behavior that could confuse support teams monitoring storage usage.
+
+---
+
+## 4. Recommendations for Approval Gate
+
+To move from **"New"** to **"Ready"**, the following clarifications are required:
+
+1.  **Define IndexedDB Quota Policy:** Explicitly state if a hard limit (e.g., 50MB) is enforced or if it relies on browser defaults. If unlimited, how is growth controlled?
+2.  **Migration Rollback Plan:** Add an AC for "If migration fails, system must revert to legacy storage mode gracefully."
+3.  **Eviction Logic:** Clarify if the "30 item retention" (REQ-317) applies per-storage-tier or globally across both tiers.
+4.  **Schema Versioning:** Require a check in the Design Doc for how the app handles IndexedDB schema changes between versions.
+
+---
+
+**Final Note:** The requirement is technically sound but operationally vague regarding storage limits. Approval should be contingent on the Design Doc addressing the "Quota Management" section specifically.

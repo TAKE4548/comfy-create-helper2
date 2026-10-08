@@ -1,10 +1,10 @@
 # Prompt Surgeon — History ページ仕様書 (SPEC_HISTORY)
 
-**バージョン**: 2.1  
-**最終更新**: 2026-09-01  
+**バージョン**: 2.2
+**最終更新**: 2026-10-08
 **実装ファイル**: `frontend/src/pages/HistoryPage.tsx`（`AlbumListView`, `AlbumDetailView`, `hooks` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
 
 ---
 
@@ -60,10 +60,11 @@
 
 #### REQ-316 生成画像メタ情報と現在タグ関連
 - `HistoryModalPreview` の情報表示は画像とメタ情報を並列に示し、Workflow/Workflow ID、Prompt ID、キュー受付・メタ情報保存・画像保存時刻、現在のアルバム所属を区別して表示する。生成完了時刻は未記録として扱う。
+- Snapshot IDがある場合、保存済み `Snapshot.params` 内の生成記録を正本として優先する。snapshot未保存の画像では同期 `readLocalRecordedMetadata` でローカル記録を初回表示し、見つからない場合は非同期server取得へfallbackする。API query cacheのpersistはprompt metadata queryを除外する。どちらにも記録がない値を現在の入力から補完しない。
 - 保存済みSnapshot.paramsに含まれる `__prompt_surgeon_metadata_v1` を生成時記録の正本として、生成時の欄名・role・順序・全文、Parameters & Assets、実使用seed、記録済みアセット/LoRA値を表示する。空欄と未記録を区別し、完全性が不確かな記録には警告する。現workflow/master/cache/current inputで旧生成factsを補完しない。記録がない旧画像には現在値を生成時値として表示しない。
 - Prompts と Parameters & Assets のtab、欄ごとの折りたたみ/全開閉/コピー、書記素単位の文字数、コピー失敗通知を提供する。Parameters & AssetsではJSONのscalar、null、配列、objectを保持し、未分類の記録キーはキー名と値で表示する。画像の寸法・比率は読込画像のpixel寸法から計算し、形式は取得できるMIME値を示す。
 - 現在の汎用TagSet関連とLoRA付属trigger set関連は別リストに示す。保存済みsnapshotに限り、draftで追加/削除し、PATCH `/api/snapshots/{id}` で保存またはキャンセルできる。PATCHはgeneric `tag_sets[{tag_set_id,role}]` と `lora_trigger_sets[{lora_id,trigger_set_id,role}]` を区別し、前者はsnapshot関連、後者はparams内の `__metadata_associations_v1` に保存する。trigger関連は親LoRA IDのsnapshot所属を検証する。LoRA関連の既存role/strengthや生成記録を変更しない。
-- キャンセルはdraftを破棄し、保存失敗はdraftを保持してエラーを示す。保存中は対象画像の切替/閉じる等を抑止する。保存済み画像に限った編集とし、未保存プレビューは読取専用とする。履歴・Snapshot件数の上限は生成時メタデータキャッシュ上限とは別である。`prompt-surgeon-meta-*` のローカル一時キャッシュは最大30件、サーバーprompt metadataは最大1000件とする。Snapshot `params` はキャッシュ整理後も保存内容として保持する。
+- キャンセルはdraftを破棄し、保存失敗はdraftを保持してエラーを示す。保存中は対象画像の切替/閉じる等を抑止する。保存済み画像に限った編集とし、未保存プレビューは読取専用とする。Studioのsession draft・同期済み状態・競合/復元動作はこの生成metadata cacheと独立して維持する。履歴・Snapshot件数の上限は生成時メタデータcache上限とは別である。`prompt-surgeon-meta-*` のローカル一時cacheは最大30件、サーバーprompt metadataは最大1000件とする。Snapshot `params` はcache整理後も保存内容として保持する。API query cacheのIndexedDB期限・fallbackは[SPEC_COMMON 6](./SPEC_COMMON.md)を参照する。
 - 局所typecheckと対象テストで実装を確認した。統合3-Gate、全体回帰、ブラウザーシナリオおよび実際のComfyUI生成の完了は、最終検証記録に基づいて別途判断する。
 
 ### 4-2. フキダシ・セリフ編集 & 派生スナップショット (`components/SpeechBubbleEditorModal.tsx`)

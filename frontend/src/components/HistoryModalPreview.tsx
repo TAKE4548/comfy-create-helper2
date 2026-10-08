@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { snapshotsApi, albumsApi } from '../api/client'
 import type { Snapshot } from '../api/types'
-import { getMetadataView, resolveRecordedMetadata } from '../utils/promptRecord'
+import { getMetadataView, readLocalRecordedMetadata, resolveRecordedMetadata } from '../utils/promptRecord'
 import { PreviewHeader } from './history/PreviewHeader'
 import { PreviewImageViewer } from './history/PreviewImageViewer'
 import { SnapshotMetadataTab } from './history/SnapshotMetadataTab'
@@ -164,6 +164,8 @@ export function HistoryModalPreview({
     }
   }, [activeImage])
 
+  const localRecordedMetadata = !activeSnapshotId ? readLocalRecordedMetadata(promptId) : null
+
   const { data: recordedMetadata, isLoading: isServerMetaLoading } = useQuery({
     queryKey: ['prompt-metadata', promptId],
     queryFn: () => resolveRecordedMetadata(promptId),
@@ -178,7 +180,9 @@ export function HistoryModalPreview({
     enabled: !!activeSnapshotId && isOpen,
   })
 
-  const effectiveParams = activeSnapshotId ? snapshot?.params ?? null : recordedMetadata?.paramValues ?? null
+  const effectiveParams = activeSnapshotId
+    ? snapshot?.params ?? null
+    : localRecordedMetadata?.paramValues ?? recordedMetadata?.paramValues ?? null
   const view = getMetadataView(effectiveParams)
   const { data: albums, isError: albumsError } = useQuery({
     queryKey: ['albums'], queryFn: () => albumsApi.list(), enabled: !!activeSnapshotId && isOpen,
@@ -299,4 +303,3 @@ export function HistoryModalPreview({
     </div>
   )
 }
-

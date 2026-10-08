@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoryModalPreview } from '../HistoryModalPreview'
 import { promptMetadataApi, snapshotsApi } from '../../api/client'
@@ -187,6 +187,32 @@ describe('HistoryModalPreview', () => {
     expect(screen.queryByText('A recorded prompt')).toBeNull()
   })
 
+  it('shows the switched image local record synchronously even when its query cache already contains null', async () => {
+    localStorage.setItem('prompt-surgeon-meta-image-a', JSON.stringify({ paramValues: generationParams('A recorded prompt', '1:1', 111, 20) }))
+    localStorage.setItem('prompt-surgeon-meta-image-b', JSON.stringify({ paramValues: generationParams('B recorded prompt', '3:2', 99123, 27) }))
+    queryClient.setQueryData(['prompt-metadata', 'image-b'], null, { updatedAt: Date.now() - 11 * 60 * 1000 })
+    const images = ['/a.png?t=image-a', '/b.png?t=image-b']
+    const { rerender } = renderComponent({ images, currentIndex: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /show info/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /Parameters & Assets/ }))
+    expect(await screen.findByText('A recorded prompt')).toBeDefined()
+
+    rerender(<QueryClientProvider client={queryClient}><HistoryModalPreview isOpen onClose={vi.fn()} images={images} currentIndex={1} onChangeIndex={vi.fn()} snapshotIds={[null, null]} /></QueryClientProvider>)
+    expect(screen.getByText('B recorded prompt')).toBeDefined()
+    expect(screen.getByText('3:2')).toBeDefined()
+    expect(screen.getAllByText('99123').length).toBeGreaterThan(0)
+    expect(screen.getByText('27')).toBeDefined()
+    expect(screen.queryByText('A recorded prompt')).toBeNull()
+
+    act(() => {
+      queryClient.setQueryData(['prompt-metadata', 'image-a'], {
+        paramValues: generationParams('Late A prompt', '1:1', 111, 20),
+      })
+    })
+    expect(screen.getByText('B recorded prompt')).toBeDefined()
+    expect(screen.queryByText('Late A prompt')).toBeNull()
+  })
+
   it('renders correctly when toggled from isOpen=false to isOpen=true without hook mismatch error', async () => {
     const { rerender } = renderComponent({ isOpen: false })
 
@@ -278,4 +304,3 @@ describe('HistoryModalPreview', () => {
     expect(screen.getByRole('button', { name: '>' })).toBeInTheDocument()
   })
 })
-
