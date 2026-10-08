@@ -9,6 +9,17 @@ export interface TextCandidateNode {
   classType: string
 }
 
+export function isStudioAllowedRole(mapping: { input_type?: string | null; role?: string | null }): boolean {
+  if (mapping.input_type !== 'textarea') return true
+  const role = mapping.role || ''
+  return (
+    role === 'Main_Positive_Prompt' ||
+    role === 'Negative_Prompt' ||
+    role.toLowerCase().includes('positive') ||
+    role.toLowerCase().includes('negative')
+  )
+}
+
 export function extractTextNodes(jsonBody: Record<string, any> | undefined): TextCandidateNode[] {
   if (!jsonBody || typeof jsonBody !== 'object') return []
   const candidates: TextCandidateNode[] = []
@@ -25,6 +36,14 @@ export function extractTextNodes(jsonBody: Record<string, any> | undefined): Tex
   return candidates
 }
 
+export function getNodeLabel(id: string, jsonBody?: Record<string, any>): string {
+  const node = jsonBody?.[id] as Record<string, any> | undefined
+  if (!node) return `#${id}`
+  const title = node._meta?.title || node.title || ''
+  const classType = node.class_type || ''
+  return `#${id} - ${title ? `[${title}] ` : ''}(${classType})`
+}
+
 export interface NodeRemapModalProps {
   workflow: Workflow
   onClose: () => void
@@ -32,7 +51,8 @@ export interface NodeRemapModalProps {
 }
 
 export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalProps) {
-  const candidates = extractTextNodes(workflow.json_body as Record<string, any>)
+  const textCandidates = extractTextNodes(workflow.json_body as Record<string, any>)
+  const allNodeIds = Object.keys(workflow.json_body || {})
 
   const [mappingMasters, setMappingMasters] = useState<MappingMaster[]>([])
 
@@ -52,10 +72,13 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
     }
   }, [])
 
-  const positiveMapping = workflow.mappings?.find(
+  const existingMappings = workflow.mappings || []
+
+  // Resolve positive and negative mappings or masters
+  const positiveMapping = existingMappings.find(
     (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
   )
-  const negativeMapping = workflow.mappings?.find(
+  const negativeMapping = existingMappings.find(
     (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
   )
 
@@ -64,14 +87,43 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
   const negativeMaster = mappingMasters.find((m) => m.role === 'Negative_Prompt') ||
     mappingMasters.find((m) => m.role && m.role.toLowerCase().includes('negative'))
 
+  // State: master_id -> selected node_id
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Record<number, string>>(() => {
+    const initial: Record<number, string> = {}
+    for (const m of existingMappings) {
+      initial[m.master_id] = m.node_id
+    }
+    if (positiveMapping) {
+      initial[positiveMapping.master_id] = positiveMapping.node_id || textCandidates[0]?.id || ''
+    } else if (positiveMaster) {
+      initial[positiveMaster.id] = textCandidates[0]?.id || ''
+    }
+    if (negativeMapping) {
+      initial[negativeMapping.master_id] = negativeMapping.node_id || textCandidates[1]?.id || textCandidates[0]?.id || ''
+    } else if (negativeMaster) {
+      initial[negativeMaster.id] = textCandidates[1]?.id || textCandidates[0]?.id || ''
+    }
+    return initial
+  })
+
+  // Separate positive & negative dedicated state for direct compatibility
   const [selectedPositiveNodeId, setSelectedPositiveNodeId] = useState<string>(
-    positiveMapping?.node_id || candidates[0]?.id || ''
+    positiveMapping?.node_id || textCandidates[0]?.id || ''
   )
   const [selectedNegativeNodeId, setSelectedNegativeNodeId] = useState<string>(
-    negativeMapping?.node_id || candidates[1]?.id || candidates[0]?.id || ''
+    negativeMapping?.node_id || textCandidates[1]?.id || textCandidates[0]?.id || ''
   )
+
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Filter allowed mappings according to whitelist rules
+  const allowedMappings = existingMappings.filter((m) => isStudioAllowedRole(m))
+  const parameterMappings = allowedMappings.filter((m) => m.input_type !== 'textarea')
+
+  const handleNodeChange = (masterId: number, nodeId: string) => {
+    setSelectedNodeIds((prev) => ({ ...prev, [masterId]: nodeId }))
+  }
 
   const handleSave = async () => {
     if (!selectedPositiveNodeId || !selectedNegativeNodeId) {
@@ -82,7 +134,6 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
     setIsSaving(true)
     setError(null)
     try {
-      const existingMappings = workflow.mappings || []
       const updatedMappingsList: { master_id: number; node_id: string }[] = []
       let posHandled = false
       let negHandled = false
@@ -94,6 +145,8 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
         } else if (negativeMapping && m.master_id === negativeMapping.master_id) {
           updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNegativeNodeId })
           negHandled = true
+        } else if (selectedNodeIds[m.master_id] !== undefined) {
+          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNodeIds[m.master_id] })
         } else {
           updatedMappingsList.push({ master_id: m.master_id, node_id: m.node_id })
         }
@@ -135,11 +188,11 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       data-testid="node-remap-modal"
     >
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
           <div>
-            <h3 className="text-base font-semibold text-zinc-100">プロンプト注入先ノード再割当</h3>
+            <h3 className="text-base font-semibold text-zinc-100">ノードマッピング再割当</h3>
             <p className="text-xs text-zinc-400 mt-0.5">
               ワークフロー: {workflow.name}
             </p>
@@ -154,9 +207,9 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto">
           <p className="text-xs text-zinc-400">
-            LoRA Studio で生成される Positive プロンプト（直交マトリクス）および Negative プロンプトを注入する ComfyUI ノードを選択してください。
+            Positive/Negative プロンプト注入先ノード、および各種生成パラメータ（Steps, CFG, Sampler 等）が対応する ComfyUI ノードを設定してください。
           </p>
 
           {error && (
@@ -165,65 +218,120 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
             </div>
           )}
 
-          {/* Positive Node */}
-          <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-indigo-400">
-                Main Positive Prompt ノード
-              </label>
-              <span className="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-900">
-                Positive Role
-              </span>
+          {/* Prompt Section */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              プロンプト注入先ノード
+            </h4>
+
+            {/* Positive Node */}
+            <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-indigo-400">
+                  Main Positive Prompt ノード
+                </label>
+                <span className="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-900">
+                  Positive Role
+                </span>
+              </div>
+              <select
+                data-testid="remap-positive-select"
+                value={selectedPositiveNodeId}
+                onChange={(e) => {
+                  setSelectedPositiveNodeId(e.target.value)
+                  if (positiveMapping) handleNodeChange(positiveMapping.master_id, e.target.value)
+                }}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+              >
+                {textCandidates.length === 0 ? (
+                  <option value="">ノードが見つかりません</option>
+                ) : (
+                  textCandidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.id} - {c.title} ({c.classType})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
-            <select
-              data-testid="remap-positive-select"
-              value={selectedPositiveNodeId}
-              onChange={(e) => setSelectedPositiveNodeId(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
-            >
-              {candidates.length === 0 ? (
-                <option value="">ノードが見つかりません</option>
-              ) : (
-                candidates.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.id} - {c.title} ({c.classType})
-                  </option>
-                ))
-              )}
-            </select>
+
+            {/* Negative Node */}
+            <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-rose-400">
+                  Negative Prompt ノード
+                </label>
+                <span className="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded border border-rose-900">
+                  Negative Role
+                </span>
+              </div>
+              <select
+                data-testid="remap-negative-select"
+                value={selectedNegativeNodeId}
+                onChange={(e) => {
+                  setSelectedNegativeNodeId(e.target.value)
+                  if (negativeMapping) handleNodeChange(negativeMapping.master_id, e.target.value)
+                }}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-rose-500"
+              >
+                {textCandidates.length === 0 ? (
+                  <option value="">ノードが見つかりません</option>
+                ) : (
+                  textCandidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.id} - {c.title} ({c.classType})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
           </div>
 
-          {/* Negative Node */}
-          <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-rose-400">
-                Negative Prompt ノード
-              </label>
-              <span className="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded border border-rose-900">
-                Negative Role
-              </span>
+          {/* Parameters Section (Non-textarea mappings) */}
+          {parameterMappings.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                生成パラメータノードマッピング ({parameterMappings.length} 件)
+              </h4>
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {parameterMappings.map((m) => {
+                  const currentValue = selectedNodeIds[m.master_id] ?? m.node_id
+                  return (
+                    <div
+                      key={m.id || m.master_id}
+                      className="bg-zinc-950/40 border border-zinc-800/60 rounded-lg p-3 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-zinc-300">
+                          {m.display_name || m.role}
+                        </label>
+                        <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
+                          {m.input_type}
+                        </span>
+                      </div>
+                      <select
+                        data-testid={`remap-select-${m.role || m.master_id}`}
+                        value={currentValue}
+                        onChange={(e) => handleNodeChange(m.master_id, e.target.value)}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="">ノードを選択…</option>
+                        {allNodeIds.map((id) => (
+                          <option key={id} value={id}>
+                            {getNodeLabel(id, workflow.json_body as Record<string, any>)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-            <select
-              data-testid="remap-negative-select"
-              value={selectedNegativeNodeId}
-              onChange={(e) => setSelectedNegativeNodeId(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-rose-500"
-            >
-              {candidates.length === 0 ? (
-                <option value="">ノードが見つかりません</option>
-              ) : (
-                candidates.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.id} - {c.title} ({c.classType})
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-zinc-800 bg-zinc-950/40">
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-zinc-800 bg-zinc-950/40 flex-shrink-0">
           <button
             type="button"
             onClick={onClose}

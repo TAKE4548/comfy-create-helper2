@@ -37,6 +37,15 @@ export interface StudioState {
   selectedAltOutfits: OutfitMasterPreset[]
   setSelectedAltOutfits: (outfits: OutfitMasterPreset[]) => void
 
+  // REQ-331: Generation parameters and node bypass state
+  paramValues: Record<string, string>
+  setParamValue: (key: string, value: string) => void
+  setParamValues: (values: Record<string, string>) => void
+
+  bypassedNodeIds: string[]
+  setBypassedNodeIds: (nodeIds: string[]) => void
+  toggleBypassedNodeId: (nodeId: string) => void
+
   activeJob: LoraTrainingJob | null
   setActiveJob: (job: LoraTrainingJob | null) => void
 
@@ -92,6 +101,23 @@ export const useStudioStore = create<StudioState>((set) => ({
   selectedAltOutfits: [],
   setSelectedAltOutfits: (selectedAltOutfits) => set({ selectedAltOutfits }),
 
+  // REQ-331 additions
+  paramValues: {},
+  setParamValue: (key, value) =>
+    set((state) => ({
+      paramValues: { ...state.paramValues, [key]: value },
+    })),
+  setParamValues: (paramValues) => set({ paramValues }),
+
+  bypassedNodeIds: [],
+  setBypassedNodeIds: (bypassedNodeIds) => set({ bypassedNodeIds }),
+  toggleBypassedNodeId: (nodeId) =>
+    set((state) => ({
+      bypassedNodeIds: state.bypassedNodeIds.includes(nodeId)
+        ? state.bypassedNodeIds.filter((id) => id !== nodeId)
+        : [...state.bypassedNodeIds, nodeId],
+    })),
+
   activeJob: null,
   setActiveJob: (activeJob) => set({ activeJob }),
 
@@ -136,6 +162,8 @@ export const useStudioStore = create<StudioState>((set) => ({
       saveStatus: 'idle',
       items: [],
       selectedAltOutfits: [],
+      paramValues: {},
+      bypassedNodeIds: [],
       activeJob: null,
       isTrainingActive: false,
       telemetryLogs: [],

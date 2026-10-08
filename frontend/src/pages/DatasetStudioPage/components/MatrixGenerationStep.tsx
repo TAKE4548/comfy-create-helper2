@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2 } from 'lucide-react'
+import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2, Sliders, ShieldAlert } from 'lucide-react'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { datasetApi, workflowsApi, workflowPresetsApi, comfyApi } from '../../../api/client'
 import type { DatasetItem, Workflow, DatasetProject } from '../../../api/types'
@@ -7,6 +7,10 @@ import { useStudioStore } from '../useStudioStore'
 import { OutfitMasterModal, distributeAltOutfits } from './OutfitMasterModal'
 import { OutfitPresetBadge } from './OutfitPresetBadge'
 import { NodeRemapModal } from './NodeRemapModal'
+import { CollapsibleSection } from '../../../components/CollapsibleSection'
+import { ParamPanel } from '../../../components/ParamPanel'
+import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
+import { getInitialParams } from '../../../utils/workflowParamInjector'
 import { useStudioAutosave, type StudioFormData } from '../hooks/useStudioAutosave'
 import type { DatasetStudioDraft } from '../utils/studioDraftStorage'
 
@@ -19,6 +23,9 @@ export interface InjectPromptOptions {
   negativeNodeId?: string | null
   negativePrompt?: string
   seedNodeId?: string | null
+  paramValues?: Record<string, string>
+  mappings?: any[]
+  bypassedNodeIds?: string[]
 }
 
 /**
@@ -139,6 +146,40 @@ export function injectPromptAndSeed(
     }
   }
 
+  // REQ-331: Inject parameter values into mapped nodes
+  if (options?.paramValues && options?.mappings) {
+    for (const mapping of options.mappings) {
+      if (!mapping.role || mapping.input_type === 'textarea') continue
+      const targetNodeId = mapping.node_id
+      const val = options.paramValues[mapping.role]
+      if (val !== undefined && targetNodeId && payload[targetNodeId]) {
+        const node = payload[targetNodeId]
+        if (!node.inputs) node.inputs = {}
+        const fieldName = mapping.param_name || mapping.role
+        if (mapping.input_type === 'int') {
+          const num = parseInt(val, 10)
+          node.inputs[fieldName] = isNaN(num) ? 0 : num
+        } else if (mapping.input_type === 'float') {
+          const flt = parseFloat(val)
+          node.inputs[fieldName] = isNaN(flt) ? 0.0 : flt
+        } else if (mapping.input_type === 'boolean') {
+          node.inputs[fieldName] = val === 'true'
+        } else {
+          node.inputs[fieldName] = val
+        }
+      }
+    }
+  }
+
+  // REQ-331: Inject bypassed node mode (mode = 2) with safe validation
+  if (options?.bypassedNodeIds && Array.isArray(options.bypassedNodeIds)) {
+    for (const nodeId of options.bypassedNodeIds) {
+      if (payload[nodeId]) {
+        payload[nodeId].mode = 2
+      }
+    }
+  }
+
   return payload
 }
 
@@ -153,7 +194,13 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     setCurrentStep,
     selectedAltOutfits,
     setSelectedAltOutfits,
+    paramValues,
+    setParamValues,
+    bypassedNodeIds,
+    toggleBypassedNodeId,
   } = useStudioStore()
+
+  const [isBypassModalOpen, setIsBypassModalOpen] = useState(false)
 
   // Project Configuration state
   const [projectName, setProjectName] = useState<string>(activeProject?.name || 'My New Chara LoRA')
@@ -336,6 +383,20 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [batchProgress, setBatchProgress] = useState<number>(0)
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // REQ-331: SSoT merge strategy - merge workflow default parameter values with existing store values
+  useEffect(() => {
+    if (currentWorkflow) {
+      const defaults = getInitialParams(currentWorkflow)
+      const currentVals = useStudioStore.getState().paramValues
+      useStudioStore.getState().setParamValues({ ...defaults, ...currentVals })
+    }
+  }, [currentWorkflow?.id])
+
+  // Extract non-textarea parameter mappings for ParamPanel
+  const nonTextareaMappings = useMemo(() => {
+    return (currentWorkflow?.mappings || []).filter((m) => m.input_type !== 'textarea')
+  }, [currentWorkflow?.mappings])
 
   // Fetch available workflows
   useEffect(() => {
@@ -539,6 +600,9 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             positiveNodeId: posMapping?.node_id,
             negativeNodeId: negMapping?.node_id,
             negativePrompt: negativePrompt,
+            paramValues: paramValues,
+            mappings: wfMappings,
+            bypassedNodeIds: bypassedNodeIds,
           })
 
           const res = await comfyApi.queuePrompt({
@@ -773,8 +837,22 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         />
       )}
 
-      {/* 3-Section Tag Inputs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {currentWorkflow && isBypassModalOpen && (
+        <BypassSettingsModal
+          workflowJson={currentWorkflow.json_body}
+          onClose={() => setIsBypassModalOpen(false)}
+        />
+      )}
+
+      {/* REQ-331 Section 1: Prompts & Outfits (CollapsibleSection) */}
+      <CollapsibleSection
+        title="① マトリクス因子プロンプト・衣装設定 (Prompts & Outfits)"
+        defaultOpen={true}
+        id="prompts-section"
+      >
+        <div className="space-y-6 pt-3">
+          {/* 3-Section Tag Inputs */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* 1. Meta / Quality */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
@@ -851,37 +929,136 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
           </div>
         </div>
       </div>
+        </div>
+      </CollapsibleSection>
 
-      {/* ④ ネガティブプロンプト (Negative Prompt) */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-zinc-200">
-              ④ ネガティブプロンプト (Negative Prompt)
-            </h3>
-            <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded">
-              全スロット共通
-            </span>
-          </div>
-          <span className="text-xs text-zinc-500">
+      {/* REQ-331 Section 2: Negative Prompt (CollapsibleSection) */}
+      <CollapsibleSection
+        title="② ネガティブプロンプト (Negative Prompt)"
+        defaultOpen={true}
+        id="negative-section"
+        badge={
+          <span className="text-xs text-zinc-500 font-mono">
             {(negativePrompt || '').length} 文字
           </span>
+        }
+      >
+        <div className="pt-3">
+          <p className="text-xs text-zinc-400 mb-3">
+            画質崩れ、不要要素の排除タグ。ワークフローの指定 Negative ノードに全件注入されます。
+          </p>
+          <div
+            data-testid="negative-tag-editor"
+            className="min-h-[90px] bg-zinc-950/60 p-2 rounded-lg border border-zinc-800"
+          >
+            <TagChipEditor
+              id="negative-tag-editor"
+              value={negativePrompt}
+              onChange={setNegativePrompt}
+              placeholder="worst quality, low quality, bad anatomy, blurry..."
+            />
+          </div>
         </div>
-        <p className="text-xs text-zinc-400 mb-3">
-          画質崩れ、不要要素の排除タグ。ワークフローの指定 Negative ノードに全件注入されます。
-        </p>
-        <div
-          data-testid="negative-tag-editor"
-          className="min-h-[90px] bg-zinc-950/60 p-2 rounded-lg border border-zinc-800"
-        >
-          <TagChipEditor
-            id="negative-tag-editor"
-            value={negativePrompt}
-            onChange={setNegativePrompt}
-            placeholder="worst quality, low quality, bad anatomy, blurry..."
-          />
+      </CollapsibleSection>
+
+      {/* REQ-331 Section 3: Generation Parameters (CollapsibleSection) */}
+      <CollapsibleSection
+        title="③ 生成パラメータ設定 (Generation Parameters)"
+        defaultOpen={true}
+        id="params-section"
+        badge={
+          <span
+            data-testid="param-count-badge"
+            className="text-[10px] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded font-mono"
+          >
+            {nonTextareaMappings.length} parameters
+          </span>
+        }
+      >
+        <div className="pt-3" data-testid="studio-param-panel-container">
+          {nonTextareaMappings.length === 0 ? (
+            <p className="text-xs text-zinc-500 py-3 italic">
+              ワークフローにパラメータマッピング（Steps, CFG, Sampler 等）が設定されていません。右上の「再割当」より追加できます。
+            </p>
+          ) : (
+            <ParamPanel
+              paramMappings={nonTextareaMappings}
+              paramValues={paramValues}
+              setParamValues={setParamValues}
+              onOpenBypassSettings={() => setIsBypassModalOpen(true)}
+            />
+          )}
         </div>
-      </div>
+      </CollapsibleSection>
+
+      {/* REQ-331 Section 4: Bypass & Node Mapping Details (CollapsibleSection) */}
+      <CollapsibleSection
+        title="④ バイパス・ノード詳細設定 (Bypasses & Mappings)"
+        defaultOpen={false}
+        id="bypass-mapping-section"
+        badge={
+          <div className="flex items-center gap-1.5">
+            <span
+              data-testid="bypassed-count-badge"
+              className="text-[10px] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded font-mono"
+            >
+              {bypassedNodeIds.length} bypassed
+            </span>
+          </div>
+        }
+      >
+        <div className="pt-3 space-y-4">
+          <p className="text-xs text-zinc-400">
+            アップスケーラーや FaceDetailer 等の不要ノードのバイパス（無効化）や、ワークフロー内のプロンプト・パラメータ注入先ノードの再割当を行えます。
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              data-testid="open-bypass-modal-button"
+              onClick={() => setIsBypassModalOpen(true)}
+              className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition-colors"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+              <span>ノードバイパス設定 (Bypass)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsRemapModalOpen(true)}
+              className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition-colors"
+            >
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <span>ノードマッピング再割当 (Remap)</span>
+            </button>
+          </div>
+
+          {/* Quick list of bypassed nodes if any */}
+          {bypassedNodeIds.length > 0 && (
+            <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-lg p-3 text-xs">
+              <span className="text-zinc-400 font-medium">現在バイパスされているノード ID:</span>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {bypassedNodeIds.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/60 text-[11px] font-mono"
+                  >
+                    #{id}
+                    <button
+                      type="button"
+                      onClick={() => toggleBypassedNodeId(id)}
+                      className="hover:text-amber-100 ml-1 text-xs"
+                      title="バイパス解除"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </CollapsibleSection>
 
       {/* 5. Alt Outfits Library Integration */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">

@@ -358,10 +358,24 @@ describe('MatrixGenerationStep', () => {
     })
   })
 
-  it('AC-4: passes positiveNodeId, negativeNodeId, and negativePrompt when batch submitting to ComfyUI via comfyApi.queuePrompt', async () => {
+  it('AC-4: passes positiveNodeId, negativeNodeId, negativePrompt, paramValues, and bypassed nodes when batch submitting to ComfyUI', async () => {
+    // Setup store with items, customized paramValues, and bypassed node
     useStudioStore.getState().setItems(mockItems)
+    useStudioStore.getState().setParamValues({ steps: '42' })
+    useStudioStore.getState().toggleBypassedNodeId('7') // bypass negative node
 
     vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'pid-123' })
+
+    // Provide workflow with parameter mapping
+    const customWf: Workflow = {
+      ...mockWorkflows[0],
+      mappings: [
+        ...mockWorkflows[0].mappings,
+        { id: 103, master_id: 3, node_id: '3', role: 'steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+      ],
+    }
+    vi.mocked(workflowsApi.list).mockResolvedValue([customWf])
+    vi.mocked(workflowsApi.get).mockResolvedValue(customWf)
 
     render(<MatrixGenerationStep />)
 
@@ -377,7 +391,8 @@ describe('MatrixGenerationStep', () => {
 
     const firstCallArgs = vi.mocked(comfyApi.queuePrompt).mock.calls[0][0]
     expect(firstCallArgs.prompt['6'].inputs.text).toBe(mockItems[0].raw_prompt)
-    expect(firstCallArgs.prompt['7'].inputs.text).toBe('worst quality, bad anatomy')
+    expect(firstCallArgs.prompt['3'].inputs.steps).toBe(42)
+    expect(firstCallArgs.prompt['7'].mode).toBe(2) // bypassed node has mode=2
     expect(firstCallArgs.client_id).toMatch(/^lora-studio-/)
   })
 
@@ -809,6 +824,75 @@ describe('injectPromptAndSeed', () => {
     expect(injected['7'].inputs.text).toBe('negative content')
     expect(injected['3']).toBeDefined()
     expect(injected['3'].inputs.seed).toBe(42)
+  })
+
+  it('AC-4: injectPromptAndSeed injects paramValues (int, float, boolean, text) and bypasses nodes (mode=2)', () => {
+    const workflowJson: any = {
+      '3': { inputs: { steps: 20, cfg: 7.0, sampler_name: 'euler' }, class_type: 'KSampler' },
+      '10': { inputs: { text: '' }, class_type: 'CLIPTextEncode' },
+      '11': { inputs: { text: '' }, class_type: 'CLIPTextEncode' },
+      '20': { inputs: { enabled: true }, class_type: 'FaceDetailer' },
+      '25': { inputs: { upscale_by: 2.0 }, class_type: 'UpscaleModelLoader' },
+    }
+
+    const mappings = [
+      { role: 'steps', node_id: '3', param_name: 'steps', input_type: 'int' },
+      { role: 'cfg', node_id: '3', param_name: 'cfg', input_type: 'float' },
+      { role: 'sampler', node_id: '3', param_name: 'sampler_name', input_type: 'combo' },
+      { role: 'enabled', node_id: '20', param_name: 'enabled', input_type: 'boolean' },
+    ]
+
+    const paramValues = {
+      steps: '35',
+      cfg: '8.5',
+      sampler: 'dpmpp_2m',
+      enabled: 'false',
+    }
+
+    const bypassedNodeIds = ['20', '25']
+
+    const result = injectPromptAndSeed(workflowJson, 'pos text', 1234, {
+      positiveNodeId: '10',
+      negativeNodeId: '11',
+      negativePrompt: 'neg text',
+      paramValues,
+      mappings,
+      bypassedNodeIds,
+    })
+
+    // Parameters injected
+    expect(result['3'].inputs.steps).toBe(35)
+    expect(result['3'].inputs.cfg).toBe(8.5)
+    expect(result['3'].inputs.sampler_name).toBe('dpmpp_2m')
+    expect(result['20'].inputs.enabled).toBe(false)
+
+    // Nodes bypassed (mode = 2)
+    expect(result['20'].mode).toBe(2)
+    expect(result['25'].mode).toBe(2)
+  })
+
+  it('Red Team 1: safely skips missing node_ids in paramValues and bypassedNodeIds without throwing', () => {
+    const workflowJson: any = {
+      '10': { inputs: { text: '' }, class_type: 'CLIPTextEncode' },
+    }
+
+    const mappings = [
+      { role: 'steps', node_id: '999', param_name: 'steps', input_type: 'int' },
+    ]
+
+    const paramValues = { steps: '40' }
+    const bypassedNodeIds = ['888', '777']
+
+    expect(() => {
+      const result = injectPromptAndSeed(workflowJson, 'pos', 1, {
+        positiveNodeId: '10',
+        paramValues,
+        mappings,
+        bypassedNodeIds,
+      })
+      expect(result['10'].inputs.text).toBe('pos')
+      expect(result['999']).toBeUndefined()
+    }).not.toThrow()
   })
 })
 

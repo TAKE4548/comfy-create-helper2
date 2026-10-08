@@ -126,4 +126,38 @@ describe('useStudioStore', () => {
     expect(state.lossHistory).toEqual([])
     expect(state.telemetryLogs).toEqual([])
   })
+  it('manages paramValues state (REQ-331)', () => {
+    expect(useStudioStore.getState().paramValues).toEqual({})
+
+    useStudioStore.getState().setParamValue('steps', '25')
+    expect(useStudioStore.getState().paramValues).toEqual({ steps: '25' })
+
+    useStudioStore.getState().setParamValue('cfg', '7.0')
+    expect(useStudioStore.getState().paramValues).toEqual({ steps: '25', cfg: '7.0' })
+
+    useStudioStore.getState().setParamValues({ sampler: 'euler', steps: '30' })
+    expect(useStudioStore.getState().paramValues).toEqual({ sampler: 'euler', steps: '30' })
+  })
+
+  it('manages bypassedNodeIds state (REQ-331)', () => {
+    expect(useStudioStore.getState().bypassedNodeIds).toEqual([])
+
+    useStudioStore.getState().setBypassedNodeIds(['node-1', 'node-2'])
+    expect(useStudioStore.getState().bypassedNodeIds).toEqual(['node-1', 'node-2'])
+
+    useStudioStore.getState().toggleBypassedNodeId('node-3')
+    expect(useStudioStore.getState().bypassedNodeIds).toEqual(['node-1', 'node-2', 'node-3'])
+
+    useStudioStore.getState().toggleBypassedNodeId('node-2')
+    expect(useStudioStore.getState().bypassedNodeIds).toEqual(['node-1', 'node-3'])
+  })
+
+  it('clears paramValues and bypassedNodeIds on resetStudio (REQ-331)', () => {
+    useStudioStore.getState().setParamValues({ steps: '20' })
+    useStudioStore.getState().setBypassedNodeIds(['node-1'])
+
+    useStudioStore.getState().resetStudio()
+    expect(useStudioStore.getState().paramValues).toEqual({})
+    expect(useStudioStore.getState().bypassedNodeIds).toEqual([])
+  })
 })
