@@ -1,109 +1,71 @@
-# Implementation Plan: REQ-324 フロントエンド肥大化モジュールおよびコンポーネントの構造分割整理 (api/client.ts & HistoryModalPreview)
+# Implementation Plan: REQ-325 Prompt Surgeon: 共通プロンプト構文解析エンジン (PromptTokenEngine) の新設と統合
 
-Prompt Surgeon の機能急拡大に伴い肥大化した 2 大フロントエンド要素（API通信層 `api/client.ts` 約700行、UIプレビュー層 `HistoryModalPreview.tsx` 約420行）の構造分割整理を実施します。透過的 re-export ハブの採用により外部コードへの後方互換性を100%維持し、Atomic なサブコンポーネント化と `React.memo` により再レンダリング最適化を実現します。
+複数箇所（`TagChipEditor`, `captionDecoupler.ts`, `promptUtils.ts` 等）で個別実装されているプロンプト文字列・タグ構文の解析、重み付け `((tag:1.2))` の展開、カンマ正規化、デカップリング置換処理を統一する共通トークンエンジン `PromptTokenEngine`（`frontend/src/utils/prompt/` 配下）を新設し、`captionDecoupler.ts` を移行統合します。
 
 ## User Review Required
-- **API 後方互換性方針**: `api/client.ts` を集約 re-export ハブとして維持するため、既存のコンポーネント・フック・テストコードからのインポートパス（`@/api/client` や `../api/client`）および公開型・シンボルの変更は一切生じません。
-- **HistoryModalPreview 分割方針**: ヘッダー操作部（`PreviewHeader`）、画像表示部（`PreviewImageViewer`）、メタデータ情報部（`SnapshotMetadataTab`）に分離し、モーダル内タイマーやタブ操作による不要な再描画を抑制します。既存の全画面表示・キーボード操作・スワイプ・保存中ロック動作は完全に保持されます。
+- **コアエンジン新設 (`src/utils/prompt/`)**: `PromptToken` データモデル（`raw`, `text`, `weight`, `bracketDepth`, `enabled`, `category`）および静的クラス `PromptTokenEngine` を新設します。
+- **既存機能への透過的統合**: まず最重要リファクタリング対象である `captionDecoupler.ts`（Dataset Studio）の内部ロジックを `PromptTokenEngine` 委任へと切り替えます。関数のシグネチャ（`decoupleCaption(params: DecoupleParams): string`）や既存のテスト期待値は 100% 後方互換を維持します。
 
 ## Proposed Changes
 
-### API Layer Modularization
+### Core Token Engine Module
 
-#### [LOCAL NEW] [base.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/core/base.ts)
-- `BASE_URL` (`/api`) および汎用 HTTP 通信関数 `request<T>` を配置。FormData ヘッダー制御、204 No Content、JSON パース、API 例外生成を担当。
+#### [LOCAL NEW] [types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/prompt/types.ts)
+- `PromptTokenCategory` 型（`meta | physical | outfit | trigger | general`）
+- `PromptToken` インターフェース（`raw`, `text`, `weight`, `bracketDepth`, `enabled`, `category`）
+- `DecoupleOptions` インターフェース（`position?: 'prepend' | 'append'`）
 
-#### [LOCAL NEW] [stream.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/core/stream.ts)
-- NDJSON/SSE ストリーム処理用例外クラス `SceneSpeechStreamError`、`abortError`、およびイベント行パース関数 `parseSceneSpeechEvent` を配置。
+#### [LOCAL NEW] [PromptTokenEngine.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/prompt/PromptTokenEngine.ts)
+- `tokenize(promptText: string): PromptToken[]`: 括弧ネスト（(), [], {}）を追跡しながらカンマ/改行で安全に分割。重み付け構文 `((tag:1.2))` や多重括弧 `(((tag)))` を解析し、連続カンマや無駄な空白を正規化。
+- `serializeToComfyPrompt(tokens: PromptToken[]): string`: 有効なトークンを ComfyUI 構文に準拠してカンマ区切りのクリーンな平文文字列へ再構成。
+- `decoupleTags(tokens, removeTags, injectTrigger?, options?)`: 大文字小文字を区別せず対象タグを除去し、オプションのトリガーワードを注入。
+- `adjustWeight(token, delta)`: 重み倍率の加算・丸め・0下限保護処理。
 
-#### [LOCAL NEW] [base.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/core/__tests__/base.test.ts)
-- `request<T>` およびストリームイベントパースの単体テスト。正常系、204 返却、HTTP エラー送出、異常系フォーマットを網羅。
+#### [LOCAL NEW] [PromptTokenEngine.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/prompt/__tests__/PromptTokenEngine.test.ts)
+- AC-1（トークン化・正規化）、AC-2（シリアライズ）、AC-3（タグ除外・トリガー注入）、および Red Team 境界値（連続カンマ `,,`、空入力、括弧不整合、ReDoS 防止）の単体テストスイート。
 
-#### [LOCAL NEW] [workflows.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/workflows.ts)
-- ワークフローおよびノードパラメータ系 API（`workflowsApi`, `workflowPresetsApi`, `bypassProfilesApi`, `paramSyncGroupsApi`, `mappingMastersApi`, `paramTypeMastersApi`）を配置。
+### Caption Decoupler Integration
 
-#### [LOCAL NEW] [snapshots.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/snapshots.ts)
-- スナップショットおよびメタデータ・タグ系 API（`snapshotsApi`, `albumsApi`, `promptMetadataApi`, `tagSetsApi`, `tagsetCategoriesApi`）と `PromptMetadataRead` 型を配置。
+#### [LOCAL MODIFY] [captionDecoupler.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/utils/captionDecoupler.ts)
+- 内部の素朴な `split(',')` および `filter` 処理を、新設した `PromptTokenEngine.tokenize`, `decoupleTags`, `serializeToComfyPrompt` に移行。
+- デフォルト衣装スロットおよび代替衣装スロットにおける挙動と後方互換性を完全維持。
 
-#### [LOCAL NEW] [loraStudio.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/loraStudio.ts)
-- LoRA、モデル、Dataset Studio、学習、ベンチマーク系 API（`lorasApi`, `loraCategoriesApi`, `baseModelsApi`, `checkpointMappingsApi`, `datasetApi`, `trainingApi`, `benchmarkApi`）を配置。
-
-#### [LOCAL NEW] [speech.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/speech.ts)
-- 音声・フキダシ・ストリーム生成系 API（`sceneSpeechApi`, `speechBatchApi`, `speechBubblePresetsApi`, `speechTonePresetsApi`, `fontsApi`）を配置。
-
-#### [LOCAL NEW] [translation.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/translation.ts)
-- 翻訳および LLM 連携系 API（`translateApi`, `llmPromptsApi`）を配置。
-
-#### [LOCAL NEW] [settings.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/domains/settings.ts)
-- システム設定・監査ログ・ComfyUI 通信系 API（`settingsApi`, `configApi`, `auditApi`, `comfyApi`）と `VramSettings` 型を配置。
-
-#### [LOCAL MODIFY] [client.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/client.ts)
-- `core/` および `domains/` の各モジュールと `./types` の型を集約再エクスポートする透過的ハブとしてスリム化（約700行から約30行へ削減）。
-
-#### [LOCAL NEW] [clientReExport.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/__tests__/clientReExport.test.ts)
-- 集約ハブ `client.ts` が 27 個の全 API オブジェクトおよび必要な型を過不足なくエクスポートしていることを担保する単体テスト。
-
-### History Modal Preview Decomposition
-
-#### [LOCAL NEW] [PreviewHeader.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/history/PreviewHeader.tsx)
-- スナップショットダウンロード（WebP/PNG/JPEG）、一時画像直接ダウンロード、自動追従トグル、閉じるボタンを包含するヘッダーコンポーネント（`React.memo` 適用）。
-
-#### [LOCAL NEW] [PreviewImageViewer.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/history/PreviewImageViewer.tsx)
-- 画像プレビュー本体、前後ナビゲーションボタン、全画面拡大、タッチスワイプハンドラ、カルーセル枚数表示、情報開閉トグルを包含するビューワーコンポーネント（`React.memo` 適用）。
-
-#### [LOCAL NEW] [SnapshotMetadataTab.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/history/SnapshotMetadataTab.tsx)
-- メタデータローディング状態、`GenerationMetadataPanel`、アルバム所属、タグ関連付けエディタ（`SnapshotTagAssociationsPanel`）のレンダリングを包含するパネルコンポーネント（`React.memo` 適用）。
-
-#### [LOCAL MODIFY] [HistoryModalPreview.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/HistoryModalPreview.tsx)
-- サブコンポーネントを合成するオーケストレータとして再構築。全画面監視、3秒無操作タイマー、保存中ロック、キーボードショートカット制御に専念（約420行から約180行へ削減）。
-
-#### [LOCAL NEW] [PreviewSubcomponents.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/history/__tests__/PreviewSubcomponents.test.tsx)
-- `PreviewHeader`, `PreviewImageViewer`, `SnapshotMetadataTab` 各サブコンポーネントの Props 伝播・イベント発火単体テスト。
-
-#### [LOCAL MODIFY] [HistoryModalPreview.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/HistoryModalPreview.test.tsx)
-- 既存の全テストケース（メタデータ表示、保存中ロック、キーボード制御）を維持しつつ、分割後のサブコンポーネント統合・不要再レンダリング防止の検証を追加。
+#### [LOCAL NEW] [captionDecoupler.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/utils/__tests__/captionDecoupler.test.ts)
+- `decoupleCaption` 単体の網羅的テスト。デフォルト衣装・代替衣装・大文字小文字混在・連続カンマ入力に対する挙動を検証。
 
 ## Task Dependency Graph (DAG)
 
-
 ```mermaid
 graph TD
-    REQ-324-T1["REQ-324-T1: API Core Infrastructure & Stream (base.ts, stream.ts)"]
-    REQ-324-T2["REQ-324-T2: API Core Domains (workflows.ts, snapshots.ts, loraStudio.ts)"]
-    REQ-324-T3["REQ-324-T3: API Specialized Domains (speech.ts, translation.ts, settings.ts)"]
-    REQ-324-T4["REQ-324-T4: API Backward-Compatibility Re-export Hub (client.ts)"]
-    REQ-324-T5["REQ-324-T5: HistoryModalPreview Subcomponents (Header, Viewer, MetadataTab)"]
-    REQ-324-T6["REQ-324-T6: HistoryModalPreview Integration & Memoized Re-render"]
+    REQ-325-T1["REQ-325-T1: PromptTokenEngine コアエンジン新設と TDD ユニットテスト作成"]
+    REQ-325-T2["REQ-325-T2: captionDecoupler.ts を PromptTokenEngine に移行し後方互換性を維持"]
+    REQ-325-T3["REQ-325-T3: Baseline 3-Gate 検証および回帰監査"]
 
-    REQ-324-T1 --> REQ-324-T2
-    REQ-324-T1 --> REQ-324-T3
-    REQ-324-T2 --> REQ-324-T4
-    REQ-324-T3 --> REQ-324-T4
-    REQ-324-T5 --> REQ-324-T6
+    REQ-325-T1 --> REQ-325-T2
+    REQ-325-T2 --> REQ-325-T3
 ```
 
 ### Parallel Execution Capabilities
-- **第一階層 (Layer 1)**: `REQ-324-T1`（API Core）と `REQ-324-T5`（UI サブコンポーネント群）は完全に独立しているため、**並列実行可能**です。
-- **第二階層 (Layer 2)**: `REQ-324-T1` 完了後、`REQ-324-T2`（Workflows/Snapshots/LoRA）と `REQ-324-T3`（Speech/Translation/Settings）は互いに依存しないため、**並列実行可能**です。同時に `REQ-324-T5` 完了後の `REQ-324-T6` も並列に進行可能です。
-- **第三階層 (Layer 3)**: 全 API ドメイン完了後、`REQ-324-T4` で `client.ts` の集約 re-export を完了します。
+- `REQ-325-T1` は基盤実装であるため最優先で実行。
+- `REQ-325-T2` は `REQ-325-T1` のエンジン完成後に移行を実施。
+- `REQ-325-T3` は全実装完了後にシステム全体の型検証およびフルテストを実行。
 
 ## Trade-off Disclosure
 
 | 設計選択肢 | メリット | デメリット・トレードオフ | 採用理由・緩和策 |
 |---|---|---|---|
-| **透過的 re-export ハブ (`client.ts`)** | 既存全コード（数十ファイル）のインポート修正が不要で回帰リスク 0 | 将来的に直接ドメインパスを推奨する運用との二重性 | 移行期の安全性を最優先。新機能開発時はドメイン直接インポートも許可する方針とする |
-| **API ドメイン 6 分割** | ファイル行数が各 50〜100 行程度に縮小し、責務分離・可読性が大幅向上 | ファイル数が増加（管理対象モジュール増） | ドメイン別ディレクトリ `api/domains/` に隔離し、明確な命名規則で可視性を担保 |
-| **HistoryModalPreview の 3 分割 & React.memo** | 3秒無操作タイマー発火時やタブ切替時の不要な重いパネル再描画を抑制 | Props バケツリレーの発生、インターフェース定義の手間 | Props インターフェースを明示し、親から渡すコールバックを `useCallback` で固定化してメモ化効果を最大化 |
+| **ステートマシン走査によるトークン化** | 括弧ネストと重み付けを $O(N)$ で確実に解析可能。ReDoS のリスクが皆無 | 単純な `split(',')` よりコード量が増加 | プロンプト解析の正確性とエッジケースの安全性を最優先。詳細な単体テストで堅牢性を担保 |
+| **段階的移行（まず captionDecoupler から適用）** | 影響範囲を極小化し、即座に安全性を実証できる | `TagChipEditor` 等の他箇所移行は次ステップへ残る | 巨大な一括移行による破壊リスクを避け、REF-02 のロードマップに沿って安全に段階移行する方針を採用 |
+| **透過的後方互換性（decoupleCaption シグネチャ不変）** | 既存の UI コンポーネント（`CuratorGrid`）や E2E テストの書き換えが不要 | ラッパー関数が残る | 既存機能の安定稼働と回帰防止を最優先 |
 
 ## Verification Plan
 
 ### Automated Baseline Gates
 1. **Gate 1 (静的型チェック)**: `cd frontend; npm run typecheck` (型エラー 0 件)
-2. **Gate 2 (単体・全体テストスイート)**: `cd frontend; npm test` (135 テストスイート / 1284 テスト 100% PASS)
+2. **Gate 2 (単体・全体テストスイート)**: `cd frontend; npm test` (全テストスイート 100% PASS)
 3. **Gate 3 (個別検証 & Red Teaming)**:
-   - `cd frontend; npx vitest run src/api/core/__tests__/base.test.ts` (API 通信・ストリームパース異常系)
-   - `cd frontend; npx vitest run src/api/__tests__/clientReExport.test.ts` (re-export 完全性)
-   - `cd frontend; npx vitest run src/components/history/__tests__/PreviewSubcomponents.test.tsx` (サブコンポーネント単体動作)
-   - `cd frontend; npx vitest run src/components/__tests__/HistoryModalPreview.test.tsx` (全画面操作・保存中ロック・回帰検証)
+   - `cd frontend; npx vitest run src/utils/prompt/__tests__/PromptTokenEngine.test.ts` (コアエンジン正常系・境界値・異常系)
+   - `cd frontend; npx vitest run src/pages/DatasetStudioPage/__tests__/CuratorGrid.test.tsx src/test/e2e_req319_lora_studio.test.tsx src/pages/DatasetStudioPage/utils/__tests__/captionDecoupler.test.ts` (キャプションデカップリング互換性)
+
 
 

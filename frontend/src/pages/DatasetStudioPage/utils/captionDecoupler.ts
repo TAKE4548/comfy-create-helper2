@@ -1,4 +1,6 @@
-﻿export interface DecoupleParams {
+import { PromptTokenEngine } from '../../../utils/prompt/PromptTokenEngine'
+
+export interface DecoupleParams {
   rawPrompt: string
   characterTrigger: string
   outfitTrigger: string
@@ -9,19 +11,25 @@
 
 export function decoupleCaption(params: DecoupleParams): string {
   const { rawPrompt, characterTrigger, outfitTrigger, physicalTags, exclusiveOutfitTags, isDefaultOutfit } = params
-  let tags = rawPrompt.split(',').map((t) => t.trim()).filter(Boolean)
+
+  let tokens = PromptTokenEngine.tokenize(rawPrompt || '')
 
   // 1. Strip physical tags
-  const physicalLower = new Set(physicalTags.map((t) => t.toLowerCase()))
-  tags = tags.filter((t) => !physicalLower.has(t.toLowerCase()))
+  tokens = PromptTokenEngine.decoupleTags(tokens, physicalTags || [])
 
-  // 2. Strip outfit tags if default outfit slot
+  // 2. Strip outfit tags if default outfit slot & prepare triggers
+  let triggersToInject: string[] = []
   if (isDefaultOutfit) {
-    const exclusiveLower = new Set(exclusiveOutfitTags.map((t) => t.toLowerCase()))
-    tags = tags.filter((t) => !exclusiveLower.has(t.toLowerCase()))
-    return [characterTrigger, outfitTrigger, ...tags].filter(Boolean).join(', ')
+    tokens = PromptTokenEngine.decoupleTags(tokens, exclusiveOutfitTags || [])
+    triggersToInject = [characterTrigger, outfitTrigger].filter(Boolean)
   } else {
     // Alt outfit slot: keep alt tags, never inject outfitTrigger
-    return [characterTrigger, ...tags].filter(Boolean).join(', ')
+    triggersToInject = [characterTrigger].filter(Boolean)
   }
+
+  if (triggersToInject.length > 0) {
+    tokens = PromptTokenEngine.decoupleTags(tokens, [], triggersToInject, { position: 'prepend' })
+  }
+
+  return PromptTokenEngine.serializeToComfyPrompt(tokens)
 }
