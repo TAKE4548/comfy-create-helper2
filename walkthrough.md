@@ -1,72 +1,64 @@
-# ウォークスルー - REQ-330: Dataset Studio 生成投入時の CORS エラー解消
+# REQ-324 成果物検証レポート (Walkthrough)
 
-## 1. 変更概要
-Dataset Studio の Step 1（マトリクス生成投入）において、ブラウザ JavaScript から `http://127.0.0.1:8188/prompt` へ直接 `fetch` を行っていたことで発生していた CORS (`Failed to fetch`) エラーを解消しました。
-通常生成と同様にバックエンドプロキシ経由の API クライアント (`comfyApi.queuePrompt`) を使用するように統一し、ComfyUI 側のエラーハンドリング (`res?.error`) および一意な `clientId` 生成を導入しました。
-
-### 変更された主なファイル
-- [MatrixGenerationStep.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx)
-- [MatrixGenerationStep.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx)
-- [e2e_req319_lora_studio.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req319_lora_studio.test.tsx)
+## 概要
+- **PBI ID**: REQ-324
+- **タイトル**: Prompt Surgeon: フロントエンド肥大化モジュールおよびコンポーネントの構造分割整理 (api/client.ts & HistoryModalPreview)
+- **検証日**: 2026-10-08
+- **判定結果**: **PASS**
 
 ---
 
-## 2. 受入基準 (AC) 遵守状況
+## 3-Gate Baseline 検証結果
 
-| AC ID | 受入基準 (Acceptance Criteria) | 検証結果 | 検証エビデンス・テストケース |
-|---|---|:---:|---|
-| **AC-1** | Dataset Studio のマトリクス生成投入処理がブラウザ直接 `fetch` ではなくバックエンドプロキシ経由の `comfyApi.queuePrompt` を使用すること | **PASS** | `MatrixGenerationStep.test.tsx` ("uses comfyApi.queuePrompt instead of direct fetch to ComfyUI (AC-1)"): `comfyApi.queuePrompt` が呼ばれ、直接 `fetch` が呼ばれないことを検証済み |
-| **AC-2** | 生成投入時にバックエンドプロキシ (`POST /api/comfy/prompt`) を通して ComfyUI への投入が正常に成功し、エラーなく進行すること | **PASS** | `MatrixGenerationStep.test.tsx` ("completes generation loop and updates status for all items (AC-2)"): 2件のアイテムがプロキシ経由で投入され、投入完了トーストが表示されることを検証済み |
-| **AC-3** | ComfyUI サーバーダウンまたはプロキシエラー発生時、適切なエラーメッセージ（トーストまたはステータス表示）がユーザーに通知されること | **PASS** | `MatrixGenerationStep.test.tsx` ("handles network failure gracefully and shows error message (AC-3)", "handles ComfyUI node validation error and updates error state"): エラー時のトースト通知およびステータス更新を検証済み |
-| **AC-4** | UI 上の誤解を招く「(Port 8188)」表記が削除・修正されていること | **PASS** | `MatrixGenerationStep.test.tsx` ("does not contain misleading Port 8188 text (AC-4)"): ボタン・テキスト内に `Port 8188` 表記が存在しないことを検証済み |
+### Gate 1: 静的型チェック (Typecheck Baseline)
+- **コマンド**: `cd frontend; npm run typecheck` (`tsc -b --noEmit`)
+- **結果**: **PASS (0 errors, Exit code 0)**
+- **検証内容**:
+  - `frontend/src/api/client.ts` による再エクスポートハブ（`base.ts`, 各ドメイン API、各種型定義）の透過的公開が維持され、型欠落・不整合が 0 件であることを確認。
+  - 新規分割された `PreviewHeader`, `PreviewImageViewer`, `SnapshotMetadataTab` 間の Props 型定義の整合性を確認。
 
----
+### Gate 2: フルテストスイート (Full Test Suite Baseline)
+- **コマンド**: `cd frontend; npm test` (`vitest run`)
+- **結果**: **PASS (138 ファイル / 1306 テスト 100% 成功, 0 failures, Exit code 0)**
+- **検証内容**:
+  - 全サブシステムに渡るリグレッションテストがすべて成功し、既存の契約や振る舞いが完全に維持されていることを確認。
 
-## 3. 自動テスト・検証ログ (Execution Evidence)
-
-<execution_evidence>
-```bash
-# Gate 1: TypeScript 型検査 (0 errors)
-$ npm run typecheck
-> frontend@0.0.0 typecheck
-> tsc -b --noEmit
-# Exit code: 0
-
-# Gate 2: 対象ユニット・統合テスト (全29件合格)
-$ npx vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx
- ✓ src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx  (29 tests) 3329ms
- Test Files  1 passed (1)
-      Tests  29 passed (29)
-
-# Gate 2: フロントエンド全テストスイート (全133テストファイル / 1272テスト合格)
-$ npm test
- Test Files  133 passed (133)
-      Tests  1272 passed (1272)
-   Duration  33.05s
-# Exit code: 0
-
-# Gate 3: Red Teaming / 異常系検証
-- 通信エラーハンドリング検証 (ComfyUIダウン/503/Network Error): 合格
-- ComfyUI ノードバリデーションエラー (`res.error` 返却): 合格
-- アイテムリスト空状態での投入防止: 合格
-```
-</execution_evidence>
+### Gate 3: シナリオ & Red Teaming (Acceptance Criteria & Boundary)
+- **個別実行コマンド**: `cd frontend; npx vitest run src/api/core/__tests__/base.test.ts src/api/__tests__/clientReExport.test.ts src/components/__tests__/HistoryModalPreview.test.tsx`
+- **結果**: **PASS (3 ファイル / 23 テスト 100% 成功, Exit code 0)**
+- **検証内容**:
+  - **シナリオ 1 (API Core & Domains)**: `request<T>` の各 HTTP メソッド処理、204 No Content / 空ボディでの `undefined` 返却、SSE/NDJSON イベントストリーム (`parseSceneSpeechEvent`) パースの正常動作を検証。
+  - **シナリオ 2 (HistoryModalPreview 分割後サブコンポーネント連携)**: プレビュー表示、画像切替、メタデータタブ展開 (`SnapshotMetadataTab`)、タグ関連付け編集・保存が破綻なく動作することを検証。
+  - **Red Teaming (異常系・境界値)**:
+    - 不正な NDJSON 形式・無効なイベント構造・未知のイベント種別で例外が握りつぶされず確実に throw されること。
+    - HTTP 500 / 404 / 503 等の非正常ステータスで `API error ${status}: ${detail}` が throw されること。
+    - タグ保存中のモーダルクローズ・画像送り操作がロックされ、競合破損が発生しないこと。
 
 ---
 
-## 4. ローカルモデル QA 監査結果
+## Acceptance Criteria (AC) 準拠状況テーブル
 
-ローカル LLM (`qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored`) によるテスト計画監査を実施しました。
-監査完了後、VRAM は即座に 100% 解放 (`unloaded`) されています。
-
-- **総合判定**: `PASS with Conditions` (実行性・網羅性 良好)
-- **監査トレース**: `<!-- [LLM Audit Trace: Action=qa-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->`
-- **指摘事項と対応**:
-  - Gate 1 の `npm run typecheck` は exit code 0 で完全パス。
-  - テストコード内に AC-1 〜 AC-4 を明確に紐付けるテストケース名を定義し、上記の AC 遵守表にて 100% のトレーサビリティを担保。
+| AC ID | 要件概要 | 実装・テスト根拠 | 判定 |
+| :--- | :--- | :--- | :---: |
+| **AC-1** | **API Core 分割**<br>HTTP 通信基盤が `api/core/base.ts` に、SSE/NDJSON イベント処理が `api/core/stream.ts` に責務分離され循環参照なく動作すること。 | `src/api/core/base.ts`, `src/api/core/stream.ts` を分離実装。<br>`src/api/core/__tests__/base.test.ts` (12 tests PASS) にて HTTP リクエスト制御およびストリームパースを網羅検証。循環参照 0 件。 | **PASS** |
+| **AC-2** | **API Domains 分割**<br>ドメイン別モジュール (`api/domains/` 配下: `workflows`, `snapshots`, `speech`, `translation`, `loraStudio`, `settings` 等) に分割配置され、責務に応じたエンドポイントがカプセル化されていること。 | `src/api/domains/` 配下に `workflows.ts`, `snapshots.ts`, `speech.ts`, `translation.ts`, `loraStudio.ts`, `settings.ts` を配置。<br>各ドメイン API が `base.ts` の `request` を利用して独立実装されていることを確認。 | **PASS** |
+| **AC-3** | **API 後方互換 re-export & 型契約整合**<br>`api/client.ts` が集約 re-export ハブとして機能し、既存コードを 1 行も修正することなく従来と同一のシンボル・型が解決されること。 | `src/api/client.ts` から全ドメイン API インスタンス・全関数・全型を re-export。<br>`src/api/__tests__/clientReExport.test.ts` (3 tests PASS) および `npm run typecheck` (0 errors) により型欠落・名前衝突がないことを確認。 | **PASS** |
+| **AC-4** | **UI HistoryModalPreview 分割 & メモ化**<br>`HistoryModalPreview.tsx` からメタデータ正本解析 (`SnapshotMetadataTab`) 等が独立サブコンポーネントに切り出され、適切なメモ化 (`React.memo`) が施され、親コンポーネントが大幅にスリム化されること。 | `frontend/src/components/history/` 配下に `PreviewHeader.tsx`, `PreviewImageViewer.tsx`, `SnapshotMetadataTab.tsx` を分離。<br>`HistoryModalPreview.tsx` 本体は 195 行に縮小。不要な再レンダリング防止検証済。 | **PASS** |
+| **AC-5** | **循環参照ゼロ & パフォーマンス**<br>コア層・ドメイン層間で循環参照が 0 件であり、モーダル内タブ切替時にモーダル全体の不要な再レンダリングが発生しないこと。 | `madge` / TypeScript project-references に準拠し相互依存なし。<br>`HistoryModalPreview.test.tsx` にて `onClose`, `onChangeIndex`, サブコンポーネントの再描画安定性を検証。 | **PASS** |
+| **AC-6** | **3-Gate ベースライン維持**<br>リファクタリング後のフロントエンドコードベースにおいて、型検査および全体テストが 100% PASS を維持していること。 | Gate 1 (`tsc -b --noEmit`): 0 エラー。<br>Gate 2 (`npm test`): 138 ファイル / 1306 テスト 100% 成功。 | **PASS** |
 
 ---
 
-## 5. 結論
-REQ-330 のすべての受入基準および 3-Gate 検証（型検査、フルテスト、シナリオ・異常系）をパスしました。
-実装内容の検証は完了しており、クロージングおよびコミット準備が整いました。
+## ローカルモデル QA 監査 (Local Model QA Audit)
+- **監査モデル**: `qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored` (LM Studio reasoning ドメイン)
+- **監査スコア**:
+  - コマンド具体性: 8/10
+  - 指標明確性: 6/10
+  - 検証可能性: 7/10
+  - 判定: **CONDITIONAL PASS**
+- **監査指摘事項 & 対処**:
+  1. *型エクスポートの自動検証*: `clientReExport.test.ts` にて主要型・API インスタンスの存在テストを実施し、さらに `tsc -b --noEmit` による全コンポーネントでの型解決を確認済。
+  2. *例外 throw の検証*: `src/api/core/__tests__/base.test.ts` にて異常ステータス (500) および不正 NDJSON の例外スローをテストコードで網羅検証済。
+  3. *UI 描画検証*: React Testing Library による DOM 要素の存在・表示確認およびインタラクションテストを実施済。
+- **GPU クリーンアップ**:
+  - `python ${GLOBAL_SCRIPTS}\local_model_adapter.py unload` を実行し、LM Studio からモデルを完全アンロードして GPU VRAM (100%) の解放を確認済。

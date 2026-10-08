@@ -1,11 +1,11 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2, Info, Maximize2, Download, Play, Pause } from 'lucide-react'
 import { snapshotsApi, albumsApi } from '../api/client'
 import type { Snapshot } from '../api/types'
 import { getMetadataView, resolveRecordedMetadata } from '../utils/promptRecord'
-import { GenerationMetadataPanel } from './GenerationMetadataPanel'
-import { SnapshotTagAssociationsPanel } from './SnapshotTagAssociationsPanel'
+import { PreviewHeader } from './history/PreviewHeader'
+import { PreviewImageViewer } from './history/PreviewImageViewer'
+import { SnapshotMetadataTab } from './history/SnapshotMetadataTab'
 
 // Fullscreen APIのTypeScript型拡張（Safari/iOS等の互換対応）
 interface DocumentWithFullscreen extends Document {
@@ -74,7 +74,7 @@ export function HistoryModalPreview({
     resetControlsTimeout()
   }, [resetControlsTimeout])
 
-  const handleToggleFullscreen = (e: React.MouseEvent) => {
+  const handleToggleFullscreen = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (isEditing || isSaving) return
     const element = containerRef.current as HTMLElementWithFullscreen
@@ -94,9 +94,9 @@ export function HistoryModalPreview({
         doc.webkitExitFullscreen()
       }
     }
-  }
+  }, [isEditing, isSaving])
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (isSaving) return
     const doc = document as DocumentWithFullscreen
     if (doc.fullscreenElement || doc.webkitFullscreenElement) {
@@ -108,9 +108,9 @@ export function HistoryModalPreview({
     } else {
       onClose()
     }
-  }
+  }, [isSaving, onClose])
 
-  const handleContainerClick = (e: React.MouseEvent) => {
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
     if (!showControls) {
       e.stopPropagation()
       resetControlsTimeout()
@@ -119,16 +119,16 @@ export function HistoryModalPreview({
     if (e.target === e.currentTarget) {
       handleClose()
     }
-  }
+  }, [showControls, resetControlsTimeout, handleClose])
 
-  const handleImageClick = (e: React.MouseEvent) => {
+  const handleImageClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (!showControls) {
       resetControlsTimeout()
       return
     }
     handleToggleFullscreen(e)
-  }
+  }, [showControls, resetControlsTimeout, handleToggleFullscreen])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -217,7 +217,6 @@ export function HistoryModalPreview({
   if (!isOpen || images.length === 0) return null
 
   // Swipe gesture handling
-
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
   }
@@ -243,180 +242,61 @@ export function HistoryModalPreview({
   }
 
   return (
-    <div 
-      ref={containerRef} 
-      className="modal-backdrop flex flex-col" 
+    <div
+      ref={containerRef}
+      className="modal-backdrop flex flex-col"
       onClick={handleContainerClick}
       onMouseMove={handleMouseMove}
     >
-      {/* Header with Close & Format Download Buttons */}
-      {(showControls || viewMode === 'info') && (
-        <div 
-          className={`${isFullscreen ? 'absolute top-0 left-0 right-0 z-10' : 'relative'} h-12 flex items-center justify-between px-4 z-50`} 
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center gap-2">
-            {activeSnapshotId ? (
-              <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur rounded-lg px-2.5 py-1 border border-[rgba(255,255,255,0.1)] text-xs">
-                <span className="text-zinc-400 font-medium text-[11px] flex items-center gap-1">
-                  <Download size={12} /> DL:
-                </span>
-                <a
-                  href={`/api/snapshots/${activeSnapshotId}/download?format=webp`}
-                  download
-                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
-                >
-                  WebP
-                </a>
-                <a
-                  href={`/api/snapshots/${activeSnapshotId}/download?format=png`}
-                  download
-                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
-                >
-                  PNG
-                </a>
-                <a
-                  href={`/api/snapshots/${activeSnapshotId}/download?format=jpeg`}
-                  download
-                  className="px-2 py-0.5 rounded bg-surface-2 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-colors"
-                >
-                  JPEG
-                </a>
-              </div>
-            ) : activeImage ? (
-              <a
-                href={activeImage}
-                download
-                className="flex items-center gap-1 px-3 py-1 rounded-lg bg-black/60 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-semibold hover:bg-black/80 transition-colors"
-              >
-                <Download size={12} /> Download
-              </a>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            {onToggleAutoFollow && (
-              <button
-                type="button"
-                id="preview-autofollow-toggle-modal"
-                disabled={isEditing || isSaving}
-                onClick={onToggleAutoFollow}
-                className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
-                  previewAutoFollow
-                    ? 'bg-accent-green/10 border border-accent-green/40 hover:bg-accent-green/20 text-accent-green fill-accent-green'
-                    : 'bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700/80 text-zinc-400 hover:text-white'
-                }`}
-                title={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
-                aria-label={previewAutoFollow ? '最新画像を自動追従中（クリックで固定）' : '現在の画像に固定中（クリックで自動追従）'}
-              >
-                {previewAutoFollow ? <Play size={16} className="fill-accent-green" /> : <Pause size={16} />}
-              </button>
-            )}
-            <button
-              onClick={handleClose}
-              disabled={isSaving}
-              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
-              aria-label="Close preview"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-      )}
+      <PreviewHeader
+        showControls={showControls}
+        viewMode={viewMode}
+        isFullscreen={isFullscreen}
+        activeSnapshotId={activeSnapshotId}
+        activeImage={activeImage}
+        onClose={handleClose}
+        isSaving={isSaving}
+        isEditing={isEditing}
+        previewAutoFollow={previewAutoFollow}
+        onToggleAutoFollow={onToggleAutoFollow}
+      />
 
-      {/* Image Display Area */}
       <div className={`flex-1 min-h-0 ${viewMode === 'info' && !isFullscreen ? 'flex flex-col md:flex-row overflow-auto' : 'flex'}`}>
-      <div
-        className={`w-full flex items-center justify-center bg-black/40 relative cursor-pointer min-h-0 ${
-          isFullscreen ? 'absolute inset-0 z-0 w-full h-full' : (viewMode === 'full' ? 'flex-1' : 'shrink-0 md:flex-1')
-        }`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onClick={handleContainerClick}
-      >
-        {showControls && currentIndex > 0 && (
-          <button
-            disabled={isEditing || isSaving}
-            onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex - 1) }}
-            className="absolute left-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
-          >
-            &lt;
-          </button>
-        )}
-        <img
-          src={activeImage}
-          alt={`Preview ${currentIndex + 1}`}
-          className={`max-w-full object-contain select-none ${viewMode === 'info' && !isFullscreen ? 'max-h-[45vh] md:max-h-full' : 'max-h-full'} ${
-            isFullscreen ? 'cursor-zoom-out w-full h-full' : 'cursor-zoom-in'
-          }`}
-          onClick={handleImageClick}
+        <PreviewImageViewer
+          activeImage={activeImage}
+          currentIndex={currentIndex}
+          totalImages={images.length}
+          showControls={showControls}
+          isFullscreen={isFullscreen}
+          viewMode={viewMode}
+          isEditing={isEditing}
+          isSaving={isSaving}
+          onChangeIndex={onChangeIndex}
+          onImageClick={handleImageClick}
+          onSetViewMode={setViewMode}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onContainerClick={handleContainerClick}
         />
-        {showControls && currentIndex < images.length - 1 && (
-          <button
-            disabled={isEditing || isSaving}
-            onClick={(e) => { e.stopPropagation(); onChangeIndex(currentIndex + 1) }}
-            className="absolute right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
-          >
-            &gt;
-          </button>
-        )}
 
-        {/* Carousel indicators */}
-        {showControls && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white/80 pointer-events-none">
-            {currentIndex + 1} / {images.length}
-          </div>
-        )}
-
-        {showControls && !isFullscreen && (
-          viewMode === 'full' ? (
-            <button
-              disabled={isEditing || isSaving}
-              onClick={(e) => { e.stopPropagation(); setViewMode('info') }}
-              className="absolute bottom-4 right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
-              aria-label="Show info"
-            >
-              <Info size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); setViewMode('full') }}
-              className="absolute bottom-4 right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
-              aria-label="Hide info"
-            >
-              <Maximize2 size={20} />
-            </button>
-          )
+        {viewMode === 'info' && !isFullscreen && (
+          <SnapshotMetadataTab
+            activeImage={activeImage}
+            activeSnapshotId={activeSnapshotId}
+            promptId={promptId}
+            isLoading={isLoading}
+            isServerMetaLoading={isServerMetaLoading}
+            view={view}
+            recordedMetadata={recordedMetadata}
+            snapshot={snapshot}
+            albums={albums}
+            albumsError={!!albumsError}
+            onPersisted={onPersisted}
+            onEditingChange={onEditingChange}
+          />
         )}
       </div>
-
-      {/* Metadata Panel */}
-      {viewMode === 'info' && !isFullscreen && (
-        <div
-          className="w-full md:w-[min(48%,640px)] shrink-0 overflow-y-auto p-5 bg-surface border-t md:border-l border-white/10"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {(activeSnapshotId && isLoading) || isServerMetaLoading ? (
-            <div className="flex items-center justify-center py-10 gap-2 text-zinc-400 text-xs">
-              <Loader2 size={16} className="animate-spin text-accent-green" />
-              <span>Loading metadata...</span>
-            </div>
-          ) : (
-            <div className="space-y-4 text-xs text-zinc-300">
-              <GenerationMetadataPanel key={activeImage} imageUrl={activeImage} promptId={promptId ?? view.record?.prompt_id ?? null} {...view}
-                header={{ workflowId: view.workflowId, workflowName: view.workflowName, queuedAt: view.queuedAt,
-                  metadataSavedAt: activeSnapshotId ? null : recordedMetadata?.metadataSavedAt ?? null,
-                  imageSavedAt: snapshot?.created_at ?? null,
-                  albums: albums?.filter(a => a.items?.some(i => i.snapshot_id === activeSnapshotId)).map(a => a.name) ?? [] }}
-                associationPanel={snapshot ? <SnapshotTagAssociationsPanel key={snapshot.id} snapshot={snapshot}
-                  onPersisted={onPersisted} onEditingChange={onEditingChange} /> : <p>保存済み画像でタグ関連を編集できます。現在は読み取り専用です。</p>} />
-              {snapshot && !view.record && <p>保存時の関連Workflow ID: {snapshot.workflow_id}</p>}
-              {albumsError && <p role="alert">現在のアルバムを取得できませんでした。</p>}
-            </div>
-          )}
-        </div>
-      )}
-      </div>
-
     </div>
   )
 }
+

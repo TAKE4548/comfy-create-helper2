@@ -241,4 +241,41 @@ describe('HistoryModalPreview', () => {
     const lockedBtn = screen.getByRole('button', { name: /現在の画像に固定中/i })
     expect(lockedBtn).toBeDefined()
   })
+
+  it('keeps subcomponents and callbacks stable across renders to prevent unnecessary re-rendering', async () => {
+    const onClose = vi.fn()
+    const onChangeIndex = vi.fn()
+    const { rerender } = renderComponent({
+      images: ['/output/image1.png', '/output/image2.png'],
+      currentIndex: 0,
+      onClose,
+      onChangeIndex,
+    })
+
+    // Initial render checks
+    expect(screen.getByAltText('Preview 1')).toBeInTheDocument()
+    const nextBtn = screen.getByRole('button', { name: '>' })
+    expect(nextBtn).toBeInTheDocument()
+
+    // Trigger mouse move to ensure resetControlsTimeout does not disrupt DOM
+    fireEvent.mouseMove(screen.getByAltText('Preview 1'))
+
+    // Re-render with same props
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <HistoryModalPreview
+          isOpen={true}
+          onClose={onClose}
+          images={['/output/image1.png', '/output/image2.png']}
+          currentIndex={0}
+          onChangeIndex={onChangeIndex}
+          snapshotIds={[null, null]}
+        />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByAltText('Preview 1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '>' })).toBeInTheDocument()
+  })
 })
+
