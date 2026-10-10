@@ -7,7 +7,7 @@
     "env_vars": {
       "PYTORCH_HIP_ALLOC_CONF": "garbage_collection_threshold:0.8,max_split_size_mb:512"
     },
-    "start_command": "python main.py --bf16-vae --fp8_e4m3fn-unet --fast --disable-smart-memory --enable-cors-header --listen 0.0.0.0 --use-split-cross-attention",
+    "start_command": "python main.py --bf16-vae --bf16-unet --enable-cors-header --listen 0.0.0.0 --use-quad-cross-attention",
     "port": 8188,
     "wait_timeout_sec": 30,
     "retry_count": 3,
