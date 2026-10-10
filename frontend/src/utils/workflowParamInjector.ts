@@ -3,7 +3,7 @@
  * workflow parameters, LoRA stacks, and seeds into ComfyUI workflow JSON.
  */
 
-import type { Workflow } from '../api/types'
+import type { Workflow, StageMaster } from '../api/types'
 
 export interface WorkflowNode {
   inputs?: Record<string, any>
@@ -22,6 +22,7 @@ export interface InjectWorkflowParamsOptions {
   paramValues: Record<string, string>
   seedOptions?: SeedInjectionOptions
   cloneJson?: boolean
+  stages?: StageMaster[]
 }
 
 /**
@@ -75,19 +76,61 @@ export function extractLoraStackParams(node: WorkflowNode | null | undefined, ro
 }
 
 /**
+ * Resolves an external or legacy role key against current knownRoles using StageMaster previous_suffixes history chain,
+ * falling back to base_key graceful resolution if not matched.
+ */
+export function resolveRoleWithHistoryFallback(
+  roleKey: string | null | undefined,
+  stages: StageMaster[],
+  knownRoles: string[]
+): string {
+  // 0. 空値・不正入力ガード
+  if (!roleKey) return ''
+  // 1. 直接合致
+  if (knownRoles.includes(roleKey)) return roleKey
+  // 2. previous_suffixes 履歴チェーン解決 (直近最大10件に制限)
+  for (const st of stages) {
+    let prevList = st.previous_suffixes
+    if (typeof prevList === 'string') {
+      try {
+        prevList = JSON.parse(prevList)
+      } catch {
+        prevList = null
+      }
+    }
+    if (!prevList || !Array.isArray(prevList)) continue
+    const historyChain = prevList.slice(0, 10)
+    for (const prev of historyChain) {
+      if (prev && roleKey.endsWith(prev)) {
+        const base = roleKey.slice(0, -prev.length)
+        const updated = `${base}${st.suffix}`
+        if (knownRoles.includes(updated)) return updated
+      }
+    }
+  }
+  // 3. base_key グレイスフル解決 (アンダースコア分割による親プレフィックス合致)
+  const baseKey = roleKey.split('_')[0]
+  const matched = knownRoles.find((r) => r.startsWith(baseKey))
+  return matched || roleKey
+}
+
+/**
  * Returns default initial parameter values for all mappings defined in a workflow.
  */
-export function getInitialParams(workflow: Workflow): Record<string, string> {
+export function getInitialParams(workflow: Workflow, stages?: StageMaster[]): Record<string, string> {
   const init: Record<string, string> = {}
   const wfJson = (workflow.json_body || {}) as Record<string, WorkflowNode>
+  const knownRoles = workflow.mappings.map((m) => m.role).filter(Boolean) as string[]
+
   workflow.mappings.forEach((m) => {
     if (m.role) {
+      const resolvedRole = stages ? resolveRoleWithHistoryFallback(m.role, stages, knownRoles) : m.role
       if (m.input_type === 'lora_stack') {
         const node = m.node_id ? wfJson[m.node_id] : null
-        Object.assign(init, extractLoraStackParams(node, m.role))
+        Object.assign(init, extractLoraStackParams(node, resolvedRole))
       } else {
         const node = m.node_id ? wfJson[m.node_id] : null
-        init[m.role] = m.param_name ? extractGeneralParam(node, m.param_name) : ''
+        init[resolvedRole] = m.param_name ? extractGeneralParam(node, m.param_name) : ''
       }
     }
   })
@@ -196,13 +239,23 @@ export function injectGeneralParam(
  * Injects parameters, LoRA stacks, and optional seeds into a workflow JSON object.
  */
 export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Record<string, any> {
-  const { workflow, paramValues: inputParamValues, seedOptions, cloneJson = true } = options
+  const { workflow, paramValues: inputParamValues, seedOptions, cloneJson = true, stages } = options
   const wfJson: Record<string, any> = cloneJson
     ? JSON.parse(JSON.stringify(workflow.json_body || {}))
     : (workflow.json_body || {})
 
-  const defaultParams = getInitialParams(workflow)
-  const paramValues = { ...defaultParams, ...inputParamValues }
+  const defaultParams = getInitialParams(workflow, stages)
+  const healedInputs: Record<string, string> = { ...inputParamValues }
+  if (stages && stages.length > 0) {
+    const knownRoles = workflow.mappings.map((m) => m.role).filter(Boolean) as string[]
+    for (const [k, v] of Object.entries(inputParamValues)) {
+      const resolved = resolveRoleWithHistoryFallback(k, stages, knownRoles)
+      if (resolved && resolved !== k && !(resolved in healedInputs)) {
+        healedInputs[resolved] = v
+      }
+    }
+  }
+  const paramValues = { ...defaultParams, ...healedInputs }
 
   workflow.mappings.forEach((m) => {
     if (!m.role || !m.node_id) return

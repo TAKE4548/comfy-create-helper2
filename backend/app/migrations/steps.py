@@ -133,16 +133,17 @@ def step_004_tag_sets_thumbnail_and_sort_order(conn: Connection, inspector: Insp
 
 
 def step_005_master_tables_sort_order(conn: Connection, inspector: Inspector) -> None:
-    if "mapping_master" in inspector.get_table_names():
-        columns = [c["name"] for c in inspector.get_columns("mapping_master")]
-        if "sort_order" not in columns:
-            conn.execute(sa.text("ALTER TABLE mapping_master ADD COLUMN sort_order INTEGER DEFAULT 0"))
-            conn.execute(sa.text("""
-                UPDATE mapping_master SET sort_order = (
-                    SELECT COUNT(*) FROM mapping_master AS m2 WHERE m2.id <= mapping_master.id
-                ) - 1
-            """))
-            logger.info("Migrated: Added 'sort_order' column to 'mapping_master' table.")
+    for tbl in ("mapping_master", "mapping_masters"):
+        if tbl in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns(tbl)]
+            if "sort_order" not in columns:
+                conn.execute(sa.text(f"ALTER TABLE {tbl} ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(sa.text(f"""
+                    UPDATE {tbl} SET sort_order = (
+                        SELECT COUNT(*) FROM {tbl} AS m2 WHERE m2.id <= {tbl}.id
+                    ) - 1
+                """))
+                logger.info(f"Migrated: Added 'sort_order' column to '{tbl}' table.")
 
     if "loras" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("loras")]
@@ -526,6 +527,243 @@ def step_028_tag_subsets_thumbnail_path(conn: Connection, inspector: Inspector) 
         logger.info("Migrated: Added 'thumbnail_path' column to 'tag_subsets' table.")
 
 
+def step_029_workflow_mapping_v2_normalization(conn: Connection, inspector: Inspector) -> None:
+    table_names = inspector.get_table_names()
+
+    # 1. Rename mapping_master -> mapping_masters if legacy exists
+    if "mapping_master" in table_names and "mapping_masters" not in table_names:
+        conn.execute(sa.text("ALTER TABLE mapping_master RENAME TO mapping_masters"))
+        logger.info("Migrated: Renamed 'mapping_master' table to 'mapping_masters'.")
+        table_names = [("mapping_masters" if t == "mapping_master" else t) for t in table_names]
+
+    # 2. Create mapping_group_masters table if not exists
+    if "mapping_group_masters" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE mapping_group_masters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key VARCHAR NOT NULL UNIQUE,
+                name VARCHAR NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_builtin BOOLEAN NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 1
+            )
+        """))
+        logger.info("Migrated: Created 'mapping_group_masters' table.")
+
+    # 3. Create stage_masters table if not exists
+    if "stage_masters" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE stage_masters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key VARCHAR NOT NULL UNIQUE,
+                name VARCHAR NOT NULL,
+                suffix VARCHAR NOT NULL DEFAULT '',
+                search_keywords TEXT,
+                previous_suffixes TEXT,
+                is_builtin BOOLEAN NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+        logger.info("Migrated: Created 'stage_masters' table.")
+
+    # 4. Create mapping_masters table if not exists
+    if "mapping_masters" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE mapping_masters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER REFERENCES mapping_group_masters(id) ON DELETE SET NULL,
+                base_key VARCHAR NOT NULL,
+                name VARCHAR NOT NULL,
+                param_name VARCHAR NOT NULL,
+                input_type VARCHAR NOT NULL,
+                expected_class_types TEXT,
+                base_title_patterns TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                role VARCHAR,
+                display_name VARCHAR,
+                title_patterns TEXT
+            )
+        """))
+        logger.info("Migrated: Created 'mapping_masters' table.")
+    else:
+        cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(mapping_masters)")).fetchall()}
+        if "group_id" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN group_id INTEGER REFERENCES mapping_group_masters(id) ON DELETE SET NULL"))
+            logger.info("Migrated: Added 'group_id' column to 'mapping_masters' table.")
+        if "base_key" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN base_key VARCHAR"))
+            logger.info("Migrated: Added 'base_key' column to 'mapping_masters' table.")
+        if "name" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN name VARCHAR"))
+            logger.info("Migrated: Added 'name' column to 'mapping_masters' table.")
+        if "base_title_patterns" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN base_title_patterns TEXT"))
+            logger.info("Migrated: Added 'base_title_patterns' column to 'mapping_masters' table.")
+
+    # 5. Create mapping_variants table if not exists
+    if "mapping_variants" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE mapping_variants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                master_id INTEGER NOT NULL REFERENCES mapping_masters(id) ON DELETE CASCADE,
+                stage_id INTEGER NOT NULL REFERENCES stage_masters(id) ON DELETE CASCADE,
+                custom_role_override VARCHAR,
+                extra_title_patterns TEXT,
+                is_enabled BOOLEAN NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+        logger.info("Migrated: Created 'mapping_variants' table.")
+
+    # 6. Add variant_id to workflow_mappings if not present
+    if "workflow_mappings" in table_names:
+        cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(workflow_mappings)")).fetchall()}
+        if "variant_id" not in cols:
+            conn.execute(sa.text("ALTER TABLE workflow_mappings ADD COLUMN variant_id INTEGER REFERENCES mapping_variants(id) ON DELETE CASCADE"))
+            logger.info("Migrated: Added 'variant_id' column to 'workflow_mappings' table.")
+
+    # 7. Seed default groups
+    default_groups = [
+        ("prompt", "プロンプト系", 1, 1, 1),
+        ("sampler", "サンプラー系", 2, 1, 1),
+        ("model", "モデル・基盤", 3, 1, 1),
+        ("latent", "Latent・画像", 4, 1, 1),
+        ("controlnet", "ControlNet・補助", 5, 1, 1),
+        ("etc", "その他", 6, 1, 1),
+    ]
+    for g_key, g_name, s_order, is_b, is_a in default_groups:
+        existing_g = conn.execute(sa.text("SELECT id FROM mapping_group_masters WHERE key = :key"), {"key": g_key}).fetchone()
+        if not existing_g:
+            conn.execute(sa.text("""
+                INSERT INTO mapping_group_masters (key, name, sort_order, is_builtin, is_active)
+                VALUES (:key, :name, :sort_order, :is_builtin, :is_active)
+            """), {"key": g_key, "name": g_name, "sort_order": s_order, "is_builtin": is_b, "is_active": is_a})
+
+    # 8. Seed default stages
+    default_stages = [
+        ("main", "通常 / Main", "", '["main", "primary"]', 1, 1, 1),
+        ("rough", "Rough", "_rough", '["rough", "draft", "1st"]', 2, 1, 1),
+        ("detail", "Detail", "_detail", '["detail", "refiner", "2nd", "hires"]', 3, 1, 1),
+    ]
+    for s_key, s_name, s_suffix, s_kw, s_order, is_b, is_a in default_stages:
+        existing_s = conn.execute(sa.text("SELECT id FROM stage_masters WHERE key = :key"), {"key": s_key}).fetchone()
+        if not existing_s:
+            conn.execute(sa.text("""
+                INSERT INTO stage_masters (key, name, suffix, search_keywords, previous_suffixes, sort_order, is_builtin, is_active)
+                VALUES (:key, :name, :suffix, :search_keywords, '[]', :sort_order, :is_builtin, :is_active)
+            """), {
+                "key": s_key, "name": s_name, "suffix": s_suffix,
+                "search_keywords": s_kw, "sort_order": s_order,
+                "is_builtin": is_b, "is_active": is_a
+            })
+
+    # 9. Data migration (DML)
+    stage_rows = conn.execute(sa.text("SELECT id, key, suffix FROM stage_masters")).fetchall()
+    stages_by_key = {r[1]: (r[0], r[2]) for r in stage_rows}
+    main_stage_id, main_suffix = stages_by_key.get("main", (None, ""))
+    rough_stage_id, rough_suffix = stages_by_key.get("rough", (None, "_rough"))
+    detail_stage_id, detail_suffix = stages_by_key.get("detail", (None, "_detail"))
+
+    group_rows = conn.execute(sa.text("SELECT id, key FROM mapping_group_masters")).fetchall()
+    groups_by_key = {r[1]: r[0] for r in group_rows}
+
+    master_rows = conn.execute(sa.text("""
+        SELECT id, role, display_name, title_patterns, base_key, name, base_title_patterns, group_id
+        FROM mapping_masters
+    """)).fetchall()
+
+    for row in master_rows:
+        m_id, role, display_name, title_patterns, curr_base_key, curr_name, curr_base_patterns, curr_group_id = row
+
+        base_key = curr_base_key
+        target_stage_id = main_stage_id
+        target_suffix = main_suffix
+
+        role_str = role or f"master_{m_id}"
+        if not base_key:
+            if role_str.lower().endswith("_rough"):
+                base_key = role_str[:-6]
+                target_stage_id = rough_stage_id or main_stage_id
+                target_suffix = rough_suffix
+            elif role_str.lower().endswith("_detail"):
+                base_key = role_str[:-7]
+                target_stage_id = detail_stage_id or main_stage_id
+                target_suffix = detail_suffix
+            else:
+                base_key = role_str
+                target_stage_id = main_stage_id
+                target_suffix = main_suffix
+
+        name_val = curr_name or display_name or base_key
+        base_patterns_val = curr_base_patterns or title_patterns or "[]"
+
+        group_id_val = curr_group_id
+        if not group_id_val:
+            b_lower = (base_key or "").lower()
+            r_lower = role_str.lower()
+            if "prompt" in b_lower or "prompt" in r_lower:
+                group_id_val = groups_by_key.get("prompt")
+            elif any(k in b_lower or k in r_lower for k in ["sampler", "seed", "step", "cfg", "denoise", "fdetailer"]):
+                group_id_val = groups_by_key.get("sampler")
+            elif any(k in b_lower or k in r_lower for k in ["lora", "model", "checkpoint"]):
+                group_id_val = groups_by_key.get("model")
+            elif any(k in b_lower or k in r_lower for k in ["latent", "vae", "image"]):
+                group_id_val = groups_by_key.get("latent")
+            elif "controlnet" in b_lower or "controlnet" in r_lower:
+                group_id_val = groups_by_key.get("controlnet")
+            else:
+                group_id_val = groups_by_key.get("etc")
+
+        conn.execute(sa.text("""
+            UPDATE mapping_masters
+            SET base_key = :base_key,
+                name = :name,
+                base_title_patterns = :base_title_patterns,
+                group_id = :group_id
+            WHERE id = :id
+        """), {
+            "base_key": base_key,
+            "name": name_val,
+            "base_title_patterns": base_patterns_val,
+            "group_id": group_id_val,
+            "id": m_id
+        })
+
+        if target_stage_id:
+            var_row = conn.execute(sa.text("""
+                SELECT id FROM mapping_variants WHERE master_id = :master_id AND stage_id = :stage_id
+            """), {"master_id": m_id, "stage_id": target_stage_id}).fetchone()
+
+            if not var_row:
+                custom_role = None
+                expected_role = f"{base_key}{target_suffix}"
+                if role and role != expected_role:
+                    custom_role = role
+
+                conn.execute(sa.text("""
+                    INSERT INTO mapping_variants (master_id, stage_id, custom_role_override, extra_title_patterns, is_enabled, sort_order)
+                    VALUES (:master_id, :stage_id, :custom_role_override, '[]', 1, 0)
+                """), {
+                    "master_id": m_id,
+                    "stage_id": target_stage_id,
+                    "custom_role_override": custom_role
+                })
+                var_row = conn.execute(sa.text("""
+                    SELECT id FROM mapping_variants WHERE master_id = :master_id AND stage_id = :stage_id
+                """), {"master_id": m_id, "stage_id": target_stage_id}).fetchone()
+
+            if var_row and "workflow_mappings" in table_names:
+                var_id = var_row[0]
+                conn.execute(sa.text("""
+                    UPDATE workflow_mappings
+                    SET variant_id = :variant_id
+                    WHERE master_id = :master_id AND (variant_id IS NULL OR variant_id = 0)
+                """), {"variant_id": var_id, "master_id": m_id})
+
+    logger.info("Migrated: Step 029 workflow mapping v2 normalization applied successfully.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -543,4 +781,5 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("026", "dataset_projects_prompt_negative", step_026_dataset_projects_prompt_negative),
     MigrationStep("027", "generation_jobs", step_027_generation_jobs),
     MigrationStep("028", "tag_subsets_thumbnail_path", step_028_tag_subsets_thumbnail_path),
+    MigrationStep("029", "workflow_mapping_v2_normalization", step_029_workflow_mapping_v2_normalization),
 ]

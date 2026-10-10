@@ -1,4 +1,5 @@
 import unittest
+from typing import Optional
 from app.services.workflow_scanner import scan_workflow
 
 class DummyMappingMaster:
@@ -227,3 +228,186 @@ class TestWorkflowScanner(unittest.TestCase):
         # 5. Unknown
         res = estimate_base_model_from_checkpoints(["unknown_model_xyz.safetensors"], mappings)
         self.assertEqual(res, None)
+
+    def test_scan_workflow_variants_stage_keywords_matching(self):
+        from app.services.workflow_scanner import scan_workflow_variants
+
+        class DummyStage:
+            def __init__(self, id: int, key: str, suffix: str, search_keywords: str):
+                self.id = id
+                self.key = key
+                self.suffix = suffix
+                self.search_keywords = search_keywords
+
+        class DummyMaster:
+            def __init__(self, id: int, base_key: str, expected_class_types: str, param_name: str, base_title_patterns: str):
+                self.id = id
+                self.base_key = base_key
+                self.expected_class_types = expected_class_types
+                self.param_name = param_name
+                self.base_title_patterns = base_title_patterns
+
+        class DummyVariant:
+            def __init__(self, id: int, master: DummyMaster, stage: DummyStage, custom_role_override: Optional[str] = None, extra_title_patterns: str = "[]", is_enabled: bool = True):
+                self.id = id
+                self.master_id = master.id
+                self.stage_id = stage.id
+                self.master = master
+                self.stage = stage
+                self.custom_role_override = custom_role_override
+                self.extra_title_patterns = extra_title_patterns
+                self.is_enabled = is_enabled
+
+            @property
+            def computed_role(self) -> str:
+                if self.custom_role_override:
+                    return self.custom_role_override
+                return f"{self.master.base_key}{self.stage.suffix}"
+
+        stage_main = DummyStage(1, "main", "", "[]")
+        stage_rough = DummyStage(2, "rough", "_rough", '["rough", "draft"]')
+        stage_detail = DummyStage(3, "detail", "_detail", '["detail"]')
+
+        master_steps = DummyMaster(1, "steps", '["KSampler"]', "steps", '["KSampler"]')
+
+        var_main = DummyVariant(1, master_steps, stage_main)
+        var_rough = DummyVariant(2, master_steps, stage_rough)
+        var_detail = DummyVariant(3, master_steps, stage_detail)
+
+        workflow_json = {
+            "10": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 10},
+                "_meta": {"title": "KSampler (Rough Pass)"}
+            },
+            "20": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 30},
+                "_meta": {"title": "KSampler (Detail Stage)"}
+            },
+            "30": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 20},
+                "_meta": {"title": "KSampler"}
+            }
+        }
+
+        res = scan_workflow_variants(workflow_json, [var_main, var_rough, var_detail])
+        self.assertEqual(len(res["matched"]), 3)
+        self.assertEqual(len(res["warnings"]), 0)
+
+        match_by_role = {m["role"]: m["node_id"] for m in res["matched"]}
+        self.assertEqual(match_by_role["steps"], "30")
+        self.assertEqual(match_by_role["steps_rough"], "10")
+        self.assertEqual(match_by_role["steps_detail"], "20")
+
+    def test_scan_workflow_variants_unmatched_stage_not_found(self):
+        from app.services.workflow_scanner import scan_workflow_variants
+
+        class DummyStage:
+            def __init__(self, id: int, key: str, suffix: str, search_keywords: str):
+                self.id = id
+                self.key = key
+                self.suffix = suffix
+                self.search_keywords = search_keywords
+
+        class DummyMaster:
+            def __init__(self, id: int, base_key: str, expected_class_types: str, param_name: str):
+                self.id = id
+                self.base_key = base_key
+                self.expected_class_types = expected_class_types
+                self.param_name = param_name
+                self.base_title_patterns = '["KSampler"]'
+
+        class DummyVariant:
+            def __init__(self, id: int, master: DummyMaster, stage: DummyStage):
+                self.id = id
+                self.master_id = master.id
+                self.stage_id = stage.id
+                self.master = master
+                self.stage = stage
+                self.custom_role_override = None
+                self.extra_title_patterns = "[]"
+                self.is_enabled = True
+
+            @property
+            def computed_role(self) -> str:
+                return f"{self.master.base_key}{self.stage.suffix}"
+
+        stage_main = DummyStage(1, "main", "", "[]")
+        stage_rough = DummyStage(2, "rough", "_rough", '["rough"]')
+        master = DummyMaster(1, "steps", '["KSampler"]', "steps")
+
+        var_main = DummyVariant(1, master, stage_main)
+        var_rough = DummyVariant(2, master, stage_rough)
+
+        # 1-stage workflow with no rough node
+        workflow_json = {
+            "30": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 20},
+                "_meta": {"title": "KSampler"}
+            }
+        }
+
+        res = scan_workflow_variants(workflow_json, [var_main, var_rough])
+        self.assertEqual(len(res["matched"]), 1)
+        self.assertEqual(res["matched"][0]["role"], "steps")
+        self.assertEqual(res["matched"][0]["node_id"], "30")
+
+        self.assertEqual(len(res["warnings"]), 1)
+        self.assertEqual(res["warnings"][0]["role"], "steps_rough")
+        self.assertEqual(res["warnings"][0]["status"], "not_found")
+
+    def test_scan_workflow_variants_extra_title_patterns_and_disabled(self):
+        from app.services.workflow_scanner import scan_workflow_variants
+
+        class DummyStage:
+            def __init__(self, id: int, key: str, suffix: str, search_keywords: str):
+                self.id = id
+                self.key = key
+                self.suffix = suffix
+                self.search_keywords = search_keywords
+
+        class DummyMaster:
+            def __init__(self, id: int, base_key: str, expected_class_types: str, param_name: str):
+                self.id = id
+                self.base_key = base_key
+                self.expected_class_types = expected_class_types
+                self.param_name = param_name
+                self.base_title_patterns = '["KSampler"]'
+
+        class DummyVariant:
+            def __init__(self, id: int, master: DummyMaster, stage: DummyStage, extra_title_patterns: str = "[]", is_enabled: bool = True):
+                self.id = id
+                self.master_id = master.id
+                self.stage_id = stage.id
+                self.master = master
+                self.stage = stage
+                self.custom_role_override = None
+                self.extra_title_patterns = extra_title_patterns
+                self.is_enabled = is_enabled
+
+            @property
+            def computed_role(self) -> str:
+                return f"{self.master.base_key}{self.stage.suffix}"
+
+        stage_main = DummyStage(1, "main", "", "[]")
+        master = DummyMaster(1, "steps", '["KSampler"]', "steps")
+
+        var1 = DummyVariant(1, master, stage_main, extra_title_patterns='["Custom Special Sampler"]', is_enabled=True)
+        var_disabled = DummyVariant(2, master, stage_main, is_enabled=False)
+
+        workflow_json = {
+            "50": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 25},
+                "_meta": {"title": "Custom Special Sampler"}
+            }
+        }
+
+        res = scan_workflow_variants(workflow_json, [var1, var_disabled])
+        self.assertEqual(len(res["matched"]), 1)
+        self.assertEqual(res["matched"][0]["node_id"], "50")
+        self.assertEqual(len(res["warnings"]), 0)
+

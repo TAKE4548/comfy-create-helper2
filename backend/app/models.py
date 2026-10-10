@@ -30,22 +30,87 @@ class ParamTypeMaster(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
-class MappingMaster(Base):
-    __tablename__ = "mapping_master"
+class MappingGroupMaster(Base):
+    __tablename__ = "mapping_group_masters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    role: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    expected_class_types: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    masters: Mapped[list["MappingMaster"]] = relationship(back_populates="group")
+
+
+class StageMaster(Base):
+    __tablename__ = "stage_masters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    suffix: Mapped[str] = mapped_column(String, nullable=False, default="")
+    search_keywords: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    previous_suffixes: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    variants: Mapped[list["MappingVariant"]] = relationship(back_populates="stage")
+
+
+class MappingMaster(Base):
+    __tablename__ = "mapping_masters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mapping_group_masters.id", ondelete="SET NULL"), nullable=True)
+    base_key: Mapped[str] = mapped_column(String, nullable=False, default="")
+    name: Mapped[str] = mapped_column(String, nullable=False, default="")
     param_name: Mapped[str] = mapped_column(String, nullable=False)
     input_type: Mapped[str] = mapped_column(String, nullable=False)  # textarea/int/float/select
-    display_name: Mapped[str] = mapped_column(String, nullable=False)
-    title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    expected_class_types: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    base_title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # relationships
+    # Legacy compatibility fields
+    role: Mapped[str] = mapped_column(String, nullable=True, default="")
+    display_name: Mapped[str] = mapped_column(String, nullable=True, default="")
+    title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+
+    # Relationships
+    group: Mapped[Optional["MappingGroupMaster"]] = relationship(back_populates="masters")
+    variants: Mapped[list["MappingVariant"]] = relationship(
+        back_populates="master", cascade="all, delete-orphan"
+    )
     workflow_mappings: Mapped[list["WorkflowMapping"]] = relationship(
         back_populates="master", cascade="all, delete-orphan"
     )
+
+
+class MappingVariant(Base):
+    __tablename__ = "mapping_variants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("mapping_masters.id", ondelete="CASCADE"), nullable=False)
+    stage_id: Mapped[int] = mapped_column(ForeignKey("stage_masters.id", ondelete="CASCADE"), nullable=False)
+    custom_role_override: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    extra_title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    master: Mapped["MappingMaster"] = relationship(back_populates="variants")
+    stage: Mapped["StageMaster"] = relationship(back_populates="variants")
+    workflow_mappings: Mapped[list["WorkflowMapping"]] = relationship(
+        back_populates="variant", cascade="all, delete-orphan"
+    )
+
+    @property
+    def computed_role(self) -> str:
+        if self.custom_role_override:
+            return self.custom_role_override
+        suf = self.stage.suffix if (self.stage and self.stage.suffix) else ""
+        base = self.master.base_key if self.master else ""
+        return f"{base}{suf}"
 
 
 lora_base_models = Table(
@@ -156,11 +221,29 @@ class WorkflowMapping(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
-    master_id: Mapped[int] = mapped_column(ForeignKey("mapping_master.id", ondelete="CASCADE"), nullable=False)
+    master_id: Mapped[int] = mapped_column(ForeignKey("mapping_masters.id", ondelete="CASCADE"), nullable=True, default=0)
+    variant_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mapping_variants.id", ondelete="CASCADE"), nullable=True)
     node_id: Mapped[str] = mapped_column(String, nullable=False)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="mappings")
-    master: Mapped["MappingMaster"] = relationship(back_populates="workflow_mappings")
+    master: Mapped[Optional["MappingMaster"]] = relationship(back_populates="workflow_mappings")
+    variant: Mapped[Optional["MappingVariant"]] = relationship(back_populates="workflow_mappings")
+
+    @property
+    def effective_master_id(self) -> Optional[int]:
+        if self.master_id is not None:
+            return self.master_id
+        if self.variant:
+            return self.variant.master_id
+        return None
+
+    @property
+    def effective_master(self) -> Optional["MappingMaster"]:
+        if self.master is not None:
+            return self.master
+        if self.variant and self.variant.master:
+            return self.variant.master
+        return None
 
 
 class WorkflowHistory(Base):

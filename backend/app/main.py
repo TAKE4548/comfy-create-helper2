@@ -27,7 +27,7 @@ from app import models
 from app.migrations import run_migrations
 from app.seeder import seed_initial_data
 from app.routers import (
-    workflows, mapping_masters, snapshots, albums,
+    workflows, mapping_masters, mapping_groups, stage_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
     presets, bypass_profiles, base_models, fonts,
     param_type_masters, comfy, param_sync_groups,
@@ -161,6 +161,8 @@ app.add_middleware(
 app.include_router(system_logs.router)
 app.include_router(workflows.router)
 app.include_router(mapping_masters.router)
+app.include_router(mapping_groups.router)
+app.include_router(stage_masters.router)
 app.include_router(snapshots.router)
 app.include_router(albums.router)
 app.include_router(loras.router)

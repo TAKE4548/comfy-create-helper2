@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2, Check } from 'lucide-react'
 import { workflowsApi, workflowPresetsApi, snapshotsApi, mappingMastersApi, baseModelsApi } from '../../../api/client'
-import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, BaseModel } from '../../../api/types'
+import { stageMastersApi } from '../../../api/domains/stageMasters'
+import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, BaseModel, StageMaster } from '../../../api/types'
+import { detectActiveStages } from '../../../utils/workflowAdaptiveStageDetector'
+import { AdaptiveWorkflowWiring } from '../../../components/AdaptiveWorkflowWiring'
 import { useConfig } from '../../../hooks/useConfig'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
@@ -134,6 +137,18 @@ export function WorkflowConnectionSection({
   })
   const { data: mappingMasters = [] } = useQuery({ queryKey: ['mapping-masters'], queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>, enabled: group !== 'system' })
   const { data: baseModels = [] } = useQuery({ queryKey: ['base-models'], queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>, enabled: group !== 'system' })
+  const { data: stageMasters = [] } = useQuery({
+    queryKey: ['stage-masters'],
+    queryFn: () => stageMastersApi.list() as Promise<StageMaster[]>,
+    enabled: group !== 'system',
+  })
+
+  const activeStages = useMemo(() => {
+    const masters = stageMasters.length > 0 ? stageMasters : [
+      { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 } as StageMaster,
+    ]
+    return detectActiveStages(configWorkflow?.json_body, masters)
+  }, [configWorkflow?.json_body, stageMasters])
 
   useEffect(() => {
     if (!configWorkflow || configWorkflow.id !== configWorkflowId) return
@@ -171,12 +186,13 @@ export function WorkflowConnectionSection({
     }
   }
 
-  const handleSaveLinks = () => {
+  const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number }>) => {
     if (!configWorkflow) return
+    const mappingsToSave = updatedMappings || configMappings
     void saveWorkflowConfig({
       name: configWorkflow.name,
       json_body: configWorkflow.json_body,
-      mappings: configMappings,
+      mappings: mappingsToSave.map((m) => ({ master_id: m.master_id, node_id: m.node_id })),
       target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null,
       default_applied_assets: configWorkflow.default_applied_assets ?? null,
     })
@@ -594,24 +610,25 @@ export function WorkflowConnectionSection({
                         {configWorkflowId === wf.id && <div className="space-y-3 border-t border-zinc-800 bg-zinc-950 p-4" aria-label="ワークフロー対応付け設定">
                           {!configWorkflow ? <p className="text-xs text-zinc-500">設定を読み込み中...</p> : <>
                             <h3 className="text-sm font-semibold">{configWorkflow.name} の対応付け</h3>
-                            {configMappings.map((mapping, index) => {
-                              const master = mappingMasters.find((m) => m.id === mapping.master_id)
-                              return <div key={`${mapping.master_id}-${index}`} className="grid grid-cols-3 items-center gap-2 text-xs">
-                                <select aria-label={`${master?.role || 'role'} の対応付け`} value={mapping.master_id} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigMappings((items) => items.map((item, i) => i === index ? { ...item, master_id: Number(e.target.value) } : item)) }} className="rounded bg-zinc-900 p-2">
-                                  {mappingMasters.map((option) => <option key={option.id} value={option.id}>{option.role} · {option.param_name}</option>)}
-                                </select>
-                                <select aria-label={`${master?.role || 'role'} のノード`} value={mapping.node_id} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigMappings((items) => items.map((item, i) => i === index ? { ...item, node_id: e.target.value } : item)) }} className="rounded bg-zinc-900 p-2">
-                                  {graphNodeIds(configWorkflow.json_body).map((id) => <option key={id} value={id}>{id}</option>)}
-                                </select>
-                                <span className="text-zinc-400">{master?.role} → {master?.param_name || '—'}</span>
-                              </div>
-                            })}
+                            <AdaptiveWorkflowWiring
+                              workflow={configWorkflow}
+                              activeStages={activeStages}
+                              mappingMasters={mappingMasters}
+                              onSaveMappings={handleSaveLinks}
+                              currentMappings={configMappings}
+                              onChangeMappings={(items) => {
+                                configDraftRevision.current += 1
+                                setSaved(null)
+                                setConfigError('')
+                                setConfigMappings(items.map((item) => ({ master_id: item.master_id, node_id: item.node_id })))
+                              }}
+                              isSaving={configSaving}
+                            />
                             <label className="flex items-center gap-3 text-xs text-zinc-300">ベースモデル関連
                               <select aria-label="ベースモデル関連" value={configBaseModelId} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigBaseModelId(e.target.value) }} className="rounded bg-zinc-900 p-2">
                                 <option value="">未指定</option>{baseModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                               </select>
                             </label>
-                            <button type="button" disabled={configSaving} onClick={handleSaveLinks} className="rounded bg-accent-green/15 px-3 py-2 text-xs text-accent-green disabled:opacity-50">{configSaving ? '保存中…' : '対応付けを保存'}</button>
                             {saved === 'workflow-config' && <p role="status" className="text-xs text-emerald-300">設定を保存しました</p>}
                             <div className="flex gap-2">
                               <button type="button" onClick={() => setExportText(JSON.stringify({ format: 'prompt-surgeon-workflow-config', version: 1, name: configWorkflow.name, json_body: configWorkflow.json_body, mappings: configMappings, target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null, default_applied_assets: configWorkflow.default_applied_assets ?? null }, null, 2))} className="rounded border border-zinc-700 px-3 py-2 text-xs">設定JSONをエクスポート</button>

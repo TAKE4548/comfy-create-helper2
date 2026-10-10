@@ -138,6 +138,16 @@ from app.schemas.speech_batch import (
     SpeechBatchItemRetryRequest,
 )
 
+from app.schemas.mapping import (
+    StageMasterBase,
+    StageMasterCreate,
+    StageMasterUpdate,
+    StageMasterRead,
+    StageMasterReorder,
+    CascadePreviewResponse,
+    CascadeRenameRequest,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -180,6 +190,9 @@ __all__ = [
     # SpeechBatch
     "SpeechBatchJobItemCreate", "SpeechBatchJobCreate", "SpeechBatchJobItemRead", "SpeechBatchJobRead",
     "SpeechBatchItemRetryRequest",
+    # StageMaster / Cascade
+    "StageMasterBase", "StageMasterCreate", "StageMasterUpdate", "StageMasterRead",
+    "StageMasterReorder", "CascadePreviewResponse", "CascadeRenameRequest",
 ]
 
 

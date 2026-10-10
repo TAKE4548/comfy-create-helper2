@@ -33,6 +33,155 @@ export interface MappingMasterUsage {
   node_id: string
 }
 
+// ─── REQ-336 2-Axis Mapping Architecture Types ──────────────────
+
+export interface MappingGroupMaster {
+  id: number
+  key: string
+  name: string
+  sort_order: number
+  is_builtin: boolean
+  is_active: boolean
+  master_count?: number
+}
+
+export interface MappingGroupMasterCreate {
+  key: string
+  name: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface MappingGroupMasterUpdate {
+  name?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface StageMaster {
+  id: number
+  key: string
+  name: string
+  suffix: string
+  search_keywords: string[] | null
+  previous_suffixes: string[] | null
+  is_builtin: boolean
+  is_active: boolean
+  sort_order: number
+}
+
+export interface StageMasterCreate {
+  key: string
+  name: string
+  suffix?: string
+  search_keywords?: string[] | null
+  is_builtin?: boolean
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface StageMasterUpdate {
+  name?: string
+  suffix?: string
+  search_keywords?: string[] | null
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface MappingVariant {
+  id: number
+  master_id: number
+  stage_id: number
+  stage_key: string
+  stage_name: string
+  stage_suffix: string
+  custom_role_override: string | null
+  computed_role: string
+  extra_title_patterns: string[] | null
+  is_enabled: boolean
+}
+
+export interface MappingVariantUpdateItem {
+  id?: number
+  stage_id?: number
+  custom_role_override?: string | null
+  extra_title_patterns?: string[] | null
+  is_enabled?: boolean
+}
+
+export interface MappingMasterV2 {
+  id: number
+  group_id: number | null
+  base_key: string
+  name: string
+  param_name: string
+  input_type: string
+  expected_class_types: string[] | null
+  base_title_patterns: string[] | null
+  sort_order: number
+  variants: MappingVariant[]
+  // Legacy compatibility fields
+  role?: string
+  display_name?: string
+  title_patterns?: string[] | null
+}
+
+export interface MappingMasterV2Create {
+  role?: string
+  base_key?: string
+  display_name?: string
+  name?: string
+  param_name: string
+  input_type: string
+  group_id?: number | null
+  expected_class_types?: string[] | null
+  title_patterns?: string[] | null
+  base_title_patterns?: string[] | null
+  sort_order?: number
+  variants?: MappingVariantUpdateItem[]
+}
+
+export interface MappingMasterV2Update {
+  group_id?: number | null
+  base_key?: string
+  name?: string
+  param_name?: string
+  input_type?: string
+  expected_class_types?: string[] | null
+  base_title_patterns?: string[] | null
+  sort_order?: number
+  variants?: MappingVariantUpdateItem[]
+  role?: string
+  display_name?: string
+  title_patterns?: string[] | null
+}
+
+export interface CascadePreviewResult {
+  stage_id: number
+  old_suffix: string
+  new_suffix: string
+  affected_variants_count: number
+  affected_presets_count: number
+  affected_snapshots_count: number
+  preview_items?: Array<{
+    target_type: 'variant' | 'preset' | 'snapshot'
+    id: number | string
+    name: string
+    old_role: string
+    new_role: string
+  }>
+  role_diffs?: Array<{
+    old_role: string
+    new_role: string
+  }>
+}
+
+export interface CascadeRenamePayload {
+  new_suffix: string
+  update_presets?: boolean
+  update_snapshots?: boolean
+}
+
 // 笏笏笏 Workflow 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 export interface WorkflowMapping {
