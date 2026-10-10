@@ -87,6 +87,33 @@ describe('BaseImageSelectModal', () => {
     )
   }
 
+  it('uses the accessible common sheet wrapper and gives snapshot and album controls 44px targets', async () => {
+    renderWithQuery(
+      <BaseImageSelectModal
+        workflowId={1}
+        currentSnapshotId={1}
+        onClose={mockOnClose}
+        onSelect={mockOnSelect}
+      />
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'ベース画像を差し替え' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog.className).toContain('lg:max-w-[42.5rem]')
+    expect(dialog.querySelector('div[aria-hidden="true"]')).toHaveClass('md:hidden')
+    const expectTouchTargets = () => {
+      expect(Array.from(dialog.querySelectorAll('button, select')).every((control) =>
+        control.classList.contains('min-h-11')
+      )).toBe(true)
+    }
+
+    await screen.findByText('#2')
+    expectTouchTargets()
+    fireEvent.click(screen.getByRole('button', { name: /アルバム/ }))
+    await screen.findByText('Album 1')
+    expectTouchTargets()
+  })
+
   it('renders snapshot tab and loads filter options and snapshots by default', async () => {
     renderWithQuery(
       <BaseImageSelectModal
@@ -296,8 +323,11 @@ describe('BaseImageSelectModal', () => {
       />
     )
 
-    const closeBtn = screen.getByRole('button', { name: '' }) // Lucide X button
+    const closeBtn = screen.getByRole('button', { name: '閉じる' })
     fireEvent.click(closeBtn)
     expect(mockOnClose).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('dialog', { name: 'ベース画像を差し替え' }).parentElement!)
+    expect(mockOnClose).toHaveBeenCalledTimes(2)
   })
 })

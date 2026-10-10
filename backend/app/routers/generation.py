@@ -155,11 +155,16 @@ async def cancel_job(
     job_id: str,
     request: Request,
     only_unsubmitted: bool = False,
+    only_queued: bool = False,
     service: GenerationService = Depends(_service),
 ) -> Response:
     try:
+        if only_unsubmitted and only_queued:
+            raise HTTPException(status_code=422, detail="only_unsubmitted and only_queued cannot be combined")
         result = (
-            await service.cancel_unsubmitted(job_id)
+            await service.cancel_queued(job_id)
+            if only_queued
+            else await service.cancel_unsubmitted(job_id)
             if only_unsubmitted
             else await service.cancel(job_id)
         )

@@ -10,6 +10,24 @@ from app import models, schemas
 router = APIRouter(prefix="/api/albums", tags=["albums"])
 
 
+def _album_description(db: Session, album_id: int) -> str | None:
+    setting = db.get(models.AppSetting, f"album_description:{album_id}")
+    return setting.value if setting else None
+
+
+def _store_album_description(db: Session, album_id: int, description: str | None) -> None:
+    key = f"album_description:{album_id}"
+    setting = db.get(models.AppSetting, key)
+    if not description:
+        if setting is not None:
+            db.delete(setting)
+        return
+    if setting is None:
+        db.add(models.AppSetting(key=key, value=description))
+    else:
+        setting.value = description
+
+
 @router.get("", response_model=list[schemas.AlbumRead])
 def list_albums(db: Session = Depends(get_db)):
     albums = db.query(models.Album).order_by(models.Album.sort_order.asc(), models.Album.id.asc()).all()
@@ -19,6 +37,7 @@ def list_albums(db: Session = Depends(get_db)):
             name=album.name,
             sort_order=album.sort_order,
             created_at=album.created_at,
+            description=_album_description(db, album.id),
             items=[
                 schemas.AlbumItemRead(
                     snapshot_id=item.snapshot_id,
@@ -43,6 +62,7 @@ def get_album(album_id: int, db: Session = Depends(get_db)):
         name=album.name,
         sort_order=album.sort_order,
         created_at=album.created_at,
+        description=_album_description(db, album.id),
         items=[
             schemas.AlbumItemRead(
                 snapshot_id=item.snapshot_id,
@@ -62,6 +82,7 @@ def create_album(payload: schemas.AlbumCreate, db: Session = Depends(get_db)):
     album = models.Album(name=payload.name, sort_order=next_order)
     db.add(album)
     db.flush()
+    _store_album_description(db, album.id, payload.description)
     for idx, snap_id in enumerate(payload.snapshot_ids):
         db.add(models.AlbumItem(
             album_id=album.id,
@@ -70,7 +91,13 @@ def create_album(payload: schemas.AlbumCreate, db: Session = Depends(get_db)):
         ))
     db.commit()
     db.refresh(album)
-    return album
+    return schemas.AlbumSummary(
+        id=album.id,
+        name=album.name,
+        sort_order=album.sort_order,
+        created_at=album.created_at,
+        description=_album_description(db, album.id),
+    )
 
 
 @router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
@@ -103,6 +130,9 @@ def update_album(album_id: int, payload: schemas.AlbumUpdate, db: Session = Depe
     if payload.sort_order is not None:
         album.sort_order = payload.sort_order
 
+    if "description" in payload.model_fields_set:
+        _store_album_description(db, album_id, payload.description)
+
     db.commit()
     db.refresh(album)
     return get_album(album_id, db)
@@ -130,6 +160,7 @@ def delete_album(album_id: int, db: Session = Depends(get_db)):
     album = db.query(models.Album).filter(models.Album.id == album_id).first()
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
+    _store_album_description(db, album_id, None)
     db.delete(album)
     db.commit()
 
@@ -195,4 +226,3 @@ def add_album_items(
     db.commit()
     db.refresh(album)
     return get_album(album_id, db)
-

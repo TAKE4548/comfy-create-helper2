@@ -13,7 +13,7 @@ import { HistoryModalPreview } from '../../components/HistoryModalPreview'
 import { AddSnapshotToAlbumModal } from '../../components/AddSnapshotToAlbumModal'
 import { SpeechBubbleEditorModal } from '../../components/SpeechBubbleEditorModal'
 import { BatchSpeechTransformModal } from '../../components/BatchSpeechTransformModal'
-import { useMultiSelect } from '../../hooks/useMultiSelect'
+import { useCollectionSelection } from '../../hooks/useCollectionSelection'
 import { MultiSelectToolbar } from '../../components/MultiSelectToolbar'
 import { useThumbnailAspectRatio } from '../../hooks/useThumbnailAspectRatio'
 import { useBulkDownload } from './hooks/useBulkDownload'
@@ -23,6 +23,7 @@ import { AlbumListView } from './components/AlbumListView'
 import { AlbumDetailView } from './views/AlbumDetailView'
 import { SnapshotGalleryView } from './views/SnapshotGalleryView'
 import { PageHeader } from '../../components/common/PageHeader'
+import { Modal } from '../../components/common/Modal'
 
 /**
  * サムネイル URL または元画像 URL を安全に解決する。
@@ -112,6 +113,11 @@ export function HistoryPage() {
       }) as Promise<SnapshotSummary[]>,
   })
 
+  const { data: allSnapshots } = useQuery({
+    queryKey: ['snapshots', null, null, null],
+    queryFn: () => snapshotsApi.list({}) as Promise<SnapshotSummary[]>,
+  })
+
   const { data: activeBatchJob } = useQuery({
     queryKey: ['speech-batch-active-job'],
     queryFn: () => speechBatchApi.getActiveJob(),
@@ -169,8 +175,8 @@ export function HistoryPage() {
       : copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
   }, [snapshots, sortOrder])
 
-  const snapshotMultiSelect = useMultiSelect({ items: snapshots ?? [] })
-  const albumItemMultiSelect = useMultiSelect({
+  const snapshotMultiSelect = useCollectionSelection<number, (typeof sortedSnapshots)[number]>({ items: sortedSnapshots })
+  const albumItemMultiSelect = useCollectionSelection<number, { id: number }>({
     items: sortedAlbumItems.map((i) => ({ id: i.snapshot_id })),
   })
 
@@ -325,7 +331,9 @@ export function HistoryPage() {
                           : 'text-zinc-500 hover:text-zinc-300'
                       }`}
                     >
-                      {v === 'snapshots' ? 'Snapshots' : 'Albums'}
+                      {v === 'snapshots'
+                        ? `Snapshots (${allSnapshots?.length ?? snapshots?.length ?? 0})`
+                        : `Albums (${albums?.length ?? 0})`}
                     </button>
                   ))}
                 </div>
@@ -386,6 +394,10 @@ export function HistoryPage() {
           )}
 
           {view === 'snapshots' ? (
+            <>
+            <div className="px-5 py-2 text-xs text-zinc-400" data-testid="history-snapshot-count">
+              表示中: {Math.min(snapshotLimit, sortedSnapshots.length)} / {allSnapshots?.length ?? snapshots?.length ?? 0}件
+            </div>
             <SnapshotGalleryView
               snapshots={snapshots ?? []}
               workflows={workflows}
@@ -412,6 +424,7 @@ export function HistoryPage() {
                 if (confirm('Delete snapshot?')) deleteSnapshot.mutate(id)
               }}
             />
+            </>
           ) : (
             <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
               <AlbumListView
@@ -440,11 +453,12 @@ export function HistoryPage() {
       <AddSnapshotToAlbumModal
         isOpen={isAddToAlbumModalOpen}
         onClose={() => setIsAddToAlbumModalOpen(false)}
-        onConfirm={({ albumId, newAlbumName }) => {
-          addToAlbumMutation.mutate({
+        onConfirm={async ({ albumId, newAlbumName }) => {
+          const snapshotIds = [...snapshotMultiSelect.selectedIds]
+          await addToAlbumMutation.mutateAsync({
             albumId,
             newAlbumName,
-            snapshotIds: [...snapshotMultiSelect.selectedIds],
+            snapshotIds,
           })
           setIsAddToAlbumModalOpen(false)
           snapshotMultiSelect.exitMultiSelectMode()
@@ -529,8 +543,13 @@ export function HistoryPage() {
 
       {/* アルバム削除スコープ選択モーダル */}
       {albumDeleteTarget.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 animate-scale-in">
+        <Modal
+          isOpen
+          onClose={() => setAlbumDeleteTarget({ isOpen: false, snapshotIds: [] })}
+          size="sm"
+          ariaLabel={`アルバム「${currentAlbum?.name ?? ''}」の${albumDeleteTarget.snapshotIds.length}件の削除方法を選択`}
+          dialogClassName="p-5 space-y-4 animate-scale-in"
+        >
             <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
               <Trash2 size={16} className="text-red-400" />
               アルバムからアイテムを削除
@@ -591,8 +610,7 @@ export function HistoryPage() {
                 キャンセル
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

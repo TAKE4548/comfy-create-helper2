@@ -80,6 +80,8 @@ describe('HistoryModalPreview', () => {
     expect(screen.getByAltText('Preview 2')).toHaveAttribute('src', 'image-a')
     expect(onClose).not.toHaveBeenCalled()
     expect(onChangeIndex).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
     finish(saved)
     await waitFor(() => expect(screen.getByAltText('Preview 2')).toHaveAttribute('src', 'image-b'))
   })
@@ -314,8 +316,10 @@ describe('HistoryModalPreview', () => {
 
     // Initial render checks
     expect(screen.getByAltText('Preview 1')).toBeInTheDocument()
-    const nextBtn = screen.getByRole('button', { name: '>' })
+    const nextBtn = screen.getByRole('button', { name: '次の画像' })
     expect(nextBtn).toBeInTheDocument()
+    expect(nextBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(nextBtn).toHaveClass('min-h-11', 'min-w-11')
 
     // Trigger mouse move to ensure resetControlsTimeout does not disrupt DOM
     fireEvent.mouseMove(screen.getByAltText('Preview 1'))
@@ -335,6 +339,73 @@ describe('HistoryModalPreview', () => {
     )
 
     expect(screen.getByAltText('Preview 1')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '>' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '次の画像' })).toBeInTheDocument()
+  })
+
+  it('uses Escape first to leave fullscreen, then to close the preview', () => {
+    const onClose = vi.fn()
+    renderComponent({ images: ['image-a', 'image-b'], onClose })
+    const originalFullscreen = Object.getOwnPropertyDescriptor(document, 'fullscreenElement')
+    const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, 'exitFullscreen')
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, writable: true, value: null })
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: vi.fn(() => {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, writable: true, value: null })
+        document.dispatchEvent(new Event('fullscreenchange'))
+      }),
+    })
+    const modal = document.querySelector('.modal-backdrop') as HTMLDivElement & { requestFullscreen: () => void }
+    modal.requestFullscreen = vi.fn(() => {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, writable: true, value: modal })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+
+    fireEvent.click(screen.getByAltText('Preview 1'))
+    expect(document.fullscreenElement).toBe(modal)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(document.fullscreenElement).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    if (originalFullscreen) Object.defineProperty(document, 'fullscreenElement', originalFullscreen)
+    else delete (document as any).fullscreenElement
+    if (originalExitFullscreen) Object.defineProperty(document, 'exitFullscreen', originalExitFullscreen)
+    else delete (document as any).exitFullscreen
+  })
+
+  it('supports fit/100/200 zoom, enlarged-image panning, and explicit A/B boundary comparison', () => {
+    renderComponent({ images: ['image-a', 'image-b', 'image-c'] })
+
+    const image = screen.getByAltText('Preview 1')
+    fireEvent.click(screen.getByRole('button', { name: '100%' }))
+    expect(image).toHaveClass('max-w-none', 'max-h-none')
+    fireEvent.click(screen.getByRole('button', { name: '200%' }))
+    expect(image).toHaveStyle({ transform: 'translate(0px, 0px) scale(2)' })
+    const viewer = image.parentElement!
+    const originalPointerEvent = window.PointerEvent
+    window.PointerEvent = MouseEvent as typeof PointerEvent
+    fireEvent.pointerDown(image, { pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(viewer, { pointerId: 1, clientX: 30, clientY: 25 })
+    fireEvent.pointerUp(viewer, { pointerId: 1 })
+    window.PointerEvent = originalPointerEvent
+    expect(image).toHaveStyle({ transform: 'translate(20px, 15px) scale(2)' })
+    fireEvent.click(screen.getByRole('button', { name: 'Fit' }))
+    expect(image).toHaveClass('max-w-full', 'max-h-full')
+
+    fireEvent.click(screen.getByRole('button', { name: '画像比較' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'A画像' }), { target: { value: '2' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'B画像' }), { target: { value: '0' } })
+    expect(screen.getByAltText('Comparison A')).toHaveAttribute('src', 'image-c')
+    expect(screen.getByAltText('Comparison B')).toHaveAttribute('src', 'image-a')
+    const comparisonLayer = screen.getByTestId('comparison-b-layer')
+    fireEvent.change(screen.getByRole('slider', { name: '比較境界' }), { target: { value: '70' } })
+    expect(comparisonLayer).toHaveStyle({ clipPath: 'inset(0 30% 0 0)' })
+
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' })
+    expect(comparisonLayer).toHaveStyle({ clipPath: 'inset(0 0% 0 0)' })
+    fireEvent.keyUp(window, { code: 'Space', key: ' ' })
+    expect(comparisonLayer).toHaveStyle({ clipPath: 'inset(0 30% 0 0)' })
   })
 })

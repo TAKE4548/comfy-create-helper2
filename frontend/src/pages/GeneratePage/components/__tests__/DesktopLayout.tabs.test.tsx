@@ -1,7 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import React from 'react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
+import { LS_KEYS } from '../../../../utils/localStorageKeys'
+
+const mainSplitBounds = vi.hoisted(() => ({ minSize: null as number | null | undefined, maxSize: null as number | null | undefined }))
+
+vi.mock('../../../../components/layout/ResizableSplitLayout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../components/layout/ResizableSplitLayout')>()
+  return {
+    ...actual,
+    ResizableSplitLayout: (props: Parameters<typeof actual.ResizableSplitLayout>[0]) => {
+      if (props.direction === 'horizontal' && props.storageKey === LS_KEYS.LAYOUT_MAIN_SPLIT) {
+        mainSplitBounds.minSize = props.minSize
+        mainSplitBounds.maxSize = props.maxSize
+      }
+      return React.createElement(actual.ResizableSplitLayout, props)
+    },
+  }
+})
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -24,10 +42,32 @@ vi.mock('../../../api/client', () => ({
 }))
 
 describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar', () => {
+  afterEach(() => vi.useRealTimers())
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
-    useGenerationStore.setState({ roleTextModes: {} })
+    mainSplitBounds.minSize = null
+    mainSplitBounds.maxSize = null
+    useGenerationStore.setState({ roleTextModes: {}, generationStartTime: null })
+  })
+
+  it('clamps the main pane to 330px on tablet resize and restores desktop bounds without unmounting controls', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    const { container } = render(<DesktopLayout state={createMockState()} />)
+    expect(mainSplitBounds).toEqual({ minSize: 380, maxSize: 700 })
+    const savedSplit = localStorage.getItem(LS_KEYS.LAYOUT_MAIN_SPLIT)
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    fireEvent(window, new Event('resize'))
+    expect(mainSplitBounds).toEqual({ minSize: 330, maxSize: 330 })
+    expect(container.querySelector('#left-pane-toolbar')).toBeInTheDocument()
+    expect(container.querySelector('#desktop-controls-scroll')).toBeInTheDocument()
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    fireEvent(window, new Event('resize'))
+    expect(mainSplitBounds).toEqual({ minSize: 380, maxSize: 700 })
+    expect(localStorage.getItem(LS_KEYS.LAYOUT_MAIN_SPLIT)).toBe(savedSplit)
   })
 
   const createMockState = (overrides = {}) => {
@@ -255,6 +295,9 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     // Callback triggers
     const addSetBtn = container.querySelector('#add-set-btn')
     const manageBtn = container.querySelector('#manage-presets-btn')
+    expect(manageBtn).toHaveTextContent('管理')
+    expect(screen.getByRole('button', { name: '管理' })).toBe(manageBtn)
+    expect(manageBtn?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     if (manageBtn) {
       fireEvent.click(manageBtn)
       expect(state.setIsPresetManagerOpen).toHaveBeenCalledWith(true)
@@ -287,6 +330,9 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     // 3) Remove tab (close button)
     const closeButtons = container.querySelectorAll('#desktop-preset-tabs-bar button')
     expect(closeButtons.length).toBe(3)
+    expect(closeButtons[0]).toHaveAttribute('title', 'タブを閉じる (DBからは削除されません)')
+    expect(closeButtons[0]).toHaveAttribute('aria-label', 'タブを閉じる (DBからは削除されません)')
+    expect(closeButtons[0].querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     fireEvent.click(closeButtons[0])
     expect(state.removeSet).toHaveBeenCalledWith('set-1')
 
@@ -295,6 +341,12 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     const redoBtn = container.querySelector('#redo-btn')
     expect(undoBtn).toBeInTheDocument()
     expect(redoBtn).toBeInTheDocument()
+    expect(undoBtn).toHaveAttribute('title', 'Undo (Ctrl+Z)')
+    expect(undoBtn).toHaveAttribute('aria-label', 'Undo (Ctrl+Z)')
+    expect(undoBtn?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(redoBtn).toHaveAttribute('title', 'Redo (Ctrl+Y)')
+    expect(redoBtn).toHaveAttribute('aria-label', 'Redo (Ctrl+Y)')
+    expect(redoBtn?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
 
     if (undoBtn) {
       fireEvent.click(undoBtn)
@@ -376,5 +428,35 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     // Text mode is still preserved
     expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
     expect(screen.getByText('チップモード切替')).toBeInTheDocument()
+  })
+
+  it('AC-16–18: keeps prompt and controls in independent scroll panes and preserves prompt draft across preset tabs', () => {
+    const state = createMockState()
+    const { container, rerender } = render(<DesktopLayout state={state} />)
+
+    const promptPane = container.querySelector('#desktop-prompt-scroll') as HTMLElement
+    const controlsPane = container.querySelector('#desktop-controls-scroll') as HTMLElement
+    expect(promptPane).toHaveClass('overflow-y-auto')
+    expect(controlsPane).toHaveClass('overflow-y-auto')
+    expect(screen.getAllByRole('separator').some((separator) => separator.getAttribute('aria-orientation') === 'horizontal')).toBe(true)
+    expect(localStorage.getItem('prompt-surgeon-generate-left-ratio-v1')).toBe(JSON.stringify({ version: 1, ratio: 0.55 }))
+
+    rerender(<DesktopLayout state={{ ...state, activeSetId: 'set-2' }} />)
+    expect(container.querySelector('#prompt-Main_Positive_Prompt')).toBeInTheDocument()
+    expect(container.textContent).toContain('Positive Prompt')
+    expect(container.querySelector('#desktop-prompt-scroll')).toBeInTheDocument()
+    expect(container.querySelector('#desktop-controls-scroll')).toBeInTheDocument()
+  })
+
+  it('shows a seconds-based remaining ETA when the generation start and progress are known', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))
+    useGenerationStore.setState({ generationStartTime: Date.now() - 20_000 })
+    const state = createMockState({ isGeneratingHere: true, progress: { percentage: 50 } })
+
+    render(<DesktopLayout state={state} />)
+
+    expect(screen.getByText('経過時間: 20秒')).toBeInTheDocument()
+    expect(screen.getByText('残り約: 20秒')).toBeInTheDocument()
   })
 })

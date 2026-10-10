@@ -3,13 +3,20 @@ import { Image as ImageIcon, Check } from 'lucide-react'
 import { useThumbnailAspectRatio } from '../../../hooks/useThumbnailAspectRatio'
 
 export const ThumbnailSettingsSection: React.FC = () => {
-  const { presetId, customRatio, presets, aspectRatioStyle, ratioStr, setPreset, setCustomRatio } = useThumbnailAspectRatio()
+  const { presetId, customRatio, presets, aspectRatioStyle, ratioStr, persistenceError, setPreset, setCustomRatio } = useThumbnailAspectRatio()
   const [customInput, setCustomInput] = useState(customRatio)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  const handlePresetChange = (id: string) => {
+    const saved = setPreset(id)
+    setSaveMessage(saved ? '設定を保存しました' : null)
+  }
 
   const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
     setCustomInput(val)
-    setCustomRatio(val)
+    const saved = setCustomRatio(val)
+    setSaveMessage(saved ? '設定を保存しました' : null)
   }
 
   return (
@@ -22,6 +29,12 @@ export const ThumbnailSettingsSection: React.FC = () => {
         </div>
       </div>
 
+      {persistenceError ? (
+        <p role="alert" className="text-sm text-amber-300">保存できませんでした: {persistenceError}。設定は未保存です。</p>
+      ) : saveMessage ? (
+        <p role="status" className="text-sm text-emerald-300">{saveMessage}</p>
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Preset Selector */}
         <div className="md:col-span-2 space-y-3">
@@ -33,8 +46,8 @@ export const ThumbnailSettingsSection: React.FC = () => {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => setPreset(p.id)}
-                  className={`px-3 py-2 rounded-lg text-xs font-medium border flex items-center justify-between transition-all ${
+                  onClick={() => handlePresetChange(p.id)}
+                  className={`min-h-[44px] px-3 py-2 rounded-lg text-xs font-medium border flex items-center justify-between transition-all ${
                     isSelected
                       ? 'bg-accent-green/15 border-accent-green text-accent-green shadow-sm'
                       : 'bg-surface-2 border-[rgba(255,255,255,0.08)] text-zinc-300 hover:border-zinc-500 hover:text-white'
@@ -57,10 +70,10 @@ export const ThumbnailSettingsSection: React.FC = () => {
                   value={customInput}
                   onChange={handleCustomChange}
                   placeholder="例: 5:7, 7:9, 0.71"
-                  className="px-3 py-1.5 text-xs bg-zinc-900 border border-[rgba(255,255,255,0.12)] rounded-lg text-zinc-200 focus:outline-none focus:border-accent-green w-full max-w-full sm:max-w-48"
+                  className="min-h-[44px] px-3 py-1.5 text-xs font-mono bg-zinc-900 border border-[rgba(255,255,255,0.12)] rounded-lg text-zinc-200 focus:outline-none focus:border-accent-green w-full max-w-full sm:max-w-48"
                   data-testid="custom-aspect-ratio-input"
                 />
-                <span className="text-[11px] text-zinc-500">現在適用中: {ratioStr}</span>
+                <span className="text-[11px] font-mono text-zinc-500">現在適用中: {ratioStr}</span>
               </div>
             </div>
           )}

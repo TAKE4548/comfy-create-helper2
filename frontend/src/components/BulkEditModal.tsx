@@ -4,7 +4,7 @@ import { X, Loader2 } from 'lucide-react';
 export interface BulkEditField {
   key: string;
   label: string;
-  type: 'category' | 'strength_range' | 'text' | 'select';
+  type: 'category' | 'strength_range' | 'text' | 'select' | 'multi_select';
   options?: { id: number | string; name: string }[];
 }
 
@@ -66,6 +66,11 @@ export function BulkEditModal({
         }
         if (maxVal !== undefined && maxVal !== '') {
           payload[`${field.key}_max`] = Number(maxVal);
+        }
+      } else if (field.type === 'multi_select') {
+        const val = formValues[field.key];
+        if (val !== '__NO_CHANGE__') {
+          payload[field.key] = Array.isArray(val) ? val.map(Number) : [];
         }
       } else {
         const val = formValues[field.key];
@@ -139,6 +144,36 @@ export function BulkEditModal({
                     </div>
                   </div>
                 );
+              }
+
+              if (field.type === 'multi_select') {
+                const selected = Array.isArray(formValues[field.key]) ? formValues[field.key] as number[] : []
+                return (
+                  <fieldset key={field.key} className="space-y-2">
+                    <legend className="text-xs font-medium text-gray-400 uppercase tracking-wider">{field.label}</legend>
+                    <div className="space-y-2">
+                      {field.options?.map((opt) => {
+                        const id = Number(opt.id)
+                        return (
+                          <label key={opt.id} className="flex items-center gap-2 text-sm text-zinc-200">
+                            <input
+                              type="checkbox"
+                              aria-label={opt.name}
+                              checked={selected.includes(id)}
+                              onChange={(event) => {
+                                const current = Array.isArray(formValues[field.key]) ? formValues[field.key] as number[] : []
+                                handleChange(field.key, event.target.checked
+                                  ? [...new Set([...current, id])]
+                                  : current.filter((selectedId) => selectedId !== id))
+                              }}
+                            />
+                            {opt.name}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
+                )
               }
 
               if (field.type === 'category' || field.type === 'select') {

@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LoRAsPage } from '../LoRAsPage'
+import { ImageCarousel } from '../../components/ImageCarousel'
 import { lorasApi, loraCategoriesApi, baseModelsApi } from '../../api/client'
 import type { Lora, Category, BaseModel } from '../../api/types'
 
@@ -79,6 +80,11 @@ const MOCK_LORAS: Lora[] = [
 
 describe('LoRAsPage Component', () => {
   let queryClient: QueryClient
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -425,6 +431,116 @@ describe('LoRAsPage Component', () => {
     })
   })
 
+  it('selects the filtered display order, counts collapsed cards, and blocks reorder in selection mode', async () => {
+    const secondCharacter = { ...MOCK_LORAS[0], id: 11, model_name: 'lora_alpha_2' }
+    vi.mocked(lorasApi.list).mockResolvedValueOnce([MOCK_LORAS[0], secondCharacter, MOCK_LORAS[1]])
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('lora-filter-1')!)
+
+    const first = document.getElementById('lora-card-1')!
+    const second = document.getElementById('lora-card-11')!
+    fireEvent.click(first, { ctrlKey: true })
+    fireEvent.click(second, { shiftKey: true })
+    expect(first.className).toContain('border-[#3ECF8E]')
+    expect(screen.getByText((_, element) => element?.tagName.toLowerCase() === 'span' && element.textContent?.includes('2 / 2 件選択中') === true)).toBeInTheDocument()
+
+    fireEvent.click(document.getElementById('category-section-header-1')!)
+    expect(document.getElementById('lora-card-1')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /選択解除/ }))
+    fireEvent.click(screen.getByRole('button', { name: /すべて選択/ }))
+    expect(screen.getByText((_, element) => element?.tagName.toLowerCase() === 'span' && element.textContent?.includes('2 / 2 件選択中') === true)).toBeInTheDocument()
+
+    act(() => capturedOnDragEnd?.({ active: { id: 1 }, over: { id: 11 } }))
+    expect(lorasApi.reorder).not.toHaveBeenCalled()
+  })
+
+  it('bulk-updates only the selected LoRA category and leaves the other fixture untouched', async () => {
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('lora-card-1')!, { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '一括編集' }))
+
+    const bulkEditor = document.querySelector('.modal-backdrop')!
+    fireEvent.change(within(bulkEditor).getByRole('combobox'), { target: { value: '2' } })
+    fireEvent.click(within(bulkEditor).getByRole('button', { name: '適用する' }))
+
+    await waitFor(() => expect(lorasApi.update).toHaveBeenCalledTimes(1))
+    expect(lorasApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      model_name: 'lora_alpha',
+      category_id: 2,
+      target_base_model_ids: [1],
+      trigger_word_sets: [{ name: 'main', words: ['alpha_trigger'] }],
+    }))
+    expect(lorasApi.update).not.toHaveBeenCalledWith(2, expect.anything())
+    expect(MOCK_LORAS[1]).toMatchObject({ id: 2, category_id: 2, target_base_model_ids: [2] })
+  })
+
+  it('assigns base models to only the selected LoRA and preserves its example paths', async () => {
+    const selectedLora = { ...MOCK_LORAS[0], target_base_model_ids: [], example_paths: ['/examples/alpha.webp'] }
+    vi.mocked(lorasApi.list).mockResolvedValueOnce([selectedLora, MOCK_LORAS[1]])
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('lora-card-1')!, { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '一括編集' }))
+
+    const bulkEditor = document.querySelector('.modal-backdrop')!
+    fireEvent.click(within(bulkEditor).getByRole('checkbox', { name: 'SDXL' }))
+    fireEvent.click(within(bulkEditor).getByRole('button', { name: '適用する' }))
+
+    await waitFor(() => expect(lorasApi.update).toHaveBeenCalledTimes(1))
+    expect(lorasApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      model_name: 'lora_alpha',
+      category_id: 1,
+      target_base_model_ids: [2],
+      example_paths: ['/examples/alpha.webp'],
+    }))
+    expect(lorasApi.update).not.toHaveBeenCalledWith(2, expect.anything())
+  })
+
+  it('downloads JSON containing only the selected LoRA records', async () => {
+    const createObjectURL = vi.fn(() => 'blob:selected-loras')
+    const downloadClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL: vi.fn() })
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('lora-card-1')!, { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '選択をJSONエクスポート' }))
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(downloadClick).toHaveBeenCalledTimes(1)
+    const [blob] = createObjectURL.mock.calls[0] as [Blob]
+    const serialized = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(blob)
+    })
+    const exported = JSON.parse(serialized) as Lora[]
+    expect(exported.map((lora) => lora.id)).toEqual([1])
+    expect(exported).toContainEqual(expect.objectContaining({ model_name: 'lora_alpha' }))
+    expect(exported.some((lora) => lora.id === 2)).toBe(false)
+  })
+
+  it('confirms the selected LoRA deletion in-page and leaves state unchanged when cancelled', async () => {
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('lora-card-1')!, { ctrlKey: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /選択を削除/ }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('1件を削除')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('lora_alpha')
+    expect(lorasApi.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(lorasApi.delete).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /選択を削除/ }))
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }))
+    await waitFor(() => expect(lorasApi.delete).toHaveBeenCalledWith(1))
+    expect(lorasApi.delete).toHaveBeenCalledTimes(1)
+    expect(lorasApi.delete).not.toHaveBeenCalledWith(2)
+  })
+
   it('copies trigger words to clipboard', async () => {
     const writeTextMock = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {
@@ -446,5 +562,55 @@ describe('LoRAsPage Component', () => {
     }
 
     expect(writeTextMock).toHaveBeenCalledWith('alpha_trigger')
+  })
+
+  it('renders portrait library cards in responsive two, three, and four column layouts', async () => {
+    const { container } = renderComponent()
+    await waitFor(() => expect(screen.getByText('lora_alpha')).toBeInTheDocument())
+    const card = document.getElementById('lora-card-1')!
+    const grid = container.querySelector('[class*="max-w-[928px]"]') as HTMLElement
+    expect(grid.className).toContain('grid-cols-2')
+    expect(grid.className).toContain('md:grid-cols-3')
+    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.className).toContain('max-w-[928px]')
+    expect(card).toHaveClass('h-[320px]')
+    expect(card.querySelector('[data-testid="image-carousel"]')).toHaveClass('w-full', 'shrink-0')
+  })
+
+  it('scrubs examples on hover and swipes on touch without opening the parent card', () => {
+    const onCardOpen = vi.fn()
+    const { container, rerender } = render(
+      <div onClick={onCardOpen}><ImageCarousel thumbnailPath="/cover.png" snapshotPaths={['/example-a.png', '/example-b.png']} alt="examples" /></div>
+    )
+    const carousel = container.querySelector('[data-testid="image-carousel"]')!
+    fireEvent.mouseEnter(carousel)
+    fireEvent.mouseEnter(screen.getByTestId('image-carousel-scrub-2'))
+    expect(carousel.querySelector('img')).toHaveAttribute('src', '/example-b.png')
+
+    const touchStart = new Event('touchstart', { bubbles: true })
+    Object.defineProperty(touchStart, 'touches', { value: [{ clientX: 80 }] })
+    const touchEnd = new Event('touchend', { bubbles: true })
+    Object.defineProperty(touchEnd, 'changedTouches', { value: [{ clientX: 180 }] })
+    const touchObserved = vi.fn()
+    carousel.addEventListener('touchstart', touchObserved)
+    const touchEndObserved = vi.fn()
+    carousel.addEventListener('touchend', touchEndObserved)
+    act(() => { carousel.dispatchEvent(touchStart); carousel.dispatchEvent(touchEnd) })
+    expect(touchObserved).toHaveBeenCalledOnce()
+    expect(touchObserved.mock.calls[0][0].touches[0].clientX).toBe(80)
+    expect(touchEndObserved).toHaveBeenCalledOnce()
+    expect(touchEndObserved.mock.calls[0][0].changedTouches[0].clientX).toBe(180)
+    expect(carousel.querySelector('img')).toHaveAttribute('src', '/example-a.png')
+    fireEvent.click(carousel)
+    expect(onCardOpen).not.toHaveBeenCalled()
+    fireEvent.click(carousel)
+    expect(onCardOpen).toHaveBeenCalledTimes(1)
+
+    rerender(<ImageCarousel thumbnailPath="/only.png" alt="single" />)
+    expect(screen.getByAltText('single preview 1')).toHaveAttribute('src', '/only.png')
+    expect(screen.queryByTestId('image-carousel-scrub-1')).not.toBeInTheDocument()
+    rerender(<ImageCarousel alt="missing" />)
+    expect(screen.getByText('No Preview')).toBeInTheDocument()
+    expect(screen.getByTestId('image-carousel')).toHaveClass('bg-zinc-950')
   })
 })

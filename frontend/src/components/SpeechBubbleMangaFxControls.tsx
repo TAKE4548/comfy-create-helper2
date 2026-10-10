@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { ChevronDown, ChevronRight, X, Zap } from 'lucide-react'
 import type {
   SpeechBubble,
   MangaTextEffectConfig,
@@ -166,8 +167,10 @@ export const SpeechBubbleMangaFxControls: React.FC<SpeechBubbleMangaFxControlsPr
         }}
       >
         <div className="flex items-center gap-1.5 font-medium text-xs text-zinc-200">
-          <span className="text-[10px] text-zinc-400">{isMangaFxOpen ? '▼' : '▶'}</span>
-          <span>💥 漫画テキスト演出 (FX)</span>
+          {isMangaFxOpen
+            ? <ChevronDown aria-hidden="true" size={12} />
+            : <ChevronRight aria-hidden="true" size={12} />}
+          <span className="inline-flex items-center gap-1"><Zap aria-hidden="true" size={12} /> 漫画テキスト演出 (FX)</span>
         </div>
         {(fx.scaleCurve !== 'none' ||
           (fx.multiStrokes && fx.multiStrokes.length > 0) ||
@@ -555,10 +558,11 @@ export const SpeechBubbleMangaFxControls: React.FC<SpeechBubbleMangaFxControlsPr
                         <button
                           type="button"
                           onClick={() => handleDeleteMultiStroke(layer.id)}
+                          aria-label={`レイヤー ${idx + 1} を削除`}
                           className="text-red-400 hover:text-red-300 text-[10px]"
                           title="レイヤー削除"
                         >
-                          ✕ 削除
+                          <X aria-hidden="true" size={12} /> 削除
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">

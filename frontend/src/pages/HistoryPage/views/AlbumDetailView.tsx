@@ -24,6 +24,7 @@ import {
   MouseSensor,
   TouchSensor,
   DragEndEvent,
+  DragOverEvent,
   DragStartEvent,
   DragOverlay,
 } from '@dnd-kit/core'
@@ -86,6 +87,7 @@ function SortableItem({
   return (
     <div
       ref={setNodeRef}
+      data-sortable-item={id}
       style={style}
       className="h-full w-full relative"
       {...attributes}
@@ -164,6 +166,7 @@ export function AlbumDetailView({
   const [isEditingDetailName, setIsEditingDetailName] = useState(false)
   const [detailAlbumName, setDetailAlbumName] = useState('')
   const [activeId, setActiveId] = useState<number | null>(null)
+  const [overId, setOverId] = useState<number | null>(null)
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -180,16 +183,22 @@ export function AlbumDetailView({
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as number)
+    setOverId(null)
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    setOverId(event.over ? event.over.id as number : null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
+    setOverId(null)
     if (!over || active.id === over.id) return
     onItemDragEnd(active.id as number, over.id as number)
   }
 
-  const isDndEnabled = sortCriterion === 'custom'
+  const isDndEnabled = sortCriterion === 'custom' && !isMultiSelectMode
 
   return (
     <>
@@ -388,7 +397,9 @@ export function AlbumDetailView({
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
+          onDragCancel={() => { setActiveId(null); setOverId(null) }}
         >
           <SortableContext
             items={sortedItems.map((item) => item.snapshot_id)}
@@ -397,6 +408,7 @@ export function AlbumDetailView({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {visibleItems.map((item) => {
                 const isItemSelected = isSelected(item.snapshot_id)
+                const isDropTarget = activeId !== null && overId === item.snapshot_id && activeId !== overId
                 const longPressHandlers = getLongPressHandlers(item.snapshot_id)
 
                 const renderCardContent = (touchHandleListeners?: DragHandleListeners) => (
@@ -416,15 +428,20 @@ export function AlbumDetailView({
                       ...aspectRatioStyle,
                     }}
                     className={`group bg-surface-2 border rounded-xl overflow-hidden relative flex items-center justify-center transition-all cursor-pointer select-none w-full ${
-                      isItemSelected
-                        ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30 bg-surface-2'
+                      isDropTarget
+                        ? 'border-accent-green ring-2 ring-accent-green ring-inset'
+                        : isItemSelected
+                        ? 'border-accent-green ring-1 ring-accent-green/30 bg-surface-2'
                         : 'border-transparent hover:border-zinc-700'
                     }`}
+                    data-drop-marker={isDropTarget ? 'true' : undefined}
+                    role="group"
+                    aria-label={`Snapshot ${item.snapshot_id}${isMultiSelectMode ? isItemSelected ? '、選択済み' : '、未選択' : ''}`}
                   >
                     {item.image_path || item.thumbnail_path ? (
                       <img
                         src={item.thumbnail_path || item.image_path!}
-                        alt=""
+                        alt={`Snapshot ${item.snapshot_id}`}
                         loading="lazy"
                         decoding="async"
                         className="max-w-full max-h-full object-contain pointer-events-none"
@@ -439,7 +456,7 @@ export function AlbumDetailView({
                     {isMultiSelectMode && (
                       <div className="absolute top-2 left-2 z-20">
                         {isItemSelected ? (
-                          <div className="p-1 rounded-md bg-[#7C6FDD] text-white">
+                          <div className="p-1 rounded-md bg-accent-green text-white">
                             <Check size={12} strokeWidth={3} />
                           </div>
                         ) : (

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '4xl' | '5xl' | '7xl' | 'full'
 
@@ -11,16 +11,17 @@ export interface ModalProps {
   size?: ModalSize
   closeOnBackdropClick?: boolean
   closeOnEsc?: boolean
+  ariaLabel?: string
 }
 
 const sizeClasses: Record<ModalSize, string> = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-xl',
-  '4xl': 'max-w-4xl',
-  '5xl': 'max-w-5xl',
-  '7xl': 'max-w-7xl',
+  sm: 'max-w-full md:max-w-[min(90vw,36.25rem)] lg:max-w-[36.25rem]',
+  md: 'max-w-full md:max-w-[min(90vw,40rem)] lg:max-w-[40rem]',
+  lg: 'max-w-full md:max-w-[min(90vw,42.5rem)] lg:max-w-[42.5rem]',
+  xl: 'max-w-full md:max-w-[min(90vw,42.5rem)] lg:max-w-[42.5rem]',
+  '4xl': 'max-w-full md:max-w-[min(90vw,42.5rem)] lg:max-w-[42.5rem]',
+  '5xl': 'max-w-full md:max-w-[min(90vw,42.5rem)] lg:max-w-[42.5rem]',
+  '7xl': 'max-w-full md:max-w-[min(90vw,42.5rem)] lg:max-w-[42.5rem]',
   full: 'max-w-full',
 }
 
@@ -33,19 +34,56 @@ export function Modal({
   size = '5xl',
   closeOnBackdropClick = true,
   closeOnEsc = true,
+  ariaLabel = 'Dialog',
 }: ModalProps) {
-  useEffect(() => {
-    if (!isOpen || !closeOnEsc) return
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
+  useLayoutEffect(() => {
+    if (!isOpen) return
+
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const focusableElements = getFocusableElements(dialogRef.current)
+    ;(focusableElements[0] ?? dialogRef.current)?.focus()
+
+    return () => {
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+
+      if (event.key === 'Escape' && closeOnEsc) {
+        onCloseRef.current()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusableElements = getFocusableElements(dialogRef.current)
+      const first = focusableElements[0]
+      const last = focusableElements[focusableElements.length - 1]
+
+      if (!first || !last) {
+        event.preventDefault()
+        dialogRef.current?.focus()
+      } else if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault()
+        first.focus()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, closeOnEsc, onClose])
+  }, [isOpen, closeOnEsc])
 
   if (!isOpen) return null
 
@@ -53,19 +91,49 @@ export function Modal({
 
   return (
     <div
-      className={`modal-backdrop animate-fade-in ${className}`}
-      onClick={() => {
-        if (closeOnBackdropClick) {
+      className={`modal-backdrop animate-fade-in items-end md:items-center p-0 md:p-4 ${className}`}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && closeOnBackdropClick && !event.defaultPrevented) {
           onClose()
         }
       }}
     >
       <div
-        className={`bg-[#121316] border border-[rgba(255,255,255,0.1)] rounded-2xl w-full ${sizeClass} max-h-full flex flex-col shadow-2xl overflow-hidden ${dialogClassName}`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
+        onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+          if (event.key === 'Escape' && closeOnEsc && !event.defaultPrevented) {
+            // Keep nested popovers in control of their Escape event.
+            event.stopPropagation()
+          }
+        }}
+        className={`bg-surface-3 border border-[rgba(255,255,255,0.1)] rounded-t-2xl rounded-b-none md:rounded-2xl w-full ${sizeClass} max-h-[calc(100dvh-env(safe-area-inset-top))] md:max-h-[90dvh] lg:max-h-full flex flex-col shadow-2xl overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:pb-0 ${dialogClassName}`}
         onClick={(e) => e.stopPropagation()}
       >
+        <div aria-hidden="true" className="mx-auto mt-2 mb-1 h-1 w-10 flex-shrink-0 rounded-full bg-white/30 md:hidden" />
         {children}
       </div>
     </div>
   )
+}
+
+function getFocusableElements(dialog: HTMLDivElement | null): HTMLElement[] {
+  if (!dialog) return []
+
+  const selector = 'a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]'
+  return Array.from(dialog.querySelectorAll<HTMLElement>(selector)).filter((element) => {
+    if (element.matches(':disabled') || element.tabIndex < 0 || element.closest('[hidden], [aria-hidden="true"]')) return false
+
+    let ancestor: HTMLElement | null = element
+    while (ancestor && dialog.contains(ancestor)) {
+      const style = window.getComputedStyle(ancestor)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+      ancestor = ancestor.parentElement
+    }
+
+    return true
+  })
 }

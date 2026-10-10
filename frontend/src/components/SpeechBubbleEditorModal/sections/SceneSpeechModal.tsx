@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Check, Circle, CircleX, Loader2, X } from 'lucide-react'
 import type { GeneratedSpeechBubbleRead, ServerFont } from '../../../api/types'
 import { SceneSpeechOnboarding } from './SceneSpeechOnboarding'
 import type { ProgressStep, SceneSpeechModalState } from './SceneSpeechModalState'
@@ -20,8 +21,8 @@ const errorLabels = {
   timeout: 'タイムアウト',
   unknown: '不明',
 }
-const stepIcons: Record<ProgressStep['status'], string> = {
-  pending: '○', active: '⏳', done: '✓', error: '✗',
+const stepIcons: Record<ProgressStep['status'], typeof Circle> = {
+  pending: Circle, active: Loader2, done: Check, error: CircleX,
 }
 const tierLabels = { high: '高', mid: '中', low: '低', fallback: '補助' }
 
@@ -50,9 +51,12 @@ export function SceneSpeechModal({ state, onClose, onRetry, onApply, onPresetCre
           <h2 className="text-lg font-semibold">シーン台詞を生成中</h2>
           <p>経過 {elapsed} 秒</p>
           <ol className="space-y-2" aria-label="生成進捗">
-            {state.steps.map(step => <li key={step.key}>
-              <span className={step.status === 'active' ? 'animate-spin inline-block' : ''} aria-hidden="true">{stepIcons[step.status]}</span> {step.label}
-            </li>)}
+            {state.steps.map(step => {
+              const StepIcon = stepIcons[step.status]
+              return <li key={step.key}>
+                <StepIcon className={step.status === 'active' ? 'animate-spin inline-block' : 'inline-block'} size={14} aria-hidden="true" /> {step.label}
+              </li>
+            })}
           </ol>
         </>
       case 'onboarding':
@@ -101,7 +105,7 @@ export function SceneSpeechModal({ state, onClose, onRetry, onApply, onPresetCre
   }
 
   const panel = <div className="rounded-t-xl md:rounded-xl bg-white p-5 shadow-xl w-full max-w-[540px] max-h-[80vh] overflow-y-auto" role="dialog" aria-modal="true">
-    <div className="flex justify-end"><button type="button" aria-label="閉じる" onClick={onClose}>×</button></div>
+    <div className="flex justify-end"><button type="button" aria-label="閉じる" onClick={onClose}><X aria-hidden="true" size={18} /></button></div>
     {content()}
   </div>
 

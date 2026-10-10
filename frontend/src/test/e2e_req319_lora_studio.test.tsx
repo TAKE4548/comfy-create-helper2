@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { DatasetStudioPage } from '../pages/DatasetStudioPage'
 import { useStudioStore } from '../pages/DatasetStudioPage/useStudioStore'
 import { datasetApi, trainingApi, benchmarkApi, workflowsApi } from '../api/client'
@@ -13,6 +13,7 @@ vi.mock('../api/client', () => ({
     createProject: vi.fn(),
     updateProject: vi.fn(),
     calculateMatrix: vi.fn(),
+    getItems: vi.fn(),
     updateItem: vi.fn(),
     exportDataset: vi.fn(),
     listOutfits: vi.fn(),
@@ -142,6 +143,7 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
     vi.mocked(datasetApi.listOutfits).mockResolvedValue(mockPresets)
     vi.mocked(datasetApi.createProject).mockResolvedValue(mockProject)
     vi.mocked(datasetApi.calculateMatrix).mockResolvedValue(mockItems)
+    vi.mocked(datasetApi.getItems).mockResolvedValue(mockItems)
     vi.mocked(datasetApi.updateItem).mockResolvedValue(mockItems[0])
     vi.mocked(datasetApi.exportDataset).mockResolvedValue({
       status: 'success',
@@ -193,12 +195,12 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
     })
   })
 
-  it('navigates through Step 1 to 4 and completes the studio lifecycle (AC-1 to AC-9)', async () => {
+  it('navigates through Studio stages 1 to 4 and completes the studio lifecycle (AC-1 to AC-9)', async () => {
     render(<DatasetStudioPage />)
 
     // 1. Verify Step 1 Render (AC-1, AC-2, AC-3)
     expect(screen.getByText('LoRA Studio')).toBeDefined()
-    expect(screen.getByText('Step 1: 素材マトリクス')).toBeDefined()
+    expect(screen.getByText('Step 1: 生成')).toBeDefined()
 
     // Test caption decoupler pure logic (AC-4)
     const decoupledDefault = decoupleCaption({
@@ -242,7 +244,7 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
     // Click Step 2 tab to switch
     fireEvent.click(screen.getByTestId('studio-step-tab-2'))
     await waitFor(() => {
-      expect(screen.getByText('Step 2: キュレーション & キャプション (20件)')).toBeDefined()
+      expect(screen.getByText('Step 2: 選別')).toBeDefined()
     })
 
     // Verify slots rendered in Step 2 (AC-4, AC-5)
@@ -255,7 +257,7 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
       expect(datasetApi.exportDataset).toHaveBeenCalledWith(mockProject.id)
     })
 
-    // Set state to Step 3
+    // Set state to Step 3: captions
     useStudioStore.setState({
       currentStep: 3,
       activeProject: mockProject,
@@ -263,10 +265,16 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
     })
     fireEvent.click(screen.getByTestId('studio-step-tab-3'))
     await waitFor(() => {
-      expect(screen.getByTestId('training-config-panel')).toBeDefined()
+      expect(screen.getByText('Step 3: キャプション')).toBeDefined()
     })
 
-    // Verify Step 3 parameter inputs & start training button (AC-6, AC-7)
+    // Set state to Step 4: training
+    useStudioStore.setState({ currentStep: 4, activeProject: mockProject })
+    fireEvent.click(screen.getByTestId('studio-step-tab-4'))
+    await waitFor(() => {
+      expect(screen.getByText('Step 4: 学習')).toBeDefined()
+      expect(screen.getByTestId('training-config-panel')).toBeDefined()
+    })
     expect(screen.getByLabelText(/^Epochs$/i)).toBeDefined()
     expect(screen.getByLabelText(/^Dataset Repeats$/i)).toBeDefined()
     expect(screen.getByTestId('btn-start-training')).toBeDefined()
@@ -278,16 +286,14 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
       expect(trainingApi.startJob).toHaveBeenCalled()
     })
 
-    // Set state to Step 4
-    useStudioStore.setState({
-      currentStep: 4,
-      activeProject: mockProject,
-    })
-    fireEvent.click(screen.getByTestId('studio-step-tab-4'))
+    // Open the separate post-training evaluation view from its header action.
+    const evaluationButton = screen.getByTestId('open-post-training-evaluation')
+    expect(evaluationButton).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(evaluationButton)
     await waitFor(() => {
+      expect(evaluationButton).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('benchmark-matrix-table')).toBeDefined()
     })
-
     // Verify 12 benchmark cells & run benchmark button (AC-8, AC-9)
     expect(screen.getByTestId('run-benchmark-btn')).toBeDefined()
     expect(screen.getByTestId('benchmark-cell-decoupling-0.6')).toBeDefined()
@@ -308,5 +314,101 @@ describe('REQ-319 LoRA Studio End-to-End Pipeline', () => {
       expect(screen.getByTestId('sweet-spot-card')).toBeDefined()
       expect(screen.getByTestId('sweet-spot-weight')).toHaveTextContent('0.75 - 0.85')
     })
+  })
+
+  it('restores persisted rejected items without regenerating the matrix', async () => {
+    const rejectedItem = { ...mockItems[0], status: 'REJECTED' as const }
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
+    vi.mocked(datasetApi.getItems).mockResolvedValue([rejectedItem])
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => {
+      expect(useStudioStore.getState().items).toEqual([rejectedItem])
+    })
+    expect(datasetApi.getItems).toHaveBeenCalledWith(mockProject.id)
+    expect(datasetApi.calculateMatrix).not.toHaveBeenCalled()
+  })
+
+  it('keeps a new project empty when its persisted item list is empty', async () => {
+    const newProject = { ...mockProject, id: 90, name: 'New empty project' }
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([newProject])
+    vi.mocked(datasetApi.getItems).mockResolvedValue([])
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => {
+      expect(datasetApi.getItems).toHaveBeenCalledWith(newProject.id)
+      expect(useStudioStore.getState().activeProject?.id).toBe(newProject.id)
+    })
+    expect(useStudioStore.getState().items).toEqual([])
+    expect(datasetApi.calculateMatrix).not.toHaveBeenCalled()
+  })
+
+  it('preserves in-memory edits and the current stage when revisiting the same project', async () => {
+    const editedItems = [{ ...mockItems[0], caption_text: 'unsaved caption edit' }]
+    useStudioStore.setState({ activeProject: mockProject, items: editedItems, currentStep: 3 })
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
+
+    render(<DatasetStudioPage />)
+
+    await waitFor(() => expect(screen.getByText('キャプション')).toBeInTheDocument())
+    expect(useStudioStore.getState().currentStep).toBe(3)
+    expect(useStudioStore.getState().items).toBe(editedItems)
+    expect(datasetApi.getItems).not.toHaveBeenCalled()
+  })
+
+  it('does not replace newer in-memory items with an older persisted-items response', async () => {
+    let resolvePersistedItems!: (items: DatasetItem[]) => void
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
+    vi.mocked(datasetApi.getItems).mockImplementation(() => new Promise((resolve) => {
+      resolvePersistedItems = resolve
+    }))
+
+    render(<DatasetStudioPage />)
+    await waitFor(() => expect(datasetApi.getItems).toHaveBeenCalledWith(mockProject.id))
+    await act(async () => useStudioStore.setState({ items: mockItems }))
+    await act(async () => resolvePersistedItems([{ ...mockItems[0], status: 'REJECTED' as const }]))
+
+    expect(useStudioStore.getState().items).toBe(mockItems)
+    expect(datasetApi.calculateMatrix).not.toHaveBeenCalled()
+  })
+
+  it('ignores an older project response and stale error after switching projects', async () => {
+    const secondProject = { ...mockProject, id: 2, name: 'Second project' }
+    const itemResolvers = new Map<number, { resolve: (items: DatasetItem[]) => void; reject: (error: Error) => void }>()
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject, secondProject])
+    vi.mocked(datasetApi.getItems).mockImplementation((projectId) => new Promise((resolve, reject) => {
+      itemResolvers.set(projectId, { resolve, reject })
+    }))
+
+    render(<DatasetStudioPage />)
+    const selector = await screen.findByTestId('project-selector') as HTMLSelectElement
+    await waitFor(() => expect(itemResolvers.has(Number(selector.value))).toBe(true))
+    const firstProjectId = Number(selector.value)
+    const secondProjectId = firstProjectId === mockProject.id ? secondProject.id : mockProject.id
+    const secondItem = { ...mockItems[0], id: 902, project_id: secondProjectId, status: 'REJECTED' as const }
+
+    fireEvent.change(selector, { target: { value: String(secondProjectId) } })
+    await waitFor(() => expect(itemResolvers.has(secondProjectId)).toBe(true))
+    await act(async () => itemResolvers.get(secondProjectId)?.resolve([secondItem]))
+    await waitFor(() => expect(useStudioStore.getState().items).toEqual([secondItem]))
+    await act(async () => itemResolvers.get(firstProjectId)?.reject(new Error('stale project load failed')))
+
+    expect(useStudioStore.getState().activeProject?.id).toBe(secondProjectId)
+    expect(useStudioStore.getState().items).toEqual([secondItem])
+    expect(screen.queryByTestId('studio-items-load-error')).not.toBeInTheDocument()
+    expect(datasetApi.calculateMatrix).not.toHaveBeenCalled()
+  })
+
+  it('shows a visible error when the current project item restore fails', async () => {
+    vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
+    vi.mocked(datasetApi.getItems).mockRejectedValue(new Error('restore failed'))
+
+    render(<DatasetStudioPage />)
+
+    expect(await screen.findByTestId('studio-items-load-error')).toHaveTextContent('保存済みの素材を読み込めませんでした')
+    expect(useStudioStore.getState().items).toEqual([])
+    expect(datasetApi.calculateMatrix).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { Play, Pause, CheckSquare, Square, ImageOff } from 'lucide-react'
+import { Play, Pause, CheckSquare, Square, ImageOff, X } from 'lucide-react'
 import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 import { getPromptPrefix } from '../../../utils/formatUtils'
@@ -270,8 +270,8 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
             >
               選択した {selectedIds.size} 枚を保存
             </button>
-            <button type="button" onClick={exitMultiSelectMode} className="text-zinc-400">
-              ✕ 閉じる
+            <button type="button" onClick={exitMultiSelectMode} aria-label="選択モード終了" className="text-zinc-400">
+              <X aria-hidden="true" size={14} /> 閉じる
             </button>
           </div>
         </div>
@@ -309,9 +309,10 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
           <button
             type="button"
             onClick={exitMultiSelectMode}
+            aria-label="選択モード終了"
             className="text-zinc-400 hover:text-zinc-200 font-semibold"
           >
-            ✕ 選択モード終了
+            <X aria-hidden="true" size={14} /> 選択モード終了
           </button>
         </div>
       </div>

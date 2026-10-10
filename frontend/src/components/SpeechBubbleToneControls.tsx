@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, Drama, Lightbulb, Sparkles } from 'lucide-react'
 import type { SpeechTonePreset } from '../api/types'
 import type { SpeechBubble } from '../types/speechBubble'
 import { speechTonePresetsApi } from '../api/client'
@@ -150,8 +151,10 @@ export const SpeechBubbleToneControls: React.FC<SpeechBubbleToneControlsProps> =
         }}
       >
         <div className="flex items-center gap-1.5 font-medium text-xs text-zinc-200">
-          <span className="text-[10px] text-zinc-400">{isToneSectionOpen ? '▼' : '▶'}</span>
-          <span>🎭 セリフ口調変換 (LLM)</span>
+          <span className="text-zinc-400">{isToneSectionOpen
+            ? <ChevronDown aria-hidden="true" size={12} />
+            : <ChevronRight aria-hidden="true" size={12} />}</span>
+          <span className="flex items-center gap-1"><Drama aria-hidden="true" size={14} />セリフ口調変換 (LLM)</span>
         </div>
         {rewriteResult && (
           <span className="text-[10px] text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
@@ -271,7 +274,7 @@ export const SpeechBubbleToneControls: React.FC<SpeechBubbleToneControlsProps> =
               disabled={isRewriting || !bubble.text.trim() || (!customTonePrompt.trim() && !selectedTonePresetId)}
               className="px-3 py-1 bg-purple-600/80 hover:bg-purple-600 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
             >
-              {isRewriting ? '変換中...' : '✨ 口調変換 (LLM)'}
+              {isRewriting ? '変換中...' : <><Sparkles aria-hidden="true" size={12} />口調変換 (LLM)</>}
             </button>
           </div>
 
@@ -302,8 +305,8 @@ export const SpeechBubbleToneControls: React.FC<SpeechBubbleToneControlsProps> =
                     onClick={() => setShowThinking((prev) => !prev)}
                     className="flex items-center justify-between w-full text-[11px] font-medium text-purple-300 hover:text-purple-200"
                   >
-                    <span>💡 AIの解釈・思考過程</span>
-                    <span className="text-[10px]">{showThinking ? '▲ 閉じる' : '▼ 表示'}</span>
+                    <span className="flex items-center gap-1"><Lightbulb aria-hidden="true" size={12} />AIの解釈・思考過程</span>
+                    <span className="text-[10px] flex items-center gap-1">{showThinking ? '閉じる' : '表示'}<ChevronDown aria-hidden="true" size={12} className={showThinking ? 'rotate-180' : ''} /></span>
                   </button>
                   {showThinking && (
                     <div className="text-[11px] text-zinc-300 space-y-1.5 pt-1.5 border-t border-purple-900/30">
@@ -360,7 +363,7 @@ export const SpeechBubbleToneControls: React.FC<SpeechBubbleToneControlsProps> =
                     className="px-2 py-0.5 text-xs text-purple-200 hover:text-purple-100 bg-purple-600/60 hover:bg-purple-600 border border-purple-500/50 rounded font-medium transition-colors disabled:opacity-50"
                     data-testid="tone-rewrite-retry-feedback"
                   >
-                    ✨ 修正指示を反映して再生成
+                    <Sparkles aria-hidden="true" size={12} /> 修正指示を反映して再生成
                   </button>
                   <button
                     type="button"

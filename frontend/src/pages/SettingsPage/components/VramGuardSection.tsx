@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, ChevronDown, Save, RefreshCw } from 'lucide-react'
+import { ShieldCheck, ChevronDown, ChevronUp, Save, RefreshCw } from 'lucide-react'
 import { settingsApi, type VramSettings } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
@@ -14,6 +14,11 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
   const [minFreeGb, setMinFreeGb] = useState<number>(4.0)
   const [guardEnabled, setGuardEnabled] = useState<boolean>(true)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const draftRef = useRef({ minFreeGb, guardEnabled })
+  draftRef.current = { minFreeGb, guardEnabled }
+  const dirtyRef = useRef(false)
 
   // System stats from store
   const systemStats = useGenerationStore((state) => state.systemStats)
@@ -25,7 +30,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
   })
 
   useEffect(() => {
-    if (vramSettings) {
+    if (vramSettings && !dirtyRef.current) {
       if (typeof vramSettings.vram_min_free_gb === 'number') {
         setMinFreeGb(vramSettings.vram_min_free_gb)
       }
@@ -38,22 +43,47 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
   const updateMutation = useMutation({
     mutationFn: (data: { vram_min_free_gb: number; vram_guard_enabled?: boolean }) =>
       settingsApi.updateVram(data),
-    onSuccess: (savedData) => {
+    onSuccess: (savedData, submittedData) => {
       qc.invalidateQueries({ queryKey: ['settings-vram'] })
-      if (savedData) {
+      const noNewerEdits = draftRef.current.minFreeGb === submittedData.vram_min_free_gb &&
+        draftRef.current.guardEnabled === submittedData.vram_guard_enabled
+      if (savedData && noNewerEdits) {
         setMinFreeGb(savedData.vram_min_free_gb)
         setGuardEnabled(savedData.vram_guard_enabled)
+        dirtyRef.current = false
+        setHasUnsavedChanges(false)
+      } else if (noNewerEdits) {
+        dirtyRef.current = false
+        setHasUnsavedChanges(false)
       }
-      setToastMessage('VRAM安全ガード設定を保存しました')
+      setSaveError(null)
+      setToastMessage('設定を保存しました')
       setTimeout(() => setToastMessage(null), 3000)
+    },
+    onError: (error) => {
+      setSaveError(error instanceof Error ? error.message : String(error))
+      setToastMessage(null)
+      dirtyRef.current = true
+      setHasUnsavedChanges(true)
     },
   })
 
   const handleSave = () => {
+    setSaveError(null)
+    setToastMessage(null)
     updateMutation.mutate({
       vram_min_free_gb: minFreeGb,
       vram_guard_enabled: guardEnabled,
     })
+  }
+
+  const updateDraft = (next: { minFreeGb?: number; guardEnabled?: boolean }) => {
+    dirtyRef.current = true
+    setHasUnsavedChanges(true)
+    setSaveError(null)
+    setToastMessage(null)
+    if (next.minFreeGb !== undefined) setMinFreeGb(next.minFreeGb)
+    if (next.guardEnabled !== undefined) setGuardEnabled(next.guardEnabled)
   }
 
   // Calculate current free VRAM: prefer systemStats, then vramSettings, then null
@@ -116,6 +146,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                       {toastMessage}
                     </span>
                   )}
+                  {hasUnsavedChanges && <span role="status" className="text-xs text-amber-300">未保存</span>}
                   <button
                     type="button"
                     onClick={handleSave}
@@ -129,6 +160,12 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   </button>
                 </div>
               </div>
+
+              {saveError && (
+                <p role="alert" className="text-sm text-rose-300">
+                  保存できませんでした: {saveError}。設定は未保存です。
+                </p>
+              )}
 
               {/* Status & Gauge Comparison */}
               <div className="p-3.5 rounded-lg bg-surface-2/40 border border-[rgba(255,255,255,0.04)] space-y-2.5">
@@ -183,8 +220,9 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                     </div>
                     <div className="flex justify-between text-[10px] text-zinc-500">
                       <span>0 GB</span>
-                      <span className="text-red-400/80">
-                        ▲ 閾値: {minFreeGb.toFixed(1)} GB
+                      <span className="inline-flex items-center gap-1 text-red-400/80">
+                        <ChevronUp size={12} aria-hidden="true" />
+                        閾値: {minFreeGb.toFixed(1)} GB
                       </span>
                       <span>{totalGb.toFixed(1)} GB</span>
                     </div>
@@ -210,7 +248,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                       onChange={(e) => {
                         const val = parseFloat(e.target.value)
                         if (!isNaN(val)) {
-                          setMinFreeGb(val)
+                          updateDraft({ minFreeGb: val })
                         }
                       }}
                       className="w-20 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2 py-1 text-right font-mono text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]"
@@ -225,7 +263,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   max={14.0}
                   step={0.5}
                   value={minFreeGb}
-                  onChange={(e) => setMinFreeGb(parseFloat(e.target.value))}
+                  onChange={(e) => updateDraft({ minFreeGb: parseFloat(e.target.value) })}
                   className="w-full accent-[#7C6FDD] cursor-pointer"
                 />
 
@@ -249,7 +287,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   <input
                     type="checkbox"
                     checked={guardEnabled}
-                    onChange={(e) => setGuardEnabled(e.target.checked)}
+                      onChange={(e) => updateDraft({ guardEnabled: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3ECF8E]"></div>

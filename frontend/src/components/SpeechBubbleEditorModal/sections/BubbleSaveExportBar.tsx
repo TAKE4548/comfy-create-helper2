@@ -73,7 +73,7 @@ export const BubbleSaveExportBar: React.FC<BubbleSaveExportBarProps> = ({
             }}
             className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green"
           >
-            <option value="new">+ 新規アルバムを作成</option>
+            <option value="new">新規アルバムを作成</option>
             <option value="">なし (アルバムに追加しない)</option>
             {albums.map((a) => (
               <option key={a.id} value={a.id}>

@@ -162,9 +162,9 @@ describe('SettingsPage - Speech Tone Presets', () => {
     const nameInput = screen.getByPlaceholderText(/例: ツンデレ風/) as HTMLInputElement
     fireEvent.change(nameInput, { target: { value: '未保存の口調' } })
 
-    fireEvent.click(screen.getByRole('tab', { name: '④ 翻訳' }))
+    fireEvent.click(screen.getByRole('tab', { name: '翻訳' }))
     await waitFor(() => expect(window.location.hash).toBe('#translation'))
-    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'セリフ支援' }))
     await waitFor(() => expect(window.location.hash).toBe('#dialogue'))
 
     expect(screen.getByPlaceholderText(/例: ツンデレ風/)).toHaveValue('未保存の口調')
@@ -178,7 +178,7 @@ describe('SettingsPage - Speech Tone Presets', () => {
     renderComponent()
 
     expect(screen.getByRole('button', { name: 'プロンプト診断・生成の詳細設定' })).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'セリフ支援' }))
     await waitFor(() => expect(window.location.hash).toBe('#dialogue'))
     expect(screen.getByRole('button', { name: 'セリフ生成の詳細設定' })).toHaveAttribute('aria-expanded', 'false')
   })
@@ -223,7 +223,7 @@ describe('SettingsPage - Speech Tone Presets', () => {
     window.location.hash = '#workflows'
     const { unmount } = renderComponent()
     await waitFor(() => expect(systemStatsSubscription.start).toHaveBeenCalledTimes(1))
-    fireEvent.click(screen.getByRole('tab', { name: '⑤ システム・一般' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'システム・一般' }))
     await waitFor(() => expect(window.location.hash).toBe('#system'))
     expect(systemStatsSubscription.start).toHaveBeenCalledTimes(1)
     expect(systemStatsSubscription.stop).not.toHaveBeenCalled()
@@ -245,17 +245,18 @@ describe('SettingsPage - Speech Tone Presets', () => {
 
   it('shows speech tone presets by default and allows collapsing the section', async () => {
     renderComponent()
+    const dialoguePanel = screen.getByRole('tabpanel', { name: 'セリフ支援' })
 
     expect(screen.getByText('セリフ口調プリセット設定')).toBeDefined()
 
     await waitFor(() => {
-      expect(screen.getByText('ツンデレ風')).toBeDefined()
-      expect(screen.getByText('お嬢様風')).toBeDefined()
-      expect(screen.getByText('ツンデレ口調')).toBeDefined()
+      expect(within(dialoguePanel).getByText('ツンデレ風', { exact: true })).toBeDefined()
+      expect(within(dialoguePanel).getByText('お嬢様風', { exact: true })).toBeDefined()
+      expect(within(dialoguePanel).getAllByText('ツンデレ口調', { exact: true })).toHaveLength(2)
     })
 
     fireEvent.click(screen.getByText('セリフ口調プリセット設定'))
-    await waitFor(() => expect(screen.queryByText('ツンデレ風')).not.toBeInTheDocument())
+    await waitFor(() => expect(within(dialoguePanel).queryByText('ツンデレ風', { exact: true })).not.toBeInTheDocument())
   })
 
   it('opens create modal, fills form and submits new tone preset', async () => {
@@ -312,13 +313,14 @@ describe('SettingsPage - Speech Tone Presets', () => {
     vi.mocked(speechTonePresetsApi.update).mockResolvedValue(updatedPreset)
 
     renderComponent()
+    const dialoguePanel = screen.getByRole('tabpanel', { name: 'セリフ支援' })
 
     await waitFor(() => {
-      expect(screen.getByText('ツンデレ風')).toBeDefined()
+      expect(within(dialoguePanel).getByText('ツンデレ風', { exact: true })).toBeDefined()
     })
 
     // Click edit button for first preset
-    const editButtons = screen.getAllByTitle('編集')
+    const editButtons = within(dialoguePanel).getAllByTitle('編集')
     fireEvent.click(editButtons[0])
 
     expect(screen.getByTestId('speech-tone-preset-modal')).toBeDefined()
@@ -344,22 +346,31 @@ describe('SettingsPage - Speech Tone Presets', () => {
     })
   })
 
-  it('deletes tone preset upon confirmation', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('cancels inline tone preset confirmation without mutation and deletes only after explicit confirmation', async () => {
     vi.mocked(speechTonePresetsApi.delete).mockResolvedValue(undefined)
 
     renderComponent()
+    const dialoguePanel = screen.getByRole('tabpanel', { name: 'セリフ支援' })
 
     await waitFor(() => {
-      expect(screen.getByText('ツンデレ風')).toBeDefined()
+      expect(within(dialoguePanel).getByText('ツンデレ風', { exact: true })).toBeDefined()
     })
 
-    const deleteButtons = screen.getAllByTitle('削除')
-    fireEvent.click(deleteButtons[0])
+    const clickPresetDelete = () => fireEvent.click(within(dialoguePanel).getAllByTitle('削除')[0])
+    clickPresetDelete()
+    expect(within(dialoguePanel).getByText('「ツンデレ風」を削除しますか？')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(speechTonePresetsApi.delete).not.toHaveBeenCalled()
+    expect(within(dialoguePanel).getAllByText('ツンデレ口調', { exact: true })).toHaveLength(2)
 
+    clickPresetDelete()
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith('口調プリセット「ツンデレ風」を削除しますか？')
+      expect(within(dialoguePanel).getByText('「ツンデレ風」を削除しますか？')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: '削除を確認' }))
+    await waitFor(() => {
       expect(speechTonePresetsApi.delete).toHaveBeenCalledWith(1)
     })
+    expect(speechTonePresetsApi.delete).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,0 +1,66 @@
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useCollectionSelection } from '../useCollectionSelection'
+const items = ['a', 'b', 'c', 'd'].map((id) => ({ id })); const click = (mods: Record<string, boolean> = {}) => ({ ctrlKey: false, metaKey: false, shiftKey: false, preventDefault: vi.fn(), stopPropagation: vi.fn(), ...mods }) as unknown as React.MouseEvent
+const touch = (x = 0, y = 0) => ({ touches: [{ clientX: x, clientY: y }] }) as unknown as React.TouchEvent<Element>
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+describe('useCollectionSelection', () => {
+  it('handles normal, Ctrl, Shift range, select all, clear, exit, and filtered IDs', () => {
+    const { result, rerender } = renderHook(({ list }) => useCollectionSelection({ items: list }), { initialProps: { list: items } })
+    const normal = click()
+    act(() => result.current.handleItemClick('a', normal))
+    expect(result.current.selectedIds.size).toBe(0)
+    expect(normal.preventDefault).not.toHaveBeenCalled()
+    act(() => result.current.handleItemClick('b', click({ ctrlKey: true })))
+    act(() => result.current.handleItemClick('d', click({ shiftKey: true })))
+    expect(result.current.selectedIds).toEqual(new Set(['b', 'c', 'd']))
+    act(() => result.current.clearSelection())
+    expect(result.current.isMultiSelectMode).toBe(true)
+    act(() => result.current.selectAll())
+    expect(result.current.selectedIds).toEqual(new Set(['a', 'b', 'c', 'd']))
+    rerender({ list: items.slice(0, 2) })
+    expect(result.current.selectedIds).toEqual(new Set(['a', 'b']))
+    act(() => result.current.exitMultiSelectMode())
+    expect(result.current.isMultiSelectMode).toBe(false)
+    expect(result.current.selectedIds.size).toBe(0)
+  })
+
+  it('activates at 500ms, suppresses its click, and cancels on 15px movement or release', () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useCollectionSelection({ items }))
+    const handlers = result.current.getLongPressHandlers('c')
+    act(() => handlers.onTouchStart(touch()))
+    act(() => vi.advanceTimersByTime(499))
+    expect(result.current.isMultiSelectMode).toBe(false)
+    act(() => vi.advanceTimersByTime(1))
+    expect(result.current.isSelected('c')).toBe(true)
+    const followingClick = click()
+    act(() => result.current.handleItemClick('c', followingClick))
+    expect(result.current.isSelected('c')).toBe(true)
+    expect(followingClick.stopPropagation).toHaveBeenCalledOnce()
+    act(() => handlers.onTouchEnd())
+
+    act(() => result.current.exitMultiSelectMode())
+    act(() => result.current.getLongPressHandlers('d').onTouchStart(touch()))
+    const move = new Event('touchmove')
+    Object.defineProperty(move, 'touches', { value: [{ clientX: 15, clientY: 0 }] })
+    act(() => window.dispatchEvent(move))
+    act(() => vi.advanceTimersByTime(500))
+    expect(result.current.isMultiSelectMode).toBe(false)
+    const released = result.current.getLongPressHandlers('a')
+    act(() => released.onTouchStart(touch()))
+    act(() => released.onTouchEnd())
+    act(() => vi.advanceTimersByTime(500))
+    expect(result.current.isMultiSelectMode).toBe(false)
+  })
+
+  it('clears pending timers and touch listeners on unmount', () => {
+    vi.useFakeTimers()
+    const removeListener = vi.spyOn(window, 'removeEventListener')
+    const { result, unmount } = renderHook(() => useCollectionSelection({ items }))
+    act(() => result.current.getLongPressHandlers('a').onTouchStart(touch()))
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(removeListener).toHaveBeenCalledWith('touchmove', expect.any(Function))
+  })
+})

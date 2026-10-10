@@ -1,5 +1,5 @@
 import React from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Target, Lightbulb, RotateCcw } from 'lucide-react'
 import type { SpeechBubble } from '../../../types/speechBubble'
 import type { MobileTab } from '../types'
 
@@ -61,11 +61,11 @@ export const CanvasViewportSection: React.FC<CanvasViewportSectionProps> = ({
               }}
               className="rounded accent-blue-500"
             />
-            <span>🎯 しっぽ微調整モード</span>
+            <span className="inline-flex items-center gap-1"><Target aria-hidden="true" size={12} /> しっぽ微調整モード</span>
           </label>
           {selectedBubble.tail.isFineTuning && (
             <div className="flex items-center gap-2 pl-2 border-l border-zinc-700 text-zinc-400">
-              <span className="text-[11px] text-zinc-300">💡 橙色の2接点をドラッグして配置</span>
+              <span className="text-[11px] text-zinc-300 inline-flex items-center gap-1"><Lightbulb aria-hidden="true" size={12} /> 橙色の2接点をドラッグして配置</span>
               <button
                 type="button"
                 onClick={() => {
@@ -88,7 +88,7 @@ export const CanvasViewportSection: React.FC<CanvasViewportSectionProps> = ({
                 }}
                 className="px-2 py-0.5 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded border border-zinc-700 transition-colors"
               >
-                🔄 接点初期化
+                <><RotateCcw aria-hidden="true" size={12} /> 接点初期化</>
               </button>
             </div>
           )}

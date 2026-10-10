@@ -37,6 +37,8 @@ export interface JobView {
   status: JobStatus
   started_at: string | null
   finished_at: string | null
+  set_name?: string | null
+  prompt_excerpt?: string | null
   node: { id: string; name: string; value: number; max: number } | null
   outputs: Array<{
     node_id: string

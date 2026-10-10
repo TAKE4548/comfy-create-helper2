@@ -73,6 +73,7 @@ export const checkpointMappingsApi = {
 export const datasetApi = {
   getProjects: () => request<DatasetProject[]>('/dataset/projects'),
   getProject: (projectId: number) => request<DatasetProject>(`/dataset/projects/${projectId}`),
+  getItems: (projectId: number) => request<DatasetItem[]>(`/dataset/projects/${projectId}/items`),
   createProject: (data: DatasetProjectCreate) =>
     request<DatasetProject>('/dataset/projects', {
       method: 'POST',

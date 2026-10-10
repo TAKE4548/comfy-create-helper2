@@ -176,7 +176,9 @@ async def test_real_bridge_service_repository_router_accepts_and_completes_witho
         await websocket.wait_closed()
 
     async with websocket_serve(upstream_ws, "127.0.0.1", 0) as server:
-        ws_port = server.sockets[0].getsockname()[1]
+        upstream_socket = next(iter(server.sockets))
+        assert upstream_socket is not None
+        ws_port = upstream_socket.getsockname()[1]
         app, service, _bridge, sessions = _integration_app(
             tmp_path, upstream, bridge_url=f"http://127.0.0.1:{ws_port}", start_bridge=True,
         )

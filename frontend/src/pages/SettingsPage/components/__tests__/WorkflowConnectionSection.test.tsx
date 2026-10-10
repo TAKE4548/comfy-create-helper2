@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   },
   workflowPresetsApi: { list: vi.fn(), update: vi.fn(), reorder: vi.fn() },
   snapshotsApi: { list: vi.fn() },
+  mappingMastersApi: { list: vi.fn() },
+  baseModelsApi: { list: vi.fn() },
 }))
 
 vi.mock('../../../../api/client', () => api)
@@ -55,13 +57,15 @@ describe('WorkflowConnectionSection groups', () => {
     vi.clearAllMocks()
     api.workflowsApi.list.mockResolvedValue([workflow])
     api.workflowsApi.getHistoryStatus.mockResolvedValue({ has_rollback: true })
-    api.workflowsApi.get.mockResolvedValue({ mappings: [] })
+    api.workflowsApi.get.mockResolvedValue({ id: 1, name: 'Example workflow', json_body: { nodes: { '2': { class_type: 'KSampler', inputs: { steps: 20 } } } }, mappings: [{ id: 4, master_id: 1, node_id: '2', role: 'sampling', param_name: 'steps' }], target_base_model_id: 1, default_applied_assets: null })
     api.workflowsApi.update.mockResolvedValue(workflow)
     api.workflowsApi.copy.mockResolvedValue(workflow)
     api.workflowsApi.diffAnalyze.mockResolvedValue({ changes: [] })
     api.workflowsApi.rollback.mockResolvedValue(undefined)
     api.workflowPresetsApi.list.mockResolvedValue([])
     api.snapshotsApi.list.mockResolvedValue([])
+    api.mappingMastersApi.list.mockResolvedValue([{ id: 1, role: 'sampling', param_name: 'steps', input_type: 'int', display_name: 'Steps' }, { id: 2, role: 'sampling', param_name: 'cfg', input_type: 'float', display_name: 'CFG' }])
+    api.baseModelsApi.list.mockResolvedValue([{ id: 1, name: 'SD 1.5' }, { id: 2, name: 'SDXL' }])
   })
 
   afterEach(() => {
@@ -125,9 +129,11 @@ describe('WorkflowConnectionSection groups', () => {
   it('persists long-press controls with the existing local storage keys', () => {
     const { container } = renderSection({ group: 'system', isExpandedWorkflows: false, isExpandedConnections: false })
     fireEvent.change(container.querySelector('#settings-longpress-multiselect'), { target: { value: '1.4' } })
+    expect(screen.getByText('設定を保存しました')).toBeInTheDocument()
     fireEvent.change(container.querySelector('#settings-longpress-cardmove'), { target: { value: '2.2' } })
     expect(localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_MULTI_SELECT)).toBe('1.4')
     expect(localStorage.getItem(LS_KEYS.LONG_PRESS_DELAY_CARD_MOVE)).toBe('2.2')
+    expect(screen.getByText('設定を保存しました')).toBeInTheDocument()
   })
 
   it('uses defaults and keeps session changes when browser storage rejects access', () => {
@@ -150,5 +156,86 @@ describe('WorkflowConnectionSection groups', () => {
     expect(multiSelect.value).toBe('1.3')
     expect(cardMove.value).toBe('2.1')
     expect(setItem).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('alert')).toHaveTextContent('Storage denied')
+    expect(screen.getByRole('alert')).toHaveTextContent('設定は未保存です')
+    expect(screen.queryByText('設定を保存しました')).toBeNull()
+  })
+
+  it('edits role-node-widget mapping and base model in one workflow update', async () => {
+    renderSection({ group: 'workflows', isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    fireEvent.click(screen.getByRole('button', { name: '対応付け・設定' }))
+    await screen.findByText((_, node) => node?.textContent === 'sampling → steps')
+    expect(screen.getByText((_, node) => node?.textContent === 'sampling → steps')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('sampling のノード'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('ベースモデル関連'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '対応付けを保存' }))
+    await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      json_body: { nodes: { '2': { class_type: 'KSampler', inputs: { steps: 20 } } } },
+      mappings: [{ master_id: 1, node_id: '2' }],
+      target_base_model_id: 2,
+    })))
+    expect(await screen.findByRole('status')).toHaveTextContent('設定を保存しました')
+  })
+
+  it('reports workflow save failure without losing the current mapping draft', async () => {
+    api.workflowsApi.update.mockRejectedValueOnce(new Error('workflow storage unavailable'))
+    renderSection({ group: 'workflows', isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    fireEvent.click(screen.getByRole('button', { name: '対応付け・設定' }))
+    await screen.findByLabelText('ベースモデル関連')
+    fireEvent.change(screen.getByLabelText('ベースモデル関連'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '対応付けを保存' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('workflow storage unavailable')
+    expect(screen.getByRole('alert')).toHaveTextContent('設定は未保存です')
+    expect(screen.getByLabelText('ベースモデル関連')).toHaveValue('2')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('previews import without mutation, rejects unknown nodes, and applies only after inline confirmation', async () => {
+    renderSection({ group: 'workflows', isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    fireEvent.click(screen.getByRole('button', { name: '対応付け・設定' }))
+    await screen.findByText((_, node) => node?.textContent === 'sampling → steps')
+    const payload = { format: 'prompt-surgeon-workflow-config', version: 1, name: 'Imported', json_body: { nodes: { '8': { class_type: 'KSampler', inputs: {} } } }, mappings: [{ master_id: 1, node_id: '9' }], target_base_model_id: 2, default_applied_assets: null }
+    fireEvent.click(screen.getByRole('button', { name: '設定JSONをエクスポート' }))
+    const exported = JSON.parse((screen.getByLabelText('エクスポートJSON') as HTMLTextAreaElement).value)
+    expect(exported).toMatchObject({ format: 'prompt-surgeon-workflow-config', version: 1, name: 'Example workflow', mappings: [{ master_id: 1, node_id: '2' }], target_base_model_id: 1, default_applied_assets: null })
+    const input = screen.getByLabelText('設定JSONをインポート')
+    fireEvent.change(input, { target: { value: JSON.stringify(payload) } })
+    fireEvent.click(screen.getByRole('button', { name: 'インポート内容を確認' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/ノードIDが不正/)
+    expect(api.workflowsApi.update).not.toHaveBeenCalled()
+
+    for (const invalid of [
+      { ...payload, version: 2 },
+      { ...payload, mappings: [{ master_id: 999, node_id: '8' }] },
+      { ...payload, mappings: [{ master_id: 1, node_id: '8' }, { master_id: 1, node_id: '8' }] },
+      { ...payload, mappings: [{ master_id: 1, node_id: '8' }], target_base_model_id: 99 },
+    ]) {
+      fireEvent.change(input, { target: { value: JSON.stringify(invalid) } })
+      fireEvent.click(screen.getByRole('button', { name: 'インポート内容を確認' }))
+      expect(await screen.findByRole('alert')).toBeTruthy()
+      expect(api.workflowsApi.update).not.toHaveBeenCalled()
+    }
+
+    const valid = { ...payload, mappings: [{ master_id: 1, node_id: '8' }] }
+    fireEvent.change(input, { target: { value: JSON.stringify(valid) } })
+    fireEvent.click(screen.getByRole('button', { name: 'インポート内容を確認' }))
+    expect(await screen.findByText(/Example workflow.*1件/)).toBeTruthy()
+    expect(api.workflowsApi.update).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '適用を確認' }))
+    expect(screen.getByText(/Example workflow \/ 1件/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'プレビューを解除' }))
+    expect(api.workflowsApi.update).not.toHaveBeenCalled()
+    expect(input).toHaveValue(JSON.stringify(valid))
+    expect(screen.queryByText(/Example workflow \/ 1件/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'インポート内容を確認' }))
+    expect(await screen.findByText(/Example workflow.*1件/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '適用を確認' }))
+    fireEvent.click(screen.getByRole('button', { name: 'この内容を適用する' }))
+    await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledTimes(1))
+    expect(api.workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({ json_body: valid.json_body, mappings: valid.mappings, target_base_model_id: 2, default_applied_assets: null }))
   })
 })

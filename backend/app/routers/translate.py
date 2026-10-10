@@ -1,11 +1,16 @@
 import logging
 from typing import Literal, Optional, TypedDict, cast
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services import translation_service
+from app.services.replacement_dictionary import (
+    apply_replacement_rules,
+    load_replacement_dictionary,
+    save_replacement_dictionary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +62,56 @@ class TranslateStatsResponse(BaseModel):
     cached_entries_count: int
 
 
+class DictionaryRule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    replacement: str
+
+    @field_validator("source")
+    @classmethod
+    def normalize_source(cls, source: str) -> str:
+        normalized = source.strip()
+        if not normalized:
+            raise ValueError("source must not be empty")
+        return normalized
+
+
+class DictionaryUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rules: list[DictionaryRule]
+
+    @model_validator(mode="after")
+    def validate_unique_sources(self) -> "DictionaryUpdateRequest":
+        sources = [rule.source for rule in self.rules]
+        if len(sources) != len(set(sources)):
+            raise ValueError("dictionary sources must be unique")
+        return self
+
+
+class DictionaryResponse(BaseModel):
+    rules: list[DictionaryRule]
+
+
+@router.get("/dictionary", response_model=DictionaryResponse)
+def get_translation_dictionary(db: Session = Depends(get_db)) -> DictionaryResponse:
+    return DictionaryResponse(rules=[DictionaryRule(**rule) for rule in load_replacement_dictionary(db)])
+
+
+@router.put("/dictionary", response_model=DictionaryResponse)
+def update_translation_dictionary(
+    payload: DictionaryUpdateRequest,
+    db: Session = Depends(get_db),
+) -> DictionaryResponse:
+    rules: list[dict[str, str]] = [
+        {"source": rule.source, "replacement": rule.replacement}
+        for rule in payload.rules
+    ]
+    saved = save_replacement_dictionary(db, rules)
+    return DictionaryResponse(rules=[DictionaryRule(**rule) for rule in saved])
+
+
 @router.post("/prompt", response_model=PromptTranslateResponse)
 async def translate_prompt_endpoint(
     payload: PromptTranslateRequest,
@@ -70,6 +125,10 @@ async def translate_prompt_endpoint(
             provider=payload.provider,
             db=db,
             repack=True if payload.repack is None else payload.repack,
+        )
+        translated_prompt = apply_replacement_rules(
+            translated_prompt,
+            load_replacement_dictionary(db),
         )
         meta_data = cast(TranslationMetaData, meta_dict)
         return PromptTranslateResponse(

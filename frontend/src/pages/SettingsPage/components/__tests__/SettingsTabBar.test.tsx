@@ -3,18 +3,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { SettingsTabBar } from '../SettingsTabBar'
 
 const labels = [
-  ['workflows', '① ワークフロー・モデル', '① モデル'],
-  ['prompt', '② プロンプト支援', '② 呪文'],
-  ['dialogue', '③ セリフ支援', '③ セリフ'],
-  ['translation', '④ 翻訳', '④ 翻訳'],
-  ['system', '⑤ システム・一般', '⑤ システム'],
+  ['workflows', 'ワークフロー・モデル', 'モデル'],
+  ['prompt', 'プロンプト支援', '呪文'],
+  ['dialogue', 'セリフ支援', 'セリフ'],
+  ['translation', '翻訳', '翻訳'],
+  ['system', 'システム・一般', 'システム'],
 ] as const
 
 describe('SettingsTabBar', () => {
   it('renders the five tabs with associated panels and a single roving tab stop', () => {
     render(<SettingsTabBar activeTab="workflows" onSelect={vi.fn()} />)
     const tabs = screen.getAllByRole('tab')
+    const tablist = screen.getByRole('tablist', { name: '設定カテゴリー' })
     expect(tabs).toHaveLength(5)
+    expect(tablist).toHaveAttribute('aria-orientation', 'horizontal')
+    expect(tablist.className).toContain('overflow-x-auto')
+    expect(tablist.className).toContain('md:grid-cols-5')
     expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(labels.map(([, long]) => long))
     expect(tabs.map((tab) => tab.getAttribute('aria-controls'))).toEqual(labels.map(([id]) => `settings-panel-${id}`))
     expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
@@ -23,7 +27,22 @@ describe('SettingsTabBar', () => {
       const tab = screen.getByRole('tab', { name: long })
       expect(tab).toHaveTextContent(short)
       expect(tab).toHaveTextContent(long)
+      expect(tab.className).toContain('min-h-11')
+      expect(tab.className).toContain('md:min-w-0')
+      expect(tab.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+      expect(tab.getAttribute('aria-label')).not.toMatch(/[①②③④⑤]/)
     })
+  })
+
+  it('reflects an externally restored active tab without invoking selection', () => {
+    const onSelect = vi.fn()
+    const { rerender } = render(<SettingsTabBar activeTab="workflows" onSelect={onSelect} />)
+
+    rerender(<SettingsTabBar activeTab="translation" onSelect={onSelect} />)
+
+    expect(screen.getByRole('tab', { name: '翻訳' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '翻訳' })).toHaveAttribute('tabindex', '0')
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -45,7 +64,7 @@ describe('SettingsTabBar', () => {
   it('leaves Tab to native focus navigation and selects a tab on click', () => {
     const onSelect = vi.fn()
     render(<SettingsTabBar activeTab="workflows" onSelect={onSelect} />)
-    const tab = screen.getByRole('tab', { name: '④ 翻訳' })
+    const tab = screen.getByRole('tab', { name: '翻訳' })
     fireEvent.keyDown(tab, { key: 'Tab' })
     expect(onSelect).not.toHaveBeenCalled()
     fireEvent.click(tab)

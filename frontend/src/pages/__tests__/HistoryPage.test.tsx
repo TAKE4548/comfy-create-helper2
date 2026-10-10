@@ -17,6 +17,8 @@ vi.mock('../../api/client', () => ({
     update: vi.fn().mockResolvedValue({}),
     reorder: vi.fn().mockResolvedValue({}),
     deleteItems: vi.fn().mockResolvedValue({}),
+    create: vi.fn().mockResolvedValue({}),
+    addItems: vi.fn().mockResolvedValue({}),
     updateOrder: vi.fn().mockResolvedValue({}),
   },
   workflowsApi: {
@@ -104,6 +106,38 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     vi.mocked(workflowsApi.list).mockResolvedValue([])
     vi.mocked(lorasApi.list).mockResolvedValue([])
     vi.mocked(tagSetsApi.list).mockResolvedValue([])
+  })
+
+  it('shows complete snapshot and album totals while reporting the visible snapshot count', async () => {
+    const originalIntersectionObserver = globalThis.IntersectionObserver
+    globalThis.IntersectionObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as any
+    const snapshots = Array.from({ length: 30 }, (_, index) => ({
+      id: index + 1,
+      workflow_id: 1,
+      image_path: `/images/snap${index + 1}.png`,
+      created_at: new Date(Date.UTC(2026, 7, 18, 0, index)).toISOString(),
+    }))
+    vi.mocked(snapshotsApi.list).mockResolvedValue(snapshots)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('history-snapshot-count')).toHaveTextContent('表示中: 24 / 30件')
+    })
+    expect(screen.getByRole('button', { name: 'Snapshots (30)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Albums (1)' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Albums (1)' }))
+    expect(await screen.findByText('Test Album')).toBeInTheDocument()
+    globalThis.IntersectionObserver = originalIntersectionObserver
   })
 
   it('renders speech edit button in album detail view and opens modal on click', async () => {
@@ -289,6 +323,67 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     })
   })
 
+  it('keeps the add-to-album dialog and snapshot selection until the async save succeeds', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      { id: 1, workflow_id: 1, image_path: '/images/snap1.png', created_at: '2026-08-18T00:00:00Z' },
+      { id: 2, workflow_id: 1, image_path: '/images/snap2.png', created_at: '2026-08-18T01:00:00Z' },
+    ])
+    let resolveCreate!: (value: unknown) => void
+    const createPromise = new Promise((resolve) => { resolveCreate = resolve })
+    vi.mocked(albumsApi.create).mockReturnValueOnce(createPromise as never)
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /add to album/i }))
+    fireEvent.click(screen.getByRole('button', { name: /すべて選択/i }))
+    fireEvent.click(screen.getByRole('button', { name: /アルバムへ追加/i }))
+    fireEvent.change(screen.getByLabelText('新規アルバム名'), { target: { value: '保存先' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(albumsApi.create).toHaveBeenCalledWith({
+      name: '保存先',
+      snapshot_ids: expect.arrayContaining([1, 2]),
+    }))
+    expect(screen.getByText('選択した画像をアルバムに追加')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /一括削除/i })).toBeEnabled()
+
+    await act(async () => resolveCreate({}))
+
+    await waitFor(() => {
+      expect(screen.queryByText('選択した画像をアルバムに追加')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /一括削除/i })).not.toBeInTheDocument()
+    })
+  })
+
+  it('preserves add-to-album draft and selection when the async save rejects', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      { id: 3, workflow_id: 1, image_path: '/images/snap3.png', created_at: '2026-08-18T00:00:00Z' },
+    ])
+    vi.mocked(albumsApi.create).mockRejectedValueOnce(new Error('保存に失敗しました'))
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /add to album/i }))
+    fireEvent.click(screen.getByRole('button', { name: /すべて選択/i }))
+    fireEvent.click(screen.getByRole('button', { name: /アルバムへ追加/i }))
+    const nameInput = screen.getByLabelText('新規アルバム名')
+    fireEvent.change(nameInput, { target: { value: '保持する名前' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存に失敗しました')
+    expect(screen.getByLabelText('新規アルバム名')).toHaveValue('保持する名前')
+    expect(screen.getByText('選択した画像をアルバムに追加')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /一括削除/i })).toBeEnabled()
+  })
+
   it('supports 2-axis sorting in album detail view (criterion and direction)', async () => {
     const multiItemAlbum = {
       id: 20,
@@ -340,6 +435,7 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     expect(deleteBadge.id).toBe('item-delete-btn-101')
     fireEvent.click(deleteBadge)
 
+    expect(screen.getByRole('dialog', { name: /Test Album.*1件/i })).toBeInTheDocument()
     expect(screen.getByText(/アルバムからアイテムを削除/i)).toBeInTheDocument()
 
     const removeOnlyBtn = screen.getByText('アルバムから削除')

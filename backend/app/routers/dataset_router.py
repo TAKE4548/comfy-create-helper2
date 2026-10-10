@@ -62,6 +62,19 @@ def get_dataset_project(project_id: int, db: Session = Depends(get_db)):
     return project
 
 
+@router.get("/projects/{project_id}/items", response_model=List[DatasetItemResponse])
+def list_dataset_project_items(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(models.DatasetProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Dataset project not found")
+    return (
+        db.query(models.DatasetItem)
+        .filter(models.DatasetItem.project_id == project_id)
+        .order_by(models.DatasetItem.slot_index.asc(), models.DatasetItem.id.asc())
+        .all()
+    )
+
+
 @router.put("/projects/{project_id}", response_model=DatasetProjectResponse)
 def update_dataset_project(project_id: int, payload: DatasetProjectUpdate, db: Session = Depends(get_db)):
     project = db.get(models.DatasetProject, project_id)

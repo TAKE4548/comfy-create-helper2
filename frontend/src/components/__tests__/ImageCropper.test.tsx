@@ -103,7 +103,8 @@ describe('ImageCropper component', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(parentClick).not.toHaveBeenCalled()
 
-    const closeButton = screen.getByRole('button', { name: '✕' })
+    const closeButton = screen.getByRole('button', { name: '切り抜きを閉じる' })
+    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     fireEvent.click(closeButton)
     expect(onCancel).toHaveBeenCalledTimes(2)
     expect(parentClick).not.toHaveBeenCalled()

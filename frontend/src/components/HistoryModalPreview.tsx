@@ -47,15 +47,25 @@ export function HistoryModalPreview({
   const containerRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number | null>(null)
   const controlsTimeoutRef = useRef<any>(null)
+  const comparisonKeyActiveRef = useRef(false)
 
   const resetControlsTimeout = useCallback(() => {
     setShowControls(true)
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current)
     }
-    controlsTimeoutRef.current = setTimeout(() => {
+    const hideWhenIdle = () => {
+      const focusedElement = document.activeElement
+      const focusedControl = focusedElement instanceof HTMLElement &&
+        !!containerRef.current?.contains(focusedElement) &&
+        !!focusedElement.closest('button,select,input,textarea,[contenteditable="true"]')
+      if (focusedControl || comparisonKeyActiveRef.current) {
+        controlsTimeoutRef.current = setTimeout(hideWhenIdle, 3000)
+        return
+      }
       setShowControls(false)
-    }, 3000)
+    }
+    controlsTimeoutRef.current = setTimeout(hideWhenIdle, 3000)
   }, [])
 
   useEffect(() => {
@@ -135,11 +145,6 @@ export function HistoryModalPreview({
       const doc = document as DocumentWithFullscreen
       const isCurrentlyFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
       setIsFullscreen(isCurrentlyFullscreen)
-
-      // Bパターン: 全画面が解除されたことを検知した際、プレビューモーダルが開いている状態 (isOpen) ならば onClose() を呼び出す
-      if (!isCurrentlyFullscreen && isOpen && !isSaving) {
-        onClose()
-      }
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -148,7 +153,7 @@ export function HistoryModalPreview({
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
     }
-  }, [isOpen, onClose, isSaving])
+  }, [])
 
   const queryClient = useQueryClient()
   const activeSnapshotId = lockedTarget ? lockedTarget.snapshotId : snapshotIds?.[currentIndex] ?? null
@@ -205,6 +210,26 @@ export function HistoryModalPreview({
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isEditing || isSaving || (e.target instanceof HTMLElement && e.target.closest('input,select,textarea,[contenteditable="true"]'))) return
+      if (e.code === 'Space' && containerRef.current?.querySelector('[data-testid="image-comparison"]')) {
+        comparisonKeyActiveRef.current = true
+        resetControlsTimeout()
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (isFullscreen) {
+          const doc = document as DocumentWithFullscreen
+          if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+            if (doc.exitFullscreen) void doc.exitFullscreen()
+            else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen()
+            else setIsFullscreen(false)
+          } else {
+            setIsFullscreen(false)
+          }
+        } else {
+          onClose()
+        }
+        return
+      }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         resetControlsTimeout()
         if (e.key === 'ArrowLeft') {
@@ -214,9 +239,19 @@ export function HistoryModalPreview({
         }
       }
     }
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || !comparisonKeyActiveRef.current) return
+      comparisonKeyActiveRef.current = false
+      resetControlsTimeout()
+    }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, currentIndex, images.length, onChangeIndex, resetControlsTimeout, isEditing, isSaving])
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      comparisonKeyActiveRef.current = false
+    }
+  }, [isOpen, currentIndex, images.length, onChangeIndex, resetControlsTimeout, isEditing, isSaving, isFullscreen, onClose])
 
   if (!isOpen || images.length === 0) return null
 
@@ -268,6 +303,7 @@ export function HistoryModalPreview({
       <div className={`flex-1 min-h-0 ${viewMode === 'info' && !isFullscreen ? 'flex flex-col md:flex-row overflow-auto' : 'flex'}`}>
         <PreviewImageViewer
           activeImage={activeImage}
+          images={images}
           currentIndex={currentIndex}
           totalImages={images.length}
           showControls={showControls}

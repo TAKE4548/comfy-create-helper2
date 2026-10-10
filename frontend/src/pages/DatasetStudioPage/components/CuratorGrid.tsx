@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import type { DatasetItem } from '../../../api/types'
 import { datasetApi } from '../../../api/client'
+import { Modal } from '../../../components/common/Modal'
 import { useStudioStore } from '../useStudioStore'
 import { CaptionEditorCard } from './CaptionEditorCard'
 
@@ -19,10 +21,44 @@ export const CuratorGrid: React.FC<CuratorGridProps> = ({ onRerollPrompt }) => {
 
   const [isExporting, setIsExporting] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const [previewItem, setPreviewItem] = useState<DatasetItem | null>(null)
+  const cardRefs = useRef(new Map<number, HTMLDivElement>())
 
   const handleToggleStatus = (item: DatasetItem) => {
     const nextStatus = item.status === 'APPROVED' ? 'REJECTED' : 'APPROVED'
     updateItemStatus(item.id, nextStatus as 'APPROVED' | 'REJECTED')
+  }
+
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, item: DatasetItem, index: number) => {
+    const target = event.target as HTMLElement
+    if (target.closest('button, input, textarea, select, [contenteditable="true"]')) return
+
+    switch (event.key.toLowerCase()) {
+      case 'x':
+      case 'arrowdown':
+        event.preventDefault()
+        handleToggleStatus(item)
+        break
+      case 'a':
+      case 'arrowup':
+        if (item.status === 'REJECTED') {
+          event.preventDefault()
+          updateItemStatus(item.id, 'APPROVED')
+        }
+        break
+      case 'arrowleft':
+        event.preventDefault()
+        cardRefs.current.get(index - 1)?.focus()
+        break
+      case 'arrowright':
+        event.preventDefault()
+        cardRefs.current.get(index + 1)?.focus()
+        break
+      case ' ':
+        event.preventDefault()
+        setPreviewItem(item)
+        break
+    }
   }
 
   const handleSingleReroll = async (item: DatasetItem) => {
@@ -86,19 +122,30 @@ export const CuratorGrid: React.FC<CuratorGridProps> = ({ onRerollPrompt }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {items.map((item) => {
+      <div data-testid="curator-grid" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        {items.map((item, index) => {
           const isApproved = item.status === 'APPROVED'
+          const isRejected = item.status === 'REJECTED'
           const isRerolling = item.status === 'REROLLING'
 
           return (
             <div
               key={item.id}
               data-testid={`curator-item-${item.id}`}
+              ref={(element) => {
+                if (element) cardRefs.current.set(index, element)
+                else cardRefs.current.delete(index)
+              }}
+              tabIndex={0}
+              role="group"
+              aria-label={`Slot ${item.slot_index + 1} ${item.status}`}
+              onKeyDown={(event) => handleCardKeyDown(event, item, index)}
               className={`flex flex-col bg-slate-800 rounded-lg border p-3 gap-2 transition-all ${
                 isApproved
-                  ? 'border-emerald-500/50 shadow-sm shadow-emerald-500/10'
-                  : 'border-slate-700 opacity-80'
+                  ? 'border-emerald-500/30'
+                  : isRejected
+                  ? 'border-amber-500/70 ring-1 ring-amber-500/20'
+                  : 'border-slate-700'
               }`}
             >
               {/* Header: Slot number & Status Badge & Reroll Button */}
@@ -110,23 +157,24 @@ export const CuratorGrid: React.FC<CuratorGridProps> = ({ onRerollPrompt }) => {
                   <button
                     type="button"
                     data-testid={`reroll-button-${item.id}`}
+                    aria-label="単発リロール"
                     disabled={isRerolling}
                     onClick={() => handleSingleReroll(item)}
                     title="単発リロール"
-                    className="p-1 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors"
+                    className="min-h-11 min-w-11 p-1 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors"
                   >
-                    ↺
+                    <RotateCcw size={16} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     data-testid={`status-badge-${item.id}`}
                     onClick={() => handleToggleStatus(item)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase transition-colors ${
+                    className={`min-h-11 px-2 rounded text-[10px] font-bold tracking-wide uppercase transition-colors ${
                       isRerolling
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                         : isApproved
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
                     }`}
                   >
                     {item.status}
@@ -164,6 +212,20 @@ export const CuratorGrid: React.FC<CuratorGridProps> = ({ onRerollPrompt }) => {
           )
         })}
       </div>
+      <Modal
+        isOpen={previewItem !== null}
+        onClose={() => setPreviewItem(null)}
+        size="7xl"
+        ariaLabel="画像プレビュー"
+      >
+        {previewItem?.image_path && (
+          <img
+            src={previewItem.image_path}
+            alt={`Slot ${previewItem.slot_index + 1} preview`}
+            className="max-h-[85vh] max-w-full object-contain mx-auto"
+          />
+        )}
+      </Modal>
     </div>
   )
 }

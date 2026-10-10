@@ -83,7 +83,7 @@ export function TagSetDetailModal({
       tags: tagSet.tags.join(', '),
       thumbnail_path: tagSet.thumbnail_path ?? undefined,
       target_base_model_ids: tagSet.target_base_model_ids ?? [],
-      subsets: tagSet.subsets ? tagSet.subsets.map((s: any) => ({ name: s.name, tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags })) : [],
+      subsets: tagSet.subsets ? tagSet.subsets.map((s: any) => ({ name: s.name, tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags, thumbnail_path: s.thumbnail_path ?? null })) : [],
     })
     setIsEditing(true)
   }
@@ -204,7 +204,7 @@ export function TagSetDetailModal({
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[rgba(255,255,255,0.06)] mt-4 flex-shrink-0">
                     <button type="button" onClick={() => setIsEditing(false)} className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>
-                    <button type="button" onClick={handleSave} disabled={!form.name || !form.tags || isPending} className="flex-1 py-2.5 rounded-xl bg-[#7C6FDD] text-white font-bold text-sm hover:bg-[#6d62cc] disabled:opacity-50 transition-all">
+                    <button type="button" onClick={handleSave} disabled={!form.name || !form.tags || isPending} className="flex-1 py-2.5 rounded-xl bg-accent-green text-zinc-950 font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all">
                       {isPending ? 'Saving…' : 'Save Changes'}
                     </button>
                   </div>
@@ -231,7 +231,7 @@ export function TagSetDetailModal({
                       <div className="flex flex-wrap gap-1.5 mt-1">
                         {tagSet.target_base_model_ids && tagSet.target_base_model_ids.length > 0 ? (
                           baseModels?.filter(bm => tagSet.target_base_model_ids?.includes(bm.id)).map(bm => (
-                            <span key={bm.id} className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#7C6FDD]/15 text-[#7C6FDD] border border-[#7C6FDD]/30">
+                            <span key={bm.id} className="px-2 py-0.5 rounded text-[10px] font-medium bg-surface-2 text-zinc-300 border border-[rgba(255,255,255,0.08)]">
                               {bm.name}
                             </span>
                           ))
@@ -246,12 +246,12 @@ export function TagSetDetailModal({
                         <div className="min-w-0 flex-1">
                           <TagChipViewer
                             tags={tagSet.tags}
-                            accentColor="purple"
+                            accentColor="green"
                             defaultMode="chips"
                           />
                         </div>
                         <button id={`detail-copy-btn-${tagSet.id}`} onClick={() => onCopy(tagSet.id, tagSet.tags)}
-                          className={`p-2 rounded-md border transition-all flex-shrink-0 ${copiedId === tagSet.id ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:bg-surface'}`}>
+                          className={`p-2 rounded-md border transition-all flex-shrink-0 ${copiedId === tagSet.id ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200 hover:bg-surface'}`}>
                           {copiedId === tagSet.id ? <Check size={14} /> : <Copy size={14} />}
                         </button>
                       </div>
@@ -263,9 +263,10 @@ export function TagSetDetailModal({
                           {tagSet.subsets.map((sub, i) => (
                             <div key={i} className="p-2.5 bg-surface-2 rounded-lg border border-[rgba(255,255,255,0.04)] space-y-1">
                               <span className="text-xs font-semibold text-zinc-300 block">{sub.name}</span>
+                              {sub.thumbnail_path && <img src={sub.thumbnail_path} alt={`${sub.name} thumbnail`} className="h-16 w-16 rounded object-cover" />}
                               <TagChipViewer
                                 tags={Array.isArray(sub.tags) ? sub.tags : (sub.tags as unknown as string).split(',').map((t: string) => t.trim()).filter(Boolean)}
-                                accentColor="purple"
+                                accentColor="green"
                                 defaultMode="chips"
                               />
                             </div>
@@ -275,7 +276,7 @@ export function TagSetDetailModal({
                     )}
                   </div>
                   <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 flex justify-end gap-2 mt-4 flex-shrink-0">
-                    <button type="button" onClick={handleStartEdit} className="px-4 py-2 rounded-lg bg-[#7C6FDD]/10 border border-[#7C6FDD]/30 text-[#a99ef7] text-xs font-semibold hover:bg-[#7C6FDD]/20 transition-all">Edit</button>
+                    <button type="button" onClick={handleStartEdit} className="px-4 py-2 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-semibold hover:bg-accent-green/20 transition-all">Edit</button>
                     <button type="button" id="close-detail-modal-btn" onClick={onClose} className="px-4 py-2 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 text-xs font-semibold hover:bg-surface-2 transition-all">Close</button>
                   </div>
                 </div>

@@ -258,6 +258,23 @@ class Lora(Base):
         back_populates="lora", cascade="all, delete-orphan"
     )
     snapshots: Mapped[list["SnapshotLora"]] = relationship(back_populates="lora")
+    example_images: Mapped[list["LoraExampleImage"]] = relationship(
+        back_populates="lora",
+        cascade="all, delete-orphan",
+        order_by=lambda: (LoraExampleImage.sort_order, LoraExampleImage.id),
+    )
+
+
+class LoraExampleImage(Base):
+    __tablename__ = "lora_example_images"
+    __table_args__ = (CheckConstraint("length(image_path) > 0", name="ck_lora_example_images_path_nonempty"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lora_id: Mapped[int] = mapped_column(ForeignKey("loras.id", ondelete="CASCADE"), nullable=False)
+    image_path: Mapped[str] = mapped_column(String, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    lora: Mapped["Lora"] = relationship(back_populates="example_images")
 
 
 class LoraTriggerWordSet(Base):
@@ -310,6 +327,7 @@ class TagSubset(Base):
     tag_set_id: Mapped[int] = mapped_column(ForeignKey("tag_sets.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     tags: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of strings
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     tag_set: Mapped["TagSet"] = relationship(back_populates="subsets")
@@ -519,4 +537,3 @@ class LoraTrainingJob(Base):
     status: Mapped[str] = mapped_column(String(50), default="IDLE")
     final_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-

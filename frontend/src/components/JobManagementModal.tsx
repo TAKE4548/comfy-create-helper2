@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Trash2, Play, Clock } from 'lucide-react'
 import { useGenerationStore } from '../store/useGenerationStore'
+import { generationApi } from '../api/domains/generation'
 import type { CancelOperation, CancelResult, CancelScope } from '../api/domains/generation'
+import { Modal } from './common/Modal'
 
 interface JobManagementModalProps {
   isOpen: boolean
@@ -17,11 +19,18 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     cancelJob,
     clearPendingQueue,
     cancelAllJobs,
+    generationSnapshot,
+    fetchQueue,
   } = useGenerationStore()
   const [bulkScope, setBulkScope] = useState<CancelScope>('all')
   const [busy, setBusy] = useState(false)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<{ mode: 'queued' | 'all'; scope: CancelScope } | null>(null)
+  const [confirmationCounts, setConfirmationCounts] = useState<{ pending: number; running: number } | null>(null)
+  const [runningConfirmation, setRunningConfirmation] = useState<string | null>(null)
+  const [queuedReservation, setQueuedReservation] = useState<string | null>(null)
   const busyRef = useRef(false)
+  const cancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // [FIX REQ-049] useMemo を早期リターンより前に移動（React Rules of Hooks 準拠）
   const visibleRunning = useMemo(
@@ -33,10 +42,36 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     [queuePending, filterOwnSession, clientId]
   )
 
+  const clearReservation = () => {
+    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
+    cancelTimer.current = null
+    setQueuedReservation(null)
+  }
+
+  const closeModal = () => {
+    if (busyRef.current) return
+    clearReservation()
+    setConfirmation(null)
+    setRunningConfirmation(null)
+    onClose()
+  }
+
+  useEffect(() => () => {
+    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) clearReservation()
+  }, [isOpen])
+
   if (!isOpen) return null
 
   const handleCancelJob = async (promptId: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    setRunningConfirmation(promptId)
+  }
+
+  const confirmRunningCancel = async (promptId: string) => {
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true)
@@ -51,7 +86,36 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     } finally {
       busyRef.current = false
       setBusy(false)
+      setRunningConfirmation(null)
     }
+  }
+
+  const reserveQueuedCancel = (promptId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (busyRef.current) return
+    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
+    setResultMessage(null)
+    setQueuedReservation(promptId)
+    cancelTimer.current = setTimeout(async () => {
+      cancelTimer.current = null
+      setQueuedReservation(null)
+      busyRef.current = true
+      setBusy(true)
+      try {
+        const result = await generationApi.cancelJob(promptId, false, true)
+        if (result.outcome === 'cancelled' || result.outcome === 'already_terminal') {
+          setResultMessage(`取消結果を確認しました: ${result.prompt_id || result.job_id || promptId}`)
+        } else {
+          setResultMessage(`取消できません: ${result.prompt_id || result.job_id || promptId}（${result.message}）`)
+        }
+        await fetchQueue()
+      } catch (error) {
+        setResultMessage(`取消できません: ${promptId}（${error instanceof Error ? error.message : '状態を確認できません'}）`)
+      } finally {
+        busyRef.current = false
+        setBusy(false)
+      }
+    }, 3000)
   }
 
   const hasConfirmedAllEffects = (operation: CancelOperation) => {
@@ -74,20 +138,29 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     const skippedReason = operation.upstream_interrupt === 'skipped'
       ? '。保護対象があるため通常実行中の取消を見送りました。全取消完了扱いではありません'
       : ''
-    setResultMessage(`${operation.message || '一括取消の結果を確認してください。'}（確認済み: ${confirmedCount}件、未確認: ${unresolvedCount}件）${skippedReason}`)
+    const affectedIds = operation.items.map((item) => item.prompt_id || item.job_id).filter(Boolean).join(', ')
+    setResultMessage(`${operation.message || '一括取消の結果を確認してください。'}（確認済み: ${confirmedCount}件、未確認: ${unresolvedCount}件${affectedIds ? `、対象: ${affectedIds}` : ''}）${skippedReason}`)
+  }
+
+  const requestBulkConfirmation = (mode: 'queued' | 'all') => {
+    setConfirmation({ mode, scope: bulkScope })
+    const countScope = (rows: any[]) => bulkScope === 'all' ? rows.length : rows.filter((row) =>
+      generationSnapshot?.jobs.some((item) => item.prompt_id === row[1] && item.scope === 'normal')
+    ).length
+    setConfirmationCounts({ pending: countScope(queuePending), running: countScope(queueRunning) })
+    setResultMessage(null)
   }
 
   const handleClearQueueOnly = async () => {
-    const scopeDescription = bulkScope === 'all'
-      ? '全セッションの通常生成・Studio・未分類および外部キュー'
-      : '全セッションの識別済み通常生成のみ（Studio・未分類は保持）'
-    if (!confirm(`待機中の${scopeDescription}をクリアしますか？\n※実行中の生成は中断しません。`)) return
+    const scope = confirmation?.scope
+    if (!confirmation || confirmation.mode !== 'queued' || !scope) return
+    setConfirmation(null)
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true)
     setResultMessage(null)
     try {
-      showOperationResult(await clearPendingQueue(bulkScope))
+      showOperationResult(await clearPendingQueue(scope))
     } catch (error) {
       setResultMessage(error instanceof Error ? error.message : 'キュー取消の結果を確認できませんでした。')
     } finally {
@@ -97,19 +170,15 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   }
 
   const handleCancelAll = async () => {
-    const scopeDescription = bulkScope === 'all'
-      ? '全セッションの通常生成・Studio・未分類・外部キューを削除し、実行中の生成も中断'
-      : '全セッションの識別済み通常生成のみを取消（Studio・未分類は保持）'
-    const protectionNote = bulkScope === 'normal'
-      ? '\n※Studioまたは未分類の実行中・待機中ジョブを保護するため、通常生成の実行中取消を見送る場合があります。'
-      : ''
-    if (!confirm(`${scopeDescription}しますか？${protectionNote}`)) return
+    const scope = confirmation?.scope
+    if (!confirmation || confirmation.mode !== 'all' || !scope) return
+    setConfirmation(null)
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true)
     setResultMessage(null)
     try {
-      showOperationResult(await cancelAllJobs(bulkScope))
+      showOperationResult(await cancelAllJobs(scope))
     } catch (error) {
       setResultMessage(error instanceof Error ? error.message : '一括取消の結果を確認できませんでした。')
     } finally {
@@ -123,10 +192,21 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div 
-        className="w-full min-w-0 max-w-2xl max-h-[calc(100dvh-1rem)] bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl overflow-y-auto flex flex-col lg:max-h-[85vh]"
-        onClick={(e) => e.stopPropagation()}
+    <Modal
+      isOpen={isOpen}
+      onClose={closeModal}
+      size="lg"
+      ariaLabel="ジョブ管理"
+      dialogClassName="p-0"
+    >
+      <div
+        className="w-full min-w-0 min-h-0 flex flex-col"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !event.defaultPrevented) {
+            event.preventDefault()
+            closeModal()
+          }
+        }}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.08)] px-5 py-4 bg-surface">
@@ -139,9 +219,13 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
               <p className="text-[10px] text-zinc-400 mt-0.5">ComfyUI 実行キューの監視とキャンセル</p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors"
+          <button
+            type="button"
+            aria-label="閉じる"
+            id="close-job-management-modal-btn"
+            disabled={busy}
+            onClick={closeModal}
+            className="min-h-11 min-w-11 flex items-center justify-center p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <X size={18} />
           </button>
@@ -164,6 +248,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                 const promptId = job[1]
                 const jobClientId = job[3]?.client_id
                 const isOwn = jobClientId === clientId
+                const metadata = generationSnapshot?.jobs.find((item) => item.prompt_id === promptId)
                 return (
                   <div 
                     key={promptId}
@@ -181,15 +266,10 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                       <div className="text-[10px] text-zinc-400 font-mono">
                         Client: {jobClientId || 'unknown'}
                       </div>
+                      {metadata?.node && <div className="text-[10px] text-zinc-300">{metadata.node.name} · {metadata.node.value}/{metadata.node.max}</div>}
+                      {(metadata?.set_name || metadata?.prompt_excerpt) && <div className="text-[10px] text-zinc-400">{metadata.set_name}{metadata.set_name && metadata.prompt_excerpt ? ' · ' : ''}{metadata.prompt_excerpt}</div>}
                     </div>
-                    <button
-                      onClick={(e) => handleCancelJob(promptId, e)}
-                      disabled={busy}
-                      className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 transition-all"
-                      title="中断（生成を停止）"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {runningConfirmation === promptId ? <div className="flex gap-1"><button type="button" onClick={() => confirmRunningCancel(promptId)} disabled={busy} className="min-h-11 px-2 text-[11px] text-red-300">実行中ジョブを中断する</button><button type="button" onClick={() => setRunningConfirmation(null)} className="min-h-11 px-2 text-[11px]">戻る</button></div> : <button onClick={(e) => handleCancelJob(promptId, e)} disabled={busy} className="min-h-11 min-w-11 p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 transition-all" title="中断（生成を停止）"><Trash2 size={14} /></button>}
                   </div>
                 )
               })
@@ -230,14 +310,14 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                           Client: {jobClientId || 'unknown'}
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => handleCancelJob(promptId, e)}
+                      {queuedReservation === promptId ? <div className="flex items-center gap-2"><span role="status" className="text-[11px] text-amber-300">取消予約（3秒後）</span><button type="button" onClick={clearReservation} className="min-h-11 px-2 text-[11px] text-accent-green">Undo</button></div> : <button
+                        onClick={(e) => reserveQueuedCancel(promptId, e)}
                         disabled={busy}
-                        className="p-1.5 rounded bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-[rgba(255,255,255,0.04)] hover:border-red-500/20 transition-all"
+                        className="min-h-11 min-w-11 p-1.5 rounded bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-[rgba(255,255,255,0.04)] hover:border-red-500/20 transition-all"
                         title="キューから削除"
                       >
                         <Trash2 size={13} />
-                      </button>
+                      </button>}
                     </div>
                   )
                 })}
@@ -258,9 +338,9 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
               <select
                 aria-label="一括取消範囲"
                 value={bulkScope}
-                onChange={(event) => setBulkScope(event.target.value as CancelScope)}
+                onChange={(event) => { setBulkScope(event.target.value as CancelScope); setConfirmation(null); setConfirmationCounts(null) }}
                 disabled={busy}
-                className="w-full min-w-0 rounded bg-zinc-800 border border-zinc-700 px-2 py-2 sm:w-auto sm:py-1"
+                className="min-h-11 w-full min-w-0 rounded bg-zinc-800 border border-zinc-700 px-2 py-2 sm:w-auto sm:py-1"
               >
                 <option value="all">全生成（Studioを含む）</option>
                 <option value="normal">通常生成のみ</option>
@@ -269,33 +349,38 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
             <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
               <button
                 type="button"
-                onClick={handleClearQueueOnly}
+                onClick={() => requestBulkConfirmation('queued')}
                 disabled={busy}
-                className="px-3.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                className="min-h-11 px-3.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
               >
                 <Trash2 size={14} />
                 キューのみクリア
               </button>
               <button
                 type="button"
-                onClick={handleCancelAll}
+                onClick={() => requestBulkConfirmation('all')}
                 disabled={busy}
-                className="px-3.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                className="min-h-11 px-3.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
               >
                 <Trash2 size={14} />
                 すべて中断
               </button>
               <button
                 type="button"
-                onClick={onClose}
-                className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.08)] text-zinc-300 text-xs font-semibold transition-all"
+                onClick={closeModal}
+                disabled={busy}
+                className="min-h-11 px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-[rgba(255,255,255,0.08)] text-zinc-300 text-xs font-semibold transition-all"
               >
                 閉じる
               </button>
             </div>
+            {confirmation && <div role="dialog" aria-label="取消確認" className="rounded border border-amber-500/30 p-2 text-[11px] text-zinc-200">
+              <p>{confirmation.scope === 'all' ? '全セッションの通常生成・Studio・未分類・外部キュー' : '全セッションの識別済み通常生成（Studio・未分類は保護）'}を対象にします。待機中 {confirmationCounts?.pending ?? 0} 件 / 実行中 {confirmation.mode === 'all' ? confirmationCounts?.running ?? 0 : 0} 件。{confirmation.mode === 'queued' ? '実行中は中断しません。' : '実行中も中断します。'}</p>
+              <div className="mt-2 flex gap-2"><button type="button" onClick={confirmation.mode === 'queued' ? handleClearQueueOnly : handleCancelAll} disabled={busy} className="min-h-11 px-2 text-[11px] font-semibold text-amber-300">確認して{confirmation.mode === 'queued' ? 'キューのみクリア' : 'すべて中断'}</button><button type="button" onClick={() => setConfirmation(null)} className="min-h-11 px-2 text-[11px]">戻る</button></div>
+            </div>}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

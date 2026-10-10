@@ -11,6 +11,7 @@ import { usePresetState } from './usePresetState'
 import { useAssetSelectionState } from './useAssetSelectionState'
 import { useGenerateDisplayState } from './useGenerateDisplayState'
 import { useGeneratePageModals } from './useGeneratePageModals'
+import { useGenerateKeyboardShortcuts } from './useImageNavigation'
 
 export type { SnapshotSummaryWithParams } from './useGenerateDisplayState'
 
@@ -109,6 +110,17 @@ export function useGeneratePageState() {
 
   // 6. Modals & Responsive State
   const modals = useGeneratePageModals()
+
+  useGenerateKeyboardShortcuts({
+    onGenerate: handleGenerateSets,
+    onSave: () => snapshotActions.setIsSaveModalOpen(true),
+    onOpenPreview: displayState.handleOpenModalPreview,
+    hasSelectedImage: Boolean(selectedImg),
+    modalOpen: Boolean(
+      modals.rescanOpen || modals.isSettingsOpen || modals.isJobModalOpen || modals.isSceneGeneratorOpen ||
+      snapshotActions.isSaveModalOpen || displayState.isModalPreviewOpen
+    ),
+  })
 
   return {
     ...modals,

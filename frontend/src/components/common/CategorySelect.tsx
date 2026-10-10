@@ -132,7 +132,7 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
         </option>
       ))}
       <option value="__new__" className={textAccentClass}>
-        + 新規カテゴリを追加
+        新規カテゴリを追加
       </option>
     </select>
   )

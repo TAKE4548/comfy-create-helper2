@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MobileLayout } from '../MobileLayout'
+import { useGenerationStore } from '../../../../store/useGenerationStore'
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -12,9 +13,12 @@ vi.mock('react-router-dom', () => ({
 // Mock lucide-react icons if necessary (lucide-react works normally in tests)
 
 describe('MobileLayout - TagChipEditor Integration', () => {
+  afterEach(() => vi.useRealTimers())
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    useGenerationStore.setState({ generationStartTime: null })
   })
 
   const createMockState = (overrides = {}) => {
@@ -175,6 +179,17 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(screen.getByText('テキスト入力モード切替')).toBeInTheDocument()
   })
 
+  it('labels the mobile workflow connection settings button and keeps its open callback', () => {
+    const setIsSettingsOpen = vi.fn()
+    const state = createMockState({ setIsSettingsOpen })
+    render(<MobileLayout state={state} />)
+
+    const settingsButton = screen.getByRole('button', { name: 'ワークフロー / 接続設定' })
+    expect(settingsButton).toHaveAttribute('title', 'ワークフロー / 接続設定')
+    fireEvent.click(settingsButton)
+    expect(setIsSettingsOpen).toHaveBeenCalledWith(true)
+  })
+
   it('switches between Chips Mode and Text Mode when clicking toggle button', () => {
     const state = createMockState()
     render(<MobileLayout state={state} />)
@@ -225,29 +240,52 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(openTranslationMock).toHaveBeenCalledWith('Main_Positive_Prompt', '1girl, masterpiece, high quality')
   })
 
-  it('renders sections in order: Thumbnail Strip (History) -> Profiles -> Prompt Input', () => {
-    const state = createMockState({
+  it('switches the mounted mobile panels without losing the prompt draft or history selection', () => {
+    let state: any
+    state = createMockState({
       showStrip: true,
       selectedWorkflowId: 1,
+      selectedIds: [12],
       textMappings: [
         { id: 1, role: 'Main_Positive_Prompt', display_name: 'Positive Prompt', input_type: 'string' },
       ],
       activePromptTab: 'Main_Positive_Prompt',
+      setParamValues: vi.fn((values) => { state.paramValues = values }),
     })
     render(<MobileLayout state={state} />)
 
-    const historyTab = screen.getByText('履歴')
-    const profilesTitle = screen.getByText('Profiles')
-    const promptInput = screen.getByText('Positive Prompt Input')
+    const segmentGroup = screen.getByRole('group', { name: '表示セクション' })
+    const promptTab = screen.getByRole('button', { name: 'プロンプト' })
+    const parametersTab = screen.getByRole('button', { name: 'パラメータ' })
+    const historyTab = screen.getByRole('button', { name: '履歴' })
+    expect(segmentGroup).toBeInTheDocument()
+    expect(promptTab).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('mobile-prompt-panel')).not.toHaveAttribute('hidden')
+    expect(screen.getByTestId('mobile-parameters-panel')).toHaveAttribute('hidden')
+    expect(screen.getByTestId('mobile-history-panel')).toHaveAttribute('hidden')
 
-    // Verify DOM order using compareDocumentPosition
-    expect(historyTab.compareDocumentPosition(profilesTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(profilesTitle.compareDocumentPosition(promptInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const promptDraft = state.paramValues.Main_Positive_Prompt
+    expect(screen.getByText('1girl')).toBeInTheDocument()
+    const promptEditor = document.getElementById('prompt-mobile-Main_Positive_Prompt')
+    const historyPanel = screen.getByTestId('mobile-history-panel')
+
+    fireEvent.click(parametersTab)
+    expect(screen.getByTestId('mobile-parameters-panel')).not.toHaveAttribute('hidden')
+    expect(promptEditor).toBeInTheDocument()
+    fireEvent.click(historyTab)
+    expect(historyPanel).not.toHaveAttribute('hidden')
+    expect(screen.getByTestId('mobile-history-panel')).toBe(historyPanel)
+    expect(state.selectedIds).toEqual([12])
+    fireEvent.click(promptTab)
+    expect(screen.getByTestId('mobile-prompt-panel')).not.toHaveAttribute('hidden')
+    expect(state.paramValues.Main_Positive_Prompt).toBe(promptDraft)
+    expect(screen.getByText('1girl')).toBeInTheDocument()
   })
 
   it('renders undo/redo inline next to manage presets button and handles click', () => {
     const undoMock = vi.fn()
     const redoMock = vi.fn()
+    const setIsPresetManagerOpen = vi.fn()
     const state = createMockState({
       selectedWorkflowId: 1,
       sets: [{ id: 'default', name: 'Default', checked: true }],
@@ -256,17 +294,21 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       canRedo: true,
       undo: undoMock,
       redo: redoMock,
+      setIsPresetManagerOpen,
     })
 
     render(<MobileLayout state={state} />)
 
     const undoBtn = screen.getByTitle('Undo')
     const redoBtn = screen.getByTitle('Redo')
-    const manageBtn = screen.getByText('📑 管理')
+    const manageBtn = screen.getByRole('button', { name: '管理' })
 
     // Verify buttons are not disabled
     expect(undoBtn).not.toBeDisabled()
     expect(redoBtn).not.toBeDisabled()
+    expect(undoBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(redoBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(manageBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
 
     // Verify parent container shares the same flex group
     expect(undoBtn.closest('div')?.parentElement).toBe(manageBtn.parentElement)
@@ -277,6 +319,25 @@ describe('MobileLayout - TagChipEditor Integration', () => {
 
     fireEvent.click(redoBtn)
     expect(redoMock).toHaveBeenCalledWith('default')
+
+    fireEvent.click(manageBtn)
+    expect(setIsPresetManagerOpen).toHaveBeenCalledWith(true)
+  })
+
+  it('closes the selected mobile set from its labeled icon button', () => {
+    const removeSet = vi.fn()
+    const state = createMockState({
+      sets: [{ id: 'default', name: 'Default', checked: true }],
+      openPresetIds: ['default'],
+      activeSetId: 'default',
+      removeSet,
+    })
+    render(<MobileLayout state={state} />)
+
+    const closeButton = screen.getByRole('button', { name: 'Defaultのタブを閉じる' })
+    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.click(closeButton)
+    expect(removeSet).toHaveBeenCalledWith('default')
   })
 
   it('preserves prompt values and does not overwrite with empty strings when switching prompt tabs on mobile', () => {
@@ -356,6 +417,49 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(headerRow1).toHaveTextContent('GPU')
     expect(headerRow1).toHaveTextContent('VRAM')
   })
+
+  it('keeps the portrait preview, progress, and actions above the mobile navigation safe area', () => {
+    const state = createMockState({ selectedImg: '/portrait.png', isGeneratingHere: true })
+    const { container } = render(<MobileLayout state={state} />)
+
+    const previewImage = screen.getByAltText('Generated')
+    expect(previewImage.parentElement?.parentElement).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+    expect(container.querySelector('[data-testid="mobile-progress-line"]')).toHaveClass('sticky', 'top-0', 'h-6')
+    expect(screen.getByTestId('mobile-action-bar').className).toContain('bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))]')
+    expect(container.firstElementChild).toHaveClass('pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
+    expect(screen.getByText(/ETA 未取得/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Generate Batch/ })).toHaveClass('min-h-[44px]')
+  })
+
+  it('shows a seconds-based remaining ETA when the generation start and progress are known', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))
+    useGenerationStore.setState({ generationStartTime: Date.now() - 20_000 })
+    const state = createMockState({ isGeneratingHere: true, progress: { percentage: 50 } })
+
+    render(<MobileLayout state={state} />)
+
+    expect(screen.getByText(/ETA .*20秒/)).toBeInTheDocument()
+  })
+
+  it('keeps the generated portrait preview from shrinking and exposes mobile queue and save actions', () => {
+    const setIsJobModalOpen = vi.fn()
+    const state = createMockState({ previewImage: '/portrait.png', totalQueueCount: 3, setIsJobModalOpen })
+    render(<MobileLayout state={state} />)
+
+    const preview = screen.getByAltText('Generated')
+    expect(preview.parentElement?.parentElement).toHaveClass('shrink-0', 'aspect-[2/3]', 'max-h-[42vh]')
+    expect(screen.getByRole('button', { name: 'Snapshot保存' })).toHaveClass('min-h-[44px]')
+    const queueButton = screen.getByRole('button', { name: 'キュー管理: 3件' })
+    expect(queueButton).toHaveClass('min-h-[44px]')
+    fireEvent.click(queueButton)
+    expect(setIsJobModalOpen).toHaveBeenCalledWith(true)
+  })
+
+  it('uses the all-session queue count while another session is generating', () => {
+    const state = createMockState({ allQueueCount: 7, totalQueueCount: 2, isOtherSessionGenerating: true })
+    render(<MobileLayout state={state} />)
+
+    expect(screen.getByRole('button', { name: 'キュー管理: 7件' })).toBeInTheDocument()
+  })
 })
-
-

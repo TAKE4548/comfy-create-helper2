@@ -232,6 +232,8 @@ export const TagChip: React.FC<TagChipProps> = ({
   return (
     <div
       ref={setNodeRef}
+      data-ux-tag-chip="true"
+      data-ux-neutral-hover={!isEditing && enabled ? 'true' : undefined}
       style={style}
       tabIndex={isEditing ? -1 : 0}
       onKeyDown={handleKeyDown}
@@ -239,7 +241,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         relative flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none
         ${isEditing ? 'bg-[#18181C] border-[#7C6FDD]' : ''}
         ${!isEditing && enabled ? 'bg-[#1F1F25] border-[rgba(255,255,255,0.08)] text-[#E4E4E7] hover:border-[rgba(255,255,255,0.15)] focus:border-[#7C6FDD]' : ''}
-        ${!isEditing && !enabled ? 'bg-zinc-900 border-dashed border-[rgba(255,255,255,0.05)] text-[#A1A1AA] opacity-50 line-through' : ''}
+        ${!isEditing && !enabled ? 'bg-zinc-900 border-dashed border-[rgba(255,255,255,0.05)] text-[#71717A] opacity-50 line-through' : ''}
       `}
       title="クリックでメニュー / ダブルクリックで編集 / Spaceで切替 / Delで削除 / Ctrl+Dで複製"
       aria-roledescription="ドラッグで並び替え可能"

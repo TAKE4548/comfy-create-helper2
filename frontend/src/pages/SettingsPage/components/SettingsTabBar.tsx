@@ -1,5 +1,7 @@
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
+import { Languages, MessageCircle, MessageSquare, Settings, Workflow } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { SettingsTabId } from '../hooks/useSettingsTab'
 
 export interface SettingsTabBarProps {
@@ -7,12 +9,12 @@ export interface SettingsTabBarProps {
   onSelect: (id: SettingsTabId) => void
 }
 
-const TABS: ReadonlyArray<{ id: SettingsTabId; label: string; shortLabel: string }> = [
-  { id: 'workflows', label: '① ワークフロー・モデル', shortLabel: '① モデル' },
-  { id: 'prompt', label: '② プロンプト支援', shortLabel: '② 呪文' },
-  { id: 'dialogue', label: '③ セリフ支援', shortLabel: '③ セリフ' },
-  { id: 'translation', label: '④ 翻訳', shortLabel: '④ 翻訳' },
-  { id: 'system', label: '⑤ システム・一般', shortLabel: '⑤ システム' },
+const TABS: ReadonlyArray<{ id: SettingsTabId; label: string; shortLabel: string; icon: LucideIcon }> = [
+  { id: 'workflows', label: 'ワークフロー・モデル', shortLabel: 'モデル', icon: Workflow },
+  { id: 'prompt', label: 'プロンプト支援', shortLabel: '呪文', icon: MessageSquare },
+  { id: 'dialogue', label: 'セリフ支援', shortLabel: 'セリフ', icon: MessageCircle },
+  { id: 'translation', label: '翻訳', shortLabel: '翻訳', icon: Languages },
+  { id: 'system', label: 'システム・一般', shortLabel: 'システム', icon: Settings },
 ]
 
 export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): React.JSX.Element {
@@ -40,7 +42,7 @@ export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): Re
 
   return (
     <div className="relative">
-      <div role="tablist" aria-label="設定カテゴリー" className="flex snap-x snap-mandatory overflow-x-auto md:grid md:grid-cols-5">
+      <div role="tablist" aria-label="設定カテゴリー" aria-orientation="horizontal" className="flex snap-x snap-mandatory overflow-x-auto md:grid md:grid-cols-5">
         {TABS.map((tab, index) => {
           const selected = activeTab === tab.id
           return (
@@ -56,8 +58,9 @@ export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): Re
               tabIndex={selected ? 0 : -1}
               onClick={() => selectAndFocus(index)}
               onKeyDown={(event) => handleKeyDown(event, index)}
-              className="h-11 min-w-max snap-start px-3 md:min-w-0"
+              className="inline-flex min-h-11 h-11 min-w-max snap-start items-center justify-center gap-1.5 px-3 md:min-w-0"
             >
+              <tab.icon size={16} aria-hidden="true" />
               <span className="md:hidden">{tab.shortLabel}</span>
               <span className="hidden md:inline">{tab.label}</span>
             </button>

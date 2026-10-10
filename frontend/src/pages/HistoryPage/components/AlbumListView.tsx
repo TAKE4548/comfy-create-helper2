@@ -8,6 +8,7 @@ import {
   MouseSensor,
   TouchSensor,
   DragEndEvent,
+  DragOverEvent,
   DragStartEvent,
   DragOverlay,
 } from '@dnd-kit/core'
@@ -42,14 +43,10 @@ function SortableAlbumItem({
     disabled,
   })
 
-  const mouseListeners: React.DOMAttributes<HTMLDivElement> = {
-    onMouseDown: listeners?.onMouseDown as any,
-    onKeyDown: listeners?.onKeyDown as any,
-  }
-
   const touchHandleListeners: DragHandleListeners = {
     onTouchStart: listeners?.onTouchStart as any,
     onMouseDown: listeners?.onMouseDown as any,
+    onKeyDown: listeners?.onKeyDown as any,
   }
 
   const style: React.CSSProperties = {
@@ -71,8 +68,6 @@ function SortableAlbumItem({
       ref={setNodeRef}
       style={style}
       className="h-full w-full relative"
-      {...attributes}
-      {...mouseListeners}
     >
       {children({ attributes, listeners: touchHandleListeners, isDragging })}
     </div>
@@ -100,6 +95,8 @@ export function AlbumListView({
   const [editingAlbumId, setEditingAlbumId] = useState<number | null>(null)
   const [editingAlbumName, setEditingAlbumName] = useState('')
   const [activeAlbumId, setActiveAlbumId] = useState<number | null>(null)
+  const [overAlbumId, setOverAlbumId] = useState<number | null>(null)
+  const [deleteConfirmAlbumId, setDeleteConfirmAlbumId] = useState<number | null>(null)
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -118,9 +115,14 @@ export function AlbumListView({
     setActiveAlbumId(Number(event.active.id))
   }
 
+  const handleAlbumDragOver = (event: DragOverEvent) => {
+    setOverAlbumId(event.over ? Number(event.over.id) : null)
+  }
+
   const handleAlbumDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     setActiveAlbumId(null)
+    setOverAlbumId(null)
     if (!over || active.id === over.id || !albums) return
     const oldIndex = albums.findIndex((a) => a.id === Number(active.id))
     const newIndex = albums.findIndex((a) => a.id === Number(over.id))
@@ -134,6 +136,7 @@ export function AlbumListView({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleAlbumDragStart}
+      onDragOver={handleAlbumDragOver}
       onDragEnd={handleAlbumDragEnd}
     >
       <SortableContext
@@ -145,9 +148,9 @@ export function AlbumListView({
             <SortableAlbumItem
               key={album.id}
               id={album.id}
-              disabled={editingAlbumId !== null}
+              disabled={editingAlbumId !== null || deleteConfirmAlbumId !== null}
             >
-              {({ listeners: touchHandleListeners }) => (
+              {({ attributes, listeners: touchHandleListeners }) => (
                 <div
                   id={`album-card-${album.id}`}
                   onClick={() => {
@@ -157,6 +160,18 @@ export function AlbumListView({
                   }}
                   className="group relative rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface overflow-hidden hover:border-[rgba(255,255,255,0.1)] transition-all cursor-pointer h-full flex flex-col justify-between select-none"
                 >
+                  {overAlbumId === album.id && activeAlbumId !== album.id && (
+                    <div
+                      data-testid={`album-drop-marker-${album.id}`}
+                      aria-hidden="true"
+                      className={`absolute left-1 right-1 z-30 h-1 rounded-full bg-accent-green shadow-[0_0_12px_rgba(62,207,142,0.8)] pointer-events-none ${
+                        albums && albums.findIndex((item) => item.id === activeAlbumId) < albums.findIndex((item) => item.id === album.id)
+                          ? 'bottom-0'
+                          : 'top-0'
+                      }`}
+                    />
+                  )}
+
                   {/* タッチ用ドラッグハンドル */}
                   {editingAlbumId !== album.id && (
                     <button
@@ -167,9 +182,10 @@ export function AlbumListView({
                         WebkitTouchCallout: 'none',
                         userSelect: 'none',
                       }}
+                      {...touchHandleListeners}
+                      {...attributes}
                       onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                      {...touchHandleListeners}
                       title="ドラッグして並び替え"
                       aria-label="並び替えハンドル"
                     >
@@ -177,26 +193,49 @@ export function AlbumListView({
                     </button>
                   )}
 
-                  {/* Album thumbnail grid */}
-                  <div className="grid grid-cols-3 gap-0.5 aspect-[3/1] bg-surface-2">
-                    {album.items.slice(0, 3).map((item, i) => (
-                      <div key={i} className="bg-surface-2 overflow-hidden">
-                        {item.image_path || item.thumbnail_path ? (
-                          <img
-                            src={item.thumbnail_path || item.image_path!}
-                            alt=""
-                            loading="lazy"
-                            className="w-full h-full object-cover pointer-events-none"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-700">
-                            <ImageOff size={16} strokeWidth={1} />
-                          </div>
-                        )}
+                  <div
+                    data-testid={`album-cover-${album.id}`}
+                    className="relative h-32 overflow-hidden bg-surface-2 flex items-center justify-center"
+                  >
+                    {album.items.length === 0 ? (
+                      <div className="flex flex-col items-center gap-1 text-zinc-500">
+                        <ImageOff size={22} strokeWidth={1} />
+                        <span className="text-xs">画像はありません</span>
                       </div>
-                    ))}
+                    ) : album.items.slice(0, 3).map((item, index, covers) => {
+                      const source = item.thumbnail_path || item.image_path
+                      const isSingle = covers.length === 1
+                      return (
+                        <div
+                          key={item.snapshot_id}
+                          className={`absolute top-2 bottom-2 overflow-hidden rounded-lg border border-white/20 bg-surface shadow-xl ${
+                            isSingle ? 'left-2 right-2' : 'w-[62%]'
+                          }`}
+                          style={isSingle ? undefined : {
+                            left: `${14 + index * 15}%`,
+                            zIndex: index + 1,
+                            transform: `rotate(${(index - (covers.length - 1) / 2) * 5}deg)`,
+                          }}
+                        >
+                          {source ? (
+                            <img
+                              data-testid={`album-cover-image-${album.id}-${index}`}
+                              src={source}
+                              alt=""
+                              loading="lazy"
+                              className="w-full h-full object-cover pointer-events-none"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-700">
+                              <ImageOff size={18} strokeWidth={1} />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                  <div className="p-3 flex items-center justify-between">
+                  <div className="p-3">
+                    <div className="flex items-center justify-between">
                     {editingAlbumId === album.id ? (
                       <div
                         className="flex items-center gap-1.5 flex-1 mr-2"
@@ -264,21 +303,62 @@ export function AlbumListView({
                             <Edit2 size={12} />
                           </button>
                         </div>
-                        <p className="text-xs text-zinc-500 mt-0.5">
-                          {album.items.length} images
-                        </p>
                       </div>
                     )}
                     <button
                       id={`album-delete-${album.id}`}
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (confirm('Delete album?')) onDeleteAlbum(album.id)
+                        setDeleteConfirmAlbumId(album.id)
                       }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10"
+                      aria-label="アルバムを削除"
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10"
                     >
                       <Trash2 size={14} />
                     </button>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-zinc-400 truncate" title={album.description || undefined}>
+                        {album.description?.trim() || '未設定'}
+                      </p>
+                      <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
+                        <span data-testid={`album-image-count-${album.id}`}>{album.items.length}枚</span>
+                        <time data-testid={`album-created-at-${album.id}`} dateTime={album.created_at}>
+                          {new Date(album.created_at).toLocaleDateString('ja-JP')}
+                        </time>
+                      </div>
+                    </div>
+                    {deleteConfirmAlbumId === album.id && (
+                      <div
+                        role="alertdialog"
+                        aria-label={`${album.name}の削除確認`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 space-y-2"
+                      >
+                        <p className="text-xs text-zinc-200">
+                          「{album.name}」を削除しますか？画像{album.items.length}枚のアルバム参照が外れます。
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmAlbumId(null)}
+                            className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-white/5"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteAlbum(album.id)
+                              setDeleteConfirmAlbumId(null)
+                            }}
+                            className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-300 hover:bg-red-500/30"
+                          >
+                            {album.name} を削除
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -298,7 +378,10 @@ export function AlbumListView({
             const album = albums?.find((a) => a.id === activeAlbumId)
             if (!album) return null
             return (
-              <div className="rounded-xl border border-zinc-600 bg-surface shadow-2xl opacity-90 scale-105 p-3 w-[260px]">
+              <div
+                data-testid={`album-drag-overlay-${album.id}`}
+                className="rounded-xl border border-zinc-600 bg-surface shadow-2xl opacity-90 scale-105 p-3 w-[260px]"
+              >
                 <p className="text-sm font-medium text-zinc-200 truncate">{album.name}</p>
                 <p className="text-xs text-zinc-500 mt-0.5">{album.items.length} images</p>
               </div>

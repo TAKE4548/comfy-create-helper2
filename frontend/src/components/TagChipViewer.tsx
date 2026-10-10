@@ -56,6 +56,7 @@ export const TagChipViewer: React.FC<TagChipViewerProps> = ({
             <span
               key={`${tag}-${idx}`}
               data-tag={tag}
+              data-ux-tag-chip="true"
               className={`px-2 py-0.5 rounded text-xs leading-normal select-text ${accentStyles}`}
             >
               {tag}

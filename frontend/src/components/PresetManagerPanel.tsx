@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GripVertical, Pencil, Loader2, Trash2, ListChecks, X } from 'lucide-react';
+import { GripVertical, Pencil, Loader2, Trash2, ListChecks, X, Save, Film } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -270,7 +270,7 @@ export function PresetManagerPanel({
                 }}
                 className="flex-1 py-1.5 rounded-lg bg-surface border border-[rgba(255,255,255,0.08)] text-zinc-300 text-[10px] font-semibold hover:bg-white/5 transition-all"
               >
-                💾 上書き保存
+                <><Save aria-hidden="true" size={12} /> 上書き保存</>
               </button>
               <button
                 type="button"
@@ -358,7 +358,7 @@ export function PresetManagerPanel({
             onClick={onOpenSceneGenerator}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[rgba(124,111,221,0.08)] border border-[#7C6FDD]/30 text-[#7C6FDD] text-xs font-semibold hover:bg-[rgba(124,111,221,0.15)] transition-all"
           >
-            🎬 Scene Generator で複数プリセットを自動生成
+            <><Film aria-hidden="true" size={14} /> Scene Generator で複数プリセットを自動生成</>
           </button>
         </div>
       )}

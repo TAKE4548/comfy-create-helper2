@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { X, Languages, Copy, Check, ArrowRight, CornerDownLeft, RefreshCw, AlertCircle } from 'lucide-react'
+import { Modal } from '../../../components/common/Modal'
 
 export interface PromptTranslationModalProps {
   isOpen: boolean
@@ -49,9 +50,26 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handleSourceKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || !event.ctrlKey) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.nativeEvent.isComposing || event.repeat || isTranslating || !sourceText.trim()) return
+
+    onTranslate()
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="w-full max-w-xl bg-surface border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="sm"
+      ariaLabel="プロンプト翻訳"
+      closeOnBackdropClick={false}
+      closeOnEsc={false}
+      dialogClassName="bg-surface overflow-hidden"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-surface-2 border-b border-[rgba(255,255,255,0.06)]">
           <div className="flex items-center gap-2">
@@ -61,8 +79,10 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
             </h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 p-1 rounded-lg hover:bg-white/5 transition-colors"
+            aria-label="閉じる"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-zinc-400 hover:text-zinc-200 p-1 rounded-lg hover:bg-white/5 transition-colors"
           >
             <X size={16} />
           </button>
@@ -73,7 +93,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
           <button
             type="button"
             onClick={() => onModeChange('en_to_ja')}
-            className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all ${
+            className={`min-h-[44px] px-3 py-1.5 text-xs font-medium border-b-2 transition-all ${
               mode === 'en_to_ja'
                 ? 'border-[#7C6FDD] text-[#7C6FDD]'
                 : 'border-transparent text-zinc-400 hover:text-zinc-200'
@@ -84,7 +104,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
           <button
             type="button"
             onClick={() => onModeChange('ja_to_en')}
-            className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all ${
+            className={`min-h-[44px] px-3 py-1.5 text-xs font-medium border-b-2 transition-all ${
               mode === 'ja_to_en'
                 ? 'border-[#7C6FDD] text-[#7C6FDD]'
                 : 'border-transparent text-zinc-400 hover:text-zinc-200'
@@ -113,7 +133,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
                 type="button"
                 onClick={() => onTranslate()}
                 disabled={isTranslating || !sourceText.trim()}
-                className="flex items-center gap-1.5 px-3 py-1 bg-[#7C6FDD] hover:bg-[#7C6FDD]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded shadow-sm transition-all"
+                className="min-h-[44px] flex items-center gap-1.5 px-3 py-1 bg-[#7C6FDD] hover:bg-[#7C6FDD]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded shadow-sm transition-all"
               >
                 {isTranslating ? (
                   <RefreshCw size={12} className="animate-spin" />
@@ -126,6 +146,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
             <textarea
               value={sourceText}
               onChange={(e) => onSourceTextChange(e.target.value)}
+              onKeyDown={handleSourceKeyDown}
               placeholder={
                 mode === 'en_to_ja'
                   ? '英語プロンプトを入力または自動セット...'
@@ -146,7 +167,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
                 >
                   {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
                   <span>{copied ? 'コピー完了' : 'コピー'}</span>
@@ -172,7 +193,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
                 type="button"
                 onClick={() => onApply('replace')}
                 disabled={!translatedText.trim()}
-                className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-all"
+                className="min-h-[44px] px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-all"
               >
                 プロンプトを上書き
               </button>
@@ -180,7 +201,7 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
                 type="button"
                 onClick={() => onApply('append')}
                 disabled={!translatedText.trim()}
-                className="flex items-center gap-1 px-3.5 py-1.5 bg-accent-green hover:bg-accent-green/80 disabled:opacity-40 disabled:cursor-not-allowed text-black text-xs font-medium rounded-lg shadow-sm transition-all"
+                className="min-h-[44px] px-3.5 py-1.5 flex items-center gap-1 bg-accent-green hover:bg-accent-green/80 disabled:opacity-40 disabled:cursor-not-allowed text-black text-xs font-medium rounded-lg shadow-sm transition-all"
               >
                 <CornerDownLeft size={13} />
                 <span>末尾に追記</span>
@@ -203,7 +224,6 @@ export const PromptTranslationModal: React.FC<PromptTranslationModalProps> = ({
             <span>API消費: {meta.billed_characters} 文字</span>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

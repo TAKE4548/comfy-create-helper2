@@ -32,6 +32,8 @@ export interface JobView {
   started_at: string | null
   finished_at: string | null
   preview_url?: string | null
+  set_name?: string | null
+  prompt_excerpt?: string | null
   node: { id: string; name: string; value: number; max: number } | null
   outputs: Array<{
     node_id: string
@@ -177,6 +179,8 @@ function isJobView(value: unknown): value is JobView {
     isNullableString(value.normal_group_id) && isNullableInteger(value.project_id) &&
     isJobStatus(value.status) && isNullableString(value.started_at) && isNullableString(value.finished_at) &&
     (value.preview_url === undefined || isNullableString(value.preview_url)) &&
+    (value.set_name === undefined || isNullableString(value.set_name)) &&
+    (value.prompt_excerpt === undefined || isNullableString(value.prompt_excerpt)) &&
     isNodeView(value.node) && Array.isArray(value.outputs) && value.outputs.every(isImageView) &&
     isFailureView(value.failure)
 }
@@ -283,8 +287,13 @@ export const generationApi = {
   getState: async (): Promise<GenerationSnapshot> => decodeGenerationSnapshot(await call<unknown>('/generation/state')),
   getRequest: (requestId: string): Promise<RequestLookup> =>
     call(`/generation/requests/${encodeURIComponent(requestId)}`),
-  cancelJob: (jobId: string, onlyUnsubmitted?: boolean): Promise<CancelResult> =>
-    call(`/generation/jobs/${encodeURIComponent(jobId)}/cancel${onlyUnsubmitted ? '?only_unsubmitted=true' : ''}`, { method: 'POST' }),
+  cancelJob: (jobId: string, onlyUnsubmitted?: boolean, onlyQueued?: boolean): Promise<CancelResult> => {
+    if (onlyUnsubmitted && onlyQueued) {
+      return Promise.reject(new Error('onlyUnsubmitted and onlyQueued cannot be combined'))
+    }
+    const guard = onlyQueued ? '?only_queued=true' : onlyUnsubmitted ? '?only_unsubmitted=true' : ''
+    return call(`/generation/jobs/${encodeURIComponent(jobId)}/cancel${guard}`, { method: 'POST' })
+  },
   cancel: (body: CancelRequest): Promise<CancelOperation> =>
     call('/generation/cancel', { method: 'POST', body: JSON.stringify(body) }),
   getUpstreamQueue: (): Promise<UpstreamQueueView> => call('/generation/upstream-queue'),

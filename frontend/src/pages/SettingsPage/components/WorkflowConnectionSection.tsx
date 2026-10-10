@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2 } from 'lucide-react'
-import { workflowsApi, workflowPresetsApi, snapshotsApi } from '../../../api/client'
-import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse } from '../../../api/types'
+import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2, Check } from 'lucide-react'
+import { workflowsApi, workflowPresetsApi, snapshotsApi, mappingMastersApi, baseModelsApi } from '../../../api/client'
+import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, BaseModel } from '../../../api/types'
 import { useConfig } from '../../../hooks/useConfig'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
@@ -11,6 +11,28 @@ import { WorkflowDiffReplaceModal } from '../../../components/WorkflowDiffReplac
 import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
 import { ServiceConnectionCard } from './ServiceConnectionCard'
+
+type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string }[]; target_base_model_id: number | null; default_applied_assets: string | null }
+const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
+function graphNodeIds(graph: unknown): string[] {
+  if (!record(graph) || !record(graph.nodes)) return []
+  return Object.keys(graph.nodes).filter((id) => record(graph.nodes[id]))
+}
+function validateConfig(value: unknown, masterIds: number[], modelIds: number[]): ConfigDraft {
+  if (!record(value) || value.format !== 'prompt-surgeon-workflow-config' || value.version !== 1) throw new Error('形式またはバージョンが正しくありません')
+  if (typeof value.name !== 'string' || !record(value.json_body) || !graphNodeIds(value.json_body).length || !Array.isArray(value.mappings)) throw new Error('ワークフロー名・グラフ・対応付けが不正です')
+  const nodes = graphNodeIds(value.json_body)
+  const seen = new Set<number>()
+  const mappings = value.mappings.map((m: any) => {
+    if (!record(m) || !Number.isInteger(m.master_id) || m.master_id <= 0 || !masterIds.includes(m.master_id) || typeof m.node_id !== 'string' || !nodes.includes(m.node_id) || seen.has(m.master_id)) throw new Error('対応付けのマスターID・ノードIDが不正または重複しています')
+    seen.add(m.master_id)
+    return { master_id: m.master_id, node_id: m.node_id }
+  })
+  const modelId = value.target_base_model_id
+  if (modelId !== null && (!Number.isInteger(modelId) || modelId <= 0 || !modelIds.includes(modelId))) throw new Error('ベースモデルIDが不正です')
+  if (value.default_applied_assets !== null && typeof value.default_applied_assets !== 'string') throw new Error('既定アセット形式が不正です')
+  return { name: value.name, json_body: value.json_body, mappings, target_base_model_id: modelId, default_applied_assets: value.default_applied_assets }
+}
 
 export interface WorkflowConnectionSectionProps {
   group?: 'workflows' | 'system'
@@ -35,6 +57,9 @@ export function WorkflowConnectionSection({
 }: WorkflowConnectionSectionProps) {
   const qc = useQueryClient()
   const [saved, setSaved] = useState<string | null>(null)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const [configSaving, setConfigSaving] = useState(false)
+  const configDraftRevision = useRef(0)
   const [comfyUrl, setComfyUrl] = useState('http://localhost:8188')
   const [longPressMultiSelect, setLongPressMultiSelect] = useState(0.8)
   const [longPressCardMove, setLongPressCardMove] = useState(0.5)
@@ -60,6 +85,14 @@ export function WorkflowConnectionSection({
   const [hasRollbackMap, setHasRollbackMap] = useState<Record<number, boolean>>({})
   const diffFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingDiffWorkflow, setPendingDiffWorkflow] = useState<WorkflowSummary | null>(null)
+  const [configWorkflowId, setConfigWorkflowId] = useState<number | null>(null)
+  const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string }[]>([])
+  const [configBaseModelId, setConfigBaseModelId] = useState('')
+  const [configText, setConfigText] = useState('')
+  const [exportText, setExportText] = useState('')
+  const [configPreview, setConfigPreview] = useState<ConfigDraft | null>(null)
+  const [configError, setConfigError] = useState('')
+  const [confirmConfigApply, setConfirmConfigApply] = useState(false)
 
   const { data: config } = useConfig()
 
@@ -93,6 +126,75 @@ export function WorkflowConnectionSection({
     queryFn: () => workflowsApi.list() as Promise<WorkflowSummary[]>,
     enabled: group !== 'system',
   })
+
+  const { data: configWorkflow } = useQuery({
+    queryKey: ['workflow-config', configWorkflowId],
+    queryFn: () => workflowsApi.get(configWorkflowId!) as Promise<Workflow>,
+    enabled: group !== 'system' && configWorkflowId !== null,
+  })
+  const { data: mappingMasters = [] } = useQuery({ queryKey: ['mapping-masters'], queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>, enabled: group !== 'system' })
+  const { data: baseModels = [] } = useQuery({ queryKey: ['base-models'], queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>, enabled: group !== 'system' })
+
+  useEffect(() => {
+    if (!configWorkflow || configWorkflow.id !== configWorkflowId) return
+    setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id }) => ({ master_id, node_id })))
+    setConfigBaseModelId(configWorkflow.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
+  }, [configWorkflow, configWorkflowId])
+
+  const saveWorkflowConfig = async (draft: ConfigDraft) => {
+    if (configWorkflowId === null || configSaving) return
+    const revision = configDraftRevision.current
+    setConfigSaving(true)
+    setSaved(null)
+    setConfigError('')
+    try {
+      await workflowsApi.update(configWorkflowId, {
+        json_body: draft.json_body,
+        mappings: draft.mappings,
+        target_base_model_id: draft.target_base_model_id,
+        default_applied_assets: draft.default_applied_assets,
+      })
+      await qc.invalidateQueries({ queryKey: ['workflows'] })
+      await qc.invalidateQueries({ queryKey: ['workflow-config', configWorkflowId] })
+      if (revision === configDraftRevision.current) {
+        setConfigPreview(null)
+        setConfirmConfigApply(false)
+        setSaved('workflow-config')
+      }
+    } catch (err: any) {
+      if (revision === configDraftRevision.current) {
+        setSaved(null)
+        setConfigError(`保存に失敗しました: ${err.message || err}（設定は未保存です）`)
+      }
+    } finally {
+      setConfigSaving(false)
+    }
+  }
+
+  const handleSaveLinks = () => {
+    if (!configWorkflow) return
+    void saveWorkflowConfig({
+      name: configWorkflow.name,
+      json_body: configWorkflow.json_body,
+      mappings: configMappings,
+      target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null,
+      default_applied_assets: configWorkflow.default_applied_assets ?? null,
+    })
+  }
+
+  const handlePreviewConfig = () => {
+    configDraftRevision.current += 1
+    setSaved(null)
+    try {
+      const draft = validateConfig(JSON.parse(configText), mappingMasters.map((m) => m.id), baseModels.map((m) => m.id))
+      setConfigPreview(draft)
+      setConfirmConfigApply(false)
+      setConfigError('')
+    } catch (err: any) {
+      setConfigPreview(null)
+      setConfigError(err.message || 'JSONを読み取れません')
+    }
+  }
 
   const { data: workflowPresets } = useQuery({
     queryKey: ['workflow-presets', expandedPresetWorkflowId],
@@ -257,6 +359,8 @@ export function WorkflowConnectionSection({
   })
 
   const handleLongPressChange = (key: 'multi-select' | 'card-move', value: number) => {
+    setSaved(null)
+    setStorageError(null)
     if (key === 'multi-select') {
       setLongPressMultiSelect(value)
     } else {
@@ -270,9 +374,14 @@ export function WorkflowConnectionSection({
         String(value),
       )
       setSaved('longpress')
-    } catch {
+    } catch (error) {
       // Keep the updated in-memory value when browser storage is unavailable.
       setSaved(null)
+      const details = error && typeof error === 'object' ? error as { message?: unknown; name?: unknown } : null
+      const reason = typeof details?.message === 'string' && details.message
+        ? details.message
+        : typeof details?.name === 'string' && details.name ? details.name : 'LocalStorageへの保存に失敗しました'
+      setStorageError(reason)
     }
     setTimeout(() => setSaved(null), 2000)
   }
@@ -288,7 +397,7 @@ export function WorkflowConnectionSection({
               <h2 className="text-sm font-semibold text-zinc-300">長押し感度設定（アプリ全体）</h2>
               <span className="text-xs text-zinc-600">— ブラウザ（LocalStorage）に保存</span>
             </div>
-            {saved === 'longpress' && <span className="text-xs text-accent-green">✓ 保存しました</span>}
+            {saved === 'longpress' && <span className="flex items-center gap-1 text-xs text-accent-green"><Check size={13} />設定を保存しました</span>}
           </div>
         ) : (
         <div
@@ -302,7 +411,7 @@ export function WorkflowConnectionSection({
           </div>
           <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
             {saved === 'longpress' && (
-              <span className="text-xs text-accent-green">✓ 保存しました</span>
+              <span className="flex items-center gap-1 text-xs text-accent-green"><Check size={13} />設定を保存しました</span>
             )}
             <ChevronDown
               size={16}
@@ -315,6 +424,7 @@ export function WorkflowConnectionSection({
         )}
         {(group === 'system' || isExpandedLongPress) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-5">
+            {storageError && <p role="alert" className="text-xs text-red-300">保存に失敗しました: {storageError}（設定は未保存です）</p>}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs text-zinc-300">履歴の複数選択長押し時間</label>
@@ -474,6 +584,51 @@ export function WorkflowConnectionSection({
                             </button>
                           </div>
                         </div>
+
+                        <div className="flex justify-end gap-2 px-4 pb-3">
+                          <button type="button" aria-expanded={configWorkflowId === wf.id} onClick={() => {
+                            setConfigWorkflowId(configWorkflowId === wf.id ? null : wf.id)
+                            setConfigPreview(null); setConfigError(''); setExportText('')
+                          }} className="rounded border border-[rgba(255,255,255,0.08)] px-3 py-1.5 text-xs text-zinc-300">対応付け・設定</button>
+                        </div>
+                        {configWorkflowId === wf.id && <div className="space-y-3 border-t border-zinc-800 bg-zinc-950 p-4" aria-label="ワークフロー対応付け設定">
+                          {!configWorkflow ? <p className="text-xs text-zinc-500">設定を読み込み中...</p> : <>
+                            <h3 className="text-sm font-semibold">{configWorkflow.name} の対応付け</h3>
+                            {configMappings.map((mapping, index) => {
+                              const master = mappingMasters.find((m) => m.id === mapping.master_id)
+                              return <div key={`${mapping.master_id}-${index}`} className="grid grid-cols-3 items-center gap-2 text-xs">
+                                <select aria-label={`${master?.role || 'role'} の対応付け`} value={mapping.master_id} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigMappings((items) => items.map((item, i) => i === index ? { ...item, master_id: Number(e.target.value) } : item)) }} className="rounded bg-zinc-900 p-2">
+                                  {mappingMasters.map((option) => <option key={option.id} value={option.id}>{option.role} · {option.param_name}</option>)}
+                                </select>
+                                <select aria-label={`${master?.role || 'role'} のノード`} value={mapping.node_id} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigMappings((items) => items.map((item, i) => i === index ? { ...item, node_id: e.target.value } : item)) }} className="rounded bg-zinc-900 p-2">
+                                  {graphNodeIds(configWorkflow.json_body).map((id) => <option key={id} value={id}>{id}</option>)}
+                                </select>
+                                <span className="text-zinc-400">{master?.role} → {master?.param_name || '—'}</span>
+                              </div>
+                            })}
+                            <label className="flex items-center gap-3 text-xs text-zinc-300">ベースモデル関連
+                              <select aria-label="ベースモデル関連" value={configBaseModelId} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigBaseModelId(e.target.value) }} className="rounded bg-zinc-900 p-2">
+                                <option value="">未指定</option>{baseModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                              </select>
+                            </label>
+                            <button type="button" disabled={configSaving} onClick={handleSaveLinks} className="rounded bg-accent-green/15 px-3 py-2 text-xs text-accent-green disabled:opacity-50">{configSaving ? '保存中…' : '対応付けを保存'}</button>
+                            {saved === 'workflow-config' && <p role="status" className="text-xs text-emerald-300">設定を保存しました</p>}
+                            <div className="flex gap-2">
+                              <button type="button" onClick={() => setExportText(JSON.stringify({ format: 'prompt-surgeon-workflow-config', version: 1, name: configWorkflow.name, json_body: configWorkflow.json_body, mappings: configMappings, target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null, default_applied_assets: configWorkflow.default_applied_assets ?? null }, null, 2))} className="rounded border border-zinc-700 px-3 py-2 text-xs">設定JSONをエクスポート</button>
+                              <button type="button" onClick={() => { setConfigPreview(null); setConfigError(''); setConfirmConfigApply(false) }} className="rounded border border-zinc-700 px-3 py-2 text-xs">プレビューを解除</button>
+                            </div>
+                            {exportText && <textarea aria-label="エクスポートJSON" readOnly value={exportText} className="min-h-28 w-full rounded bg-zinc-900 p-2 font-mono text-xs" />}
+                            <label className="block text-xs text-zinc-300">設定JSONをインポート
+                              <textarea aria-label="設定JSONをインポート" value={configText} onChange={(e) => { configDraftRevision.current += 1; setSaved(null); setConfigError(''); setConfigPreview(null); setConfirmConfigApply(false); setConfigText(e.target.value) }} className="mt-1 min-h-28 w-full rounded bg-zinc-900 p-2 font-mono text-xs" />
+                            </label>
+                            <button type="button" onClick={handlePreviewConfig} className="rounded border border-zinc-700 px-3 py-2 text-xs">インポート内容を確認</button>
+                            {configError && <p role="alert" className="text-xs text-red-400">{configError}</p>}
+                            {configPreview && <div className="space-y-2 rounded border border-accent-green/30 p-3 text-xs">
+                              <p>{configWorkflow.name} に {configPreview.mappings.length}件の対応付けを適用</p>
+                              {!confirmConfigApply ? <button type="button" onClick={() => setConfirmConfigApply(true)} className="rounded bg-amber-500/15 px-3 py-2 text-amber-300">適用を確認</button> : <div className="flex items-center gap-2"><span>{configWorkflow.name} / {configPreview.mappings.length}件</span><button type="button" disabled={configSaving} onClick={() => void saveWorkflowConfig(configPreview)} className="rounded bg-accent-green/15 px-3 py-2 text-accent-green disabled:opacity-50">{configSaving ? '保存中…' : 'この内容を適用する'}</button></div>}
+                            </div>}
+                          </>}
+                        </div>}
 
                         {/* Inline Preset Manager Panel */}
                         {isExpanded && (

@@ -87,19 +87,19 @@ describe('SettingsPage REQ-314 integration boundaries', () => {
     localStorage.setItem(LS_KEYS.SETTINGS_ACTIVE_TAB, 'system')
     renderPage()
 
-    const promptTab = screen.getByRole('tab', { name: '② プロンプト支援' })
+    const promptTab = screen.getByRole('tab', { name: 'プロンプト支援' })
     expect(promptTab).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tabpanel', { name: '② プロンプト支援' })).toBeTruthy()
+    expect(screen.getByRole('tabpanel', { name: 'プロンプト支援' })).toBeTruthy()
     await waitFor(() => expect(localStorage.getItem(LS_KEYS.SETTINGS_ACTIVE_TAB)).toBe('prompt'))
 
-    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'セリフ支援' }))
     await waitFor(() => expect(window.location.hash).toBe('#dialogue'))
     await waitFor(() => expect(localStorage.getItem(LS_KEYS.SETTINGS_ACTIVE_TAB)).toBe('dialogue'))
 
     window.history.back()
-    await waitFor(() => expect(screen.getByRole('tab', { name: '② プロンプト支援' })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'プロンプト支援' })).toHaveAttribute('aria-selected', 'true'))
     window.history.forward()
-    await waitFor(() => expect(screen.getByRole('tab', { name: '③ セリフ支援' })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'セリフ支援' })).toHaveAttribute('aria-selected', 'true'))
   })
 
   it('starts prompt details closed and keeps an unsaved prompt edit across tab navigation', async () => {
@@ -113,10 +113,10 @@ describe('SettingsPage REQ-314 integration boundaries', () => {
     const editor = await screen.findByDisplayValue('Original prompt')
     fireEvent.change(editor, { target: { value: 'Unsaved page draft' } })
 
-    fireEvent.click(screen.getByRole('tab', { name: '③ セリフ支援' }))
-    await waitFor(() => expect(screen.getByRole('tab', { name: '③ セリフ支援' })).toHaveAttribute('aria-selected', 'true'))
-    fireEvent.click(screen.getByRole('tab', { name: '② プロンプト支援' }))
-    await waitFor(() => expect(screen.getByRole('tab', { name: '② プロンプト支援' })).toHaveAttribute('aria-selected', 'true'))
+    fireEvent.click(screen.getByRole('tab', { name: 'セリフ支援' }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'セリフ支援' })).toHaveAttribute('aria-selected', 'true'))
+    fireEvent.click(screen.getByRole('tab', { name: 'プロンプト支援' }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'プロンプト支援' })).toHaveAttribute('aria-selected', 'true'))
 
     expect(screen.getByDisplayValue('Unsaved page draft')).toBeInTheDocument()
     expect(llmPromptsApi.update).not.toHaveBeenCalled()

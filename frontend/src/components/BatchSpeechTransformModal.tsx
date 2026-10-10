@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X, Sparkles, RefreshCw, Ban, Undo, Save, CheckSquare, Square,
-  MessageSquare, AlertCircle, CheckCircle2, Loader2, Filter
+  MessageSquare, AlertCircle, CheckCircle2, Loader2, Filter, Lightbulb, ChevronDown, ChevronLeft
 } from 'lucide-react'
 import { Modal } from './common/Modal'
 import {
@@ -701,8 +701,8 @@ export function BatchSpeechTransformModal({
                                         onClick={() => setExpandedThinkingItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }))}
                                         className="flex items-center justify-between w-full text-[10px] font-medium text-[#7C6FDD] hover:text-[#9B8FF0]"
                                       >
-                                        <span>💡 AI解釈・思考過程</span>
-                                        <span>{expandedThinkingItems[itemId] ? '▲ 閉じる' : '▼ 表示'}</span>
+                                        <span className="flex items-center gap-1"><Lightbulb aria-hidden="true" size={12} />AI解釈・思考過程</span>
+                                        <span className="flex items-center gap-1">{expandedThinkingItems[itemId] ? '閉じる' : '表示'}<ChevronDown aria-hidden="true" size={12} className={expandedThinkingItems[itemId] ? 'rotate-180' : ''} /></span>
                                       </button>
                                       {expandedThinkingItems[itemId] && (
                                         <div className="text-[10px] text-zinc-300 space-y-1 pt-1 border-t border-[#7C6FDD]/20">
@@ -780,7 +780,7 @@ export function BatchSpeechTransformModal({
                   onClick={() => setPhase('select')}
                   className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg border border-[rgba(255,255,255,0.08)] hover:bg-white/5 transition-all"
                 >
-                  ← 候補選択に戻る
+                  <><ChevronLeft aria-hidden="true" size={14} /> 候補選択に戻る</>
                 </button>
 
                 {activeJob && (
@@ -837,7 +837,7 @@ export function BatchSpeechTransformModal({
                     onClick={handleStartTransform}
                     className="px-5 py-2 text-xs font-semibold rounded-lg bg-[#7C6FDD] hover:bg-[#6e5fcf] text-white transition-all flex items-center gap-1.5 shadow-lg shadow-[#7C6FDD]/20"
                   >
-                    <Sparkles size={14} /> ✨ 一括変換を開始 ({selectedCount}件)
+                    <Sparkles aria-hidden="true" size={14} /> 一括変換を開始 ({selectedCount}件)
                   </button>
                 ) : (
                   <button

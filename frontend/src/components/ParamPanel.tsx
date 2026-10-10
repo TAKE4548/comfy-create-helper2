@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Shuffle, Lock, Settings, Link, ChevronDown, ChevronRight } from 'lucide-react'
+import { Shuffle, Lock, Settings, Link, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import type { Lora, ParamTypeMaster, ParamSyncGroup } from '../api/types'
 import { LoraStackEditor } from './LoraStackEditor'
 import { SearchableLoraSelect } from './SearchableLoraSelect'
@@ -27,6 +27,56 @@ const DEFAULT_EXPANDED_STATE: GenerateSectionsExpandedState = {
   paramSync: true,
   bypass: true,
 };
+
+const SAMPLER_NUMERIC_FIELDS: Record<string, { name: string; step: number }> = {
+  Sampler_Steps: { name: 'steps', step: 1 },
+  Sampler_CFG: { name: 'cfg', step: 0.1 },
+  Sampler_Denoise: { name: 'denoise', step: 0.01 },
+};
+
+const decimalPlaces = (value: number): number => {
+  const text = value.toString().toLowerCase()
+  if (text.includes('e-')) return Number(text.split('e-')[1])
+  return text.split('.')[1]?.length ?? 0
+}
+
+const getSamplerNumericBounds = (
+  role: string | null,
+  paramName: string | null,
+  comfyObjectInfo: ParamPanelProps['comfyObjectInfo'],
+): { min?: number; max?: number } => {
+  const field = role ? SAMPLER_NUMERIC_FIELDS[role] : undefined
+  if (!field) return {}
+  const keys = [...new Set([paramName, field.name].filter((key): key is string => Boolean(key)))]
+  for (const classType of ['KSampler', 'KSamplerAdvanced']) {
+    const node = comfyObjectInfo?.[classType]
+    for (const key of keys) {
+      const metadata = node?.input?.required?.[key]?.[1] ?? node?.input?.optional?.[key]?.[1]
+      if (metadata) {
+        return {
+          min: typeof metadata.min === 'number' && Number.isFinite(metadata.min) ? metadata.min : undefined,
+          max: typeof metadata.max === 'number' && Number.isFinite(metadata.max) ? metadata.max : undefined,
+        }
+      }
+    }
+  }
+  return {}
+}
+
+const NumericStepperButtons = ({
+  label,
+  disabled,
+  onChange,
+}: {
+  label: string
+  disabled: boolean
+  onChange: (direction: -1 | 1) => void
+}) => (
+  <span className="inline-flex items-center gap-0.5">
+    <button type="button" aria-label={`Decrease ${label}`} disabled={disabled} onClick={() => onChange(-1)} className="h-8 w-8 rounded text-zinc-300 hover:bg-zinc-700 disabled:opacity-40"><Minus aria-hidden="true" size={14} /></button>
+    <button type="button" aria-label={`Increase ${label}`} disabled={disabled} onClick={() => onChange(1)} className="h-8 w-8 rounded text-zinc-300 hover:bg-zinc-700 disabled:opacity-40"><Plus aria-hidden="true" size={14} /></button>
+  </span>
+)
 
 export interface ParamPanelProps {
   paramMappings: any[]
@@ -116,6 +166,21 @@ export const ParamPanel = ({
       {expandedSections.parameters && (
         <div className="space-y-3 pt-1">
       {paramMappings.map((m) => {
+        const customType = paramTypeMasters?.find((ptm) => ptm.name === m.input_type)
+        const samplerNumericField = m.role ? SAMPLER_NUMERIC_FIELDS[m.role] : undefined
+        const numericStep = samplerNumericField?.step ?? customType?.step ?? (customType
+          ? (customType.widget_type === 'float' ? 0.01 : 1)
+          : (m.input_type === 'float' ? 0.1 : 1))
+        const samplerBounds = getSamplerNumericBounds(m.role ?? null, m.param_name ?? null, comfyObjectInfo)
+        const numericMin = customType?.min_value ?? samplerBounds.min
+        const numericMax = customType?.max_value ?? samplerBounds.max
+        const changeNumericValue = (direction: -1 | 1) => {
+          const current = Number(paramValues[m.role!] ?? 0)
+          if (!Number.isFinite(current)) return
+          const precision = Math.max(decimalPlaces(numericStep), decimalPlaces(current))
+          const adjusted = Math.min(numericMax ?? Infinity, Math.max(numericMin ?? -Infinity, current + numericStep * direction))
+          setParamValues({ ...paramValues, [m.role!]: adjusted.toFixed(precision) })
+        }
         const syncGroup = activeSlaveMap.get(m.role!)
         const isSyncedSlave = Boolean(syncGroup)
         const masterDisplayName = syncGroup ? (paramMappings.find((pm) => pm.role === syncGroup.master_role)?.display_name || syncGroup.master_role) : ''
@@ -192,7 +257,6 @@ export const ParamPanel = ({
                 />
               </button>
             ) : (() => {
-              const customType = paramTypeMasters?.find((ptm) => ptm.name === m.input_type)
               if (customType) {
                 if (customType.widget_type === 'select' && customType.combo_options) {
                   return (
@@ -234,30 +298,38 @@ export const ParamPanel = ({
                   )
                 } else {
                   return (
-                    <input
-                      id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
-                      type={customType.widget_type === 'textarea' ? 'text' : 'number'}
-                      value={paramValues[m.role!] ?? ''}
-                      disabled={isSyncedSlave}
-                      onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                      min={customType.min_value ?? undefined}
-                      max={customType.max_value ?? undefined}
-                      step={customType.step ?? (customType.widget_type === 'float' ? 0.01 : 1)}
-                      className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
-                    />
+                    <>
+                      <input
+                        id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                        type={customType.widget_type === 'textarea' ? 'text' : 'number'}
+                        value={paramValues[m.role!] ?? ''}
+                        disabled={isSyncedSlave}
+                        onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                        min={numericMin}
+                        max={numericMax}
+                        step={numericStep}
+                        className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
+                      />
+                      {customType.widget_type !== 'textarea' && <NumericStepperButtons label={m.display_name || m.role!} disabled={isSyncedSlave} onChange={changeNumericValue} />}
+                    </>
                   )
                 }
               }
               return (
-                <input
-                  id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
-                  type="number"
-                  value={paramValues[m.role!] ?? ''}
-                  disabled={isSyncedSlave}
-                  onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                  step={m.input_type === 'float' ? 0.1 : 1}
-                  className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
-                />
+                <div className="flex items-center gap-1">
+                  <input
+                    id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
+                    type="number"
+                    value={paramValues[m.role!] ?? ''}
+                    disabled={isSyncedSlave}
+                    onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
+                    min={numericMin}
+                    max={numericMax}
+                    step={numericStep}
+                    className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
+                  />
+                  <NumericStepperButtons label={m.display_name || m.role!} disabled={isSyncedSlave} onChange={changeNumericValue} />
+                </div>
               )
             })()}
           </div>

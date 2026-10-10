@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TagsPage } from '../TagsPage'
 import { tagSetsApi, tagsetCategoriesApi, baseModelsApi } from '../../api/client'
 import type { TagSet, Category, BaseModel } from '../../api/types'
+import { TagSetDetailModal } from '../../components/TagSetModals/TagSetDetailModal'
 
 let capturedOnDragEnd: ((event: any) => void) | null = null
 
@@ -40,6 +41,28 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+vi.mock('../../components/TagSetModals', () => ({
+  TagSetCreateModal: ({ form, setForm, onSubmit }: any) => <div>
+    <input aria-label="create-main-tags" value={form.tags} onChange={(e) => setForm((f: any) => ({ ...f, tags: e.target.value }))} />
+    <input aria-label="create-subset-tags" value={form.subsets?.[0]?.tags ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets?.length ? f.subsets.map((s: any, i: number) => i === 0 ? { ...s, name: 'named', tags: e.target.value } : s) : [{ name: 'named', tags: e.target.value }] }))} />
+    <input aria-label="create-subset-image" value={form.subsets?.[0]?.thumbnail_path ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets?.length ? f.subsets.map((s: any, i: number) => i === 0 ? { ...s, name: 'named', thumbnail_path: e.target.value } : s) : [{ name: 'named', tags: '', thumbnail_path: e.target.value }] }))} />
+    <button onClick={onSubmit}>create-submit</button>
+  </div>,
+  TagSetEditModal: ({ form, setForm, onSubmit }: any) => <div>
+    <input aria-label="edit-main-tags" value={form.tags} onChange={(e) => setForm((f: any) => ({ ...f, tags: e.target.value }))} />
+    <input aria-label="edit-subset-tags" value={form.subsets?.[0]?.tags ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets?.map((s: any, i: number) => i === 0 ? { ...s, name: 'Summer', tags: e.target.value } : s) }))} />
+    {form.subsets?.map((s: any, i: number) => <input key={i} aria-label={`edit-subset-image-${i}`} value={s.thumbnail_path ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets.map((subset: any, idx: number) => idx === i ? { ...subset, thumbnail_path: e.target.value } : subset) }))} />)}
+    <button onClick={onSubmit}>edit-submit</button>
+  </div>,
+  TagSetDetailModal: () => null,
+}))
+
+vi.mock('../../components/BulkEditModal', () => ({
+  BulkEditModal: ({ isOpen, onApply }: any) => isOpen
+    ? <button aria-label="apply-tagset-bulk-edit" onClick={() => onApply({ category_id: 2, target_base_model_ids: [2] })}>apply bulk</button>
+    : null,
+}))
+
 const MOCK_CATEGORIES: Category[] = [
   { id: 1, name: 'Costume' },
   { id: 2, name: 'Lighting' },
@@ -57,7 +80,11 @@ const MOCK_TAG_SETS: TagSet[] = [
     description: 'School uniform style',
     category_id: 1,
     tags: ['serafuku', 'pleated skirt'],
-    subsets: [{ id: 10, name: 'Summer', tags: ['short sleeves'] }],
+    thumbnail_path: '/cover.png',
+    subsets: [
+      { id: 10, name: 'Summer', tags: ['short sleeves'], thumbnail_path: '/summer-example.png' },
+      { id: 11, name: 'Winter', tags: ['long sleeves'], thumbnail_path: '/winter-example.png' },
+    ],
     target_base_model_ids: [1],
   },
   {
@@ -343,7 +370,6 @@ describe('TagsPage Component', () => {
   })
 
   it('deletes a single tag set when delete button is confirmed', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true)
     renderComponent()
 
     await waitFor(() => {
@@ -354,10 +380,124 @@ describe('TagsPage Component', () => {
     expect(deleteBtn).toBeInTheDocument()
     fireEvent.click(deleteBtn!)
 
-    expect(confirmSpy).toHaveBeenCalledWith('Delete this tag set?')
+    expect(screen.getByRole('alertdialog', { name: 'タグセット削除の確認' })).toHaveTextContent('Costume Set')
+    expect(tagSetsApi.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '削除' }))
     await waitFor(() => {
       expect(tagSetsApi.delete).toHaveBeenCalledWith(1)
     })
+  })
+
+  it('select all uses the complete filtered display list and disables sorting while selected', async () => {
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    fireEvent.change(screen.getByPlaceholderText('Search tags…'), { target: { value: 'Costume' } })
+    fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: /すべて選択/ }))
+    expect(screen.getByText((_, element) => element?.tagName.toLowerCase() === 'span' && element.textContent?.includes('1 / 1 件選択中') === true)).toBeInTheDocument()
+    expect(document.getElementById('tagset-card-1')).toHaveClass('border-accent-green', 'ring-accent-green/40')
+    expect(document.getElementById('tagset-card-1')).not.toHaveTextContent('並び替えハンドル')
+    act(() => capturedOnDragEnd?.({ active: { id: 1 }, over: { id: 2 } }))
+    expect(tagSetsApi.reorder).not.toHaveBeenCalled()
+  })
+
+  it('serializes nested main and subset tags through the shared parser on create and update', async () => {
+    renderComponent()
+    fireEvent.click(screen.getByRole('button', { name: /New Tag Set/ }))
+    fireEvent.change(screen.getByLabelText('create-main-tags'), { target: { value: '(red hair, long hair:1.2), blue_eyes' } })
+    fireEvent.change(screen.getByLabelText('create-subset-image'), { target: { value: '/created-subset.png' } })
+    fireEvent.change(screen.getByLabelText('create-subset-tags'), { target: { value: '[soft light, rim_light], green_eyes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'create-submit' }))
+    await waitFor(() => expect(tagSetsApi.create).toHaveBeenCalledWith(expect.objectContaining({
+      tags: ['(red hair, long hair:1.2)', 'blue eyes'],
+      subsets: [{ name: 'named', tags: ['[soft light, rim light]', 'green eyes'], thumbnail_path: '/created-subset.png' }],
+    })))
+
+    await waitFor(() => expect(document.getElementById('tagset-edit-1')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('tagset-edit-1')!)
+    expect(screen.getByLabelText('edit-subset-image-0')).toHaveValue('/summer-example.png')
+    expect(screen.getByLabelText('edit-subset-image-1')).toHaveValue('/winter-example.png')
+    fireEvent.change(screen.getByLabelText('edit-main-tags'), { target: { value: '(a, b:0.7), c_d' } })
+    fireEvent.change(screen.getByLabelText('edit-subset-tags'), { target: { value: '(x, y), z_z' } })
+    fireEvent.click(screen.getByRole('button', { name: 'edit-submit' }))
+    await waitFor(() => expect(tagSetsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      tags: ['(a, b:0.7)', 'c d'],
+      thumbnail_path: '/cover.png',
+      subsets: [
+        { name: 'Summer', tags: ['(x, y)', 'z z'], thumbnail_path: '/summer-example.png' },
+        { name: 'Winter', tags: ['long sleeves'], thumbnail_path: '/winter-example.png' },
+      ],
+    })))
+
+    await waitFor(() => expect(document.getElementById('tagset-edit-1')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('tagset-edit-1')!)
+    expect(screen.getByLabelText('edit-subset-image-0')).toHaveValue('/summer-example.png')
+    expect(screen.getByLabelText('edit-subset-image-1')).toHaveValue('/winter-example.png')
+  })
+
+  it('preserves named subset images when bulk category and model changes use full replacement updates', async () => {
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '一括編集' }))
+    fireEvent.click(screen.getByRole('button', { name: 'apply-tagset-bulk-edit' }))
+
+    await waitFor(() => expect(tagSetsApi.update).toHaveBeenCalledTimes(1))
+    expect(tagSetsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      name: 'Costume Set',
+      category_id: 2,
+      tags: ['serafuku', 'pleated skirt'],
+      thumbnail_path: '/cover.png',
+      target_base_model_ids: [2],
+      subsets: [
+        { name: 'Summer', tags: ['short sleeves'], thumbnail_path: '/summer-example.png' },
+        { name: 'Winter', tags: ['long sleeves'], thumbnail_path: '/winter-example.png' },
+      ],
+    }))
+    expect(tagSetsApi.update).not.toHaveBeenCalledWith(2, expect.anything())
+    expect(MOCK_TAG_SETS[1]).toMatchObject({ id: 2, category_id: 2, target_base_model_ids: [2] })
+  })
+
+  it('confirms deletion of only selected tag sets and cancel leaves them untouched', async () => {
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /選択を削除/ }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('1件')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Costume Set')
+    expect(screen.getByRole('alertdialog')).not.toHaveTextContent('Lighting Set')
+    expect(tagSetsApi.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(tagSetsApi.delete).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /選択を削除/ }))
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }))
+    await waitFor(() => expect(tagSetsApi.delete).toHaveBeenCalledWith(1))
+    expect(tagSetsApi.delete).toHaveBeenCalledTimes(1)
+    expect(tagSetsApi.delete).not.toHaveBeenCalledWith(2)
+  })
+
+  it('shows and reopens each named subset with its own image', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TagSetDetailModal
+          tagSet={MOCK_TAG_SETS[0]}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={vi.fn()}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          isPending={false}
+          onCategoryCreated={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByAltText('Summer thumbnail')).toHaveAttribute('src', '/summer-example.png')
+    expect(screen.getByAltText('Winter thumbnail')).toHaveAttribute('src', '/winter-example.png')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(await screen.findByAltText('Summer preview')).toHaveAttribute('src', '/summer-example.png')
+    expect(screen.getByAltText('Winter preview')).toHaveAttribute('src', '/winter-example.png')
   })
 
   it('supports multi-select mode with Ctrl/Meta click, select all, and clear selection', async () => {
@@ -431,5 +571,32 @@ describe('TagsPage Component', () => {
     }
 
     expect(writeTextMock).toHaveBeenCalledWith('serafuku, pleated skirt')
+  })
+
+  it('renders portrait cards in a 2/3/4 responsive grid with configured image ratio and usable controls', async () => {
+    localStorage.setItem('prompt-surgeon-thumbnail-aspect-ratio', '2:3')
+    renderComponent()
+    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+
+    const card = document.getElementById('tagset-card-1')!
+    expect(card.className).toContain('w-full')
+    expect(card.className).toContain('max-w-[220px]')
+    expect(card).toHaveClass('h-[320px]')
+    const grid = card.closest('.grid')!
+    expect(grid.className).toContain('grid-cols-2')
+    expect(grid.className).toContain('md:grid-cols-3')
+    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.className).not.toContain('xl:grid-cols-5')
+
+    const carousel = card.querySelector('[data-testid="image-carousel"]')
+    expect(carousel).toBeInTheDocument()
+    expect(carousel).toHaveClass('w-full', 'shrink-0')
+    expect(card.querySelector('[data-testid="image-carousel-frame"]')).toBeInTheDocument()
+    expect(screen.getByText('School uniform style')).toHaveClass('line-clamp-2')
+    expect(document.getElementById('category-section-header-1')).toHaveClass('sticky', 'top-0', 'min-h-[44px]')
+    expect(screen.getByRole('button', { name: 'Copy tag serafuku' })).toHaveClass('min-h-[44px]', 'text-[11px]')
+    expect(card.querySelector('[aria-label="並び替えハンドル"]')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
+    expect(document.getElementById('tagset-edit-1')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
+    expect(document.getElementById('tagset-delete-1')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
   })
 })

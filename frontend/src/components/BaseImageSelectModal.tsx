@@ -6,6 +6,7 @@ import { snapshotsApi, workflowsApi, lorasApi, tagSetsApi, albumsApi } from '../
 import { STALE_TIMES } from '../constants/staleTimes'
 import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 import type { SnapshotSummary, WorkflowSummary, Lora, TagSet, Album } from '../api/types'
+import { Modal } from './common/Modal'
 
 export interface BaseImageOption {
   id: number
@@ -174,11 +175,14 @@ export function BaseImageSelectModal({
   }, [sortedAlbumItems.length, albumItemLimit])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        className="bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="lg"
+      ariaLabel="ベース画像を差し替え"
+      dialogClassName="p-0 max-h-[85dvh]"
+    >
+      <div className="w-full min-w-0 min-h-0 max-h-[85dvh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(255,255,255,0.08)]">
           <div className="flex items-center gap-2">
@@ -192,7 +196,7 @@ export function BaseImageSelectModal({
               id="tab-snapshots"
               type="button"
               onClick={() => setActiveTab('snapshots')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-medium transition-colors ${
+              className={`min-h-11 flex items-center gap-1.5 px-3 py-1 rounded-md font-medium transition-colors ${
                 activeTab === 'snapshots'
                   ? 'bg-accent-green text-black font-semibold'
                   : 'text-zinc-400 hover:text-white'
@@ -205,7 +209,7 @@ export function BaseImageSelectModal({
               id="tab-albums"
               type="button"
               onClick={() => setActiveTab('albums')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-medium transition-colors ${
+              className={`min-h-11 flex items-center gap-1.5 px-3 py-1 rounded-md font-medium transition-colors ${
                 activeTab === 'albums'
                   ? 'bg-accent-green text-black font-semibold'
                   : 'text-zinc-400 hover:text-white'
@@ -216,7 +220,7 @@ export function BaseImageSelectModal({
             </button>
           </div>
 
-          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
+          <button type="button" aria-label="閉じる" onClick={onClose} className="min-h-11 min-w-11 flex items-center justify-center text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5">
             <X size={18} />
           </button>
         </div>
@@ -231,7 +235,7 @@ export function BaseImageSelectModal({
                 aria-label="Workflow Filter"
                 value={selectedWorkflowId ?? ''}
                 onChange={(e) => setSelectedWorkflowId(e.target.value ? Number(e.target.value) : null)}
-                className="bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
+                className="min-h-11 bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
               >
                 <option value="">All Workflows</option>
                 {workflows.map((w) => (
@@ -246,7 +250,7 @@ export function BaseImageSelectModal({
                 aria-label="LoRA Filter"
                 value={selectedLoraId ?? ''}
                 onChange={(e) => setSelectedLoraId(e.target.value ? Number(e.target.value) : null)}
-                className="bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
+                className="min-h-11 bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
               >
                 <option value="">All LoRAs</option>
                 {loras.map((l) => (
@@ -261,7 +265,7 @@ export function BaseImageSelectModal({
                 aria-label="Tag Set Filter"
                 value={selectedTagSetId ?? ''}
                 onChange={(e) => setSelectedTagSetId(e.target.value ? Number(e.target.value) : null)}
-                className="bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
+                className="min-h-11 bg-zinc-800 border border-white/10 text-zinc-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-accent-green/50 max-w-[160px] truncate"
               >
                 <option value="">All Tag Sets</option>
                 {tagSets.map((t) => (
@@ -277,7 +281,7 @@ export function BaseImageSelectModal({
                     id="sort-desc"
                     type="button"
                     onClick={() => setSortOrder('desc')}
-                    className={`px-2 py-1 rounded transition-colors ${
+                    className={`min-h-11 px-2 py-1 rounded transition-colors ${
                       sortOrder === 'desc' ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
@@ -287,7 +291,7 @@ export function BaseImageSelectModal({
                     id="sort-asc"
                     type="button"
                     onClick={() => setSortOrder('asc')}
-                    className={`px-2 py-1 rounded transition-colors ${
+                    className={`min-h-11 px-2 py-1 rounded transition-colors ${
                       sortOrder === 'asc' ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
@@ -318,7 +322,7 @@ export function BaseImageSelectModal({
                         type="button"
                         onClick={() => onSelect(s)}
                         style={aspectRatioStyle}
-                        className={`group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
+                        className={`min-h-11 group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
                           s.id === currentSnapshotId
                             ? 'border-accent-green ring-2 ring-accent-green/30'
                             : 'border-white/10 hover:border-white/30'
@@ -372,7 +376,7 @@ export function BaseImageSelectModal({
                           key={album.id}
                           type="button"
                           onClick={() => setSelectedAlbumId(album.id)}
-                          className="group bg-zinc-900 border border-white/10 hover:border-accent-green/50 rounded-lg overflow-hidden flex flex-col text-left transition-all hover:shadow-lg"
+                          className="min-h-11 group bg-zinc-900 border border-white/10 hover:border-accent-green/50 rounded-lg overflow-hidden flex flex-col text-left transition-all hover:shadow-lg"
                         >
                           <div className="aspect-[4/3] w-full bg-zinc-950 flex items-center justify-center overflow-hidden">
                             {coverPath ? (
@@ -407,7 +411,7 @@ export function BaseImageSelectModal({
                       id="album-back-btn"
                       type="button"
                       onClick={() => setSelectedAlbumId(null)}
-                      className="flex items-center gap-1 text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                      className="min-h-11 flex items-center gap-1 text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors"
                     >
                       <ArrowLeft size={14} />
                       <span>アルバム一覧へ</span>
@@ -422,7 +426,7 @@ export function BaseImageSelectModal({
                       id="album-sort-custom"
                       type="button"
                       onClick={() => setAlbumSortBy('custom')}
-                      className={`px-2 py-1 rounded transition-colors ${
+                      className={`min-h-11 px-2 py-1 rounded transition-colors ${
                         albumSortBy === 'custom' ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'
                       }`}
                     >
@@ -432,7 +436,7 @@ export function BaseImageSelectModal({
                       id="album-sort-date-desc"
                       type="button"
                       onClick={() => setAlbumSortBy('date-desc')}
-                      className={`px-2 py-1 rounded transition-colors ${
+                      className={`min-h-11 px-2 py-1 rounded transition-colors ${
                         albumSortBy === 'date-desc' ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'
                       }`}
                     >
@@ -442,7 +446,7 @@ export function BaseImageSelectModal({
                       id="album-sort-date-asc"
                       type="button"
                       onClick={() => setAlbumSortBy('date-asc')}
-                      className={`px-2 py-1 rounded transition-colors ${
+                      className={`min-h-11 px-2 py-1 rounded transition-colors ${
                         albumSortBy === 'date-asc' ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'
                       }`}
                     >
@@ -477,7 +481,7 @@ export function BaseImageSelectModal({
                               })
                             }
                             style={aspectRatioStyle}
-                            className={`group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
+                            className={`min-h-11 group relative rounded-lg overflow-hidden border transition-all text-left bg-zinc-900 flex flex-col w-full ${
                               item.snapshot_id === currentSnapshotId
                                 ? 'border-accent-green ring-2 ring-accent-green/30'
                                 : 'border-white/10 hover:border-white/30'
@@ -512,7 +516,6 @@ export function BaseImageSelectModal({
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   )
 }
-

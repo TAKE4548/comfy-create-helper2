@@ -68,6 +68,58 @@ def _increment_revision(db: Session) -> int:
     return revision
 
 
+def _prompt_excerpt(metadata_json: str) -> str | None:
+    try:
+        metadata = json.loads(metadata_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    param_values = metadata.get("param_values")
+    if not isinstance(param_values, dict):
+        return None
+
+    frozen_record = param_values.get("__prompt_surgeon_metadata_v1")
+    if isinstance(frozen_record, str):
+        try:
+            frozen_record = json.loads(frozen_record)
+        except (TypeError, ValueError):
+            frozen_record = None
+
+    prompts: list[str] = []
+    if (
+        isinstance(frozen_record, dict)
+        and type(frozen_record.get("version")) is int
+        and frozen_record["version"] == 1
+    ):
+        fields = frozen_record.get("fields")
+        if isinstance(fields, list):
+            for field in fields:
+                if not isinstance(field, dict):
+                    continue
+                if (
+                    field.get("input_type") != "textarea"
+                    or field.get("recorded") is not True
+                    or field.get("status") != "submitted"
+                    or not isinstance(field.get("value"), str)
+                ):
+                    continue
+                label = f"{field.get('role', '')} {field.get('display_name', '')}".casefold()
+                if any(marker in label for marker in ("negative", "ネガティブ", "否定")):
+                    continue
+                value = field["value"].strip()
+                if value:
+                    prompts.append(value)
+    else:
+        for key in ("prompt", "positive_prompt", "Prompt_Positive"):
+            value = param_values.get(key)
+            if isinstance(value, str) and value.strip():
+                prompts.append(value.strip())
+
+    excerpt = "; ".join(prompts)
+    return excerpt[:160] or None
+
+
 def _job_view(job: GenerationJob) -> dict[str, Any]:
     return {
         "job_id": job.job_id,
@@ -85,6 +137,8 @@ def _job_view(job: GenerationJob) -> dict[str, Any]:
         "outputs": json.loads(job.outputs_json),
         "failure": json.loads(job.failure_json) if job.failure_json is not None else None,
         "preview_url": None,
+        "set_name": job.set_name,
+        "prompt_excerpt": _prompt_excerpt(job.metadata_json),
     }
 
 

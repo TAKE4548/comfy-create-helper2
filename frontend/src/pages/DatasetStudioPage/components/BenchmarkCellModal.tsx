@@ -1,4 +1,5 @@
 import React from 'react'
+import { X } from 'lucide-react'
 
 export interface BenchmarkCell {
   axisId: 'decoupling' | 'bake_in' | 'pose' | 'angle'
@@ -65,7 +66,7 @@ export const BenchmarkCellModal: React.FC<BenchmarkCellModalProps> = ({ cell, on
             className="text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
             aria-label="閉じる"
           >
-            ✕
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, X, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Search, X, Check, ChevronDown, ChevronUp, ImageOff, Minus, Plus } from 'lucide-react'
 import type { Lora, TagSet } from '../../../api/types'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
 
@@ -37,13 +37,14 @@ export const AddAssetModal = ({
 
   // 詳細設定展開中のLoRA IDリスト
   const [expandedLoras, setExpandedLoras] = useState<Set<number>>(new Set())
+  const [failedThumbnailIds, setFailedThumbnailIds] = useState<Set<number>>(new Set())
 
   // LoRAのデフォルト値決定
   const getInitialLoraConfig = (lora: Lora): LoraConfig => {
     const min = lora.recommended_strength_min
     const max = lora.recommended_strength_max
     let strength = 1.0
-    if (min != null && max != null) strength = Math.round(((min + max) / 2) * 10) / 10
+    if (min != null && max != null) strength = Math.round(((min + max) / 2) * 100) / 100
     else if (min != null) strength = min
     else if (max != null) strength = max
 
@@ -132,6 +133,17 @@ export const AddAssetModal = ({
     }
   }
 
+  const handleStrengthChange = (loraId: number, value: number) => {
+    if (!Number.isFinite(value)) return
+    handleUpdateLoraConfig(loraId, 'strength', Math.round(Math.min(2, Math.max(0, value)) * 100) / 100)
+  }
+
+  const handleStrengthStep = (loraId: number, amount: number) => {
+    const current = selectedLoras.get(loraId)?.strength
+    if (current === undefined) return
+    handleStrengthChange(loraId, current + amount)
+  }
+
   const toggleExpandLora = (loraId: number) => {
     const next = new Set(expandedLoras)
     if (next.has(loraId)) {
@@ -159,7 +171,7 @@ export const AddAssetModal = ({
       }
 
       const loraPromptString = config.insertLoadTag
-        ? `<lora:${filename}:${config.strength.toFixed(1)}>`
+        ? `<lora:${filename}:${config.strength.toFixed(2)}>`
         : undefined
 
       addAppliedAsset(role, {
@@ -258,6 +270,41 @@ export const AddAssetModal = ({
           </div>
         </div>
 
+        <section aria-label="選択中のアセット" className="sticky top-0 z-10 border-b border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3">
+          <div className="mb-2 text-xs font-semibold text-zinc-300">選択中のアセット ({selectedLoras.size})</div>
+          {selectedLoras.size === 0 ? (
+            <p className="text-xs text-zinc-500">LoRA未選択</p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto">
+              {Array.from(selectedLoras.keys()).map((id) => {
+                const lora = loras.find((item) => item.id === id)
+                if (!lora) return null
+                const label = lora.description || lora.model_name
+                return (
+                  <div key={id} className="flex shrink-0 items-center gap-2 rounded-lg border border-accent-green/30 bg-surface-2 p-2">
+                    {lora.thumbnail_path && !failedThumbnailIds.has(id) ? (
+                      <img
+                        src={lora.thumbnail_path}
+                        alt={label}
+                        className="h-10 w-10 rounded object-cover"
+                        onError={() => setFailedThumbnailIds((current) => new Set(current).add(id))}
+                      />
+                    ) : (
+                      <span className="flex h-10 w-10 items-center justify-center rounded bg-black/20 text-zinc-500" aria-label={`${label}のサムネイルなし`}>
+                        <ImageOff size={16} aria-hidden="true" />
+                      </span>
+                    )}
+                    <span className="max-w-28 truncate text-xs text-zinc-200">{label}</span>
+                    <button type="button" aria-label={`トレイから削除: ${lora.model_name}`} onClick={() => handleToggleLora(lora)} className="min-h-11 min-w-11 rounded text-zinc-400 hover:text-white">
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Asset List Area */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 custom-scrollbar min-h-[250px]">
           {activeTab === 'lora' ? (
@@ -349,18 +396,21 @@ export const AddAssetModal = ({
                           <div className="space-y-1.5">
                             <div className="flex justify-between items-center text-[11px] text-zinc-400">
                               <span>推奨強度</span>
-                              <span className="font-semibold text-accent-green font-mono">{config.strength.toFixed(1)}</span>
+                              <span className="font-semibold text-accent-green font-mono">{config.strength.toFixed(2)}</span>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <button type="button" aria-label={`強度を下げる: ${lora.model_name}`} onClick={() => handleStrengthStep(lora.id, -0.05)} className="min-h-11 min-w-11 rounded border border-white/10"><Minus aria-hidden="true" size={14} /></button>
                               <input
                                 type="range"
                                 min="0.0"
                                 max="2.0"
-                                step="0.1"
+                                step="0.05"
                                 value={config.strength}
-                                onChange={(e) => handleUpdateLoraConfig(lora.id, 'strength', parseFloat(e.target.value))}
+                                onChange={(e) => handleStrengthChange(lora.id, parseFloat(e.target.value))}
                                 className="flex-1 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-accent-green"
                               />
+                              <input type="number" min="0" max="2" step="0.05" inputMode="decimal" aria-label={`LoRA強度: ${lora.model_name}`} value={config.strength} onChange={(e) => handleStrengthChange(lora.id, Number(e.target.value))} className="min-h-11 w-20 rounded bg-surface px-2 text-sm text-zinc-100" />
+                              <button type="button" aria-label={`強度を上げる: ${lora.model_name}`} onClick={() => handleStrengthStep(lora.id, 0.05)} className="min-h-11 min-w-11 rounded border border-white/10"><Plus aria-hidden="true" size={14} /></button>
                             </div>
                           </div>
                         )}

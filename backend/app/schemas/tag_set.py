@@ -2,12 +2,18 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class TagSubsetCreate(BaseModel):
     name: str
     tags: list[str]
+    thumbnail_path: Optional[str] = None
+
+    @field_validator("thumbnail_path", mode="before")
+    @classmethod
+    def normalize_empty_thumbnail_path(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 class TagSubsetRead(BaseModel):
@@ -16,6 +22,7 @@ class TagSubsetRead(BaseModel):
     tag_set_id: int
     name: str
     tags: list[str]
+    thumbnail_path: Optional[str] = None
 
 
 class TagSetCreate(BaseModel):
@@ -46,4 +53,3 @@ class TagSetRead(BaseModel):
 class TagSetReorder(BaseModel):
     category_id: Optional[int] = None
     ordered_ids: list[int]
-

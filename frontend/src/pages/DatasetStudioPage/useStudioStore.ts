@@ -18,6 +18,8 @@ export interface LossPoint {
 export interface StudioState {
   currentStep: 1 | 2 | 3 | 4
   setCurrentStep: (step: 1 | 2 | 3 | 4) => void
+  evaluationView: boolean
+  setEvaluationView: (open: boolean) => void
 
   activeProject: DatasetProject | null
   setActiveProject: (project: DatasetProject | null) => void
@@ -66,10 +68,17 @@ export interface StudioState {
 
 export const useStudioStore = create<StudioState>((set) => ({
   currentStep: 1,
-  setCurrentStep: (step) => set({ currentStep: step }),
+  setCurrentStep: (step) => set({ currentStep: step, evaluationView: false }),
+  evaluationView: false,
+  setEvaluationView: (evaluationView) => set({ evaluationView }),
 
   activeProject: null,
-  setActiveProject: (project) => set({ activeProject: project }),
+  setActiveProject: (project) =>
+    set((state) =>
+      state.activeProject?.id === project?.id
+        ? { activeProject: project }
+        : { activeProject: project, currentStep: 1, evaluationView: false }
+    ),
 
   saveStatus: 'idle',
   setSaveStatus: (saveStatus) => set({ saveStatus }),
@@ -158,6 +167,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   resetStudio: () =>
     set({
       currentStep: 1,
+      evaluationView: false,
       activeProject: null,
       saveStatus: 'idle',
       items: [],

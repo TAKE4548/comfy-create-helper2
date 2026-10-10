@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useEffect } from 'react'
-import { Clock, Trash2, MessageSquarePlus, Download, Check, ImageOff } from 'lucide-react'
+import React, { useMemo, useRef, useEffect, useState } from 'react'
+import { Clock, Trash2, MessageSquarePlus, Download, Check, ImageOff, X } from 'lucide-react'
 import type { SnapshotSummary, Lora, TagSet } from '../../../api/types'
 import type { UseMultiSelectReturn } from '../../../hooks/useMultiSelect'
 
@@ -63,6 +63,9 @@ export function SnapshotGalleryView({
   onDeleteSnapshot,
 }: SnapshotGalleryViewProps) {
   const snapshotSentinelRef = useRef<HTMLDivElement>(null)
+  const [workflowSearch, setWorkflowSearch] = useState('')
+  const [loraSearch, setLoraSearch] = useState('')
+  const [tagSetSearch, setTagSetSearch] = useState('')
 
   const sortedSnapshots = useMemo(() => {
     if (!snapshots) return []
@@ -75,6 +78,22 @@ export function SnapshotGalleryView({
   const visibleSnapshots = useMemo(() => {
     return sortedSnapshots.slice(0, snapshotLimit)
   }, [sortedSnapshots, snapshotLimit])
+
+  const visibleWorkflows = workflows?.filter((workflow) =>
+    workflow.name.toLocaleLowerCase().includes(workflowSearch.toLocaleLowerCase())
+  )
+  const visibleLoras = loras?.filter((lora) =>
+    lora.model_name.toLocaleLowerCase().includes(loraSearch.toLocaleLowerCase()) ||
+    (lora.description || '').toLocaleLowerCase().includes(loraSearch.toLocaleLowerCase())
+  )
+  const getLoraFilterLabel = (lora: NonNullable<typeof loras>[number]) =>
+    lora.description ? `${lora.model_name} — ${lora.description}` : lora.model_name
+  const visibleTagSets = tagSets?.filter((tagSet) =>
+    tagSet.name.toLocaleLowerCase().includes(tagSetSearch.toLocaleLowerCase())
+  )
+  const selectedWorkflow = workflows?.find((workflow) => workflow.id === selectedWorkflowId)
+  const selectedLora = loras?.find((lora) => lora.id === selectedLoraId)
+  const selectedTagSet = tagSets?.find((tagSet) => tagSet.id === selectedTagSetId)
 
   useEffect(() => {
     const sentinel = snapshotSentinelRef.current
@@ -97,6 +116,14 @@ export function SnapshotGalleryView({
     <>
       {/* Workflow Filter (snapshots only) */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">
+        <input
+          type="search"
+          aria-label="ワークフローを検索"
+          value={workflowSearch}
+          onChange={(event) => setWorkflowSearch(event.target.value)}
+          placeholder="ワークフローを検索"
+          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+        />
         <select
           id="history-workflow-filter"
           value={selectedWorkflowId ?? ''}
@@ -104,13 +131,21 @@ export function SnapshotGalleryView({
           className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40"
         >
           <option value="">All Workflows</option>
-          {workflows?.map((w) => (
+          {visibleWorkflows?.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
             </option>
           ))}
         </select>
 
+        <input
+          type="search"
+          aria-label="LoRAを検索"
+          value={loraSearch}
+          onChange={(event) => setLoraSearch(event.target.value)}
+          placeholder="LoRAを検索"
+          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+        />
         <select
           id="history-lora-filter"
           value={selectedLoraId ?? ''}
@@ -118,13 +153,21 @@ export function SnapshotGalleryView({
           className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40"
         >
           <option value="">All LoRAs</option>
-          {loras?.map((l) => (
+          {visibleLoras?.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.description || l.model_name}
+              {getLoraFilterLabel(l)}
             </option>
           ))}
         </select>
 
+        <input
+          type="search"
+          aria-label="タグセットを検索"
+          value={tagSetSearch}
+          onChange={(event) => setTagSetSearch(event.target.value)}
+          placeholder="タグセットを検索"
+          className="min-h-11 w-40 text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 text-zinc-300"
+        />
         <select
           id="history-tagset-filter"
           value={selectedTagSetId ?? ''}
@@ -132,12 +175,32 @@ export function SnapshotGalleryView({
           className="text-xs bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40"
         >
           <option value="">All Tag Sets</option>
-          {tagSets?.map((t) => (
+          {visibleTagSets?.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
             </option>
           ))}
         </select>
+
+        {(selectedWorkflow || selectedLora || selectedTagSet) && (
+          <div className="flex flex-wrap gap-2" aria-label="有効な絞り込み">
+            {selectedWorkflow && (
+              <button type="button" onClick={() => setSelectedWorkflowId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+                Workflow: {selectedWorkflow.name} <X aria-hidden="true" size={12} />
+              </button>
+            )}
+            {selectedLora && (
+              <button type="button" onClick={() => setSelectedLoraId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+                LoRA: {getLoraFilterLabel(selectedLora)} <X aria-hidden="true" size={12} />
+              </button>
+            )}
+            {selectedTagSet && (
+              <button type="button" onClick={() => setSelectedTagSetId(null)} className="min-h-11 px-3 rounded-full bg-surface-2 text-xs text-zinc-200">
+                TagSet: {selectedTagSet.name} <X aria-hidden="true" size={12} />
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)]">
           {(['desc', 'asc'] as const).map((order) => (
@@ -163,7 +226,7 @@ export function SnapshotGalleryView({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div data-testid="snapshot-grid" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleSnapshots.map((snap) => {
             const isSelected = multiSelect.isSelected(snap.id)
             const longPressHandlers = multiSelect.getLongPressHandlers(snap.id)
@@ -184,9 +247,22 @@ export function SnapshotGalleryView({
                 }}
                 className={`group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer select-none ${
                   multiSelect.isMultiSelectMode && isSelected
-                    ? 'border-[#7C6FDD] ring-1 ring-[#7C6FDD]/30 bg-surface-2'
+                    ? 'border-accent-green ring-1 ring-accent-green/30 bg-surface-2'
                     : 'border-transparent hover:border-zinc-700'
                 }`}
+                tabIndex={0}
+                role="group"
+                aria-label={`Snapshot ${snap.id}`}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
+                  event.preventDefault()
+                  if (multiSelect.isMultiSelectMode) {
+                    multiSelect.handleItemClick(snap.id, event as any)
+                  } else {
+                    const index = sortedSnapshots.findIndex((snapshot) => snapshot.id === snap.id)
+                    onOpenPreview(index >= 0 ? index : 0)
+                  }
+                }}
                 onClick={(e) => {
                   if (multiSelect.isMultiSelectMode || e.ctrlKey || e.metaKey) {
                     multiSelect.handleItemClick(snap.id, e)
@@ -196,7 +272,7 @@ export function SnapshotGalleryView({
                   }
                 }}
               >
-                <div className="bg-surface-2 w-full" style={aspectRatioStyle}>
+                <div className="bg-black w-full" style={{ ...aspectRatioStyle, aspectRatio: '2 / 3' }}>
                   {snap.image_path || snap.thumbnail_path ? (
                     <img
                       src={snap.thumbnail_path || toThumbnailUrl(snap.image_path)}
@@ -216,7 +292,7 @@ export function SnapshotGalleryView({
                 {multiSelect.isMultiSelectMode && (
                   <div className="absolute top-2 left-2 z-20">
                     {isSelected ? (
-                      <div className="p-1 rounded-md bg-[#7C6FDD] text-white">
+                      <div className="p-1 rounded-md bg-accent-green text-white">
                         <Check size={12} strokeWidth={3} />
                       </div>
                     ) : (
@@ -225,9 +301,15 @@ export function SnapshotGalleryView({
                   </div>
                 )}
 
-                {/* Always visible action badges (Speech Edit -> Download -> Delete) */}
+                {/* Touch-visible and hover/focus-visible metadata and actions. */}
                 {!multiSelect.isMultiSelectMode && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
+                  <div data-testid={`snapshot-overlay-${snap.id}`} className="absolute bottom-0 inset-x-0 z-20 flex items-end justify-between gap-1 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-2 pt-8 pb-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+                    <p className="min-w-0 text-[11px] text-zinc-200">
+                      {new Date(snap.created_at).toLocaleDateString('ja-JP', {
+                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
+                    <div className="flex shrink-0 items-center gap-1">
                     {snap.image_path && (
                       <button
                         id={`snap-speech-edit-${snap.id}`}
@@ -237,7 +319,7 @@ export function SnapshotGalleryView({
                         }}
                         title="セリフ編集・吹き出し追加"
                         aria-label="セリフ編集・吹き出し追加"
-                        className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-accent-green transition-colors shadow-sm"
+                        className="min-h-11 min-w-11 p-2 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-accent-green transition-colors shadow-sm"
                       >
                         <MessageSquarePlus size={12} />
                       </button>
@@ -250,7 +332,7 @@ export function SnapshotGalleryView({
                         onClick={(e) => e.stopPropagation()}
                         title="ダウンロード"
                         aria-label="ダウンロード"
-                        className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white transition-colors shadow-sm"
+                        className="min-h-11 min-w-11 p-2 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white transition-colors shadow-sm"
                       >
                         <Download size={12} />
                       </a>
@@ -263,22 +345,13 @@ export function SnapshotGalleryView({
                       }}
                       title="削除"
                       aria-label="削除"
-                      className="p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-red-400 transition-colors shadow-sm"
+                      className="min-h-11 min-w-11 p-2 rounded-md bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-red-400 transition-colors shadow-sm"
                     >
                       <Trash2 size={12} />
                     </button>
+                    </div>
                   </div>
                 )}
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <p className="text-xs text-zinc-300">
-                    {new Date(snap.created_at).toLocaleDateString('ja-JP', {
-                      month: 'numeric',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
-                </div>
               </div>
             )
           })}

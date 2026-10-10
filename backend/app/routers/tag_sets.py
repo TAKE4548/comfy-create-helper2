@@ -28,7 +28,8 @@ def _tagset_to_schema(ts: models.TagSet, db: Session) -> schemas.TagSetRead:
             id=s.id,
             tag_set_id=s.tag_set_id,
             name=s.name,
-            tags=json.loads(s.tags) if s.tags else []
+            tags=json.loads(s.tags) if s.tags else [],
+            thumbnail_path=s.thumbnail_path,
         )
         for s in ts.subsets
     ]
@@ -74,7 +75,8 @@ def create_tag_set(payload: schemas.TagSetCreate, db: Session = Depends(get_db))
             subsets.append(
                 models.TagSubset(
                     name=s.name,
-                    tags=json.dumps(s.tags)
+                    tags=json.dumps(s.tags),
+                    thumbnail_path=s.thumbnail_path,
                 )
             )
     ts = models.TagSet(
@@ -122,7 +124,8 @@ def update_tag_set(tag_set_id: int, payload: schemas.TagSetCreate, db: Session =
     ts.subsets = [
         models.TagSubset(
             name=s.name,
-            tags=json.dumps(s.tags)
+            tags=json.dumps(s.tags),
+            thumbnail_path=s.thumbnail_path,
         )
         for s in payload.subsets
     ]

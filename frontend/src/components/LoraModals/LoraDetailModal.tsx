@@ -7,7 +7,7 @@ import { useThumbnailAspectRatio } from '../../hooks/useThumbnailAspectRatio'
 import { ImageCropper } from '../ImageCropper'
 import { TagChipViewer } from '../TagChipViewer'
 import { LoraFormFields } from './LoraFormFields'
-import type { LoraFormState } from './types'
+import { validateLoraStrengthRange, type LoraFormState } from './types'
 
 export interface LoraDetailModalProps {
   lora: Lora
@@ -42,7 +42,8 @@ export function LoraDetailModal({
     file_path: '',
     trigger_word_sets: [],
     thumbnail_path: undefined,
-    target_base_model_ids: []
+    target_base_model_ids: [],
+    example_paths: []
   })
   
   const { data: baseModels } = useQuery({
@@ -90,11 +91,13 @@ export function LoraDetailModal({
   }
 
   const handleStartEdit = () => {
+    const min = lora.recommended_strength_min ?? undefined
+    const max = lora.recommended_strength_max ?? undefined
     setForm({
       model_name: lora.model_name,
       description: lora.description ?? '',
-      recommended_strength_min: lora.recommended_strength_min ?? undefined,
-      recommended_strength_max: lora.recommended_strength_max ?? undefined,
+      recommended_strength_min: min ?? max,
+      recommended_strength_max: max ?? min,
       category_id: lora.category_id ?? undefined,
       file_path: lora.file_path ?? '',
       trigger_word_sets: lora.trigger_word_sets.map((tws) => ({
@@ -103,14 +106,26 @@ export function LoraDetailModal({
       })),
       thumbnail_path: lora.thumbnail_path ?? undefined,
       target_base_model_ids: lora.target_base_model_ids ?? [],
+      example_paths: lora.example_paths ?? [],
     })
     setIsEditing(true)
   }
 
   const handleSave = () => {
-    onSave(lora.id, form)
+    const validationError = validateLoraStrengthRange(form)
+    if (validationError) return
+    const min = form.recommended_strength_min
+    const max = form.recommended_strength_max
+    const normalizedForm = {
+      ...form,
+      recommended_strength_min: min ?? max,
+      recommended_strength_max: max ?? min,
+    }
+    onSave(lora.id, normalizedForm)
     setIsEditing(false)
   }
+
+  const strengthRangeError = validateLoraStrengthRange(form)
 
   const uploadImage = async (blob: Blob): Promise<string> => {
     const formData = new FormData()
@@ -140,11 +155,12 @@ export function LoraDetailModal({
 
   return (
     <>
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-full lg:max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-backdrop items-end md:items-center p-0 md:p-4" onClick={onClose}>
+        <div role="dialog" aria-modal="true" aria-labelledby="lora-detail-title" data-testid="lora-detail-sheet" className="relative mt-auto md:my-auto w-full max-w-full bg-surface rounded-t-2xl rounded-b-none border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col md:max-w-[min(90vw,42.5rem)] md:rounded-2xl md:max-h-[85vh] lg:max-w-[42.5rem]" onClick={(e) => e.stopPropagation()}>
+          <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-zinc-600 md:hidden" />
           <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex-shrink-0">
-            <h2 className="text-sm font-semibold text-zinc-200">{isEditing ? 'Edit LoRA Model' : 'LoRA Model Details'}</h2>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+            <h2 id="lora-detail-title" className="text-sm font-semibold text-zinc-200">{isEditing ? 'Edit LoRA Model' : 'LoRA Model Details'}</h2>
+            <button type="button" aria-label="Close LoRA details" onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[rgba(255,255,255,0.06)] flex-1 overflow-hidden">
             {/* Left Side: Images Preview */}
@@ -266,7 +282,8 @@ export function LoraDetailModal({
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-[rgba(255,255,255,0.06)] mt-4">
                     <button type="button" onClick={() => setIsEditing(false)} className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>
-                    <button type="button" onClick={handleSave} disabled={!form.model_name || isPending} className="flex-1 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all">
+                    <button type="button" onClick={handleSave} aria-describedby={strengthRangeError ? 'lora-strength-error' : undefined}
+                      disabled={!form.model_name || isPending || Boolean(strengthRangeError)} className="flex-1 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all">
                       {isPending ? 'Saving…' : 'Save Changes'}
                     </button>
                   </div>

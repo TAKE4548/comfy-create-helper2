@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Languages,
+  ChevronDown,
   Check,
   RefreshCw,
   AlertCircle,
@@ -15,6 +16,7 @@ import { llmPromptsApi, translateApi } from '../../../api/client'
 import type { LlmPrompt, TranslateTestResponse } from '../../../api/types'
 import { LlmSettingsSection } from './LlmSettingsSection'
 import { TranslationPreviewCard } from './TranslationPreviewCard'
+import { DictionaryPanel } from './DictionaryPanel'
 
 type TranslationProvider = 'google_cloud' | 'deepl' | 'llm' | 'fugumt'
 
@@ -52,10 +54,18 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   const providerRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Test connection state
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<TranslateTestResponse | null>(null)
+  const testRequestId = useRef(0)
+
+  const invalidateConnectionTest = () => {
+    testRequestId.current += 1
+    setIsTesting(false)
+    setTestResult(null)
+  }
 
   // Sync state from fetched prompts
   useEffect(() => {
@@ -152,8 +162,13 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
         setCredentialsDirty(apiKey !== submitted.apiKey || apiUrl !== submitted.apiUrl)
       }
       qc.invalidateQueries({ queryKey: ['llm-prompts'] })
+      setSaveError(null)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+    },
+    onError: (error) => {
+      setSaved(false)
+      setSaveError(error instanceof Error ? error.message : '保存に失敗しました')
     },
   })
 
@@ -165,6 +180,8 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   })
 
   const handleTestConnection = async () => {
+    if (isTesting) return
+    const requestId = ++testRequestId.current
     setIsTesting(true)
     setTestResult(null)
     try {
@@ -177,24 +194,31 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
               api_url: apiUrl || undefined,
             }
       )
-      setTestResult(res)
+      if (requestId === testRequestId.current) setTestResult(res)
     } catch (err: any) {
-      setTestResult({
-        success: false,
-        sample_translation: '',
-        error: err.message || '接続テストに失敗しました',
-      })
+      if (requestId === testRequestId.current) {
+        setTestResult({
+          success: false,
+          sample_translation: '',
+          error: err.message || '接続テストに失敗しました',
+        })
+      }
     } finally {
-      setIsTesting(false)
+      if (requestId === testRequestId.current) setIsTesting(false)
     }
   }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
+    setSaved(false)
+    setSaveError(null)
     saveSettingsMutation.mutate({ provider, apiKey, apiUrl })
   }
 
   const setDraftProvider = (next: TranslationProvider) => {
+    invalidateConnectionTest()
+    setSaved(false)
+    setSaveError(null)
     setProvider(next)
     setProviderDirty(next !== savedProvider)
     if (provider === 'llm' && next !== 'llm') providerRef.current?.focus()
@@ -236,16 +260,16 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
         <div className="flex items-center gap-2">
           {saved && (
             <span className="text-xs text-accent-green flex items-center gap-1 font-medium animate-fade-in">
-              <Check size={13} /> 保存完了
+              <Check size={13} /> 設定を保存しました
             </span>
           )}
-          <span
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
             className={`text-zinc-500 transition-transform duration-200 ${
               isExpanded ? 'rotate-180' : ''
             }`}
-          >
-            ▼
-          </span>
+          />
         </div>
       </button>
 
@@ -380,6 +404,9 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                         type={showApiKey ? 'text' : 'password'}
                         value={apiKey}
                         onChange={(e) => {
+                          invalidateConnectionTest()
+                          setSaved(false)
+                          setSaveError(null)
                           const value = e.target.value
                           setApiKey(value)
                           setCredentialsDirty(savedCredentials === null || value !== savedCredentials.apiKey || apiUrl !== savedCredentials.apiUrl)
@@ -409,6 +436,9 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                       type="text"
                       value={apiUrl}
                       onChange={(e) => {
+                        invalidateConnectionTest()
+                        setSaved(false)
+                        setSaveError(null)
                         const value = e.target.value
                         setApiUrl(value)
                         setCredentialsDirty(savedCredentials === null || apiKey !== savedCredentials.apiKey || value !== savedCredentials.apiUrl)
@@ -437,6 +467,8 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
                 <TranslationPreviewCard provider={provider} enabled={previewEnabled} debounceMs={debounceMs} />
               </div>
 
+              <DictionaryPanel />
+
               <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3 space-y-2">
                 <button type="button" className="text-xs font-semibold text-zinc-200" aria-expanded={translationExpanded} onClick={() => setTranslationExpanded((value) => !value)}>
                   翻訳用LLM詳細設定
@@ -455,6 +487,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
               </div>
 
               {/* Action Buttons: Save & Test */}
+              {saveError && <p role="alert" className="text-xs text-red-300">保存に失敗しました: {saveError}（設定は未保存です）</p>}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 <div className="flex items-center gap-2">
                   <button

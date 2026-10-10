@@ -88,6 +88,7 @@ export function useBulkDownload({
 
         let fileIndex = 1
         const total = orderedIds.length
+        let hasDownloadFailure = false
 
         for (let i = 0; i < total; i++) {
           if (abortControllerRef.current?.signal.aborted) {
@@ -106,7 +107,10 @@ export function useBulkDownload({
             }
           }
 
-          if (!imgPath) continue
+          if (!imgPath) {
+            hasDownloadFailure = true
+            continue
+          }
 
           let originalName = getFilenameFromPath(imgPath, id)
           if (isAlbum) {
@@ -126,6 +130,7 @@ export function useBulkDownload({
             const response = await fetch(imgPath, { signal: abortControllerRef.current?.signal })
             if (!response.ok) {
               console.error(`Failed to fetch image for snapshot ${id}: ${response.statusText}`)
+              hasDownloadFailure = true
               continue
             }
             const blob = await response.blob()
@@ -133,7 +138,13 @@ export function useBulkDownload({
           } catch (e: any) {
             if (e.name === 'AbortError') throw e
             console.error(`Error downloading snapshot ${id}:`, e)
+            hasDownloadFailure = true
           }
+        }
+
+        if (hasDownloadFailure) {
+          setError('一部の選択画像をダウンロードできませんでした。')
+          return false
         }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' })

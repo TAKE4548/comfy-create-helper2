@@ -388,6 +388,8 @@ describe('SpeechBubbleControls', () => {
     })
 
     const deleteButtons = screen.getAllByTitle('プリセットを削除')
+    expect(deleteButtons[0]).toHaveAttribute('aria-label', 'プリセット「コミック標準」を削除')
+    expect(deleteButtons[0].querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     fireEvent.click(deleteButtons[0])
 
     await waitFor(() => {
@@ -488,6 +490,12 @@ describe('SpeechBubbleControls', () => {
     fireEvent.click(cancelBtn)
 
     expect(screen.queryByTestId('preset-overwrite-modal')).toBeNull()
+
+    fireEvent.click(screen.getAllByTitle('現在の修飾で上書き')[0])
+    const closeButton = screen.getByRole('button', { name: '上書き保存を閉じる' })
+    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.click(closeButton)
+    expect(screen.queryByTestId('preset-overwrite-modal')).toBeNull()
     expect(speechBubblePresetsApi.update).not.toHaveBeenCalled()
   })
 
@@ -578,15 +586,18 @@ describe('SpeechBubbleControls', () => {
 
     renderWithQuery(<SpeechBubbleControls {...defaultProps} />)
     await waitFor(() => {
-      expect(screen.getByText(/💬 テキスト付き \(1\)/)).toBeDefined()
-      expect(screen.getByText(/🎨 スタイル専用 \(1\)/)).toBeDefined()
+      expect(screen.getByText(/テキスト付き \(1\)/)).toBeDefined()
+      expect(screen.getByText(/スタイル専用 \(1\)/)).toBeDefined()
       expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
       expect(screen.getByText('スタイルのみA (縦)')).toBeDefined()
     })
 
     // Toggle collapse for with-text section
     const toggleWithTextBtn = screen.getByLabelText('テキスト付きプリセットの折り畳み切替')
+    expect(toggleWithTextBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(toggleWithTextBtn.querySelector('svg')).toHaveClass('lucide-chevron-down')
     fireEvent.click(toggleWithTextBtn)
+    expect(toggleWithTextBtn.querySelector('svg')).toHaveClass('lucide-chevron-right')
     expect(screen.queryByText('テキスト付きB (縦)')).toBeNull()
     expect(screen.getByText('スタイルのみA (縦)')).toBeDefined()
 
@@ -596,7 +607,9 @@ describe('SpeechBubbleControls', () => {
 
     // Toggle collapse for without-text section
     const toggleWithoutTextBtn = screen.getByLabelText('スタイル専用プリセットの折り畳み切替')
+    expect(toggleWithoutTextBtn.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     fireEvent.click(toggleWithoutTextBtn)
+    expect(toggleWithoutTextBtn.querySelector('svg')).toHaveClass('lucide-chevron-right')
     expect(screen.queryByText('スタイルのみA (縦)')).toBeNull()
     expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
   })
@@ -894,7 +907,7 @@ describe('SpeechBubbleControls', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('口調プリセット選択')).toBeDefined()
       expect(screen.getByPlaceholderText(/口調の指示を入力/)).toBeDefined()
-      expect(screen.getByText('✨ 口調変換 (LLM)')).toBeDefined()
+      expect(screen.getByRole('button', { name: '口調変換 (LLM)' })).toBeDefined()
       expect(screen.getByText('ツンデレ風')).toBeDefined()
       expect(screen.getByText('お嬢様風')).toBeDefined()
     })
@@ -936,7 +949,7 @@ describe('SpeechBubbleControls', () => {
     })
 
     // Click rewrite
-    const rewriteBtn = screen.getByText('✨ 口調変換 (LLM)')
+    const rewriteBtn = screen.getByRole('button', { name: '口調変換 (LLM)' })
     fireEvent.click(rewriteBtn)
 
     await waitFor(() => {
@@ -979,7 +992,7 @@ describe('SpeechBubbleControls', () => {
     fireEvent.click(screen.getByTestId('tone-rewrite-include-image'))
 
     // Click rewrite
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(speechTonePresetsApi.rewrite).toHaveBeenCalledWith({
@@ -1011,7 +1024,7 @@ describe('SpeechBubbleControls', () => {
       expect(screen.getByDisplayValue('上品なお嬢様言葉で「〜ですわ」をつけて。')).toBeDefined()
     })
 
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(screen.getByText('セリフに適用')).toBeDefined()
@@ -1037,7 +1050,7 @@ describe('SpeechBubbleControls', () => {
 
     const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/)
     fireEvent.change(promptTextarea, { target: { value: 'カスタム口調指示' } })
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(screen.getByText('破棄')).toBeDefined()
@@ -1060,7 +1073,7 @@ describe('SpeechBubbleControls', () => {
 
     const promptTextarea = screen.getByPlaceholderText(/口調の指示を入力/)
     fireEvent.change(promptTextarea, { target: { value: 'カスタム口調指示' } })
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(screen.getByText('LLMタイムアウト')).toBeDefined()
@@ -1085,7 +1098,7 @@ describe('SpeechBubbleControls', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')).toBeDefined()
     })
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('tone-rewrite-thinking')).toBeDefined()
@@ -1128,7 +1141,7 @@ describe('SpeechBubbleControls', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回し。')).toBeDefined()
     })
-    fireEvent.click(screen.getByText('✨ 口調変換 (LLM)'))
+    fireEvent.click(screen.getByRole('button', { name: '口調変換 (LLM)' }))
 
     await waitFor(() => {
       expect(screen.getByText('べ、別に心配してないわよ。')).toBeDefined()
@@ -1359,7 +1372,7 @@ describe('SpeechBubbleControls', () => {
     const onDuplicateMock = vi.fn()
     renderWithQuery(<SpeechBubbleControls {...defaultProps} onDuplicate={onDuplicateMock} />)
 
-    const dupBtn = screen.getByText('📋 この吹き出しを複製')
+    const dupBtn = screen.getByRole('button', { name: 'この吹き出しを複製' })
     fireEvent.click(dupBtn)
     expect(onDuplicateMock).toHaveBeenCalledTimes(1)
   })
@@ -1452,8 +1465,8 @@ describe('SpeechBubbleControls', () => {
       expect(screen.getByText('セリフ入りプリセット (横)')).toBeDefined()
     })
 
-    // Verify 💬 badge is shown
-    expect(screen.getByText('💬')).toBeDefined()
+    // The preset content remains visible independently of its decorative badge icon.
+    expect(screen.getByText('セリフ入りプリセット (横)')).toBeDefined()
 
     // Click preset
     fireEvent.click(screen.getByText('セリフ入りプリセット (横)'))
@@ -1684,6 +1697,4 @@ describe('SpeechBubbleControls', () => {
     })
   })
 })
-
-
 

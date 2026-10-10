@@ -368,6 +368,11 @@ describe('useGeneratePageState', () => {
     await act(async () => {
       await vi.mocked(workflowsApi.get).mock.results.at(-1)?.value
     })
+    await waitFor(() => {
+      expect(result.current.workflow?.mappings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'positive_prompt', input_type: 'textarea' }),
+      ]))
+    })
 
     const preset1: WorkflowPreset = {
       id: 10,

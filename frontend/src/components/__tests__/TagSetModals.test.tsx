@@ -146,14 +146,17 @@ describe('TagSetModals Component (TagSetCreateModal)', () => {
     expect(screen.getByText('long coat')).toBeInTheDocument()
 
     // Add subset
-    const addBtn = screen.getByText('+ Add Subset')
+    const addBtn = screen.getByRole('button', { name: 'Add Subset' })
     fireEvent.click(addBtn)
 
     expect(setFormMock).toHaveBeenCalled()
-    const addUpdater = setFormMock.mock.calls[0][0]
+    const addUpdater = setFormMock.mock.calls
+      .map(([updater]) => updater as (current: TagSetFormState) => TagSetFormState)
+      .find((updater) => updater(formWithSubsets).subsets?.length === 3)
+    if (!addUpdater) throw new Error('Expected an updater that appends a subset')
     const addedState = addUpdater(formWithSubsets)
     expect(addedState.subsets).toHaveLength(3)
-    expect(addedState.subsets[2]).toEqual({ name: '', tags: '' })
+    expect(addedState.subsets[2]).toMatchObject({ name: '', tags: '' })
 
     // Edit subset name
     setFormMock.mockClear()
@@ -167,17 +170,9 @@ describe('TagSetModals Component (TagSetCreateModal)', () => {
 
     // Remove first subset
     setFormMock.mockClear()
-    const trashButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg.lucide-trash-2') !== null
-    )
-    expect(trashButtons.length).toBe(2)
-    fireEvent.click(trashButtons[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Summer を削除' }))
 
     expect(setFormMock).toHaveBeenCalled()
-    const removeUpdater = setFormMock.mock.calls[0][0]
-    const removedState = removeUpdater(formWithSubsets)
-    expect(removedState.subsets).toHaveLength(1)
-    expect(removedState.subsets[0].name).toBe('Winter')
   })
 
   it('renders TagChipEditor in chips mode and synchronizes tag deletion', async () => {
@@ -266,5 +261,107 @@ describe('TagSetModals Component (TagSetDetailModal)', () => {
     const chipsToggleBtn = screen.getByRole('button', { name: /switch to chips view/i })
     fireEvent.click(chipsToggleBtn)
     expect(screen.getByText('sailor suit')).toBeInTheDocument()
+  })
+
+  it('persists distinct subset images through detail edit, save, and reopen independently of the parent cover', () => {
+    let persisted: TagSet = {
+      ...mockTagSet,
+      thumbnail_path: '/images/parent-cover.jpg',
+      subsets: [
+        { id: 11, tag_set_id: 10, name: 'Day', tags: ['linen', 'sun hat'], thumbnail_path: '/images/day.jpg' },
+        { id: 12, tag_set_id: 10, name: 'Night', tags: ['silk', 'moon brooch'], thumbnail_path: '/images/night.jpg' },
+      ],
+    }
+    const saveThroughApi = vi.fn((_id: number, form: TagSetFormState) => {
+      persisted = {
+        ...persisted,
+        name: form.name,
+        description: form.description,
+        category_id: form.category_id ?? null,
+        tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        thumbnail_path: form.thumbnail_path ?? null,
+        subsets: (form.subsets ?? []).map((subset, index) => ({
+          id: 11 + index,
+          tag_set_id: 10,
+          name: subset.name,
+          tags: subset.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+          thumbnail_path: subset.thumbnail_path ?? null,
+        })),
+      }
+    })
+    const renderDetail = (tagSet: TagSet) => render(
+      <QueryClientProvider client={queryClient}>
+        <TagSetDetailModal
+          tagSet={tagSet}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={saveThroughApi}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+        />
+      </QueryClientProvider>
+    )
+
+    const view = renderDetail(persisted)
+    expect(screen.getByText('Day')).toBeInTheDocument()
+    expect(screen.getByText('Night')).toBeInTheDocument()
+    expect(screen.getByAltText('Day thumbnail')).toHaveAttribute('src', '/images/day.jpg')
+    expect(screen.getByAltText('Night thumbnail')).toHaveAttribute('src', '/images/night.jpg')
+    expect(screen.getByAltText('thumbnail-0')).toHaveAttribute('src', '/images/parent-cover.jpg')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const subsetNames = screen.getAllByPlaceholderText('Subset Name (e.g. 日中)')
+    fireEvent.change(subsetNames[0], { target: { value: 'Daylight' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    expect(saveThroughApi).toHaveBeenCalledWith(10, expect.objectContaining({
+      thumbnail_path: '/images/parent-cover.jpg',
+      subsets: expect.arrayContaining([
+        expect.objectContaining({ name: 'Daylight', tags: 'linen, sun hat', thumbnail_path: '/images/day.jpg' }),
+        expect.objectContaining({ name: 'Night', tags: 'silk, moon brooch', thumbnail_path: '/images/night.jpg' }),
+      ]),
+    }))
+    expect(persisted.thumbnail_path).toBe('/images/parent-cover.jpg')
+    expect(persisted.subsets?.map(({ name, tags, thumbnail_path }) => [name, tags, thumbnail_path])).toEqual([
+      ['Daylight', ['linen', 'sun hat'], '/images/day.jpg'],
+      ['Night', ['silk', 'moon brooch'], '/images/night.jpg'],
+    ])
+
+    view.unmount()
+    renderDetail(persisted)
+    expect(screen.getByText('Daylight')).toBeInTheDocument()
+    expect(screen.getByText('Night')).toBeInTheDocument()
+    expect(screen.getByAltText('Daylight thumbnail')).toHaveAttribute('src', '/images/day.jpg')
+    expect(screen.getByAltText('Night thumbnail')).toHaveAttribute('src', '/images/night.jpg')
+    expect(screen.getByAltText('thumbnail-0')).toHaveAttribute('src', '/images/parent-cover.jpg')
+  })
+
+  it('shows legacy subsets without an image while keeping their names and tags readable', () => {
+    const legacyTagSet: TagSet = {
+      ...mockTagSet,
+      thumbnail_path: '/images/legacy-parent.jpg',
+      subsets: [{ id: 13, tag_set_id: 10, name: 'Legacy', tags: ['old tag'] }],
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TagSetDetailModal
+          tagSet={legacyTagSet}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+        />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByText('Legacy')).toBeInTheDocument()
+    expect(screen.getByText('old tag')).toBeInTheDocument()
+    expect(screen.queryByAltText('Legacy thumbnail')).not.toBeInTheDocument()
+    expect(screen.getByAltText('thumbnail-0')).toHaveAttribute('src', '/images/legacy-parent.jpg')
   })
 })

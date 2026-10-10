@@ -1,0 +1,153 @@
+# REQ-334 実行タスク一覧
+
+物理Task Cardを正本として生成。147カード、最長依存経路8カード。rootが調整し、所有ファイルを重ねず最大3 Engineerで実行した。完了はカードの局所検証結果であり、全102ACの判定は受入証跡表による。
+
+| ID | 状態 | 依存 |
+|---|---|---|
+| REQ-334-T1 | done | なし |
+| REQ-334-T2 | done | REQ-334-T1 |
+| REQ-334-T3 | done | REQ-334-T1 |
+| REQ-334-T4 | done | なし |
+| REQ-334-T5 | done | REQ-334-T4 |
+| REQ-334-T6 | done | REQ-334-T27, REQ-334-T56, REQ-334-T63 |
+| REQ-334-T7 | done | REQ-334-T5 |
+| REQ-334-T8 | done | REQ-334-T1 |
+| REQ-334-T9 | done | REQ-334-T1 |
+| REQ-334-T10 | done | REQ-334-T1, REQ-334-T2, REQ-334-T3, REQ-334-T4, REQ-334-T5, REQ-334-T6, REQ-334-T7, REQ-334-T8, REQ-334-T9, REQ-334-T15, REQ-334-T18, REQ-334-T19, REQ-334-T21, REQ-334-T25, REQ-334-T26, REQ-334-T27, REQ-334-T28, REQ-334-T29, REQ-334-T30, REQ-334-T31, REQ-334-T32, REQ-334-T33, REQ-334-T40, REQ-334-T41, REQ-334-T42, REQ-334-T43, REQ-334-T44, REQ-334-T55, REQ-334-T56, REQ-334-T57, REQ-334-T58, REQ-334-T59, REQ-334-T63, REQ-334-T64, REQ-334-T65, REQ-334-T67, REQ-334-T68, REQ-334-T69, REQ-334-T70, REQ-334-T71, REQ-334-T73, REQ-334-T74, REQ-334-T75, REQ-334-T76, REQ-334-T77, REQ-334-T78, REQ-334-T79, REQ-334-T80, REQ-334-T82 |
+| REQ-334-T11 | done | なし |
+| REQ-334-T12 | done | REQ-334-T11 |
+| REQ-334-T13 | done | REQ-334-T11, REQ-334-T22 |
+| REQ-334-T14 | done | REQ-334-T11 |
+| REQ-334-T15 | done | REQ-334-T5 |
+| REQ-334-T16 | done | REQ-334-T11, REQ-334-T24 |
+| REQ-334-T17 | done | REQ-334-T12, REQ-334-T13 |
+| REQ-334-T18 | done | なし |
+| REQ-334-T19 | done | なし |
+| REQ-334-T20 | done | REQ-334-T19 |
+| REQ-334-T21 | done | REQ-334-T19 |
+| REQ-334-T22 | done | なし |
+| REQ-334-T23 | done | なし |
+| REQ-334-T24 | done | REQ-334-T11 |
+| REQ-334-T25 | done | なし |
+| REQ-334-T26 | done | なし |
+| REQ-334-T27 | done | なし |
+| REQ-334-T28 | done | REQ-334-T25 |
+| REQ-334-T29 | done | REQ-334-T25, REQ-334-T58, REQ-334-T59 |
+| REQ-334-T30 | done | REQ-334-T25 |
+| REQ-334-T31 | done | REQ-334-T26 |
+| REQ-334-T32 | done | REQ-334-T9 |
+| REQ-334-T33 | done | REQ-334-T25, REQ-334-T32 |
+| REQ-334-T34 | done | REQ-334-T20 |
+| REQ-334-T35 | done | REQ-334-T20 |
+| REQ-334-T36 | done | REQ-334-T23 |
+| REQ-334-T37 | done | REQ-334-T24, REQ-334-T60, REQ-334-T61 |
+| REQ-334-T38 | done | REQ-334-T11, REQ-334-T24 |
+| REQ-334-T39 | done | REQ-334-T24 |
+| REQ-334-T40 | done | REQ-334-T41, REQ-334-T59 |
+| REQ-334-T41 | done | なし |
+| REQ-334-T42 | done | REQ-334-T25 |
+| REQ-334-T43 | done | REQ-334-T42, REQ-334-T44, REQ-334-T59 |
+| REQ-334-T44 | done | なし |
+| REQ-334-T45 | done | REQ-334-T20, REQ-334-T23, REQ-334-T34, REQ-334-T35, REQ-334-T36, REQ-334-T47, REQ-334-T50, REQ-334-T51, REQ-334-T52, REQ-334-T53, REQ-334-T54, REQ-334-T64, REQ-334-T66, REQ-334-T81 |
+| REQ-334-T46 | done | REQ-334-T11, REQ-334-T13, REQ-334-T14, REQ-334-T22, REQ-334-T24, REQ-334-T37, REQ-334-T38, REQ-334-T39, REQ-334-T48, REQ-334-T62, REQ-334-T70, REQ-334-T72 |
+| REQ-334-T47 | done | REQ-334-T12, REQ-334-T17 |
+| REQ-334-T48 | done | REQ-334-T13, REQ-334-T17 |
+| REQ-334-T49 | done | REQ-334-T19 |
+| REQ-334-T50 | done | なし |
+| REQ-334-T51 | done | REQ-334-T50 |
+| REQ-334-T52 | done | REQ-334-T51 |
+| REQ-334-T53 | done | REQ-334-T52 |
+| REQ-334-T54 | done | REQ-334-T35, REQ-334-T53 |
+| REQ-334-T55 | done | REQ-334-T28 |
+| REQ-334-T56 | done | REQ-334-T27 |
+| REQ-334-T57 | done | REQ-334-T1 |
+| REQ-334-T58 | done | なし |
+| REQ-334-T59 | done | REQ-334-T41, REQ-334-T44, REQ-334-T58 |
+| REQ-334-T60 | done | REQ-334-T24 |
+| REQ-334-T61 | done | REQ-334-T59, REQ-334-T60 |
+| REQ-334-T62 | done | REQ-334-T39, REQ-334-T65 |
+| REQ-334-T63 | done | REQ-334-T27, REQ-334-T56 |
+| REQ-334-T64 | done | REQ-334-T25, REQ-334-T36 |
+| REQ-334-T65 | done | REQ-334-T3 |
+| REQ-334-T66 | done | REQ-334-T34, REQ-334-T35, REQ-334-T54 |
+| REQ-334-T67 | done | REQ-334-T31, REQ-334-T65 |
+| REQ-334-T68 | done | REQ-334-T18 |
+| REQ-334-T69 | done | REQ-334-T57 |
+| REQ-334-T70 | done | REQ-334-T39, REQ-334-T65 |
+| REQ-334-T71 | done | REQ-334-T6, REQ-334-T65 |
+| REQ-334-T72 | done | REQ-334-T24 |
+| REQ-334-T73 | done | REQ-334-T65 |
+| REQ-334-T74 | done | なし |
+| REQ-334-T75 | done | REQ-334-T29 |
+| REQ-334-T76 | done | REQ-334-T40 |
+| REQ-334-T77 | done | REQ-334-T28 |
+| REQ-334-T78 | done | REQ-334-T57 |
+| REQ-334-T79 | done | REQ-334-T56, REQ-334-T63 |
+| REQ-334-T80 | done | REQ-334-T19, REQ-334-T21, REQ-334-T49 |
+| REQ-334-T81 | done | REQ-334-T20, REQ-334-T53 |
+| REQ-334-T82 | done | REQ-334-T69 |
+| REQ-334-T83 | done | なし |
+| REQ-334-T84 | done | なし |
+| REQ-334-T85 | done | なし |
+| REQ-334-T86 | done | REQ-334-T8 |
+| REQ-334-T87 | done | REQ-334-T80 |
+| REQ-334-T88 | done | REQ-334-T86 |
+| REQ-334-T89 | done | REQ-334-T82 |
+| REQ-334-T90 | done | REQ-334-T81 |
+| REQ-334-T91 | done | REQ-334-T81 |
+| REQ-334-T92 | done | REQ-334-T80 |
+| REQ-334-T93 | done | REQ-334-T91 |
+| REQ-334-T94 | done | REQ-334-T36 |
+| REQ-334-T95 | done | REQ-334-T94, REQ-334-T92 |
+| REQ-334-T96 | done | REQ-334-T89 |
+| REQ-334-T97 | done | REQ-334-T88 |
+| REQ-334-T98 | done | REQ-334-T95 |
+| REQ-334-T99 | done | REQ-334-T96 |
+| REQ-334-T100 | done | REQ-334-T99 |
+| REQ-334-T101 | done | REQ-334-T92 |
+| REQ-334-T102 | done | REQ-334-T97 |
+| REQ-334-T103 | done | REQ-334-T27 |
+| REQ-334-T104 | done | REQ-334-T18 |
+| REQ-334-T105 | done | REQ-334-T8 |
+| REQ-334-T106 | done | なし |
+| REQ-334-T107 | done | なし |
+| REQ-334-T108 | done | REQ-334-T106 |
+| REQ-334-T109 | done | REQ-334-T106 |
+| REQ-334-T110 | done | REQ-334-T106, REQ-334-T109 |
+| REQ-334-T111 | done | REQ-334-T109, REQ-334-T110 |
+| REQ-334-T112 | done | REQ-334-T109 |
+| REQ-334-T113 | done | REQ-334-T22 |
+| REQ-334-T114 | done | REQ-334-T41 |
+| REQ-334-T115 | done | REQ-334-T73 |
+| REQ-334-T116 | done | REQ-334-T114, REQ-334-T44 |
+| REQ-334-T117 | done | REQ-334-T108, REQ-334-T111, REQ-334-T121 |
+| REQ-334-T118 | done | なし |
+| REQ-334-T119 | done | なし |
+| REQ-334-T120 | done | なし |
+| REQ-334-T121 | done | なし |
+| REQ-334-T122 | done | なし |
+| REQ-334-T123 | done | REQ-334-T93 |
+| REQ-334-T124 | done | REQ-334-T118, REQ-334-T120 |
+| REQ-334-T125 | done | REQ-334-T113 |
+| REQ-334-T126 | done | REQ-334-T119 |
+| REQ-334-T127 | done | REQ-334-T122 |
+| REQ-334-T128 | done | REQ-334-T127 |
+| REQ-334-T129 | done | REQ-334-T112 |
+| REQ-334-T130 | done | REQ-334-T110 |
+| REQ-334-T131 | done | REQ-334-T110 |
+| REQ-334-T132 | done | REQ-334-T128 |
+| REQ-334-T133 | done | REQ-334-T128 |
+| REQ-334-T134 | done | REQ-334-T110 |
+| REQ-334-T135 | done | REQ-334-T130 |
+| REQ-334-T136 | done | REQ-334-T129 |
+| REQ-334-T137 | done | REQ-334-T126 |
+| REQ-334-T138 | done | REQ-334-T137 |
+| REQ-334-T139 | done | REQ-334-T138 |
+| REQ-334-T140 | done | REQ-334-T137 |
+| REQ-334-T141 | done | REQ-334-T140 |
+| REQ-334-T142 | done | REQ-334-T137 |
+| REQ-334-T143 | done | REQ-334-T136 |
+| REQ-334-T144 | done | REQ-334-T142 |
+| REQ-334-T145 | done | REQ-334-T140 |
+| REQ-334-T146 | done | REQ-334-T145 |
+| REQ-334-T147 | done | REQ-334-T86 |

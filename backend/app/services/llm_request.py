@@ -109,3 +109,28 @@ async def get_available_models() -> list[str]:
     except Exception as e:
         logger.error(f"Failed to get available models from {url}: {e}")
         return []
+
+
+async def get_model_context_limit(model_id: str) -> int | None:
+    """Return an authoritative context limit from the selected model's metadata."""
+    url = f"{settings.llm_base_url}/models"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+        models = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(models, list):
+            return None
+        for model_info in models:
+            if not isinstance(model_info, dict) or model_info.get("id") != model_id:
+                continue
+            for key in ("context_length", "max_context_length"):
+                value = model_info.get(key)
+                if type(value) is int and value > 0:
+                    return value
+            return None
+        return None
+    except Exception as e:
+        logger.warning("Failed to read context metadata for model %s: %s", model_id, e)
+        return None

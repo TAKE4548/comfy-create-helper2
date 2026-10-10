@@ -25,6 +25,52 @@ describe('useStudioStore', () => {
     expect(useStudioStore.getState().currentStep).toBe(4)
   })
 
+  it('keeps post-training evaluation separate and resets it on stage, project, and studio changes', () => {
+    const store = useStudioStore.getState()
+    store.setActiveProject({ id: 1 } as DatasetProject)
+    store.setEvaluationView(true)
+    expect(useStudioStore.getState().evaluationView).toBe(true)
+
+    useStudioStore.getState().setCurrentStep(3)
+    expect(useStudioStore.getState().currentStep).toBe(3)
+    expect(useStudioStore.getState().evaluationView).toBe(false)
+
+    useStudioStore.getState().setEvaluationView(true)
+    useStudioStore.getState().setActiveProject(null)
+    expect(useStudioStore.getState().currentStep).toBe(1)
+    expect(useStudioStore.getState().evaluationView).toBe(false)
+
+    useStudioStore.getState().setEvaluationView(true)
+    useStudioStore.getState().resetStudio()
+    expect(useStudioStore.getState().evaluationView).toBe(false)
+  })
+
+  it('preserves the current stage and evaluation view when the same project is refreshed', () => {
+    const project = { id: 12, name: 'Dataset' } as DatasetProject
+    useStudioStore.getState().setActiveProject(project)
+    useStudioStore.getState().setCurrentStep(3)
+    useStudioStore.getState().setEvaluationView(true)
+
+    useStudioStore.getState().setActiveProject({ ...project, name: 'Dataset refreshed' })
+
+    expect(useStudioStore.getState().activeProject?.name).toBe('Dataset refreshed')
+    expect(useStudioStore.getState().currentStep).toBe(3)
+    expect(useStudioStore.getState().evaluationView).toBe(true)
+  })
+
+  it('resets the stage and evaluation view only when project identity changes', () => {
+    const project = { id: 12, name: 'Dataset' } as DatasetProject
+    useStudioStore.getState().setActiveProject(project)
+    useStudioStore.getState().setCurrentStep(3)
+    useStudioStore.getState().setEvaluationView(true)
+
+    useStudioStore.getState().setActiveProject({ ...project, id: 13 })
+
+    expect(useStudioStore.getState().activeProject?.id).toBe(13)
+    expect(useStudioStore.getState().currentStep).toBe(1)
+    expect(useStudioStore.getState().evaluationView).toBe(false)
+  })
+
   it('manages activeProject and items lifecycle', () => {
     const mockProject: DatasetProject = {
       id: 1,

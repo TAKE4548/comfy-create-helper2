@@ -96,6 +96,17 @@ describe('LoraModals Component (LoraRegisterModal)', () => {
     })
   })
 
+  it('keeps registration as a labelled mobile sheet and caps its centered desktop width', () => {
+    const { container } = renderComponent()
+    const dialog = screen.getByRole('dialog', { name: 'Register LoRA Model' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog).toHaveClass('max-w-full', 'md:max-w-[min(90vw,42.5rem)]', 'lg:max-w-[42.5rem]')
+    expect(dialog).toHaveClass('md:rounded-2xl', 'md:max-h-[85vh]')
+    expect(dialog).not.toHaveClass('sm:max-w-3xl', 'sm:rounded-2xl')
+    expect(dialog.querySelector('[aria-hidden="true"]')).toHaveClass('md:hidden')
+    expect(container.querySelector('.modal-backdrop')).toHaveClass('md:items-center')
+  })
+
   it('auto-fills file_path and model_name when an unregistered model is selected', async () => {
     renderComponent()
 
@@ -148,7 +159,7 @@ describe('LoraModals Component (LoraRegisterModal)', () => {
     expect(screen.getByDisplayValue('Hair')).toBeInTheDocument()
 
     // Add set
-    const addBtn = screen.getByText('+ Add Set')
+    const addBtn = screen.getByRole('button', { name: 'Add Set' })
     fireEvent.click(addBtn)
 
     expect(setFormMock).toHaveBeenCalled()
@@ -262,5 +273,30 @@ describe('LoraModals Component (LoraDetailModal)', () => {
     const chipsToggleBtn = screen.getByRole('button', { name: /switch to chips view/i })
     fireEvent.click(chipsToggleBtn)
     expect(screen.getByText('neon lighting')).toBeInTheDocument()
+  })
+
+  it('keeps detail as a labelled mobile sheet and caps its centered desktop width', () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LoraDetailModal
+          lora={mockLora}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+        />
+      </QueryClientProvider>
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'LoRA Model Details' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog).toHaveClass('max-w-full', 'md:max-w-[min(90vw,42.5rem)]', 'lg:max-w-[42.5rem]')
+    expect(dialog).toHaveClass('md:rounded-2xl', 'md:max-h-[85vh]')
+    expect(dialog).not.toHaveClass('sm:max-w-5xl', 'sm:rounded-2xl')
+    expect(dialog.querySelector('[aria-hidden="true"]')).toHaveClass('md:hidden')
+    expect(dialog.querySelector('.grid')).toHaveClass('md:grid-cols-2')
   })
 })

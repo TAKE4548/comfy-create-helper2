@@ -30,11 +30,24 @@ import {
 import { ImageCropper } from '../components/ImageCropper'
 import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
-import { useMultiSelect } from '../hooks/useMultiSelect'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
+import { useCollectionSelection } from '../hooks/useCollectionSelection'
+import { parseTagSetTokens } from '../components/TagSetModals/TagSetFormFields'
 
 const EMPTY_FORM: TagSetFormState = { name: '', description: '', category_id: undefined, tags: '', subsets: [], target_base_model_ids: [] }
+
+const serializeSubsetForms = (subsets: TagSetFormState['subsets']) => (subsets || []).map((subset) => ({
+  name: subset.name,
+  tags: parseTagSetTokens(subset.tags),
+  thumbnail_path: subset.thumbnail_path ?? null,
+}))
+
+const preserveTagSetSubsets = (subsets: TagSet['subsets']) => (subsets || []).map((subset) => ({
+  name: subset.name,
+  tags: subset.tags,
+  thumbnail_path: subset.thumbnail_path ?? null,
+}))
 
 interface DragHandleListeners {
   onMouseDown?: (event: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void
@@ -52,16 +65,6 @@ interface DragHandleRenderProps {
 function SortableTagSetCard({ id, children, disabled }: { id: number; children: (handleProps: DragHandleRenderProps) => React.ReactNode; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
 
-  const mouseListeners: React.DOMAttributes<HTMLDivElement> = {
-    onMouseDown: listeners?.onMouseDown as any,
-    onKeyDown: listeners?.onKeyDown as any,
-  }
-
-  const touchHandleListeners: DragHandleListeners = {
-    onTouchStart: listeners?.onTouchStart as any,
-    onMouseDown: listeners?.onMouseDown as any,
-  }
-
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -70,8 +73,8 @@ function SortableTagSetCard({ id, children, disabled }: { id: number; children: 
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...mouseListeners}>
-      {children({ attributes, listeners: touchHandleListeners, isDragging })}
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners: listeners as DragHandleListeners, isDragging })}
     </div>
   )
 }
@@ -94,7 +97,7 @@ function CategorySectionDroppable({
       ref={setNodeRef}
       id={containerId}
       className={`min-h-[60px] rounded-xl transition-colors ${
-        isOver ? 'bg-[#7C6FDD]/5 ring-1 ring-[#7C6FDD]/30' : ''
+        isOver ? 'bg-accent-green/5 ring-1 ring-accent-green/30' : ''
       }`}
     >
       {isEmpty ? (
@@ -113,7 +116,18 @@ export function TagsPage() {
 
   const [activeId, setActiveId] = useState<number | null>(null)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [items, setItems] = useState<TagSet[]>([])
+  const [search, setSearch] = useState('')
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<(number | 'uncategorized')[]>([])
+  const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
+  const [pendingDeleteTagSet, setPendingDeleteTagSet] = useState<TagSet | null>(null)
+  const filtered = items.filter((ts) =>
+    (ts.name.toLowerCase().includes(search.toLowerCase()) ||
+      (ts.description ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      ts.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))) &&
+    (selectedCategoryIds.length === 0 || selectedCategoryIds.includes(ts.category_id ?? 'uncategorized'))
+  )
 
   const {
     isMultiSelectMode,
@@ -124,7 +138,7 @@ export function TagsPage() {
     isSelected,
     selectAll,
     clearSelection,
-  } = useMultiSelect({ items })
+  } = useCollectionSelection<number, TagSet>({ items: filtered })
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -138,13 +152,11 @@ export function TagsPage() {
       },
     })
   )
-  const [search, setSearch] = useState('')
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<(number | 'uncategorized')[]>([])
-  const [selectedBaseModelIds, setSelectedBaseModelIds] = useState<number[]>([])
   const { isExpanded, toggleSection } = useAccordionSections('ps_accordion_tagsets')
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [copiedTagWord, setCopiedTagWord] = useState<string | null>(null)
   const [selectedTagSetForDetail, setSelectedTagSetForDetail] = useState<TagSet | null>(null)
   const [copiedDetailId, setCopiedDetailId] = useState<number | null>(null)
   const [editTagSet, setEditTagSet] = useState<TagSet | null>(null)
@@ -181,11 +193,8 @@ export function TagsPage() {
       name: form.name,
       description: form.description || undefined,
       category_id: form.category_id,
-      tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
-      subsets: form.subsets ? form.subsets.map((s: { name: string; tags: string }) => ({
-        name: s.name,
-        tags: s.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
-      })) : [],
+      tags: parseTagSetTokens(form.tags),
+      subsets: serializeSubsetForms(form.subsets),
       target_base_model_ids: form.target_base_model_ids
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tag-sets'] }); setShowModal(false); setForm(EMPTY_FORM) },
@@ -197,12 +206,9 @@ export function TagsPage() {
         name: tagForm.name,
         description: tagForm.description || undefined,
         category_id: tagForm.category_id,
-        tags: tagForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
+        tags: parseTagSetTokens(tagForm.tags),
         thumbnail_path: tagForm.thumbnail_path || undefined,
-        subsets: tagForm.subsets ? tagForm.subsets.map((s: { name: string; tags: string }) => ({
-          name: s.name,
-          tags: s.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
-        })) : [],
+        subsets: serializeSubsetForms(tagForm.subsets),
         target_base_model_ids: tagForm.target_base_model_ids
       }),
     onSuccess: () => {
@@ -218,6 +224,16 @@ export function TagsPage() {
   const deleteTagSet = useMutation({
     mutationFn: (id: number) => tagSetsApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tag-sets'] }),
+  })
+
+  const selectedTagSets = items.filter((tagSet) => selectedIds.has(tagSet.id))
+  const bulkDeleteTagSets = useMutation({
+    mutationFn: (ids: number[]) => Promise.all(ids.map((id) => tagSetsApi.delete(id))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tag-sets'] })
+      exitMultiSelectMode()
+      setShowBulkDeleteConfirm(false)
+    },
   })
 
   const reorderTagSets = useMutation({
@@ -277,7 +293,9 @@ export function TagsPage() {
             category_id: tagSet.category_id,
             tags: tagSet.tags,
             thumbnail_path: tagSet.thumbnail_path,
-            ...values
+            target_base_model_ids: tagSet.target_base_model_ids ?? [],
+            ...values,
+            subsets: preserveTagSetSubsets(tagSet.subsets),
           }
           return tagSetsApi.update(id, updatedTs)
         })
@@ -312,28 +330,24 @@ export function TagsPage() {
       thumbnail_path: ts.thumbnail_path ?? undefined,
       subsets: ts.subsets ? ts.subsets.map((s: any) => ({
         name: s.name,
-        tags: s.tags.join(', ')
+        tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags,
+        thumbnail_path: s.thumbnail_path ?? null,
       })) : [],
       target_base_model_ids: ts.target_base_model_ids ?? []
     })
   }
 
-  const filtered = items.filter(
-    (ts) =>
-      ts.name.toLowerCase().includes(search.toLowerCase()) ||
-      (ts.description ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      ts.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
-  )
-
   const isDndActive = !search && selectedBaseModelIds.length === 0
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (isMultiSelectMode) return
     setActiveId(event.active.id as number)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
+    if (isMultiSelectMode) return
     if (!over || active.id === over.id) return
 
     const activeItem = items.find((i) => i.id === Number(active.id))
@@ -435,8 +449,8 @@ export function TagsPage() {
     const catName = categories?.find((c) => c.id === ts.category_id)?.name
     const longPressHandlers = getLongPressHandlers(ts.id)
     return (
-      <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive}>
-        {({ listeners: touchHandleListeners }) => (
+      <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive || isMultiSelectMode}>
+        {({ attributes, listeners: handleListeners }) => (
           <div id={`tagset-card-${ts.id}`} 
             onClick={(e) => {
               if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
@@ -451,15 +465,15 @@ export function TagsPage() {
             onMouseLeave={longPressHandlers.onMouseLeave}
             onTouchStart={longPressHandlers.onTouchStart}
             onTouchEnd={longPressHandlers.onTouchEnd}
-            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col h-[320px] w-full max-w-[220px] ${
               isMultiSelectMode && isSelected(ts.id)
-                ? 'border-purple-500/50 ring-1 ring-purple-500/30 bg-surface'
+                ? 'border-accent-green ring-2 ring-accent-green/40 bg-surface'
                 : 'border-[rgba(255,255,255,0.06)] bg-surface'
             }`}>
             
             {isMultiSelectMode && (
-              <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-purple-400 border border-[rgba(255,255,255,0.08)]">
-                {isSelected(ts.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+              <div className="absolute top-2 left-2 z-20 p-1 rounded-md bg-surface/80 text-zinc-300 border border-[rgba(255,255,255,0.08)]">
+                {isSelected(ts.id) ? <CheckSquare size={16} className="text-accent-green" /> : <Square size={16} />}
               </div>
             )}
 
@@ -467,11 +481,12 @@ export function TagsPage() {
             {!isMultiSelectMode && isDndActive && (
               <button
                 type="button"
-                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none p-1.5 rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
+                className="absolute top-2 left-2 z-20 cursor-grab active:cursor-grabbing touch-none select-none min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md bg-black/60 hover:bg-black/80 text-zinc-400 hover:text-white transition-colors"
                 style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
                 onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                 onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                {...touchHandleListeners}
+                {...attributes}
+                {...handleListeners}
                 title="ドラッグして並び替え"
                 aria-label="並び替えハンドル"
               >
@@ -483,27 +498,37 @@ export function TagsPage() {
               thumbnailPath={ts.thumbnail_path}
               snapshotPaths={ts.snapshot_paths}
               alt={ts.name}
-              className="w-full"
-              style={aspectRatioStyle}
+              className="w-full shrink-0"
+              imageAspectRatio={numericRatio}
+              imageAreaFraction={0.58}
             >
-              <button id={`tagset-edit-${ts.id}`}
+              {!isMultiSelectMode && <button id={`tagset-edit-${ts.id}`}
                 onClick={(e) => { e.stopPropagation(); openEdit(ts) }}
-                className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-[#7C6FDD]/20 hover:text-[#7C6FDD]">
+                aria-label={`タグセット編集 ${ts.name}`}
+                className="absolute top-2 right-12 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                 <Pencil size={13} />
-              </button>
-              <button id={`tagset-delete-${ts.id}`}
-                onClick={(e) => { e.stopPropagation(); if (confirm('Delete this tag set?')) deleteTagSet.mutate(ts.id) }}
-                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+              </button>}
+              {!isMultiSelectMode && <button id={`tagset-delete-${ts.id}`}
+                onClick={(e) => { e.stopPropagation(); setPendingDeleteTagSet(ts) }}
+                aria-label={`タグセット削除 ${ts.name}`}
+                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
                 <Trash2 size={13} />
-              </button>
+              </button>}
+              {pendingDeleteTagSet?.id === ts.id && <div role="alertdialog" aria-label="タグセット削除の確認" className="absolute inset-x-2 top-12 z-30 rounded-lg border border-red-500/40 bg-surface p-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <p className="text-xs text-zinc-200">「{ts.name}」を削除しますか？</p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => setPendingDeleteTagSet(null)} className="rounded px-2 py-1 text-xs text-zinc-400">キャンセル</button>
+                  <button type="button" onClick={() => { deleteTagSet.mutate(ts.id); setPendingDeleteTagSet(null) }} className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-300">削除</button>
+                </div>
+              </div>}
             </ImageCarousel>
 
-            <div className="p-3 flex-1 flex flex-col justify-between gap-2">
-              <div className="space-y-1.5 min-w-0">
+            <div className="p-1 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-start gap-1">
+              <div className="space-y-1.5 min-w-0 shrink-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-xs font-semibold text-zinc-200 truncate flex-1" title={ts.name}>{ts.name}</p>
                   {catName && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C6FDD]/15 text-[#a99ef7] border border-[#7C6FDD]/25">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-zinc-300 border border-white/10">
                       {catName}
                     </span>
                   )}
@@ -511,18 +536,23 @@ export function TagsPage() {
                 {ts.description && <p className="text-[10px] text-zinc-500 line-clamp-2" title={ts.description}>{ts.description}</p>}
               </div>
 
-              <div className="flex flex-wrap gap-1 overflow-hidden max-h-[44px]">
+              <div className="flex flex-nowrap gap-1 overflow-x-auto overflow-y-hidden h-[44px] shrink-0">
                 {ts.tags.slice(0, 5).map((tag, i) => (
-                  <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-[rgba(124,111,221,0.06)] border border-[rgba(124,111,221,0.15)] text-[#a99ef7] font-mono truncate max-w-[80px]">{tag}</span>
+                  <button key={i} type="button" aria-label={`Copy tag ${tag}`} onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(tag)
+                    setCopiedTagWord(`${ts.id}:${tag}`)
+                    setTimeout(() => setCopiedTagWord(null), 1200)
+                  }} className={`min-h-[44px] min-w-[44px] text-[11px] px-1 py-0.5 rounded border font-mono truncate max-w-[80px] ${copiedTagWord === `${ts.id}:${tag}` ? 'bg-accent-green/20 border-accent-green/30 text-accent-green' : 'bg-white/[0.04] border-white/10 text-zinc-300'}`}>{copiedTagWord === `${ts.id}:${tag}` ? 'Copied' : tag}</button>
                 ))}
                 {ts.tags.length > 5 && <span className="text-[9px] px-1 py-0.5 text-zinc-600 font-medium">+{ts.tags.length - 5}</span>}
               </div>
 
-              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
-                <span className="text-[9px] text-zinc-600">{ts.tags.length} tags</span>
+              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] shrink-0">
+                <span className="text-[11px] text-zinc-600">{ts.tags.length} tags</span>
                 <button id={`copy-tagset-${ts.id}`}
                   onClick={(e) => { e.stopPropagation(); handleCopy(ts.id, ts.tags) }}
-                  className={`text-[9px] px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${copiedId === ts.id ? 'bg-accent-green/20 text-accent-green border border-accent-green/30' : 'bg-surface-2 border border-[rgba(255,255,255,0.08)] text-zinc-500 hover:text-zinc-300'}`}>
+                  className={`min-h-[44px] px-2 rounded transition-all flex items-center gap-1 text-[11px] ${copiedId === ts.id ? 'bg-accent-green/20 text-accent-green border border-accent-green/30' : 'bg-surface-2 border border-[rgba(255,255,255,0.08)] text-zinc-500 hover:text-zinc-300'}`}>
                   <Copy size={9} />{copiedId === ts.id ? 'Copied' : 'Copy'}
                 </button>
               </div>
@@ -539,26 +569,38 @@ export function TagsPage() {
       {isMultiSelectMode && (
         <MultiSelectToolbar
           selectedCount={selectedIds.size}
-          totalCount={items.length}
+          totalCount={filtered.length}
           onSelectAll={selectAll}
           onClearSelection={clearSelection}
           onExitMode={exitMultiSelectMode}
           actions={
-            <button
-              onClick={() => setShowBulkEdit(true)}
-              disabled={selectedIds.size === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/10 border border-purple-600/30 text-purple-400 text-xs font-medium hover:bg-purple-600/20 transition-all disabled:opacity-50"
-            >
-              <Pencil size={12} />
-              一括編集
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowBulkEdit(true)}
+                disabled={selectedIds.size === 0}
+                className="flex min-h-[44px] items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-[11px] font-medium hover:bg-accent-green/20 transition-all disabled:opacity-50"
+              >
+                <Pencil size={12} aria-hidden="true" />
+                一括編集
+              </button>
+              <button
+                type="button"
+                onClick={() => { bulkDeleteTagSets.reset(); setShowBulkDeleteConfirm(true) }}
+                disabled={selectedIds.size === 0 || bulkDeleteTagSets.isPending}
+                aria-label="選択を削除"
+                className="flex min-h-[44px] items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] font-medium hover:bg-red-500/20 transition-all disabled:opacity-50"
+              >
+                <Trash2 size={12} aria-hidden="true" />
+                選択を削除
+              </button>
+            </div>
           }
         />
       )}
 
       <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
         <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-          <Tag size={17} className="text-accent-purple" />Tag Sets
+          <Tag size={17} className="text-accent-green" />Tag Sets
           <span className="text-xs text-zinc-500 font-normal ml-1">({filtered.length})</span>
         </h1>
         <div className="flex items-center gap-2">
@@ -570,7 +612,7 @@ export function TagsPage() {
             <Settings2 size={15} />
           </button>
           <button id="create-tagset-btn" onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7C6FDD]/10 border border-[#7C6FDD]/30 text-[#7C6FDD] text-xs font-medium hover:bg-[#7C6FDD]/20 transition-all">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all">
             <Plus size={14} />New Tag Set
           </button>
         </div>
@@ -581,11 +623,11 @@ export function TagsPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input id="tag-search" type="text" placeholder="Search tags…" value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-[#7C6FDD]/40" />
+            className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/60" />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
           <button id="tag-filter-all" onClick={() => setSelectedCategoryIds([])}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             All
           </button>
           {categories?.map((cat) => {
@@ -593,14 +635,14 @@ export function TagsPage() {
             return (
               <button key={cat.id} id={`tag-filter-${cat.id}`}
                 onClick={() => setSelectedCategoryIds(prev => prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id])}
-                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${isSelected ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${isSelected ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
                 {cat.name}
               </button>
             )
           })}
           <button id="tag-filter-uncategorized"
             onClick={() => setSelectedCategoryIds(prev => prev.includes('uncategorized') ? prev.filter(id => id !== 'uncategorized') : [...prev, 'uncategorized'])}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-[#7C6FDD]/10 border-[#7C6FDD]/40 text-[#7C6FDD]' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             未分類
           </button>
         </div>
@@ -625,7 +667,7 @@ export function TagsPage() {
                       setSelectedBaseModelIds([...selectedBaseModelIds, bm.id])
                     }
                   }}
-                  className="rounded border-[rgba(255,255,255,0.08)] bg-surface-2 text-[#7C6FDD] focus:ring-0 focus:ring-offset-0"
+                  className="rounded border-[rgba(255,255,255,0.08)] bg-surface-2 text-accent-green focus:ring-0 focus:ring-offset-0"
                 />
                 <span>{bm.name}</span>
               </label>
@@ -648,7 +690,7 @@ export function TagsPage() {
                     type="button"
                     id={`category-section-header-${catKey}`}
                     onClick={() => toggleSection(catKey)}
-                    className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                    className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
                   >
                     {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                     <span>{cat.name}</span>
@@ -658,7 +700,7 @@ export function TagsPage() {
                   {expanded && (
                     <SortableContext items={sectionCards.map((x) => x.id)} strategy={rectSortingStrategy}>
                       <CategorySectionDroppable containerId={`category-container-${catKey}`} isEmpty={sectionCards.length === 0}>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className="mx-auto grid w-full max-w-[928px] grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                           {sectionCards.map((ts) => renderTagSetCard(ts))}
                         </div>
                       </CategorySectionDroppable>
@@ -674,7 +716,7 @@ export function TagsPage() {
                   type="button"
                   id="category-section-header-uncategorized"
                   onClick={() => toggleSection('uncategorized')}
-                  className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                  className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
                 >
                   {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                   <span>未分類</span>
@@ -684,7 +726,7 @@ export function TagsPage() {
                 {isExpanded('uncategorized') && (
                   <SortableContext items={uncategorizedItems.map((x) => x.id)} strategy={rectSortingStrategy}>
                     <CategorySectionDroppable containerId="category-container-uncategorized" isEmpty={uncategorizedItems.length === 0}>
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                      <div className="mx-auto grid w-full max-w-[928px] grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                         {uncategorizedItems.map((ts) => renderTagSetCard(ts))}
                       </div>
                     </CategorySectionDroppable>
@@ -697,11 +739,11 @@ export function TagsPage() {
           <DragOverlay>
             {activeId && (
               <div className="relative">
-                <div className="opacity-90 scale-105 ring-2 ring-purple-500 rounded-xl pointer-events-none">
+                <div className="opacity-90 scale-105 ring-2 ring-accent-green rounded-xl pointer-events-none">
                   {renderDragOverlayItem(activeId)}
                 </div>
                 {isMultiSelectMode && selectedIds.size > 1 && (
-                  <div className="absolute -bottom-2 -right-2 bg-purple-500 text-black text-xs font-bold
+                  <div className="absolute -bottom-2 -right-2 bg-accent-green text-black text-xs font-bold
                                   rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
                     +{selectedIds.size - 1}
                   </div>
@@ -761,6 +803,26 @@ export function TagsPage() {
           onApply={(values) => bulkUpdateTagSets.mutate(values)}
           isApplying={bulkUpdateTagSets.isPending}
         />
+      )}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
+          <section role="alertdialog" aria-modal="true" aria-labelledby="bulk-tagset-delete-title" className="w-full max-w-lg rounded-xl border border-red-500/30 bg-surface p-5 shadow-2xl">
+            <h2 id="bulk-tagset-delete-title" className="text-base font-semibold text-zinc-100">選択したTagSetを削除</h2>
+            <p className="mt-2 text-sm text-zinc-300">{selectedTagSets.length}件を削除します。この操作は取り消せません。</p>
+            <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-zinc-400">
+              {selectedTagSets.map((tagSet) => <li key={tagSet.id}>{tagSet.name}</li>)}
+            </ul>
+            {bulkDeleteTagSets.isError && (
+              <p role="alert" className="mt-3 text-sm text-red-300">
+                削除に失敗しました: {bulkDeleteTagSets.error instanceof Error ? bulkDeleteTagSets.error.message : 'サーバーエラー'}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" disabled={bulkDeleteTagSets.isPending} onClick={() => setShowBulkDeleteConfirm(false)} className="min-h-[44px] rounded-lg border border-white/10 px-3 py-2 text-[11px] text-zinc-300 disabled:opacity-50">キャンセル</button>
+              <button type="button" onClick={() => bulkDeleteTagSets.mutate([...selectedIds])} disabled={bulkDeleteTagSets.isPending || selectedIds.size === 0} className="min-h-[44px] rounded-lg bg-red-600 px-3 py-2 text-[11px] font-medium text-white disabled:opacity-50">{bulkDeleteTagSets.isPending ? '削除中…' : '削除する'}</button>
+            </div>
+          </section>
+        </div>
       )}
       {cropImageSrc && (
         <ImageCropper

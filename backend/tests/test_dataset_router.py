@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import unittest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
@@ -121,6 +121,64 @@ class TestDatasetRouter(unittest.TestCase):
         names = [o["name"] for o in outfits]
         self.assertIn("Casual Hoodie", names)
         self.assertIn("Swimsuit", names)
+
+    def test_get_project_items_restores_saved_order_status_and_metadata_without_writes(self):
+        project = models.DatasetProject(
+            name="Restore Project",
+            character_trigger="restore_char",
+            outfit_trigger="restore_outfit",
+            workflow_id=self.workflow.id,
+            prompt_meta="meta",
+            prompt_physical="physical",
+            prompt_exclusive_outfit="outfit",
+            selected_alt_outfits="[]",
+        )
+        self.db.add(project)
+        self.db.commit()
+        self.db.refresh(project)
+
+        missing = self.client.get(f"/api/dataset/projects/{project.id + 999}/items")
+        self.assertEqual(missing.status_code, 404)
+
+        writes = []
+
+        def track_writes(conn, cursor, statement, parameters, context, executemany):
+            operation = statement.lstrip().split(maxsplit=1)[0].upper()
+            if operation in {"INSERT", "UPDATE", "DELETE"}:
+                writes.append(operation)
+
+        event.listen(engine, "before_cursor_execute", track_writes)
+        try:
+            empty = self.client.get(f"/api/dataset/projects/{project.id}/items")
+            self.assertEqual(empty.status_code, 200)
+            self.assertEqual(empty.json(), [])
+            self.assertEqual(writes, [])
+
+            items = [
+                models.DatasetItem(project_id=project.id, slot_index=2, factors_json='{"slot":2}', raw_prompt="slot two", caption_text="caption two", seed=202, image_path="/saved/two.png", status="APPROVED"),
+                models.DatasetItem(project_id=project.id, slot_index=1, factors_json='{"slot":1,"variant":"rejected"}', raw_prompt="rejected prompt", caption_text="rejected caption", seed=101, image_path="/saved/rejected.png", status="REJECTED"),
+                models.DatasetItem(project_id=project.id, slot_index=1, factors_json='{"slot":1,"variant":"approved"}', raw_prompt="approved prompt", caption_text="approved caption", seed=102, image_path="/saved/approved.png", status="APPROVED"),
+                models.DatasetItem(project_id=project.id, slot_index=0, factors_json='{"slot":0}', raw_prompt="slot zero", caption_text="caption zero", seed=100, image_path="/saved/zero.png", status="APPROVED"),
+            ]
+            self.db.add_all(items)
+            self.db.commit()
+            self.db.refresh(project)
+            writes.clear()
+
+            response = self.client.get(f"/api/dataset/projects/{project.id}/items")
+        finally:
+            event.remove(engine, "before_cursor_execute", track_writes)
+
+        self.assertEqual(response.status_code, 200)
+        restored = response.json()
+        self.assertEqual([item["slot_index"] for item in restored], [0, 1, 1, 2])
+        self.assertLess(restored[1]["id"], restored[2]["id"])
+        self.assertEqual([item["status"] for item in restored], ["APPROVED", "REJECTED", "APPROVED", "APPROVED"])
+        self.assertEqual(restored[1]["factors_json"], '{"slot":1,"variant":"rejected"}')
+        self.assertEqual(restored[1]["caption_text"], "rejected caption")
+        self.assertEqual(restored[1]["image_path"], "/saved/rejected.png")
+        self.assertEqual(restored[1]["seed"], 101)
+        self.assertEqual(writes, [])
 
     def test_generate_matrix(self):
         project = models.DatasetProject(

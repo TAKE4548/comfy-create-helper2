@@ -102,6 +102,59 @@ describe('SnapshotGalleryView', () => {
     expect(defaultProps.setSortOrder).toHaveBeenCalledWith('asc')
   })
 
+  it('searches filter options and exposes removable chips for every active condition', () => {
+    render(
+      <SnapshotGalleryView
+        {...defaultProps}
+        workflows={[...mockWorkflows, { id: 11, name: 'Workflow B' }]}
+        selectedWorkflowId={10}
+        selectedLoraId={20}
+        selectedTagSetId={30}
+      />
+    )
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'ワークフローを検索' }), {
+      target: { value: 'workflow b' },
+    })
+    const workflowSelect = document.getElementById('history-workflow-filter')!
+    expect(workflowSelect.querySelector('option[value="11"]')).toBeInTheDocument()
+    expect(workflowSelect.querySelector('option[value="10"]')).not.toBeInTheDocument()
+
+    const workflowChip = screen.getByRole('button', { name: /Workflow: Workflow A/ })
+    expect(workflowChip.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.click(workflowChip)
+    fireEvent.click(screen.getByRole('button', { name: /LoRA: lora-a — LoRA A/ }))
+    fireEvent.click(screen.getByRole('button', { name: /TagSet: TagSet A/ }))
+    expect(defaultProps.setSelectedWorkflowId).toHaveBeenCalledWith(null)
+    expect(defaultProps.setSelectedLoraId).toHaveBeenCalledWith(null)
+    expect(defaultProps.setSelectedTagSetId).toHaveBeenCalledWith(null)
+  })
+
+  it('finds LoRAs by model name and description and distinguishes options with identical descriptions', () => {
+    const loras = [
+      { id: 20, model_name: 'lora-a', description: 'Shared caption' },
+      { id: 21, model_name: 'named-model', description: 'Shared caption' },
+    ]
+    const setSelectedLoraId = vi.fn()
+    const { rerender } = render(<SnapshotGalleryView {...defaultProps} loras={loras} setSelectedLoraId={setSelectedLoraId} />)
+    const search = screen.getByRole('searchbox', { name: 'LoRAを検索' })
+    const select = document.getElementById('history-lora-filter') as HTMLSelectElement
+
+    fireEvent.change(search, { target: { value: 'named-model' } })
+    expect(select.querySelector('option[value="21"]')).toHaveTextContent('named-model — Shared caption')
+    expect(select.querySelector('option[value="20"]')).not.toBeInTheDocument()
+    fireEvent.change(select, { target: { value: '21' } })
+    expect(setSelectedLoraId).toHaveBeenCalledWith(21)
+
+    fireEvent.change(search, { target: { value: 'shared caption' } })
+    expect(select.querySelector('option[value="20"]')).toHaveTextContent('lora-a — Shared caption')
+    expect(select.querySelector('option[value="21"]')).toHaveTextContent('named-model — Shared caption')
+
+    rerender(<SnapshotGalleryView {...defaultProps} loras={loras} selectedLoraId={21} setSelectedLoraId={setSelectedLoraId} />)
+    fireEvent.click(screen.getByRole('button', { name: /LoRA: named-model — Shared caption/ }))
+    expect(setSelectedLoraId).toHaveBeenCalledWith(null)
+  })
+
   it('renders empty state when there are no snapshots', () => {
     render(<SnapshotGalleryView {...defaultProps} snapshots={[]} />)
 
@@ -117,6 +170,23 @@ describe('SnapshotGalleryView', () => {
     fireEvent.click(card!)
 
     expect(defaultProps.onOpenPreview).toHaveBeenCalled()
+  })
+
+  it('keeps a 2:3 responsive card and exposes touch and keyboard preview controls', () => {
+    render(<SnapshotGalleryView {...defaultProps} />)
+
+    const grid = screen.getByTestId('snapshot-grid')
+    expect(grid).toHaveClass('grid-cols-2', 'md:grid-cols-3', 'xl:grid-cols-4')
+    expect(screen.getByAltText('Snapshot 1').parentElement).toHaveStyle({ aspectRatio: '2 / 3' })
+
+    const overlay = screen.getByTestId('snapshot-overlay-1')
+    expect(overlay).toHaveClass('opacity-100', 'sm:group-hover:opacity-100', 'sm:group-focus-within:opacity-100')
+    const speechAction = document.getElementById('snap-speech-edit-1')!
+    expect(speechAction).toHaveClass('min-h-11', 'min-w-11')
+
+    const card = screen.getByRole('group', { name: 'Snapshot 1' })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(defaultProps.onOpenPreview).toHaveBeenCalledWith(1)
   })
 
   it('handles speech modal open and delete actions', () => {

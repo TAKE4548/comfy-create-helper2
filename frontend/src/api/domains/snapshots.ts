@@ -47,10 +47,17 @@ export const snapshotsApi = {
       method: 'POST',
       body: JSON.stringify({ roi }),
     }),
-  detectBubbleDebug: (id: number, roi?: { x: number; y: number; w: number; h: number } | null) =>
+  detectBubbleDebug: (
+    id: number,
+    roi?: { x: number; y: number; w: number; h: number } | null,
+    overrides?: { min_area?: number; min_brightness?: number }
+  ) =>
     request<{ candidates: BubbleCandidate[] }>(`/snapshots/${id}/detect-bubble-debug`, {
       method: 'POST',
-      body: JSON.stringify({ roi }),
+      body: JSON.stringify({
+        ...(roi !== undefined ? { roi } : {}),
+        ...(overrides ?? {}),
+      }),
     }),
   upload: (blob: Blob) => {
     const formData = new FormData()
@@ -67,7 +74,7 @@ export const albumsApi = {
   list: () => request<Album[]>('/albums'),
   get: (id: number) => request<Album>(`/albums/${id}`),
   create: (data: unknown) => request<Album>('/albums', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: number, data: { name?: string; sort_order?: number }) =>
+  update: (id: number, data: { name?: string; sort_order?: number; description?: string | null }) =>
     request<Album>(`/albums/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   reorder: (ordered_ids: number[]) =>
     request<void>('/albums/reorder', { method: 'PUT', body: JSON.stringify({ ordered_ids }) }),

@@ -186,6 +186,10 @@ export function useGenerateAction(
     if (!capturedWorkflow) return
 
     const state = getLatestState()
+    const activeSet = state.activeSetId == null
+      ? undefined
+      : state.sets.find((set) => String(set.id) === String(state.activeSetId))
+    const activeSetName = activeSet?.name
     const currentParamValues = cleanParams(state.paramValues)
     const currentPromptChips = freeze(state.promptChips || {})
     const isAnimaMode = state.isAnimaMode
@@ -230,6 +234,7 @@ export function useGenerateAction(
           [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, currentAppliedAssets)),
         },
         applied_assets: currentAppliedAssets,
+        ...(activeSet ? { set_name: activeSetName } : {}),
       })
     }
 

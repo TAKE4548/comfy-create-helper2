@@ -1,6 +1,6 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
+import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown, X } from 'lucide-react'
 import { speechTonePresetsApi } from '../../../api/client'
 import type { SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
@@ -25,6 +25,37 @@ export function SpeechTonePresetModal({
   const [prompt, setPrompt] = useState(initial?.prompt || '')
   const [description, setDescription] = useState(initial?.description || '')
   const [sortOrder, setSortOrder] = useState<number>(initial?.sort_order ?? 0)
+  const [previewText, setPreviewText] = useState('')
+  const [previewResult, setPreviewResult] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
+  const revision = useRef(0)
+  const requestPending = useRef(false)
+
+  useEffect(() => () => { revision.current += 1 }, [])
+
+  const invalidatePreview = () => {
+    revision.current += 1
+    setPreviewResult(null)
+    setPreviewError(null)
+  }
+
+  const handlePreview = async () => {
+    if (requestPending.current || !prompt.trim() || !previewText.trim()) return
+    requestPending.current = true
+    const requestRevision = ++revision.current
+    setIsPreviewing(true)
+    setPreviewError(null)
+    try {
+      const result = await speechTonePresetsApi.rewrite({ text: previewText, tone_prompt: prompt, preset_id: initial?.id })
+      if (revision.current === requestRevision) setPreviewResult(result.rewritten_text)
+    } catch (error) {
+      if (revision.current === requestRevision) setPreviewError(error instanceof Error ? error.message : String(error))
+    } finally {
+      requestPending.current = false
+      setIsPreviewing(false)
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,8 +87,9 @@ export function SpeechTonePresetModal({
             type="button"
             onClick={onClose}
             className="min-h-11 min-w-11 inline-flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1"
+            aria-label="閉じる"
           >
-            ✕
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -84,10 +116,18 @@ export function SpeechTonePresetModal({
               required
               rows={3}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => { invalidatePreview(); setPrompt(e.target.value) }}
               placeholder="例: ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回しに変換してください。"
               className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
             />
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#1F1F25] p-3">
+            <label className="block text-xs font-medium text-zinc-300" htmlFor="speech-tone-preview-input">プレビュー用セリフ</label>
+            <textarea id="speech-tone-preview-input" aria-label="プレビュー用セリフ" rows={2} value={previewText} onChange={(e) => { invalidatePreview(); setPreviewText(e.target.value) }} className="min-h-11 w-full rounded-lg bg-[#18181C] px-3 py-2 text-xs text-zinc-100" />
+            <button type="button" onClick={() => void handlePreview()} disabled={isPreviewing || !prompt.trim() || !previewText.trim()} className="min-h-11 rounded-lg bg-purple-600 px-4 text-xs text-white disabled:opacity-50">{isPreviewing ? 'プレビュー中...' : 'プレビュー実行'}</button>
+            {previewError && <p role="alert" className="text-xs text-red-400">プレビューに失敗しました: {previewError}</p>}
+            {previewResult !== null && <div aria-live="polite" className="rounded bg-zinc-900 p-3 text-sm text-zinc-100"><p className="mb-1 text-[10px] text-zinc-500">生成プレビュー</p><p>{previewResult}</p></div>}
           </div>
 
           <div>
@@ -142,6 +182,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
   const qc = useQueryClient()
   const [tonePresetModalMode, setTonePresetModalMode] = useState<'create' | 'edit' | null>(null)
   const [editingTonePreset, setEditingTonePreset] = useState<SpeechTonePreset | null>(null)
+  const [pendingDeleteToneId, setPendingDeleteToneId] = useState<number | null>(null)
 
   const { data: tonePresets = [], isLoading: isLoadingTonePresets } = useQuery<SpeechTonePreset[]>({
     queryKey: ['speech-tone-presets'],
@@ -231,7 +272,10 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                   {tonePresets.map((tp) => (
                     <tr key={tp.id} className="block border-b border-[rgba(255,255,255,0.04)] md:table-row hover:bg-white/[0.02] transition-colors">
                       <td data-label="プリセット名" className="relative block whitespace-normal py-2 pl-24 pr-4 text-zinc-100 before:absolute before:left-4 before:top-2 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:whitespace-nowrap md:px-4 md:py-3 md:before:hidden font-medium">
-                        {tp.name}
+                        <article aria-label={tp.name} className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/40 p-2">
+                          <h3 data-label="プリセット名" className="text-xs font-semibold">{tp.name}</h3>
+                          <p className="mt-1 whitespace-normal text-[11px] font-normal text-zinc-400">{tp.description || '説明なし'}</p>
+                        </article>
                       </td>
                       <td data-label="プロンプト指示" className="relative block whitespace-normal break-words py-2 pl-24 pr-4 text-zinc-300 before:absolute before:left-4 before:top-2 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:max-w-xs md:truncate md:px-4 md:py-3 md:before:hidden" title={tp.prompt}>
                         {tp.prompt}
@@ -243,7 +287,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                         {tp.sort_order}
                       </td>
                       <td data-label="操作" className="relative block py-2 pl-24 pr-4 text-right before:absolute before:left-4 before:top-3 before:font-medium before:text-zinc-500 before:content-[attr(data-label)] md:table-cell md:px-4 md:py-3 md:before:hidden whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
@@ -257,16 +301,17 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm(`口調プリセット「${tp.name}」を削除しますか？`)) {
-                                deleteTonePresetMutation.mutate(tp.id)
-                              }
-                            }}
+                            onClick={() => setPendingDeleteToneId(tp.id)}
                             className="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                             title="削除"
                           >
                             <Trash2 size={13} />
                           </button>
+                          {pendingDeleteToneId === tp.id && <div role="alertdialog" aria-label="口調プリセット削除の確認" className="mt-2 flex items-center gap-2 rounded border border-red-500/30 p-2 text-xs">
+                            <span>「{tp.name}」を削除しますか？</span>
+                            <button type="button" onClick={() => setPendingDeleteToneId(null)}>キャンセル</button>
+                            <button type="button" aria-label="削除を確認" onClick={() => { deleteTonePresetMutation.mutate(tp.id); setPendingDeleteToneId(null) }}>削除</button>
+                          </div>}
                         </div>
                       </td>
                     </tr>

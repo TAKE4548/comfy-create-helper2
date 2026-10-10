@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ManagerActionOutcomeUnknownError, systemManagerApi } from '../../../api/domains/systemManager'
 import type { ManagerServiceName, ManagedServiceName } from '../../../api/domains/systemManager'
 import { useConfig } from '../../../hooks/useConfig'
@@ -26,6 +26,9 @@ export function ServiceConnectionCard(): React.JSX.Element {
   const [logFilename, setLogFilename] = useState('')
   const [logMessage, setLogMessage] = useState('')
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [logsOpen, setLogsOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<{ action: 'stop' | 'restart'; service: ManagedServiceName } | null>(null)
+  const busyRef = useRef(false)
 
   const managerAvailable = available && status !== null
   const busy = actionPending !== null || status?.action_in_progress != null
@@ -39,6 +42,8 @@ export function ServiceConnectionCard(): React.JSX.Element {
   }, [managerAvailable])
 
   const runAction = async (action: 'start' | 'stop' | 'restart', service: ManagedServiceName): Promise<void> => {
+    if (!managerAvailable || busyRef.current || busy) return
+    busyRef.current = true
     const key = `${service}:${action}`
     setActionPending(key)
     setActionMessage(`${service === 'backend' ? 'Backend' : 'ComfyUI'} の ${action} をManagerに要求中です。`)
@@ -57,6 +62,7 @@ export function ServiceConnectionCard(): React.JSX.Element {
       }
       await refetch()
     } finally {
+      busyRef.current = false
       setActionPending(null)
     }
   }
@@ -79,25 +85,29 @@ export function ServiceConnectionCard(): React.JSX.Element {
   }
 
   const emergencyUrl = `http://${window.location.hostname}:8899`
-  const processStatus = (running: boolean, label: string): string => `${label}: ${running ? '稼働中' : '停止中'}`
+  const processStatus = (running: boolean | undefined, label: string): string => `${label}: ${running === undefined ? '不明' : running ? '稼働中' : '停止中'}`
 
   return (
     <section aria-labelledby="service-connections-title" className="space-y-4 rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface p-4 text-zinc-200">
       <h2 id="service-connections-title" className="text-lg font-semibold text-zinc-100">サービス管理</h2>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="サービス状態">
+        <article aria-label="Supervisor" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">Supervisor</h3><p className="mt-1 text-sm">{managerAvailable ? '接続中' : '不明'}</p></article>
+        <article aria-label="Windows Backend" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">Windows Backend</h3><p className="mt-1 text-sm">{processStatus(managerAvailable ? status.be?.running : undefined, 'Backend')}</p></article>
+        <article aria-label="ComfyUI" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">ComfyUI</h3><p className="mt-1 text-sm">{processStatus(managerAvailable ? status.comfy?.running : undefined, 'ComfyUI')}</p></article>
+      </div>
+      <p className="text-xs text-zinc-500">Frontend: {processStatus(managerAvailable ? status.fe?.running : undefined, '状態').replace('状態: ', '')}</p>
       <div className="space-y-1 text-sm text-zinc-300" aria-live="polite">
-        <p>{managerAvailable ? processStatus(status.fe.running, 'Frontend') : 'Frontend: Manager状態を取得できません'}</p>
-        <p>{managerAvailable ? processStatus(status.be.running, 'Backend') : 'Backend: Manager状態を取得できません'}</p>
-        <p>{managerAvailable ? processStatus(status.comfy.running, 'ComfyUI') : 'ComfyUI: Manager状態を取得できません'}</p>
         {status?.action_in_progress && <p role="status">{serviceLabel(status.action_in_progress.service)} の {status.action_in_progress.action} を実行中です。</p>}
       </div>
 
       {!managerAvailable && <p role="status" className="text-sm text-amber-300">Managerに接続できません。8899が復旧すると操作とログを利用できます。</p>}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap" aria-label="サービス操作">
         <button type="button" onClick={() => void runAction('start', 'comfy')} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md bg-green-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを起動</button>
-        <button type="button" onClick={() => void runAction('stop', 'comfy')} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを停止</button>
-        <button type="button" onClick={() => void runAction('restart', 'comfy')} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを再起動</button>
-        <button type="button" onClick={() => void runAction('restart', 'backend')} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">Backendを再起動</button>
+        <button type="button" onClick={() => setConfirmAction({ action: 'stop', service: 'comfy' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを停止</button>
+        <button type="button" onClick={() => setConfirmAction({ action: 'restart', service: 'comfy' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを再起動</button>
+        <button type="button" onClick={() => setConfirmAction({ action: 'restart', service: 'backend' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">Backendを再起動</button>
       </div>
+      {confirmAction && <div role="alertdialog" aria-label="サービス操作の確認" className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>{serviceLabel(confirmAction.service)}を{confirmAction.action === 'stop' ? '停止' : '再起動'}します。対象サービスを一時的に利用できなくなります。</p><div className="flex gap-2"><button type="button" onClick={() => setConfirmAction(null)} className="min-h-[44px] rounded px-3">キャンセル</button><button type="button" onClick={() => { const pending = confirmAction; setConfirmAction(null); void runAction(pending.action, pending.service) }} disabled={!managerAvailable || busy} className="min-h-[44px] rounded bg-amber-500/20 px-3">確認して実行</button></div></div>}
       <p role="status" aria-live="polite" className="text-sm text-zinc-200">{actionMessage}</p>
       <p className="text-sm text-zinc-400">Backend再起動中はポート8000の復帰を待ち、復帰後にこのページを手動で再読み込みしてください。復帰中も読み込み済みの画面を保ったまま、<a className="underline" href={emergencyUrl} target="_blank" rel="noreferrer">Managerの緊急画面（8899）</a>を利用できます。</p>
 
@@ -107,18 +117,20 @@ export function ServiceConnectionCard(): React.JSX.Element {
         <p className="text-sm text-zinc-400">ComfyUI接続先はBackend設定で管理されます。この画面からは変更できません。</p>
       </div>
 
-      <div className="space-y-3 border-t border-[rgba(255,255,255,0.06)] pt-4">
-        <label htmlFor="manager-log-service" className="block text-sm font-medium text-zinc-200">サービスログ</label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <select id="manager-log-service" value={logService} onChange={(event) => setLogService(event.target.value as ManagerServiceName)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] flex-1 rounded-md border border-[rgba(255,255,255,0.1)] bg-surface-2 px-3 py-2 text-sm disabled:opacity-50">
-            {LOG_SERVICES.map((service) => <option key={service} value={service}>{serviceLabel(service)}</option>)}
-          </select>
-          <button type="button" onClick={() => void loadLogs(logService)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">{loadingLogs ? '取得中…' : '最新ログを表示'}</button>
-        </div>
-        {logFilename && <p className="break-all text-xs text-zinc-400">{logFilename}</p>}
-        {logMessage && <p role="status" className="text-sm text-zinc-300">{logMessage}</p>}
-        <pre aria-label="サービスログ内容" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/30 p-3 text-xs text-zinc-300">{logContent || 'ログは未取得です。'}</pre>
-      </div>
+      <details className="border-t border-[rgba(255,255,255,0.06)] pt-4" onToggle={(event) => { const open = event.currentTarget.open; setLogsOpen(open); if (open) void loadLogs(logService) }}>
+        <summary className="min-h-[44px] cursor-pointer py-3 text-sm font-medium text-zinc-200">サービスログ</summary>
+        {logsOpen && <div className="space-y-3 pb-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select id="manager-log-service" value={logService} onChange={(event) => setLogService(event.target.value as ManagerServiceName)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] flex-1 rounded-md border border-[rgba(255,255,255,0.1)] bg-surface-2 px-3 py-2 text-sm disabled:opacity-50">
+              {LOG_SERVICES.map((service) => <option key={service} value={service}>{serviceLabel(service)}</option>)}
+            </select>
+            <button type="button" onClick={() => void loadLogs(logService)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">{loadingLogs ? '取得中…' : '最新ログを表示'}</button>
+          </div>
+          {logFilename && <p className="break-all text-xs text-zinc-400">{logFilename}</p>}
+          {logMessage && <p role="status" className="text-sm text-zinc-300">{logMessage}</p>}
+          <pre aria-label="サービスログ内容" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/30 p-3 text-xs text-zinc-300">{logContent || 'ログは未取得です。'}</pre>
+        </div>}
+      </details>
     </section>
   )
 }

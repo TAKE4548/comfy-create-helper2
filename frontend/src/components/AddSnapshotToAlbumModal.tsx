@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Search, ChevronDown, Loader2, BookOpen } from 'lucide-react'
+import { X, Search, ChevronDown, Loader2, BookOpen, Plus } from 'lucide-react'
 import { useAlbums } from '../hooks/useAlbums'
+import { Modal } from './common/Modal'
 
 interface AddSnapshotToAlbumModalProps {
   isOpen: boolean
@@ -27,6 +28,8 @@ export function AddSnapshotToAlbumModal({
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | 'new' | ''>(allowNone ? '' : 'new')
   const [newAlbumName, setNewAlbumName] = useState('')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -68,6 +71,8 @@ export function AddSnapshotToAlbumModal({
       setNewAlbumName('')
       setSearchQuery('')
       setIsDropdownOpen(false)
+      setSubmitError(null)
+      setIsSubmitting(false)
     }
   }, [isOpen, allowNone, storageKey])
 
@@ -93,19 +98,29 @@ export function AddSnapshotToAlbumModal({
     setSearchQuery('')
   }
 
-  const handleConfirm = () => {
-    if (selectedAlbumId === 'new' && !newAlbumName.trim()) return
-    if (storageKey) {
-      if (typeof selectedAlbumId === 'number') {
-        localStorage.setItem(storageKey, String(selectedAlbumId))
-      } else if (selectedAlbumId === '') {
-        localStorage.setItem(storageKey, '')
+  const handleClose = () => {
+    if (isPending || isSubmitting) return
+    onClose()
+  }
+
+  const handleConfirm = async () => {
+    if (isPending || isSubmitting || (selectedAlbumId === 'new' && !newAlbumName.trim())) return
+    setSubmitError(null)
+    setIsSubmitting(true)
+    try {
+      await onConfirm({
+        albumId: typeof selectedAlbumId === 'number' ? selectedAlbumId : null,
+        newAlbumName: selectedAlbumId === 'new' ? newAlbumName.trim() : undefined,
+      })
+      if (storageKey) {
+        if (typeof selectedAlbumId === 'number') localStorage.setItem(storageKey, String(selectedAlbumId))
+        else if (selectedAlbumId === '') localStorage.setItem(storageKey, '')
       }
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'アルバムへの追加に失敗しました。')
+    } finally {
+      setIsSubmitting(false)
     }
-    onConfirm({
-      albumId: typeof selectedAlbumId === 'number' ? selectedAlbumId : null,
-      newAlbumName: selectedAlbumId === 'new' ? newAlbumName.trim() : undefined,
-    })
   }
 
   // Determine label for the selector trigger button
@@ -117,17 +132,21 @@ export function AddSnapshotToAlbumModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="w-full max-w-lg bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative max-h-full lg:max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      size="sm"
+      ariaLabel={title}
+      dialogClassName="p-5 sm:p-6 space-y-5 relative"
+    >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-zinc-200">{title}</h3>
           <button
             id="close-add-album-modal-btn"
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            aria-label="閉じる"
+            disabled={isPending || isSubmitting}
+            onClick={handleClose}
+            className="min-h-11 min-w-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors p-1"
           >
             <X size={18} />
           </button>
@@ -140,8 +159,9 @@ export function AddSnapshotToAlbumModal({
             <button
               type="button"
               id="album-selector-trigger"
+              disabled={isPending || isSubmitting}
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3.5 py-2.5 text-sm text-zinc-300 flex items-center justify-between hover:border-zinc-700 transition-all text-left focus:outline-none"
+              className="min-h-11 w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3.5 py-2.5 text-sm text-zinc-300 flex items-center justify-between hover:border-zinc-700 transition-all text-left focus:outline-none"
             >
               <span className="truncate flex items-center gap-2">
                 <BookOpen size={15} className="text-zinc-500 flex-shrink-0" />
@@ -162,7 +182,8 @@ export function AddSnapshotToAlbumModal({
                     placeholder="アルバム名を検索..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-transparent border-none text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none"
+                    disabled={isPending || isSubmitting}
+                    className="min-h-11 w-full bg-transparent border-none text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none"
                   />
                 </div>
 
@@ -171,8 +192,9 @@ export function AddSnapshotToAlbumModal({
                   {allowNone && (
                     <button
                       type="button"
+                      disabled={isPending || isSubmitting}
                       onClick={() => handleSelectAlbum('')}
-                      className={`w-full text-left px-3 py-2 text-xs rounded-md transition-colors ${
+                      className={`min-h-11 w-full text-left px-3 py-2 text-xs rounded-md transition-colors ${
                         selectedAlbumId === ''
                           ? 'bg-accent-green/10 text-accent-green font-medium'
                           : 'text-zinc-400 hover:bg-white/5'
@@ -185,14 +207,16 @@ export function AddSnapshotToAlbumModal({
                   {/* Create New Album Option */}
                   <button
                     type="button"
+                    disabled={isPending || isSubmitting}
                     onClick={() => handleSelectAlbum('new')}
-                    className={`w-full text-left px-3 py-2 text-xs rounded-md transition-colors ${
+                    className={`min-h-11 w-full flex items-center gap-2 text-left px-3 py-2 text-xs rounded-md transition-colors ${
                       selectedAlbumId === 'new'
                         ? 'bg-accent-green/10 text-accent-green font-medium'
                         : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                     }`}
                   >
-                    + 新規アルバム作成 (Create New Album)
+                    <Plus size={14} aria-hidden="true" />
+                    <span>新規アルバム作成 (Create New Album)</span>
                   </button>
 
                   {/* Separator */}
@@ -209,8 +233,9 @@ export function AddSnapshotToAlbumModal({
                       <button
                         key={album.id}
                         type="button"
+                        disabled={isPending || isSubmitting}
                         onClick={() => handleSelectAlbum(album.id)}
-                        className={`w-full text-left px-3 py-2 text-xs rounded-md transition-colors truncate ${
+                        className={`min-h-11 w-full text-left px-3 py-2 text-xs rounded-md transition-colors truncate ${
                           selectedAlbumId === album.id
                             ? 'bg-accent-green/10 text-accent-green font-medium'
                             : 'text-zinc-300 hover:bg-white/5 hover:text-white'
@@ -232,38 +257,41 @@ export function AddSnapshotToAlbumModal({
           {/* New Album Name Input */}
           {selectedAlbumId === 'new' && (
             <div className="space-y-1.5 animate-slide-up">
-              <label className="text-xs font-medium text-zinc-400">新規アルバム名</label>
+              <label htmlFor="new-album-name-field" className="text-xs font-medium text-zinc-400">新規アルバム名</label>
               <input
                 type="text"
                 id="new-album-name-field"
                 placeholder="新規アルバム名を入力してください..."
                 value={newAlbumName}
+                disabled={isPending || isSubmitting}
                 onChange={(e) => setNewAlbumName(e.target.value)}
-                className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-accent-green/50 transition-all"
+                className="min-h-11 w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-accent-green/50 transition-all"
               />
             </div>
           )}
         </div>
 
+        {submitError && <p role="alert" className="text-sm text-red-400">{submitError}</p>}
+
         <div className="flex justify-end gap-3 pt-2">
           <button
             id="cancel-add-album-modal-btn"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-medium hover:bg-white/5 transition-all"
+            disabled={isPending || isSubmitting}
+            onClick={handleClose}
+            className="min-h-11 px-4 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-medium hover:bg-white/5 transition-all"
           >
             キャンセル
           </button>
           <button
             id="confirm-add-album-modal-btn"
             onClick={handleConfirm}
-            disabled={isPending || (selectedAlbumId === 'new' && !newAlbumName.trim())}
-            className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-40 transition-all glow-green flex items-center gap-2"
+            disabled={isPending || isSubmitting || (selectedAlbumId === 'new' && !newAlbumName.trim())}
+            className="min-h-11 px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-40 transition-all glow-green flex items-center gap-2"
           >
             {isPending && <Loader2 size={14} className="animate-spin" />}
             {isPending ? '処理中…' : confirmText}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

@@ -100,6 +100,8 @@ class JobView(_ContractModel):
     outputs: list[ImageView]
     failure: FailureView | None
     preview_url: str | None = None
+    set_name: str | None = None
+    prompt_excerpt: str | None = None
 
     _validate_started_at = field_validator("started_at")(_utc_timestamp)
     _validate_finished_at = field_validator("finished_at")(_utc_timestamp)

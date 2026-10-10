@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useId } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Wand2, Sliders, ChevronDown, Save, RefreshCw } from 'lucide-react'
+import { Wand2, Sliders, ChevronDown, Save, RefreshCw, Check } from 'lucide-react'
 import { llmPromptsApi } from '../../../api/client'
 import type { LlmPrompt } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
@@ -79,11 +79,32 @@ export function LlmSettingsSection({
   const detailsExpanded = isExpandedPrompts
   const [expanded, setExpanded] = useState<string | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
+  const editsRef = useRef(edits)
   const [saved, setSaved] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [modelDraft, setModelDraft] = useState<string | null>(null)
+  const modelDraftRef = useRef<string | null>(null)
+  const [playgroundPresetKey, setPlaygroundPresetKey] = useState('')
+  const [playgroundText, setPlaygroundText] = useState('')
+  const [playgroundVariablesText, setPlaygroundVariablesText] = useState('{}')
+  const [playgroundView, setPlaygroundView] = useState<'raw' | 'expanded'>('raw')
+  const [playgroundResponse, setPlaygroundResponse] = useState<{
+    rendered_prompt: string
+    result: string
+    token_limit: number | null
+  } | null>(null)
+  const [playgroundError, setPlaygroundError] = useState<string | null>(null)
+  const [playgroundPending, setPlaygroundPending] = useState(false)
+  const playgroundRequestId = useRef(0)
   const [llmParamsEdits, setLlmParamsEdits] = useState<Record<string, LlmParams>>({})
   const llmParamsEditsRef = useRef(llmParamsEdits)
   const dirtyParamsRef = useRef(new Set<string>())
   const savedParamsRef = useRef<Record<string, string>>({})
+
+  const clearSaveFeedback = () => {
+    setSaved(null)
+    setSaveError(null)
+  }
 
   const { data: prompts, isLoading: isLoadingPrompts } = useQuery({
     queryKey: ['llm-prompts'],
@@ -103,22 +124,44 @@ export function LlmSettingsSection({
 
   const updateModelMutation = useMutation({
     mutationFn: (model: string) => llmPromptsApi.updateCurrentModel(model),
-    onSuccess: () => {
+    onMutate: () => clearSaveFeedback(),
+    onSuccess: (_result, model) => {
       qc.invalidateQueries({ queryKey: ['llm-current-model'] })
-      setSaved('model')
-      setTimeout(() => setSaved(null), 2000)
+      if (modelDraftRef.current === model) {
+        modelDraftRef.current = model
+        setModelDraft(model)
+        setSaved('model')
+      }
+    },
+    onError: (error, model) => {
+      if (modelDraftRef.current === model) setSaveError(error instanceof Error ? error.message : '保存に失敗しました')
     },
   })
 
   const updatePrompt = useMutation({
     mutationFn: ({ key, content }: { key: string; content: string }) =>
       llmPromptsApi.update(key, { content }),
-    onSuccess: (_, { key }) => {
+    onMutate: () => clearSaveFeedback(),
+    onSuccess: (_, { key, content }) => {
       qc.invalidateQueries({ queryKey: ['llm-prompts'] })
-      setSaved(key)
-      setTimeout(() => setSaved(null), 2000)
+      const currentDraft = key in PARAM_LABELS
+        ? JSON.stringify(llmParamsEditsRef.current[key] || DEFAULT_PARAMS)
+        : editsRef.current[key]
+      if (currentDraft === undefined || currentDraft === content) setSaved(key)
+    },
+    onError: (error, { key, content }) => {
+      const currentDraft = key in PARAM_LABELS
+        ? JSON.stringify(llmParamsEditsRef.current[key] || DEFAULT_PARAMS)
+        : editsRef.current[key]
+      if (currentDraft === undefined || currentDraft === content) {
+        setSaveError(error instanceof Error ? error.message : '保存に失敗しました')
+      }
     },
   })
+
+  useEffect(() => {
+    if (modelDraft === null && currentModelData?.content) setModelDraft(currentModelData.content)
+  }, [currentModelData?.content, modelDraft])
 
   useEffect(() => {
     if (prompts) {
@@ -160,6 +203,11 @@ export function LlmSettingsSection({
   const getContent = (p: LlmPrompt) => edits[p.key] ?? p.content
 
   const handleParamChange = (key: string, field: keyof LlmParams, val: number) => {
+    clearSaveFeedback()
+    playgroundRequestId.current += 1
+    setPlaygroundPending(false)
+    setPlaygroundResponse(null)
+    setPlaygroundError(null)
     dirtyParamsRef.current.add(key)
     setLlmParamsEdits((prev) => {
       const next = { ...prev, [key]: { ...prev[key], [field]: val } }
@@ -169,6 +217,7 @@ export function LlmSettingsSection({
   }
 
   const handleSaveParams = (key: string) => {
+    clearSaveFeedback()
     const params = llmParamsEdits[key] || DEFAULT_PARAMS
     const content = JSON.stringify(params)
     savedParamsRef.current[key] = content
@@ -188,8 +237,79 @@ export function LlmSettingsSection({
     ([key]) => !allowedParams || allowedParams.has(key)
   )
 
+  useEffect(() => {
+    if (!playgroundPresetKey && visiblePrompts?.length) {
+      setPlaygroundPresetKey(visiblePrompts[0].key)
+    }
+  }, [prompts, group, playgroundPresetKey])
+
+  useEffect(() => {
+    playgroundRequestId.current += 1
+    setPlaygroundPending(false)
+    setPlaygroundResponse(null)
+    setPlaygroundError(null)
+  }, [currentModelData?.content])
+
+  const selectedPlaygroundPreset = visiblePrompts?.find((prompt) => prompt.key === playgroundPresetKey)
+    ?? visiblePrompts?.[0]
+  const playgroundSystemPrompt = selectedPlaygroundPreset ? getContent(selectedPlaygroundPreset) : ''
+
+  const invalidatePlayground = () => {
+    playgroundRequestId.current += 1
+    setPlaygroundPending(false)
+    setPlaygroundResponse(null)
+    setPlaygroundError(null)
+  }
+
+  const handlePlaygroundPreview = async () => {
+    let variables: Record<string, string>
+    try {
+      const parsed: unknown = JSON.parse(playgroundVariablesText)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+        || Object.values(parsed).some((value) => typeof value !== 'string')) {
+        throw new Error('変数は文字列値を持つJSONオブジェクトで指定してください')
+      }
+      variables = parsed as Record<string, string>
+    } catch (error) {
+      setPlaygroundResponse(null)
+      setPlaygroundError(error instanceof Error ? error.message : '変数JSONを確認してください')
+      return
+    }
+
+    const requestId = ++playgroundRequestId.current
+    setPlaygroundPending(true)
+    setPlaygroundError(null)
+    setPlaygroundResponse(null)
+    setPlaygroundView('raw')
+    const paramsRecord = prompts?.find((prompt) => prompt.key === 'llm_params_audit')
+    const params = llmParamsEdits.llm_params_audit ?? (() => {
+      try {
+        return paramsRecord?.content ? { ...DEFAULT_PARAMS, ...JSON.parse(paramsRecord.content) } : DEFAULT_PARAMS
+      } catch {
+        return DEFAULT_PARAMS
+      }
+    })()
+    try {
+      const response = await llmPromptsApi.playground({
+        system_prompt: playgroundSystemPrompt,
+        text: playgroundText,
+        variables,
+        model: currentModelData?.content || null,
+        llm_params: { ...params },
+      })
+      if (requestId === playgroundRequestId.current) setPlaygroundResponse(response)
+    } catch (error) {
+      if (requestId === playgroundRequestId.current) {
+        setPlaygroundError(error instanceof Error ? error.message : 'Playground preview failed')
+      }
+    } finally {
+      if (requestId === playgroundRequestId.current) setPlaygroundPending(false)
+    }
+  }
+
   return (
     <>
+      {saveError && <p role="alert" className="mb-2 text-xs text-red-300">保存に失敗しました: {saveError}（設定は未保存です）</p>}
       {/* LLM Model Settings */}
       <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
         <div
@@ -202,8 +322,8 @@ export function LlmSettingsSection({
             <span className="text-xs text-zinc-600">— 使用するLLMモデルの選択</span>
           </div>
           <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {saved === 'model' && (
-              <span className="text-xs text-accent-green">✓ 保存しました</span>
+                    {saved === 'model' && (
+              <span className="flex items-center gap-1 text-xs text-accent-green"><Check size={13} />設定を保存しました</span>
             )}
             {!group && <ChevronDown
               size={16}
@@ -220,8 +340,14 @@ export function LlmSettingsSection({
                 <label className="block text-xs text-zinc-400 mb-1">現在のモデル</label>
                 <select
                   id="settings-llm-model-select"
-                  value={currentModelData?.content || ''}
-                  onChange={(e) => updateModelMutation.mutate(e.target.value)}
+                  value={modelDraft ?? currentModelData?.content ?? ''}
+                  onChange={(e) => {
+                    clearSaveFeedback()
+                    modelDraftRef.current = e.target.value
+                    setModelDraft(e.target.value)
+                    invalidatePlayground()
+                    updateModelMutation.mutate(e.target.value)
+                  }}
                   disabled={updateModelMutation.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -264,9 +390,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-translation-model-select"
                   value={prompts?.find((p) => p.key === 'translation_model')?.content || ''}
-                  onChange={(e) =>
-                    updatePrompt.mutate({ key: 'translation_model', content: e.target.value })
-                  }
+                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'translation_model', content: e.target.value }) }}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -291,9 +415,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-speech-vlm-model-select"
                   value={prompts?.find((p) => p.key === 'speech_draft_vlm_model')?.content || ''}
-                  onChange={(e) =>
-                    updatePrompt.mutate({ key: 'speech_draft_vlm_model', content: e.target.value })
-                  }
+                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'speech_draft_vlm_model', content: e.target.value }) }}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -318,9 +440,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-speech-llm-model-select"
                   value={prompts?.find((p) => p.key === 'speech_draft_llm_model')?.content || ''}
-                  onChange={(e) =>
-                    updatePrompt.mutate({ key: 'speech_draft_llm_model', content: e.target.value })
-                  }
+                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'speech_draft_llm_model', content: e.target.value }) }}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -358,6 +478,7 @@ export function LlmSettingsSection({
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10)
                     if (val >= 300 && val <= 2000) {
+                      clearSaveFeedback()
                       updatePrompt.mutate({ key: 'translation_debounce', content: String(val) })
                     }
                   }}
@@ -451,22 +572,27 @@ export function LlmSettingsSection({
                         <textarea
                           id={`prompt-content-${p.key}`}
                           value={getContent(p)}
-                          onChange={(e) =>
-                            setEdits((prev) => ({ ...prev, [p.key]: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            invalidatePlayground()
+                            clearSaveFeedback()
+                            const nextEdits = { ...editsRef.current, [p.key]: e.target.value }
+                            editsRef.current = nextEdits
+                            setEdits(nextEdits)
+                          }}
                           rows={16}
                           className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar"
                         />
                         <div className="flex items-center justify-between">
                           <button
                             id={`prompt-reset-${p.key}`}
-                            onClick={() =>
-                              setEdits((prev) => {
-                                const n = { ...prev }
-                                delete n[p.key]
-                                return n
-                              })
-                            }
+                            onClick={() => {
+                              invalidatePlayground()
+                              clearSaveFeedback()
+                              const nextEdits = { ...editsRef.current }
+                              delete nextEdits[p.key]
+                              editsRef.current = nextEdits
+                              setEdits(nextEdits)
+                            }}
                             disabled={!edits[p.key]}
                             className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors"
                           >
@@ -485,13 +611,86 @@ export function LlmSettingsSection({
                             }`}
                           >
                             <Save size={12} />
-                            {saved === p.key ? 'Saved!' : 'Save'}
+                            {saved === p.key ? '設定を保存しました' : 'Save'}
                           </button>
                         </div>
                       </div>
                     )}
                   </div>
                 ))}
+                {group === 'prompt' && (
+                  <section aria-label="Prompt Playground" className="rounded-xl border border-[rgba(255,255,255,0.08)] bg-surface p-4 space-y-3">
+                    <h2 className="text-sm font-semibold text-zinc-200">Prompt Playground</h2>
+                    <label className="block text-xs text-zinc-400">
+                      System prompt preset
+                      <select
+                        aria-label="Playground preset"
+                        value={selectedPlaygroundPreset?.key ?? ''}
+                        onChange={(event) => {
+                          invalidatePlayground()
+                          setPlaygroundPresetKey(event.target.value)
+                        }}
+                        className="mt-1 w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-zinc-200"
+                      >
+                        {visiblePrompts?.map((prompt) => (
+                          <option key={prompt.key} value={prompt.key}>{PROMPT_LABELS[prompt.key] ?? prompt.key}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-zinc-400">
+                      Test input
+                      <textarea
+                        aria-label="Playground input"
+                        value={playgroundText}
+                        onChange={(event) => {
+                          invalidatePlayground()
+                          setPlaygroundText(event.target.value)
+                        }}
+                        rows={3}
+                        className="mt-1 w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-zinc-200"
+                      />
+                    </label>
+                    <label className="block text-xs text-zinc-400">
+                      Variables (JSON)
+                      <textarea
+                        aria-label="Playground variables"
+                        value={playgroundVariablesText}
+                        onChange={(event) => {
+                          invalidatePlayground()
+                          setPlaygroundVariablesText(event.target.value)
+                        }}
+                        rows={2}
+                        className="mt-1 w-full bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 font-mono text-zinc-200"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handlePlaygroundPreview}
+                      disabled={playgroundPending || !selectedPlaygroundPreset}
+                      className="px-3 py-2 rounded-lg bg-[#7C6FDD] text-white text-xs font-medium disabled:opacity-50"
+                    >
+                      {playgroundPending ? 'Previewing…' : 'Preview prompt'}
+                    </button>
+                    {playgroundError && <p role="alert" className="text-xs text-red-300">{playgroundError}</p>}
+                    <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 space-y-2">
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setPlaygroundView('raw')} aria-pressed={playgroundView === 'raw'}>Raw system prompt</button>
+                        <button type="button" onClick={() => setPlaygroundView('expanded')} disabled={!playgroundResponse} aria-pressed={playgroundView === 'expanded'}>Expanded system prompt</button>
+                      </div>
+                      <pre data-testid="playground-prompt-preview" className="whitespace-pre-wrap text-xs text-zinc-300">
+                        {playgroundView === 'expanded'
+                          ? playgroundResponse?.rendered_prompt ?? ''
+                          : playgroundSystemPrompt}
+                      </pre>
+                      {playgroundResponse && (
+                        <>
+                          <p className="text-xs text-zinc-400">Context token limit: {playgroundResponse.token_limit ?? '未取得'}</p>
+                          <div className="text-xs text-zinc-200 whitespace-pre-wrap">{playgroundResponse.result}</div>
+                        </>
+                      )}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
           </div>
@@ -547,7 +746,7 @@ export function LlmSettingsSection({
                           }`}
                         >
                           <Save size={12} />
-                          {isSaved ? '保存しました!' : '保存'}
+                          {isSaved ? '設定を保存しました' : '保存'}
                         </button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  rewrite: vi.fn(),
 }))
 
 vi.mock('../../../../api/client', () => ({
@@ -17,6 +18,7 @@ vi.mock('../../../../api/client', () => ({
     create: mocks.create,
     update: mocks.update,
     delete: mocks.remove,
+    rewrite: mocks.rewrite,
   },
 }))
 
@@ -37,7 +39,7 @@ describe('SpeechToneSection', () => {
     mocks.create.mockReset().mockResolvedValue({})
     mocks.update.mockReset().mockResolvedValue({})
     mocks.remove.mockReset().mockResolvedValue({})
-    vi.stubGlobal('confirm', vi.fn(() => true))
+    mocks.rewrite.mockReset()
   })
 
   it('shows a responsive labeled card with the full preset details and 44px actions', () => {
@@ -79,13 +81,59 @@ describe('SpeechToneSection', () => {
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: '新規', prompt: '口調' }))
   })
 
-  it('deletes the exact selected preset ID and handles an empty list', () => {
+  it('shows a named sample card and requires inline confirmation to delete the selected ID', () => {
     const { rerender } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+    expect(screen.getByRole('article', { name: '丁寧' })).toHaveTextContent('説明')
     fireEvent.click(screen.getByTitle('削除'))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('丁寧')
+    expect(mocks.remove).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('削除'))
+    fireEvent.click(screen.getByRole('button', { name: '削除を確認' }))
     expect(mocks.remove).toHaveBeenCalledWith(17)
 
     mocks.presets.splice(0)
     rerender(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
     expect(screen.getByText('登録されている口調プリセットはありません。')).toBeInTheDocument()
+  })
+
+  it('previews the unsaved input and prompt without saving the preset', async () => {
+    mocks.rewrite.mockResolvedValue({ rewritten_text: 'こんにちは、最新設定です。' })
+    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+    fireEvent.click(screen.getByTitle('編集'))
+    const modal = screen.getByTestId('speech-tone-preset-modal')
+    fireEvent.change(within(modal).getByLabelText('プレビュー用セリフ'), { target: { value: '最新の入力' } })
+    fireEvent.change(within(modal).getByPlaceholderText(/ツンデレな口調で/), { target: { value: '最新の未保存指示' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
+    expect(await within(modal).findByText('こんにちは、最新設定です。')).toBeInTheDocument()
+    expect(mocks.rewrite).toHaveBeenCalledWith(expect.objectContaining({ text: '最新の入力', tone_prompt: '最新の未保存指示', preset_id: 17 }))
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+
+  it('ignores an older rewrite result after the user changes the draft and preserves input on failure', async () => {
+    let resolveFirst!: (value: { rewritten_text: string }) => void
+    mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({ rewritten_text: '新しい結果' })
+      .mockRejectedValueOnce(new Error('service unavailable'))
+    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+    fireEvent.click(screen.getByTitle('編集'))
+    const modal = screen.getByTestId('speech-tone-preset-modal')
+    const input = within(modal).getByLabelText('プレビュー用セリフ')
+    fireEvent.change(input, { target: { value: '旧入力' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
+    fireEvent.change(input, { target: { value: '最新入力' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー中...' }))
+    expect(mocks.rewrite).toHaveBeenCalledTimes(1)
+    resolveFirst({ rewritten_text: '古い結果' })
+    expect(await within(modal).findByDisplayValue('最新入力')).toBeInTheDocument()
+    expect(within(modal).queryByText('古い結果')).not.toBeInTheDocument()
+
+    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
+    expect(await within(modal).findByText('新しい結果')).toBeInTheDocument()
+    fireEvent.change(input, { target: { value: '失敗しても残る入力' } })
+    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
+    expect(await within(modal).findByRole('alert')).toHaveTextContent('service unavailable')
+    expect(within(modal).getByDisplayValue('失敗しても残る入力')).toBeInTheDocument()
   })
 })

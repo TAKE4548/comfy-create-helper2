@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
-  Loader2, Settings, ImageOff, Download, Plus,
+  Library, Loader2, Redo2, Settings, ImageOff, Download, Plus, Undo2, X,
   ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
@@ -140,6 +140,7 @@ export const MobileLayout = ({
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [mobileSegment, setMobileSegment] = useState<'prompt' | 'parameters' | 'history'>('prompt')
 
   const gallery = useGalleryInteraction({
     isMobile: true,
@@ -238,8 +239,13 @@ export const MobileLayout = ({
   const currentBatchItemNumber = hasGeneratingJob ? Math.min(totalBatchCount, finishedBatchCount + 1) : Math.min(totalBatchCount, finishedBatchCount)
 
   const overallPercentage = isGeneratingHere ? batchProgress.percentage : 0
-  const eta = (overallPercentage > 0 && elapsedTime > 0)
-    ? Math.round(elapsedTime * (100 - overallPercentage) / overallPercentage)
+  const etaProgress = generationSnapshot
+    ? (normalProgress?.fraction ?? 0) * 100
+    : overallPercentage
+  const etaElapsedTime = generationSnapshot ? managedElapsedTime : elapsedTime
+  const etaElapsedKnown = generationSnapshot ? Boolean(normalRunningJob?.started_at) : Boolean(generationStartTime)
+  const eta = (etaElapsedKnown && etaProgress > 0 && etaElapsedTime > 0)
+    ? Math.round(etaElapsedTime * (100 - etaProgress) / etaProgress)
     : null
 
   const renderUploadZone = () => (
@@ -273,7 +279,7 @@ export const MobileLayout = ({
   const isNegative = activePromptTabMapping?.role?.toLowerCase().includes('negative')
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto pb-36 bg-surface relative w-full">
+    <div className="flex flex-col h-full overflow-y-auto scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)] pb-[calc(54px+env(safe-area-inset-bottom)+72px)] bg-surface relative w-full">
       {/* Header */}
       <div className="flex flex-col gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
         <div className="flex items-center justify-between">
@@ -290,7 +296,7 @@ export const MobileLayout = ({
           <select id="workflow-select-mobile" value={selectedWorkflowId ?? ''}
             onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
             className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 truncate">
-            <option value="">+ 新しいワークフローを追加 (Upload New...)</option>
+            <option value="">新しいワークフローを追加 (Upload New...)</option>
             {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
           {selectedWorkflowId && (
@@ -307,7 +313,8 @@ export const MobileLayout = ({
           )}
           <div className="relative flex-shrink-0 flex items-center">
             <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ComfyUI設定">
+              aria-label="ワークフロー / 接続設定"
+              className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ワークフロー / 接続設定">
               <Settings size={14} />
             </button>
             {isSettingsOpen && (
@@ -332,6 +339,14 @@ export const MobileLayout = ({
         </div>
       </div>
 
+      {/* Compact progress stays visible below the scrolling header. */}
+      <div data-testid="mobile-progress-line" className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[10px] font-mono text-zinc-300">
+        <span className="truncate">{displayProgressActive ? displayNodeName : vramWaitStatus?.isWaiting ? 'VRAM解放待ち' : (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? '他セッションで生成中' : '待機中'}</span>
+        <span className="shrink-0">{displayProgressActive ? '進行中' : '—'}</span>
+        <span className="shrink-0 ux-numeric">ETA {displayProgressActive ? (eta === null ? '未取得' : `${eta}秒`) : '未取得'}</span>
+        {displayProgressActive && <span className="absolute bottom-0 left-0 h-0.5 bg-accent-green" style={{ width: `${overallPercentage}%` }} />}
+      </div>
+
       {/* Progress Line */}
       <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-2">
         {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
@@ -341,7 +356,7 @@ export const MobileLayout = ({
               <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
               <span className="font-semibold text-yellow-300 truncate">VRAM解放待ち</span>
               <span className="text-zinc-600">|</span>
-              <span className="text-zinc-400 truncate">
+              <span className="text-zinc-400 truncate ux-numeric">
                 空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'}GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)}GB ({vramWaitStatus.waitDurationSec}秒)
               </span>
             </div>
@@ -381,11 +396,11 @@ export const MobileLayout = ({
             <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium pt-0.5">
               <div className="flex items-center gap-2">
                 <Loader2 size={10} className="animate-spin text-accent-green flex-shrink-0" />
-                <span>経過: {displayElapsedTime}秒</span>
+                <span className="ux-numeric">経過: {displayElapsedTime}秒</span>
                 {eta !== null && (
                   <>
                     <span className="text-zinc-700">|</span>
-                    <span>残り約: {eta}秒</span>
+                    <span className="ux-numeric">残り約: {eta}秒</span>
                   </>
                 )}
               </div>
@@ -424,7 +439,7 @@ export const MobileLayout = ({
             <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium pt-0.5">
               <div className="flex items-center gap-2">
                 <Loader2 size={10} className="animate-spin text-amber-400 flex-shrink-0" />
-                <span>経過: {displayElapsedTime}秒</span>
+                <span className="ux-numeric">経過: {displayElapsedTime}秒</span>
               </div>
               <span 
                 onClick={() => setIsJobModalOpen(true)}
@@ -458,7 +473,7 @@ export const MobileLayout = ({
       </div>
 
       {/* Main Preview */}
-      <div className="bg-grid relative w-full aspect-video max-h-[300px] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
+      <div className="bg-grid relative w-full shrink-0 aspect-[2/3] max-h-[42vh] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
         {(previewImage || selectedImg) ? (
           <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={handleOpenModalPreview}>
             <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
@@ -482,10 +497,28 @@ export const MobileLayout = ({
         )}
       </div>
 
-      {/* Thumbnail Strip */}
-      {showStrip && (
-        <GenerationGallerySection state={state} gallery={gallery} isMobile={true} />
-      )}
+      <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-2">
+        {([
+          ['prompt', 'プロンプト'],
+          ['parameters', 'パラメータ'],
+          ['history', '履歴'],
+        ] as const).map(([segment, label]) => (
+          <button key={segment} type="button" aria-pressed={mobileSegment === segment}
+            aria-controls={`mobile-${segment}-panel`} onClick={() => setMobileSegment(segment)}
+            className={`min-h-[44px] rounded-lg border px-2 text-sm font-medium transition-colors ${mobileSegment === segment ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-zinc-200'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <section id="mobile-history-panel" data-testid="mobile-history-panel" aria-label="履歴"
+        hidden={mobileSegment !== 'history'} style={{ display: mobileSegment === 'history' ? undefined : 'none' }}>
+        {/* Keep the gallery mounted while switching segments so its selection survives. */}
+        {showStrip && <GenerationGallerySection state={state} gallery={gallery} isMobile={true} />}
+      </section>
+
+      <section id="mobile-prompt-panel" data-testid="mobile-prompt-panel" aria-label="プロンプト"
+        hidden={mobileSegment !== 'prompt'} style={{ display: mobileSegment === 'prompt' ? undefined : 'none' }}>
 
       {/* Multi-Set Tab Bar (Mobile) */}
       {selectedWorkflowId && (
@@ -501,9 +534,10 @@ export const MobileLayout = ({
                     onClick={() => undo?.(activeSet.id)}
                     disabled={!canUndo}
                     title="Undo"
-                    className="px-2 py-0.5 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                    aria-label="Undo"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
                   >
-                    ↩
+                    <Undo2 size={16} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -511,9 +545,10 @@ export const MobileLayout = ({
                     onClick={() => redo?.(activeSet.id)}
                     disabled={!canRedo}
                     title="Redo"
-                    className="px-2 py-0.5 rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
+                    aria-label="Redo"
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:pointer-events-none text-xs font-bold"
                   >
-                    ↪
+                    <Redo2 size={16} aria-hidden="true" />
                   </button>
                 </div>
               )}
@@ -521,9 +556,11 @@ export const MobileLayout = ({
                 type="button"
                 id="manage-presets-btn-mobile"
                 onClick={() => setIsPresetManagerOpen(true)}
-                className="px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
+                aria-label="管理"
+                className="inline-flex min-h-11 items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-[rgba(255,255,255,0.08)] text-zinc-350 hover:bg-white/5 font-semibold transition-all"
               >
-                📑 管理
+                <Library size={14} aria-hidden="true" />
+                管理
               </button>
             </div>
           </div>
@@ -540,7 +577,7 @@ export const MobileLayout = ({
                   }`}>
                   <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
                   <span className="truncate max-w-[70px]">{s.name}</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)">✕</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="inline-flex min-h-11 min-w-11 items-center justify-center text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)" aria-label={`${s.name}のタブを閉じる`}><X size={14} aria-hidden="true" /></button>
                 </div>
               ))}
             </div>
@@ -654,7 +691,11 @@ export const MobileLayout = ({
         </div>
       )}
 
+      </section>
+
       {/* Mobile Settings & Parameters */}
+      <section id="mobile-parameters-panel" data-testid="mobile-parameters-panel" aria-label="パラメータ"
+        hidden={mobileSegment !== 'parameters'} style={{ display: mobileSegment === 'parameters' ? undefined : 'none' }}>
       <div className="px-4 py-3 space-y-4">
         <AuditPanel
           auditOpen={auditOpen}
@@ -698,6 +739,7 @@ export const MobileLayout = ({
           onOpenParamSyncSettings={() => setIsParamSyncSettingsOpen(true)}
         />
       </div>
+      </section>
 
       {/* Mobile Action Bar */}
       {vramWaitStatus?.isWaiting && (
@@ -711,7 +753,7 @@ export const MobileLayout = ({
               <span className="text-xs font-semibold text-yellow-300 truncate">
                 VRAM解放待ち（待機中）
               </span>
-              <span className="text-[10px] text-zinc-400 truncate">
+              <span className="text-[10px] text-zinc-400 truncate ux-numeric">
                 空き: {vramWaitStatus.freeGb !== null && vramWaitStatus.freeGb !== undefined ? vramWaitStatus.freeGb.toFixed(1) : '--'} GB / 必要: {vramWaitStatus.requiredGb.toFixed(1)} GB ({vramWaitStatus.waitDurationSec}s)
               </span>
             </div>
@@ -725,14 +767,20 @@ export const MobileLayout = ({
           </button>
         </div>
       )}
-      <div className="fixed bottom-16 left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-3 flex items-center gap-3">
+      <div data-testid="mobile-action-bar" className="fixed bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))] left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-2 flex items-center gap-3">
         <button id="generate-btn-mobile" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
-          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
+          className="flex-1 min-h-[44px] flex items-center justify-center gap-2 py-2 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
           <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
         </button>
         <button id="save-snapshot-btn-mobile" onClick={() => setIsSaveModalOpen(true)} disabled={isMultiSelectMode ? selectedIds.size === 0 : !selectedImg}
-          className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 transition-all">
+          aria-label="Snapshot保存"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-sm font-medium hover:bg-white/5 disabled:opacity-40 transition-all">
           <Camera size={15} />
+        </button>
+        <button id="queue-management-btn-mobile" type="button" onClick={() => setIsJobModalOpen(true)}
+          aria-label={`キュー管理: ${(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}件`}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center px-2 py-2 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-xs font-medium hover:bg-white/5 transition-all">
+          Queue {(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}
         </button>
       </div>
 

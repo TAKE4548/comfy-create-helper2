@@ -157,4 +157,67 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     expect(document.getElementById('param-sync-settings-btn-mobile')).toBeInTheDocument()
     expect(document.getElementById('bypass-settings-btn-mobile')).toBeInTheDocument()
   })
+
+  it('steps sampler parameters by their configured increment and precision', () => {
+    const setParamValues = vi.fn()
+    render(<ParamPanel
+      {...defaultProps}
+      paramMappings={[
+        { id: 3, role: 'Sampler_Steps', param_name: 'steps', display_name: 'Steps', input_type: 'int' },
+        { id: 4, role: 'Sampler_CFG', param_name: 'cfg', display_name: 'CFG', input_type: 'float' },
+        { id: 5, role: 'Sampler_Denoise', param_name: 'denoise', display_name: 'Denoise', input_type: 'float' },
+      ]}
+      paramValues={{ Sampler_Steps: '20', Sampler_CFG: '7.5', Sampler_Denoise: '0.85' }}
+      setParamValues={setParamValues}
+      comfyObjectInfo={{ KSampler: { input: { required: {
+        steps: ['INT', { min: 1, max: 100 }],
+        cfg: ['FLOAT', { min: 1, max: 20 }],
+        denoise: ['FLOAT', { min: 0, max: 1 }],
+      } } } }}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Steps' }))
+    expect(setParamValues).toHaveBeenLastCalledWith({ Sampler_Steps: '21', Sampler_CFG: '7.5', Sampler_Denoise: '0.85' })
+    fireEvent.click(screen.getByRole('button', { name: 'Increase CFG' }))
+    expect(setParamValues).toHaveBeenLastCalledWith({ Sampler_Steps: '20', Sampler_CFG: '7.6', Sampler_Denoise: '0.85' })
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Denoise' }))
+    expect(setParamValues).toHaveBeenLastCalledWith({ Sampler_Steps: '20', Sampler_CFG: '7.5', Sampler_Denoise: '0.86' })
+  })
+
+  it('clamps sampler steppers to available metadata and leaves missing bounds unspecified', () => {
+    const setParamValues = vi.fn()
+    const { rerender } = render(<ParamPanel
+      {...defaultProps}
+      paramMappings={[{ id: 3, role: 'Sampler_Denoise', param_name: 'denoise', display_name: 'Denoise', input_type: 'float' }]}
+      paramValues={{ Sampler_Denoise: '1' }}
+      setParamValues={setParamValues}
+      comfyObjectInfo={{ KSamplerAdvanced: { input: { optional: { denoise: ['FLOAT', { min: 0, max: 1 }] } } } }}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Denoise' }))
+    expect(setParamValues).toHaveBeenCalledWith({ Sampler_Denoise: '1.00' })
+    expect(document.getElementById('param-Sampler_Denoise')).toHaveAttribute('max', '1')
+
+    rerender(<ParamPanel
+      {...defaultProps}
+      paramMappings={[{ id: 3, role: 'Sampler_Denoise', param_name: 'denoise', display_name: 'Denoise', input_type: 'float' }]}
+      paramValues={{ Sampler_Denoise: '0.85' }}
+      setParamValues={setParamValues}
+    />)
+    expect(document.getElementById('param-Sampler_Denoise')).not.toHaveAttribute('min')
+    expect(document.getElementById('param-Sampler_Denoise')).not.toHaveAttribute('max')
+  })
+
+  it('disables numeric stepper buttons for synchronized slave parameters', () => {
+    render(<ParamPanel
+      {...defaultProps}
+      paramMappings={[
+        { id: 3, role: 'Sampler_CFG', param_name: 'cfg', display_name: 'CFG', input_type: 'float' },
+        { id: 4, role: 'master_cfg', param_name: 'cfg', display_name: 'Master CFG', input_type: 'float' },
+      ]}
+      paramSyncGroups={[{ ...defaultProps.paramSyncGroups[0], master_role: 'master_cfg', slave_roles: ['Sampler_CFG'] }]}
+    />)
+    expect(screen.getByRole('button', { name: 'Increase CFG' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Decrease CFG' })).toBeDisabled()
+  })
 })

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, X, MessageSquare, Save, Palette, Copy, Sparkles, Ruler, Trash2 } from 'lucide-react'
 import {
   SpeechBubble,
   BubbleShapeType,
@@ -386,7 +387,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               }
             }}
             className="group inline-flex items-center gap-1.5 px-2 py-1 bg-[#18181C] hover:bg-[#282830] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/50 rounded text-xs text-zinc-200 cursor-pointer transition-all"
-            title={`${p.name} ${orientationSuffix}${p.text ? `\n💬 テキスト: ${p.text}` : ''} (クリックで適用)`}
+            title={`${p.name} ${orientationSuffix}${p.text ? `\nテキスト: ${p.text}` : ''} (クリックで適用)`}
           >
             <span
               className="w-3 h-3 rounded-full border flex-shrink-0"
@@ -401,7 +402,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
             </span>
             {p.text && (
               <span className="text-[10px] text-amber-400 font-bold" title={`保存テキスト: ${p.text}`}>
-                💬
+                <MessageSquare aria-hidden="true" size={12} />
               </span>
             )}
             <button
@@ -410,15 +411,16 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               onClick={(e) => handleOpenOverwriteModal(p, e)}
               className="opacity-0 group-hover:opacity-100 hover:text-blue-400 p-0.5 text-[10px] transition-opacity"
             >
-              💾
+              <Save aria-hidden="true" size={12} />
             </button>
             <button
               type="button"
               title="プリセットを削除"
+              aria-label={`プリセット「${p.name}」を削除`}
               onClick={(e) => handleDeletePreset(p, e)}
               className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 text-[10px] transition-opacity"
             >
-              ✕
+              <X aria-hidden="true" size={12} />
             </button>
           </div>
         )
@@ -438,7 +440,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
             disabled={isDrafting}
             className="text-[11px] px-2 py-1 bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 rounded border border-indigo-700/50 disabled:opacity-50 transition-colors"
           >
-            {isDrafting ? '生成中...' : '✨ ドラフト生成 (LLM)'}
+            {isDrafting ? '生成中...' : <><Sparkles aria-hidden="true" size={12} /> ドラフト生成 (LLM)</>}
           </button>
         </div>
         <textarea
@@ -461,7 +463,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               onClick={handleAutoFitBubbleSize}
               className="text-[11px] px-2 py-0.5 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 rounded border border-blue-700/40 transition-colors"
             >
-              📐 枠サイズ自動フィット
+              <Ruler aria-hidden="true" size={12} /> 枠サイズ自動フィット
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2 mb-2">
@@ -719,7 +721,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                 onClick={() => updatePresetSettings({ searchQuery: '' })}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs"
               >
-                ✕
+                <X aria-hidden="true" size={14} />
               </button>
             )}
           </div>
@@ -788,8 +790,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                 className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
               >
                 <span className="font-medium flex items-center gap-1.5">
-                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithoutTextOpen ? '▼' : '▶'}</span>
-                  <span>🎨 スタイル専用 ({withoutTextPresets.length})</span>
+                  {presetSettings.isWithoutTextOpen
+                    ? <ChevronDown aria-hidden="true" size={12} />
+                    : <ChevronRight aria-hidden="true" size={12} />}
+                  <span className="inline-flex items-center gap-1"><Palette aria-hidden="true" size={12} /> スタイル専用 ({withoutTextPresets.length})</span>
                 </span>
               </button>
               {presetSettings.isWithoutTextOpen && (
@@ -812,8 +816,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
                 className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#18181C] hover:bg-[#222228] text-xs text-zinc-300 transition-colors select-none"
               >
                 <span className="font-medium flex items-center gap-1.5">
-                  <span className="text-[10px] text-zinc-500">{presetSettings.isWithTextOpen ? '▼' : '▶'}</span>
-                  <span>💬 テキスト付き ({withTextPresets.length})</span>
+                  {presetSettings.isWithTextOpen
+                    ? <ChevronDown aria-hidden="true" size={12} />
+                    : <ChevronRight aria-hidden="true" size={12} />}
+                  <span className="inline-flex items-center gap-1"><MessageSquare aria-hidden="true" size={12} /> テキスト付き ({withTextPresets.length})</span>
                 </span>
               </button>
               {presetSettings.isWithTextOpen && (
@@ -1063,7 +1069,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
             onClick={onDuplicate}
             className="w-full py-1.5 px-3 text-blue-400 hover:text-blue-300 hover:bg-blue-950/40 border border-blue-800/50 rounded transition-colors text-xs font-medium"
           >
-            📋 この吹き出しを複製
+            <><Copy aria-hidden="true" size={12} /> この吹き出しを複製</>
           </button>
         )}
         <button
@@ -1071,7 +1077,7 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
           onClick={onDelete}
           className="w-full py-1.5 px-3 text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/50 rounded transition-colors text-xs font-medium"
         >
-          🗑 この吹き出しを削除
+          <><Trash2 aria-hidden="true" size={12} /> この吹き出しを削除</>
         </button>
       </div>
 
@@ -1093,9 +1099,10 @@ export const SpeechBubbleControls: React.FC<SpeechBubbleControlsProps> = ({
               <button
                 type="button"
                 onClick={() => setOverwriteModalPreset(null)}
+                aria-label="上書き保存を閉じる"
                 className="text-zinc-400 hover:text-zinc-200 text-xs"
               >
-                ✕
+                <X aria-hidden="true" size={14} />
               </button>
             </div>
 

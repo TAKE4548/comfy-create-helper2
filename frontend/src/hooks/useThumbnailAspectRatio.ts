@@ -17,11 +17,12 @@ function readStorage(key: string, fallback: string): string {
   }
 }
 
-function writeStorage(key: string, value: string): void {
+function writeStorage(key: string, value: string): string | null {
   try {
     localStorage.setItem(key, value)
-  } catch {
-    // Keep the hook usable for this session when browser storage is unavailable.
+    return null
+  } catch (error) {
+    return error instanceof Error && error.message ? error.message : 'ブラウザーの保存領域に書き込めませんでした'
   }
 }
 
@@ -32,9 +33,23 @@ export function useThumbnailAspectRatio() {
   const [customRatio, setCustomRatioState] = useState<string>(() =>
     readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ''),
   )
+  const [persistenceError, setPersistenceError] = useState<string | null>(null)
 
   useEffect(() => {
-    const handleStorage = () => {
+    const handleStorage = (event: Event) => {
+      if (event instanceof CustomEvent && event.type === EVENT_NAME) {
+        const change = event.detail as { key?: string; value?: string; error?: string | null } | undefined
+        if (change?.key === LS_KEYS.THUMBNAIL_ASPECT_RATIO && typeof change.value === 'string') {
+          setPresetIdState(change.value)
+          setPersistenceError(change.error ?? null)
+          return
+        }
+        if (change?.key === LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM && typeof change.value === 'string') {
+          setCustomRatioState(change.value)
+          setPersistenceError(change.error ?? null)
+          return
+        }
+      }
       setPresetIdState((current) => readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, current))
       setCustomRatioState((current) => readStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, current))
     }
@@ -46,16 +61,20 @@ export function useThumbnailAspectRatio() {
     }
   }, [])
 
-  const setPreset = useCallback((id: string) => {
-    writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, id)
+  const setPreset = useCallback((id: string): boolean => {
+    const error = writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO, id)
     setPresetIdState(id)
-    window.dispatchEvent(new Event(EVENT_NAME))
+    setPersistenceError(error)
+    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { key: LS_KEYS.THUMBNAIL_ASPECT_RATIO, value: id, error } }))
+    return error === null
   }, [])
 
-  const setCustomRatio = useCallback((ratio: string) => {
-    writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ratio)
+  const setCustomRatio = useCallback((ratio: string): boolean => {
+    const error = writeStorage(LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, ratio)
     setCustomRatioState(ratio)
-    window.dispatchEvent(new Event(EVENT_NAME))
+    setPersistenceError(error)
+    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { key: LS_KEYS.THUMBNAIL_ASPECT_RATIO_CUSTOM, value: ratio, error } }))
+    return error === null
   }, [])
 
   const parsed = useMemo<ParsedAspectRatio>(() => {
@@ -73,6 +92,7 @@ export function useThumbnailAspectRatio() {
     ratioStr: parsed.ratioStr,
     numericRatio: parsed.numericRatio,
     aspectRatioStyle,
+    persistenceError,
     setPreset,
     setCustomRatio,
   }

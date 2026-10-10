@@ -17,6 +17,7 @@ vi.mock('../api/client', () => ({
     updateProject: vi.fn(),
     getProjects: vi.fn(),
     getProject: vi.fn(),
+    getItems: vi.fn(),
     calculateMatrix: vi.fn(),
     updateItem: vi.fn(),
     exportDataset: vi.fn(),
@@ -83,6 +84,23 @@ describe('REQ-323: E2E Autosave & Draft Recovery Lifecycle Suite', () => {
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
     vi.mocked(datasetApi.getProject).mockResolvedValue(mockProject)
+    // Existing project fixtures represent persisted server data; newly-created
+    // projects have no items until matrix generation runs.
+    vi.mocked(datasetApi.getItems).mockImplementation(async (projectId) =>
+      projectId === mockProject.id
+        ? [{
+            id: 501,
+            project_id: mockProject.id,
+            slot_index: 0,
+            factors_json: '{}',
+            raw_prompt: '1girl, solo, persisted example',
+            caption_text: 'persisted example',
+            image_path: null,
+            seed: 501,
+            status: 'APPROVED',
+          }]
+        : [],
+    )
     vi.mocked(datasetApi.updateProject).mockImplementation(async (id, data) => ({
       ...mockProject,
       ...data,
@@ -168,7 +186,7 @@ describe('REQ-323: E2E Autosave & Draft Recovery Lifecycle Suite', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('character-trigger-input')).toBeInTheDocument()
-        expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+        expect(screen.getByTestId('autosave-status')).toHaveTextContent('未保存（下書き保持）')
       })
 
       // User types a new character trigger
@@ -194,7 +212,7 @@ describe('REQ-323: E2E Autosave & Draft Recovery Lifecycle Suite', () => {
             10,
             expect.objectContaining({ character_trigger: 'alice_super_hero' })
           )
-          expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+          expect(screen.getByTestId('autosave-status')).toHaveTextContent('自動保存済み')
         },
         { timeout: 3000 }
       )
@@ -303,7 +321,7 @@ describe('REQ-323: E2E Autosave & Draft Recovery Lifecycle Suite', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('character-trigger-input')).toBeInTheDocument()
-        expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+        expect(screen.getByTestId('autosave-status')).toHaveTextContent('未保存（下書き保持）')
       })
 
       // Modify form

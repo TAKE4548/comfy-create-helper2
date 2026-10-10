@@ -12,6 +12,7 @@ import { useGenerationStore } from '../../../store/useGenerationStore'
 vi.mock('../../../api/client', () => ({
   datasetApi: {
     getProjects: vi.fn(),
+    getItems: vi.fn(),
     createProject: vi.fn(),
     updateProject: vi.fn(),
     calculateMatrix: vi.fn(),
@@ -106,6 +107,9 @@ describe('MatrixGenerationStep', () => {
     useStudioStore.getState().resetStudio()
     useGenerationStore.setState({ generationSnapshot: null, generationSyncing: false, errorToast: null })
     vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
+    vi.mocked(datasetApi.getItems).mockImplementation(async (projectId) =>
+      projectId === mockProject.id ? mockItems : [],
+    )
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(workflowsApi.get).mockResolvedValue(mockWorkflows[0])
     vi.mocked(mappingMastersApi.list).mockResolvedValue(mockMappingMasters)
@@ -129,6 +133,27 @@ describe('MatrixGenerationStep', () => {
     // Changing char trigger updates outfit trigger
     fireEvent.change(charInput, { target: { value: 'alice' } })
     expect(outfitInput).toHaveValue('alice_outfit')
+  })
+
+  it('uses semantic section labels without circled-number decorators', async () => {
+    render(<MatrixGenerationStep />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('project-name-input')).toBeInTheDocument()
+    })
+
+    for (const label of [
+      'マトリクス因子プロンプト・衣装設定 (Prompts & Outfits)',
+      'メタ情報 (Meta & Quality)',
+      '身体的特徴・顔 (Face & Body)',
+      '専用の服装 (Default Outfit)',
+      'ネガティブプロンプト (Negative Prompt)',
+      '生成パラメータ設定 (Generation Parameters)',
+      'バイパス・ノード詳細設定 (Bypasses & Mappings)',
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(screen.queryAllByText(/^[①②③④]/)).toHaveLength(0)
   })
 
   it('renders all three TagChipEditors', async () => {
@@ -711,7 +736,10 @@ describe('MatrixGenerationStep', () => {
       expect(screen.getByTestId('autosave-status')).toBeInTheDocument()
     })
 
-    expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+    expect(screen.getByRole('button', { name: '新規プロジェクト' })).toBeInTheDocument()
+    expect(screen.queryByText('＋ 新規プロジェクト')).not.toBeInTheDocument()
+
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('未保存（下書き保持）')
 
     // Check project list in select
     const selector = screen.getByTestId('project-selector') as HTMLSelectElement
@@ -733,7 +761,7 @@ describe('MatrixGenerationStep', () => {
     render(<DatasetStudioPage />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+      expect(screen.getByTestId('autosave-status')).toHaveTextContent('未保存（下書き保持）')
     })
 
     // Edit project name in form
@@ -749,7 +777,7 @@ describe('MatrixGenerationStep', () => {
         mockProject.id,
         expect.objectContaining({ name: 'Modified Name' })
       )
-      expect(screen.getByTestId('autosave-status')).toHaveTextContent('保存完了')
+      expect(screen.getByTestId('autosave-status')).toHaveTextContent('自動保存済み')
     }, { timeout: 3000 })
   })
 

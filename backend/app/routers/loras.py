@@ -16,8 +16,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/loras", tags=["loras"])
 
 
+def _unique_paths(paths: list[str]) -> list[str]:
+    return list(dict.fromkeys(paths))
+
+
 def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
-    snapshot_paths = [
+    example_paths = _unique_paths([image.image_path for image in lora.example_images])
+    generated_snapshot_paths = [
         r[0] for r in (
             db.query(models.Snapshot.image_path)
             .join(models.SnapshotLora, models.SnapshotLora.snapshot_id == models.Snapshot.id)
@@ -28,6 +33,7 @@ def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
             .all()
         )
     ]
+    snapshot_paths = _unique_paths([*example_paths, *generated_snapshot_paths])
     return schemas.LoraRead(
         id=lora.id,
         model_name=lora.model_name,
@@ -48,6 +54,7 @@ def _lora_to_schema(lora: models.Lora, db: Session) -> schemas.LoraRead:
             for tws in lora.trigger_word_sets
         ],
         snapshot_paths=snapshot_paths,
+        example_paths=example_paths,
         target_base_model_ids=[bm.id for bm in lora.base_models],
     )
 
@@ -88,6 +95,9 @@ def create_lora(payload: schemas.LoraCreate, db: Session = Depends(get_db)):
         
     db.add(lora)
     db.flush()
+    if payload.example_paths is not None:
+        for sort_order, image_path in enumerate(_unique_paths(payload.example_paths)):
+            db.add(models.LoraExampleImage(lora_id=lora.id, image_path=image_path, sort_order=sort_order))
     for tws in payload.trigger_word_sets:
         db.add(models.LoraTriggerWordSet(
             lora_id=lora.id,
@@ -138,6 +148,13 @@ def update_lora(lora_id: int, payload: schemas.LoraCreate, db: Session = Depends
             name=trigger_word_set.name,
             words=json.dumps(trigger_word_set.words),
         ))
+    if "example_paths" in payload.model_fields_set and payload.example_paths is not None:
+        lora.example_images.clear()
+        db.flush()
+        lora.example_images.extend(
+            models.LoraExampleImage(image_path=image_path, sort_order=sort_order)
+            for sort_order, image_path in enumerate(_unique_paths(payload.example_paths))
+        )
     db.commit()
     db.refresh(lora)
     return _lora_to_schema(lora, db)

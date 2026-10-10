@@ -128,7 +128,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
     if "target_base_model_id" in payload.model_fields_set:
         wf.target_base_model_id = payload.target_base_model_id
 
-    if payload.default_applied_assets is not None:
+    if "default_applied_assets" in payload.model_fields_set:
         wf.default_applied_assets = payload.default_applied_assets
 
     if payload.mappings is not None:

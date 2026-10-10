@@ -3,18 +3,25 @@ title: Settings ページ仕様書 (SPEC_SETTINGS)
 tags:
   - settings
   - REQ-314
+  - REQ-334
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
+  - docs/backlog/task/archive/REQ-334-T10.md
   - frontend/src/pages/SettingsPage
+  - frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx
+  - frontend/src/pages/SettingsPage/components/SpeechToneSection.tsx
+  - frontend/src/pages/SettingsPage/components/LlmSettingsSection.tsx
+  - frontend/src/pages/SettingsPage/components/TranslationSettingsSection.tsx
+  - frontend/src/pages/SettingsPage/components/BubbleDetectionSection.tsx
 ---
 
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 2.3
-**最終更新**: 2026-10-04
+**バージョン**: 2.4
+**最終更新**: 2026-10-10
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md)
 
 ---
 
@@ -63,9 +70,17 @@ systemタブは接続状態、VRAM、表示と操作の3論理カードで構成
 
 状態・ログ取得は7秒、サービス操作は120秒の待機予算を使う。操作timeout・504・応答不明は「要求結果未確認」と表示して状態を再取得し、再送しない。running表示だけで再起動成功と断定しない。ログAPIの`lines`は総行数number、本文は`content`であり、FEは表示用配列へ正規化する。Managerのbusyと各サービスの稼働状態は区別する。
 
-状態・ログ取得は7秒、サービス操作は120秒の待機予算を使う。操作timeout・504・応答不明は「要求結果未確認」と表示して状態を再取得し、再送しない。running表示だけで再起動成功と断定しない。ログAPIの`lines`は総行数number、本文は`content`であり、FEは表示用配列へ正規化する。Managerのbusyと各サービスの稼働状態は区別する。
+画面幅768px未満ではタブバーを横スクロール可能にし、スナップ位置をタブ単位にする。タブを画面幅へ均等縮小せず、選択タブが見える状態を保つ。設定カードは狭い画面で縦積みにし、操作対象は44px以上とする。AppShellのbottom nav（<768px）、tablet rail（768–1023px）、desktop sidebar（>=1024px）は[SPEC_COMMON.md](./SPEC_COMMON.md)の共通境界に従う。
 
-768px未満ではタブバーを横スクロール可能にし、スナップ位置をタブ単位にする。タブを画面幅へ均等縮小せず、選択タブが見える状態を保つ。操作ボタンなどのタッチ対象は最小44pxとし、狭い画面では各設定カードをモバイル向けに縦積み表示する。設定タブのレイアウト境界は768px、AppShell下部ナビゲーションの境界は1024pxで、設定ページから共通AppShellの仕様は変更しない。
+設定タブの初期値は有効なURL hash、保存済み有効tab ID、最後に`workflows`の順に解決し、tab選択後の戻る/進むもURL履歴から復元する。LLM Playgroundは設定値を保存するフォームではなく、現在編集中の未保存draftを試すstatelessな場である。token情報が応答にないときは推測せず「未取得」と表示する。
+
+設定変更は成功応答を確認した後だけ保存済み状態として表示する。保存失敗時は入力draftを保持して「未保存」と示し、再取得や古い非同期応答で入力を上書きしない。Speech Toneは名前付きsample cardsで未保存入力をpreviewし、最新draftの結果だけを採用して古い要求結果を表示しない。Bubble Detection等の設定編集中に未保存draftがある状態で遷移しようとした場合は確認overlayを出し、保存/破棄の選択までdraftを保護する。
+
+Translationの辞書照合は大文字小文字を区別するリテラル一致で、長い一致から一度だけ置換する。置換結果を再走査して連鎖変換せず、元の入力を破壊しない。キャッシュは元の入力・設定に対応する結果として扱い、置換済みテキストを別入力のキーへ流用しない。
+
+Workflow/Mapping設定のJSON import/exportはversion 1形式を使う。importはschema、workflow graph、対象Master IDを適用前に検証し、ファイル内のtarget名と件数をpreviewに表示する。preview表示だけではDBを変更せず、利用者の明示確認後に既存workflow update APIを一度だけ呼ぶ。`default_applied_assets`を省略したimportは既存値を保ち、明示`null`は関連付けを解除する。無効な入力ではpreviewの適用操作を許可しない。
+
+systemタブの接続/VRAM/表示・操作カードには、Supervisor、Windows Backend、ComfyUIの3つのコンパクトなservice cardsを配置する。停止/再起動の前に対象サービス名を明示したinline確認を行い、操作要求は二重送信しない。状態・ログ取得timeoutは7秒、サービス操作は120秒。結果が未確認のときは状態を再取得するだけで再送せず、ログ本文は初期状態で折り畳む。ログ取得は同一ホストの8899番Manager APIを使い、メインAPI（8000番）と混同しない。
 
 ---
 
@@ -158,6 +173,8 @@ interface TranslationSettings {
 
 ## 6. API 呼び出し
 
+`docs/openapi.yaml`はバックエンドOpenAPIから生成される契約ファイルで、現行生成物は117 pathを持つ。この一覧はSettings画面が利用するAPIの抜粋であり、OpenAPI全体の代替ではない。
+
 | 操作 | エンドポイント | ペイロード / パラメータ |
 |---|---|---|
 | マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters` | `{ "role": string, ... }` |
@@ -196,4 +213,4 @@ pages/SettingsPage/
 
 ---
 
-*本ドキュメントは現行の SettingsPage 実装に準拠した正本です。*
+*本ドキュメントはSettings画面の承認済み仕様と実装契約の正本です。この記述だけでREQ-334の全体QAや3-Gate完了を示すものではありません。*

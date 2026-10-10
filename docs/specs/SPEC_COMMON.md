@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.3
+**バージョン**: 2.4
 **最終更新**: 2026-10-10
-**ステータス**: 現行実装に完全準拠（TagChipパース規則・イベント型契約・キャッシュライフサイクル定義）
+**ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md)
 
 ---
 
@@ -14,29 +14,38 @@
 
 | トークン名 | 値 | 用途 |
 |---|---|---|
-| `base-bg` | `#0F0F11` | 最背面の背景色 |
-| `surface` | `#18181C` | カード・サイドバー・ヘッダーパネル背景 |
-| `surface-2` | `#1F1F25` | 入力欄・モーダル内部などの第2サーフェス |
-| `accent-green` | `#3ECF8E` | 主要アクション・アクティブ状態・成功色 |
-| `accent-purple` | `#7C6FDD` | LLM 機能・設定など特定の機能強調（限定使用） |
-| `border` | `rgba(255,255,255,0.08)` | 汎用ボーダー（細線） |
-| `text-primary` | `#E0E0E8` / `text-zinc-200` | 主要テキスト |
-| `text-muted` | `text-zinc-400` / `text-zinc-500` | サブテキスト |
+| `base-bg` | `#09090B` | 最背面の背景色 |
+| `surface` | `#121215` | 主要面・サイドバー・ヘッダーパネル背景 |
+| `surface-2` | `#18181C` | カード・入力欄の背景 |
+| `surface-3` | `#202024` | 共通ダイアログの外側サーフェス |
+| `accent-green` | `#3ecf8e` | 主要アクション・アクティブ状態・成功色 |
+| `accent-purple` | `#7C6FDD` | AI支援（限定使用） |
+| `border` | 白10% | カード・入力境界。区切り6%、強調18%、カード上辺8% |
+| `text-primary` | `#F4F4F5` / `#D4D4D8` | 見出し / 本文 |
+| `text-muted` | `#A1A1AA` / `#71717A` | 補助 / 非活性 |
 
 ### 1-2. タイポグラフィ
 
-- フォントファミリ: システムフォント（Tailwind デフォルト）
+- フォントファミリ: Inter、数値はJetBrains Monoとtabular-nums
 - ヘッダー・ラベル: `text-xs font-semibold` / `text-sm font-medium`
 - ボディテキスト: `text-sm text-zinc-300`
-- ミュートテキスト: `text-xs text-zinc-500`
+- ミュートテキスト: `text-xs text-zinc-400`、非活性は`text-zinc-500`
+- 通常UIの最小文字サイズは11px。ID、プロンプトID、技術値は読みやすさが必要な場面で等幅フォント（`font-mono`）を使う。
 
 ### 1-3. 共通 UI ルール
 
-- ボーダー: `border border-[rgba(255,255,255,0.08)]`（デフォルト）/ アクティブ時: `border-accent-green/50`
-- 角丸: `rounded-lg`（標準）/ `rounded-xl`（カード・モーダル）
+- ボーダー: 白10%（カード・入力）、区切り6% / 選択時: 緑枠・チェック
+- 角丸: モーダル外枠12px、ボタン・入力・カード8px、チップ・バッジ6px
+- 共通Modalはモバイルで上端12px・下端0、768px以上で12pxとし、ダイアログrole/name、focus管理、Escape/backdrop制御を共通化する。
 - スクロールバー: `.custom-scrollbar` クラスでカスタムスタイル適用（OS 標準非表示・細いダークスタイル）
 - トランジション: `transition-all` / `transition-colors`（ホバー・アクティブの変化）
 - アニメーション: `animate-pulse`（生成中インジケータ）/ `animate-fade-in`（モーダル等出現時）
+- モバイル操作対象は最小44×44pxを確保する。操作対象の意味・状態は色だけで伝えず、名称や状態テキストも併用する。
+
+### 1-4. 共通モーダルとレスポンシブ境界（REQ-334）
+
+- 通常の共通Modalは幅768px未満で画面下部のsheetとなり、上端ハンドル、safe-area余白、フォーカス復帰を提供する。768px以上は中央配置し、要求サイズに応じて最大580px（sm）、640px（md）、680px（lg）とする。幅768–1023pxはビューポート幅の90%を上限にする。
+- 画像閲覧を目的とする全画面プレビューだけは通常モーダル幅の上限を使わず、画像表示用の全画面契約を維持する。
 
 ---
 
@@ -48,7 +57,7 @@
 
 ### 2-2. デスクトップ: サイドバー
 
-- 左固定サイドバー（`w-56` デフォルト / `w-16` 折り畳み）
+- 画面幅1024px以上では左固定サイドバー（`w-56` / 224px、折り畳み時 `w-16` / 64px）を表示する。
 - 300ms のスムーズなトランジションで折り畳み切り替え
 - 折り畳み状態は localStorage キー `prompt-surgeon-sidebar-collapsed` で永続化
 - トグルボタン ID: `#sidebar-toggle`
@@ -57,6 +66,7 @@
 | アイコン | ラベル | ルート |
 |---|---|---|
 | Zap | Generate | `/` |
+| Sparkles | Studio | `/studio` |
 | Layers | LoRAs | `/loras` |
 | Tag | Tags | `/tags` |
 | Clock | History | `/history` |
@@ -64,13 +74,21 @@
 
 アクティブ状態: テキスト・アイコンを `accent-green`（`#3ECF8E`）でハイライト
 
-### 2-3. モバイル: ボトムナビゲーション
+### 2-3. タブレット: レールナビゲーション
 
-- 画面下部固定（`fixed bottom-0`）
-- アイコン ＋ ラベルテキスト（Generate / LoRAs / Tags / History / Settings）を表示
-- 全ページで同一のルーティング（`/`, `/loras`, `/tags`, `/history`, `/settings`）を共有
+画面幅768–1023pxでは左側に幅56pxのコンパクトなナビゲーションレールを表示する。画面幅1024px未満ではフル幅224pxのサイドバーを表示しない。
+
+### 2-4. モバイル: ボトムナビゲーション
+
+- 画面幅768px未満では画面下部に高さ54pxのナビゲーションを固定し、safe-area insetを加味する。
+- アイコン ＋ ラベルテキスト（Generate / Studio / LoRAs / Tags / History / Settings）を表示
+- 全ページで同一のルーティング（`/`, `/studio`, `/loras`, `/tags`, `/history`, `/settings`）を共有
 
 設定ページ固有のタブ、responsive、localStorage契約は [SPEC_SETTINGS.md](./SPEC_SETTINGS.md) を参照する。ここでは共通AppShellのナビゲーション境界を定義し、設定内のタブ状態や詳細開閉状態は定義しない。
+
+### 2-5. Generateの可変分割（REQ-334）
+
+デスクトップGenerateは、入力を担う左ペインとプレビュー/アクションを担う右ペインを分割線で区切る。分割比率は利用者の変更に応じて保存し、再表示時に復元する。最大幅へ到達した状態で更にサイクル操作を行う場合は開始比率へ戻す。画面幅800pxでは左ペインを330pxとし、右側に永続ActionBarとプレビュー領域を配置する。モバイルGenerateはこの分割を使わない。詳細は[SPEC_GENERATE.md](./SPEC_GENERATE.md)を参照。
 
 ---
 
@@ -321,3 +339,8 @@ interface TagChipEventDetail {
 ---
 
 *本ドキュメントは共通仕様の正本です。キャッシュ実装は [`App.tsx`](../../frontend/src/App.tsx) と [`queryCachePersister.ts`](../../frontend/src/utils/queryCachePersister.ts) を参照する。*
+
+
+## REQ-334 共通表示の最終補正
+
+選択枠はhover中も3ECF8Eを維持する。手動作成・保存は緑/暗い文字、AI支援だけ紫、データ属性badgeは中立色。768〜1023pxでは下部nav余白をModal backdropへ加えず16px paddingで中央配置し、標準:fullscreenで画像全画面を除外する。mobile rangeとsummaryの操作領域も44px。資源容量と秒数はJetBrains Mono/tabular-nums。

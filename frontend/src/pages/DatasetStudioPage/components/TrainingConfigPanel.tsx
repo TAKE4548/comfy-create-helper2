@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { AlertTriangle, Rocket, Settings2, Square } from 'lucide-react'
 import { useStudioStore } from '../useStudioStore'
 import { trainingApi } from '../../../api/client'
 import { TrainingTooltip } from './TrainingTooltip'
@@ -181,7 +182,7 @@ noise_offset = ${noiseOffset}
       {/* Header and VRAM Guard Warning */}
       <div className="flex flex-col gap-2">
         <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-          <span>⚙️</span> Step 3: ローカル学習設定 & リアルタイム監視
+          <Settings2 aria-hidden="true" className="h-5 w-5" /> Step 4: ローカル学習設定 & リアルタイム監視
         </h2>
         <p className="text-sm text-zinc-400">
           LoRA学習パラメータを設定し、WSL2上の学習プロセスを非同期起動します。AMD ROCm / RX 9070 XT に最適化されたパラメータを推奨しています。
@@ -192,7 +193,7 @@ noise_offset = ${noiseOffset}
             className="bg-amber-950/40 border border-amber-600/60 rounded-lg p-3 text-amber-300 text-sm flex items-center gap-2"
             data-testid="vram-guard-alert"
           >
-            <span>⚠️</span>
+            <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span>
               <strong>VRAMガード発動中:</strong> 現在学習プロセスがGPUを排他利用しているため、他画面での画像生成キュー投入はブロックされています。
             </span>
@@ -440,7 +441,7 @@ noise_offset = ${noiseOffset}
                 data-testid="btn-start-training"
                 className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg shadow transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span>🚀</span>
+                <Rocket aria-hidden="true" className="h-4 w-4" />
                 <span>{isStarting ? '起動中...' : '学習プロセス起動'}</span>
               </button>
             ) : (
@@ -450,7 +451,7 @@ noise_offset = ${noiseOffset}
                 data-testid="btn-stop-training"
                 className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg shadow transition-colors flex items-center justify-center gap-2"
               >
-                <span>⏹️</span>
+                <Square aria-hidden="true" className="h-4 w-4" />
                 <span>安全停止</span>
               </button>
             )}
@@ -492,4 +493,3 @@ noise_offset = ${noiseOffset}
     </div>
   )
 }
-

@@ -2,7 +2,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TranslationSettingsSection } from '../TranslationSettingsSection'
-import { llmPromptsApi, translateApi } from '../../../../api/client'
+import { llmPromptsApi, settingsApi, translateApi } from '../../../../api/client'
+import { VramGuardSection } from '../VramGuardSection'
 
 vi.mock('../../../../api/client', () => ({
   llmPromptsApi: {
@@ -14,6 +15,7 @@ vi.mock('../../../../api/client', () => ({
     testConnection: vi.fn().mockResolvedValue({ success: true, sample_translation: '少女、美しい空' }),
     clearCache: vi.fn().mockResolvedValue({ count: 5 }),
   },
+  settingsApi: { getVram: vi.fn(), updateVram: vi.fn() },
 }))
 
 describe('TranslationSettingsSection', () => {
@@ -26,6 +28,12 @@ describe('TranslationSettingsSection', () => {
       { id: 2, key: 'translation_api_key', content: 'test-api-key', updated_at: '2026-01-01T00:00:00Z' },
       { id: 3, key: 'translation_api_url', content: 'https://custom.api.url', updated_at: '2026-01-01T00:00:00Z' },
     ])
+    vi.mocked(settingsApi.getVram).mockResolvedValue({
+      vram_min_free_gb: 4,
+      vram_guard_enabled: true,
+      vram_free_gb: 8,
+      vram_total_gb: 12,
+    })
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -43,6 +51,15 @@ describe('TranslationSettingsSection', () => {
     await waitFor(() => {
       expect(screen.getByText('Google Cloud Translation API')).toBeInTheDocument()
     })
+    expect(screen.getByRole('button', { name: /Translation Settings/ }).querySelector('svg.lucide-chevron-down')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('uses a decorative Lucide marker for the VRAM threshold instead of an arrow glyph', async () => {
+    render(<QueryClientProvider client={queryClient}><VramGuardSection isExpanded onToggle={vi.fn()} /></QueryClientProvider>)
+    await screen.findByLabelText('最小必要空き容量 (vram_min_free_gb)')
+    const threshold = screen.getByText(/閾値:/).closest('span')
+    expect(threshold?.querySelector('svg.lucide-chevron-up')).toHaveAttribute('aria-hidden', 'true')
+    expect(threshold).not.toHaveTextContent('▲')
   })
 
   it('saves settings with object payload { content: ... } on submit', async () => {
@@ -250,5 +267,62 @@ describe('TranslationSettingsSection', () => {
       const fuguRadio = screen.getByLabelText(/FuguMT/i) as HTMLInputElement
       expect(fuguRadio.checked).toBe(true)
     })
+  })
+
+  it('tests the current unsaved credentials and displays the provider response without saving', async () => {
+    vi.mocked(translateApi.testConnection).mockResolvedValueOnce({ success: true, sample_translation: '未保存キーでの翻訳' })
+    render(<QueryClientProvider client={queryClient}><TranslationSettingsSection isExpanded onToggle={vi.fn()} /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByDisplayValue('test-api-key')).toBeInTheDocument())
+    fireEvent.change(screen.getByDisplayValue('test-api-key'), { target: { value: 'draft-secret-value' } })
+    fireEvent.change(screen.getByDisplayValue('https://custom.api.url'), { target: { value: 'https://draft.example' } })
+    fireEvent.click(screen.getByRole('button', { name: /疎通テスト/i }))
+
+    await waitFor(() => {
+      expect(translateApi.testConnection).toHaveBeenCalledWith({ provider: 'google_cloud', api_key: 'draft-secret-value', api_url: 'https://draft.example' })
+      expect(screen.getByText('疎通テスト成功')).toBeInTheDocument()
+      expect(screen.getByText(/未保存キーでの翻訳/)).toBeInTheDocument()
+    })
+    expect(llmPromptsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('displays the API connection failure reason', async () => {
+    vi.mocked(translateApi.testConnection).mockResolvedValueOnce({ success: false, sample_translation: '', error: 'invalid credentials' })
+    render(<QueryClientProvider client={queryClient}><TranslationSettingsSection isExpanded onToggle={vi.fn()} /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByText('Google Cloud Translation API')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /疎通テスト/i }))
+    expect(await screen.findByText('疎通テスト失敗')).toBeInTheDocument()
+    expect(screen.getByText('invalid credentials')).toBeInTheDocument()
+  })
+
+  it('ignores a connection response after provider changes and prevents duplicate requests', async () => {
+    let resolveTest!: (result: { success: boolean; sample_translation: string }) => void
+    vi.mocked(translateApi.testConnection).mockReturnValueOnce(new Promise((resolve) => { resolveTest = resolve }))
+    render(<QueryClientProvider client={queryClient}><TranslationSettingsSection isExpanded onToggle={vi.fn()} /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByText('Google Cloud Translation API')).toBeInTheDocument())
+    const testButton = screen.getByRole('button', { name: /疎通テスト/i })
+    fireEvent.click(testButton)
+    expect(testButton).toBeDisabled()
+    fireEvent.click(testButton)
+    expect(translateApi.testConnection).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByLabelText(/FuguMT/i))
+    resolveTest({ success: true, sample_translation: 'stale secret result' })
+    await waitFor(() => expect(screen.getByRole('button', { name: /疎通テスト/i })).toBeEnabled())
+    expect(screen.queryByText(/stale secret result/)).toBeNull()
+  })
+
+  it('shows exact save success and preserves the draft with an unsaved reason after save failure', async () => {
+    render(<QueryClientProvider client={queryClient}><TranslationSettingsSection isExpanded onToggle={vi.fn()} /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByText('Google Cloud Translation API')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /設定を保存/i }))
+    await waitFor(() => expect(screen.getByText(/設定を保存しました/)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByDisplayValue('test-api-key'), { target: { value: 'retryable-secret' } })
+    vi.mocked(llmPromptsApi.update).mockRejectedValueOnce(new Error('provider unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: /設定を保存/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('provider unavailable')
+    expect(screen.getByRole('alert')).toHaveTextContent('設定は未保存です')
+    expect(screen.getByDisplayValue('retryable-secret')).toBeInTheDocument()
+    expect(screen.queryByText('設定を保存しました')).toBeNull()
   })
 })

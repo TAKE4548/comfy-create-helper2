@@ -2,7 +2,7 @@ import io
 import json
 from typing import Optional
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from PIL import Image
@@ -220,6 +220,8 @@ def detect_bubble_roi_endpoint(snapshot_id: int, payload: ROIRequest, db: Sessio
 
 class BubbleDebugRequest(BaseModel):
     roi: Optional[dict] = None
+    min_area: Optional[int] = Field(default=None, ge=50, le=5000)
+    min_brightness: Optional[int] = Field(default=None, ge=0, le=255)
 
 
 @router.post("/{snapshot_id}/detect-bubble-debug")
@@ -232,6 +234,8 @@ def detect_bubble_debug_endpoint(snapshot_id: int, payload: BubbleDebugRequest, 
     from app import models
     filename = s.image_path.split("/")[-1]
     full_path = Path(settings.snapshot_path) / filename
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="Snapshot image is unavailable")
 
     min_area = 1000
     min_brightness = 150
@@ -239,10 +243,18 @@ def detect_bubble_debug_endpoint(snapshot_id: int, payload: BubbleDebugRequest, 
     if setting and setting.content:
         try:
             params = json.loads(setting.content)
-            min_area = params.get("min_area", 1000)
-            min_brightness = params.get("min_brightness", 150)
+            if isinstance(params, dict):
+                saved_area = params.get("min_area")
+                saved_brightness = params.get("min_brightness")
+                if type(saved_area) is int and 50 <= saved_area <= 5000:
+                    min_area = saved_area
+                if type(saved_brightness) is int and 0 <= saved_brightness <= 255:
+                    min_brightness = saved_brightness
         except Exception:
             pass
+
+    min_area = payload.min_area if payload.min_area is not None else min_area
+    min_brightness = payload.min_brightness if payload.min_brightness is not None else min_brightness
 
     candidates = detect_bubble_candidates(
         str(full_path),
@@ -251,4 +263,3 @@ def detect_bubble_debug_endpoint(snapshot_id: int, payload: BubbleDebugRequest, 
         min_brightness=min_brightness
     )
     return {"candidates": candidates}
-

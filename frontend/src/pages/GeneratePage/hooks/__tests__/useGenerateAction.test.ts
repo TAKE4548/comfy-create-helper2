@@ -1304,6 +1304,31 @@ describe('useGenerateAction', () => {
       expect(metadata.paramValues.prompt).toBe('latest prompt right before click');
     });
 
+    it('captures the active set name on the normal batch item before submission', async () => {
+      mockStore.sets = [{ id: 'set-active', name: 'Initial name', batchSize: 1, seedMode: 'fixed', seed: 12, checked: true, paramValues: {} }]
+      mockStore.activeSetId = 'set-active'
+      mockStore.submitGenerationBatch.mockImplementationOnce(async (request: any) => {
+        mockStore.sets[0].name = 'Changed after submission started'
+        mockStore.activeSetId = null
+        return { batch_id: 'named-batch', job_ids: ['named-job'] }
+      })
+
+      await useGenerateAction(baseWorkflow).handleGenerate()
+
+      const request = mockStore.submitGenerationBatch.mock.calls[0][0]
+      expect(request.items[0].set_name).toBe('Initial name')
+    })
+
+    it('omits set_name when the active set id does not match an existing set', async () => {
+      mockStore.sets = [{ id: 'saved-set', name: 'Existing', batchSize: 1, seedMode: 'fixed', seed: 12, checked: true, paramValues: {} }]
+      mockStore.activeSetId = 'unknown-active-id'
+
+      await useGenerateAction(baseWorkflow).handleGenerate()
+
+      const request = mockStore.submitGenerationBatch.mock.calls[0][0]
+      expect(request.items[0]).not.toHaveProperty('set_name')
+    })
+
     it('RT-3: does not overwrite checked set when activeSetId points to a different (unchecked) set', async () => {
       mockStore.sets = [
         {

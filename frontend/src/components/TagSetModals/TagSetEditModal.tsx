@@ -228,7 +228,7 @@ export function TagSetEditModal({
                   id="save-edit-tagset-btn"
                   onClick={onSubmit}
                   disabled={!form.name || !form.tags || isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-[#7C6FDD] text-white font-bold text-sm hover:bg-[#6d62cc] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="flex-1 py-2.5 rounded-xl bg-accent-green text-zinc-950 font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   {isPending ? 'Saving…' : 'Save Changes'}
                 </button>

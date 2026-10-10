@@ -125,6 +125,56 @@ describe('CuratorGrid', () => {
     expect(useStudioStore.getState().items[0].status).toBe('REJECTED')
   })
 
+  it('preserves existing decisions and exposes the requested responsive columns', () => {
+    useStudioStore.setState({
+      items: mockItems.map((item, index) => ({ ...item, status: index === 0 ? 'REJECTED' : 'APPROVED' })),
+    })
+    const { unmount } = render(<CuratorGrid />)
+
+    expect(useStudioStore.getState().items.map((item) => item.status)).toEqual(['REJECTED', 'APPROVED'])
+    expect(screen.getByTestId('curator-grid')).toHaveClass('grid-cols-2', 'md:grid-cols-3', 'xl:grid-cols-4')
+    expect(screen.getByTestId('curator-item-1')).toHaveClass('border-amber-500/70')
+    expect(screen.getByTestId('status-badge-1')).toHaveTextContent('REJECTED')
+
+    unmount()
+    render(<CuratorGrid />)
+    expect(useStudioStore.getState().items[0].status).toBe('REJECTED')
+  })
+
+  it('supports card keyboard decisions, bounded navigation, and image preview', () => {
+    render(<CuratorGrid />)
+    const firstCard = screen.getByTestId('curator-item-1')
+    const secondCard = screen.getByTestId('curator-item-2')
+
+    firstCard.focus()
+    fireEvent.keyDown(firstCard, { key: 'x' })
+    expect(useStudioStore.getState().items[0].status).toBe('REJECTED')
+    fireEvent.keyDown(firstCard, { key: 'ArrowUp' })
+    expect(useStudioStore.getState().items[0].status).toBe('APPROVED')
+    fireEvent.keyDown(firstCard, { key: 'ArrowDown' })
+    expect(useStudioStore.getState().items[0].status).toBe('REJECTED')
+
+    fireEvent.keyDown(firstCard, { key: 'ArrowLeft' })
+    expect(firstCard).toHaveFocus()
+    fireEvent.keyDown(firstCard, { key: 'ArrowRight' })
+    expect(secondCard).toHaveFocus()
+    fireEvent.keyDown(secondCard, { key: 'ArrowRight' })
+    expect(secondCard).toHaveFocus()
+
+    fireEvent.keyDown(secondCard, { key: ' ' })
+    expect(screen.getByRole('img', { name: 'Slot 2 preview' })).toBeInTheDocument()
+  })
+
+  it('does not hijack keyboard shortcuts from caption controls', () => {
+    render(<CuratorGrid />)
+    const textarea = screen.getByTestId('caption-editor-1')
+
+    fireEvent.keyDown(textarea, { key: 'x' })
+    fireEvent.keyDown(textarea, { key: ' ' })
+    expect(useStudioStore.getState().items[0].status).toBe('APPROVED')
+    expect(screen.queryByRole('img', { name: 'Slot 1 preview' })).not.toBeInTheDocument()
+  })
+
   it('updates caption text when edited', () => {
     render(<CuratorGrid />)
 

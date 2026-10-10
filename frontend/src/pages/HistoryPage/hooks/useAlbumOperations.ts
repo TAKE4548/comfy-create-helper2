@@ -35,9 +35,14 @@ export function useAlbumOperations({ initialSelectedAlbumId = null }: UseAlbumOp
     if (!currentAlbum) return []
     return [...currentAlbum.items].sort((a, b) => {
       if (albumSortCriterion === 'date') {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-        return albumSortDirection === 'asc' ? dateA - dateB : dateB - dateA
+        const parsedDateA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const parsedDateB = b.created_at ? new Date(b.created_at).getTime() : 0
+        const dateA = Number.isFinite(parsedDateA) ? parsedDateA : 0
+        const dateB = Number.isFinite(parsedDateB) ? parsedDateB : 0
+        if (dateA !== dateB) {
+          return albumSortDirection === 'asc' ? dateA - dateB : dateB - dateA
+        }
+        return a.sequence_order - b.sequence_order
       } else {
         return albumSortDirection === 'asc'
           ? a.sequence_order - b.sequence_order

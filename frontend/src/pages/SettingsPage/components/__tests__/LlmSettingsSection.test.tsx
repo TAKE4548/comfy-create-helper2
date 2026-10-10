@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   getCurrentModel: vi.fn(),
   updateCurrentModel: vi.fn(),
   update: vi.fn(),
+  playground: vi.fn(),
 }))
 
 vi.mock('../../../../api/client', () => ({ llmPromptsApi: api }))
@@ -57,6 +58,7 @@ describe('LlmSettingsSection grouped contracts', () => {
     api.getCurrentModel.mockReset().mockResolvedValue({ key: 'llm_current_model', content: 'model-a' })
     api.updateCurrentModel.mockReset().mockResolvedValue({})
     api.update.mockReset().mockResolvedValue({})
+    api.playground.mockReset().mockResolvedValue({ rendered_prompt: 'expanded system', result: 'preview result', token_limit: null })
   })
 
   it.each([
@@ -240,5 +242,91 @@ describe('LlmSettingsSection grouped contracts', () => {
     expect(container.querySelector('#settings-translation-model-select')).toBeEnabled()
     expect(container.querySelectorAll('input[type="number"]')[0]).toHaveValue(0.2)
     expect(screen.getByText('翻訳パラメータ設定')).toBeVisible()
+  })
+
+  it('previews unsaved preset, input, and variables with expanded output and unknown context limit', async () => {
+    api.list.mockResolvedValue(records.map((record) => record.key === 'audit_interference'
+      ? { ...record, content: 'System {{name}}' }
+      : { ...record }))
+    const { container } = mount('prompt', undefined, true)
+    await ready(container)
+    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
+    const presetEditor = container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!
+    fireEvent.change(presetEditor, { target: { value: 'Unsaved {{name}}' } })
+    fireEvent.change(screen.getByLabelText('Playground input'), { target: { value: 'Describe {{name}}' } })
+    fireEvent.change(screen.getByLabelText('Playground variables'), { target: { value: '{"name":"Mage"}' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview prompt' }))
+
+    await waitFor(() => expect(api.playground).toHaveBeenCalledWith({
+      system_prompt: 'Unsaved {{name}}',
+      text: 'Describe {{name}}',
+      variables: { name: 'Mage' },
+      model: 'model-a',
+      llm_params: JSON.parse(records.find((record) => record.key === 'llm_params_audit')!.content),
+    }))
+    expect(api.update).not.toHaveBeenCalled()
+    expect(await screen.findByText('preview result')).toBeVisible()
+    expect(screen.getByText(/Context token limit: 未取得/)).toBeVisible()
+    expect(screen.getByTestId('playground-prompt-preview')).toHaveTextContent('Unsaved {{name}}')
+    fireEvent.click(screen.getByRole('button', { name: 'Expanded system prompt' }))
+    expect(screen.getByTestId('playground-prompt-preview')).toHaveTextContent('expanded system')
+  })
+
+  it('preserves Playground drafts on failure and ignores a response made stale by editing input', async () => {
+    const { container } = mount('prompt', undefined, true)
+    await ready(container)
+    fireEvent.change(screen.getByLabelText('Playground input'), { target: { value: 'Keep this draft' } })
+    api.playground.mockRejectedValueOnce(new Error('Playground offline'))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview prompt' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Playground offline')
+    expect(screen.getByLabelText('Playground input')).toHaveValue('Keep this draft')
+    expect(api.update).not.toHaveBeenCalled()
+
+    let resolvePreview!: (value: { rendered_prompt: string; result: string; token_limit: number | null }) => void
+    api.playground.mockImplementationOnce(() => new Promise((resolve) => { resolvePreview = resolve }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview prompt' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previewing…' }))
+    expect(api.playground).toHaveBeenCalledTimes(2)
+    fireEvent.change(screen.getByLabelText('Playground input'), { target: { value: 'New draft' } })
+    resolvePreview({ rendered_prompt: 'stale', result: 'stale result', token_limit: 4096 })
+    await waitFor(() => expect(screen.queryByText('stale result')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Playground input')).toHaveValue('New draft')
+  })
+
+  it('shows exact save success only after the prompt update resolves', async () => {
+    const { container } = mount('prompt', undefined, true)
+    await ready(container)
+    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
+    fireEvent.change(container.querySelector('#prompt-content-audit_interference')!, { target: { value: 'Saved prompt draft' } })
+    expect(screen.queryByText('設定を保存しました')).toBeNull()
+    fireEvent.click(container.querySelector('#prompt-save-audit_interference')!)
+
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('audit_interference', { content: 'Saved prompt draft' }))
+    expect(await screen.findByText('設定を保存しました')).toBeInTheDocument()
+  })
+
+  it('shows the save failure reason, preserves drafts, and ignores stale success for a newer edit', async () => {
+    api.update.mockRejectedValueOnce(new Error('storage unavailable'))
+    const { container } = mount('prompt', undefined, true)
+    await ready(container)
+    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
+    const editor = container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!
+    fireEvent.change(editor, { target: { value: 'Retryable draft' } })
+    fireEvent.click(container.querySelector('#prompt-save-audit_interference')!)
+    expect(await screen.findByRole('alert')).toHaveTextContent('storage unavailable')
+    expect(screen.getByRole('alert')).toHaveTextContent('設定は未保存です')
+    expect(editor).toHaveValue('Retryable draft')
+    expect(screen.queryByText('設定を保存しました')).toBeNull()
+
+    let resolveSave!: (value: unknown) => void
+    api.update.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    fireEvent.click(container.querySelector('#prompt-save-audit_interference')!)
+    await waitFor(() => expect(api.update).toHaveBeenCalledTimes(2))
+    fireEvent.change(editor, { target: { value: 'Newer unsaved draft' } })
+    resolveSave({})
+    await waitFor(() => expect(editor).toHaveValue('Newer unsaved draft'))
+    expect(screen.queryByText('設定を保存しました')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

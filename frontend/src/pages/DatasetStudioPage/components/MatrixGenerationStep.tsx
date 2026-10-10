@@ -833,7 +833,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
 
       {/* REQ-331 Section 1: Prompts & Outfits (CollapsibleSection) */}
       <CollapsibleSection
-        title="① マトリクス因子プロンプト・衣装設定 (Prompts & Outfits)"
+        title="マトリクス因子プロンプト・衣装設定 (Prompts & Outfits)"
         defaultOpen={true}
         id="prompts-section"
       >
@@ -844,7 +844,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-zinc-200">① メタ情報 (Meta & Quality)</h3>
+              <h3 className="text-sm font-semibold text-zinc-200">メタ情報 (Meta & Quality)</h3>
               <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">共通維持</span>
             </div>
             <p className="text-xs text-zinc-400 mb-3">
@@ -868,7 +868,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-zinc-200">② 身体的特徴・顔 (Face & Body)</h3>
+              <h3 className="text-sm font-semibold text-zinc-200">身体的特徴・顔 (Face & Body)</h3>
               <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded">
                 連動: {characterTrigger}
               </span>
@@ -894,7 +894,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-zinc-200">③ 専用の服装 (Default Outfit)</h3>
+              <h3 className="text-sm font-semibold text-zinc-200">専用の服装 (Default Outfit)</h3>
               <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded">
                 連動: {outfitTrigger}
               </span>
@@ -921,7 +921,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
 
       {/* REQ-331 Section 2: Negative Prompt (CollapsibleSection) */}
       <CollapsibleSection
-        title="② ネガティブプロンプト (Negative Prompt)"
+        title="ネガティブプロンプト (Negative Prompt)"
         defaultOpen={true}
         id="negative-section"
         badge={
@@ -950,7 +950,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
 
       {/* REQ-331 Section 3: Generation Parameters (CollapsibleSection) */}
       <CollapsibleSection
-        title="③ 生成パラメータ設定 (Generation Parameters)"
+        title="生成パラメータ設定 (Generation Parameters)"
         defaultOpen={true}
         id="params-section"
         badge={
@@ -980,7 +980,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
 
       {/* REQ-331 Section 4: Bypass & Node Mapping Details (CollapsibleSection) */}
       <CollapsibleSection
-        title="④ バイパス・ノード詳細設定 (Bypasses & Mappings)"
+        title="バイパス・ノード詳細設定 (Bypasses & Mappings)"
         defaultOpen={false}
         id="bypass-mapping-section"
         badge={

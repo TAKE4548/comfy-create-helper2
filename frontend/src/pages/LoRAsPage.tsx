@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Folder, Copy, Layers, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Search, Folder, Layers, Trash2, Pencil, Settings2, CheckSquare, Square, GripVertical, ChevronDown, ChevronRight, FileJson } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -29,7 +29,7 @@ import {
 import { ImageCropper } from '../components/ImageCropper'
 import { useThumbnailAspectRatio } from '../hooks/useThumbnailAspectRatio'
 
-import { useMultiSelect } from '../hooks/useMultiSelect'
+import { useCollectionSelection } from '../hooks/useCollectionSelection'
 import { BulkEditModal, type BulkEditField } from '../components/BulkEditModal'
 import { MultiSelectToolbar } from '../components/MultiSelectToolbar'
 
@@ -60,16 +60,6 @@ interface DragHandleRenderProps {
 function SortableLoraCard({ id, children, disabled }: { id: number; children: (handleProps: DragHandleRenderProps) => React.ReactNode; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
 
-  const mouseListeners: React.DOMAttributes<HTMLDivElement> = {
-    onMouseDown: listeners?.onMouseDown as any,
-    onKeyDown: listeners?.onKeyDown as any,
-  }
-
-  const touchHandleListeners: DragHandleListeners = {
-    onTouchStart: listeners?.onTouchStart as any,
-    onMouseDown: listeners?.onMouseDown as any,
-  }
-
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -78,8 +68,8 @@ function SortableLoraCard({ id, children, disabled }: { id: number; children: (h
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...mouseListeners}>
-      {children({ attributes, listeners: touchHandleListeners, isDragging })}
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners: listeners as DragHandleListeners, isDragging })}
     </div>
   )
 }
@@ -122,18 +112,8 @@ export function LoRAsPage() {
   // Use state dynamically inside component to check isMultiSelectMode
   const [activeId, setActiveId] = useState<number | null>(null)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [items, setItems] = useState<Lora[]>([])
-
-  const {
-    isMultiSelectMode,
-    selectedIds,
-    exitMultiSelectMode,
-    handleItemClick,
-    getLongPressHandlers,
-    isSelected,
-    selectAll,
-    clearSelection,
-  } = useMultiSelect({ items })
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -156,6 +136,7 @@ export function LoRAsPage() {
   const [tooltipLora, setTooltipLora] = useState<number | null>(null)
   const [selectedLoraForDetail, setSelectedLoraForDetail] = useState<Lora | null>(null)
   const [copiedTriggerSetId, setCopiedTriggerSetId] = useState<number | null>(null)
+  const [copiedTriggerWord, setCopiedTriggerWord] = useState<string | null>(null)
   const [form, setForm] = useState<LoraFormState>(EMPTY_FORM)
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
   const { aspectRatioStyle, numericRatio } = useThumbnailAspectRatio()
@@ -196,6 +177,15 @@ export function LoRAsPage() {
   const deleteLora = useMutation({
     mutationFn: (id: number) => lorasApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loras'] }),
+  })
+
+  const bulkDeleteLoras = useMutation({
+    mutationFn: () => Promise.all([...selectedIds].map((id) => lorasApi.delete(id))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['loras'] })
+      exitMultiSelectMode()
+      setShowBulkDeleteConfirm(false)
+    },
   })
 
   const updateLora = useMutation({
@@ -256,6 +246,12 @@ export function LoRAsPage() {
       label: '推奨強度',
       type: 'strength_range',
     },
+    {
+      key: 'target_base_model_ids',
+      label: '対象ベースモデル',
+      type: 'multi_select',
+      options: baseModels?.map((model) => ({ id: model.id, name: model.name })) || [],
+    },
   ]
 
   const bulkUpdateLoras = useMutation({
@@ -272,6 +268,8 @@ export function LoRAsPage() {
             category_id: lora.category_id,
             file_path: lora.file_path,
             thumbnail_path: lora.thumbnail_path,
+            target_base_model_ids: lora.target_base_model_ids ?? [],
+            example_paths: lora.example_paths ?? [],
             ...values,
             trigger_word_sets: lora.trigger_word_sets.map((tws) => ({
               name: tws.name,
@@ -294,8 +292,6 @@ export function LoRAsPage() {
     (l.description ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
-  const isDndActive = !search && selectedBaseModelIds.length === 0
-
   const handleCopy = (id: number, words: string) => {
     navigator.clipboard.writeText(words)
     setCopiedTriggerSetId(id)
@@ -303,10 +299,15 @@ export function LoRAsPage() {
   }
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (isMultiSelectMode) return
     setActiveId(event.active.id as number)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (isMultiSelectMode) {
+      setActiveId(null)
+      return
+    }
     const { active, over } = event
     setActiveId(null)
     if (!over || active.id === over.id) return
@@ -411,16 +412,43 @@ export function LoRAsPage() {
     selectedCategoryIds.includes('uncategorized') ||
     (selectedCategoryIds.length === 0 && allUncategorizedItems.length > 0)
 
+  const selectionItems = [
+    ...visibleCategories.flatMap((category) => filteredLoras.filter((lora) => lora.category_id === category.id)),
+    ...(showUncategorized ? uncategorizedItems : []),
+  ]
+  const {
+    isMultiSelectMode,
+    selectedIds,
+    exitMultiSelectMode,
+    handleItemClick,
+    getLongPressHandlers,
+    isSelected,
+    selectAll,
+    clearSelection,
+  } = useCollectionSelection<number, Lora>({ items: selectionItems })
+  const isDndActive = !search && selectedBaseModelIds.length === 0 && !isMultiSelectMode
+  const selectedLoras = selectionItems.filter((lora) => selectedIds.has(lora.id))
+
+  const exportSelectedLoras = () => {
+    const blob = new Blob([JSON.stringify(selectedLoras, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'loras.json'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   const renderLoraCard = (lora: Lora) => {
     const catName = categories?.find((c) => c.id === lora.category_id)?.name
     const longPressHandlers = getLongPressHandlers(lora.id)
     return (
       <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
-        {({ listeners: touchHandleListeners }) => (
+        {({ attributes, listeners: handleListeners }) => (
           <div
             id={`lora-card-${lora.id}`}
             onClick={(e) => {
-              if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+              if (isMultiSelectMode || e.ctrlKey || e.metaKey || e.shiftKey) {
                 e.stopPropagation()
                 handleItemClick(lora.id, e)
               } else {
@@ -432,7 +460,9 @@ export function LoRAsPage() {
             onMouseLeave={longPressHandlers.onMouseLeave}
             onTouchStart={longPressHandlers.onTouchStart}
             onTouchEnd={longPressHandlers.onTouchEnd}
-            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col justify-between h-full min-h-[300px] ${
+            onTouchCancel={longPressHandlers.onTouchCancel}
+            onContextMenu={longPressHandlers.onContextMenu}
+            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col h-[320px] min-h-[320px] max-h-[320px] ${
               isMultiSelectMode && isSelected(lora.id)
                 ? 'border-[#3ECF8E] ring-1 ring-[#3ECF8E]/30 bg-surface'
                 : 'border-[rgba(255,255,255,0.06)] bg-surface'
@@ -453,7 +483,8 @@ export function LoRAsPage() {
                 style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
                 onContextMenu={(e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault()}
                 onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
-                {...touchHandleListeners}
+                {...attributes}
+                {...handleListeners}
                 title="ドラッグして並び替え"
                 aria-label="並び替えハンドル"
               >
@@ -465,8 +496,9 @@ export function LoRAsPage() {
               thumbnailPath={lora.thumbnail_path}
               snapshotPaths={lora.snapshot_paths}
               alt={lora.model_name}
-              className="w-full"
-              style={aspectRatioStyle}
+              className="w-full shrink-0"
+              imageAspectRatio={numericRatio}
+              imageAreaFraction={0.58}
             >
               <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
                 className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
@@ -479,10 +511,10 @@ export function LoRAsPage() {
               </button>
             </ImageCarousel>
 
-            <div className="p-3 flex-1 flex flex-col justify-between gap-2">
-              <div className="space-y-1.5 min-w-0">
+            <div className="p-3 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-start gap-2">
+                <div className="space-y-1.5 min-w-0 overflow-hidden shrink-0">
                 <div>
-                  <p className="text-xs font-medium text-zinc-200 truncate" title={lora.description || lora.model_name}>
+                  <p className="text-xs font-medium text-zinc-200 line-clamp-2 break-words" title={lora.description || lora.model_name}>
                     {lora.description || lora.model_name.split('/').pop()}
                   </p>
                   {lora.description && <p className="text-xs text-zinc-500 truncate mt-0.5" title={lora.model_name}>{lora.model_name.split('/').pop()}</p>}
@@ -500,21 +532,30 @@ export function LoRAsPage() {
               </div>
 
               {lora.trigger_word_sets.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-1 shrink-0">
                   {lora.trigger_word_sets.slice(0, 2).map((tws) => (
                     <div key={tws.id} className="flex items-center gap-1.5 group/tws">
-                      <p className="text-xs text-zinc-600 truncate flex-1">{tws.words.slice(0, 3).join(', ')}{tws.words.length > 3 ? '…' : ''}</p>
-                      <button id={`copy-trigger-${tws.id}`}
-                        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(tws.words.join(', ')) }}
-                        className="opacity-0 group-hover/tws:opacity-100 transition-opacity text-zinc-500 hover:text-zinc-300">
-                        <Copy size={11} />
-                      </button>
+                      <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+                        {tws.words.slice(0, 3).map((word, index) => {
+                          const isCopied = copiedTriggerWord === `${tws.id}:${word}`
+                          return <button key={`${word}-${index}`} id={`copy-trigger-${tws.id}${index ? `-${index}` : ''}`} type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(word)
+                              setCopiedTriggerWord(`${tws.id}:${word}`)
+                              setTimeout(() => setCopiedTriggerWord(null), 1200)
+                            }}
+                            className={`max-w-full truncate text-xs ${isCopied ? 'text-accent-green' : 'text-zinc-600 hover:text-zinc-300'}`}
+                            aria-label={`Copy trigger word ${word}`}>{isCopied ? 'Copied' : word}</button>
+                        })}
+                        {tws.words.length > 3 && <span className="text-xs text-zinc-600">…</span>}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
+              <div className="flex items-center justify-between border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1 shrink-0">
                 {lora.file_path ? (
                   <div className="relative">
                     <button id={`lora-path-${lora.id}`}
@@ -545,11 +586,22 @@ export function LoRAsPage() {
       {isMultiSelectMode && (
         <MultiSelectToolbar
           selectedCount={selectedIds.size}
-          totalCount={items.length}
+          totalCount={selectionItems.length}
           onSelectAll={selectAll}
           onClearSelection={clearSelection}
           onExitMode={exitMultiSelectMode}
           actions={
+            <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportSelectedLoras}
+              disabled={selectedIds.size === 0}
+              aria-label="選択をJSONエクスポート"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-zinc-300 text-xs font-medium hover:bg-white/5 transition-all disabled:opacity-50"
+            >
+              <FileJson size={12} aria-hidden="true" />
+              JSONエクスポート
+            </button>
             <button
               onClick={() => setShowBulkEdit(true)}
               disabled={selectedIds.size === 0}
@@ -558,6 +610,15 @@ export function LoRAsPage() {
               <Pencil size={12} />
               一括編集
             </button>
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              disabled={selectedIds.size === 0 || bulkDeleteLoras.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-medium hover:bg-red-500/20 transition-all disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              選択を削除
+            </button>
+            </div>
           }
         />
       )}
@@ -657,7 +718,7 @@ export function LoRAsPage() {
                     type="button"
                     id={`category-section-header-${catKey}`}
                     onClick={() => toggleSection(catKey)}
-                    className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                    className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
                   >
                     {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                     <span>{cat.name}</span>
@@ -667,7 +728,7 @@ export function LoRAsPage() {
                   {expanded && (
                     <SortableContext items={sectionCards.map((x) => x.id)} strategy={rectSortingStrategy}>
                       <CategorySectionDroppable containerId={`category-container-${catKey}`} isEmpty={sectionCards.length === 0}>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className="mx-auto grid w-full max-w-[928px] grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
                           {sectionCards.map((l) => renderLoraCard(l))}
                         </div>
                       </CategorySectionDroppable>
@@ -683,7 +744,7 @@ export function LoRAsPage() {
                   type="button"
                   id="category-section-header-uncategorized"
                   onClick={() => toggleSection('uncategorized')}
-                  className="flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1"
+                  className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
                 >
                   {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                   <span>未分類</span>
@@ -693,7 +754,7 @@ export function LoRAsPage() {
                 {isExpanded('uncategorized') && (
                   <SortableContext items={uncategorizedItems.map((x) => x.id)} strategy={rectSortingStrategy}>
                     <CategorySectionDroppable containerId="category-container-uncategorized" isEmpty={uncategorizedItems.length === 0}>
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                      <div className="mx-auto grid w-full max-w-[928px] grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
                         {uncategorizedItems.map((l) => renderLoraCard(l))}
                       </div>
                     </CategorySectionDroppable>
@@ -759,6 +820,21 @@ export function LoRAsPage() {
           isApplying={bulkUpdateLoras.isPending}
         />
       )}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
+          <section role="alertdialog" aria-modal="true" aria-labelledby="bulk-delete-title" className="w-full max-w-lg rounded-xl border border-red-500/30 bg-surface p-5 shadow-2xl">
+            <h2 id="bulk-delete-title" className="text-base font-semibold text-zinc-100">選択したLoRAを削除</h2>
+            <p className="mt-2 text-sm text-zinc-300">{selectedLoras.length}件を削除します。この操作は取り消せません。</p>
+            <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-zinc-400">
+              {selectedLoras.map((lora) => <li key={lora.id}>{lora.model_name}</li>)}
+            </ul>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowBulkDeleteConfirm(false)} className="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300">キャンセル</button>
+              <button type="button" onClick={() => bulkDeleteLoras.mutate()} disabled={bulkDeleteLoras.isPending || selectedIds.size === 0} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{bulkDeleteLoras.isPending ? '削除中…' : '削除する'}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {cropImageSrc && (
         <ImageCropper
           imageSrc={cropImageSrc}
@@ -770,4 +846,3 @@ export function LoRAsPage() {
     </div>
   )
 }
-

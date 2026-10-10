@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { lorasApi } from '../api/client'
 import type { Lora } from '../api/types'
-import { Plus, Trash2 } from 'lucide-react'
+import { Minus, Plus, Trash2 } from 'lucide-react'
 import { SearchableLoraSelect } from './SearchableLoraSelect'
 
 interface LoraStackEditorProps {
@@ -62,6 +62,13 @@ export function LoraStackEditor({ role, paramValues, setParamValues, loras, titl
     })
   }
 
+  const handleStrengthStep = (idx: number, amount: number) => {
+    const key = `${role}_lora_wt_${idx}`
+    const current = Number(paramValues[key] ?? '0.0')
+    if (!Number.isFinite(current)) return
+    handleValueChange(key, (Math.round((current + amount) * 100) / 100).toFixed(2))
+  }
+
   const slots = Array.from({ length: loraCount }, (_, i) => i + 1)
 
   return (
@@ -110,15 +117,21 @@ export function LoraStackEditor({ role, paramValues, setParamValues, loras, titl
                 </div>
 
                 <div className="grid grid-cols-3 gap-1.5">
-                  <div className="flex flex-col gap-0.5">
+                  <div className="col-span-3 sm:col-span-1 flex flex-col gap-0.5">
                     <span className="text-[9px] text-zinc-500">Weight</span>
-                    <input
-                      type="number"
-                      step={0.1}
-                      value={currentWt}
-                      onChange={(e) => handleValueChange(`${role}_lora_wt_${idx}`, e.target.value)}
-                      className="bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-0.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right"
-                    />
+                    <div className="flex items-center gap-1">
+                      <button type="button" aria-label={`Decrease LoRA strength for slot ${idx}`} onClick={() => handleStrengthStep(idx, -0.05)} className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 rounded bg-surface-2 text-zinc-300 hover:text-white" ><Minus aria-hidden="true" size={14} /></button>
+                      <input
+                        type="number"
+                        step={0.05}
+                        inputMode="decimal"
+                        aria-label={`LoRA strength for slot ${idx}`}
+                        value={currentWt}
+                        onChange={(e) => handleValueChange(`${role}_lora_wt_${idx}`, e.target.value)}
+                        className="min-h-11 min-w-0 flex-1 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-0.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right"
+                      />
+                      <button type="button" aria-label={`Increase LoRA strength for slot ${idx}`} onClick={() => handleStrengthStep(idx, 0.05)} className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 rounded bg-surface-2 text-zinc-300 hover:text-white"><Plus aria-hidden="true" size={14} /></button>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[9px] text-zinc-500">Model Str</span>

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import Cropper from "react-easy-crop";
+import { X } from "lucide-react";
 
 interface ImageCropperProps {
   imageSrc: string; // クロップ対象の画像データ（DataURL等）
@@ -113,10 +114,12 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
             画像の切り抜き調整
           </h3>
           <button
+            type="button"
             onClick={onCancel}
+            aria-label="切り抜きを閉じる"
             className="text-slate-400 hover:text-slate-200 transition-colors"
           >
-            ✕
+            <X aria-hidden="true" size={16} />
           </button>
         </div>
 

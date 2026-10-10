@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { DesktopLayout } from '../DesktopLayout'
 import { MobileLayout } from '../MobileLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
@@ -60,7 +60,7 @@ function renderBoth(state: ReturnType<typeof makeState>) {
   return { desktop, mobile }
 }
 
-afterEach(() => { cleanup(); setManagedState(null); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); setManagedState(null, { generationStartTime: null }); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('REQ-333 progress bars use managed snapshots on desktop and mobile', () => {
   it('shows integer percentages while preserving fractional overall and node bar widths', () => {
@@ -148,5 +148,63 @@ describe('REQ-333 progress bars use managed snapshots on desktop and mobile', ()
     expect(screen.getAllByText('30%')).toHaveLength(2)
     expect(desktop.container).toBeDefined()
     expect(mobile.container).toBeDefined()
+  })
+
+  it('keeps queue, generate, and snapshot actions in the right action bar with unknown timing labels', () => {
+    const runningJob = job({ job_id: 'running', status: 'running', node: { id: 'node', name: 'Sampler', value: 1, max: 4 } })
+    setManagedState(snapshot([runningJob]), { generationStartTime: null, nodeProgress: { percentage: 25 } })
+    const state = makeState({ totalQueueCount: 4, allQueueCount: 6 })
+    localStorage.clear()
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    const view = render(<DesktopLayout state={state as never} />)
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+
+    expect(view.container.querySelector('#desktop-action-bar')).toBeInTheDocument()
+    expect(view.container.querySelector('[style="width: 330px;"]')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ワークフロー / 接続設定' })).toBeInTheDocument()
+    expect(view.container.querySelectorAll('#generate-btn')).toHaveLength(1)
+    expect(view.container.querySelectorAll('#save-snapshot-btn')).toHaveLength(1)
+    expect(view.container.querySelectorAll('.bg-accent-green.progress-shimmer')).toHaveLength(1)
+    expect(view.container.querySelectorAll('.bg-blue-500.progress-shimmer')).toHaveLength(1)
+    expect(screen.getByText('経過時間: 未取得')).toBeInTheDocument()
+    expect(screen.getByText('残り約: 未取得')).toBeInTheDocument()
+
+    const queueButton = screen.getByRole('button', { name: 'ジョブキュー一覧・管理を開く' })
+    expect(queueButton).toHaveAttribute('title', 'ジョブキュー一覧・管理を開く')
+    expect(queueButton).toHaveTextContent('Queue: 4')
+    fireEvent.click(queueButton)
+    expect(state.setIsJobModalOpen).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(view.container.querySelector('#generate-btn') as HTMLElement)
+    expect(state.handleGenerateSets).toHaveBeenCalledTimes(1)
+
+    const saveButton = view.container.querySelector('#save-snapshot-btn') as HTMLButtonElement
+    expect(saveButton.disabled).toBe(true)
+    view.rerender(<DesktopLayout state={{ ...state, selectedImg: '/image.png' } as never} />)
+    const enabledSaveButton = view.container.querySelector('#save-snapshot-btn') as HTMLButtonElement
+    expect(enabledSaveButton.disabled).toBe(false)
+    fireEvent.click(enabledSaveButton)
+    expect(state.setIsSaveModalOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it('computes remaining seconds from the managed running-job start time and progress', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))
+    setManagedState(snapshot([
+      job({
+        job_id: 'known-eta',
+        status: 'running',
+        started_at: '2026-10-10T11:59:30Z',
+        node: { id: 'node', name: 'Sampler', value: 1, max: 2 },
+      }),
+    ]), { generationStartTime: null })
+
+    const { desktop, mobile } = renderBoth(makeState({ isGeneratingHere: true }))
+
+    expect(desktop.container).toHaveTextContent('経過時間: 30秒')
+    expect(mobile.container).toHaveTextContent('経過: 30秒')
+    expect(desktop.container).toHaveTextContent('残り約: 30秒')
+    expect(mobile.container).toHaveTextContent('ETA 30秒')
   })
 })

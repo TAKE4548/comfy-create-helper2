@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import JSZip from 'jszip'
 import { useBulkDownload } from '../useBulkDownload'
 import type { SnapshotSummary, Album } from '../../../../api/types'
 
@@ -69,6 +70,47 @@ describe('useBulkDownload', () => {
     expect(success).toBe(true)
     expect(result.current.isDownloading).toBe(false)
     expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('archives only the explicitly selected off-screen IDs with unique ZIP names', async () => {
+    const snapshots: SnapshotSummary[] = [
+      { ...mockSnapshots[0], image_path: 'http://localhost:8188/view/shared.png' },
+      { ...mockSnapshots[1], image_path: 'http://localhost:8188/view/shared.png' },
+      { ...mockSnapshots[0], id: 3, image_path: 'http://localhost:8188/view/third.png' },
+      { ...mockSnapshots[1], id: 4, image_path: 'http://localhost:8188/view/shared.png' },
+    ]
+    const { result } = renderHook(() => useBulkDownload({ snapshots }))
+    const zipFileSpy = vi.spyOn(JSZip.prototype, 'file')
+
+    let success = false
+    await act(async () => {
+      success = await result.current.handleBulkDownload([3, 2, 4], 'selected.zip')
+    })
+
+    expect(success).toBe(true)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3)
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(1, snapshots[2].image_path, expect.any(Object))
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(2, snapshots[1].image_path, expect.any(Object))
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(3, snapshots[3].image_path, expect.any(Object))
+    const archivedNames = zipFileSpy.mock.calls.map(([name]) => name).filter((name) => typeof name === 'string')
+    expect(archivedNames).toEqual(['third.png', 'shared.png', 'shared_1.png'])
+    zipFileSpy.mockRestore()
+  })
+
+  it('reports failure instead of creating a successful ZIP when a selected image fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, statusText: 'Not Found' }) as any
+    const { result } = renderHook(() => useBulkDownload({ snapshots: mockSnapshots }))
+
+    let success = true
+    await act(async () => {
+      success = await result.current.handleBulkDownload([2], 'selected.zip')
+    })
+
+    expect(success).toBe(false)
+    expect(result.current.error).toContain('選択画像')
+    expect(globalThis.URL.createObjectURL).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 
   it('handles album download with 3-digit prefix indexing', async () => {

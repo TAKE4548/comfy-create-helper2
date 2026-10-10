@@ -12,12 +12,13 @@ function chipColor(pct: number | null): string {
 function StatChip({ label, pct }: { label: string; pct: number | null }) {
   return (
     <span className={`
-      flex-shrink-0 text-[10px] font-mono font-semibold
+      flex-shrink-0 text-[10px] font-semibold
       px-2 py-0.5 rounded border
       bg-surface-2/60
       ${chipColor(pct)}
     `}>
-      {label} {pct !== null ? `${Math.round(pct)}%` : '--'}
+      <span>{label} </span>
+      <span className="ux-numeric">{pct !== null ? `${Math.round(pct)}%` : '--'}</span>
     </span>
   )
 }

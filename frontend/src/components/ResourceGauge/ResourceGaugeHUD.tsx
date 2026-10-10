@@ -17,8 +17,8 @@ function GaugeRow({ label, pct, detail }: {
   return (
     <div className="flex items-center justify-between gap-3 text-[10px]">
       <span className="text-zinc-500 w-8 flex-shrink-0">{label}</span>
-      <span className="text-zinc-400 flex-1 truncate">{detail}</span>
-      <span className={`font-mono font-bold w-8 text-right ${getColorClass(pct)}`}>
+      <span className="ux-numeric text-zinc-400 flex-1 truncate">{detail}</span>
+      <span className={`ux-numeric font-bold w-8 text-right ${getColorClass(pct)}`}>
         {pct !== null ? `${Math.round(pct)}%` : '--'}
       </span>
     </div>
@@ -29,7 +29,7 @@ function UsagePair({ label, pct }: { label: string; pct: number | null }) {
   return (
     <div className="flex items-center gap-1.5 text-[10px]">
       <span className="text-zinc-500">{label}</span>
-      <span className={`font-mono font-bold ${getColorClass(pct)}`}>
+      <span className={`ux-numeric font-bold ${getColorClass(pct)}`}>
         {pct !== null ? `${Math.round(pct)}%` : '--'}
       </span>
     </div>

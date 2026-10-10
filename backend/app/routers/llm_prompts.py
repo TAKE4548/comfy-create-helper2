@@ -1,8 +1,10 @@
 """LLM system prompts management router."""
 
 from datetime import datetime, timezone
+import re
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,7 +13,59 @@ from app import models, schemas
 router = APIRouter(prefix="/api/llm-prompts", tags=["llm-prompts"])
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class PlaygroundRequest(BaseModel):
+    system_prompt: str
+    text: str
+    variables: dict[str, str] = Field(default_factory=dict)
+    model: str | None = None
+    llm_params: dict[str, object] | None = None
+
+
+class PlaygroundResponse(BaseModel):
+    rendered_prompt: str
+    result: str
+    token_limit: int | None
+
+
+_PLAYGROUND_VARIABLE = re.compile(r"\{\{([^{}]+)\}\}")
+
+
+def _render_playground_text(template: str, variables: dict[str, str]) -> str:
+    return _PLAYGROUND_VARIABLE.sub(lambda match: variables.get(match.group(1), match.group(0)), template)
+
+
+@router.post("/playground", response_model=PlaygroundResponse)
+async def playground(payload: PlaygroundRequest) -> PlaygroundResponse:
+    from app.services.llm_request import call_llm, get_model_context_limit
+
+    rendered_prompt = _render_playground_text(payload.system_prompt, payload.variables)
+    rendered_text = _render_playground_text(payload.text, payload.variables)
+    try:
+        token_limit = await get_model_context_limit(payload.model) if payload.model else None
+    except Exception:
+        token_limit = None
+
+    try:
+        result = await call_llm(
+            system_prompt=rendered_prompt,
+            user_prompt=rendered_text,
+            timeout=30.0,
+            model=payload.model,
+            llm_params=payload.llm_params,
+        )
+    except (httpx.TimeoutException, TimeoutError) as exc:
+        raise HTTPException(status_code=504, detail="Playground LLM request timed out") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Playground LLM request failed: {exc}") from exc
+
+    return PlaygroundResponse(
+        rendered_prompt=rendered_prompt,
+        result=result,
+        token_limit=token_limit,
+    )
 
 class CurrentModelUpdate(BaseModel):
     model: str | None = None
@@ -179,6 +233,5 @@ async def speech_draft(payload: SpeechDraftRequest, db: Session = Depends(get_db
         return {"draft": draft}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 

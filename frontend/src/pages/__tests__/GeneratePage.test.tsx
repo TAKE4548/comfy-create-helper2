@@ -133,12 +133,16 @@ describe('GeneratePage Component Regression Tests', () => {
     // Check if workflow select is present
     const select = container.querySelector('#workflow-select') as HTMLSelectElement;
     expect(select).toBeInTheDocument();
+    const uploadOption = select.querySelector('option[value=""]');
+    expect(uploadOption).toHaveTextContent('新しいワークフローを追加 (Upload New...)');
+    expect(uploadOption).toHaveValue('');
+    expect(uploadOption).not.toHaveTextContent(/^\s*\+/);
   });
 
   it('toggles settings popover when settings button is clicked', async () => {
     renderPage();
 
-    const settingsBtn = screen.getByTitle('ComfyUI設定');
+    const settingsBtn = screen.getByTitle('ワークフロー / 接続設定');
     expect(settingsBtn).toBeInTheDocument();
 
     // Settings popover should not be visible initially
@@ -164,8 +168,11 @@ describe('GeneratePage Component Regression Tests', () => {
     renderPage();
 
     // Verify mobile layout elements (e.g. settings-toggle-btn-mobile or similar)
-    const mobileSettingsBtn = screen.getByTitle('ComfyUI設定');
+    const mobileSettingsBtn = screen.getByTitle('ワークフロー / 接続設定');
     expect(mobileSettingsBtn).toBeInTheDocument();
+    const mobileUploadOption = screen.getByRole('option', { name: '新しいワークフローを追加 (Upload New...)' });
+    expect(mobileUploadOption).toHaveValue('');
+    expect(mobileUploadOption).not.toHaveTextContent(/^\s*\+/);
   });
 
   it('REQ-112: header does not contain removed UI elements', async () => {
@@ -189,7 +196,7 @@ describe('GeneratePage Component Regression Tests', () => {
 
   it('REQ-112: settings popover contains workflow management items', async () => {
     const { container } = renderPage();
-    const settingsBtn = screen.getByTitle('ComfyUI設定');
+    const settingsBtn = screen.getByTitle('ワークフロー / 接続設定');
     fireEvent.click(settingsBtn);
     await waitFor(() => {
       expect(container.querySelector('#popover-rename-btn')).toBeInTheDocument();

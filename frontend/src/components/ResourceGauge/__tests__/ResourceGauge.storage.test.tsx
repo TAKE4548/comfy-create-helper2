@@ -70,10 +70,11 @@ describe('ResourceGauge storage display', () => {
     })
     render(<ResourceGaugeChips />)
 
-    expect(screen.getByText('CPU 12%')).toBeInTheDocument()
-    expect(screen.getByText('RAM 56%')).toBeInTheDocument()
-    expect(screen.getByText('GPU 34%')).toBeInTheDocument()
-    expect(screen.getByText('VRAM 78%')).toBeInTheDocument()
+    for (const [label, value] of [['CPU', '12%'], ['RAM', '56%'], ['GPU', '34%'], ['VRAM', '78%']]) {
+      const chip = screen.getByText(label).parentElement
+      expect(chip).toHaveTextContent(`${label} ${value}`)
+      expect(chip?.querySelector('.ux-numeric')).toHaveTextContent(value)
+    }
     expect(screen.getByText('localStorage 取得不可')).toBeInTheDocument()
     expect(screen.getByText('sessionStorage 0.0 KiB')).toBeInTheDocument()
     expect(screen.getByText('推定使用量の説明')).toBeInTheDocument()

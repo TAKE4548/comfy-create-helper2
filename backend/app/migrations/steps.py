@@ -516,6 +516,16 @@ def step_027_generation_jobs(conn: Connection, inspector: Inspector) -> None:
     logger.info("Migrated: Created 'generation_jobs' table and indexes.")
 
 
+def step_028_tag_subsets_thumbnail_path(conn: Connection, inspector: Inspector) -> None:
+    if "tag_subsets" not in inspector.get_table_names():
+        return
+
+    columns = [column["name"] for column in inspector.get_columns("tag_subsets")]
+    if "thumbnail_path" not in columns:
+        conn.execute(sa.text("ALTER TABLE tag_subsets ADD COLUMN thumbnail_path TEXT"))
+        logger.info("Migrated: Added 'thumbnail_path' column to 'tag_subsets' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -532,5 +542,5 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("025", "lora_studio_tables", step_025_lora_studio_tables),
     MigrationStep("026", "dataset_projects_prompt_negative", step_026_dataset_projects_prompt_negative),
     MigrationStep("027", "generation_jobs", step_027_generation_jobs),
+    MigrationStep("028", "tag_subsets_thumbnail_path", step_028_tag_subsets_thumbnail_path),
 ]
-

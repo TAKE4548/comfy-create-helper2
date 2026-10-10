@@ -331,7 +331,7 @@ describe('SpeechBubbleEditorModal', () => {
     fireEvent.touchEnd(window)
 
     // Test switching back to full preview via button on mini preview
-    const fullPreviewBtn = screen.getByText(/全画面操作 ↗/)
+    const fullPreviewBtn = screen.getByRole('button', { name: /全画面操作/ })
     expect(fullPreviewBtn).toBeDefined()
     fireEvent.click(fullPreviewBtn)
   })
@@ -782,7 +782,7 @@ describe('SpeechBubbleEditorModal', () => {
       expect(snapshotsApi.detectBubble).toHaveBeenCalled()
     })
 
-    const dupBtn = await screen.findByText('📋 この吹き出しを複製')
+    const dupBtn = await screen.findByRole('button', { name: 'この吹き出しを複製' })
     fireEvent.click(dupBtn)
 
     await waitFor(() => {
@@ -1005,7 +1005,7 @@ describe('SpeechBubbleEditorModal', () => {
       })
 
       // Duplicate bubble
-      const dupBtn = await screen.findByText('📋 この吹き出しを複製')
+      const dupBtn = await screen.findByRole('button', { name: 'この吹き出しを複製' })
       fireEvent.click(dupBtn)
 
       // Bubble count should be 2

@@ -83,6 +83,7 @@ describe('TelemetryLossChart', () => {
     render(<TelemetryLossChart data={mockData} currentVramGb={11.4} gpuTemp={68} totalVramGb={16} />)
 
     expect(screen.getByTestId('telemetry-loss-chart')).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'リアルタイム Loss 収束 & テレメトリ監視' }).querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     expect(screen.getByTestId('vram-indicator').textContent).toContain('11.4 GB')
     expect(screen.getByTestId('temp-indicator').textContent).toContain('68°C')
 
@@ -201,5 +202,12 @@ describe('TrainingConfigPanel Component', () => {
       expect(useStudioStore.getState().isTrainingActive).toBe(false)
     })
   })
-})
 
+  it('uses Step 4 semantic heading and decorative Lucide icons without changing training actions', () => {
+    render(<TrainingConfigPanel />)
+
+    expect(screen.getByRole('heading', { name: 'Step 4: ローカル学習設定 & リアルタイム監視' })).toBeInTheDocument()
+    expect(screen.getByTestId('btn-start-training').querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByText(/[🚀⚙️⚠️⏹️]/)).not.toBeInTheDocument()
+  })
+})

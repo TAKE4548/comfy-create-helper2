@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react'
+import { X, Image as ImageIcon, Sparkles, Loader2, Settings, Maximize2 } from 'lucide-react'
 import { snapshotsApi, fontsApi, sceneSpeechApi } from '../../api/client'
 import { useAlbums } from '../../hooks/useAlbums'
 import { STALE_TIMES } from '../../constants/staleTimes'
@@ -459,7 +459,7 @@ export function SpeechBubbleEditorModal({
                 : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/40'
             }`}
           >
-            🖼️ プレビュー
+            <ImageIcon aria-hidden="true" size={14} /> プレビュー
           </button>
           <button
             type="button"
@@ -470,7 +470,7 @@ export function SpeechBubbleEditorModal({
                 : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/40'
             }`}
           >
-            ⚙️ 編集設定
+            <Settings aria-hidden="true" size={14} /> 編集設定
           </button>
         </div>
 
@@ -519,7 +519,7 @@ export function SpeechBubbleEditorModal({
                     onClick={() => setActiveMobileTab('preview')}
                     className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 hover:bg-black/80 text-[10px] text-blue-300 border border-blue-500/30 backdrop-blur-sm transition-colors"
                   >
-                    全画面操作 ↗
+                    <Maximize2 aria-hidden="true" size={12} /> 全画面操作
                   </button>
                 </div>
                 {/* Drag Resize Handle */}

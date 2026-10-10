@@ -286,6 +286,7 @@ export interface AlbumSummary {
   name: string
   sort_order?: number
   created_at: string
+  description?: string | null
 }
 
 export interface Album {
@@ -294,16 +295,19 @@ export interface Album {
   sort_order?: number
   created_at: string
   items: AlbumItem[]
+  description?: string | null
 }
 
 export interface AlbumCreate {
   name: string
   snapshot_ids: number[]
+  description?: string | null
 }
 
 export interface AlbumUpdate {
   name?: string
   sort_order?: number
+  description?: string | null
 }
 
 export interface AlbumReorder {
@@ -342,6 +346,7 @@ export interface Lora {
   file_path: string | null
   trigger_word_sets: TriggerWordSet[]
   snapshot_paths?: string[]
+  example_paths?: string[]
   target_base_model_ids?: number[]
   sort_order: number
   created_at: string
@@ -364,6 +369,7 @@ export interface LoraCreate {
   thumbnail_path?: string
   file_path?: string
   trigger_word_sets: { name: string; words: string[] }[]
+  example_paths?: string[]
   target_base_model_ids?: number[]
 }
 
@@ -374,11 +380,13 @@ export interface TagSubset {
   tag_set_id: number
   name: string
   tags: string[]
+  thumbnail_path?: string | null
 }
 
 export interface TagSubsetCreate {
   name: string
   tags: string[]
+  thumbnail_path?: string | null
 }
 
 export interface TagSet {
@@ -1133,4 +1141,3 @@ export interface EvaluateBenchmarkResponse {
   sweet_spot: SweetSpotResult
   results: Record<string, unknown>[]
 }
-

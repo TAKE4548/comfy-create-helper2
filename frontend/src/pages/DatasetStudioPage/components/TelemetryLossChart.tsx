@@ -1,5 +1,6 @@
 
 import React from 'react'
+import { Activity } from 'lucide-react'
 
 export interface TelemetryLossChartProps {
   data: { step: number; loss: number }[]
@@ -44,7 +45,7 @@ export const TelemetryLossChart: React.FC<TelemetryLossChartProps> = ({
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex flex-col gap-4 text-zinc-100" data-testid="telemetry-loss-chart">
       <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
         <h4 className="font-medium text-sm text-zinc-200 flex items-center gap-2">
-          <span>📉</span> リアルタイム Loss 収束 & テレメトリ監視
+          <Activity aria-hidden="true" className="h-4 w-4" /> リアルタイム Loss 収束 & テレメトリ監視
         </h4>
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-1.5" data-testid="vram-indicator">
