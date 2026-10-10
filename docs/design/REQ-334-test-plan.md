@@ -63,6 +63,6 @@ Browser evidence: 390×844, 767×800, 768×800, 1023×800, 1024×800, 1440×900,
 
 ## Evidence, Audit, and Closure
 
-最終証拠は[全102AC受入表](REQ-334-acceptance.md)、[直接assertion一覧](REQ-334-test-assertions.md)、[実画面観測](REQ-334-browser-evidence.md)、[walkthrough](../../walkthrough.md)を参照。R15 frontendは521 suites/1697 tests全件成功・型errors0、backendは656 tests成功・mypy177 files/errors0。147物理カードのDAGは循環なし。Safe AreaのCSS値シミュレーション、mock upstreamとManager未接続の範囲を明示し、実GPU実行成功へ読み替えない。
+最終証拠は[全102AC受入表](REQ-334-acceptance.md)、[直接assertion一覧](REQ-334-test-assertions.md)、[実画面観測](REQ-334-browser-evidence.md)、[walkthrough](REQ-334-walkthrough.md)を参照。R15 frontendは521 suites/1697 tests全件成功・型errors0、backendは656 tests成功・mypy177 files/errors0。147物理カードのDAGは循環なし。Safe AreaのCSS値シミュレーション、mock upstreamとManager未接続の範囲を明示し、実GPU実行成功へ読み替えない。
 
 Record each AC as PASS/FAIL/INCONCLUSIVE with test command or browser procedure and evidence path. BA audit is separately tracked; an inconclusive audit is not a product pass. Audit source note: `REQ-334-audit.md`. GPU cleanup evidence and OpenAPI extraction limitations remain disclosed there. Phase completion requires its mapped AC evidence and applicable gates; full PBI closure requires every AC-01〜102 PASS and required human QA acceptance. Audit limitations cannot be converted into passing product evidence.

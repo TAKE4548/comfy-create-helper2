@@ -15,6 +15,6 @@ T1〜T82で共通表示、Generate、アセット、Studio、History、Settings�
 
 Gate1は全サブシステムの型チェック、Gate2はファイル指定なしの全件テスト、Gate3は102ACの個別証拠照合。失敗・未確認を成功へ転記しない。Windowsのソケット制約は同じ検証コマンドの昇格実行で確認し、隔離DB・画像・ログを使う。QA画面のアプリ/APIは実物、Comfy/LLMはfixture upstreamであり、実GPU生成の検証とは区別する。
 
-backend最終型チェックは177ファイル・エラー0、全pytestは656件成功。frontend最終全件結果とGate3/監査はwalkthrough.mdに記録してからクローズする。本番ビルドはfrontend/distへ生成する。
+backend最終型チェックは177ファイル・エラー0、全pytestは656件成功。frontend最終全件結果とGate3/監査はdocs/design/REQ-334-walkthrough.mdに記録してからクローズする。本番ビルドはfrontend/distへ生成する。
 
 PBI管理スクリプトによる復旧原文の巻き戻りを確認したため、REQ-334状態はUTF8/LFで直接更新する。完了判定前にarchiveしない。最終commitはREQ-334所有ファイルだけを対象にし、既存の他PBI/設定/incident修正やQA一時データを含めない。pushは行わない。
