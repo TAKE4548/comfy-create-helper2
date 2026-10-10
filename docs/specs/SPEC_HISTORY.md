@@ -1,7 +1,7 @@
 # Prompt Surgeon — History ページ仕様書 (SPEC_HISTORY)
 
-**バージョン**: 2.2
-**最終更新**: 2026-10-08
+**バージョン**: 2.3
+**最終更新**: 2026-10-10
 **実装ファイル**: `frontend/src/pages/HistoryPage.tsx`（`AlbumListView`, `AlbumDetailView`, `hooks` 分割構成）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
@@ -52,6 +52,8 @@
 
 ## 4. スナップショット表示 & 編集
 
+保存済みSnapshotはGenerateページの未保存試行履歴と独立したデータである。Generate Galleryの原画missing判定やサムネイル再試行は、保存Snapshotの画像、params、履歴には適用しない。Snapshot本体・paramsの保存、一覧件数、表示aspect比は既存仕様を維持する。
+
 ### 4-1. HistoryModalPreview コンポーネント (`components/HistoryModalPreview.tsx`)
 
 - 画像の拡大表示 & パラメータ整形表示
@@ -59,7 +61,8 @@
 - **完全全画面プレビュー (REQ-078)**: 3秒操作なしでオーバーレイ自動非表示、Esc/✕/再タップでモーダルと同期クローズ。
 
 #### REQ-316 生成画像メタ情報と現在タグ関連
-- `HistoryModalPreview` の情報表示は画像とメタ情報を並列に示し、Workflow/Workflow ID、Prompt ID、キュー受付・メタ情報保存・画像保存時刻、現在のアルバム所属を区別して表示する。生成完了時刻は未記録として扱う。
+- `HistoryModalPreview` の情報表示は画像とメタ情報を並列に示し、Workflow/Workflow ID、Prompt ID、キュー受付・メタ情報保存・生成完了・画像保存時刻、現在のアルバム所属を区別して表示する。生成完了時刻はversion1 recordのoptional `completed_at`の実記録を使い、記録や対応する成功jobの実日時がないものは未記録とする。Snapshotは自身の保存済みrecordを正本とし、Snapshot作成時刻で生成完了時刻を代用しない。
+- 未保存画像のlocal凍結recordに完了日時が欠ける場合は、同じprompt IDのserver recordから有効な`completed_at`だけを補う。localのparams・seed・assets・workflow・queued_atは維持し、取得失敗やID不一致ではlocalを保持する。日時が記録済みならlocal優先を維持する。
 - Snapshot IDがある場合、保存済み `Snapshot.params` 内の生成記録を正本として優先する。snapshot未保存の画像では同期 `readLocalRecordedMetadata` でローカル記録を初回表示し、見つからない場合は非同期server取得へfallbackする。API query cacheのpersistはprompt metadata queryを除外する。どちらにも記録がない値を現在の入力から補完しない。
 - 保存済みSnapshot.paramsに含まれる `__prompt_surgeon_metadata_v1` を生成時記録の正本として、生成時の欄名・role・順序・全文、Parameters & Assets、実使用seed、記録済みアセット/LoRA値を表示する。空欄と未記録を区別し、完全性が不確かな記録には警告する。現workflow/master/cache/current inputで旧生成factsを補完しない。記録がない旧画像には現在値を生成時値として表示しない。
 - Prompts と Parameters & Assets のtab、欄ごとの折りたたみ/全開閉/コピー、書記素単位の文字数、コピー失敗通知を提供する。Parameters & AssetsではJSONのscalar、null、配列、objectを保持し、未分類の記録キーはキー名と値で表示する。画像の寸法・比率は読込画像のpixel寸法から計算し、形式は取得できるMIME値を示す。

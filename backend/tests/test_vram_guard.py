@@ -122,8 +122,9 @@ class TestVramGuardAPI:
         ):
             with TestClient(app) as client:
                 with client.websocket_connect("/api/ws") as ws:
-                    data = ws.receive_text()
-                    msg = json.loads(data)
+                    msg = json.loads(ws.receive_text())
+                    while msg.get("type") != "SYSTEM_STATS":
+                        msg = json.loads(ws.receive_text())
                     assert msg["type"] == "SYSTEM_STATS"
                     stats = msg["data"]
                     assert "vram_free_gb" in stats

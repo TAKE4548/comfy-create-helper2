@@ -19,6 +19,7 @@ import { createBypassSlice } from './slices/bypassSlice'
 import { createParamSyncSlice } from './slices/paramSyncSlice'
 import { createSystemStatsSlice } from './slices/systemStatsSlice'
 import { comfyWsService } from './services/comfyWebSocketService'
+import { systemWsService } from './services/systemWsService'
 
 // ─── Re-exports for 100% backward compatibility ─────────────────
 export * from './types'
@@ -27,6 +28,7 @@ export { addAssetToPrompt, removeAssetFromPrompt } from '../utils/promptUtils'
 
 export const _resetWebSocketForTesting = () => {
   comfyWsService.resetForTesting()
+  systemWsService.resetForTesting()
 }
 
 // ─── Root Store ──────────────────────────────────────────────────

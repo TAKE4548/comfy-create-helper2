@@ -5,7 +5,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 export interface MetadataItemView { key: string; name: string; recorded: boolean; value: JsonValue; role?: string | null; status?: string }
 export interface GenerationMetadataPanelProps {
   imageUrl: string; promptId: string | null
-  header: { workflowId: number | null; workflowName: string | null; queuedAt: string | null; metadataSavedAt: string | null; imageSavedAt: string | null; albums: string[] }
+  header: { workflowId: number | null; workflowName: string | null; queuedAt: string | null; metadataSavedAt: string | null; completedAt?: string | null; imageSavedAt: string | null; albums: string[] }
   fields: PromptFieldView[]; parameters: MetadataItemView[]; extras: MetadataItemView[]
   actualSeed: string | null
   loraRows: { key: string; model: string; role: string; weight: string | null; modelStrength: string | null; clipStrength: string | null }[]
@@ -71,7 +71,7 @@ export function GenerationMetadataPanel(props: GenerationMetadataPanelProps): Re
       <div><span className="block text-xs text-zinc-500">Prompt ID</span>{props.promptId ?? '未記録'}</div>
       <div><span className="block text-xs text-zinc-500">生成キュー登録</span>{props.header.queuedAt ?? '未記録'}</div>
       <div><span className="block text-xs text-zinc-500">メタ情報保存</span>{props.header.metadataSavedAt ?? '未記録'}</div>
-      <div><span className="block text-xs text-zinc-500">生成完了時刻</span>未記録</div>
+      <div><span className="block text-xs text-zinc-500">生成完了時刻</span>{props.header.completedAt ?? '未記録'}</div>
       <div><span className="block text-xs text-zinc-500">画像保存時刻</span>{props.header.imageSavedAt ?? '未記録'}</div>
     </section>
     <section><h4 className="font-semibold">アルバム（現在）</h4><p className="text-sm text-zinc-300">{props.header.albums.length ? props.header.albums.join('、') : '所属なし'}</p></section>

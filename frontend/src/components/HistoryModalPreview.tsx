@@ -182,7 +182,7 @@ export function HistoryModalPreview({
 
   const effectiveParams = activeSnapshotId
     ? snapshot?.params ?? null
-    : localRecordedMetadata?.paramValues ?? recordedMetadata?.paramValues ?? null
+    : recordedMetadata?.paramValues ?? localRecordedMetadata?.paramValues ?? null
   const view = getMetadataView(effectiveParams)
   const { data: albums, isError: albumsError } = useQuery({
     queryKey: ['albums'], queryFn: () => albumsApi.list(), enabled: !!activeSnapshotId && isOpen,

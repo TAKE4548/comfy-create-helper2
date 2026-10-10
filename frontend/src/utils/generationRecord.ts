@@ -15,7 +15,8 @@ export interface CapturedAsset {
 }
 export interface GenerationRecord {
   version: 1; workflow_id: number; workflow_name: string; completeness: 'complete' | 'partial' | 'unknown'
-  fields: CapturedField[]; parameters: CapturedField[]; assets: CapturedAsset[]; queued_at: string | null; prompt_id?: string
+  fields: CapturedField[]; parameters: CapturedField[]; assets: CapturedAsset[]; queued_at: string | null
+  completed_at?: string | null; prompt_id?: string
 }
 export type CaptureAssetInput = AppliedAsset & { triggerSetId?: number | null; triggerSetName?: string | null }
 export const PROMPT_RECORD_KEY = '__prompt_surgeon_metadata_v1'

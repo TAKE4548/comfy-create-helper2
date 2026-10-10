@@ -50,23 +50,38 @@ def resolve_internal_comfy_url(url: Optional[str], base_url: str) -> str:
     if not url:
         return ""
     try:
-        parsed = urllib.parse.urlparse(url)
-        # Check if path corresponds to ComfyUI /view endpoint
-        if parsed.path.startswith("/view") or "/view" in parsed.path:
-            base_parsed = urllib.parse.urlparse(base_url.rstrip("/"))
-            # Reconstruct with base_url's scheme and netloc while preserving path, query, fragment
-            resolved = urllib.parse.urlunparse((
-                base_parsed.scheme,
-                base_parsed.netloc,
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
-            return resolved
-        return url
+        parsed = urllib.parse.urlsplit(url)
+        is_manager_view = parsed.path == "/api/comfy/view"
+        is_upstream_view = parsed.path == "/view"
+        is_legacy_view_path = parsed.path.startswith("/view/")
+        if not (is_manager_view or is_upstream_view or is_legacy_view_path):
+            return url
+
+        base_parsed = urllib.parse.urlsplit(base_url.rstrip("/"))
+        if not base_parsed.scheme or not base_parsed.netloc:
+            return url
+        query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        upstream_query = urllib.parse.urlencode(
+            [(key, value) for key, value in query_pairs if key != "t"],
+            doseq=True,
+        )
+        return urllib.parse.urlunsplit((
+            base_parsed.scheme,
+            base_parsed.netloc,
+            parsed.path if is_legacy_view_path else "/view",
+            upstream_query,
+            "",
+        ))
     except Exception:
         return url
+
+
+def _is_comfy_view_url(url: str) -> bool:
+    try:
+        path = urllib.parse.urlsplit(url).path
+        return path in {"/api/comfy/view", "/view"} or path.startswith("/view/")
+    except ValueError:
+        return False
 
 
 class SnapshotService:
@@ -110,9 +125,13 @@ class SnapshotService:
 
         saved_image_path = payload.image_path
         saved_thumbnail_path = payload.thumbnail_path
-        downloaded_file_path: Optional[Path] = None
+        downloaded_file_paths: list[Path] = []
 
-        if payload.image_path and (payload.image_path.startswith("http://") or payload.image_path.startswith("https://")):
+        is_absolute_http_image = bool(payload.image_path and payload.image_path.startswith(("http://", "https://")))
+        is_relative_comfy_view = bool(
+            payload.image_path and payload.image_path.startswith("/") and _is_comfy_view_url(payload.image_path)
+        )
+        if payload.image_path and (is_absolute_http_image or is_relative_comfy_view):
             target_download_url = resolve_internal_comfy_url(payload.image_path, settings.comfy_url)
             try:
                 parsed_url = urllib.parse.urlparse(target_download_url)
@@ -134,7 +153,11 @@ class SnapshotService:
                 saved_image_path, saved_thumbnail_path = process_and_save_image(
                     image_bytes, settings.snapshot_path, filename_base
                 )
-                downloaded_file_path = settings.snapshot_path / Path(saved_image_path).name
+                downloaded_file_paths.extend(
+                    settings.snapshot_path / Path(path).name
+                    for path in (saved_image_path, saved_thumbnail_path)
+                    if path.startswith("/api/snapshots/images/")
+                )
             except Exception as e:
                 logger.error(f"Failed to download snapshot image from {target_download_url} (original: {payload.image_path}): {e}")
                 raise HTTPException(
@@ -211,7 +234,9 @@ class SnapshotService:
             return s
         except Exception as db_err:
             db.rollback()
-            if downloaded_file_path and downloaded_file_path.exists():
+            for downloaded_file_path in downloaded_file_paths:
+                if not downloaded_file_path.exists():
+                    continue
                 try:
                     os.remove(downloaded_file_path)
                 except OSError as os_err:

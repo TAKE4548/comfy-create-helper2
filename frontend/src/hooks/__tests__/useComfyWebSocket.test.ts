@@ -1,264 +1,82 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias */
 import React from 'react'
-import { renderHook, act, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useComfyWebSocket, resolveComfyUrl } from '../useComfyWebSocket'
-import { configApi } from '../../api/client'
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../api/client', () => ({
-  configApi: {
-    get: vi.fn(),
-  },
+const store = vi.hoisted(() => ({
+  state: {
+    progress: null as { value: number; max: number; percentage: number } | null,
+    previewImage: null as string | null,
+    isConnected: false,
+    isGenerating: false,
+    currentPromptId: null as string | null,
+    queuePrompt: vi.fn(),
+    cancelGeneration: vi.fn(),
+    clearPreview: vi.fn()
+  }
 }))
 
-describe('useComfyWebSocket', () => {
-  let queryClient: QueryClient
-  const originalFetch = globalThis.fetch
-  const originalCreateObjectURL = globalThis.URL.createObjectURL
-  let mockWebSocketInstance: any = null
+vi.mock('../../store/useGenerationStore', () => ({
+  useGenerationStore: (selector: (state: typeof store.state) => unknown) => selector(store.state)
+}))
 
-  class MockWebSocket {
-    binaryType: string = ''
-    url: string
-    onopen: (() => void) | null = null
-    onclose: (() => void) | null = null
-    onerror: (() => void) | null = null
-    onmessage: ((event: { data: any }) => void) | null = null
-    close = vi.fn()
+import { resolveComfyUrl, useComfyWebSocket } from '../useComfyWebSocket'
 
-    constructor(url: string) {
-      this.url = url
-      mockWebSocketInstance = this
-    }
-  }
-
+describe('useComfyWebSocket store adapter', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    })
-    mockWebSocketInstance = null
-    const mockGet = configApi.get as any
-    mockGet.mockResolvedValue({ comfy_url: 'http://localhost:8188' })
-    
-    // Set up default mocks
-    vi.stubGlobal('WebSocket', MockWebSocket)
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    }) as any
-    globalThis.URL.createObjectURL = vi.fn().mockReturnValue('blob:http://localhost:8188/mock-uuid')
+    store.state.progress = { value: 3, max: 8, percentage: 38 }
+    store.state.previewImage = '/api/comfy/preview?t=prompt-current'
+    store.state.isConnected = true
+    store.state.isGenerating = true
+    store.state.currentPromptId = 'prompt-current'
+    store.state.queuePrompt = vi.fn().mockResolvedValue('prompt-queued')
+    store.state.cancelGeneration = vi.fn().mockResolvedValue(undefined)
+    store.state.clearPreview = vi.fn()
+    vi.stubGlobal('fetch', vi.fn())
+    vi.stubGlobal('WebSocket', vi.fn())
   })
-
-  const wrapper = ({ children }: { children: React.ReactNode }) =>
-    React.createElement(QueryClientProvider, { client: queryClient }, children)
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    globalThis.fetch = originalFetch
-    globalThis.URL.createObjectURL = originalCreateObjectURL
+    vi.restoreAllMocks()
   })
 
-  it('should handle WebSocket constructor exception gracefully (Red Teaming Scenario)', async () => {
-    const mockGet = configApi.get as any
-    mockGet.mockResolvedValue({ comfy_url: 'http://localhost:8188' })
-
-    // WebSocket のコンストラクタが例外をスローするようにグローバル WebSocket をモック
-    vi.stubGlobal('WebSocket', vi.fn().mockImplementation(() => {
-      throw new Error('SecurityError: WebSocket connection failed')
-    }))
-
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
-
-    // URL取得を待つ
-    await waitFor(() => {
-      expect(mockGet).toHaveBeenCalled()
+  it('projects the existing generation store state without creating a connection or fetch path', () => {
+    const { result } = renderHook(() => useComfyWebSocket('legacy-client-id'))
+    expect(result.current).toMatchObject({
+      progress: { value: 3, max: 8, percentage: 38 },
+      previewImage: '/api/comfy/preview?t=prompt-current',
+      isConnected: true,
+      isGenerating: true,
+      currentPromptId: 'prompt-current'
     })
-
-    // isConnected が false になり、エラーがログ出力されることを確認
-    await waitFor(() => {
-      expect(result.current.isConnected).toBe(false)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to establish WebSocket connection in useComfyWebSocket:',
-        expect.any(Error)
-      )
-    })
-
-    consoleErrorSpy.mockRestore()
+    expect(WebSocket).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('should toggle isConnected state on open, close, and error events', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
+  it('delegates generation actions and keeps the public cancellation signature void', async () => {
+    const queuePromise = Promise.resolve('prompt-queued')
+    store.state.queuePrompt = vi.fn().mockReturnValue(queuePromise)
+    store.state.cancelGeneration = vi.fn().mockResolvedValue(undefined)
+    const { result } = renderHook(() => useComfyWebSocket())
 
-    // Wait for websocket instance creation
-    await waitFor(() => {
-      expect(mockWebSocketInstance).not.toBeNull()
-    })
-
-    // Trigger open
-    act(() => {
-      mockWebSocketInstance.onopen()
-    })
-    expect(result.current.isConnected).toBe(true)
-
-    // Trigger close
-    act(() => {
-      mockWebSocketInstance.onclose()
-    })
-    expect(result.current.isConnected).toBe(false)
-
-    // Trigger open again
-    act(() => {
-      mockWebSocketInstance.onopen()
-    })
-    expect(result.current.isConnected).toBe(true)
-
-    // Trigger error
-    act(() => {
-      mockWebSocketInstance.onerror()
-    })
-    expect(result.current.isConnected).toBe(false)
-  })
-
-  it('should handle progress, execution_start, executed, execution_complete, and execution_error events', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
-
-    await waitFor(() => {
-      expect(mockWebSocketInstance).not.toBeNull()
-    })
-
-    // 1. progress event
-    act(() => {
-      mockWebSocketInstance.onmessage({
-        data: JSON.stringify({
-          type: 'progress',
-          data: { value: 3, max: 10 },
-        }),
-      })
-    })
-    expect(result.current.isGenerating).toBe(true)
-    expect(result.current.progress).toEqual({ value: 3, max: 10, percentage: 30 })
-
-    // 2. execution_start event
-    act(() => {
-      mockWebSocketInstance.onmessage({
-        data: JSON.stringify({
-          type: 'execution_start',
-          data: { prompt_id: 'test-prompt-123' },
-        }),
-      })
-    })
-    expect(result.current.isGenerating).toBe(true)
-    expect(result.current.progress).toBeNull()
-    expect(result.current.currentPromptId).toBe('test-prompt-123')
-
-    // 3. executed event (with images)
-    act(() => {
-      mockWebSocketInstance.onmessage({
-        data: JSON.stringify({
-          type: 'executed',
-          data: {
-            output: {
-              images: [{ filename: 'out.png', subfolder: 'sub', type: 'output' }],
-            },
-          },
-        }),
-      })
-    })
-    expect(result.current.isGenerating).toBe(false)
-    expect(result.current.progress).toEqual({ value: 1, max: 1, percentage: 100 })
-    expect(result.current.previewImage).toContain('filename=out.png')
-
-    // 4. execution_complete event
-    act(() => {
-      mockWebSocketInstance.onmessage({
-        data: JSON.stringify({
-          type: 'execution_complete',
-          data: {},
-        }),
-      })
-    })
-    expect(result.current.isGenerating).toBe(false)
-    expect(result.current.progress).toEqual({ value: 1, max: 1, percentage: 100 })
-
-    // 5. execution_error event
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    act(() => {
-      mockWebSocketInstance.onmessage({
-        data: JSON.stringify({
-          type: 'execution_error',
-          data: { exception_type: 'ValueError' },
-        }),
-      })
-    })
-    expect(result.current.isGenerating).toBe(false)
-    expect(result.current.progress).toBeNull()
-    expect(consoleErrorSpy).toHaveBeenCalled()
-    consoleErrorSpy.mockRestore()
-  })
-
-  it('should handle Blob and ArrayBuffer message data to set previewImage', async () => {
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
-
-    await waitFor(() => {
-      expect(mockWebSocketInstance).not.toBeNull()
-    })
-
-    // Test Blob data
-    const blob = new Blob(['dummy-binary-data'], { type: 'image/png' })
-    act(() => {
-      mockWebSocketInstance.onmessage({ data: blob })
-    })
-    expect(globalThis.URL.createObjectURL).toHaveBeenCalledWith(blob)
-    expect(result.current.previewImage).toBe('blob:http://localhost:8188/mock-uuid')
-
-    // Test ArrayBuffer data
-    const arrayBuffer = new ArrayBuffer(8)
-    act(() => {
-      mockWebSocketInstance.onmessage({ data: arrayBuffer })
-    })
-    expect(globalThis.URL.createObjectURL).toHaveBeenCalled()
-    expect(result.current.previewImage).toBe('blob:http://localhost:8188/mock-uuid')
-  })
-
-  it('should call fetch with correct arguments on queuePrompt and cancelGeneration', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ prompt_id: 'prompt-xyz' }),
-    })
-    globalThis.fetch = mockFetch
-
-    const { result } = renderHook(() => useComfyWebSocket('test-client-id'), { wrapper })
-
-    // Test queuePrompt
-    let promptId: string | null = null
+    let queued: string | null = null
     await act(async () => {
-      promptId = await result.current.queuePrompt({ nodes: {} })
+      queued = await result.current.queuePrompt({ nodes: { 1: { class_type: 'KSampler' } } })
     })
-    expect(promptId).toBe('prompt-xyz')
-    expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/comfy/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: { nodes: {} },
-        client_id: 'test-client-id',
-      }),
-    })
+    expect(queued).toBe('prompt-queued')
+    expect(store.state.queuePrompt).toHaveBeenCalledOnce()
+    expect(store.state.queuePrompt).toHaveBeenCalledWith({ nodes: { 1: { class_type: 'KSampler' } } })
 
-    // Test cancelGeneration
-    await act(async () => {
-      await result.current.cancelGeneration()
+    let cancelled: void | Promise<void>
+    act(() => {
+      cancelled = result.current.cancelGeneration()
     })
-    expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/comfy/interrupt', {
-      method: 'POST',
-    })
+    expect(cancelled).toBeUndefined()
+    expect(store.state.cancelGeneration).toHaveBeenCalledOnce()
+
+    act(() => result.current.clearPreview())
+    expect(store.state.clearPreview).toHaveBeenCalledOnce()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
 
@@ -266,90 +84,21 @@ describe('resolveComfyUrl', () => {
   const originalLocation = window.location
 
   afterEach(() => {
+    Object.defineProperty(window, 'location', { value: originalLocation, writable: true })
+  })
+
+  it.each([
+    ['http://localhost:5173', 'http://localhost:5173/api/comfy'],
+    ['http://localhost:8000', 'http://localhost:8000/api/comfy'],
+    ['http://192.168.1.50:8000', 'http://192.168.1.50:8000/api/comfy']
+  ])('uses the same-origin API route at %s regardless of configured Comfy URL', (origin, expected) => {
     Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
+      value: { origin, hostname: new URL(origin).hostname, port: new URL(origin).port },
+      writable: true
     })
-  })
-
-  describe('when accessed from external host / mobile device', () => {
-    beforeEach(() => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          hostname: '192.168.1.50',
-          port: '8000',
-          origin: 'http://192.168.1.50:8000',
-        },
-        writable: true,
-      })
-    })
-
-    it('resolves null url to direct ComfyUI port on the host IP', () => {
-      expect(resolveComfyUrl(null)).toBe('http://192.168.1.50:8188')
-    })
-
-    it('replaces localhost and 127.0.0.1 with host IP and targets ComfyUI port 8188', () => {
-      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://192.168.1.50:8188')
-      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://192.168.1.50:8188')
-    })
-
-    it('prevents misrouting to nonexistent /comfy in single-process mode', () => {
-      expect(resolveComfyUrl('http://localhost:8000/comfy')).toBe('http://192.168.1.50:8188')
-      expect(resolveComfyUrl('http://192.168.1.50:8000/comfy')).toBe('http://192.168.1.50:8188')
-    })
-
-    it('preserves custom remote host URLs without modifying them', () => {
-      expect(resolveComfyUrl('http://10.0.0.99:8188')).toBe('http://10.0.0.99:8188')
-    })
-  })
-
-  describe('when accessed locally in bundle mode (port 8000)', () => {
-    beforeEach(() => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          hostname: 'localhost',
-          port: '8000',
-          origin: 'http://localhost:8000',
-        },
-        writable: true,
-      })
-    })
-
-    it('resolves null or loopback url to direct ComfyUI port 127.0.0.1:8188', () => {
-      expect(resolveComfyUrl(null)).toBe('http://127.0.0.1:8188')
-      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://127.0.0.1:8188')
-      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://127.0.0.1:8188')
-    })
-
-    it('cleans /comfy and port 8000 to direct ComfyUI port', () => {
-      expect(resolveComfyUrl('http://localhost:8000/comfy')).toBe('http://127.0.0.1:8188')
-    })
-
-    it('preserves custom host URLs', () => {
-      expect(resolveComfyUrl('http://custom-host:8188')).toBe('http://custom-host:8188')
-    })
-  })
-
-  describe('when accessed locally in Vite dev server (port 5173)', () => {
-    beforeEach(() => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          hostname: 'localhost',
-          port: '5173',
-          origin: 'http://localhost:5173',
-        },
-        writable: true,
-      })
-    })
-
-    it('uses Vite /comfy proxy for null or loopback urls', () => {
-      expect(resolveComfyUrl(null)).toBe('http://localhost:5173/comfy')
-      expect(resolveComfyUrl('http://localhost:8188')).toBe('http://localhost:5173/comfy')
-      expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe('http://localhost:5173/comfy')
-    })
-
-    it('preserves custom host URLs', () => {
-      expect(resolveComfyUrl('http://custom-host:8188')).toBe('http://custom-host:8188')
-    })
+    expect(resolveComfyUrl('http://127.0.0.1:8188')).toBe(expected)
+    expect(resolveComfyUrl(null)).toBe(expected)
+    expect(resolveComfyUrl('http://remote-comfy:8188')).toBe(expected)
+    expect(resolveComfyUrl(null)).not.toContain('8188')
   })
 })

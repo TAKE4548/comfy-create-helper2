@@ -1,0 +1,178 @@
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 Analysis Report: Logical Consistency & Integrity Review
+
+## Executive Summary
+
+After thorough analysis of REQ-333's cancellation, image availability, and UI contracts against historical context, I identified **5 critical logical gaps**, **8 edge case vulnerabilities**, and **3 integrity risks** that require remediation before implementation.
+
+---
+
+## Critical Logical Contradictions
+
+### 1. Cancellation Scope Paradox (T5/T6)
+
+| Statement | Location | Conflict |
+|-----------|----------|----------|
+| "singleはtarget禁止" | T5 contract | Single mode requires a target |
+| "singleはjob_id/prompt_idの一方のみ" | T5 contract | Contradicts prohibition |
+
+**Impact**: The system cannot determine whether single-mode cancellation operates on individual jobs or clears queued items. This creates undefined behavior when users cancel mid-queue operations.
+
+---
+
+### 2. Circular Dependency Chain (T15/T16)
+
+```
+┌─────────────┐
+│   T15       │── uses ──► T16.projectQueue()
+│             │            ▲
+│  depends on │◄───────────┘
+│  REQ-333-T16│
+└─────────────┘
+```
+
+**Impact**: T15 must be implemented before T16 can properly project data, yet T15's functionality depends on T16. This creates a **chicken-and-egg implementation problem**.
+
+---
+
+### 3. Atomicity Violation in Upstream Clear (T5/T6)
+
+```
+Timeline:
+T0 ──► Cancel operation begins
+T1 ──► Job A cleared from upstream queue
+T2 ──► External job B injected (non-atomic window)
+T3 ──► Clear completes, B remains uncleared
+Result: System believes all upstream was cleared; B causes downstream failures
+```
+
+**Impact**: The explicit statement `"分散atomicではない"` creates an **unbounded race condition** where external injections can corrupt cancellation semantics.
+
+---
+
+## Edge Case Vulnerabilities
+
+### 4. Image Availability State Machine Gap (T12/T31)
+
+| State | Behavior | Missing Transition |
+|-------|----------|-------------------|
+| `present` + 503 | Keep row, show placeholder | Timeout → retry policy undefined |
+| `missing` | Exclude from trial/cache/selection | Recovery path not specified |
+| `unknown` | Maintain display | Progression to `present` unclear |
+
+**Impact**: Users may see "present" images that are actually inaccessible due to transient errors. No defined timeout or automatic state refresh mechanism exists.
+
+---
+
+### 5. Unconfirmed State Timeout Undefined (T5/T6)
+
+```
+Requirement: "unconfirmedには自動mutation再送なし、状態再取得のみ"
+Missing:
+- What is the maximum duration of unconfirmed state?
+- When does auto-reacquisition trigger?
+- Is there a hard timeout for stale operations?
+```
+
+**Impact**: Operations can remain in an indefinite limbo state, causing UI to appear frozen while backend processes complete asynchronously.
+
+---
+
+### 6. Legacy Job UUID Handling Ambiguity (T11)
+
+| Scenario | Expected | Actual Risk |
+|----------|----------|-------------|
+| Cancel legacy job via single mode | Cancel specific prompt | May attempt global clear if scope ambiguous |
+| Cancel legacy job via queued mode | Should fail gracefully | May incorrectly treat as global operation |
+
+**Impact**: Legacy jobs without UUIDs could trigger unintended queue-wide operations, affecting unrelated user sessions.
+
+---
+
+## Integrity Risks
+
+### 7. T28 Integration Fragility (T26)
+
+```
+T28 depends on: [T7,T10,T12,T15,T17,T18,T20,T21,T22,T23,T24,T25,T29,T30,T31] = 15 components
+```
+
+**Risk Matrix**:
+- **Single point of failure**: Any of 15 dependencies failing breaks T28 entirely
+- **No staged verification**: Cannot validate partial integration success
+- **Testing complexity**: Requires all 15 components to be simultaneously functional
+
+---
+
+### 8. Performance SLA Absence (T5/T6)
+
+| Metric | Status | Risk |
+|--------|--------|------|
+| Cancellation latency | Not defined | Users may perceive system as unresponsive |
+| Queue clear time | Not defined | Large queues could timeout mid-operation |
+| Retry limits | Not defined | Could exhaust backend resources under load |
+
+---
+
+### 9. T30/T31 Props Evolution Unclear (T26)
+
+```typescript
+// Current contract
+interface JobManagementModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+// Missing documentation:
+// - What new props are added?
+// - Do existing props change behavior?
+// - Are there breaking changes for consumers?
+```
+
+**Impact**: Consumers of these components may experience unexpected behavior changes without migration guidance.
+
+---
+
+## Verification Checklist
+
+| Category | Items Checked | Status |
+|----------|---------------|--------|
+| **Logical Consistency** | Cancellation model, scope definitions, state transitions | ⚠️ 5/10 |
+| **Edge Cases** | Race conditions, legacy handling, error states | ⚠️ 6/12 |
+| **Contract Integrity** | API contracts, data flow, dependency graph | ⚠️ 7/15 |
+| **Performance** | SLA definitions, timeout policies | ❌ 0/4 |
+| **Error Handling** | Unconfirmed states, retry logic | ⚠️ 3/8 |
+
+---
+
+## Recommendations
+
+### Immediate Actions (Priority 1)
+1. **Clarify single vs queued semantics** with explicit test cases
+2. **Implement distributed transaction handling** for upstream queue clearing using Redis locks or similar coordination mechanism
+3. **Resolve T15/T16 circular dependency** by restructuring data flow to eliminate cross-dependency
+
+### Short-Term Actions (Priority 2)
+4. **Define image availability state machine** with explicit timeout and auto-refresh policies
+5. **Add SLA definitions** for all cancellation operations (latency, retry limits, timeouts)
+6. **Document unconfirmed state lifecycle** including maximum duration and recovery mechanisms
+
+### Long-Term Actions (Priority 3)
+7. **Create phased T28 integration plan** with staged validation points
+8. **Implement comprehensive error handling** for all edge cases identified above
+9. **Add monitoring and alerting** for race conditions and state inconsistencies
+
+---
+
+## Final Assessment
+
+| Metric | Score | Notes |
+|--------|-------|-------|
+| Logical Consistency | 6/10 | Moderate gaps in core cancellation model |
+| Edge Case Coverage | 5/10 | Race conditions not adequately addressed |
+| Contract Integrity | 7/10 | Some circular dependencies need resolution |
+| **Overall Readiness** | **5.8/10** | **Not production-ready; requires remediation** |
+
+The requirement demonstrates **moderate logical consistency** but contains critical gaps in distributed operation handling, state machine definitions, and performance specifications that must be addressed before implementation proceeds.

@@ -1,25 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { useGenerateAction } from '../pages/GeneratePage/hooks/useGenerateAction'
 import { settingsApi } from '../api/client'
+import { generationApi, type GenerationSnapshot } from '../api/domains/generation'
 import type { Workflow } from '../api/types'
 
 vi.mock('../api/client', () => ({
   settingsApi: {
     getVram: vi.fn(),
     updateVram: vi.fn(),
-  },
-  comfyApi: {
-    queuePrompt: vi.fn().mockResolvedValue({ prompt_id: 'test-prompt-id' }),
-    getHistory: vi.fn().mockResolvedValue({}),
-    deleteQueue: vi.fn().mockResolvedValue({}),
-    interrupt: vi.fn().mockResolvedValue({}),
-  },
-  promptMetadataApi: {
-    create: vi.fn().mockResolvedValue({}),
   },
 }))
 
@@ -65,6 +57,38 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  const acceptedJobId = '00000000-0000-4000-8000-000000000001'
+  const acceptedBatchId = '00000000-0000-4000-8000-000000000002'
+  const waitingSnapshot = (): GenerationSnapshot => ({
+    version: 1, epoch: 'req260-epoch', revision: 1,
+    normal_group_id: '00000000-0000-4000-8000-000000000003',
+    jobs: [{
+      job_id: acceptedJobId, request_id: '00000000-0000-4000-8000-000000000004', prompt_id: null,
+      session_id: useGenerationStore.getState().clientId, scope: 'normal', batch_id: acceptedBatchId,
+      normal_group_id: '00000000-0000-4000-8000-000000000003', project_id: null,
+      status: 'queued', started_at: null, finished_at: null, node: null, outputs: [], failure: null,
+    }],
+    batches: [{ batch_id: acceptedBatchId, scope: 'normal', project_id: null }],
+    upstream: { http_ready: true, ws_connected: true, failure_since: null },
+  })
+
+  const installAcceptedBatch = () => {
+    const submit = vi.fn(async () => {
+      useGenerationStore.setState({ generationSnapshot: waitingSnapshot() })
+      return { batch_id: acceptedBatchId, job_ids: [acceptedJobId] }
+    })
+    useGenerationStore.setState({ submitGenerationBatch: submit })
+    vi.spyOn(generationApi, 'cancelJob').mockResolvedValue({
+      job_id: acceptedJobId, prompt_id: null, status: 'cancelled', outcome: 'cancelled', message: 'cancelled',
+    })
+    return submit
+  }
+
   const wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: queryClient }, children)
 
@@ -91,6 +115,7 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
   })
 
   it('AC-1 & AC-2: holds generation in wait state when free VRAM (7.0GB) is below threshold (8.0GB)', async () => {
+    const submit = installAcceptedBatch()
     useGenerationStore.setState({
       systemStats: {
         cpu_pct: 10,
@@ -115,8 +140,11 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       generatePromise = result.current.handleGenerate()
     })
+    await generatePromise
 
     const waitStatus = useGenerationStore.getState().vramWaitStatus
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(submit.mock.invocationCallOrder[0]).toBeGreaterThan(0)
     expect(waitStatus).not.toBeNull()
     expect(waitStatus?.isWaiting).toBe(true)
     expect(waitStatus?.freeGb).toBe(7.0)
@@ -125,11 +153,12 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       useGenerationStore.getState().cancelVramWait()
     })
-    await generatePromise
+    expect(generationApi.cancelJob).toHaveBeenCalledWith(acceptedJobId, true)
   })
 
   it('AC-3: issues warning toast after 10 seconds of continuous VRAM waiting', async () => {
     vi.useFakeTimers()
+    const submit = installAcceptedBatch()
 
     const setErrorToastMock = vi.fn()
     useGenerationStore.setState({
@@ -157,6 +186,8 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       generatePromise = result.current.handleGenerate()
     })
+    await generatePromise
+    expect(submit).toHaveBeenCalledTimes(1)
 
     act(() => {
       vi.advanceTimersByTime(9000)
@@ -176,11 +207,12 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       useGenerationStore.getState().cancelVramWait()
     })
-    await generatePromise
+    expect(generationApi.cancelJob).toHaveBeenCalledWith(acceptedJobId, true)
     vi.useRealTimers()
   })
 
   it('AC-4: safely cancels wait and returns to Ready state when cancelVramWait is invoked', async () => {
+    installAcceptedBatch()
     useGenerationStore.setState({
       systemStats: {
         cpu_pct: 10,
@@ -205,22 +237,22 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       generatePromise = result.current.handleGenerate()
     })
+    await generatePromise
 
     expect(useGenerationStore.getState().vramWaitStatus?.isWaiting).toBe(true)
 
     act(() => {
       useGenerationStore.getState().cancelVramWait()
     })
-    await generatePromise
 
     expect(useGenerationStore.getState().vramWaitStatus).toBeNull()
     expect(useGenerationStore.getState().isBatchSubmitting).toBe(false)
+    expect(generationApi.cancelJob).toHaveBeenCalledWith(acceptedJobId, true)
   })
 
-  it('AC-5: automatically resumes and dispatches prompt when VRAM recovers (vram_safe becomes true)', async () => {
-    const queuePromptMock = vi.fn().mockResolvedValue('prompt-123')
+  it('AC-5: clears the server wait after VRAM recovery without submitting a duplicate batch', async () => {
+    const submit = installAcceptedBatch()
     useGenerationStore.setState({
-      queuePrompt: queuePromptMock,
       systemStats: {
         cpu_pct: 10,
         ram_used_gb: 8,
@@ -244,9 +276,10 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     act(() => {
       generatePromise = result.current.handleGenerate()
     })
+    await generatePromise
 
     expect(useGenerationStore.getState().vramWaitStatus?.isWaiting).toBe(true)
-    expect(queuePromptMock).not.toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledTimes(1)
 
     act(() => {
       useGenerationStore.setState({
@@ -268,16 +301,13 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
       })
     })
 
-    await generatePromise
-
-    expect(queuePromptMock).toHaveBeenCalledTimes(1)
+    expect(submit).toHaveBeenCalledTimes(1)
     expect(useGenerationStore.getState().vramWaitStatus).toBeNull()
   })
 
   it('Boundary value test: does NOT wait when free VRAM exactly equals threshold', async () => {
-    const queuePromptMock = vi.fn().mockResolvedValue('prompt-exact')
+    const submit = installAcceptedBatch()
     useGenerationStore.setState({
-      queuePrompt: queuePromptMock,
       systemStats: {
         cpu_pct: 10,
         ram_used_gb: 8,
@@ -302,6 +332,6 @@ describe('REQ-260 E2E VRAM Guard Integration', () => {
     })
 
     expect(useGenerationStore.getState().vramWaitStatus).toBeNull()
-    expect(queuePromptMock).toHaveBeenCalledTimes(1)
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 })

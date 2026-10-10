@@ -1,4 +1,5 @@
 import { Settings, X } from 'lucide-react'
+import { useConfig } from '../../../hooks/useConfig'
 
 export interface SettingsPopoverProps {
   setIsSettingsOpen: (open: boolean) => void
@@ -19,9 +20,6 @@ export interface SettingsPopoverProps {
 
 export const SettingsPopover = ({
   setIsSettingsOpen,
-  localComfyUrl,
-  setLocalComfyUrl,
-  setComfyUrl,
   selectedWorkflowId,
   workflow,
   handleSaveDefaultParams,
@@ -32,25 +30,32 @@ export const SettingsPopover = ({
   updateWorkflowBaseModelMutation,
   setWorkflowManageMode,
   setRescanOpen,
-}: SettingsPopoverProps) => (
+}: SettingsPopoverProps) => {
+  const { data: config, isLoading, isError } = useConfig()
+  return (
   <div className={`absolute ${mobile ? 'left-[-120px]' : 'right-0'} top-full mt-2 w-72 bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-4 z-50 space-y-4 animate-fade-in`}>
     <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-2">
       <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
         <Settings size={12} className="text-accent-green" />ComfyUI設定
       </span>
-      <button type="button" onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+      <button type="button" aria-label="閉じる" onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
         <X size={14} />
       </button>
     </div>
     <div className="space-y-1.5">
-      <label className="text-[10px] text-zinc-400 font-medium">ComfyUI URL</label>
+      <label htmlFor="comfy-url-popover" className="text-[10px] text-zinc-400 font-medium">ComfyUI URL（本体設定）</label>
       <input
+        id="comfy-url-popover"
         type="text"
-        value={localComfyUrl}
-        onChange={(e) => { setLocalComfyUrl(e.target.value); setComfyUrl(e.target.value) }}
-        placeholder="http://localhost:8188"
-        className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40"
+        value={config?.comfy_url ?? ''}
+        readOnly
+        aria-label="ComfyUI URL（本体設定）"
+        placeholder={isLoading ? '読み込み中…' : '設定を取得できません'}
+        className="w-full bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none"
       />
+      {isLoading && <p className="text-[10px] text-zinc-500">読み込み中…</p>}
+      {isError && <p role="status" className="text-[10px] text-amber-300">接続設定を取得できません</p>}
+      <a href="/settings#system" className="inline-block text-[10px] text-accent-green underline">サービス管理設定へ</a>
     </div>
     {selectedWorkflowId && workflow && (
       <div className="space-y-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
@@ -130,4 +135,5 @@ export const SettingsPopover = ({
       </div>
     )}
   </div>
-)
+  )
+}

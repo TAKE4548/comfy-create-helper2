@@ -8,7 +8,7 @@ export interface LoraRow { key: string; model: string; role: string; weight: str
 export interface MetadataView {
   record: GenerationRecord | null; fields: PromptFieldView[]; parameters: MetadataItemView[]; extras: MetadataItemView[]
   assets: MetadataItemView[]; workflowId: number | null; workflowName: string | null; queuedAt: string | null
-  warning: string | null; actualSeed: string | null; loraRows: LoraRow[]
+  completedAt?: string | null; warning: string | null; actualSeed: string | null; loraRows: LoraRow[]
 }
 export interface ResolvedMetadata {
   paramValues: Record<string, unknown>; appliedAssets: Record<string, AppliedAsset[]>; workflowId: number | null
@@ -19,6 +19,9 @@ function json(v: unknown): v is JsonValue {
   return v === null || typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (Array.isArray(v) && v.every(json)) || (object(v) && Object.values(v).every(json))
 }
 const text = (v: unknown): string | null => typeof v === 'string' || typeof v === 'number' ? String(v) : null
+function validTimestamp(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Date.parse(value)) ? value : null
+}
 function parseRecord(params: Record<string, unknown> | null): GenerationRecord | null {
   try {
     const raw = params?.[PROMPT_RECORD_KEY]
@@ -33,7 +36,8 @@ function parseRecord(params: Record<string, unknown> | null): GenerationRecord |
       typeof a.name === 'string' && typeof a.role === 'string' && Array.isArray(a.tags) && a.tags.every(t => typeof t === 'string') &&
       ['generic-tagset', 'lora-trigger', 'none', 'unknown'].includes(String(a.origin))
     if (![...r.fields, ...r.parameters].every(validField) || !r.assets.every(validAsset) || (r.queued_at !== null && typeof r.queued_at !== 'string')) return null
-    return r as unknown as GenerationRecord
+    const completedAt = r.completed_at === undefined || r.completed_at === null ? null : validTimestamp(r.completed_at)
+    return { ...r, completed_at: completedAt } as unknown as GenerationRecord
   } catch { return null }
 }
 const item = (f: CapturedField, i: number): MetadataItemView => ({ key: `${f.mapping_id}:${f.node_id}:${i}`, name: f.display_name, recorded: f.recorded, value: f.value, role: f.role, status: f.status })
@@ -72,6 +76,7 @@ export function getMetadataView(params: Record<string, unknown> | null): Metadat
     record, fields, parameters: record?.parameters.map(item) ?? [], extras,
     assets: record?.assets.map((a, i) => ({ key: `asset-${i}`, name: a.name, recorded: true, value: a as unknown as JsonValue, role: a.role })) ?? [],
     workflowId: record?.workflow_id ?? null, workflowName: record?.workflow_name ?? null, queuedAt: record?.queued_at ?? null,
+    completedAt: record?.completed_at ?? null,
     warning: complete ? null : record ? '未記録の項目があります' : '未記録の項目がある可能性があります',
     actualSeed: seed ? text(seed.value) : null, loraRows: loraRows(record?.parameters ?? []),
   }
@@ -108,7 +113,22 @@ export async function resolveRecordedMetadata(promptId: string | null): Promise<
   if (!promptId) return null
   const local = readLocalMetadata(promptId)
   const record = local ? parseRecord(local.paramValues) : null
-  if (local && record && (record.prompt_id === undefined || record.prompt_id === promptId)) return local
+  if (local && record && (record.prompt_id === undefined || record.prompt_id === promptId)) {
+    if (record.completed_at) return local
+    try {
+      const remote = await promptMetadataApi.get(promptId)
+      if (remote.prompt_id !== promptId) return local
+      const remoteRecord = parseRecord(remote.param_values)
+      if (!remoteRecord || (remoteRecord.prompt_id !== undefined && remoteRecord.prompt_id !== promptId) || !remoteRecord.completed_at) return local
+      return {
+        ...local,
+        paramValues: {
+          ...local.paramValues,
+          [PROMPT_RECORD_KEY]: JSON.stringify({ ...record, completed_at: remoteRecord.completed_at }),
+        },
+      }
+    } catch { return local }
+  }
   // Keep legacy local data only as the final fallback; a v1 record for another prompt is unsafe.
   const legacyLocal = record ? null : local
   try {

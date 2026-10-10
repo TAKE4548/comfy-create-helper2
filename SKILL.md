@@ -79,14 +79,15 @@ cd backend && uvicorn app.main:app --port 8000  # http://localhost:8000 でフ�
 
 - ベースパス: `http://localhost:8000/api`
 - Swagger UI: `http://localhost:8000/docs`
-- ComfyUI: `http://localhost:8188`（直接アクセス）
+- ComfyUI: `http://localhost:8188`（FastAPI が接続する上流サービス。React から直接接続しない）
 
 ## 重要な設計方針
 
-1. **ComfyUI へのアクセスは React から直接**（プロキシ不要）
-2. **LLM 監査は FastAPI 経由**（システムプロンプトは DB 管理）
-3. **スナップショット画像は `db/snapshots/` にファイル保存**（base64 禁止）
-4. **openapi.yaml は BE 起動後に `/openapi.json` を取得して生成**
+1. **生成通信は React から同originの FastAPI 経由**（生成関連 HTTP/WebSocket・画像を含む）。FastAPI が ComfyUI へ接続し、ブラウザーは ComfyUI の `8188` へ直接接続しない
+2. **Manager は生成通信から独立**（`8899`）。通常の管理UIはアプリの設定ページで使い、FastAPI の `8000` 停止時は PC ホスト上の `8899` 埋め込みFEを復旧用に使う
+3. **LLM 監査は FastAPI 経由**（システムプロンプトは DB 管理）
+4. **スナップショット画像は `db/snapshots/` にファイル保存**（base64 禁止）
+5. **openapi.yaml は BE 起動後に `/openapi.json` を取得して生成**
 
 ## Logging Architecture & Log Inspection Protocols
 
@@ -129,7 +130,7 @@ To avoid manual scanning or context bloat on large log files (Script-First Disco
 
 <prohibited_actions>
 - base64 でスナップショット画像を DB に保存することは禁止
-- ComfyUI への接続を FastAPI でプロキシすることは禁止
+- React から ComfyUI（`8188`）へ直接接続することは禁止。生成関連HTTP/WebSocket・画像は同originの FastAPI を経由し、ComfyUI 上流接続は FastAPI が担当する
 - LLM サーバーへ React から直接アクセスすることは禁止
 - Concluding triage analysis without checking logs/app.jsonl via scripts/inspect_logs.py is PROHIBITED
 - Closing /dev-verify with unresolved ERROR entries generated during the verification run is PROHIBITED
@@ -139,4 +140,3 @@ To avoid manual scanning or context bloat on large log files (Script-First Disco
 - Internal instructions (this file): English
 - Chat responses and artifacts: Japanese
 </linguistic_policy>
-

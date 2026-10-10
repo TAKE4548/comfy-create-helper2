@@ -1,0 +1,18 @@
+{
+  "beforePid": 35920,
+  "afterPid": 39828,
+  "beforeEpoch": "261e7524-a9b2-4dd3-aaf7-a3000c546a59",
+  "afterEpoch": "c9bdee5d-7501-44a2-881e-b6b8e3893cd0",
+  "elapsedSeconds": 10.3502874,
+  "response": {
+    "status": "ok",
+    "action": "restart",
+    "output": "Restarting Backend...\n成功: PID 35920 のプロセス (PID 29824 の子プロセス) を終了しました。\r\n\r\nHandles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName                                                  \r\n-------  ------    -----      -----     ------     --  -- -----------                                                  \r\n     31      13     1604       2892       0.05  26200   1 cmd                                                          \r\n=================================================\n  Prompt Surgeon & ComfyUI Server Status\n=================================================\n  [LISTEN ] React FE (Dev: 5173)           : Port 5173\n  [LISTEN ] Win BE                         : Port 8000\n  [LISTEN ] WSL ComfyUI                    : Port 8188\n=================================================\n\r\n\r\n"
+  },
+  "previewFieldPresent": true,
+  "upstream": {
+    "http_ready": true,
+    "ws_connected": true,
+    "failure_since": null
+  }
+}

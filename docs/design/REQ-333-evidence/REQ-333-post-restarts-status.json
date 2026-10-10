@@ -1,0 +1,12 @@
+{
+  "backend": true,
+  "frontend": true,
+  "comfy": true,
+  "busy": null,
+  "epoch": "c9bdee5d-7501-44a2-881e-b6b8e3893cd0",
+  "upstream": {
+    "http_ready": true,
+    "ws_connected": true,
+    "failure_since": null
+  }
+}

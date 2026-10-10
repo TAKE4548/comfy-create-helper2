@@ -1,7 +1,7 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.2
-**最終更新**: 2026-10-08
+**バージョン**: 2.3
+**最終更新**: 2026-10-10
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
@@ -10,7 +10,7 @@
 
 ## 1. 概要
 
-ComfyUI ワークフローを選択し、プロンプト・パラメータを編集して画像生成を実行するメインページ。  
+ComfyUI ワークフローを選択し、プロンプト・パラメータを編集して画像生成を実行するメインページ。
 PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）を同一ルート `/` 内で画面幅に応じて自動的に切り替えて提供する。
 
 ---
@@ -41,7 +41,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 | 要素 | ID / 識別子 | 説明 |
 |---|---|---|
-| 接続インジケーター | — | ComfyUI WebSocket 接続状態（緑パルス: 接続中 / グレー: 未接続） |
+| 接続インジケーター | — | 8000番のメインAPI/イベント接続状態を表示する。ComfyUI上流WebSocketの状態はバックエンドが管理する。 |
 | ワークフロー選択 | `#workflow-select` | セレクトボックス。「+ 新しいワークフローを追加」が先頭オプション |
 | ワークフロー管理 | `#workflow-manage-btn` | 名称変更・複製（`POST /copy`）モーダルを開く |
 | Presets ボタン | `#presets-toggle-btn` | プリセット管理パネル（`PresetManagerPanel`）の開閉 |
@@ -75,7 +75,7 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
   - アコーディオンの開閉、モバイル画面のタブ切り替え、Multi-Set切替・追加・複製を行っても、無効タグの状態は破棄されず完全に維持される。
   - セクションコピペ機能（`PromptSectionClipboardMenu`）や外部からの平文プロンプト文字列更新時、`TagChipEditor` は `chipsProp` を維持しつつ最新文字列を検知して正しくチップへ再パース・更新を行う。
   - プリセット切り替え時、`DesktopLayout` および `MobileLayout` で `key={`${activeSetId}-${role}`}` を適用することによりコンポーネントの再初期化を担保し、`multiSetSlice.loadPresetData` において `paramValues` から初期 `promptChips` を自動構築することで、プロンプトの消失・空欄化を防止する。
-  - ComfyUIへのキュー投入時（単一セット / Multi-Set）は、機械的導出ヘルパー `getEffectiveParamValues` により有効タグ（`enabled: true`）のみが抽出された平文マップが作成され、パラメータ同期（ParamSync）を経てComfyUI APIへ投入される。これにより無効タグが画像生成やメタデータ記録に混入することはない。
+  - 生成要求時（単一セット / Multi-Set）は、機械的導出ヘルパー `getEffectiveParamValues` により有効タグ（`enabled: true`）のみが抽出された平文mapが作成され、ParamSyncを経た凍結graph/param valuesとしてGeneration batch APIへ渡される。バックエンドworkerがComfyUIへ上流投入するため、ブラウザーからComfyUIへ直接投入しない。無効タグは生成payloadや生成metadataに混入しない。
 
 ### 2-4. アセットパネル（LoRA / TagSet の適用）
 
@@ -155,18 +155,30 @@ PC/タブレット（`DesktopLayout`）およびモバイル（`MobileLayout`）
 
 ### 2-9. メインプレビュー & キュー管理
 
-- 生成中: WebSocket 経由の進捗バー表示。
+- 生成中: WebSocket 経由の進捗バー表示。PC・モバイルの進捗率文字は整数へ丸め、バー幅の計算精度は維持する。進捗通知だけでpreview URLを合成せず、実画像URLの受信時だけ更新する。
 - 完了後: 高解像度画像表示（ダウンロード、スナップショット保存）。
 - **プレビュー自動追従 / 固定トグル (REQ-264)**:
   - サムネイルヘッダー（`DesktopLayout`, `MobileLayout`）および全画面モーダルプレビュー（`HistoryModalPreview`）において、ワンタップで「自動追従（Auto-Follow）」と「固定（Lock）」を切り替え可能。
-  - **自動追従**: 自セッションの生成完了時に、プレビュー表示およびフォーカスモーダルが自動的に最新の生成画像へ切り替わる（デフォルト: 有効）。
+  - **自動追従**: 自セッションの生成完了時に、プレビュー表示およびフォーカスモーダルが自動的に最新の生成画像へ切り替わる（デフォルト: 有効）。完了原画を選ぶ時はその完了job自身の旧プレビューだけを解除し、後続jobが画像未受信でも旧frameで原画を覆わない。後続jobの実frameを受信済みならそのframeを維持し、進捗だけで消さない。
   - **固定**: 新規生成が完了しても、現在閲覧している画像の表示を維持（REQ-240 と同様の閲覧コンテキスト保護）。
   - **即時ジャンプ**: 固定状態から自動追従を ON に切り替えた際、即座に最新画像へ表示がジャンプ。
   - 設定値は `localStorage` (`prompt-surgeon-preview-auto-follow`) に永続化される。
 - **ジョブ割り込み / キャンセル**:
-  - キャンセルボタン押下時、フロントエンドは直ちに `isGenerating: false` へ復帰し、`POST /api/comfy/interrupt` を発行して ComfyUI 側実行を即時中断。
-- ジョブ管理モーダル（`JobManagementModal.tsx`）: ComfyUI キュー一覧の確認、割り込み、キャンセル。
+  - 生成要求は `POST /api/generation/batches` でメインAPI（8000番）へ送信する。`BatchRequest` は `request_id`、既存の利用者session identity、scope（`normal` / `studio`）、凍結itemsを持ち、Studioではproject IDを持つ。フロントエンドはワークフロー・graph・パラメータ・適用アセットを要求ごとに凍結し、受付DB transactionのcommit後に返る `202 Accepted` を受付完了とする。上流ComfyUIへの送信と専用 `client_id` はバックエンドが管理し、利用者の `session_id` と混同しない。上流POSTの結果が不明な場合は `unconfirmed` とし、自動再送しない。
+  - ブラウザーは共有WebSocket `/api/ws` からGenerationのsnapshot/eventを受け取る。snapshotは `epoch` / `revision` と全状態を一体で扱い、古いrevisionやepochを現在状態へ部分mergeしない。WebSocket再接続中もAPI上のジョブ受付はバックエンドが処理し、ブラウザー接続断を理由に受付済ジョブを取り消さない。
+  - 通常生成の `normal_group_id` は通常生成のまとまりを示し、session IDやStudioのproject IDとは別である。履歴の「自セッションのみ」は表示対象を切り替えるだけで、全体キャンセルの範囲を狭めない。他sessionの待機表示はこのfilterが有効な場合に限る。異なるscopeの待機jobがある場合は別scopeの待機を優先し、scopeを併記する。
+  - 通常生成の進捗母数 `N` は取消済みjobを除外し、完了数 `F` は成功・失敗の合計とする。失敗は通知したうえで進捗上の完了として扱う。取消後のNと進捗率は残存jobから再計算する。
+  - Studio Step 1の各生成batchは独立したrequest/batchとして扱い、通常生成のgroupや他Studio batchへ合算しない。各batchの `N` はそのrequestの対象数、`F` は成功・失敗の合計とし、失敗は通知して完了として進める。キャンセルjobは進捗母数から除外し、batch停止後は停止済みとして表示する。project scopeを示す場合はproject名を併記できる。Studioのstep遷移自体は本節の対象外。
+  - ジョブ管理モーダル（`JobManagementModal.tsx`）は単件取消、待機queueのみ取消、実行中と待機queueの全取消を提供する。単件は選択行のIDだけを送る。一括操作は初期値「全生成（Studioを含む）」で、追加選択肢「通常生成のみ」を選べる。scopeはsession表示filterと独立し、通常生成のみは全sessionの識別済み通常jobだけを取消対象にし、Studio/未分類jobを保護する。保護対象が実行中または待機中の場合は、通常生成の実行中割り込みを見送り、skippedと保護理由を示して一括取消完了扱いにしない。
+  - 待機jobの取消は、取消前queueで対象が待機中であること、上流ACKが有効であること、成功した取消後queueでrunning/pendingの双方に不在であること、成功したhistory照会にterminal記録がないことを合わせて確認した場合に限り確認済みとする。queue不在だけ、ACKだけ、照会失敗、またはrunningへ遷移した競合は `unconfirmed` とする。実行中jobの割り込みはterminal状態を確認できるまで成功としない。対象のない全取消は、取消前後queue照会とACKがすべて成功し空であることを確認する。
+  - 正常完了を確認できた場合だけ一括操作を完了扱いにしてモーダルを閉じる。部分成功、未確認、protected jobによる割り込みskippedは確認済み・未確認の結果を表示してモーダルを維持する。キャンセルを失敗toastとして重複通知しない。
 - キーボードナビ: `←` / `→` キーでサムネイル切替。
+
+#### Generate通信・Manager復旧境界
+
+- メインアプリのAPIおよび共有イベント接続は8000番を使用する。ブラウザーはGeneration APIと `/api/ws` に接続し、ComfyUIへのWebSocket/HTTP上流通信はバックエンドが仲介する。上流接続に使うComfyUI `client_id` はバックエンド専用である。
+- Managerの管理UIはメインアプリ設定ページのシステム欄から使う。8000番のメインアプリが停止している場合の復旧操作には、既存8899番Managerの埋め込みFEを使う。
+- `SYSTEM_STATS` の2.5秒配信と `VRAM_RECOVERED` は既存の型・意味を維持し、Generation snapshotの更新周期へ統合・変更しない。
 
 ### 2-10. PCリソース監視 HUD & モバイルチップ (REQ-288)
 
@@ -196,6 +208,9 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 - タブ: `history`（生成履歴）/ `snapshots`（保存済みスナップショット）。
 - 表示順: 「新しい順（降順）」「古い順（昇順）」切替。
 - 複数選択一括保存: `Ctrl/Shift/長押し` で複数選択し、一括でスナップショットとしてアルバム保存可能。
+- 履歴画像URLは同一originの `/view` 表現へ正規化し、`filename` / `subfolder` / `type` / `t` を保持する。一覧には既存thumbnailを使い、main/拡大表示には同一originのview URLを使う。旧hostと新hostの同一画像はfilename・subfolder・type identityで重複表示しない。`t` はURL/cache bust用で画像identityには含めない。
+- Galleryのサムネイル取得失敗だけでは履歴を削除しない。画像identityごとに原画availabilityを確認し、上流原画の404が確定した場合だけmissingとする。thumbnailの404、変換失敗、HEAD非対応、503、ネットワーク失敗・timeoutはunknownとして扱い、履歴・選択・原画プレビューを保持する。明示再試行は同じサムネイルURLを再取得し、再試行操作は画像行の選択に伝播しない。
+- 原画missingの確認と再試行は保存Snapshot branchへ適用しない。保存済みSnapshotの本体、params、表示は試行履歴の削除から独立して保持する。missing確定時も付随サムネイルやmetadataを即時削除せず、既存の一時保存上限・cleanupに任せる。サムネイル寸法/aspect比、cache品質・原画cache回復、30件local/1000件server metadata上限、IndexedDBの10分maxAgeを含む既存データライフサイクルは従来仕様を維持する。
 
 ---
 
@@ -232,7 +247,7 @@ frontend/src/store/
     bypassSlice.ts       — バイパスプロファイル、キャッシュ
     paramSyncSlice.ts    — パラメータ同期グループ、キャッシュ
   services/
-    comfyWebSocketService.ts — WebSocket 通信シングルトンサービス
+    systemWsService.ts       — /api/ws共有接続とmessage購読の集約
   useGenerationStore.ts  — ルートストア結合（39行）
 ```
 
@@ -240,7 +255,7 @@ frontend/src/store/
   - **キープアライブ (Ping 送信)**: 接続確立中、25秒周期で定期的なキープアライブ Ping（`{"type":"ping"}`）を送信し、非アクティブ放置時における Chromium / OS のアイドルタイムアウト切断を能動防止する。
   - **指数バックオフ自動再接続**: `onClose` または `onError` 検知時、指数バックオフ（1s → 2s → 4s → 8s → 最大15s）で自動再接続を自律的・継続的に試行する。接続確立時にリトライ間隔を初期値（1秒系）へリセットする。
   - **タブ復帰時（VisibilityChange / Focus）即時回復**: ブラウザタブが非アクティブからアクティブ（`visibilityState === 'visible'` または `focus`）に復帰した際、WebSocket が未接続状態（`!isConnected`）であれば待機タイマーを待たずに即座に再接続初期化（`initialize({ force: true })`）を能動トリガーする。
-  - **状態同期**: 再接続時、`/api/comfy/queue` および `/history` を照会して進行中ジョブ・生成履歴を再検知・同期し、進捗バー・プレビューに自動復帰する。
+  - **状態同期**: 再接続時は `GET /api/generation/state` と共有WebSocketの最新Generation snapshotを使ってjob状態を同期し、履歴画像の再取得はAPI経由のhistory照会で行う。進捗はsnapshot、表示履歴はhistoryデータを正本とし、上流queue/historyの欠落だけで取消済み・完了を推定しない。
 
 ---
 
@@ -266,7 +281,7 @@ frontend/src/store/
 
 1. **実行時最新ストア状態の取得 (`useGenerateAction`)**:
    - `handleGenerate` および `handleGenerateSets` の呼び出し時、フック生成時のクロージャスナップショットではなく、Zustand ストアから直接最新状態（`useGenerationStore.getState()`）を取得してキュー投入ペイロードを構築する。
-   - これにより、パラメータ変更直後（1秒未満・オートセーブ非同期通信中）に即座に生成ボタンが押下された場合でも、画面表示中の最新 `paramValues`、`batchSize`、`seedMode`、`seed` が 100% 確実に ComfyUI へ投入される。
+   - これにより、パラメータ変更直後（1秒未満・オートセーブ非同期通信中）に即座に生成ボタンが押下された場合でも、画面表示中の最新 `paramValues`、`batchSize`、`seedMode`、`seed` を凍結したBatchRequestとしてメインAPIへ渡す。
 2. **厳格なアクティブセット特定と他セット汚染防止 (REQ-279)**:
    - セットごとのパラメータマージにおいて、`String(setItem.id) === String(currentActiveSetId)` による型安全比較を行う。
    - `currentActiveSetId` が `null` または未設定の場合、あるいはアクティブセットではないセットに対しては画面の入力値（`currentParamValues` や画面の `batchSize`/`seed`）を強制上書き・マージせず、各セット自身の保持パラメータ（`setItem.paramValues` 等）を忠実に尊重して投入する。
@@ -277,17 +292,17 @@ frontend/src/store/
 
 ### 5-4. 生成前他プロセスVRAM競合防止と待機通知 (REQ-260)
 
-1. **VRAM事前検証（Preflight Guard）**:
-   - `handleGenerate` および `handleGenerateSets` において、`queuePrompt` 実行直前に WebSocket `SYSTEM_STATS` メトリクス（またはオンデマンド照会 `GET /api/comfy/vram-status`）を参照し、ホストGPUの空きVRAM量（`vram_free_gb`）を評価する。
-   - 空きVRAMが安全基準値（デフォルト 4.0GB、`settings.vram_min_free_gb`）を下回っている場合、ComfyUIへのキュー投入を一時停止し、待機状態（`vramWaitStatus.isWaiting = true`）へ遷移する。
+1. **VRAM受付後ゲート（Preflight Guard）**:
+   - BatchRequestの受付とユーザー操作はWebSocket接続や現在のVRAM空き量を待たずに行い、workerがComfyUI上流へ送る直前にホストGPU空きVRAM（`vram_free_gb`）を評価する。判定にはバックエンドのSYSTEM_STATSまたはオンデマンド計測を使い、低VRAMなら未投入jobをworker側で待機させる。ブラウザーが待機を監視・表示することは、ブラウザーからの上流送信やworker状態の代替を意味しない。
+   - 空きVRAMが安全基準値（デフォルト4.0GB、`settings.vram_min_free_gb`）を下回る場合、受付済みrequestを維持して上流投入を保留する。受付済jobの通常キャンセルと、低VRAM wait中の未投入分キャンセルは区別する。
 2. **専用ステータス表示 & UIフィードバック (AC-2)**:
    - 待機状態中は生成進行UI上に専用ステータス「VRAM解放待ち（他プロセスの終了待機中）」および「空き容量 / 必要容量 / 待機経過秒数」をリアルタイム表示する。WebSocketからの2.5秒周期プッシュにより、空き容量表示は自動追従する。
 3. **長時間待機通知 (AC-3)**:
    - 待機状態が10秒以上継続した場合、画面上へ警告トーストを発行し、他プロセス（ローカルLLM等）の完了待機中である旨をユーザーへ明示する。
 4. **即時待機キャンセル (AC-4)**:
-   - 待機中、ユーザーはステータスバーやアクションバーの「待機キャンセル」からいつでも生成を安全に取り消し、アイドル状態へ復帰できる。
+   - 待機中、ユーザーはステータスバーやアクションバーの「待機キャンセル」から当該accepted requestの未投入jobだけを取り消せる。FEは既存のguard付きjob cancelを使い、取消時点でqueuedかつprompt ID未確定のjobだけをbackendが原子的に対象とする。ComfyUI上流へ既投入のjob、running job、Studioや別requestは中断しない。ブラウザー接続断はworkerを停止しない。
 5. **WebSocketプッシュ駆動の自動再開 (AC-5)**:
-   - クライアント主体のHTTP定期ポーリングは行わず、バックエンドからのWebSocketイベント（`SYSTEM_STATS` の `vram_safe: true` または専用イベント `VRAM_RECOVERED`）を受信した契機で待機を即座に自動解除し、保留されていたワークフローを `queuePrompt` へ自動投入して生成を開始する。
+   - workerは新しいVRAM状態を評価して安全になった待機jobを上流へ送る。FEは `SYSTEM_STATS`（`vram_safe: true`）または `VRAM_RECOVERED` とGeneration snapshotで待機表示を更新し、上流投入を重ねて行わない。通常の2.5秒SYSTEM_STATS周期を変更しない。
 
 ### 5-5. キュー投入失敗理由通知 (REQ-307)
 
@@ -304,7 +319,7 @@ frontend/src/store/
 - **一括保存**: サムネイル複数選択時に `Promise.all` で並列保存。
 - **派生スナップショット**: 親スナップショット ID（`source_snapshot_id`）を保持。親スナップショット削除時も DB の `SET NULL` により派生画像は独立して保持される。
 - **生成時メタデータ永続化とスナップショット復元**:
-  - キュー投入時（バッチ中間ジョブを含む各ジョブ）、生成開始時に固定したワークフローから欄名・role・順序・mapping情報を保持し、実際に投入したgraph値と適用アセットを `__prompt_surgeon_metadata_v1` の生成記録としてprompt IDに対応付ける。ローカル保存とサーバーの `POST /api/prompt-metadata` は非同期で行い、片方の失敗で他方の保存を止めない。生成記録にはキュー受付時刻を記録するが、生成完了時刻は記録しない。
+  - 生成要求ごとに固定したworkflow ID、graph、param values、適用アセットをbatch itemとしてメインAPIへ渡す。バックエンドは受付時の同一DB transactionで `GenerationJob` と凍結metadataを保存し、commit後に `202 Accepted` を返す。最初にComfyUI prompt IDが確認された時点で、workflow ID・param values・applied assetsをprompt metadata recordへ同一transactionで対応付ける。妥当な `__prompt_surgeon_metadata_v1` があればそのrecord内に `queued_at` とprompt IDを追記し、それ以外のparam valuesは変更しない。生成完了時刻を受付時刻や既存 `created_at` の別意味として保存しない。
   - 生成記録のローカルreader `readLocalRecordedMetadata` は同期的にlocalStorageから一致する `prompt-surgeon-meta-*` 記録を読む。local記録がない場合の非同期resolverはserver metadataを照会する。prompt metadataはTanStack Queryの永続cacheには含めない。
   - スナップショット保存時は画像 URL の `t` からローカル/server記録を照会して保存する。記録欠落時に現在の入力値から生成条件を補完しない。保存済み `params` は空値を含めて正本とし、保存後に元のメタデータ記録が整理されても保存内容は独立して残る。
   - ローカルの `prompt-surgeon-meta-*` は生成時メタデータの一時キャッシュとして最大30件を保持する。新規記録の書き込み前に整理し、incoming record用の枠を先に確保して既存記録をtimestamp降順で残す（同時刻はkey順）。初回利用時も既存キャッシュをこの上限へ移行する。壊れたJSON、objectでない値、timestampが欠落・不正な記録は有効記録より先に削除する。保存済み画像のSnapshot `params` はキャッシュと独立した保存内容であり、キャッシュ整理の対象にしない。整理によりサーバー未保存の記録が失われる場合がある。サーバーのprompt metadataは最大1000件を維持し、非同期server保存を続ける。未保存画像の無期限保持は行わない。
@@ -326,9 +341,9 @@ frontend/src/store/
 - 生成画像の情報パネルは、Prompts と Parameters & Assets を切り替えて表示する。プロンプト欄は生成時の名前・role・順序と全文を示し、欄ごとの開閉・全開閉・コピーを提供する。記録された空欄と未記録を区別し、記録の完全性が不明な場合は警告する。文字数はUnicode書記素単位で算出し、clipboard失敗を通知する。
 - Parameters & Assets には生成記録のmapping値および保存済みparamsの追加キーを名前付きで表示する。false、0、空文字、null、配列、objectを保持し、内部予約キーは通常項目として表示しない。実寸と比率は画像読込時のpixel寸法から導出し、画像形式は取得可能なMIME情報を表示する。
 - 生成記録は投入graphに含まれる実使用seed、欄構成、workflow ID/名前、適用アセットとLoRA値を保持する。生成時入力のbypass状態・graph値・記録不足を区別する。過去に記録されていない内容を現在のworkflow/master/inputから推定復元しない。
-- Workflow、Prompt ID、キュー受付時刻、メタ情報保存時刻、画像保存時刻は意味を分けて表示し、生成完了時刻は未記録とする。現在のアルバム所属は生成時の事実と混同しない。
+- Workflow、Prompt ID、キュー受付時刻、メタ情報保存時刻、生成完了時刻、画像保存時刻は意味を分けて表示する。version1 recordのoptional `completed_at`は成功jobの実`finished_at`を同じtransactionで記録する。旧履歴は対応する成功jobが残る場合だけ取得時のcopyへ補い、時刻の根拠がないものは未記録とする。保存日時から完了日時を推測しない。現在のアルバム所属は生成時の事実と混同しない。
 - LoRA、汎用適用TagSet、LoRA付属trigger setは別種の情報として表示する。保存済み画像では現在の汎用TagSet/trigger set関連をdraft編集し、追加・削除・保存・キャンセルできる。生成プレビューは読取専用。編集はtyped snapshot PATCHで関連だけを更新し、生成記録、LoRAのrole/strength、画像・アルバム等を変更しない。PATCH失敗時はdraftを保持して失敗を表示する。
-- `prompt-surgeon-meta-*` のローカル生成時メタデータcacheはlocalStorageで最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。同期readerによる初回表示と、local記録がない場合のserver fallbackを使う。Snapshot `params` はこのcache上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。API query cacheのIndexedDB保存契約は[SPEC_COMMON 6](./SPEC_COMMON.md)を参照する。
+- `prompt-surgeon-meta-*` のローカル生成時メタデータcacheはlocalStorageで最大30件とし、新規保存前にtimestamp順で整理する。破損・不正timestampの記録を先に削除し、incoming recordの枠を確保する。同期readerによる初回表示と、local記録がない場合のserver fallback、および不足する生成完了日時だけのserver補完を使う。Snapshot `params` はこのcache上限に含めず、保存済み生成記録を保持する。サーバーprompt metadataの上限1000件と非同期保存を維持する。旧画像の未記録値の再構成、未保存画像の無期限保持は行わない。API query cacheのIndexedDB保存契約は[SPEC_COMMON 6](./SPEC_COMMON.md)を参照する。
 - 実装は局所typecheck/対象テストで確認済み。統合3-Gate、全体回帰、ブラウザーシナリオ、quota拒否時の実ブラウザー動作および実際のComfyUI生成を含む検証は、最終確認の記録ができるまで完了扱いにしない。設計・AC・実装タスクは[REQ-316](../design/REQ-316.md)と[REQ-332](../design/REQ-332.md)を参照。
 
 ## 7. コンポーネント & フック構成

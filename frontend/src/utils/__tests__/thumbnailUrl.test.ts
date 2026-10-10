@@ -8,10 +8,10 @@ describe('toThumbnailUrl', () => {
     expect(toThumbnailUrl('')).toBe('')
   })
 
-  it('should convert standard ComfyUI /view URL to /api/comfy/thumbnail', () => {
+  it('converts /view to thumbnail URL while preserving image identity metadata', () => {
     const comfyUrl = 'http://localhost:8188/view?filename=ComfyUI_00001_.png&subfolder=sub&type=output&t=12345'
     const result = toThumbnailUrl(comfyUrl)
-    expect(result).toBe('/api/comfy/thumbnail?filename=ComfyUI_00001_.png&subfolder=sub&type=output&size=256')
+    expect(result).toBe('/api/comfy/thumbnail?filename=ComfyUI_00001_.png&subfolder=sub&type=output&size=256&t=12345')
   })
 
   it('should support custom size parameter', () => {

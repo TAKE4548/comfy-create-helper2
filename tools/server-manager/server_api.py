@@ -1,17 +1,20 @@
 import http.server
+import ipaddress
 import json
+import locale
 import os
 import socket
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
 from pathlib import Path
 import logging
 from logging.handlers import RotatingFileHandler
-from typing import Optional
+from typing import BinaryIO, Optional
 import server_status
 
 # pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
@@ -25,6 +28,8 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 PS_SCRIPT = SCRIPT_DIR / "server-manager.ps1"
 LOGS_DIR = SCRIPT_DIR / "logs"
 PORT = 8899
+_ALLOWED_ACTIONS = {"status", "start", "stop", "restart", "reboot-service"}
+_ALLOWED_ACTION_SERVICES = {"", "all", "backend", "be", "frontend", "fe", "comfy", "wsl"}
 
 # ロガー初期化 (5MB, 5世代, UTF-8)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,6 +60,8 @@ CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 # 多重実行防止ロックおよびステータスキャッシュ
 _status_lock = threading.Lock()
+_action_lock = threading.Lock()
+_active_action = None
 _last_status_cache = None
 _last_status_time = 0.0
 
@@ -73,7 +80,11 @@ def get_action_timeout(action: str, service: str = "", config: Optional[dict] = 
 
     if act in ["restart", "reboot-service"]:
         if svc in ["backend", "be"]:
-            return 35
+            backend_config = config.get("backend") if isinstance(config, dict) else None
+            configured_wait = backend_config.get("wait_timeout_sec") if isinstance(backend_config, dict) else None
+            ready_budget = configured_wait if type(configured_wait) is int and configured_wait > 0 else 20
+            ready_budget = max(20, ready_budget)
+            return max(60, ready_budget + 35)
         if svc in ["comfy", "wsl"]:
             return 50
         if svc in ["frontend", "fe"]:
@@ -97,6 +108,15 @@ def get_action_timeout(action: str, service: str = "", config: Optional[dict] = 
         return 15
 
     return 30
+
+
+def _read_action_output_snapshot(output_file: BinaryIO) -> str:
+    """Read only bytes present when the file-size snapshot is taken."""
+    output_file.flush()
+    size = os.fstat(output_file.fileno()).st_size
+    output_file.seek(0)
+    content = output_file.read(size)
+    return content.decode(locale.getpreferredencoding(False), errors="replace")
 
 
 def read_log_file(filename: str, tail_lines: int = 200) -> tuple[bool, str, int]:
@@ -154,6 +174,43 @@ def get_local_ip():
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+
+def is_allowed_app_origin(origin: str) -> bool:
+    """Accept only the configured local app origins used by the FE."""
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+            return False
+        if parsed.username is not None or parsed.password is not None or parsed.path or parsed.query or parsed.fragment:
+            return False
+        hostname = parsed.hostname
+        port = parsed.port
+        if hostname is None or port not in {5173, 8000}:
+            return False
+        hostname = hostname.lower()
+        if hostname == "localhost":
+            return True
+        address = ipaddress.ip_address(hostname)
+        if not isinstance(address, ipaddress.IPv4Address):
+            return False
+        if address == ipaddress.IPv4Address("127.0.0.1"):
+            return True
+        return address in ipaddress.ip_network("192.168.0.0/16") or address in ipaddress.ip_network("10.0.0.0/8")
+    except (ValueError, TypeError):
+        return False
+
+
+def _normalized_http_origin(value: str) -> tuple[str, str, int] | None:
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme.lower() != "http" or parsed.username is not None or parsed.password is not None:
+            return None
+        if not parsed.hostname or parsed.path or parsed.query or parsed.fragment:
+            return None
+        return parsed.scheme.lower(), parsed.hostname.lower(), parsed.port or 80
+    except ValueError:
+        return None
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
@@ -452,6 +509,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function renderServices(status) {
       serviceGrid.innerHTML = '';
       for (const [key, s] of Object.entries(status)) {
+        if (!['fe', 'be', 'comfy'].includes(key) || !s || typeof s !== 'object') continue;
         const isRunning = s.running;
         const isTimeout = s.status === 'TIMEOUT';
         const isBundled = s.status === 'BUNDLED';
@@ -596,23 +654,62 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self._send_origin_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def _is_origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        request_origin = _normalized_http_origin(f"http://{self.headers.get('Host', '')}")
+        return _normalized_http_origin(origin) == request_origin and request_origin is not None or is_allowed_app_origin(origin)
+
+    def _send_origin_headers(self):
+        origin = self.headers.get("Origin")
+        self.send_header("Vary", "Origin")
+        if origin and self._is_origin_allowed():
+            self.send_header("Access-Control-Allow-Origin", origin)
+
+    def _reject_disallowed_origin(self) -> bool:
+        if self._is_origin_allowed():
+            return False
+        self._send_json({"error": "Origin is not allowed"}, status=403)
+        return True
+
+    def do_OPTIONS(self):
+        if not self._is_origin_allowed():
+            self._send_json({"error": "Origin is not allowed"}, status=403)
+            return
+        self.send_response(204)
+        self._send_origin_headers()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
+        if self._reject_disallowed_origin():
+            return
         global _last_status_cache, _last_status_time
         if self.path == "/api/status":
             with _status_lock:
                 now = time.time()
                 # 2秒以内の直近キャッシュがあれば再利用
                 if _last_status_cache is not None and (now - _last_status_time) < 2.0:
-                    self._send_json(_last_status_cache)
+                    data = dict(_last_status_cache)
+                    with _action_lock:
+                        data["action_in_progress"] = dict(_active_action) if _active_action is not None else None
+                    self._send_json(data)
                     return
 
-                data = server_status.get_server_status(CONFIG_FILE)
-                _last_status_cache = data
+                service_status = server_status.get_server_status(CONFIG_FILE)
+                data = dict(service_status)
+                _last_status_cache = dict(service_status)
                 _last_status_time = time.time()
+                with _action_lock:
+                    data["action_in_progress"] = dict(_active_action) if _active_action is not None else None
                 self._send_json(data)
 
         elif self.path == "/api/config":
@@ -658,35 +755,94 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
             body = HTML_TEMPLATE.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self._send_origin_headers()
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
     def do_POST(self):
+        if self._reject_disallowed_origin():
+            return
         if self.path == "/api/action":
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json({"error": "Invalid action payload"}, status=400)
+                return
+            if not isinstance(payload, dict):
+                self._send_json({"error": "Invalid action payload"}, status=400)
+                return
             action = payload.get("action", "status")
             service = payload.get("service", "")
+            if not isinstance(action, str) or action not in _ALLOWED_ACTIONS:
+                self._send_json({"error": "Unknown action"}, status=400)
+                return
+            if not isinstance(service, str) or service.lower() not in _ALLOWED_ACTION_SERVICES:
+                self._send_json({"error": "Unknown service"}, status=400)
+                return
+            service = service.lower()
             cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", action]
             if action in ["start", "restart", "reboot-service"]:
                 cmd.append("-Background")
             if service:
                 cmd += ["-Service", service]
-            timeout = get_action_timeout(action, service)
+            action_config = None
+            if action in ["restart", "reboot-service"] and service in ["backend", "be"]:
+                try:
+                    with open(CONFIG_FILE, "r", encoding="utf-8") as config_file:
+                        loaded_config = json.load(config_file)
+                    action_config = loaded_config if isinstance(loaded_config, dict) else None
+                except (OSError, json.JSONDecodeError):
+                    action_config = None
+            timeout = get_action_timeout(action, service, action_config)
+            global _last_status_cache, _last_status_time
+            global _active_action
+            with _action_lock:
+                if _active_action is not None:
+                    self._send_json({"status": "error", "action": action, "error": "Another action is in progress"}, status=409)
+                    return
+                _active_action = {"service": service or "all", "action": action}
+            with _status_lock:
+                _last_status_cache = None
+                _last_status_time = 0.0
+            response_data: dict[str, object]
+            response_status = 200
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=timeout)
-                self._send_json({
-                    "status": "ok",
+                with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
+                    res = subprocess.run(
+                        cmd,
+                        stdout=stdout_file,
+                        stderr=stderr_file,
+                        creationflags=CREATE_NO_WINDOW,
+                        timeout=timeout,
+                    )
+                    output = _read_action_output_snapshot(stdout_file) + _read_action_output_snapshot(stderr_file)
+                succeeded = res.returncode == 0
+                response_data = {
+                    "status": "ok" if succeeded else "error",
                     "action": action,
-                    "output": (res.stdout or "") + (res.stderr or "")
-                })
+                    "output": output,
+                    **({} if succeeded else {"returncode": res.returncode})
+                }
+                response_status = 200 if succeeded else 502
             except subprocess.TimeoutExpired:
-                self._send_json({
+                response_data = {
                     "status": "timeout",
                     "action": action,
                     "error": f"Action '{action}' timed out after {timeout}s"
-                }, status=504)
+                }
+                response_status = 504
+            except OSError as exc:
+                response_data = {"status": "error", "action": action, "error": str(exc)}
+                response_status = 502
+            finally:
+                with _action_lock:
+                    _active_action = None
+                with _status_lock:
+                    _last_status_cache = None
+                    _last_status_time = 0.0
+            self._send_json(response_data, status=response_status)
         elif self.path == "/api/config":
             try:
                 length = int(self.headers.get("Content-Length", 0))

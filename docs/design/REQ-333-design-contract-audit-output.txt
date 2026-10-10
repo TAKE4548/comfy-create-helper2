@@ -1,0 +1,93 @@
+[Local Model Adapter] Input size 24557 chars exceeds threshold 15000. Chunking into 3 parts...
+[Local Model Adapter] Processing chunk 1/3...
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Local Model Adapter] Processing chunk 2/3...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Local Model Adapter] Processing chunk 3/3...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Local Model Adapter] Synthesizing final response from all chunks...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 仕様分析統合レポート
+
+## 1. エグゼクティブサマリー
+REQ-333 は、バックエンドサービス、フロントエンド API、WebSocket 通信を含むバッチ生成システムを定義しています。全体的な分析結果（スコア：6.0/10〜6.2/10）から、**状態管理の矛盾**、**API コントラクトの不整合**、および**検証ロジックの欠如**が SSoT（Single Source of Truth）の完全性を損なう重大なリスクとなっていることが判明しました。本レポートは、3 つの分析チャンクに含まれる重複する指摘を整理し、優先順位に基づいた改善案を提示します。
+
+---
+
+## 2. 主要な発見と課題
+
+### 2.1 データモデルと状態管理の不整合
+バックエンドおよびフロントエンドの状態管理に重大な矛盾が存在します。
+
+| 課題 | 詳細 | リスク |
+| :--- | :--- | :--- |
+| **スナップショットのバージョン固定** | `GenerationSnapshot.version` が常に `1` に固定されており、スキーマ変更時の移行パスが定義されていない（Chunk 1）。 | 将来の拡張時にデータ破損や不整合が発生する。 |
+| **状態フィールドの矛盾** | T15 で `GenerationState` に新しいフィールドを追加する一方、T24 ではその参照を禁止している（Chunk 2）。 | 状態同期が不完全になり、コンポーネント間で挙動不一致が生じる。 |
+| **復旧プロトコルの欠如** | バッチ処理中にスナップショット取得 (`snapshot()`) が失敗した場合のロールバックや回復手順が不明確（Chunk 1, 3）。 | 部分完了したバッチデータが失われる、またはシステム状態が不安定になる。 |
+
+### 2.2 API コントラクトと通信の不整合
+フロントエンドとバックエンド間の契約にギャップがあり、実装の齟齬を招いています。
+
+*   **言語間型定義の不一致:** TypeScript (T8) と Python (T10) の間でバッチレスポンスやエラーハンドリングの定義が異なる（Chunk 1）。
+*   **WebSocket アーキテクチャの曖昧さ:** T23 と T24 で、ポート 8188 のカスタムソケット廃止と Vite デバイスサーバー WebSocket の維持について明確な関係性が示されていない（Chunk 2）。
+*   **API レスポンスの欠落:** キャンセルやプレビューエンドポイントの返却値が型定義されておらず、`dict[str, Any]` などの緩い型が使われている（Chunk 1）。
+
+### 2.3 ロジックとエッジケースの脆弱性
+システムが想定外の入力や状態に直面した際の挙動が未定義です。
+
+*   **進捗計算の除算エラー:** T20 の進捗計算でバッチサイズ `N=0` の場合、ゼロ除算により `NaN` 或いは無限大が発生するリスク（Chunk 2）。
+*   **ジョブステータスのタイムアウト:** 未確認 (`unconfirmed`) の結果に対して自動リトライやタイムアウトのロジックが欠落しており、ジョブが永久に停滞する可能性がある（Chunk 1）。
+*   **プロップライフサイクルの不明確さ:** T29 で旧プロップとの互換性を保つと謳う一方で、通信経路への使用禁止時の副作用挙動が定義されていない（Chunk 3）。
+
+### 2.4 検証ロジックと仕様の欠如
+仕様自体が検証不能または不完全な部分を含んでいます。
+
+*   **検証対象の指定漏れ:** T27 で「実装 diff」や検証を要求しているが、具体的な関数名や型契約が空欄（Chunk 3）。
+*   **「未実施試験」の定義不明:** 「仕様書で未実施試験を PASS と書かない」というネガティブ制約があるが、どの試験が実施済みかを客観的に示す基準がない（Chunk 2, 3）。
+*   **依存関係のループ:** T28 が T29 に依存しているが、T29 の変更が T28 の統合テストに影響を与えるリスクが評価されていない（Chunk 2, 3）。
+
+---
+
+## 3. 優先順位別改善推奨事項
+
+### 🔴 P1: 必須修正 (Critical Fixes)
+SSoT 完全性を保つために直ちに実装すべき項目です。
+
+1.  **スナップショット復旧プロトコルの定義:** `snapshot()` の失敗時における原子書き込みとリトライロジックを追加する（Chunk 1）。
+2.  **状態管理の矛盾解消:** T15 と T24 の間で `GenerationState` の扱いを統一し、データフローを明確化する（Chunk 2）。
+3.  **検証仕様の具体化:** T27 のように空欄になっているターゲット関数や型契約を埋め、客観的な検証基準を設定する（Chunk 3）。
+
+### 🟠 P2: 高優先度 (High Priority)
+システム安定性と保守性を向上させる項目です。
+
+1.  **エッジケースハンドリング:** バッチサイズ制限（推奨 50-100）、進捗計算のゼロ除算保護、セッション有効期限の設定を追加する（Chunk 1, 2）。
+2.  **API コントラクトの補完:** TypeScript と Python の間で返却値とエラー定義を標準化し、型安全性を高める（Chunk 1）。
+3.  **プロップライフサイクルの文書化:** T29 のような互換性維持策について、副作用やコールバックの振る舞いを明確に記述する（Chunk 3）。
+
+### 🟡 P3: 中優先度 (Medium Priority)
+長期的な品質向上と技術的負債の削減です。
+
+1.  **型安全性の統一:** Python モジュール全体で `mypy` の適用を標準化し、型注釈の欠落を解消する（Chunk 1）。
+2.  **エラーハンドリングの追加:** バッチ失敗時の指数関数的なバックオフや再試行ポリシーを導入する（Chunk 1）。
+3.  **依存関係グラフの整理:** T28 と T29 のような循環または非順序的な依存関係を解消し、ビルドプロセスを安定させる（Chunk 2, 3）。
+
+---
+
+## 4. 最終評価と結論
+
+REQ-333 は**「条件付きで実装可能」**ですが、SSoT 完全性を維持するためには **P1 の修正が必須**です。特に状態管理の矛盾と検証ロジックの欠如は、システムが本番環境で予期せぬ挙動を示す原因となる可能性が高いです。
+
+| カテゴリ | スコア | 備考 |
+| :--- | :---: | :--- |
+| **契約整合性** | 7/10 | TS/Python のギャップのみ |
+| **状態管理** | 5/10 | 復旧手順未定義が深刻 |
+| **エラーハンドリング** | 4/10 | タイムアウト・エスケープ不足 |
+| **型安全性** | 6/10 | 不統一な注釈適用 |
+| **検証ロジック** | 5/10 | 仕様自体が検証不能な部分あり |
+
+**総合スコア: 6.2 / 10**

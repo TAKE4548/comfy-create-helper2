@@ -1,6 +1,10 @@
 import json
+import locale
+import os
 import socket
 import subprocess
+import stat
+import shutil
 import threading
 import time
 from unittest.mock import patch, MagicMock
@@ -58,6 +62,7 @@ def test_api_status_bundled_mode():
 
     handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
     handler.path = "/api/status"
+    handler.headers = {}
     sent_responses = []
 
     def fake_send_json(data, status=200):
@@ -88,6 +93,7 @@ def test_api_status_standalone_mode():
 
     handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
     handler.path = "/api/status"
+    handler.headers = {}
     sent_responses = []
 
     def fake_send_json(data, status=200):
@@ -129,7 +135,17 @@ def test_api_action_timeout():
     mock_rfile.read.return_value = json.dumps({"action": "start", "service": "comfy"}).encode("utf-8")
     handler.rfile = mock_rfile
 
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=35)):
+    output_files = []
+
+    def timeout_run(*args, **kwargs):
+        for name in ("stdout", "stderr"):
+            output_file = kwargs[name]
+            assert output_file is not subprocess.PIPE
+            assert stat.S_ISREG(os.fstat(output_file.fileno()).st_mode)
+            output_files.append(output_file)
+        raise subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=35)
+
+    with patch("subprocess.run", side_effect=timeout_run):
         handler.do_POST()
 
     assert len(sent_responses) == 1
@@ -137,12 +153,14 @@ def test_api_action_timeout():
     assert status_code == 504
     assert data.get("status") == "timeout"
     assert "timed out after 35s" in data.get("error", "").lower() or "timed out" in data.get("error", "").lower()
+    assert all(output_file.closed for output_file in output_files)
 
 
 def test_get_action_timeout_matrix():
     # restart / reboot-service
-    assert server_api.get_action_timeout("restart", "backend") == 35
-    assert server_api.get_action_timeout("reboot-service", "be") == 35
+    assert server_api.get_action_timeout("restart", "backend") == 60
+    assert server_api.get_action_timeout("reboot-service", "be") == 60
+    assert server_api.get_action_timeout("restart", "backend", {"backend": {"wait_timeout_sec": 45}}) == 80
     assert server_api.get_action_timeout("restart", "comfy") == 50
     assert server_api.get_action_timeout("reboot-service", "wsl") == 50
     assert server_api.get_action_timeout("restart", "frontend") == 35
@@ -170,7 +188,10 @@ def test_get_action_timeout_matrix():
     assert server_api.get_action_timeout("unknown", "backend") == 30
 
 
-def test_api_action_reboot_backend_timeout_used():
+def test_api_action_reboot_backend_timeout_used(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"backend": {"wait_timeout_sec": 45}}), encoding="utf-8")
+    monkeypatch.setattr(server_api, "CONFIG_FILE", config_path)
     handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
     handler.path = "/api/action"
     sent_responses = []
@@ -185,16 +206,66 @@ def test_api_action_reboot_backend_timeout_used():
     mock_rfile.read.return_value = payload
     handler.rfile = mock_rfile
 
-    mock_res = MagicMock(stdout="ok", stderr="")
-    with patch("subprocess.run", return_value=mock_res) as mock_run:
+    def successful_run(*args, **kwargs):
+        for name in ("stdout", "stderr"):
+            assert stat.S_ISREG(os.fstat(kwargs[name].fileno()).st_mode)
+        kwargs["stdout"].write("ok".encode(locale.getpreferredencoding(False)))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", side_effect=successful_run) as mock_run:
         handler.do_POST()
 
     assert mock_run.called
-    assert mock_run.call_args.kwargs.get("timeout") == 35
+    assert mock_run.call_args.kwargs.get("timeout") == 80
     assert len(sent_responses) == 1
     data, status_code = sent_responses[0]
     assert status_code == 200
     assert data["status"] == "ok"
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected", "should_throw"),
+    [
+        ("normal", "stop,closed,start,ready", False),
+        ("stop-fails", "stop,closed,stop,closed", True),
+        ("ready-fails", "stop,closed,start,ready", True),
+    ],
+)
+def test_backend_restart_requires_close_and_readiness(scenario, expected, should_throw):
+    powershell = shutil.which("powershell.exe")
+    if not powershell:
+        pytest.skip("PowerShell is required for the controlled restart harness")
+    ps_script = Path(__file__).resolve().parent.parent.parent / "tools" / "server-manager" / "server-manager.ps1"
+    escaped = str(ps_script).replace("'", "''")
+    script = rf'''
+$ErrorActionPreference = "Stop"
+. '{escaped}' -Action none
+$script:events = [System.Collections.Generic.List[string]]::new()
+$script:closeResults = if ("{scenario}" -eq "stop-fails") {{ @($false, $false) }} else {{ @($true) }}
+function Stop-BackendProcess {{ $script:events.Add("stop") }}
+function Wait-For-Port-Closed ([int]$port, [int]$timeoutSec, [string]$serviceName) {{
+  $script:events.Add("closed")
+  $value = $script:closeResults[0]
+  if ($script:closeResults.Count -gt 1) {{ $script:closeResults = @($script:closeResults | Select-Object -Skip 1) }}
+  return $value
+}}
+function Start-BackendProcess ([bool]$asBackground) {{ $script:events.Add("start") }}
+function Wait-For-Port ([int]$port, [int]$timeoutSec, [string]$serviceName) {{
+  $script:events.Add("ready")
+  return ("{scenario}" -ne "ready-fails")
+}}
+try {{ Invoke-BackendRestart $true; "RESULT=OK" }} catch {{ "RESULT=ERROR" }}
+"EVENTS=$($script:events -join ',')"
+'''
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"EVENTS={expected}" in result.stdout
+    assert f"RESULT={'ERROR' if should_throw else 'OK'}" in result.stdout
 
 
 def test_status_concurrency_lock():
@@ -233,6 +304,7 @@ def test_status_concurrency_lock():
     def worker():
         handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
         handler.path = "/api/status"
+        handler.headers = {}
         local_responses = []
         handler._send_json = lambda d, status=200: local_responses.append((d, status))
         try:
@@ -295,5 +367,3 @@ def test_manager_handler_log_message():
         msg = mock_logger.call_args[0][0]
         assert "Test message foo 42" in msg
         assert "127.0.0.1" in msg
-
-

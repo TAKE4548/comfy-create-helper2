@@ -27,6 +27,38 @@ const generatedParams = (prompt: string, aspect: string, seed: number, steps: nu
 }
 beforeEach(() => { localStorage.clear(); get.mockReset(); get.mockRejectedValue(new Error('404')) })
 describe('getMetadataView', () => {
+  it('exposes a valid backend completion timestamp without inferring it from queue time', () => {
+    const saved = record()
+    const completedAt = '2026-10-10T12:34:56.000Z'
+    const view = getMetadataView({
+      [PROMPT_RECORD_KEY]: JSON.stringify({ ...saved, queued_at: '2026-10-10T12:00:00.000Z', completed_at: completedAt }),
+    })
+    expect(view.completedAt).toBe(completedAt)
+
+    const legacy = getMetadataView({ [PROMPT_RECORD_KEY]: JSON.stringify(saved) })
+    expect(legacy.completedAt).toBeNull()
+    expect(legacy.fields[0].value).toBe('')
+  })
+
+  it('treats absent, null, and invalid completion timestamps as null while preserving the record', () => {
+    for (const completed_at of [undefined, null, 'not-a-date', 42, {}]) {
+      const saved = record()
+      const raw = { ...saved, ...(completed_at === undefined ? {} : { completed_at }) }
+      const view = getMetadataView({ [PROMPT_RECORD_KEY]: JSON.stringify(raw), extra: 'preserved' })
+      expect(view.completedAt).toBeNull()
+      expect(view.fields[0].value).toBe('')
+      expect(view.actualSeed).toBe('812')
+      expect(view.extras).toContainEqual({ key: 'extra', name: 'extra', recorded: true, value: 'preserved' })
+    }
+  })
+
+  it('interprets completed_at in snapshot param_values using the same record view', () => {
+    const saved = record()
+    const completedAt = '2026-10-10T12:34:56Z'
+    const snapshotJob = { param_values: { [PROMPT_RECORD_KEY]: JSON.stringify({ ...saved, completed_at: completedAt }) } }
+    expect(getMetadataView(snapshotJob.param_values).completedAt).toBe(completedAt)
+  })
+
   it('shows empty prompts, typed extras and actual seed/LoRA strengths without exposing internal keys', () => {
     const view = getMetadataView(params())
     expect(view.fields[0]).toMatchObject({ name: 'Quality', recorded: true, value: '' })
@@ -102,10 +134,70 @@ describe('resolveRecordedMetadata', () => {
     expect((await resolveRecordedMetadata('p'))?.paramValues).toEqual(expected)
     expect(get).toHaveBeenCalledWith('p')
   })
-  it('uses valid local generation facts without fetching or requiring assets', async () => {
-    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: params(), timestamp: 1000 }))
+  it('uses valid completed local generation facts without fetching or requiring assets', async () => {
+    const completed = record()
+    completed.completed_at = '2026-10-10T12:34:56Z'
+    const localParams = { [PROMPT_RECORD_KEY]: JSON.stringify(completed) }
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: localParams, timestamp: 1000 }))
     const found = await resolveRecordedMetadata('p')
-    expect(found?.paramValues).toEqual(params()); expect(found?.appliedAssets).toEqual({}); expect(get).not.toHaveBeenCalled()
+    expect(found?.paramValues).toEqual(localParams)
+    expect(found?.appliedAssets).toEqual({})
+    expect(get).not.toHaveBeenCalled()
+  })
+  it('merges only a matching server completion timestamp into frozen local metadata', async () => {
+    const frozen = record()
+    frozen.prompt_id = 'p'
+    const localParams = { ...params(), localOnly: 'keep-local', [PROMPT_RECORD_KEY]: JSON.stringify(frozen) }
+    const localCache = JSON.stringify({ paramValues: localParams, workflowId: 1, appliedAssets: { local: [] }, timestamp: 1000 })
+    localStorage.setItem('prompt-surgeon-meta-p', localCache)
+
+    const remoteCompletedAt = '2026-10-10T12:34:56Z'
+    const remote = { ...record(), prompt_id: 'p', completed_at: remoteCompletedAt, workflow_name: 'Remote default', parameters: [] }
+    const remoteParams = { [PROMPT_RECORD_KEY]: JSON.stringify(remote), remoteOnly: 'discard' }
+    get.mockResolvedValue({ prompt_id: 'p', workflow_id: 99, param_values: remoteParams, applied_assets: { remote: [] }, created_at: 'metadata-save-time' })
+
+    const found = await resolveRecordedMetadata('p')
+    const mergedRecord = JSON.parse(String(found?.paramValues[PROMPT_RECORD_KEY]))
+    expect(mergedRecord.completed_at).toBe(remoteCompletedAt)
+    expect(mergedRecord.workflow_name).toBe('Original')
+    expect(mergedRecord.parameters).toEqual(frozen.parameters)
+    expect(found?.paramValues.localOnly).toBe('keep-local')
+    expect(found?.paramValues.remoteOnly).toBeUndefined()
+    expect(found?.workflowId).toBe(1)
+    expect(found?.appliedAssets).toEqual({ local: [] })
+    expect(found?.metadataSavedAt).toBeNull()
+    expect(localStorage.getItem('prompt-surgeon-meta-p')).toBe(localCache)
+    expect(get).toHaveBeenCalledWith('p')
+  })
+  it('replaces an invalid local completion value only with a valid matching remote timestamp', async () => {
+    const frozen = { ...record(), prompt_id: 'p', completed_at: 'not-a-time' }
+    const localParams = { [PROMPT_RECORD_KEY]: JSON.stringify(frozen), localOnly: 'keep-local' }
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: localParams }))
+    const remote = { ...record(), prompt_id: 'p', completed_at: '2026-10-10T12:34:56Z' }
+    get.mockResolvedValue({ prompt_id: 'p', param_values: { [PROMPT_RECORD_KEY]: JSON.stringify(remote) }, applied_assets: null, created_at: 'saved' })
+
+    const found = await resolveRecordedMetadata('p')
+    const merged = JSON.parse(String(found?.paramValues[PROMPT_RECORD_KEY]))
+    expect(merged.completed_at).toBe(remote.completed_at)
+    expect(merged.workflow_name).toBe(frozen.workflow_name)
+    expect(found?.paramValues.localOnly).toBe('keep-local')
+  })
+  it('retains valid frozen local metadata when timestamp lookup fails or the remote prompt id mismatches', async () => {
+    const frozen = record()
+    frozen.prompt_id = 'p'
+    const localParams = { ...params(), localOnly: 'authoritative', [PROMPT_RECORD_KEY]: JSON.stringify(frozen) }
+    localStorage.setItem('prompt-surgeon-meta-p', JSON.stringify({ paramValues: localParams, workflowId: 1, appliedAssets: { local: [] } }))
+
+    get.mockRejectedValueOnce(new Error('server unavailable'))
+    const onFailure = await resolveRecordedMetadata('p')
+    expect(onFailure?.paramValues).toEqual(localParams)
+    expect(JSON.parse(String(onFailure?.paramValues[PROMPT_RECORD_KEY])).completed_at).toBeUndefined()
+
+    const wrongRecord = { ...record(), prompt_id: 'other', completed_at: '2026-10-10T12:34:56Z' }
+    get.mockResolvedValueOnce({ prompt_id: 'other', workflow_id: 99, param_values: { [PROMPT_RECORD_KEY]: JSON.stringify(wrongRecord) }, applied_assets: { remote: [] }, created_at: 'saved' })
+    const onMismatch = await resolveRecordedMetadata('p')
+    expect(onMismatch?.paramValues).toEqual(localParams)
+    expect(onMismatch?.appliedAssets).toEqual({ local: [] })
   })
   it('prefers server generation facts over legacy or corrupt local records', async () => {
     get.mockResolvedValue({ prompt_id: 'p', workflow_id: 1, param_values: params(), applied_assets: null, created_at: 'server-time' })

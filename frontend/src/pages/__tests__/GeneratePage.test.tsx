@@ -53,6 +53,7 @@ vi.mock('../../store/useGenerationStore', () => {
     isConnected: true,
     isGenerating: false,
     progress: null,
+    generationSnapshot: null,
     previewImage: null,
     activeClientId: null,
     filterOwnSession: false,
@@ -95,7 +96,8 @@ vi.mock('../../store/useGenerationStore', () => {
     fetchParamSyncGroups: vi.fn(),
   };
   return {
-    useGenerationStore: () => store,
+    useGenerationStore: (selector?: (state: typeof store) => unknown) =>
+      selector ? selector(store) : store,
   };
 });
 
@@ -140,16 +142,16 @@ describe('GeneratePage Component Regression Tests', () => {
     expect(settingsBtn).toBeInTheDocument();
 
     // Settings popover should not be visible initially
-    expect(screen.queryByText('ComfyUI URL')).not.toBeInTheDocument();
+    expect(screen.queryByText('ComfyUI URL（本体設定）')).not.toBeInTheDocument();
 
     // Click to open popover
     fireEvent.click(settingsBtn);
-    expect(screen.getByText('ComfyUI URL')).toBeInTheDocument();
+    expect(screen.getByText('ComfyUI URL（本体設定）')).toBeInTheDocument();
 
     // In our popover code: <button type="button" onClick={() => setIsSettingsOpen(false)} ...><X size={14} /></button>
     // We can simulate clicking it or close via popover toggle
     fireEvent.click(settingsBtn); // toggles off
-    expect(screen.queryByText('ComfyUI URL')).not.toBeInTheDocument();
+    expect(screen.queryByText('ComfyUI URL（本体設定）')).not.toBeInTheDocument();
   });
 
   it('supports switching to mobile mode based on innerWidth', async () => {
@@ -385,4 +387,3 @@ describe('GeneratePage Component Regression Tests', () => {
     });
   });
 });
-

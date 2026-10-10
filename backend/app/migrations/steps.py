@@ -473,6 +473,49 @@ def step_026_dataset_projects_prompt_negative(conn: Connection, inspector: Inspe
             logger.info("Migrated: Added 'prompt_negative' column to 'dataset_projects' table.")
 
 
+def step_027_generation_jobs(conn: Connection, inspector: Inspector) -> None:
+    if "generation_jobs" in inspector.get_table_names():
+        return
+
+    conn.execute(sa.text("""
+        CREATE TABLE generation_jobs (
+            job_id VARCHAR NOT NULL PRIMARY KEY,
+            request_id VARCHAR NOT NULL,
+            item_index INTEGER NOT NULL,
+            payload_hash VARCHAR NOT NULL,
+            prompt_id VARCHAR,
+            session_id VARCHAR NOT NULL,
+            scope VARCHAR NOT NULL CHECK (scope IN ('normal', 'studio')),
+            batch_id VARCHAR NOT NULL,
+            normal_group_id VARCHAR,
+            project_id INTEGER,
+            set_name VARCHAR,
+            status VARCHAR DEFAULT 'queued' NOT NULL,
+            graph_json TEXT,
+            metadata_json TEXT DEFAULT '{}' NOT NULL,
+            outputs_json TEXT DEFAULT '[]' NOT NULL,
+            node_json TEXT,
+            accepted_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            started_at DATETIME,
+            finished_at DATETIME,
+            failure_json TEXT,
+            cancel_requested BOOLEAN DEFAULT 0 NOT NULL,
+            CONSTRAINT uq_generation_jobs_request_item UNIQUE (request_id, item_index),
+            UNIQUE (prompt_id)
+        )
+    """))
+    conn.execute(sa.text(
+        "CREATE INDEX ix_generation_jobs_batch_id ON generation_jobs (batch_id)"
+    ))
+    conn.execute(sa.text(
+        "CREATE INDEX ix_generation_jobs_normal_group_id ON generation_jobs (normal_group_id)"
+    ))
+    conn.execute(sa.text(
+        "CREATE INDEX ix_generation_jobs_status ON generation_jobs (status)"
+    ))
+    logger.info("Migrated: Created 'generation_jobs' table and indexes.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -488,6 +531,6 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("012", "speech_bubble_presets_tag_set_id", step_012_speech_bubble_presets_tag_set_id),
     MigrationStep("025", "lora_studio_tables", step_025_lora_studio_tables),
     MigrationStep("026", "dataset_projects_prompt_negative", step_026_dataset_projects_prompt_negative),
+    MigrationStep("027", "generation_jobs", step_027_generation_jobs),
 ]
-
 

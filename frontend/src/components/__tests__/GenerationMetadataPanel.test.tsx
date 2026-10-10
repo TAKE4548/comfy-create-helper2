@@ -2,6 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GenerationMetadataPanel, type MetadataItemView } from '../GenerationMetadataPanel'
 import type { PromptFieldView } from '../GenerationPromptFields'
+import { SnapshotMetadataTab } from '../history/SnapshotMetadataTab'
+import { getMetadataView } from '../../utils/promptRecord'
+import { PROMPT_RECORD_KEY } from '../../utils/generationRecord'
+
+vi.mock('../SnapshotTagAssociationsPanel', () => ({ SnapshotTagAssociationsPanel: () => null }))
 
 const fields: PromptFieldView[] = [{ key: 'p', name: 'Prompt', role: 'positive', nodeId: '1', recorded: true, value: 'seed prompt', status: 'submitted' }]
 const items: MetadataItemView[] = [
@@ -10,7 +15,7 @@ const items: MetadataItemView[] = [
   { key: 'extra', name: 'Extension data', recorded: true, value: { list: [1, null, 'x'] } },
 ]
 const base = {
-  imageUrl: '/image.png', promptId: 'p1', header: { workflowId: 12, workflowName: 'Portrait', queuedAt: '2026-01-02T03:04:00Z', metadataSavedAt: '2026-01-02T03:04:02Z', imageSavedAt: null, albums: ['Favorites'] },
+  imageUrl: '/image.png', promptId: 'p1', header: { workflowId: 12, workflowName: 'Portrait', queuedAt: '2026-01-02T03:04:00Z', metadataSavedAt: '2026-01-02T03:04:02Z', completedAt: '2026-01-02T03:04:01Z', imageSavedAt: null, albums: ['Favorites'] },
   fields, parameters: items.slice(0, 2), extras: items.slice(2), actualSeed: '987654',
   loraRows: [{ key: 'l1', model: 'style.safetensors', role: 'LoRA', weight: '0.6', modelStrength: '0.7', clipStrength: '0.4' }],
   assets: [{ key: 'a1', name: 'Character', recorded: true, value: ['blue hair'] }], warning: null,
@@ -28,6 +33,7 @@ describe('GenerationMetadataPanel', () => {
     expect(screen.getByText(/生成キュー登録/)).toBeTruthy()
     expect(screen.getByText(/メタ情報保存/)).toBeTruthy()
     expect(screen.getByText('生成完了時刻')).toBeTruthy()
+    expect(screen.getByText((_, node) => node?.textContent === '生成完了時刻2026-01-02T03:04:01Z')).toBeTruthy()
     expect(screen.getByText((_, node) => node?.textContent === '画像保存時刻未記録')).toBeTruthy()
     expect(screen.getByText('アルバム（現在）')).toBeTruthy()
     expect(screen.getByText('Favorites')).toBeTruthy()
@@ -44,6 +50,73 @@ describe('GenerationMetadataPanel', () => {
     expect(screen.getByText('Steps')).toBeTruthy()
     expect(screen.getByText('0')).toBeTruthy()
     expect(screen.getByText('false')).toBeTruthy()
+  })
+
+  it('shows 未記録 for absent completion time instead of substituting queued or image-saved time', async () => {
+    const header = {
+      workflowId: base.header.workflowId,
+      workflowName: base.header.workflowName,
+      queuedAt: '2026-01-02T03:04:00Z',
+      metadataSavedAt: base.header.metadataSavedAt,
+      imageSavedAt: '2026-01-02T03:05:00Z',
+      albums: base.header.albums,
+    }
+    await act(async () => { render(<GenerationMetadataPanel {...base} header={header} />); await Promise.resolve() })
+
+    expect(screen.getByText((_, node) => node?.textContent === '生成完了時刻未記録')).toBeTruthy()
+    expect(screen.getByText((_, node) => node?.textContent === '画像保存時刻2026-01-02T03:05:00Z')).toBeTruthy()
+  })
+
+  it('passes the recorded completion time for an active Snapshot without substituting snapshot.created_at', async () => {
+    const completedAt = '2026-01-02T03:04:01Z'
+    const view = { ...getMetadataView(null), completedAt }
+    const snapshot = {
+      id: 7, workflow_id: 12, params: {}, image_path: '/snapshot.png',
+      created_at: '2026-01-02T03:05:00Z',
+    }
+    await act(async () => {
+      render(<SnapshotMetadataTab
+        activeImage="/snapshot.png" activeSnapshotId={7} promptId="p1"
+        isLoading={false} isServerMetaLoading={false} view={view}
+        recordedMetadata={undefined} snapshot={snapshot} albums={[]} albumsError={false}
+        onPersisted={() => {}} onEditingChange={() => {}}
+      />)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText((_, node) => node?.textContent === `生成完了時刻${completedAt}`)).toBeTruthy()
+    expect(screen.getByText((_, node) => node?.textContent === '画像保存時刻2026-01-02T03:05:00Z')).toBeTruthy()
+  })
+
+  it('shows current-image local metadata while only the server completion timestamp is loading', async () => {
+    const localRecord = {
+      version: 1,
+      workflow_id: 12,
+      workflow_name: 'Local workflow A',
+      completeness: 'complete',
+      prompt_id: 'p-a',
+      fields: [{ mapping_id: 1, node_id: '1', display_name: 'Prompt', role: 'positive', recorded: true, value: 'image A prompt', status: 'submitted' }],
+      parameters: [],
+      assets: [],
+      queued_at: null,
+    }
+    const localView = getMetadataView({ [PROMPT_RECORD_KEY]: JSON.stringify(localRecord) })
+    expect(localView.record).toBeTruthy()
+    const props = {
+      activeImage: '/a.png', activeSnapshotId: null, promptId: 'p-a',
+      isLoading: false, isServerMetaLoading: true, view: localView,
+      recordedMetadata: undefined, snapshot: undefined, albums: [], albumsError: false,
+      onPersisted: () => {}, onEditingChange: () => {},
+    }
+    const { rerender } = render(<SnapshotMetadataTab {...props} />)
+
+    expect(screen.getByRole('tab', { name: 'Prompts (1)' })).toBeTruthy()
+    expect(screen.getByText('image A prompt')).toBeTruthy()
+    expect(screen.queryByText('Loading metadata...')).toBeNull()
+
+    rerender(<SnapshotMetadataTab {...props} activeImage="/b.png" promptId="p-b" view={getMetadataView(null)} />)
+    expect(screen.getByText('Loading metadata...')).toBeTruthy()
+    expect(screen.queryByText('image A prompt')).toBeNull()
   })
 
   it('shows LoRA strengths independently, assets and association content on the assets tab', async () => {

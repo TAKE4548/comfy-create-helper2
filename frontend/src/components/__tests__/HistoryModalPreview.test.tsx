@@ -213,6 +213,40 @@ describe('HistoryModalPreview', () => {
     expect(screen.queryByText('Late A prompt')).toBeNull()
   })
 
+  it('shows local frozen facts while pending, then adds only the matching server completion time', async () => {
+    const localValues = generationParams('Frozen local prompt', '1:1', 13579, 20)
+    const localRecord = JSON.parse(localValues[PROMPT_RECORD_KEY])
+    localRecord.prompt_id = 'image-a'
+    localValues[PROMPT_RECORD_KEY] = JSON.stringify(localRecord)
+    localStorage.setItem('prompt-surgeon-meta-image-a', JSON.stringify({ paramValues: localValues }))
+
+    const remoteValues = generationParams('Different remote prompt', '3:2', 97531, 27)
+    const remoteRecord = JSON.parse(remoteValues[PROMPT_RECORD_KEY])
+    remoteRecord.prompt_id = 'image-a'
+    remoteRecord.completed_at = '2026-10-09T12:34:56.000Z'
+    remoteValues[PROMPT_RECORD_KEY] = JSON.stringify(remoteRecord)
+    let resolveRemote!: (value: { prompt_id: string; workflow_id: number; param_values: Record<string, unknown>; applied_assets: null; created_at: string }) => void
+    vi.mocked(promptMetadataApi.get).mockImplementationOnce(() => new Promise(resolve => { resolveRemote = resolve }))
+
+    renderComponent({ images: ['/a.png?t=image-a'] })
+    fireEvent.click(await screen.findByRole('button', { name: /show info/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /Parameters & Assets/ }))
+    expect(await screen.findByText('Frozen local prompt')).toBeInTheDocument()
+    expect(screen.getAllByText('13579').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('未記録').length).toBeGreaterThan(0)
+
+    await act(async () => resolveRemote({
+      prompt_id: 'image-a', workflow_id: 1, param_values: remoteValues, applied_assets: null, created_at: 'saved',
+    }))
+
+    expect(await screen.findByText('2026-10-09T12:34:56.000Z')).toBeInTheDocument()
+    expect(screen.getByText('Frozen local prompt')).toBeInTheDocument()
+    expect(screen.getByText('1:1')).toBeInTheDocument()
+    expect(screen.getAllByText('13579').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Different remote prompt')).toBeNull()
+    expect(screen.queryByText('97531')).toBeNull()
+  })
+
   it('renders correctly when toggled from isOpen=false to isOpen=true without hook mismatch error', async () => {
     const { rerender } = renderComponent({ isOpen: false })
 

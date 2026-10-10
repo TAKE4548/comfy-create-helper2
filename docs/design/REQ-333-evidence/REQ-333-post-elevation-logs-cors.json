@@ -1,0 +1,54 @@
+[
+  {
+    "service": "backend",
+    "status": 200,
+    "lines": 123,
+    "contentLength": 708,
+    "allowOrigin": "http://192.168.3.13:5173",
+    "vary": "Origin"
+  },
+  {
+    "service": "frontend",
+    "status": 200,
+    "lines": 83,
+    "contentLength": 2206,
+    "allowOrigin": "http://192.168.3.13:5173",
+    "vary": "Origin"
+  },
+  {
+    "service": "comfy",
+    "status": 200,
+    "lines": 196,
+    "contentLength": 492,
+    "allowOrigin": "http://192.168.3.13:5173",
+    "vary": "Origin"
+  },
+  {
+    "service": "manager",
+    "status": 200,
+    "lines": 3834,
+    "contentLength": 1065,
+    "allowOrigin": "http://192.168.3.13:5173",
+    "vary": "Origin"
+  },
+  {
+    "origin": "http://192.168.3.13:8000",
+    "status": 200,
+    "allowOrigin": "http://192.168.3.13:8000"
+  },
+  {
+    "origin": "http://localhost:5173",
+    "status": 200,
+    "allowOrigin": "http://localhost:5173"
+  },
+  {
+    "origin": "https://example.com",
+    "status": 403,
+    "allowOrigin": ""
+  },
+  {
+    "origin": "http://192.168.3.13:8080",
+    "status": 403,
+    "allowOrigin": ""
+  }
+]

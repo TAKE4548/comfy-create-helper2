@@ -4,6 +4,7 @@ import { useGenerateDisplayState } from '../useGenerateDisplayState'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
+import { toThumbnailUrl } from '../../../../utils/thumbnailUrl'
 
 vi.mock('../../../../api/client', () => ({
   snapshotsApi: {
@@ -32,6 +33,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     }),
     fetchQueue: vi.fn(),
     fetchHistory: vi.fn(),
+    generationSnapshot: null,
   }
   const fn = () => state
   fn.getState = () => state
@@ -63,6 +65,7 @@ describe('useGenerateDisplayState', () => {
       filterOwnSession: false,
       previewImage: null,
       previewAutoFollow: true,
+      generationSnapshot: null,
     })
   })
 
@@ -371,5 +374,110 @@ describe('useGenerateDisplayState', () => {
       })
     })
   })
-})
 
+  describe('REQ-333-T21: image identity and availability', () => {
+    it('prepends foreign live images while preserving the modal image and index context', async () => {
+      const viewed = '/view?filename=viewed.png&subfolder=&type=output&t=own-prompt'
+      const foreign = '/view?filename=foreign.png&subfolder=&type=output&t=foreign-prompt'
+      useGenerationStore.setState({ comfyHistoryImages: [viewed], batchImages: [viewed], selectedImg: viewed, filterOwnSession: false })
+      const { result, rerender } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      act(() => result.current.handleOpenModalPreview())
+      expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe(viewed)
+
+      useGenerationStore.setState({
+        comfyHistoryImages: [foreign, viewed],
+        generationSnapshot: {
+          version: 1, epoch: 'foreign-arrival', revision: 2, normal_group_id: null, batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [{ job_id: 'foreign-job', request_id: 'foreign-request', prompt_id: 'foreign-prompt', session_id: 'other-client', scope: 'normal', batch_id: 'foreign-batch', normal_group_id: null, project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, failure: null,
+            outputs: [{ node_id: '1', index: 0, view_url: foreign, thumbnail_url: '', availability: 'present' }],
+          }],
+        },
+      })
+      rerender()
+
+      await waitFor(() => expect(result.current.sortedDisplayImages[0]).toBe(foreign))
+      expect(result.current.effectiveModalIndex).toBe(1)
+      expect(result.current.sortedDisplayImages[result.current.effectiveModalIndex]).toBe(viewed)
+    })
+
+    it('removes known foreign managed identities from persisted own-filter cache but keeps legacy entries', async () => {
+      const foreign = '/view?filename=foreign.png&subfolder=&type=output&t=foreign-prompt'
+      const legacy = '/legacy/unclassified.png'
+      useGenerationStore.setState({
+        batchImages: [], comfyHistoryImages: [foreign], filterOwnSession: true,
+        generationSnapshot: {
+          version: 1, epoch: 'foreign-filter', revision: 3, normal_group_id: null, batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [{ job_id: 'foreign-job', request_id: 'foreign-request', prompt_id: 'foreign-prompt', session_id: 'other-client', scope: 'normal', batch_id: 'foreign-batch', normal_group_id: null, project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, failure: null,
+            outputs: [{ node_id: '1', index: 0, view_url: foreign, thumbnail_url: '', availability: 'present' }],
+          }],
+        },
+      })
+      queryClient.setQueryData(['generateDisplayImages', { filterOwnSession: true }], [foreign, legacy])
+      const { result, rerender } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      rerender()
+
+      await waitFor(() => expect(queryClient.getQueryData<string[]>(['generateDisplayImages', { filterOwnSession: true }])).toEqual([legacy]))
+      expect(result.current.displayImages).toEqual([legacy])
+    })
+
+    it('normalizes legacy Comfy hosts and deduplicates by filename/subfolder/type identity', () => {
+      useGenerationStore.setState({
+        comfyHistoryImages: [
+          'http://localhost:8188/view?filename=shared.png&subfolder=tests&type=output&t=1',
+          '/view?filename=shared.png&subfolder=tests&type=output&t=2',
+        ],
+        batchImages: [],
+      })
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      expect(result.current.displayImages).toEqual(['/view?filename=shared.png&subfolder=tests&type=output&t=1'])
+    })
+
+    it('retains Comfy t when building same-origin thumbnail URLs from legacy absolute URLs', () => {
+      expect(toThumbnailUrl('http://localhost:8188/view?filename=a%20b.png&subfolder=x&type=output&t=42')).toBe(
+        '/api/comfy/thumbnail?filename=a%20b.png&subfolder=x&type=output&size=256&t=42'
+      )
+    })
+
+    it('removes only confirmed missing image identities and clears selection/cache', async () => {
+      const legacy = 'http://localhost:8188/view?filename=trial.png&subfolder=tests&type=temp&t=11'
+      useGenerationStore.setState({ selectedImg: legacy, batchImages: [legacy], comfyHistoryImages: [legacy] })
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      const canonical = '/view?filename=trial.png&subfolder=tests&type=temp&t=11'
+      act(() => result.current.handleItemClick(canonical, { ctrlKey: true, metaKey: false, shiftKey: false } as React.MouseEvent))
+      expect(result.current.selectedIds.has(canonical)).toBe(true)
+      act(() => window.dispatchEvent(new CustomEvent('comfy-image-availability', {
+        detail: { url: '/view?filename=trial.png&subfolder=tests&type=temp&t=99', availability: 'missing' },
+      })))
+      await waitFor(() => {
+        expect(result.current.displayImages).not.toContain(legacy)
+        expect(queryClient.getQueryData<string[]>(['generateDisplayImages', { filterOwnSession: false }])).not.toContain(legacy)
+        expect(useGenerationStore.getState().setSelectedImg).toHaveBeenCalledWith(null)
+        expect(result.current.selectedIds.has(canonical)).toBe(false)
+      })
+    })
+
+    it('retains unknown and thumbnail-failure images, and excludes snapshot outputs from trial history', () => {
+      const original = '/view?filename=keep.png&subfolder=tests&type=temp&t=1'
+      useGenerationStore.setState({
+        comfyHistoryImages: [original, '/view?filename=thumb-error.png&subfolder=tests&type=temp', '/view?filename=missing.png&subfolder=tests&type=temp'],
+        batchImages: [],
+        generationSnapshot: {
+          version: 1, epoch: 'e', revision: 1, normal_group_id: null, batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [{ job_id: 'j', request_id: 'r', prompt_id: null, session_id: 's', scope: 'normal', batch_id: 'b', normal_group_id: null, project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, failure: null,
+            outputs: [
+              { node_id: '1', index: 0, view_url: original, thumbnail_url: '', availability: 'unknown' },
+              { node_id: '1', index: 1, view_url: '/view?filename=missing.png&subfolder=tests&type=temp', thumbnail_url: '', availability: 'missing' },
+            ],
+          }],
+        },
+      })
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+      expect(result.current.displayImages).toContain(original)
+      expect(result.current.displayImages).toContain('/view?filename=thumb-error.png&subfolder=tests&type=temp')
+      expect(result.current.displayImages).not.toContain('/view?filename=missing.png&subfolder=tests&type=temp')
+    })
+  })
+})

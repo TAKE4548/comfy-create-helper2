@@ -13,9 +13,22 @@ import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 import type { QueueSubmissionFailure } from '../../../store/types'
 import { parseQueueSubmissionFailure } from '../../../utils/queueSubmissionFailure'
 import { buildGenerationRecord, PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
+import { generationApi } from '../../../api/domains/generation'
+import type { BatchRequest, GenerationItem } from '../../../api/domains/generation'
 
 const freeze = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const cleanParams = (values: Record<string, string>) => Object.fromEntries(Object.entries(values).filter(([key]) => key !== PROMPT_RECORD_KEY && key !== ASSOCIATIONS_KEY))
+
+function createRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') globalThis.crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 type SubmissionFailureRecord = QueueSubmissionFailure & {
   target: string
@@ -52,11 +65,10 @@ export function useGenerateAction(
 ) {
   const hookStore = useGenerationStore()
   const {
-    queuePrompt,
+    submitGenerationBatch,
     setActiveBatch,
     setSubmissionAbortController,
     setIsBatchSubmitting,
-    fetchQueue,
     setErrorToast,
     setVramWaitStatus,
   } = hookStore
@@ -66,118 +78,77 @@ export function useGenerateAction(
       ? useGenerationStore.getState()
       : hookStore
 
-  const waitForVramRecovery = (signal: AbortSignal): Promise<boolean> => {
-    return new Promise<boolean>((resolve) => {
-      if (signal.aborted) {
-        resolve(false)
-        return
-      }
+  const monitorServerVramWait = (jobIds: string[], signal: AbortSignal): void => {
+    let timer: ReturnType<typeof setInterval> | null = null
+    let unsubscribe: (() => void) | null = null
+    let waitDurationSec = 0
+    let lastFreeGb: number | null = null
+    let lastRequiredGb = 6
+    let settled = false
+    let warningShown = false
 
-      const currentState = getLatestState()
-      const stats = currentState.systemStats
-
-      // systemStats が存在し、明示的に vram_safe === false の場合のみ待機
-      if (!stats || stats.vram_safe !== false) {
-        resolve(true)
-        return
-      }
-
-      let timer: any = null
-      let unsubscribe: (() => void) | null = null
-      let isSettled = false
-
-      let waitDurationSec = 0
-      let lastFreeGb = stats.vram_free_gb ?? null
-      let lastRequiredGb = stats.vram_min_free_gb ?? 6.0
-      let lastWaitSec = -1
-
-      const updateWaitStatus = (nextStats = getLatestState().systemStats) => {
-        const nextFree = nextStats?.vram_free_gb ?? lastFreeGb
-        const nextRequired = nextStats?.vram_min_free_gb ?? lastRequiredGb
-        if (
-          nextFree === lastFreeGb &&
-          nextRequired === lastRequiredGb &&
-          waitDurationSec === lastWaitSec
-        ) {
-          return
-        }
-        lastFreeGb = nextFree
-        lastRequiredGb = nextRequired
-        lastWaitSec = waitDurationSec
-
-        setVramWaitStatus?.({
-          isWaiting: true,
-          freeGb: nextFree,
-          requiredGb: nextRequired,
-          waitDurationSec,
-        })
-      }
-
-      updateWaitStatus(stats)
-
-      const cleanup = () => {
-        if (timer) {
-          clearInterval(timer)
-          timer = null
-        }
-        if (unsubscribe) {
-          unsubscribe()
-          unsubscribe = null
-        }
-        setVramWaitStatus?.(null)
-      }
-
-      const finish = (result: boolean) => {
-        if (isSettled) return
-        isSettled = true
-        cleanup()
-        resolve(result)
-      }
-
-      const onAbort = () => {
-        finish(false)
-      }
-
-      signal.addEventListener('abort', onAbort, { once: true })
-
-      timer = setInterval(() => {
-        if (isSettled) return
-        waitDurationSec += 1
-        updateWaitStatus()
-
-        if (waitDurationSec === 10) {
-          setErrorToast?.({
-            message: 'VRAM解放待ちが継続しています。他プロセスの終了待機中（キャンセル可能）',
-            type: 'warning' as any,
-          })
-        }
-      }, 1000)
-
-      let lastSeenStats = stats
-      // Guard against re-entrant execution: setVramWaitStatus triggers a store
-      // update which synchronously re-fires this subscriber. Without the flag,
-      // updateWaitStatus → setVramWaitStatus → subscriber → updateWaitStatus → …
-      // causes "Maximum call stack size exceeded".
-      let isUpdatingWaitStatus = false
-      unsubscribe = useGenerationStore.subscribe((state) => {
-        if (isSettled) return
-        // Only react when systemStats itself changes (not vramWaitStatus or other fields).
-        if (state.systemStats && state.systemStats !== lastSeenStats) {
-          if (isUpdatingWaitStatus) return
-          lastSeenStats = state.systemStats
-          const capturedStats = state.systemStats
-          isUpdatingWaitStatus = true
-          try {
-            updateWaitStatus(capturedStats)
-          } finally {
-            isUpdatingWaitStatus = false
-          }
-          if (capturedStats.vram_safe === true) {
-            finish(true)
-          }
-        }
+    const clear = () => {
+      if (timer) clearInterval(timer)
+      timer = null
+      unsubscribe?.()
+      unsubscribe = null
+      signal.removeEventListener('abort', onAbort)
+      setVramWaitStatus?.(null)
+    }
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clear()
+    }
+    const onAbort = () => {
+      for (const jobId of jobIds) void generationApi.cancelJob(jobId, true).catch((error: unknown) => {
+        console.warn('Failed to cancel an unsubmitted generation job:', error)
       })
-    })
+      finish()
+    }
+    const update = () => {
+      if (settled) return
+      const current = getLatestState()
+      const stats = current.systemStats
+      const matchingJobs = current.generationSnapshot?.jobs.filter((job) => jobIds.includes(job.job_id)) ?? []
+      // Acceptance may finish before its snapshot is delivered. Keep the
+      // subscription until these accepted IDs appear in a complete snapshot.
+      if (matchingJobs.length === 0) return
+      const waitingJobs = matchingJobs.filter((job) => job.status === 'queued' && job.prompt_id === null)
+      if (waitingJobs.length === 0 || stats?.vram_safe === true) {
+        finish()
+        return
+      }
+      if (stats?.vram_safe !== false) return
+      lastFreeGb = stats.vram_free_gb ?? lastFreeGb
+      lastRequiredGb = stats.vram_min_free_gb ?? lastRequiredGb
+      const nextWaitStatus = { isWaiting: true, freeGb: lastFreeGb, requiredGb: lastRequiredGb, waitDurationSec }
+      const currentWaitStatus = getLatestState().vramWaitStatus
+      if (currentWaitStatus?.isWaiting !== nextWaitStatus.isWaiting ||
+          currentWaitStatus.freeGb !== nextWaitStatus.freeGb ||
+          currentWaitStatus.requiredGb !== nextWaitStatus.requiredGb ||
+          currentWaitStatus.waitDurationSec !== nextWaitStatus.waitDurationSec) {
+        setVramWaitStatus?.(nextWaitStatus)
+      }
+      if (!timer) {
+        timer = setInterval(() => {
+          waitDurationSec += 1
+          update()
+          if (!settled && !warningShown && waitDurationSec >= 10) {
+            warningShown = true
+            setErrorToast?.({ message: 'VRAM解放待ちが継続しています。他プロセスの終了待機中（キャンセル可能）', type: 'warning' as any })
+          }
+        }, 1000)
+      }
+    }
+
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    unsubscribe = useGenerationStore.subscribe(update)
+    update()
   }
 
   const applyParamSync = (
@@ -225,297 +196,205 @@ export function useGenerateAction(
     const currentSeedMode = state.seedMode
     const currentSeed = state.seed
     const currentAppliedAssets = freeze(state.appliedAssets || {})
-    const currentBypassProfiles = state.bypassProfiles || []
+    const currentBypassProfiles = freeze(state.bypassProfiles || [])
     const currentParamSyncGroups = freeze(state.paramSyncGroups || [])
-
-    const activeBypassNodeIds = Array.from(
-      new Set(
-        currentBypassProfiles
-          .filter((p) => p.is_enabled)
-          .flatMap((p) => p.bypassed_node_ids)
-      )
-    )
+    const activeBypassNodeIds = Array.from(new Set(currentBypassProfiles
+      .filter((profile) => profile.is_enabled)
+      .flatMap((profile) => profile.bypassed_node_ids)))
 
     const hasComfySchema = comfyObjectInfo && Object.keys(comfyObjectInfo).length > 0
     if (activeBypassNodeIds.length > 0 && !hasComfySchema) {
-      setErrorToast?.({
-        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
-        type: 'error',
-      })
+      setErrorToast?.({ message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。', type: 'error' })
       return
     }
 
-    const effectiveParamValues = getEffectiveParamValues(
-      currentParamValues,
-      currentPromptChips || {},
-      isAnimaMode,
-      promptRoleAllowlist
+    const effectiveParamValues = applyParamSync(
+      getEffectiveParamValues(currentParamValues, currentPromptChips, isAnimaMode, promptRoleAllowlist),
+      currentParamSyncGroups
     )
-    const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
+    const items: GenerationItem[] = []
+    for (let index = 0; index < currentBatchSize; index++) {
+      const injectedGraph = injectWorkflowParams({
+        workflow: capturedWorkflow,
+        paramValues: effectiveParamValues,
+        seedOptions: { seedMode: currentSeedMode, seed: currentSeed, index },
+        cloneJson: true,
+      })
+      let finalGraph = injectedGraph
+      if (activeBypassNodeIds.length > 0) finalGraph = applyBypass(finalGraph, activeBypassNodeIds, comfyObjectInfo)
+      items.push({
+        graph: finalGraph,
+        workflow_id: capturedWorkflow.id,
+        param_values: {
+          ...effectiveParamValues,
+          [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, currentAppliedAssets)),
+        },
+        applied_assets: currentAppliedAssets,
+      })
+    }
 
+    const request: BatchRequest = freeze({
+      request_id: createRequestId(),
+      session_id: state.clientId,
+      scope: 'normal',
+      items,
+    })
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
-    const submissionFailures: SubmissionFailureRecord[] = []
-
+    const failures: SubmissionFailureRecord[] = []
     try {
-      for (let i = 0; i < currentBatchSize; i++) {
-        if (abortController.signal.aborted) {
-          return
-        }
-
-        const isVramOk = await waitForVramRecovery(abortController.signal)
-        if (!isVramOk || abortController.signal.aborted) {
-          return
-        }
-
-        const injectedGraph = injectWorkflowParams({
-          workflow: capturedWorkflow,
-          paramValues: syncedParamValues,
-          seedOptions: {
-            seedMode: currentSeedMode,
-            seed: currentSeed,
-            index: i,
-          },
-          cloneJson: true,
-        })
-        let wfJson = injectedGraph
-        if (activeBypassNodeIds.length > 0) {
-          wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
-        }
-        let promptId: string | null = null
-        let submissionFailure: QueueSubmissionFailure | undefined
-        try {
-          promptId = await queuePrompt(
-            wfJson,
-            { paramValues: { ...syncedParamValues, [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, wfJson, currentAppliedAssets)) }, appliedAssets: currentAppliedAssets, workflowId: capturedWorkflow.id },
-            {
-              signal: abortController.signal,
-              skipQueueFetch: true,
-              onSubmissionFailure: (failure) => { submissionFailure = failure },
-            }
-          )
-        } catch (error) {
-          submissionFailure ??= parseQueueSubmissionFailure(error)
-        }
-        if (abortController.signal.aborted) {
-          return
-        }
-        if (!promptId) {
-          submissionFailures.push({
-            target: '生成',
-            isSet: false,
-            batchIndex: currentBatchSize === 1 ? null : i,
-            batchSize: currentBatchSize,
-            ...(submissionFailure ?? parseQueueSubmissionFailure(null)),
-          })
-        }
+      if (abortController.signal.aborted) return
+      const accepted = await submitGenerationBatch(request)
+      if (abortController.signal.aborted) {
+        monitorServerVramWait(accepted.job_ids, abortController.signal)
+        return
+      }
+      monitorServerVramWait(accepted.job_ids, abortController.signal)
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        const failure = parseQueueSubmissionFailure(error)
+        items.forEach((_, index) => failures.push({
+          target: '生成', isSet: false,
+          batchIndex: currentBatchSize === 1 ? null : index,
+          batchSize: currentBatchSize,
+          ...failure,
+        }))
       }
     } finally {
       setIsBatchSubmitting?.(false)
-      if (!abortController.signal.aborted) {
-        try {
-          await fetchQueue?.()
-        } catch (error) {
-          console.error('Failed to refresh queue after submission:', error)
-        }
-      }
     }
-    if (!abortController.signal.aborted && submissionFailures.length > 0) {
-      setErrorToast?.({ message: formatSubmissionFailures(submissionFailures), type: 'error', persistent: true })
+    if (!abortController.signal.aborted && failures.length > 0) {
+      setErrorToast?.({ message: formatSubmissionFailures(failures), type: 'error', persistent: true })
     }
   }
 
   const handleGenerateSets = async () => {
     if (!workflow) return
     options?.onBeforeGenerate?.()
-
     const capturedWorkflow = captureWorkflow()
     if (!capturedWorkflow) return
 
     const state = getLatestState()
-    const currentParamValues = cleanParams(state.paramValues)
+    const currentParamValues = freeze(cleanParams(state.paramValues))
     const currentPromptChips = freeze(state.promptChips || {})
     const currentSets = freeze(state.sets)
     const currentAppliedAssets = freeze(state.appliedAssets || {})
     const currentActiveSetId = state.activeSetId
     const currentParamSyncGroups = freeze(state.paramSyncGroups || [])
-    const currentBypassProfiles = state.bypassProfiles || []
-
-    const checkedSets = currentSets.filter((s) => s.checked)
+    const currentBypassProfiles = freeze(state.bypassProfiles || [])
+    const checkedSets = currentSets.filter((setItem) => setItem.checked)
     if (checkedSets.length === 0) {
       setErrorToast?.({ message: '生成対象のセットが選択されていません', type: 'error' })
       return
     }
 
-    const activeBypassNodeIds = Array.from(
-      new Set(
-        currentBypassProfiles
-          .filter((p) => p.is_enabled)
-          .flatMap((p) => p.bypassed_node_ids)
-      )
-    )
-
+    const activeBypassNodeIds = Array.from(new Set(currentBypassProfiles
+      .filter((profile) => profile.is_enabled)
+      .flatMap((profile) => profile.bypassed_node_ids)))
     const hasComfySchema = comfyObjectInfo && Object.keys(comfyObjectInfo).length > 0
     if (activeBypassNodeIds.length > 0 && !hasComfySchema) {
-      setErrorToast?.({
-        message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。',
-        type: 'error',
-      })
+      setErrorToast?.({ message: 'ComfyUIのノードスキーマ情報を取得できていないため、バイパス処理を実行できません。ComfyUIの接続を確認してください。', type: 'error' })
       return
     }
 
-    // 中断用 AbortController の作成とストア登録
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
-
-    // 新規投入分のジョブ枠を構築（画面最新のバッチサイズと整合させる）
     const newBatchJobs: BatchJob[] = []
-    checkedSets.forEach((setItem) => {
-      const isTargetActive =
-        currentActiveSetId !== null &&
-        currentActiveSetId !== undefined &&
-        String(setItem.id) === String(currentActiveSetId)
-      const batchCount = isTargetActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
-      for (let i = 0; i < batchCount; i++) {
-        newBatchJobs.push({
-          promptId: `pending-${setItem.name}-${i}-${Date.now()}`,
-          setName: setItem.name,
-          status: 'pending'
-        })
-      }
-    })
+    const items: GenerationItem[] = []
+    const itemTargets: Array<{ setName: string; batchIndex: number; batchSize: number }> = []
 
-    // 既存の activeBatch があればマージして母数を合算
-    const existingActiveBatch = state.activeBatch ? [...state.activeBatch] : []
+    for (const setItem of checkedSets) {
+      const isActive = currentActiveSetId != null && String(setItem.id) === String(currentActiveSetId)
+      const itemParams = isActive
+        ? { ...cleanParams(setItem.paramValues), ...currentParamValues }
+        : cleanParams(setItem.paramValues)
+      const itemAssets = freeze((isActive ? currentAppliedAssets : setItem.appliedAssets) || {})
+      const itemChips = isActive
+        ? (Object.keys(currentPromptChips).length > 0 ? currentPromptChips : (setItem.promptChips || {}))
+        : (setItem.promptChips || {})
+      const textareaRoles = (capturedWorkflow.mappings || [])
+        .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
+        .map((mapping) => mapping.role as string)
+      const syncedParamValues = applyParamSync(
+        getEffectiveParamValues(itemParams, itemChips, state.isAnimaMode, textareaRoles),
+        currentParamSyncGroups
+      )
+      const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
+      const effectiveSeedMode = isActive ? (state.seedMode ?? setItem.seedMode) : setItem.seedMode
+      const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
+
+      for (let index = 0; index < effectiveBatchSize; index++) {
+        const injectedGraph = injectWorkflowParams({
+          workflow: capturedWorkflow,
+          paramValues: syncedParamValues,
+          seedOptions: { seedMode: effectiveSeedMode, seed: effectiveSeed, index },
+          cloneJson: true,
+        })
+        let finalGraph = injectedGraph
+        if (activeBypassNodeIds.length > 0) finalGraph = applyBypass(finalGraph, activeBypassNodeIds, comfyObjectInfo)
+        const paramValues = {
+          ...syncedParamValues,
+          [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, itemAssets)),
+        }
+        items.push({
+          graph: finalGraph,
+          workflow_id: capturedWorkflow.id,
+          param_values: paramValues,
+          applied_assets: itemAssets,
+          set_name: setItem.name,
+        })
+        itemTargets.push({ setName: setItem.name, batchIndex: index, batchSize: effectiveBatchSize })
+        newBatchJobs.push({ promptId: `pending-${setItem.name}-${index}-${Date.now()}`, setName: setItem.name, status: 'pending' })
+      }
+    }
+
+    const existingActiveBatch = freeze(state.activeBatch || [])
     const currentBatch: BatchJob[] = [...existingActiveBatch, ...newBatchJobs]
     setActiveBatch([...currentBatch])
-    const submissionFailures: SubmissionFailureRecord[] = []
-
-    let currentIdx = existingActiveBatch.length
+    const request: BatchRequest = freeze({
+      request_id: createRequestId(),
+      session_id: state.clientId,
+      scope: 'normal',
+      items,
+    })
+    const failures: SubmissionFailureRecord[] = []
     try {
-      for (const setItem of checkedSets) {
-        const isActive =
-          currentActiveSetId !== null &&
-          currentActiveSetId !== undefined &&
-          String(setItem.id) === String(currentActiveSetId)
-
-        const itemParams = isActive
-          ? { ...cleanParams(setItem.paramValues), ...currentParamValues }
-          : cleanParams(setItem.paramValues)
-        const itemAssets = (isActive ? currentAppliedAssets : setItem.appliedAssets) || {}
-        const itemChips = isActive
-          ? ((currentPromptChips && Object.keys(currentPromptChips).length > 0)
-              ? currentPromptChips
-              : (setItem.promptChips || {}))
-          : (setItem.promptChips || {})
-
-        const effectiveParamValues = getEffectiveParamValues(
-          itemParams,
-          itemChips,
-          state.isAnimaMode,
-          (capturedWorkflow.mappings || [])
-            .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
-            .map((mapping) => mapping.role as string)
-        )
-        const syncedParamValues = applyParamSync(effectiveParamValues, currentParamSyncGroups)
-
-        const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
-        const effectiveSeedMode = isActive ? (state.seedMode ?? setItem.seedMode) : setItem.seedMode
-        const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
-
-        for (let i = 0; i < effectiveBatchSize; i++) {
-          // キャンセル中断チェック
-          if (abortController.signal.aborted) {
-            console.log('Batch queueing aborted by user.')
-            return
-          }
-
-          const isVramOk = await waitForVramRecovery(abortController.signal)
-          if (!isVramOk || abortController.signal.aborted) {
-            return
-          }
-
-          const injectedGraph = injectWorkflowParams({
-            workflow: capturedWorkflow,
-            paramValues: syncedParamValues,
-            seedOptions: {
-              seedMode: effectiveSeedMode,
-              seed: effectiveSeed,
-              index: i,
-            },
-            cloneJson: true,
-          })
-          let wfJson = injectedGraph
-          if (activeBypassNodeIds.length > 0) {
-            wfJson = applyBypass(wfJson, activeBypassNodeIds, comfyObjectInfo)
-          }
-          
-          let promptId: string | null = null
-          let submissionFailure: QueueSubmissionFailure | undefined
-          try {
-            promptId = await queuePrompt(
-              wfJson,
-              { paramValues: { ...syncedParamValues, [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, wfJson, itemAssets)) }, appliedAssets: itemAssets, workflowId: capturedWorkflow.id },
-              {
-                skipQueueFetch: true,
-                signal: abortController.signal,
-                isBatchIntermediate: true,
-                onSubmissionFailure: (failure) => { submissionFailure = failure },
-              }
-            )
-          } catch (err) {
-            console.error(`Failed to generate set ${setItem.name} (batch index ${i}):`, err)
-            submissionFailure ??= parseQueueSubmissionFailure(err)
-          }
-
-          // queuePrompt 完了後のキャンセルチェック
-          if (abortController.signal.aborted) {
-            return
-          }
-
-          if (promptId) {
-            promptToSetMapCache.setMapping(promptId, setItem.name)
-            currentBatch[currentIdx] = {
-              ...currentBatch[currentIdx],
-              promptId,
-              status: 'pending',
-            }
-            setActiveBatch([...currentBatch])
-          } else {
-            submissionFailures.push({
-              target: setItem.name,
-              isSet: true,
-              batchIndex: i,
-              batchSize: effectiveBatchSize,
-              ...(submissionFailure ?? parseQueueSubmissionFailure(null)),
-            })
-            currentBatch[currentIdx] = {
-              ...currentBatch[currentIdx],
-              status: 'failed',
-            }
-            setActiveBatch([...currentBatch])
-          }
-          currentIdx++
-        }
+      if (abortController.signal.aborted) return
+      const accepted = await submitGenerationBatch(request)
+      accepted.job_ids.forEach((jobId, index) => {
+        const target = itemTargets[index]
+        if (!target) return
+        const batchIndex = existingActiveBatch.length + index
+        currentBatch[batchIndex] = { ...currentBatch[batchIndex], promptId: jobId, status: 'pending' }
+        promptToSetMapCache.setMapping(jobId, target.setName)
+      })
+      for (let index = accepted.job_ids.length; index < items.length; index++) {
+        const target = itemTargets[index]
+        failures.push({ target: target.setName, isSet: true, batchIndex: target.batchIndex, batchSize: target.batchSize, reason: '受付応答にjob_idがありません', outcome: 'unconfirmed' })
+        const batchIndex = existingActiveBatch.length + index
+        if (currentBatch[batchIndex]) currentBatch[batchIndex] = { ...currentBatch[batchIndex], status: 'failed' }
+      }
+      setActiveBatch([...currentBatch])
+      promptToSetMapCache.saveToStorage()
+      monitorServerVramWait(accepted.job_ids, abortController.signal)
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        const failure = parseQueueSubmissionFailure(error)
+        itemTargets.forEach((target) => failures.push({ target: target.setName, isSet: true, batchIndex: target.batchIndex, batchSize: target.batchSize, ...failure }))
+        for (let index = existingActiveBatch.length; index < currentBatch.length; index++) currentBatch[index] = { ...currentBatch[index], status: 'failed' }
+        setActiveBatch([...currentBatch])
       }
     } finally {
       setIsBatchSubmitting?.(false)
-      promptToSetMapCache.saveToStorage()
-
-      // キャンセル中断時は setActiveBatch 上書きと fetchQueue を抑止
       if (!abortController.signal.aborted) {
         setActiveBatch([...currentBatch])
-        try {
-          await fetchQueue?.()
-        } catch (error) {
-          console.error('Failed to refresh queue after set submission:', error)
-        }
+        promptToSetMapCache.saveToStorage()
       }
     }
-    if (!abortController.signal.aborted && submissionFailures.length > 0) {
-      setErrorToast?.({ message: formatSubmissionFailures(submissionFailures), type: 'error', persistent: true })
+    if (!abortController.signal.aborted && failures.length > 0) {
+      setErrorToast?.({ message: formatSubmissionFailures(failures), type: 'error', persistent: true })
     }
   }
 

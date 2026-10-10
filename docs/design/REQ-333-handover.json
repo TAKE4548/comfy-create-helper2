@@ -1,0 +1,1288 @@
+{
+  "pbi_id": "REQ-333",
+  "status": "completed-user-accepted",
+  "design_document": "docs/design/REQ-333.md",
+  "test_plan": "docs/design/REQ-333-test-plan.md",
+  "implementation_plan": "docs/design/REQ-333-implementation-plan.md",
+  "dag_mermaid": "graph TD\n  subgraph PRE[実装dispatch前のgovernance preflight]\n    T1[\"REQ-333-T1 承認指令更新・完了確認\"]\n  end\n  subgraph IMPL[T1完了後にdispatchする実装DAG]\n    T2[\"REQ-333-T2 生成受付・状態・ポートの型契約\"]\n    T3[\"REQ-333-T3 GenerationJob永続受付モデルと冪等migration\"]\n    T4[\"REQ-333-T4 生成記録repositoryとmetadata互換保存\"]\n    T5[\"REQ-333-T5 BE生成管理・normal group・scope状態機械\"]\n    T6[\"REQ-333-T6 常駐Comfy bridge・履歴照合・preview\"]\n    T7[\"REQ-333-T7 独立ManagerのOrigin境界と操作確認\"]\n    T8[\"REQ-333-T8 FE生成API・型・再送結果確認\"]\n    T9[\"REQ-333-T9 共通進捗・scope/session待機selector\"]\n    T10[\"REQ-333-T10 生成router・lifespan組込み\"]\n    T11[\"REQ-333-T11 統合WS・初回snapshot順序・stats共存\"]\n    T12[\"REQ-333-T12 原画配信・欠損確認・既存thumbnail保護\"]\n    T13[\"REQ-333-T13 Manager FEクライアントと状態購読\"]\n    T14[\"REQ-333-T14 FE単一SystemWsサービスの複数購読\"]\n    T15[\"REQ-333-T15 Generation storeのserver snapshot正本化\"]\n    T16[\"REQ-333-T16 queue操作・表示cacheとBE受付の接続\"]\n    T17[\"REQ-333-T17 通常生成の凍結バッチ受付へ移行\"]\n    T18[\"REQ-333-T18 Studio Step1のrequest別batch進捗\"]\n    T19[\"REQ-333-T19 ヘッダーのサービス総合状態\"]\n    T20[\"REQ-333-T20 PC・スマホ進捗と待機バッジの共通化\"]\n    T21[\"REQ-333-T21 試行画像のURL互換・欠損表示除外\"]\n    T22[\"REQ-333-T22 SnapshotServiceの新旧原画URL互換\"]\n    T23[\"REQ-333-T23 旧ComfyWSサービスの単一接続互換整理\"]\n    T24[\"REQ-333-T24 旧hookとVite直接Comfy経路の切替\"]\n    T25[\"REQ-333-T25 Settings systemサービス操作・ログUI\"]\n    T26[\"REQ-333-T26 生成・履歴・共通仕様の差分同期\"]\n    T27[\"REQ-333-T27 設定・Studio・運用ガイドの差分同期\"]\n    T28[\"REQ-333-T28 全経路統合試験とOpenAPI実在契約更新\"]\n    T29[\"REQ-333-T29 Generate接続設定popoverの上流正本表示\"]\n    T30[\"REQ-333-T30 ジョブ管理の3取消操作と全体範囲の互換\"]\n    T31[\"REQ-333-T31 Galleryサムネ失敗の原画確認と再試行\"]\n    T2 --> T4\n    T3 --> T4\n    T2 --> T5\n    T2 --> T6\n    T8 --> T9\n    T2 --> T10\n    T4 --> T10\n    T5 --> T10\n    T6 --> T10\n    T11 --> T10\n    T2 --> T11\n    T8 --> T14\n    T8 --> T15\n    T14 --> T15\n    T16 --> T15\n    T8 --> T16\n    T8 --> T17\n    T16 --> T17\n    T8 --> T18\n    T8 --> T19\n    T13 --> T19\n    T9 --> T20\n    T19 --> T20\n    T8 --> T21\n    T16 --> T21\n    T12 --> T22\n    T14 --> T23\n    T8 --> T24\n    T13 --> T25\n    T17 --> T26\n    T20 --> T26\n    T21 --> T26\n    T22 --> T26\n    T30 --> T26\n    T31 --> T26\n    T18 --> T27\n    T25 --> T27\n    T7 --> T28\n    T10 --> T28\n    T12 --> T28\n    T15 --> T28\n    T17 --> T28\n    T18 --> T28\n    T20 --> T28\n    T21 --> T28\n    T22 --> T28\n    T23 --> T28\n    T24 --> T28\n    T25 --> T28\n    T29 --> T28\n    T30 --> T28\n    T31 --> T28\n    T8 --> T30\n    T16 --> T30\n    T8 --> T31\n    T12 --> T31\n  end\n  T32[REQ-333-T32]\n  T20 --> T32\n  T21 --> T32\n  T33[REQ-333-T33]\n  T15 --> T33\n  T17 --> T33\n  T34[REQ-333-T34]\n  T16 --> T34\n  T17 --> T34\n  T35[REQ-333-T35]\n  T11 --> T35\n  T36[REQ-333-T36]\n  T7 --> T36\n  T39[REQ-333-T39]\n  T20 --> T39\n  T40[REQ-333-T40]\n  T30 --> T40\n  T41[REQ-333-T41]\n  T17 --> T41\n  T42[REQ-333-T42]\n  T43[REQ-333-T43]\n  T42 --> T43\n  T44[REQ-333-T44]\n  T43 --> T44\n  T45[REQ-333-T45]\n  T46[REQ-333-T46]\n  T43 --> T46\n  T47[REQ-333-T47]\n  T48[REQ-333-T48]\n  T49[REQ-333-T49]\n  T50[REQ-333-T50]\n  T51[REQ-333-T51]\n  T52[REQ-333-T52]\n  T53[REQ-333-T53]\n  T50 --> T53\n  T54[REQ-333-T54]",
+  "max_dag_depth": 4,
+  "atomicity": {
+    "verdict": "PASS",
+    "cards": 54,
+    "max_impacted_files": 3,
+    "max_card_lines": 221
+  },
+  "tasks": [
+    {
+      "task_id": "REQ-333-T1",
+      "id": 1,
+      "title": "承認された通信方針をプロジェクト指令へ反映",
+      "subsystem": "system",
+      "depends_on": [],
+      "impacted_files": [
+        "SKILL.md"
+      ],
+      "context_path": "SKILL.md",
+      "start": 83,
+      "acs": "C1/AC-35",
+      "logic": "このカードは実装DAGより前のgovernance preflight。人間設計承認後にT1だけをdispatchし、指令更新完了を確認してから他のrootカードをdispatchする。T1未完了のままsource担当へ旧proxy禁止と新設計を同時に渡さない。実装DAG4層とは別フェーズの必須ゲート。\n\nC1の置換文面を適用し、React生成HTTP/WS/画像→FastAPI、上流Comfy接続→BE、Manager独立を明示する。Snapshot base64禁止とLLM境界を保持する。人間設計承認後にだけ実施。",
+      "expectation": "文面をC1と逐語照合。実装ソース変更なし、直接接続/proxy禁止の矛盾が残らないこと。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2'\nGet-Content 'SKILL.md'",
+      "card_path": "docs/backlog/task/archive/REQ-333-T1.md",
+      "card_lines": 92,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T2",
+      "id": 2,
+      "title": "生成受付・状態・ポートの型契約",
+      "subsystem": "backend",
+      "depends_on": [],
+      "impacted_files": [
+        "backend/app/schemas/generation.py",
+        "backend/tests/test_generation_schema.py"
+      ],
+      "context_path": "backend/app/routers/comfy.py",
+      "start": 138,
+      "acs": "AC-11..23/27..32",
+      "logic": "BatchRequest/JobView/StateSnapshot/GenerationPort/RepositoryPortを定義する。scope normal/studio、Studio project必須、UUID、graph+metadataの凍結入力、nullable prompt ID、statusとepoch/revisionを分離。利用者sessionを上流client IDと混同しない。",
+      "expectation": "Studio project欠落422、未知scope不許可。false/0/空paramsを保持。schema dump→load同一。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_schema.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/schemas/generation.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T2.md",
+      "card_lines": 221,
+      "new_files": [
+        "backend/app/schemas/generation.py",
+        "backend/tests/test_generation_schema.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T3",
+      "id": 3,
+      "title": "GenerationJob永続受付モデルと冪等migration",
+      "subsystem": "backend",
+      "depends_on": [],
+      "impacted_files": [
+        "backend/app/models.py",
+        "backend/app/migrations/steps.py",
+        "backend/tests/test_generation_jobs_migration.py"
+      ],
+      "context_path": "backend/app/models.py",
+      "start": 412,
+      "acs": "AC-11/12/17/22",
+      "logic": "GenerationJobをD3/API項目で追加。request_id+item_index unique、prompt_id nullable unique。step027を既存custom migrationsへ冪等追加（番号衝突を再確認）。旧Snapshot/PromptMetadata行は変更しない。",
+      "expectation": "空DB/既存DB/二度migration、nullable上流ID、unique制約、旧行内容の保持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_jobs_migration.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/models.py app/migrations/steps.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T3.md",
+      "card_lines": 160,
+      "new_files": [
+        "backend/tests/test_generation_jobs_migration.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T4",
+      "id": 4,
+      "title": "生成記録repositoryとmetadata互換保存",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T2",
+        "REQ-333-T3"
+      ],
+      "impacted_files": [
+        "backend/app/services/generation_repository.py",
+        "backend/app/routers/prompt_metadata.py",
+        "backend/tests/test_generation_repository.py"
+      ],
+      "context_path": "backend/app/routers/prompt_metadata.py",
+      "start": 34,
+      "acs": "AC-11/12/26",
+      "logic": "初回confirmed prompt_id記録と同じtransactionでfrozen workflow_id/param_values/applied_assetsを必ずPromptMetadataへ保存。内側version1予約recordだけqueued_at/prompt_idを追加し、absent/invalidでもrowを保存してparamsを改変しない。同request同hashは同IDs。terminal記録の既存metadata1000件保持、active保護、Snapshot独立。",
+      "expectation": "commit失敗でprompt_id/metadata双方rollback、marker有無/invalid時もmetadata row保存、1001件/active/metadata1000境界、Snapshot独立。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_repository.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/services/generation_repository.py app/routers/prompt_metadata.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T4.md",
+      "card_lines": 148,
+      "new_files": [
+        "backend/app/services/generation_repository.py",
+        "backend/tests/test_generation_repository.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T5",
+      "id": 5,
+      "title": "BE生成管理・normal group・scope状態機械",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T2"
+      ],
+      "impacted_files": [
+        "backend/app/services/generation_service.py",
+        "backend/tests/test_generation_service.py"
+      ],
+      "context_path": "frontend/src/store/slices/jobQueueSlice.ts",
+      "start": 78,
+      "acs": "AC-11..23/27..32",
+      "logic": "注入RepositoryPort/GenerationPort/clock常駐service。normal group/Studio batch独立。request lookup idempotency、一回dispatch、cancel/history/event/preview callbackを含む。Comfy raw historyでterminal判定。VRAM上流POST前gateと10秒通知間隔を維持。",
+      "expectation": "進捗/event/preview更新、history reconciliation、3/8→3/7、4/8、Studio13/20、N=0、VRAM待機取消、global queued/allはStudio/他session/legacyを含む。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_service.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/services/generation_service.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T5.md",
+      "card_lines": 189,
+      "new_files": [
+        "backend/app/services/generation_service.py",
+        "backend/tests/test_generation_service.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T6",
+      "id": 6,
+      "title": "常駐Comfy bridge・履歴照合・preview",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T2"
+      ],
+      "impacted_files": [
+        "backend/app/services/comfy_generation_bridge.py",
+        "backend/tests/test_comfy_generation_bridge.py",
+        "backend/requirements.txt"
+      ],
+      "context_path": "frontend/src/store/services/comfyWebSocketService.ts",
+      "start": 132,
+      "acs": "AC-10..14/23..25",
+      "logic": "websockets.asyncio.clientを明示依存とする（既存環境websockets16.0）。BE専用client IDでWS接続、queueはnormalized DTO、historyはraw standard mapping。JSON eventsとbinary framesをservice callbacksへ渡す。最新previewをprompt_id別保持しget_previewでHTTP供給、terminalで解放。unconfirmed POSTを自動再送しない。",
+      "expectation": "browser0でも観測、終了event欠落history補完、WS再接続、原画/preview区別、POST timeout自動再送0回、異jobframe混入なし。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_comfy_generation_bridge.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/services/comfy_generation_bridge.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T6.md",
+      "card_lines": 183,
+      "new_files": [
+        "backend/app/services/comfy_generation_bridge.py",
+        "backend/tests/test_comfy_generation_bridge.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T7",
+      "id": 7,
+      "title": "独立ManagerのOrigin境界と操作確認",
+      "subsystem": "system",
+      "depends_on": [],
+      "impacted_files": [
+        "tools/server-manager/server_api.py",
+        "backend/tests/test_manager_origin_req333.py"
+      ],
+      "context_path": "tools/server-manager/server_api.py",
+      "start": 585,
+      "acs": "AC-02..07/33/34",
+      "logic": "OriginをURL/IP解析、localhost/127/192.168/10かつ5173/8000を許可。8899 same-origin/既存HTMLを保持、OPTIONS/ACAO/Vary、外部/8080拒否。action/service既存列挙を検査、subprocess非ゼロを成功扱いしない。起動/再起動中フラグとstatus cache無効化。実PSの動作を改造しない。",
+      "expectation": "全許可Origin、invalid IPv4/偽prefix/null/8080、同originHTML、mock subprocessのfailure/timeout、既存status/logs型保持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_manager_origin_req333.py -q",
+      "card_path": "docs/backlog/task/archive/REQ-333-T7.md",
+      "card_lines": 130,
+      "new_files": [
+        "backend/tests/test_manager_origin_req333.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T8",
+      "id": 8,
+      "title": "FE生成API・型・再送結果確認",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/api/domains/generation.ts",
+        "frontend/src/api/domains/__tests__/generation.test.ts",
+        "frontend/src/api/client.ts"
+      ],
+      "context_path": "frontend/src/api/domains/settings.ts",
+      "start": 33,
+      "acs": "AC-10..22/27..32",
+      "logic": "BatchRequest/JobView/Snapshot型とsubmitBatch/getState/getRequest/cancelJob/availabilityを実装しclientからexport。BASE_URL=/api、UUID request、202確定受付とunconfirmedを別扱い。自動mutation再送なし。旧comfyApiを残す。",
+      "expectation": "公開response/errorの完全契約（T2/T10と同一）:\n\n```typescript\nexport interface BatchAccepted {batch_id:string;job_ids:string[];epoch:string;revision:number}\nexport interface RequestLookup {batch_id:string;job_ids:string[]}\nexport type CancelMode = 'single'|'queued'|'all'\nexport type CancelScope = 'all'|'normal'\nexport type ActionOutcome = 'confirmed'|'unconfirmed'|'failed'|'not_requested'|'skipped'\nexport interface CancelTarget {job_id?:string;prompt_id?:string}\nexport interface CancelRequest {mode:CancelMode;scope?:CancelScope;target?:CancelTarget}\nexport interface CancelResult {\n job_id:string|null;prompt_id:string|null;status:JobStatus|null\n outcome:'cancelled'|'not_cancelled'|'already_terminal'|'unconfirmed'|'rejected';message:string\n}\nexport interface CancelOperation {\n scope:CancelScope;message:string;mode:CancelMode;items:CancelResult[];upstream_clear:ActionOutcome;upstream_interrupt:ActionOutcome;epoch:string;revision:number\n}\nexport interface UpstreamQueueView {\n running:Array<{prompt_id:string;client_id:string|null}>\n pending:Array<{prompt_id:string;client_id:string|null}>\n}\nexport interface ImageIdentity {filename:string;subfolder:string;type:string}\nexport interface ImageAvailability {availability:'present'|'missing'|'unknown'}\n\nexport interface ErrorDetail {\n code:string;message:string;outcome:'failed'|'unconfirmed'|null;request_id:string|null;job_id:string|null\n}\nexport interface ErrorEnvelope {detail:ErrorDetail}\nexport class GenerationApiError extends Error {\n readonly status:number\n readonly detail:ErrorDetail\n constructor(status:number, detail:ErrorDetail) { super(detail.message);this.status=status;this.detail=detail }\n}\n// JobView/GenerationSnapshotの共通項目は上記既存interfaceのままPython DTOと同一。\n// submitBatch -> BatchAccepted; getRequest -> RequestLookup; cancelJob -> CancelResult\n// cancel -> CancelOperation; getUpstreamQueue -> UpstreamQueueView (失敗503); imageAvailability -> ImageAvailability。\n// availability -> JobView['outputs']; preview HTTP200は画像bytes/MIME（JSONではない）。\n// 409/422/503/404はErrorEnvelope。通信失敗・非JSON旧エラーは同じErrorDetailへ正規化。\n// nullable項目は必ずnullとして受信、versionは1以外を型castで通さずruntime検証。\n```\n\n同originパス、signal、202/409/503の型、結果照会、元params false/0/空を保持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/api/domains/__tests__/generation.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T8.md",
+      "card_lines": 179,
+      "new_files": [
+        "frontend/src/api/domains/generation.ts",
+        "frontend/src/api/domains/__tests__/generation.test.ts"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T9",
+      "id": 9,
+      "title": "共通進捗・scope/session待機selector",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/utils/generationSelectors.ts",
+        "frontend/src/utils/__tests__/generationSelectors.test.ts"
+      ],
+      "context_path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "start": 238,
+      "acs": "AC-15..23/27..32",
+      "logic": "純関数selectProgress/selectWaitを実装。normal group全端末/自IDでF/N。Studioはbatchごと。cancelled母数除外、failed終了加算、N0idle。別scope優先、同scope他session待機はONだけ。server開始時刻でelapsed/estimateを算出し既存node率/推定式を保持。",
+      "expectation": "P01..P06/W01..W05、3完了+running50%=枚数3/8と43.75%、全取消、scope優先、OFF他session待機なし。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/utils/__tests__/generationSelectors.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T9.md",
+      "card_lines": 123,
+      "new_files": [
+        "frontend/src/utils/generationSelectors.ts",
+        "frontend/src/utils/__tests__/generationSelectors.test.ts"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T10",
+      "id": 10,
+      "title": "生成router・lifespan組込み",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T2",
+        "REQ-333-T4",
+        "REQ-333-T5",
+        "REQ-333-T6",
+        "REQ-333-T11"
+      ],
+      "impacted_files": [
+        "backend/app/routers/generation.py",
+        "backend/app/main.py",
+        "backend/tests/test_generation_api.py"
+      ],
+      "context_path": "backend/app/main.py",
+      "start": 60,
+      "acs": "AC-10..14/17/22/27..32",
+      "logic": "generation APIを追加しRepository/Service/Bridgeをlifespanで一度start/stop。DB commit後202、browser切断後もworker保持。state/request/cancel/preview/availability型レスポンス、run epoch。既存resource monitor start/stop・Comfy client closeを維持。ws managerへsnapshot supplier/event publisherを注入。",
+      "expectation": "全endpoint status、受理後request切断、startup/shutdown重複なし・task leakなし、旧config/comfy/stats回帰。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_api.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/routers/generation.py app/main.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T10.md",
+      "card_lines": 168,
+      "new_files": [
+        "backend/app/routers/generation.py",
+        "backend/tests/test_generation_api.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T11",
+      "id": 11,
+      "title": "統合WS・初回snapshot順序・stats共存",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T2"
+      ],
+      "impacted_files": [
+        "backend/app/routers/ws.py",
+        "backend/tests/test_ws.py",
+        "backend/tests/test_generation_ws.py"
+      ],
+      "context_path": "backend/app/routers/ws.py",
+      "start": 10,
+      "acs": "AC-12/13/17",
+      "logic": "ConnectionManagerへsnapshot supplier/生成event publisherを注入できる口を追加。登録→snapshot→新revision event送信の順序を保証。慢性slow readerを切断しworkerをブロックしない。正規Origin検査、30秒ping timeout、SYSTEM_STATS type/data保持。既存testの初回frame前提を更新。",
+      "expectation": "snapshot/event race、duplicate/slow reader、SYSTEM_STATS混在、timeout切断、禁止Origin、全clients0でもpublisher正常。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_ws.py tests/test_generation_ws.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/routers/ws.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T11.md",
+      "card_lines": 139,
+      "new_files": [
+        "backend/tests/test_generation_ws.py"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T12",
+      "id": 12,
+      "title": "原画配信・欠損確認・既存thumbnail保護",
+      "subsystem": "backend",
+      "depends_on": [],
+      "impacted_files": [
+        "backend/app/routers/comfy.py",
+        "backend/tests/test_comfy_proxy.py",
+        "backend/tests/test_comfy_proxy_fault.py"
+      ],
+      "context_path": "backend/app/routers/comfy.py",
+      "start": 315,
+      "acs": "AC-10/24..26",
+      "logic": "GET /api/comfy/viewを追加、upstream host=settings.comfy_url、query filename/subfolder/typeのみ転送しt除外、原画bytes/MIME保持。上流404と502/timeoutを区別。thumbnail原画missing時の即pop/unlinkを廃止し通常cache上限cleanupへ任せる。既存サイズ/品質/L1/L2/変換方式は保持。",
+      "expectation": "1024x1536原画、縮小pixel、404 missingと502 unknown、原画404で孤児cache即削除0、0-byte corrupt repairのunlink/再生成は維持、旧proxy contract。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_comfy_proxy.py tests/test_comfy_proxy_fault.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/routers/comfy.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T12.md",
+      "card_lines": 138,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T13",
+      "id": 13,
+      "title": "Manager FEクライアントと状態購読",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/api/domains/systemManager.ts",
+        "frontend/src/hooks/useManagerStatus.ts",
+        "frontend/src/hooks/__tests__/useManagerStatus.test.ts"
+      ],
+      "context_path": "frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx",
+      "start": 40,
+      "acs": "AC-02..09/33/34",
+      "logic": "URL APIで現在PC hostname:8899。status/action/logs型、個別running/起動中/TCP応答と取得失敗を分離。既存2秒status cache/接続チェックを活用し新性能周期なし。action応答成功だけでrunningに変更せず再照会。Manager unavailableは生成不可の意味にしない。",
+      "expectation": "スマホPC host、localhost、restart後再取得、管理failureでも生成状態は変更なし、購読解放。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useManagerStatus.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T13.md",
+      "card_lines": 126,
+      "new_files": [
+        "frontend/src/api/domains/systemManager.ts",
+        "frontend/src/hooks/useManagerStatus.ts",
+        "frontend/src/hooks/__tests__/useManagerStatus.test.ts"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T14",
+      "id": 14,
+      "title": "FE単一SystemWsサービスの複数購読",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/store/services/systemWsService.ts",
+        "frontend/src/hooks/useSystemStats.ts",
+        "frontend/src/store/services/__tests__/systemWsService.test.ts"
+      ],
+      "context_path": "frontend/src/store/services/systemWsService.ts",
+      "start": 37,
+      "acs": "AC-12/13/23",
+      "logic": "subscribe/unsubscribeでstats/生成が同じ1socketを共有。callback上書き禁止、最後の購読だけclose。25秒ping追加、既存1..10秒backoff/visibility suspendを保ち復帰snapshot。useSystemStatsのcleanupが他購読を切らない。resetForTestingを提供。",
+      "expectation": "購読2つでsocket1、stats cleanup後生成生存、ping<30秒、非表示/復帰、二重timer0。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/store/services/__tests__/systemWsService.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T14.md",
+      "card_lines": 121,
+      "new_files": [
+        "frontend/src/store/services/__tests__/systemWsService.test.ts"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T15",
+      "id": 15,
+      "title": "Generation storeのserver snapshot正本化",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T14",
+        "REQ-333-T16"
+      ],
+      "impacted_files": [
+        "frontend/src/store/slices/connectionSlice.ts",
+        "frontend/src/store/types.ts",
+        "frontend/src/store/__tests__/slices/connectionSlice.test.ts"
+      ],
+      "context_path": "frontend/src/store/slices/connectionSlice.ts",
+      "start": 19,
+      "acs": "AC-11..17/23",
+      "logic": "既存LS IDとFILTER_OWNを保持、保存拒否はtab内IDへfallback。T16所有のGenerationServerState型を用いて、initializeは統合WS購読、snapshot一括置換、event古順無視/欠番再取得。8188 fetch/WS/端末完了判定を削除し再同期中を表示。subscriberはAppの既存initializeで始める。store/types.tsはT16のみが編集する。",
+      "expectation": "sameprofile再読込ID保持、拒否fallback、逆順/欠番/epoch変更、atomic snapshot、上流直結0。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/store/__tests__/slices/connectionSlice.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T15.md",
+      "card_lines": 155,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T16",
+      "id": 16,
+      "title": "queue操作・表示cacheとBE受付の接続",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/store/slices/jobQueueSlice.ts",
+        "frontend/src/store/types.ts",
+        "frontend/src/store/__tests__/slices/jobQueueSlice.test.ts"
+      ],
+      "context_path": "frontend/src/store/slices/jobQueueSlice.ts",
+      "start": 113,
+      "acs": "AC-11..16/26..29",
+      "logic": "新batch APIを使うstore口とJobQueueActions/GenerationServerState typesを所有し、queuePrompt signature互換を維持。cancel results/scopeはPromise<CancelResult/CancelOperation>。GenerationServerStateの初期値はnull/false。metadataを受付へ同梱し旧二重保存を除く。local30 cacheはbest effort。singleは選択ID、bulk default global、normal scope全session。filter保持し旧history URLをsameoriginへ正規化。settings.tsは変更しない。",
+      "expectation": "録画後metadata不変、取消成功前母数不変、failed通知、filter保持、localcache拒否でserver受付は継続、global clearはStudio/他session/legacyも対象、表示filter ON/OFFでmutation payload同じ。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/store/__tests__/slices/jobQueueSlice.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T16.md",
+      "card_lines": 163,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T17",
+      "id": 17,
+      "title": "通常生成の凍結バッチ受付へ移行",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T16"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.fault.test.ts"
+      ],
+      "context_path": "frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts",
+      "start": 256,
+      "acs": "AC-10/11/17/27..29",
+      "logic": "既存captureWorkflow/inject/bypass/paramSync/seed/セット別不変性を保持し全graph/metadataを受付requestへまとめる。normal scope+LS ID+UUID。端末VRAM待機loopはserver workerへ委譲する（UI表示/10秒警告は保持）。request結果未確認は照会、REQ-307のpersistent理由/対象通知を維持。",
+      "expectation": "通常/複数セット/中間graph記録、seed凍結、取消、通信未確認、投入confirmed failedの通知継続。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateAction.fault.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T17.md",
+      "card_lines": 129,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T18",
+      "id": 18,
+      "title": "Studio Step1のrequest別batch進捗",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx",
+        "frontend/src/pages/DatasetStudioPage/hooks/useStudioGeneration.ts",
+        "frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
+      ],
+      "context_path": "frontend/src/pages/DatasetStudioPage/components/MatrixGenerationStep.tsx",
+      "start": 555,
+      "acs": "AC-17/19/22/24/30..32",
+      "logic": "injectPromptAndSeedの結果をstudio scope/project/UUID付きbatchで受付。useStudioGenerationはstore snapshotの当該batch IDsを表示し投入完了を生成完了にしない。別A/Bのprogress、normal待機、failedtoast、縮小画像。onDirectBatchSubmit拡張口もbatch識別/結果を返す契約へ整合。project autosave/draft/Step遷移には触れない。",
+      "expectation": "A12/20 B2/10、A13/20失敗、normal残2待機、同project別batch、draft競合/750ms回帰。global取消でA12成功+8cancelledは12/20停止、generating=false、Step変更/完了success callbackなし。別batchに合算しない。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T18.md",
+      "card_lines": 130,
+      "new_files": [
+        "frontend/src/pages/DatasetStudioPage/hooks/useStudioGeneration.ts"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T19",
+      "id": 19,
+      "title": "ヘッダーのサービス総合状態",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T13"
+      ],
+      "impacted_files": [
+        "frontend/src/components/common/SystemStatusBadge.tsx",
+        "frontend/src/components/common/PageHeader.tsx",
+        "frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx"
+      ],
+      "context_path": "frontend/src/components/common/PageHeader.tsx",
+      "start": 14,
+      "acs": "AC-08/09",
+      "logic": "共通SystemStatusBadgeで個別状態/総合5labelを表示。Comfy TCP LISTEN+HTTP失敗timer>30秒STUCK、起動/再接続CONNECTING、Supervisor単独停止OFFLINE。5173 dev FEを総合判定から除く。生成可否はupstream情報を別に返しOFFLINEだけで無効化しない。既存header badge slotを保つ。",
+      "expectation": "状態表5行、30秒境界/reset、devFE切替、Manager downで生成可、進捗が止まるだけでSTUCKなし。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/components/common/__tests__/SystemStatusBadge.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T19.md",
+      "card_lines": 137,
+      "new_files": [
+        "frontend/src/components/common/SystemStatusBadge.tsx",
+        "frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T20",
+      "id": 20,
+      "title": "PC・スマホ進捗と待機バッジの共通化",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T9",
+        "REQ-333-T19"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/MobileLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
+      ],
+      "context_path": "frontend/src/pages/GeneratePage/components/MobileLayout.tsx",
+      "start": 188,
+      "acs": "AC-08/09/17/18/20/21/23/27..32",
+      "logic": "D4共通selectorとSystemStatusBadgeを使用。2段bar配置保持、F/Nとnode fractionを分ける。ON/OFF別待機、scope優先、node名、elapsed/estimate、失敗トースト、N0idle。ManagerラベルOFFLINEだけでGenerateを無効化しない。",
+      "expectation": "N=0はselectorだけでなくPC/Mobileのrenderで試験する。全取消snapshotを渡し、idle表示・枚数0・NaN/Infinityのstyle/text不在を両layoutでassertする。3終了+running50%は枚数3/8、全体43.75%、node50%を別々にassertする。\n\nPC/スマホ3/8同値、43.75% fraction、Studio待機8、ON他session2/OFFなし、targetrunningで待機消失。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T20.md",
+      "card_lines": 125,
+      "new_files": [
+        "frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T21",
+      "id": 21,
+      "title": "試行画像のURL互換・欠損表示除外",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T16"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts",
+        "frontend/src/utils/thumbnailUrl.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.test.tsx"
+      ],
+      "context_path": "frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts",
+      "start": 69,
+      "acs": "AC-14/24..26",
+      "logic": "一覧は既存thumbnail、main/拡大はsame-origin view。旧absolute URLをparams/t保持で正規化。availability missingのみdisplay/cache/選択から除外、empty集合をquery cacheへ反映。unknown/502は除外しない。保存Snapshotタブは対象外、画像keyで重複防止。",
+      "expectation": "画像dimension、旧新URL同ID、確定404表示除外、空cache適用、thumb/metadata即削除なし、Snapshot保持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T21.md",
+      "card_lines": 133,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T22",
+      "id": 22,
+      "title": "SnapshotServiceの新旧原画URL互換",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T12"
+      ],
+      "impacted_files": [
+        "backend/app/services/snapshot_service.py",
+        "backend/tests/test_snapshot_service_req267.py",
+        "backend/tests/test_snapshots_req316_metadata.py"
+      ],
+      "context_path": "backend/app/services/snapshot_service.py",
+      "start": 49,
+      "acs": "AC-25/26と既存Snapshot維持",
+      "logic": "resolve_internal_comfy_urlはrelative/absolute /api/comfy/viewと旧/viewをupstream /viewへ厳密変換。create_snapshotのrelative pathも同じdownload処理へ導く。tは生成metadata照会に保持。process_and_save_image品質/一括保存/album/params/独立保持を改変しない。",
+      "expectation": "new relative/new absolute/legacyURL download、upstreampath厳密/view、false/0/空params、試行cachecleanup後保存Snapshot不変。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_snapshot_service_req267.py tests/test_snapshots_req316_metadata.py -q\n.\\.venv\\Scripts\\python.exe -m mypy app/services/snapshot_service.py",
+      "card_path": "docs/backlog/task/archive/REQ-333-T22.md",
+      "card_lines": 129,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T23",
+      "id": 23,
+      "title": "旧ComfyWSサービスの単一接続互換整理",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T14"
+      ],
+      "impacted_files": [
+        "frontend/src/store/services/comfyWebSocketService.ts",
+        "frontend/src/store/useGenerationStore.ts",
+        "frontend/src/store/services/__tests__/comfyWebSocketService.test.ts"
+      ],
+      "context_path": "frontend/src/store/services/comfyWebSocketService.ts",
+      "start": 132,
+      "acs": "AC-10/12/13",
+      "logic": "旧serviceのブラウザ8188 socket生成を廃止し、必要なpending promise/reset test helperだけ互換保持。root store test resetは単一SystemWsService resetを呼ぶ。新接続正本はconnectionSlice、旧サービスがstatsの購読を上書き/closeしない。",
+      "expectation": "8188newWebSocket0、二重socket0、既存test helperのcleanup、promise解放。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/store/services/__tests__/comfyWebSocketService.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T23.md",
+      "card_lines": 124,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T24",
+      "id": 24,
+      "title": "旧hookとVite直接Comfy経路の切替",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/hooks/useComfyWebSocket.ts",
+        "frontend/src/hooks/__tests__/useComfyWebSocket.test.ts",
+        "frontend/vite.config.ts"
+      ],
+      "context_path": "frontend/src/hooks/useComfyWebSocket.ts",
+      "start": 26,
+      "acs": "AC-10/13/25",
+      "logic": "resolveComfyUrl互換関数は端末8188を返さずsame-origin /api/comfyにする。unused直接hookをstore adapterへ移し新socketを作らない。Vite /comfy proxy撤去、/api ws:trueは維持。公開配布は関連FE/BE全カード完了後。",
+      "expectation": "localhost/PC LAN/5173/8000全部同origin、oldURL route正常、直接fetch/WS0、Vite /api HTTP/WS維持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useComfyWebSocket.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T24.md",
+      "card_lines": 122,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T25",
+      "id": 25,
+      "title": "Settings systemサービス操作・ログUI",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T13"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx",
+        "frontend/src/pages/SettingsPage.tsx",
+        "frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx"
+      ],
+      "context_path": "frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx",
+      "start": 7,
+      "acs": "AC-01..07/33/34",
+      "logic": "ServiceConnectionCardにComfy start/stop/restart・本体restart、各サービスlog selectorを追加。8899クライアント使用、本体restart中は復帰経路を表示。Manager unavailableは操作/log不可、systemのVRAM/表示操作と5tab・draftを保持。Comfy上流URLはBE正本の読取表示。",
+      "expectation": "system内UI、操作routeとstatus再照会、ログ対象最新行、timeout/failure表示、44px/モバイル縦積み、既存tab保存回帰。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T25.md",
+      "card_lines": 119,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T26",
+      "id": 26,
+      "title": "生成・履歴・共通仕様の差分同期",
+      "subsystem": "system",
+      "depends_on": [
+        "REQ-333-T17",
+        "REQ-333-T20",
+        "REQ-333-T21",
+        "REQ-333-T22",
+        "REQ-333-T30",
+        "REQ-333-T31"
+      ],
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_HISTORY.md",
+        "docs/specs/SPEC_COMMON.md"
+      ],
+      "context_path": "docs/specs/SPEC_GENERATE.md",
+      "start": 304,
+      "acs": "AC-35",
+      "logic": "承認されたC4/C5/C6/C9/C10/C11と実装証拠を正本へ反映。30/1000、Snapshot、IndexedDB maxAge、aspect、履歴一時性、既存通知周期は保持。完了時刻を既存生成recordの別意味へ上書きしない。",
+      "expectation": "C4〜C11対応逐語確認、新旧仕様diff、テスト実施/未実施の記載一致。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2'\nGet-Content 'docs/specs/SPEC_GENERATE.md' 'docs/specs/SPEC_HISTORY.md' 'docs/specs/SPEC_COMMON.md'",
+      "card_path": "docs/backlog/task/archive/REQ-333-T26.md",
+      "card_lines": 97,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T27",
+      "id": 27,
+      "title": "設定・Studio・運用ガイドの差分同期",
+      "subsystem": "system",
+      "depends_on": [
+        "REQ-333-T18",
+        "REQ-333-T25"
+      ],
+      "impacted_files": [
+        "docs/specs/SPEC_SETTINGS.md",
+        "docs/specs/SPEC_DATASET_STUDIO.md",
+        "docs/specs/server_manager_guide.md"
+      ],
+      "context_path": "docs/specs/SPEC_SETTINGS.md",
+      "start": 85,
+      "acs": "AC-35",
+      "logic": "C2/C3/C7を同期。通常system管理/8000停止時PC8899、生成8000・管理8899・8188端末到達不要、Origin境界を記載。StudioStep1 request別batchと待機だけ追記しStep遷移/750ms draft競合は保持。firewall脚本や既存OSruleを変更しない。",
+      "expectation": "実装経路とドキュメント一致、ロードマップ無視、既存非変更契約diff。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2'\nGet-Content 'docs/specs/SPEC_SETTINGS.md' 'docs/specs/SPEC_DATASET_STUDIO.md' 'docs/specs/server_manager_guide.md'\nrg -n '^## 3|^## 5|system|8899|8000|Backend URL|LM Studio URL' docs/specs/SPEC_SETTINGS.md\nrg -n '^## 2|^### 2\\.|750ms|sessionStorage|Step 1|batch|scope' docs/specs/SPEC_DATASET_STUDIO.md\nrg -n '^### 2\\.2|8188|8899|8000|非常|CORS|Origin' docs/specs/server_manager_guide.md",
+      "card_path": "docs/backlog/task/archive/REQ-333-T27.md",
+      "card_lines": 102,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T28",
+      "id": 28,
+      "title": "全経路統合試験とOpenAPI実在契約更新",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T7",
+        "REQ-333-T10",
+        "REQ-333-T12",
+        "REQ-333-T15",
+        "REQ-333-T17",
+        "REQ-333-T18",
+        "REQ-333-T20",
+        "REQ-333-T21",
+        "REQ-333-T22",
+        "REQ-333-T23",
+        "REQ-333-T24",
+        "REQ-333-T25",
+        "REQ-333-T29",
+        "REQ-333-T30",
+        "REQ-333-T31"
+      ],
+      "impacted_files": [
+        "backend/tests/test_generation_integration.py",
+        "frontend/src/__tests__/App.generationIntegration.test.tsx",
+        "backend/openapi.json"
+      ],
+      "context_path": "backend/tests/test_ws.py",
+      "start": 12,
+      "acs": "AC-01..35（AC-35文書別確認）",
+      "logic": "IG1〜6/RT01〜16を専用一時DB+mock upstream/Managerで統合。response lost・revision race・全browser切断・wronginterrupt・Studio分離・旧Snapshot経路・SYSTEM_STATSを検証。app.openapi()から実在JSONを再生成し古い定義をコピーしない。実端末E2EはQAへ渡しmockをそのPASS証拠にしない。",
+      "expectation": "backend/FE統合exit0、型チェック、生成APIschemaとrouter一致、実端末未実施はINCONCLUSIVE。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/backend'\n.\\.venv\\Scripts\\python.exe -m pytest tests/test_generation_integration.py -q\n.\\.venv\\Scripts\\python.exe -c \"import json; from app.main import app; from pathlib import Path; Path('openapi.json').write_text(json.dumps(app.openapi(),ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')\"\nSet-Location '../frontend'\nnpm run typecheck\nnpx vitest run src/__tests__/App.generationIntegration.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T28.md",
+      "card_lines": 126,
+      "new_files": [
+        "backend/tests/test_generation_integration.py",
+        "frontend/src/__tests__/App.generationIntegration.test.tsx"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T29",
+      "id": 29,
+      "title": "Generate接続設定popoverの上流正本表示",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/SettingsPopover.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/SettingsPopover.req333.test.tsx"
+      ],
+      "context_path": "frontend/src/pages/GeneratePage/components/SettingsPopover.tsx",
+      "start": 39,
+      "acs": "AC-10/C3既存設定互換",
+      "logic": "端末localComfyUrl編集が通信先を変えたと誤認されないよう、BE COMFY_URL読取表示と設定systemへの導線に変更。既存workflow/default params/model操作を保持。旧store props signatureは移行中互換を保ち直接通信へ復活させない。",
+      "expectation": "URLを書換えても8188直結なし、既存workflow保存/reset/model操作、モバイルpopover維持。",
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/SettingsPopover.req333.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T29.md",
+      "card_lines": 111,
+      "new_files": [
+        "frontend/src/pages/GeneratePage/components/__tests__/SettingsPopover.req333.test.tsx"
+      ],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T30",
+      "id": 30,
+      "title": "ジョブ管理の3取消操作と全体範囲の互換",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T16"
+      ],
+      "impacted_files": [
+        "frontend/src/components/JobManagementModal.tsx",
+        "frontend/src/components/__tests__/JobManagementModal.req333.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T30.md",
+      "card_lines": 80,
+      "new_files": [
+        "frontend/src/components/__tests__/JobManagementModal.req333.test.tsx"
+      ],
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/components/__tests__/JobManagementModal.req333.test.tsx",
+      "expectation": "",
+      "logic": "既存props `interface JobManagementModalProps {isOpen:boolean;onClose:()=>void}`、hooks-before-return、一覧の自セッション表示フィルタを保持。\nT16の公開store口を使う: cancelJob(id:string):Promise<CancelResult>、clearPendingQueue(scope?:CancelScope):Promise<CancelOperation>、cancelAllJobs(scope?:CancelScope):Promise<CancelOperation>。局所testはこの3関数＋既存queue/clientId/filter口をtyped mockし、新GenerationServerState読取りを不要とする。T15結線の実検証はT28。\nCancelResult={job_id:string|null,prompt_id:string|null,status:JobStatus|null,outcome:'cancelled'|'not_cancelled'|'already_terminal'|'unconfirmed'|'rejected',message:string}。\nCancelScope='all'|'normal'。CancelOperation={scope:CancelScope,message:string,mode:'single'|'queued'|'all',items:CancelResult[],upstream_clear/upstream_interrupt:'confirmed'|'unconfirmed'|'failed'|'not_requested'|'skipped',epoch:string,revision:number}。\n単件は選択行だけ。BE未投入UUIDとlegacy prompt IDをT16へ渡す。単件の既存無confirm操作は維持。\n2一括操作には「通常生成のみ / 全生成（Studioを含む）」選択を設け、初期値all（全生成）にする。表示filter/sessionと独立の操作選択、単件は選択IDのみでscope選択の影響なし。2全操作は既存native confirmを維持。all scope文面は全セッション/normal/Studio/外部キュー、queuedはrunning保持、allはrunning中断を示す。normal scope文面は全sessionの識別済み通常生成のみ、Studio/未分類保持、保護対象が実行中又は待機中なら通常実行中も中断を見送る条件を表示。表示件数を操作全体件数と誤認させず、全体件数を未確認なら推定値で断定しない。filter中でもscope=allはglobal、scope=normalもvisible IDではなく全session識別済normal集合。\n処理中は同じ操作の連打を抑止。全requested効果がconfirmed（既に対象なしの確認含む）ならonClose。normal allでupstream_interrupt=skippedか未確認なら「Studio/未分類を保護するため通常実行中を維持」等のBE messageを表示し、全取消完了とせずonCloseしない。部分失敗/未確認/queue照会失敗は開いたまま既存message/toast形式で取消確認済み・未確認を別表示、明示状態再取得可。自動mutation retryなし。confirmed cancelledは失敗トーストなし。手動closeは取消完了扱いにしない。\n試験: confirm拒否はAPI0回、ON/OFF filterで同じglobal payload、managed未投入+Studio+別session+legacyを含む。queuedでinterrupt0回、allでclear→interrupt、partial/timeoutでonClose0回と非optimistic保持、単件targetが選択IDのみ。CancelResult.cancelled通知時の失敗toast0、重複click1操作。scope選択初期all、normalはfilter ON/OFF同じpayload、Studio/unknown barrier時はskipped・保持理由・onClose0。単件はscopeを送らず選択IDのみ。",
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T31",
+      "id": 31,
+      "title": "Galleryサムネ失敗の原画確認と再試行",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T8",
+        "REQ-333-T12"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx",
+        "frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T31.md",
+      "card_lines": 81,
+      "new_files": [
+        "frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx"
+      ],
+      "verification_command": "Set-Location 'C:/Users/audih/ws/comfy-create-helper2/frontend'\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx",
+      "expectation": "",
+      "logic": "既存Gallery props、選択/autoFollow/複数選択、一覧thumbnail寸法、main原画preview、保存Snapshot別タブのまま保持。\nT8公開口: `generationApi.imageAvailability(identity:{filename:string;subfolder:string;type:string}):Promise<{availability:'present'|'missing'|'unknown'}>`。URLはnew URL(img,location.origin)でfilename/subfolder/typeを抽出、tをidentityに含めず上流hostを渡さない。legacy画像にjob UUIDを要求しない。\n既存LazyThumbnail props/onErrorを使用し、新キャッシュformat/品質やLazyThumbnail公開型を変更しない。Gallery内の同identity promise/結果guardで同時errorの照会を共有する。成功/unknown/HTTP例外結果後、rerender・onError再発でprobe/refetchを反復しない。明示retry又は画像identity変更でguardを解除。新TTL/intervalは不要。\nthumbnail errorで直接historyを削除する現callbackを置換する。原画present/unknown・503・ネット断なら画像行/選択/原画preview維持、既存placeholder上でサムネ取得失敗/再試行を示す。retry clickは行選択イベント伝播を止め、既存toThumbnailUrlのままLazyThumbnailをkey変更で再mountして通常GETを再試行。原画を一覧srcに入れない。\n確定原画missingだけstoreのcomfyHistoryImages/batchImagesから削除。query cacheと選択の同期はT21のhookが担当、T28で実結線を確認。保存Snapshot branchにこのonError/probe/削除を適用しない。\n試験: サムネ404+原画present/変換500/availability503で行とselected原画が残る、identity-only API引数。原画missingでtrial削除、Snapshot不変。繰返しerror/rerenderでprobe1回、同identity並列1回、明示retry後のみ次probe。retryで通常thumbnail URLが再requestされ原画サイズへの置換なし。testのImage/IntersectionObserverだけ制御し実キャッシュ回復はT12。",
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T32",
+      "id": 32,
+      "title": "既存画面回帰テストの統合状態契約への移行",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T20",
+        "REQ-333-T21"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/__tests__/GeneratePage.test.tsx",
+        "frontend/src/utils/__tests__/thumbnailUrl.test.ts"
+      ],
+      "context_path": "frontend/src/pages/__tests__/GeneratePage.test.tsx",
+      "start": 1,
+      "acs": "AC-10..17/23..29; existing regression",
+      "logic": "全体Vitestの既存GeneratePage mockがselectorを無視し、generationSnapshotへfunctionを返してjobs.filterで落ちる。実store契約へmockを合わせ、既存PC/スマホ・workflow・Preset UI試験を全件維持する。thumbnail URLは原画metadataキーtを保持する新契約へ期待値を更新し、identity/原画URLを検証する。productionをmalformed test mockに合わせて弱めない。",
+      "expectation": "Existing meaningful cases preserved; typed local tests pass, no realdevice claim",
+      "verification_command": "npm run typecheck; npx vitest run src/pages/__tests__/GeneratePage.test.tsx src/utils/__tests__/thumbnailUrl.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T32.md",
+      "card_lines": 43,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T33",
+      "id": 33,
+      "title": "旧生成・複数端末・VRAM回帰試験の通信境界移行",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T15",
+        "REQ-333-T17"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req207.test.ts",
+        "frontend/src/test/e2e_req240_multidevice.test.ts",
+        "frontend/src/test/e2e_req260_vram_guard.test.ts"
+      ],
+      "context_path": "frontend/src/test/e2e_req207.test.ts",
+      "start": 1,
+      "acs": "AC-10..17/23..29; existing regression",
+      "logic": "旧8188 WS/binary/local完了判定・client投入前VRAM待機mockを、共有/api/wsのv1全snapshotとBE batch受付へ移行する。利用者が見る生成・node・preview・自動追従/固定・他session保護・取消・再接続・VRAM警告/明示待機取消の各検証を維持する。旧楽観取消は確認済み結果だけ反映へ置換。低VRAMでも受付先行、警告10秒、abortは同requestのonly_unsubmitted guard、回復してもFE再POSTなし。元の試験を削除/skipしない。BE worker判定は既存backend試験を根拠にし、FEから推定して再投入しない。",
+      "expectation": "Existing meaningful cases preserved; typed local tests pass, no realdevice claim",
+      "verification_command": "npm run typecheck; npx vitest run src/test/e2e_req207.test.ts src/test/e2e_req240_multidevice.test.ts src/test/e2e_req260_vram_guard.test.ts",
+      "card_path": "docs/backlog/task/archive/REQ-333-T33.md",
+      "card_lines": 45,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T34",
+      "id": 34,
+      "title": "旧ストレージ回復回帰試験のBE受付契約移行",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-333-T16",
+        "REQ-333-T17"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req317_storage.test.tsx",
+        "frontend/src/test/e2e_req332_recovery.test.tsx"
+      ],
+      "context_path": "frontend/src/test/e2e_req317_storage.test.tsx",
+      "start": 1,
+      "acs": "AC-10..17/23..29; existing regression",
+      "logic": "旧/api/comfy/promptやbrowser非同期prompt-metadata POSTのfixtureを、BE202 batch/request照会と凍結metadata受付へ移行する。local30件上限・distinct fields・quota/IDB読込失敗/再移行/IDBのみ削除によるcache回復・通知を維持し、mutation自動再送なしを検証する。新job UUIDと上流prompt IDを同一視しない。意味のある全元ケースを保持、単にassertを削除/skipしない。実コード欠陥があれば所有外編集せず具体的証拠を親へ返す。",
+      "expectation": "Existing meaningful cases preserved; typed local tests pass, no realdevice claim",
+      "verification_command": "npm run typecheck; npx vitest run src/test/e2e_req317_storage.test.tsx src/test/e2e_req332_recovery.test.tsx",
+      "card_path": "docs/backlog/task/archive/REQ-333-T34.md",
+      "card_lines": 43,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T35",
+      "id": 35,
+      "title": "VRAM stats既存WS回帰試験の初期snapshot共存",
+      "subsystem": "backend",
+      "depends_on": [
+        "REQ-333-T11"
+      ],
+      "impacted_files": [
+        "backend/tests/test_vram_guard.py"
+      ],
+      "context_path": "backend/tests/test_vram_guard.py",
+      "start": 1,
+      "acs": "AC-10..17/23..29; existing regression",
+      "logic": "初回snapshotとSYSTEM_STATS共存へ既存VRAM回帰試験を移行し値/型検証を維持する。",
+      "expectation": "Existing meaningful cases preserved; typed local tests pass, no realdevice claim",
+      "verification_command": ".venv/Scripts/python.exe -m mypy tests/test_vram_guard.py; .venv/Scripts/python.exe -m pytest tests/test_vram_guard.py -q",
+      "card_path": "docs/backlog/task/archive/REQ-333-T35.md",
+      "card_lines": 30,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "task_id": "REQ-333-T36",
+      "id": 36,
+      "title": "既存Manager全体回帰試験のHTTP fixture補完",
+      "subsystem": "manager",
+      "depends_on": [
+        "REQ-333-T7"
+      ],
+      "impacted_files": [
+        "tests/unit/test_server_manager_timeout.py"
+      ],
+      "context_path": "tests/unit/test_server_manager_timeout.py",
+      "start": 1,
+      "acs": "AC-10..17/23..29; existing regression",
+      "logic": "手動HTTP handler fixtureへheadersと成功subprocess returncodeを明示し既存回帰検証を維持する。",
+      "expectation": "Existing meaningful cases preserved; typed local tests pass, no realdevice claim",
+      "verification_command": "backend/.venv/Scripts/python.exe -m pytest tests/unit/test_server_manager_timeout.py -q",
+      "card_path": "docs/backlog/task/archive/REQ-333-T36.md",
+      "card_lines": 29,
+      "new_files": [],
+      "status": "done"
+    },
+    {
+      "id": 37,
+      "task_id": "REQ-333-T37",
+      "title": "Preview regression correction",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T5"
+      ],
+      "impacted_files": [
+        "backend/app/schemas/generation.py",
+        "backend/app/services/generation_service.py",
+        "backend/tests/test_generation_service.py"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T37.md",
+      "card_lines": 29
+    },
+    {
+      "id": 38,
+      "task_id": "REQ-333-T38",
+      "title": "Preview regression correction",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T37"
+      ],
+      "impacted_files": [
+        "frontend/src/api/domains/generation.ts",
+        "frontend/src/store/slices/connectionSlice.ts",
+        "frontend/src/store/__tests__/slices/connectionSlice.test.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T38.md",
+      "card_lines": 30
+    },
+    {
+      "id": 39,
+      "task_id": "REQ-333-T39",
+      "title": "PC・モバイルの進捗率を整数表示",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T20"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/MobileLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T39.md",
+      "card_lines": 24
+    },
+    {
+      "id": 40,
+      "task_id": "REQ-333-T40",
+      "title": "モバイルのキュー取消モーダル下部レイアウト修正",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T30"
+      ],
+      "impacted_files": [
+        "frontend/src/components/JobManagementModal.tsx",
+        "frontend/src/components/__tests__/JobManagementModal.req333.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T40.md",
+      "card_lines": 23
+    },
+    {
+      "id": 41,
+      "task_id": "REQ-333-T41",
+      "title": "複数プリセットバッチの非current値の調査・回帰修正",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T17"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.fault.test.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T41.md",
+      "card_lines": 24
+    },
+    {
+      "id": 42,
+      "task_id": "REQ-333-T42",
+      "title": "生成成功時の完了日時をメタ情報へ記録",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "backend/app/services/generation_repository.py",
+        "backend/app/routers/prompt_metadata.py",
+        "backend/tests/test_generation_repository.py"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T42.md",
+      "card_lines": 27
+    },
+    {
+      "id": 43,
+      "task_id": "REQ-333-T43",
+      "title": "FEメタ情報で完了日時recordを解釈",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T42"
+      ],
+      "impacted_files": [
+        "frontend/src/utils/generationRecord.ts",
+        "frontend/src/utils/promptRecord.ts",
+        "frontend/src/utils/__tests__/promptRecord.test.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T43.md",
+      "card_lines": 27
+    },
+    {
+      "id": 44,
+      "task_id": "REQ-333-T44",
+      "title": "画像メタ情報パネルへ生成完了日時を表示",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T43"
+      ],
+      "impacted_files": [
+        "frontend/src/components/GenerationMetadataPanel.tsx",
+        "frontend/src/components/history/SnapshotMetadataTab.tsx",
+        "frontend/src/components/__tests__/GenerationMetadataPanel.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T44.md",
+      "card_lines": 24
+    },
+    {
+      "id": 45,
+      "task_id": "REQ-333-T45",
+      "title": "ユーザーフィードバックによる仕様差分の同期",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "docs/design/REQ-333.md",
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_HISTORY.md"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T45.md",
+      "card_lines": 22
+    },
+    {
+      "id": 46,
+      "task_id": "REQ-333-T46",
+      "title": "完了日時補完後のメタ情報を履歴画面へ反映",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T43"
+      ],
+      "impacted_files": [
+        "frontend/src/components/HistoryModalPreview.tsx",
+        "frontend/src/components/__tests__/HistoryModalPreview.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T46.md",
+      "card_lines": 23
+    },
+    {
+      "id": 47,
+      "task_id": "REQ-333-T47",
+      "title": "LAN開発FEのWebSocket OriginとHost一致を維持",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/vite.config.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T47.md",
+      "card_lines": 25
+    },
+    {
+      "id": 48,
+      "task_id": "REQ-333-T48",
+      "title": "Managerのサービス起動子孫によるstdout待ちを防止",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "tools/server-manager/server_api.py",
+        "backend/tests/test_manager_origin_req333.py",
+        "tests/unit/test_server_manager_timeout.py"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T48.md",
+      "card_lines": 27
+    },
+    {
+      "id": 49,
+      "task_id": "REQ-333-T49",
+      "title": "サービス操作を止めているManager処理の名称を正しく表示",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx",
+        "frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T49.md",
+      "card_lines": 23
+    },
+    {
+      "id": 50,
+      "task_id": "REQ-333-T50",
+      "title": "ManagerログAPI契約とサービス操作待機時間の整合",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/api/domains/systemManager.ts",
+        "frontend/src/api/domains/__tests__/systemManager.test.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T50.md",
+      "card_lines": 25
+    },
+    {
+      "id": 51,
+      "task_id": "REQ-333-T51",
+      "title": "完了原画への自動追従を旧previewが覆わないよう修正",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/store/slices/connectionSlice.ts",
+        "frontend/src/store/__tests__/slices/connectionSlice.test.ts"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T51.md",
+      "card_lines": 23
+    },
+    {
+      "id": 52,
+      "task_id": "REQ-333-T52",
+      "title": "サービス再起動の停止・起動確認とManager時間予算を整合",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "tools/server-manager/server-manager.ps1",
+        "tools/server-manager/server_api.py",
+        "tests/unit/test_server_manager_timeout.py"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T52.md",
+      "card_lines": 26
+    },
+    {
+      "id": 53,
+      "task_id": "REQ-333-T53",
+      "title": "サービス操作timeoutを結果未確認として表示",
+      "status": "done",
+      "depends_on": [
+        "REQ-333-T50"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/SettingsPage/components/ServiceConnectionCard.tsx",
+        "frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T53.md",
+      "card_lines": 23
+    },
+    {
+      "id": 54,
+      "task_id": "REQ-333-T54",
+      "title": "サービス操作・ログ・完了追従の仕様差分同期",
+      "status": "done",
+      "depends_on": [],
+      "impacted_files": [
+        "docs/specs/SPEC_SETTINGS.md",
+        "docs/specs/server_manager_guide.md",
+        "docs/specs/SPEC_GENERATE.md"
+      ],
+      "card_path": "docs/backlog/task/archive/REQ-333-T54.md",
+      "card_lines": 20
+    }
+  ],
+  "trade_offs_and_risks": "normal group区切り、LISTEN稼働観測、上流冪等性/再起動復元限界、job保持集合、旧URL/Snapshot保存互換は具体的な設計レビュー対象。実装・コード試験は未実施。",
+  "governance_preflight": {
+    "card": "REQ-333-T1",
+    "rule": "人間設計承認後T1のみをdispatchし完了確認後に他rootをdispatch。実装DAG4層の前段フェーズ。"
+  },
+  "compatibility_review": "docs/design/REQ-333-compatibility-review.md",
+  "focused_revision_audit_input": "docs/design/REQ-333-cancel-image-audit-input.md",
+  "cancel_image_revision": {
+    "status": "design-only-review-pending",
+    "scope": "既存3取消操作とサムネ失敗時の原画確認/回復互換",
+    "audit_execution_owner": "dev-coordinator",
+    "code_tests_executed": false,
+    "superseded": "normal-only/Studio-protected取消推論",
+    "dag_edges": 56,
+    "pbi_integrity": {
+      "ac_count": 35,
+      "sha256": "65adbf8bcc93a9802952b2e07e259e27ca1d571db53e929d08db0dfe5d9e762b",
+      "ac_sha256": "19e7b4e62fb765e8799336488a7d025baea330268d53d5aea3c6e6eb60f15198",
+      "status_in_progress": true,
+      "pbi_modified_by_architect": false
+    },
+    "audit_status": "input-ready-awaiting-coordinator-run"
+  },
+  "normal_scope_revision": {
+    "status": "design-review-pending",
+    "scope_enum": [
+      "all",
+      "normal"
+    ],
+    "default_scope": "all",
+    "modes": [
+      "single",
+      "queued",
+      "all"
+    ],
+    "single_ignores_ui_scope": true,
+    "ac_count": 36,
+    "historical_35_ac_preserved": true,
+    "pbi_in_progress": true,
+    "pbi_sha256": "297a8a77b32e9f8d2c3b5db073f34b0ab1deabee5e7cdd12dd7af6ab1e07dad3",
+    "ac01_35_lines_sha256": "9182f3f3fb6092658864bc934fb770b9cc7f4150ac04d0433b7394a7dcb0529f",
+    "implementation_dispatched": false,
+    "code_tests_executed": false,
+    "audit_owner": "dev-coordinator",
+    "audit_input": "docs/design/REQ-333-normal-scope-audit-input.md",
+    "audit_status": "input-ready-awaiting-coordinator-run",
+    "audit_input_chars": 10778
+  },
+  "verification": {
+    "gate_1": "PASS",
+    "gate_2": "PASS",
+    "backend_tests": 646,
+    "frontend_tests": 1485,
+    "gate_3": "INCONCLUSIVE",
+    "walkthrough_path": "docs/design/REQ-333-walkthrough.md",
+    "qa_audit": "ISSUES_DETECTED; completed exit 0; triage preserved",
+    "qa_triage_path": "docs/design/REQ-333-qa-triage.md",
+    "preview_regression": "Source/build verified; live BE reloaded via8899, PID/epoch changed, preview_url contract present; actual completion UI not observed",
+    "feedback_rework": "T39-T46 locally verified; preset report not reproduced; latest BE runtime reflected",
+    "mobile_dev_ws": "PASS live localhost5173/LAN5173/LAN8000 snapshots and SYSTEM_STATS; hostileOrigin403; HTTPproxy statePASS",
+    "manager_action_capture": "Updated elevated Manager live; backend restart ok10.35s and Comfy restart ok19.81s; no action stuck after backend restart",
+    "manager_service_label": "Alias busy reason validated; 7 component tests",
+    "manager_restart_privilege": "Previous BE High/Manager Medium mismatch measured; user-authorized UAC Manager-only helper executed ok, BE PID35920 preserved before subsequent explicit BE restart",
+    "control_feedback": "T50-T54 locally verified; BE restart PID35920->39828 and epoch changed; Comfy restart successful API response, all4 log APIs200, allowed LAN origins ACAO and forbidden origins403",
+    "runtime_evidence": [
+      ".tmp/REQ-333-manager-admin-result.json",
+      ".tmp/REQ-333-elevated-be-restart.json",
+      ".tmp/REQ-333-elevated-comfy-restart.json",
+      ".tmp/REQ-333-post-elevation-logs-cors.json",
+      ".tmp/REQ-333-post-elevation-ws.txt"
+    ],
+    "remaining_at_acceptance": [
+      "Real browser and phone scenarios",
+      "User review of audit triage at closure"
+    ],
+    "closure_decision": "USER_ACCEPTED"
+  },
+  "closure": {
+    "date": "2026-10-10",
+    "authorization": "大丈夫そう。これで完了にしよう",
+    "basis": "Explicit user acceptance and closure instruction; Gate1/2 and live API evidence preserved",
+    "automated_gate_3": "INCONCLUSIVE; no claim of independently observed all-AC real-device execution",
+    "audit_findings": "Original ISSUES_DETECTED and coordinator triage retained; closed by user acceptance",
+    "saved_evidence": [
+      "docs/design/REQ-333-evidence/REQ-333-control-follow-backend-full.txt",
+      "docs/design/REQ-333-evidence/REQ-333-control-follow-frontend-full.txt",
+      "docs/design/REQ-333-evidence/REQ-333-control-follow-build.txt",
+      "docs/design/REQ-333-evidence/REQ-333-qa-audit-retry.txt",
+      "docs/design/REQ-333-evidence/REQ-333-qa-unload-retry.txt",
+      "docs/design/REQ-333-evidence/REQ-333-manager-admin-result.json",
+      "docs/design/REQ-333-evidence/REQ-333-elevated-be-restart.json",
+      "docs/design/REQ-333-evidence/REQ-333-elevated-comfy-restart.json",
+      "docs/design/REQ-333-evidence/REQ-333-post-elevation-logs-cors.json",
+      "docs/design/REQ-333-evidence/REQ-333-post-elevation-ws.txt",
+      "docs/design/REQ-333-evidence/REQ-333-post-restarts-status.json"
+    ]
+  }
+}

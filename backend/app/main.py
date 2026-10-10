@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+from datetime import datetime, timezone
 from app.utils.windows_loop_defense import apply_windows_loop_defense
 
 # Windows イベントループ防御 (WinError 64 / 10054 / 1236 によるクラッシュ防止)
@@ -39,7 +40,11 @@ from app.routers import (
     training_router,
 )
 from app.routers import ws as ws_router
+from app.routers import generation as generation_router
 from app.services.resource_monitor import resource_monitor
+from app.services.comfy_generation_bridge import ComfyGenerationBridge
+from app.services.generation_repository import GenerationRepository
+from app.services.generation_service import GenerationService
 
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
@@ -62,15 +67,45 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     logger.info("Prompt Surgeon API started.")
-    # ★ リソース監視サービス開始
-    await resource_monitor.start(ws_router.manager.broadcast)
-    yield
-    # ★ リソース監視サービス停止
-    await resource_monitor.stop()
+    repository = GenerationRepository(SessionLocal)
+    bridge = ComfyGenerationBridge(settings.comfy_url)
+    service = GenerationService(
+        repository,
+        bridge,
+        clock=lambda: datetime.now(timezone.utc),
+        vram_status=resource_monitor.get_vram_status,
+        publish=ws_router.manager.publish_generation,
+    )
+    app.state.generation_repository = repository
+    app.state.generation_bridge = bridge
+    app.state.generation_service = service
+    ws_router.manager.configure_generation(service.snapshot, service.reconcile)
+    monitor_started = False
+    bridge_started = False
+    service_started = False
     try:
-        await comfy.close_comfy_client()
-    except Exception as e:
-        logger.error(f"Failed to close Comfy client: {e}")
+        # The backend-owned bridge and service remain active even when no browser is connected.
+        bridge_started = True
+        await bridge.start(service.on_event, service.on_preview)
+        service_started = True
+        await service.start()
+        monitor_started = True
+        await resource_monitor.start(ws_router.manager.broadcast)
+        yield
+    finally:
+        if monitor_started:
+            await resource_monitor.stop()
+        if bridge_started:
+            await bridge.stop()
+        if service_started:
+            await service.stop()
+        for state_name in ("generation_repository", "generation_bridge", "generation_service"):
+            if hasattr(app.state, state_name):
+                delattr(app.state, state_name)
+        try:
+            await comfy.close_comfy_client()
+        except Exception as e:
+            logger.error(f"Failed to close Comfy client: {e}")
     logger.info("Prompt Surgeon API shutting down.")
 
 
@@ -149,6 +184,7 @@ app.include_router(speech_scene.router)
 app.include_router(prompt_metadata.router)
 app.include_router(settings_router.router)
 app.include_router(ws_router.router)
+app.include_router(generation_router.router)
 app.include_router(dataset_router.router)
 app.include_router(benchmark_router.router)
 app.include_router(training_router.router)

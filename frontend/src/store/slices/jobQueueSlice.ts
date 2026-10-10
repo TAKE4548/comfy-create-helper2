@@ -1,18 +1,74 @@
 import { StateCreator } from 'zustand'
-import { comfyApi, promptMetadataApi } from '../../api/client'
-import { resolveComfyUrl } from '../../hooks/useComfyWebSocket'
+import { comfyApi } from '../../api/client'
+import { generationApi } from '../../api/domains/generation'
+import { GenerationApiError } from '../../api/domains/generation'
+import type { BatchAccepted, BatchRequest, CancelResult, GenerationSnapshot, UpstreamQueueView, CancelScope } from '../../api/domains/generation'
 import { LS_KEYS } from '../../utils/localStorageKeys'
-import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions } from '../types'
+import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions, BatchJob } from '../types'
 import { comfyWsService } from '../services/comfyWebSocketService'
-import { resolveNodeTitle } from './connectionSlice'
 import { parseQueueSubmissionFailure } from '../../utils/queueSubmissionFailure'
-import { PROMPT_RECORD_KEY } from '../../utils/generationRecord'
 import { prunePromptMetadataCache } from '../../utils/promptMetadataCache'
 
 export type JobQueueSlice = JobQueueState & JobQueueActions
 
+function createRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') globalThis.crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+async function submitBatchWithLookup(payload: BatchRequest, signal?: AbortSignal): Promise<Pick<BatchAccepted, 'batch_id' | 'job_ids'>> {
+  try {
+    const accepted = await generationApi.submitBatch(payload, signal)
+    return { batch_id: accepted.batch_id, job_ids: accepted.job_ids }
+  } catch (error) {
+    if (!(error instanceof GenerationApiError) || error.detail.outcome !== 'unconfirmed') throw error
+    try {
+      return await generationApi.getRequest(payload.request_id)
+    } catch {
+      throw error
+    }
+  }
+}
+
+export function projectQueue(snapshot: GenerationSnapshot, upstream: UpstreamQueueView): { running: any[]; pending: any[] } {
+  const managed = (job: GenerationSnapshot['jobs'][number]) => [0, job.job_id, job, { client_id: job.session_id }, []] as any
+  const running = snapshot.jobs.filter((job) => job.status === 'running').map(managed)
+  const pending = snapshot.jobs.filter((job) => ['queued', 'submitting', 'unconfirmed'].includes(job.status)).map(managed)
+  const seen = new Set(snapshot.jobs.map((job) => job.prompt_id).filter(Boolean))
+  for (const item of upstream.running) {
+    if (seen.has(item.prompt_id)) continue
+    running.push([0, item.prompt_id, {}, { client_id: item.client_id ?? undefined }, []])
+  }
+  for (const item of upstream.pending) {
+    if (seen.has(item.prompt_id)) continue
+    pending.push([0, item.prompt_id, {}, { client_id: item.client_id ?? undefined }, []])
+  }
+  return { running, pending }
+}
+
+function historyImageIdentity(url: string): string | null {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    const filename = parsed.searchParams.get('filename')
+    const subfolder = parsed.searchParams.get('subfolder')
+    const type = parsed.searchParams.get('type')
+    const promptId = parsed.searchParams.get('t')
+    if (filename === null || subfolder === null || type === null || promptId === null) return null
+    return JSON.stringify([filename, subfolder, type, promptId])
+  } catch {
+    return null
+  }
+}
+
 export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueueSlice> = (set, get) => {
   const storedFilterOwn = localStorage.getItem(LS_KEYS.FILTER_OWN) === 'true'
+  let preserveSelectionForActiveHistoryFetch = false
 
   let storedBatchImages: string[] = []
   try {
@@ -29,6 +85,8 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
 
   return {
     filterOwnSession: storedFilterOwn,
+    generationSnapshot: null,
+    generationSyncing: false,
     batchImages: storedBatchImages,
     selectedImg: verifiedSelectedImg,
     previewAutoFollow: initialAutoFollow,
@@ -90,142 +148,73 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       get().abortSubmission?.()
     },
 
-    queuePrompt: async (workflow, metadata, options?: QueuePromptOptions) => {
-      if (options?.signal?.aborted) {
-        return null
-      }
+    submitGenerationBatch: async (payload: BatchRequest) => {
+      const accepted = await submitBatchWithLookup(payload)
+      await get().fetchQueue()
+      return { batch_id: accepted.batch_id, job_ids: accepted.job_ids }
+    },
 
+    queuePrompt: async (workflow, metadata, options?: QueuePromptOptions) => {
+      if (options?.signal?.aborted) return null
       const frozenMetadata = JSON.parse(JSON.stringify({
         paramValues: metadata?.paramValues ?? get().paramValues,
         appliedAssets: metadata?.appliedAssets ?? get().appliedAssets,
         workflowId: metadata?.workflowId ?? get().selectedWorkflowId,
       }))
-      const reportPersistenceFailure = (error: unknown) => {
-        console.warn('[PromptMetadata] Failed to persist metadata:', error)
-        get().setErrorToast({ message: '生成時メタ情報の保存に失敗しました', type: 'error' })
-      }
-
-      const execute = async (): Promise<string | null> => {
-        const reportSubmissionFailure = (error: unknown) => {
-          const failure = parseQueueSubmissionFailure(error)
+      try {
+        const requestId = createRequestId()
+        const accepted = await submitBatchWithLookup({
+          request_id: requestId,
+          session_id: get().clientId,
+          scope: 'normal',
+          items: [{
+            graph: workflow,
+            ...(frozenMetadata.workflowId != null ? { workflow_id: frozenMetadata.workflowId } : {}),
+            param_values: frozenMetadata.paramValues,
+            applied_assets: frozenMetadata.appliedAssets,
+          }],
+        }, options?.signal)
+        const jobId = accepted.job_ids[0] ?? null
+        if (!jobId) {
+          const failure = { reason: '受付応答にjob_idがありません', outcome: 'unconfirmed' as const }
           if (options?.onSubmissionFailure) {
-            try {
-              options.onSubmissionFailure(failure)
-            } catch (callbackError) {
-              console.error('Queue submission failure callback failed:', callbackError)
-            }
-          } else {
-            get().setErrorToast({ message: failure.reason, type: 'error' })
-          }
-        }
-
-        try {
-          const data = await comfyApi.queuePrompt({
-            prompt: workflow,
-            client_id: get().clientId,
-          })
-
-          if (options?.signal?.aborted) {
-            return null
-          }
-
-          if (data.error) {
-            const failureResponse = typeof data.error === 'string'
-              ? { ...data, error: { message: data.error } }
-              : data
-            throw new Error(JSON.stringify(failureResponse))
-          }
-          const promptId = data.prompt_id ?? null
-
-          if (!promptId) {
-            reportSubmissionFailure(null)
-            return null
-          }
-
-          if (options?.signal?.aborted) {
-            return null
-          }
-
-          if (promptId) {
-            try {
-              prunePromptMetadataCache(promptId)
-            } catch (error) { reportPersistenceFailure(error) }
-
-            try {
-              localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, promptId)
-            } catch (error) { reportPersistenceFailure(error) }
-            const metaKey = `prompt-surgeon-meta-${promptId}`
-            const receivedAt = new Date().toISOString()
-            const recordJson = frozenMetadata.paramValues[PROMPT_RECORD_KEY]
-            if (typeof recordJson === 'string') {
-              try {
-                const record = JSON.parse(recordJson)
-                if (record?.version === 1) {
-                  frozenMetadata.paramValues[PROMPT_RECORD_KEY] = JSON.stringify({ ...record, queued_at: receivedAt, prompt_id: promptId })
-                }
-              } catch (error) { reportPersistenceFailure(error) }
-            }
-            const promptMetadata = {
-              paramValues: frozenMetadata.paramValues,
-              appliedAssets: frozenMetadata.appliedAssets,
-              workflowId: frozenMetadata.workflowId,
-              timestamp: Date.now(),
-            }
-            try {
-              localStorage.setItem(metaKey, JSON.stringify(promptMetadata))
-            } catch (error) { reportPersistenceFailure(error) }
-
-            // サーバー側DBへ非同期保存 (端末間同期対応)
-            try {
-              promptMetadataApi?.create?.({
-              prompt_id: promptId,
-              workflow_id: frozenMetadata.workflowId ?? undefined,
-              param_values: promptMetadata.paramValues,
-              applied_assets: promptMetadata.appliedAssets,
-              })?.catch?.(reportPersistenceFailure)
-            } catch (error) { reportPersistenceFailure(error) }
-
-          }
-          if (options?.isBatchIntermediate) {
-            set({
-              isGenerating: true,
-              currentPromptId: promptId,
-              activeClientId: get().clientId,
-              currentWorkflow: workflow as Record<string, any>,
-            })
-          } else {
-            set({
-              isGenerating: true,
-              previewImage: null,
-              progress: null,
-              currentPromptId: promptId,
-              activeClientId: get().clientId,
-              currentWorkflow: workflow as Record<string, any>,
-            })
-          }
-
-          if (!options?.skipQueueFetch && !options?.signal?.aborted) {
-            await get().fetchQueue()
-          }
-          return promptId
-        } catch (e: any) {
-          if (e?.name === 'AbortError' || options?.signal?.aborted) {
-            return null
-          }
-          console.error('Failed to queue prompt:', e)
-          reportSubmissionFailure(e)
+            try { options.onSubmissionFailure(failure) } catch (callbackError) { console.error('Queue submission failure callback failed:', callbackError) }
+          } else get().setErrorToast({ message: failure.reason, type: 'error' })
           return null
         }
-      }
-
-      const submissionPromise = execute()
-      comfyWsService.setActiveSubmissionPromise(submissionPromise)
-      try {
-        return await submissionPromise
-      } finally {
-        if (comfyWsService.getActiveSubmissionPromise() === submissionPromise) {
-          comfyWsService.setActiveSubmissionPromise(null)
+        if (options?.signal?.aborted) return null
+        try {
+          prunePromptMetadataCache(jobId)
+          localStorage.setItem(`prompt-surgeon-meta-${jobId}`, JSON.stringify({
+            paramValues: frozenMetadata.paramValues,
+            appliedAssets: frozenMetadata.appliedAssets,
+            workflowId: frozenMetadata.workflowId,
+            timestamp: Date.now(),
+          }))
+        } catch (error) {
+          console.warn('[PromptMetadata] Failed to persist local metadata cache:', error)
         }
+        try { localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, jobId) } catch {}
+        set({
+          isGenerating: true,
+          ...(options?.isBatchIntermediate ? {} : { previewImage: null, progress: null }),
+          currentPromptId: jobId,
+          activeClientId: get().clientId,
+          currentWorkflow: workflow as Record<string, any>,
+        })
+        if (!options?.skipQueueFetch && !options?.signal?.aborted) await get().fetchQueue()
+        return jobId
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || options?.signal?.aborted) return null
+        const failure = error instanceof GenerationApiError && error.detail.outcome === 'unconfirmed'
+          ? { reason: error.message, outcome: 'unconfirmed' as const }
+          : parseQueueSubmissionFailure(error)
+        if (options?.onSubmissionFailure) {
+          try { options.onSubmissionFailure(failure) } catch (callbackError) {
+            console.error('Queue submission failure callback failed:', callbackError)
+          }
+        } else get().setErrorToast({ message: failure.reason, type: 'error' })
+        return null
       }
     },
 
@@ -233,18 +222,19 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       await get().cancelAllJobs()
     },
 
-    fetchHistory: async () => {
+    fetchHistory: async (options) => {
+      if (options?.preserveSelection) preserveSelectionForActiveHistoryFetch = true
       const activeFetchPromise = comfyWsService.getActiveFetchHistoryPromise()
       if (activeFetchPromise) {
         return activeFetchPromise
       }
+      preserveSelectionForActiveHistoryFetch = options?.preserveSelection === true
       const execute = async () => {
-        const currentUrl = comfyWsService.getComfyUrl() || get().comfyUrl || ''
-        const resolvedUrl = resolveComfyUrl(currentUrl)
         try {
           const data = await comfyApi.getHistory(200)
           const allImages: string[] = []
           const ownImages: string[] = []
+          const foreignImages: string[] = []
           const clientId = get().clientId
 
           const entries = Object.entries(data || {}) as [string, ComfyHistoryItem][]
@@ -254,18 +244,26 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
             return indexB - indexA
           })
 
-          sortedEntries.forEach(([key, item]) => {
+          sortedEntries.forEach(([, item]) => {
             if (!item) return
-            const isOwnPrompt = item.prompt && item.prompt[3]?.client_id === clientId
+            const promptId = item.prompt?.[1]
+            const managedOwner = promptId
+              ? get().generationSnapshot?.jobs.find((job) => job.prompt_id === promptId)?.session_id
+              : undefined
+            const legacyOwner = item.prompt?.[3]?.client_id
+            const isOwnPrompt = managedOwner !== undefined
+              ? managedOwner === clientId
+              : typeof legacyOwner === 'string'
+                ? legacyOwner === clientId
+                : undefined
             if (item.outputs) {
               Object.values(item.outputs).forEach((out) => {
                 if (out?.images) {
                   out.images.forEach((img) => {
-                    const url = `${resolvedUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${key}`
+                    const url = `/api/comfy/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${encodeURIComponent(img.type)}&t=${encodeURIComponent(promptId ?? '')}`
                     allImages.push(url)
-                    if (isOwnPrompt) {
-                      ownImages.push(url)
-                    }
+                    if (isOwnPrompt === true) ownImages.push(url)
+                    else if (isOwnPrompt === false) foreignImages.push(url)
                   })
                 }
               })
@@ -273,25 +271,29 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
           })
 
           const nextComfyHistoryImages = allImages.slice(0, 200)
-          let finalBatchImages: string[] = []
 
           set((state) => {
-            const targetImages = state.filterOwnSession ? ownImages : allImages
-            const nextBatch = Array.from(new Set([...targetImages, ...state.batchImages])).slice(0, 200)
-            finalBatchImages = nextBatch
+            const foreignIdentities = new Set(foreignImages.map(historyImageIdentity).filter((identity): identity is string => identity !== null))
+            const retainedCache = state.batchImages.filter((image) => {
+              const identity = historyImageIdentity(image)
+              return identity === null || !foreignIdentities.has(identity)
+            })
+            const nextBatch = Array.from(new Set([...ownImages, ...retainedCache])).slice(0, 200)
             localStorage.setItem(LS_KEYS.BATCH_IMAGES, JSON.stringify(nextBatch))
 
-            const nextSelected =
-              state.selectedImg || (state.filterOwnSession ? nextBatch[0] : allImages[0]) || null
+            const preserveSelection = preserveSelectionForActiveHistoryFetch
+            const nextSelected = preserveSelection
+              ? state.selectedImg
+              : state.selectedImg || (state.filterOwnSession ? nextBatch[0] : allImages[0]) || null
 
-            if (nextSelected && !state.selectedImg) {
+            if (!preserveSelection && nextSelected && !state.selectedImg) {
               localStorage.setItem(LS_KEYS.SELECTED_IMG, nextSelected)
             }
 
             return {
               comfyHistoryImages: nextComfyHistoryImages,
               batchImages: nextBatch,
-              selectedImg: nextSelected,
+              selectedImg: preserveSelection ? state.selectedImg : nextSelected,
             }
           })
           window.dispatchEvent(
@@ -299,7 +301,7 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
               detail: {
                 type: 'history-fetched',
                 allImages: nextComfyHistoryImages,
-                ownImages: finalBatchImages,
+                ownImages: ownImages.slice(0, 200),
               },
             })
           )
@@ -312,210 +314,82 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       try {
         await fetchPromise
       } finally {
+        preserveSelectionForActiveHistoryFetch = false
         comfyWsService.setActiveFetchHistoryPromise(null)
       }
     },
 
     fetchQueue: async () => {
+      set({ generationSyncing: true })
       try {
-        const data = await comfyApi.getQueue()
-        if (!data) return
-
-        set({ queueRunning: data.queue_running || [], queuePending: data.queue_pending || [] })
-
-        const running = data.queue_running || []
-        if (running.length > 0) {
-          const activeJob = running[0]
-          const activeJobClientId = activeJob[3]?.client_id || null
-          if (activeJobClientId) {
-            set({ activeClientId: activeJobClientId })
-          }
-          if (!get().currentWorkflow && activeJob[2]) {
-            set({ currentWorkflow: activeJob[2] })
-          }
-          const currNode = get().currentNode
-          if (currNode && (currNode.name === 'Unknown' || !currNode.name) && activeJob[2]) {
-            const resolvedName = resolveNodeTitle(activeJob[2], currNode.id)
-            if (resolvedName) {
-              set({
-                currentNode: { id: currNode.id, name: resolvedName },
-                nodeProgress: get().nodeProgress ? { ...get().nodeProgress!, nodeName: resolvedName } : null,
-              })
-            }
+        const [snapshot, upstream] = await Promise.all([generationApi.getState(), generationApi.getUpstreamQueue()])
+        // Apply through the shared epoch/revision gate so a delayed HTTP
+        // response cannot roll back a newer WebSocket snapshot.
+        if (!get().applyGenerationSnapshot(snapshot, upstream)) {
+          set({ generationSyncing: false })
+          return
+        }
+        set({ generationSyncing: false })
+        const current = get()
+        if (current.queueRunning.length) {
+          const active = current.queueRunning[0]
+          if (active[3]?.client_id) set({ activeClientId: active[3].client_id })
+          if (!get().currentWorkflow && active[2] && typeof active[2] === 'object' && !active[2].job_id) {
+            set({ currentWorkflow: active[2] })
           }
         }
-
         const activeBatch = get().activeBatch
-        if (activeBatch) {
-          const activeQueueIds = new Set([
-            ...(data.queue_running || []).map((j: any) => j[1]),
-            ...(data.queue_pending || []).map((j: any) => j[1]),
-          ])
-          const activeUnfinishedJobs = activeBatch.filter(
-            (job) => job.status === 'pending' || job.status === 'generating'
-          )
-          if (activeUnfinishedJobs.length > 0) {
-            if (get().isBatchSubmitting) return
-
-            const anyUnfinishedInQueue = activeUnfinishedJobs.some((job) => activeQueueIds.has(job.promptId))
-            if (!anyUnfinishedInQueue) {
-              set({ activeBatch: null, isGenerating: false })
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to fetch comfy queue:', e)
-      }
-    },
-
-    cancelJob: async (promptId: string): Promise<void> => {
-      get().abortSubmission()
-      const activeSubmission = comfyWsService.getActiveSubmissionPromise()
-      if (activeSubmission) {
-        try {
-          await activeSubmission
-        } catch {}
-      }
-      try {
-        const isCurrentRunning = get().currentPromptId === promptId
-        const isInQueueRunning = get().queueRunning.some((job) => job[1] === promptId)
-        const isRunning = isCurrentRunning || isInQueueRunning
-
-        set((state) => ({
-          queuePending: state.queuePending.filter((job) => job[1] !== promptId),
-        }))
-
-        if (isRunning) {
-          await comfyApi.interrupt()
-          Promise.resolve(comfyApi.deleteHistory({ delete: [promptId] })).catch((e) => {
-            console.error('Failed to delete history in cancelJob:', e)
+        if (activeBatch && !get().isBatchSubmitting) {
+          const jobs = new Map((current.generationSnapshot?.jobs ?? []).map((job) => [job.job_id, job]))
+          const updated = activeBatch.map((item) => {
+            const job = jobs.get(item.promptId)
+            if (!job) return item
+            const status: BatchJob['status'] = job.status === 'running' ? 'generating' :
+              job.status === 'succeeded' ? 'completed' : job.status === 'failed' || job.status === 'cancelled' ? 'failed' : 'pending'
+            return { ...item, status }
           })
-        } else {
-          await comfyApi.deleteQueue({ delete: [promptId] })
+          const unfinished = updated.some((item) => item.status === 'pending' || item.status === 'generating')
+          set({ activeBatch: unfinished ? updated : null, isGenerating: unfinished })
         }
-
-        const activeBatch = get().activeBatch
-        if (activeBatch && activeBatch.some((job) => job.promptId === promptId)) {
-          const updatedBatch = activeBatch.map((job) =>
-            job.promptId === promptId ? { ...job, status: 'failed' as const } : job
-          )
-          const remainingUnfinished = updatedBatch.filter(
-            (job) => job.status === 'pending' || job.status === 'generating'
-          )
-          if (remainingUnfinished.length > 0) {
-            set({
-              activeBatch: updatedBatch,
-              ...(promptId === get().currentPromptId
-                ? {
-                    currentPromptId: null,
-                    currentNode: null,
-                    nodeProgress: null,
-                  }
-                : {}),
-            })
-            if (promptId === get().currentPromptId) {
-              localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-            }
-          } else {
-            set({
-              activeBatch: null,
-              isGenerating: false,
-              currentPromptId: null,
-              activeClientId: null,
-              generationStartTime: null,
-              currentNode: null,
-              nodeProgress: null,
-              currentWorkflow: null,
-            })
-            localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-          }
-        } else if (promptId === get().currentPromptId) {
-          set({
-            activeBatch: null,
-            isGenerating: false,
-            currentPromptId: null,
-            activeClientId: null,
-            generationStartTime: null,
-            currentNode: null,
-            nodeProgress: null,
-            currentWorkflow: null,
-          })
-          localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-        }
-      } catch (e) {
-        console.error('Failed to cancel job:', e)
+      } catch (error) {
+        console.error('Failed to fetch generation queue:', error)
+        set({ generationSyncing: false })
       }
     },
 
-    clearPendingQueue: async (): Promise<void> => {
+    cancelJob: async (id: string) => {
       get().abortSubmission()
-      const activeSubmission = comfyWsService.getActiveSubmissionPromise()
-      if (activeSubmission) {
-        try {
-          await activeSubmission
-        } catch {}
+      const active = comfyWsService.getActiveSubmissionPromise()
+      if (active) { try { await active } catch {} }
+      const job = get().generationSnapshot?.jobs.find((item) => item.job_id === id || item.prompt_id === id)
+      let result: CancelResult
+      if (job) result = await generationApi.cancelJob(job.job_id)
+      else {
+        const operation = await generationApi.cancel({ mode: 'single', scope: 'all', target: { prompt_id: id } })
+        result = operation.items[0] ?? { job_id: null, prompt_id: id, status: null, outcome: 'rejected', message: operation.message }
       }
-      try {
-        set({ queuePending: [] })
-        await comfyApi.deleteQueue({ clear: true })
-
-        const activeBatch = get().activeBatch
-        if (activeBatch) {
-          const updatedBatch = activeBatch.filter(
-            (job) => job.status === 'generating' || job.status === 'completed'
-          )
-          set({ activeBatch: updatedBatch.length > 0 ? updatedBatch : null })
-        }
-      } catch (e) {
-        console.error('Failed to clear pending queue:', e)
-      }
+      await get().fetchQueue()
+      return result
     },
 
-    cancelAllJobs: async (): Promise<void> => {
+    clearPendingQueue: async (scope: CancelScope = 'all') => {
+      get().abortSubmission()
+      const active = comfyWsService.getActiveSubmissionPromise()
+      if (active) { try { await active } catch {} }
+      const operation = await generationApi.cancel({ mode: 'queued', scope })
+      await get().fetchQueue()
+      return operation
+    },
+
+    cancelAllJobs: async (scope: CancelScope = 'all') => {
       get().cancelVramWait()
       get().abortSubmission()
-      const activeSubmission = comfyWsService.getActiveSubmissionPromise()
-      if (activeSubmission) {
-        try {
-          await activeSubmission
-        } catch {}
-      }
-      try {
-        const runningIds = get().queueRunning.map((j) => j[1])
-
-        set({
-          queuePending: [],
-          activeBatch: null,
-          isGenerating: false,
-          currentPromptId: null,
-          activeClientId: null,
-          generationStartTime: null,
-          currentNode: null,
-          nodeProgress: null,
-          currentWorkflow: null,
-        })
-        localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
-
-        try {
-          await comfyApi.deleteQueue({ clear: true })
-        } catch (e) {
-          console.error('Failed to clear queue in cancelAllJobs:', e)
-        }
-
-        try {
-          await comfyApi.interrupt()
-        } catch (e) {
-          console.error('Failed to interrupt in cancelAllJobs:', e)
-        }
-
-        if (runningIds.length > 0) {
-          Promise.resolve(comfyApi.deleteHistory({ delete: runningIds })).catch((e) => {
-            console.error('Failed to delete history in cancelAllJobs:', e)
-          })
-        }
-      } catch (e) {
-        console.error('Failed to cancel all jobs:', e)
-      }
+      const active = comfyWsService.getActiveSubmissionPromise()
+      if (active) { try { await active } catch {} }
+      const operation = await generationApi.cancel({ mode: 'all', scope })
+      await get().fetchQueue()
+      return operation
     },
+
   }
 }

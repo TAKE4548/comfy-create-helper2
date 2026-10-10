@@ -5,7 +5,7 @@ import io
 import logging
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
 from PIL import Image
@@ -269,6 +269,61 @@ async def manage_history(payload: HistoryActionRequest):
         return {"status": "error", "detail": str(e)}
 
 
+class ImageAvailability(BaseModel):
+    availability: Literal["present", "missing", "unknown"]
+
+
+async def probe_image_availability(filename: str, subfolder: str = "", type: str = "output") -> ImageAvailability:
+    """Check the original, independently of thumbnail caches and generation IDs."""
+    client = get_comfy_client()
+    params = {"filename": filename, "subfolder": subfolder, "type": type}
+    try:
+        response = await client.head(f"{settings.comfy_url}/view", params=params, timeout=3.0)
+        if response.status_code == 200:
+            return ImageAvailability(availability="present")
+        if response.status_code == 404:
+            return ImageAvailability(availability="missing")
+    except httpx.HTTPError:
+        pass
+    try:
+        response = await client.get(f"{settings.comfy_url}/view", params=params, timeout=10.0)
+        if response.status_code == 200:
+            return ImageAvailability(availability="present")
+        if response.status_code == 404:
+            return ImageAvailability(availability="missing")
+    except httpx.HTTPError:
+        pass
+    return ImageAvailability(availability="unknown")
+
+
+@router.get("/image-availability", response_model=ImageAvailability)
+async def image_availability(
+    filename: str = Query(...), subfolder: str = Query(""), type: str = Query("output"),
+) -> ImageAvailability:
+    return await probe_image_availability(filename, subfolder, type)
+
+
+@router.get("/view")
+async def get_comfy_view(
+    filename: str = Query(...), subfolder: str = Query(""), type: str = Query("output"),
+    t: str | None = Query(None),
+) -> Response:
+    """Serve original bytes from the configured upstream; t is metadata-only."""
+    try:
+        upstream = await get_comfy_client().get(
+            f"{settings.comfy_url}/view",
+            params={"filename": filename, "subfolder": subfolder, "type": type}, timeout=10.0,
+        )
+        if upstream.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
+        upstream.raise_for_status()
+    except httpx.HTTPError as error:
+        raise HTTPException(status_code=502, detail="ComfyUI view unavailable") from error
+    return Response(content=upstream.content, headers={
+        "Content-Type": upstream.headers.get("content-type", "application/octet-stream"),
+    })
+
+
 @router.get("/thumbnail")
 async def get_comfy_thumbnail(
     filename: str = Query(..., description="Image filename"),
@@ -282,24 +337,13 @@ async def get_comfy_thumbnail(
 
     client = get_comfy_client()
 
-    # ヘルパー: キャッシュヒット時に元画像がComfyUIでまだ実在するか確認 (HEAD: ~20ms)
     async def _check_comfy_exists() -> bool:
-        try:
-            h_resp = await client.head(
-                f"{settings.comfy_url}/view",
-                params={"filename": filename, "subfolder": subfolder, "type": type},
-                timeout=3.0,
-            )
-            return h_resp.status_code == 200
-        except Exception:
-            return True  # 疎通エラー時はキャッシュでフォールバック
+        availability = await probe_image_availability(filename, subfolder, type)
+        return availability.availability != "missing"
 
     # L1: メモリキャッシュ確認
     if cache_key in _thumbnail_cache:
         if not await _check_comfy_exists():
-            _thumbnail_cache.pop(cache_key, None)
-            disk_p = _get_thumbnail_disk_path(cache_key)
-            disk_p.unlink(missing_ok=True)
             raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
         _thumbnail_cache.move_to_end(cache_key)
         return Response(
@@ -314,7 +358,6 @@ async def get_comfy_thumbnail(
         try:
             if disk_path.stat().st_size > 0:
                 if not await _check_comfy_exists():
-                    disk_path.unlink(missing_ok=True)
                     raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
                 webp_bytes = await asyncio.to_thread(disk_path.read_bytes)
                 _thumbnail_cache[cache_key] = webp_bytes

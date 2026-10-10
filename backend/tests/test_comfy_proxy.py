@@ -199,6 +199,46 @@ class TestComfyProxyAPI(unittest.TestCase):
         self.assertEqual(res2.status_code, 200)
         mock_get.assert_not_called()
 
+    @patch("httpx.AsyncClient.head")
+    @patch("httpx.AsyncClient.get")
+    def test_get_comfy_thumbnail_preserves_large_original_aspect_ratio(self, mock_get, mock_head):
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        source = Image.new("RGB", (1024, 1536), color="purple")
+        source_buffer = io.BytesIO()
+        source.save(source_buffer, format="PNG")
+        original_bytes = source_buffer.getvalue()
+
+        get_response = MagicMock()
+        get_response.status_code = 200
+        get_response.content = original_bytes
+        get_response.raise_for_status = MagicMock()
+        mock_get.return_value = get_response
+        head_response = MagicMock()
+        head_response.status_code = 200
+        mock_head.return_value = head_response
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            disk_path = Path(tmpdir) / "large.webp"
+            comfy_router._thumbnail_cache.clear()
+            with mock_patch.object(comfy_router, "_get_thumbnail_disk_path", return_value=disk_path):
+                response = self.client.get("/api/comfy/thumbnail?filename=large.png&size=384&quality=80")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("content-type"), "image/webp")
+        with Image.open(io.BytesIO(response.content)) as thumbnail:
+            self.assertEqual(thumbnail.size, (256, 384))
+        mock_get.assert_called_once_with(
+            f"{comfy_router.settings.comfy_url}/view",
+            params={"filename": "large.png", "subfolder": "", "type": "output"},
+            timeout=10.0,
+        )
+        comfy_router._thumbnail_cache.clear()
+
 
     @patch("httpx.AsyncClient.get")
     def test_get_comfy_thumbnail_not_found(self, mock_get):

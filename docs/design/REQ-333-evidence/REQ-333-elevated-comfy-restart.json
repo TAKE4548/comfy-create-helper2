@@ -1,0 +1,10 @@
+{
+  "elapsedSeconds": 19.8128031,
+  "response": {
+    "status": "ok",
+    "action": "restart",
+    "output": "Restarting WSL2 ComfyUI...\n\r\nHandles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName                                                  \r\n-------  ------    -----      -----     ------     --  -- -----------                                                  \r\n     30       6     1608       2892       0.00  46032   1 cmd                                                          \r\n=================================================\n  Prompt Surgeon & ComfyUI Server Status\n=================================================\n  [LISTEN ] React FE (Dev: 5173)           : Port 5173\n  [LISTEN ] Win BE                         : Port 8000\n  [LISTEN ] WSL ComfyUI                    : Port 8188\n=================================================\n\r\n\r\n"
+  },
+  "queueRunning": 0,
+  "queuePending": 0
+}

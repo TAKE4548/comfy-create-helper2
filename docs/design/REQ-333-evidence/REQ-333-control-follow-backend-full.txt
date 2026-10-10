@@ -1,0 +1,99 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.0, pytest-9.1.0, pluggy-1.6.0
+Using --randomly-seed=1419820598
+rootdir: C:\Users\audih\ws\comfy-create-helper2
+plugins: anyio-4.13.0, hypothesis-6.168.1, asyncio-1.4.0, randomly-5.0.0, repeat-0.9.4, respx-0.23.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 646 items
+
+backend\tests\test_generation_schema.py .....                            [  0%]
+backend\tests\test_snapshot_image_mime_req316.py ....                    [  1%]
+backend\tests\test_loras_reorder.py ....                                 [  2%]
+backend\tests\test_training_manager.py .....                             [  2%]
+backend\tests\test_generation_ws.py ....                                 [  3%]
+tests\unit\test_server_status.py .......                                 [  4%]
+backend\tests\test_generation_service.py ............................... [  9%]
+...............                                                          [ 11%]
+backend\tests\test_scene_generator.py ....                               [ 12%]
+backend\tests\test_translation.py ...                                    [ 12%]
+backend\tests\test_llm_params.py ...                                     [ 13%]
+backend\tests\test_req_048_t2.py ..                                      [ 13%]
+backend\tests\test_speech_parser.py .........                            [ 14%]
+backend\tests\test_generation_api.py ........                            [ 16%]
+tests\unit\test_server_manager_logs.py ......                            [ 17%]
+backend\tests\test_comfy_proxy_fault.py ...................              [ 19%]
+backend\tests\test_tag_sets_reorder.py ....                              [ 20%]
+backend\tests\test_benchmark_service.py ....                             [ 21%]
+backend\tests\test_schemas.py .............                              [ 23%]
+backend\tests\test_loras.py ...........                                  [ 24%]
+backend\tests\test_snapshots_req316_metadata.py ..                       [ 25%]
+backend\tests\test_workflow_scanner_property.py .                        [ 25%]
+backend\tests\test_ws.py ................                                [ 27%]
+backend\tests\test_migrations.py ....                                    [ 28%]
+tests\unit\test_server_manager_timeout.py ............                   [ 30%]
+backend\tests\test_speech_migrations.py ...                              [ 30%]
+backend\tests\test_snapshots.py .........................                [ 34%]
+backend\tests\test_fonts.py ....                                         [ 35%]
+backend\tests\test_matrix_service.py .....                               [ 36%]
+backend\tests\test_dataset_router.py .....                               [ 36%]
+backend\tests\test_speech_draft.py ...................                   [ 39%]
+backend\tests\test_lm_studio_lifecycle.py .........                      [ 41%]
+backend\tests\test_param_sync_groups.py ....                             [ 41%]
+backend\tests\test_snapshot_associations_req316.py ..............        [ 43%]
+backend\tests\test_prompt_metadata.py ....                               [ 44%]
+backend\tests\test_logging.py .....                                      [ 45%]
+backend\tests\test_llm_models.py .....                                   [ 46%]
+backend\tests\test_snapshot_service_req267.py ..........                 [ 47%]
+backend\tests\test_presets.py ............                               [ 49%]
+backend\tests\test_workflow_scanner.py .......                           [ 50%]
+backend\tests\test_generation_repository.py ............................ [ 54%]
+..                                                                       [ 55%]
+backend\tests\test_req_045.py ..                                         [ 55%]
+backend\tests\test_speech_scene_router.py ..............                 [ 57%]
+backend\tests\test_vram_guard.py .....                                   [ 58%]
+backend\tests\test_assets_base_models.py ....                            [ 59%]
+backend\tests\test_migrate_images_to_webp.py .                           [ 59%]
+tests\unit\test_windows_loop_defense.py .....                            [ 60%]
+tests\unit\test_req244_scripts.py ..                                     [ 60%]
+backend\tests\test_deprecation_clean.py .                                [ 60%]
+backend\tests\test_dataset_db.py ...                                     [ 60%]
+backend\tests\test_base_models_migration.py ......                       [ 61%]
+backend\tests\test_workflows_copy.py .........                           [ 63%]
+backend\tests\test_llm_service_fault.py .....                            [ 64%]
+backend\tests\test_comfy_proxy.py ...................                    [ 67%]
+backend\tests\test_manager_origin_req333.py .....................        [ 70%]
+backend\tests\test_workflows_diff_api.py ...                             [ 70%]
+backend\tests\test_speech_scene_service.py ....................          [ 73%]
+backend\tests\test_comfy_generation_bridge.py .................          [ 76%]
+backend\tests\test_workflow_history_migration.py ..                      [ 76%]
+backend\tests\test_req_087.py .....                                      [ 77%]
+backend\tests\test_albums.py .....                                       [ 78%]
+backend\tests\test_e2e_req319.py .                                       [ 78%]
+backend\tests\test_fugumt_service.py ...............                     [ 80%]
+backend\tests\test_generation_integration.py .........                   [ 82%]
+backend\tests\test_speech_bubble_presets.py ...................          [ 85%]
+backend\tests\test_param_type_masters.py ..                              [ 85%]
+backend\tests\test_workflow_diff_engine.py ..........                    [ 86%]
+backend\tests\test_spa_static.py ......                                  [ 87%]
+backend\tests\test_speech_batch.py ......                                [ 88%]
+backend\tests\test_bypass_profiles.py ....                               [ 89%]
+backend\tests\test_api_config_network.py ....                            [ 90%]
+backend\tests\test_snapshots_webp.py ...                                 [ 90%]
+backend\tests\test_config.py .                                           [ 90%]
+backend\tests\test_generation_jobs_migration.py ....                     [ 91%]
+backend\tests\test_base_models_api.py .......                            [ 92%]
+backend\tests\test_speech_tone_presets.py ................               [ 94%]
+backend\tests\test_translation_proxy.py ................................ [ 99%]
+.                                                                        [100%]
+
+============================== warnings summary ===============================
+backend\.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\audih\ws\comfy-create-helper2\backend\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+backend/tests/test_fugumt_service.py::test_fugumt_tokenizer_encoding_functionality
+  C:\Users\audih\ws\comfy-create-helper2\backend\.venv\Lib\site-packages\transformers\models\marian\tokenization_marian.py:176: UserWarning: Recommended: pip install sacremoses.
+    warnings.warn("Recommended: pip install sacremoses.")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 646 passed, 2 warnings in 86.12s (0:01:26) ==================

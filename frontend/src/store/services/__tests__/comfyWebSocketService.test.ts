@@ -1,228 +1,161 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  ComfyWebSocketService,
-  HEARTBEAT_INTERVAL_MS,
-  BASE_RECONNECT_DELAY_MS,
-  MAX_RECONNECT_DELAY_MS,
-} from '../comfyWebSocketService';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-describe('ComfyWebSocketService', () => {
-  let service: ComfyWebSocketService;
-  let mockWs: any;
+const shared = vi.hoisted(() => ({
+  subscribers: new Map<number, {
+    onMessage: (message: Record<string, unknown>) => void
+    onOpen?: () => void
+    onClose?: () => void
+  }>(),
+  nextId: 0,
+  failSubscribe: false
+}))
+
+vi.mock('../systemWsService', () => ({
+  systemWsService: {
+    subscribe: vi.fn((onMessage, onOpen, onClose) => {
+      if (shared.failSubscribe) throw new Error('subscribe failed')
+      const id = ++shared.nextId
+      shared.subscribers.set(id, { onMessage, onOpen, onClose })
+      return () => { shared.subscribers.delete(id) }
+    }),
+    resetForTesting: vi.fn(() => { shared.subscribers.clear() })
+  }
+}))
+
+import { systemWsService } from '../systemWsService'
+import {
+  BASE_RECONNECT_DELAY_MS,
+  ComfyWebSocketService,
+  MAX_RECONNECT_DELAY_MS
+} from '../comfyWebSocketService'
+
+describe('ComfyWebSocketService compatibility facade', () => {
+  let service: ComfyWebSocketService
+
+  const callbacks = () => ({
+    onOpen: vi.fn(),
+    onClose: vi.fn(),
+    onError: vi.fn(),
+    onBlobMessage: vi.fn(),
+    onJsonMessage: vi.fn()
+  })
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    service = new ComfyWebSocketService();
-
-    mockWs = {
-      readyState: 1, // WebSocket.OPEN
-      send: vi.fn(),
-      close: vi.fn(),
-      binaryType: '',
-      onopen: null,
-      onclose: null,
-      onerror: null,
-      onmessage: null,
-    };
-
-    // Global WebSocket mock
-    vi.stubGlobal(
-      'WebSocket',
-      vi.fn().mockImplementation(() => mockWs)
-    );
-    (WebSocket as any).OPEN = 1;
-    (WebSocket as any).CONNECTING = 0;
-    (WebSocket as any).CLOSING = 2;
-    (WebSocket as any).CLOSED = 3;
-  });
+    service = new ComfyWebSocketService()
+    shared.subscribers.clear()
+    shared.nextId = 0
+    shared.failSubscribe = false
+    vi.stubGlobal('WebSocket', vi.fn())
+  })
 
   afterEach(() => {
-    service.resetForTesting();
-    vi.clearAllTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
+    service.resetForTesting()
+    shared.subscribers.clear()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
-  describe('Heartbeat Mechanism', () => {
-    it('starts heartbeat timer and sends ping message every HEARTBEAT_INTERVAL_MS', () => {
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
+  it('subscribes to the shared backend channel, maps JSON events, and creates no Comfy socket', () => {
+    const listener = callbacks()
+    expect(service.connect('http://localhost:8188', 'legacy-client', listener)).toBeNull()
+    expect(WebSocket).not.toHaveBeenCalled()
+    expect(service.getWebSocket()).toBeNull()
+    expect(shared.subscribers.size).toBe(1)
 
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      expect(mockWs.onopen).toBeDefined();
+    const subscriber = [...shared.subscribers.values()][0]
+    subscriber.onOpen?.()
+    subscriber.onMessage({ type: 'GENERATION_EVENT', data: { revision: 7 } })
+    subscriber.onMessage({ type: 'executed', data: { output: 'ignored legacy shape' } })
+    subscriber.onClose?.()
 
-      // Trigger onopen
-      mockWs.onopen();
-      expect(callbacks.onOpen).toHaveBeenCalled();
-      expect(service.getHeartbeatTimer()).not.toBeNull();
+    expect(listener.onOpen).toHaveBeenCalledOnce()
+    expect(listener.onJsonMessage).toHaveBeenCalledTimes(2)
+    expect(listener.onJsonMessage).toHaveBeenCalledWith('GENERATION_EVENT', { revision: 7 })
+    expect(listener.onJsonMessage).toHaveBeenCalledWith('executed', { output: 'ignored legacy shape' })
+    expect(listener.onClose).toHaveBeenCalledOnce()
+    expect(listener.onBlobMessage).not.toHaveBeenCalled()
+    expect(listener.onError).not.toHaveBeenCalled()
+  })
 
-      // Advance by HEARTBEAT_INTERVAL_MS
-      vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
-      expect(mockWs.send).toHaveBeenCalledTimes(1);
-      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'ping' }));
+  it('disconnect/reset removes only this facade subscriber and leaves other owners connected', () => {
+    const otherUnsubscribe = systemWsService.subscribe(vi.fn())
+    service.connect('http://localhost:8188', 'legacy-client', callbacks())
+    expect(shared.subscribers.size).toBe(2)
 
-      // Advance again
-      vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
-      expect(mockWs.send).toHaveBeenCalledTimes(2);
-    });
+    service.disconnect()
+    expect(shared.subscribers.size).toBe(1)
 
-    it('stops heartbeat timer on ws.onclose', () => {
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
+    service.connect('http://localhost:8188', 'legacy-client', callbacks())
+    service.resetForTesting()
+    expect(shared.subscribers.size).toBe(1)
+    otherUnsubscribe()
+    expect(shared.subscribers.size).toBe(0)
+  })
 
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      mockWs.onopen();
-      expect(service.getHeartbeatTimer()).not.toBeNull();
+  it('forwards callback failures through onError without owning socket failure/reconnect behavior', () => {
+    const listener = callbacks()
+    listener.onJsonMessage.mockImplementation(() => { throw new Error('consumer error') })
+    service.connect('http://localhost:8188', 'legacy-client', listener)
+    const subscriber = [...shared.subscribers.values()][0]
 
-      mockWs.onclose();
-      expect(callbacks.onClose).toHaveBeenCalled();
-      expect(service.getHeartbeatTimer()).toBeNull();
-    });
+    subscriber.onMessage({ type: 'GENERATION_EVENT', data: {} })
 
-    it('stops heartbeat timer on ws.onerror', () => {
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
+    expect(listener.onError).toHaveBeenCalledOnce()
+    expect(service.getReconnectTimer()).toBeNull()
+    expect(service.getHeartbeatTimer()).toBeNull()
+  })
 
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      mockWs.onopen();
-      expect(service.getHeartbeatTimer()).not.toBeNull();
+  it('reports a shared-service subscription initialization failure', () => {
+    const listener = callbacks()
+    shared.failSubscribe = true
 
-      mockWs.onerror();
-      expect(callbacks.onError).toHaveBeenCalled();
-      expect(service.getHeartbeatTimer()).toBeNull();
-    });
+    expect(service.connect('http://localhost:8188', 'legacy-client', listener)).toBeNull()
+    expect(listener.onError).toHaveBeenCalledOnce()
+    expect(shared.subscribers.size).toBe(0)
+  })
 
-    it('stops heartbeat timer on disconnect()', () => {
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
+  it('preserves URL and request-promise helpers while releasing promises during test reset', async () => {
+    const submission = Promise.resolve('prompt-id')
+    const history = Promise.resolve()
+    service.setComfyUrl('http://localhost:8188')
+    service.setIsInitializing(true)
+    service.setActiveSubmissionPromise(submission)
+    service.setActiveFetchHistoryPromise(history)
 
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      mockWs.onopen();
-      expect(service.getHeartbeatTimer()).not.toBeNull();
+    expect(service.getComfyUrl()).toBe('http://localhost:8188')
+    expect(service.getIsInitializing()).toBe(true)
+    expect(service.getActiveSubmissionPromise()).toBe(submission)
+    expect(service.getActiveFetchHistoryPromise()).toBe(history)
+    await submission
+    await history
 
-      service.disconnect();
-      expect(service.getHeartbeatTimer()).toBeNull();
-    });
+    service.resetForTesting()
 
-    it('handles send exception gracefully and stops heartbeat (Red Teaming test case 1)', () => {
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
+    expect(service.getComfyUrl()).toBe('http://localhost:8188')
+    expect(service.getIsInitializing()).toBe(false)
+    expect(service.getActiveSubmissionPromise()).toBeNull()
+    expect(service.getActiveFetchHistoryPromise()).toBeNull()
+  })
 
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      mockWs.onopen();
+  it('keeps the legacy backoff helpers and resets retry count when shared channel opens', () => {
+    service.incrementRetryCount()
+    service.incrementRetryCount()
+    const delay = service.getReconnectDelay()
+    expect(delay).toBeGreaterThanOrEqual(BASE_RECONNECT_DELAY_MS * 4)
+    expect(delay).toBeLessThan(BASE_RECONNECT_DELAY_MS * 4 + 500)
 
-      mockWs.send.mockImplementationOnce(() => {
-        throw new Error('Socket abruptly closed');
-      });
+    const listener = callbacks()
+    service.connect('http://localhost:8188', 'legacy-client', listener)
+    service.incrementRetryCount()
+    ;[...shared.subscribers.values()][0].onOpen?.()
+    expect(service.getRetryCount()).toBe(0)
+    expect(MAX_RECONNECT_DELAY_MS).toBe(15000)
+  })
 
-      // Should not throw
-      expect(() => {
-        service.sendPing();
-      }).not.toThrow();
-
-      // Heartbeat timer should be stopped
-      expect(service.getHeartbeatTimer()).toBeNull();
-    });
-  });
-
-  describe('Exponential Backoff & Retry Logic', () => {
-    it('calculates exponential delay capped at MAX_RECONNECT_DELAY_MS', () => {
-      // retryCount = 0: 1000 + [0, 500)
-      const delay0 = service.getReconnectDelay();
-      expect(delay0).toBeGreaterThanOrEqual(1000);
-      expect(delay0).toBeLessThan(1500);
-
-      // retryCount = 1: 2000 + [0, 500)
-      service.incrementRetryCount();
-      const delay1 = service.getReconnectDelay();
-      expect(delay1).toBeGreaterThanOrEqual(2000);
-      expect(delay1).toBeLessThan(2500);
-
-      // retryCount = 2: 4000 + [0, 500)
-      service.incrementRetryCount();
-      const delay2 = service.getReconnectDelay();
-      expect(delay2).toBeGreaterThanOrEqual(4000);
-      expect(delay2).toBeLessThan(4500);
-
-      // retryCount = 3: 8000 + [0, 500)
-      service.incrementRetryCount();
-      const delay3 = service.getReconnectDelay();
-      expect(delay3).toBeGreaterThanOrEqual(8000);
-      expect(delay3).toBeLessThan(8500);
-
-      // retryCount = 4: 16000 -> capped at 15000 + [0, 500)
-      service.incrementRetryCount();
-      const delay4 = service.getReconnectDelay();
-      expect(delay4).toBeGreaterThanOrEqual(15000);
-      expect(delay4).toBeLessThan(15500);
-
-      // retryCount = 10: still capped at 15000 + [0, 500)
-      for (let i = 0; i < 6; i++) {
-        service.incrementRetryCount();
-      }
-      const delay10 = service.getReconnectDelay();
-      expect(delay10).toBeGreaterThanOrEqual(15000);
-      expect(delay10).toBeLessThan(15500);
-    });
-
-    it('resets retry count on resetRetryCount() and on ws.onopen', () => {
-      service.incrementRetryCount();
-      service.incrementRetryCount();
-      expect(service.getRetryCount()).toBe(2);
-
-      service.resetRetryCount();
-      expect(service.getRetryCount()).toBe(0);
-
-      // Also reset on onopen
-      service.incrementRetryCount();
-      const callbacks = {
-        onOpen: vi.fn(),
-        onClose: vi.fn(),
-        onError: vi.fn(),
-        onBlobMessage: vi.fn(),
-        onJsonMessage: vi.fn(),
-      };
-      service.connect('http://localhost:8188', 'test-client', callbacks);
-      expect(service.getRetryCount()).toBe(1);
-
-      mockWs.onopen();
-      expect(service.getRetryCount()).toBe(0);
-    });
-
-    it('resets retry count and stops heartbeat in resetForTesting()', () => {
-      service.incrementRetryCount();
-      service.startHeartbeat();
-      expect(service.getRetryCount()).toBe(1);
-      expect(service.getHeartbeatTimer()).not.toBeNull();
-
-      service.resetForTesting();
-      expect(service.getRetryCount()).toBe(0);
-      expect(service.getHeartbeatTimer()).toBeNull();
-    });
-  });
-});
+  it('never starts an independent heartbeat or emits Comfy ping frames', () => {
+    service.startHeartbeat()
+    service.sendPing()
+    expect(service.getHeartbeatTimer()).toBeNull()
+    expect(WebSocket).not.toHaveBeenCalled()
+  })
+})

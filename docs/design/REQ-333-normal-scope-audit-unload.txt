@@ -1,0 +1,2 @@
+[Model Auto-Router] No models currently loaded in LM Studio.
+Explicit unload command exit code: 0

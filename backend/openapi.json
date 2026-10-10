@@ -3576,7 +3576,7 @@
           "comfy"
         ],
         "summary": "Get Comfy Object Info",
-        "description": "ComfyUI \u306e /object_info/{class_type} \u3092\u30d7\u30ed\u30ad\u30b7\u3057\u3066\u8fd4\u3059\u3002\nComfyUI\u672a\u8d77\u52d5\u6642\u306f {} \u3092\u8fd4\u3059\uff08\u30a8\u30e9\u30fc\u306b\u3057\u306a\u3044\uff09\u3002",
+        "description": "ComfyUI の /object_info/{class_type} をプロキシして返す。\nComfyUI未起動時は {} を返す（エラーにしない）。",
         "operationId": "get_comfy_object_info_api_comfy_object_info__class_type__get",
         "parameters": [
           {
@@ -3621,7 +3621,7 @@
           "comfy"
         ],
         "summary": "Get Comfy Object Info All",
-        "description": "ComfyUI \u306e\u5168\u30ce\u30fc\u30c9 /object_info \u3092\u30d7\u30ed\u30ad\u30b7\u3057\u30a4\u30f3\u30e1\u30e2\u30ea\u30ad\u30e3\u30c3\u30b7\u30e5\u3057\u3066\u8fd4\u3059\u3002",
+        "description": "ComfyUI の全ノード /object_info をプロキシしインメモリキャッシュして返す。",
         "operationId": "get_comfy_object_info_all_api_comfy_object_info_get",
         "responses": {
           "200": {
@@ -3645,7 +3645,7 @@
           "comfy"
         ],
         "summary": "Queue Prompt",
-        "description": "ComfyUI \u306e /prompt \u3078\u30b8\u30e7\u30d6\u3092\u6295\u5165\u3059\u308b\u3002",
+        "description": "ComfyUI の /prompt へジョブを投入する。",
         "operationId": "queue_prompt_api_comfy_prompt_post",
         "requestBody": {
           "content": {
@@ -3685,7 +3685,7 @@
           "comfy"
         ],
         "summary": "Get Queue",
-        "description": "ComfyUI \u306e /queue \u3092\u53d6\u5f97\u3059\u308b\u3002",
+        "description": "ComfyUI の /queue を取得する。",
         "operationId": "get_queue_api_comfy_queue_get",
         "responses": {
           "200": {
@@ -3703,7 +3703,7 @@
           "comfy"
         ],
         "summary": "Manage Queue",
-        "description": "ComfyUI \u306e /queue \u306b\u5bfe\u3059\u308b\u524a\u9664\u30fb\u30af\u30ea\u30a2\u3092\u5b9f\u884c\u3059\u308b\u3002",
+        "description": "ComfyUI の /queue に対する削除・クリアを実行する。",
         "operationId": "manage_queue_api_comfy_queue_post",
         "requestBody": {
           "content": {
@@ -3743,7 +3743,7 @@
           "comfy"
         ],
         "summary": "Interrupt Execution",
-        "description": "ComfyUI \u306e /interrupt \u3092\u547c\u3073\u51fa\u3057\u3066\u5b9f\u884c\u3092\u4e2d\u65ad\u3059\u308b\u3002",
+        "description": "ComfyUI の /interrupt を呼び出して実行を中断する。",
         "operationId": "interrupt_execution_api_comfy_interrupt_post",
         "responses": {
           "200": {
@@ -3763,7 +3763,7 @@
           "comfy"
         ],
         "summary": "Get History",
-        "description": "ComfyUI \u306e /history \u3092\u53d6\u5f97\u3059\u308b\u3002",
+        "description": "ComfyUI の /history を取得する。",
         "operationId": "get_history_api_comfy_history_get",
         "parameters": [
           {
@@ -3812,7 +3812,7 @@
           "comfy"
         ],
         "summary": "Manage History",
-        "description": "ComfyUI \u306e /history \u524a\u9664\u3092\u5b9f\u884c\u3059\u308b\u3002",
+        "description": "ComfyUI の /history 削除を実行する。",
         "operationId": "manage_history_api_comfy_history_post",
         "requestBody": {
           "required": true,
@@ -3852,7 +3852,7 @@
           "comfy"
         ],
         "summary": "Get Prompt History",
-        "description": "ComfyUI \u306e /history/{prompt_id} \u3092\u53d6\u5f97\u3059\u308b\u3002",
+        "description": "ComfyUI の /history/{prompt_id} を取得する。",
         "operationId": "get_prompt_history_api_comfy_history__prompt_id__get",
         "parameters": [
           {
@@ -3887,13 +3887,152 @@
         }
       }
     },
+    "/api/comfy/image-availability": {
+      "get": {
+        "tags": [
+          "comfy"
+        ],
+        "summary": "Image Availability",
+        "operationId": "image_availability_api_comfy_image_availability_get",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          },
+          {
+            "name": "subfolder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Subfolder"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "output",
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAvailability"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/comfy/view": {
+      "get": {
+        "tags": [
+          "comfy"
+        ],
+        "summary": "Get Comfy View",
+        "description": "Serve original bytes from the configured upstream; t is metadata-only.",
+        "operationId": "get_comfy_view_api_comfy_view_get",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          },
+          {
+            "name": "subfolder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Subfolder"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "output",
+              "title": "Type"
+            }
+          },
+          {
+            "name": "t",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "T"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/comfy/thumbnail": {
       "get": {
         "tags": [
           "comfy"
         ],
         "summary": "Get Comfy Thumbnail",
-        "description": "ComfyUI \u51fa\u529b\u753b\u50cf\u3092\u30aa\u30f3\u30c7\u30de\u30f3\u30c9\u3067 WebP \u30b5\u30e0\u30cd\u30a4\u30eb\u306b\u5909\u63db\u3057\u3066\u8fd4\u5374\u3059\u308b\u3002",
+        "description": "ComfyUI 出力画像をオンデマンドで WebP サムネイルに変換して返却する。",
         "operationId": "get_comfy_thumbnail_api_comfy_thumbnail_get",
         "parameters": [
           {
@@ -4235,7 +4374,7 @@
           "speech-bubble-presets"
         ],
         "summary": "Get Preset By Tagset",
-        "description": "\u6307\u5b9aTagSet\u306e\u30c7\u30d5\u30a9\u30eb\u30c8\u30d7\u30ea\u30bb\u30c3\u30c8\u3092\u53d6\u5f97\u3002\u672a\u767b\u9332\u6642\u306f 200 OK (null) \u3092\u8fd4\u5374",
+        "description": "指定TagSetのデフォルトプリセットを取得。未登録時は 200 OK (null) を返却",
         "operationId": "get_preset_by_tagset_api_speech_bubble_presets_by_tagset__tag_set_id__get",
         "parameters": [
           {
@@ -5039,7 +5178,7 @@
           "prompt-metadata"
         ],
         "summary": "Save Prompt Metadata",
-        "description": "\u30b8\u30e7\u30d6\u6295\u5165\u6642\u306e\u30d1\u30e9\u30e1\u30fc\u30bf\u304a\u3088\u3073\u30a2\u30bb\u30c3\u30c8\u30e1\u30bf\u30c7\u30fc\u30bf\u3092\u4fdd\u5b58\u307e\u305f\u306f\u66f4\u65b0\u3059\u308b (UPSERT)",
+        "description": "ジョブ投入時のパラメータおよびアセットメタデータを保存または更新する (UPSERT)",
         "operationId": "save_prompt_metadata_api_prompt_metadata_post",
         "requestBody": {
           "content": {
@@ -5083,7 +5222,7 @@
           "prompt-metadata"
         ],
         "summary": "Get Prompt Metadata",
-        "description": "\u6307\u5b9a\u3055\u308c\u305f prompt_id \u306e\u30e1\u30bf\u30c7\u30fc\u30bf\u3092\u53d6\u5f97\u3059\u308b",
+        "description": "指定された prompt_id のメタデータを取得する",
         "operationId": "get_prompt_metadata_api_prompt_metadata__prompt_id__get",
         "parameters": [
           {
@@ -5126,7 +5265,7 @@
           "settings"
         ],
         "summary": "Get Vram Settings",
-        "description": "\u73fe\u5728\u306eVRAM\u8a2d\u5b9a\u304a\u3088\u3073\u30b9\u30c6\u30fc\u30bf\u30b9\u3092\u53d6\u5f97\u3059\u308b\u3002",
+        "description": "現在のVRAM設定およびステータスを取得する。",
         "operationId": "get_vram_settings_api_settings_vram_get",
         "responses": {
           "200": {
@@ -5146,7 +5285,7 @@
           "settings"
         ],
         "summary": "Update Vram Settings",
-        "description": "VRAM\u5b89\u5168\u95be\u5024\u304a\u3088\u3073\u30ac\u30fc\u30c9\u6709\u52b9\u30d5\u30e9\u30b0\u3092\u66f4\u65b0\u3057\u6c38\u7d9a\u5316\u3059\u308b\u3002",
+        "description": "VRAM安全閾値およびガード有効フラグを更新し永続化する。",
         "operationId": "update_vram_settings_api_settings_vram_put",
         "requestBody": {
           "content": {
@@ -5176,6 +5315,983 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/batches": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Submit Batch",
+        "operationId": "submit_batch_api_generation_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/state": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Generation State",
+        "operationId": "get_generation_state_api_generation_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/requests/{request_id}": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Request Lookup",
+        "operationId": "get_request_lookup_api_generation_requests__request_id__get",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestLookup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Cancel Job",
+        "operationId": "cancel_job_api_generation_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "only_unsubmitted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Only Unsubmitted"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/cancel": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Cancel Generations",
+        "operationId": "cancel_generations_api_generation_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/upstream-queue": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Upstream Queue",
+        "operationId": "get_upstream_queue_api_generation_upstream_queue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamQueueView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/preview/{job_id}": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Preview",
+        "operationId": "get_preview_api_generation_preview__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generation/images/{job_id}/availability": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Image Availability",
+        "operationId": "get_image_availability_api_generation_images__job_id__availability_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageView"
+                  },
+                  "title": "Response Get Image Availability Api Generation Images  Job Id  Availability Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/projects": {
+      "get": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "List Dataset Projects",
+        "operationId": "list_dataset_projects_api_dataset_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetProjectResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Dataset Projects Api Dataset Projects Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Create Dataset Project",
+        "operationId": "create_dataset_project_api_dataset_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetProjectCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/projects/{project_id}": {
+      "get": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Get Dataset Project",
+        "operationId": "get_dataset_project_api_dataset_projects__project_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Update Dataset Project",
+        "operationId": "update_dataset_project_api_dataset_projects__project_id__put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetProjectUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Delete Dataset Project",
+        "operationId": "delete_dataset_project_api_dataset_projects__project_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/outfits": {
+      "get": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "List Outfit Presets",
+        "operationId": "list_outfit_presets_api_dataset_outfits_get",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutfitMasterPresetResponse"
+                  },
+                  "title": "Response List Outfit Presets Api Dataset Outfits Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/projects/{project_id}/matrix": {
+      "post": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Generate Project Matrix",
+        "operationId": "generate_project_matrix_api_dataset_projects__project_id__matrix_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetItemResponse"
+                  },
+                  "title": "Response Generate Project Matrix Api Dataset Projects  Project Id  Matrix Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/items/{item_id}": {
+      "patch": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Update Dataset Item",
+        "operationId": "update_dataset_item_api_dataset_items__item_id__patch",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetItemResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/projects/{project_id}/export": {
+      "post": {
+        "tags": [
+          "dataset"
+        ],
+        "summary": "Export Dataset Project",
+        "operationId": "export_dataset_project_api_dataset_projects__project_id__export_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "export_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Export Dir"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DatasetExportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/benchmark/generate-prompts": {
+      "post": {
+        "tags": [
+          "benchmark"
+        ],
+        "summary": "Generate Prompts",
+        "operationId": "generate_prompts_api_benchmark_generate_prompts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePromptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/benchmark/evaluate": {
+      "post": {
+        "tags": [
+          "benchmark"
+        ],
+        "summary": "Evaluate Benchmark",
+        "operationId": "evaluate_benchmark_api_benchmark_evaluate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateBenchmarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/training/jobs": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Create Training Job",
+        "operationId": "create_training_job_api_training_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoraTrainingJobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoraTrainingJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/training/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Get Training Job",
+        "operationId": "get_training_job_api_training_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoraTrainingJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/training/jobs/{job_id}/start": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Start Training Job",
+        "operationId": "start_training_job_api_training_jobs__job_id__start_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/training/jobs/{job_id}/stop": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Stop Training Job",
+        "operationId": "stop_training_job_api_training_jobs__job_id__stop_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/training/status": {
+      "get": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Get Training Status",
+        "operationId": "get_training_status_api_training_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -5576,6 +6692,175 @@
         ],
         "title": "BaseModelRead"
       },
+      "BatchAccepted": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          },
+          "epoch": {
+            "type": "string",
+            "title": "Epoch"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "batch_id",
+          "job_ids",
+          "epoch",
+          "revision"
+        ],
+        "title": "BatchAccepted"
+      },
+      "BatchItem": {
+        "properties": {
+          "graph": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Graph"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "param_values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Param Values"
+          },
+          "applied_assets": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Assets"
+          },
+          "set_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "graph",
+          "param_values"
+        ],
+        "title": "BatchItem"
+      },
+      "BatchRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "studio"
+            ],
+            "title": "Scope"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "session_id",
+          "scope",
+          "items"
+        ],
+        "title": "BatchRequest"
+      },
+      "BatchView": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "studio"
+            ],
+            "title": "Scope"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "batch_id",
+          "scope",
+          "project_id"
+        ],
+        "title": "BatchView"
+      },
       "Body_upload_snapshot_image_api_snapshots_upload_post": {
         "properties": {
           "file": {
@@ -5613,22 +6898,22 @@
           "x": {
             "type": "number",
             "title": "X",
-            "description": "X\u5ea7\u6a19 (px, 1024\u57fa\u6e96)"
+            "description": "X座標 (px, 1024基準)"
           },
           "y": {
             "type": "number",
             "title": "Y",
-            "description": "Y\u5ea7\u6a19 (px, 1024\u57fa\u6e96)"
+            "description": "Y座標 (px, 1024基準)"
           },
           "w": {
             "type": "number",
             "title": "W",
-            "description": "\u5e45 (px, 1024\u57fa\u6e96)"
+            "description": "幅 (px, 1024基準)"
           },
           "h": {
             "type": "number",
             "title": "H",
-            "description": "\u9ad8\u3055 (px, 1024\u57fa\u6e96)"
+            "description": "高さ (px, 1024基準)"
           }
         },
         "type": "object",
@@ -5824,6 +7109,219 @@
         },
         "type": "object",
         "title": "BypassProfileUpdate"
+      },
+      "CancelOperation": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "normal"
+            ],
+            "title": "Scope"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "queued",
+              "all"
+            ],
+            "title": "Mode"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CancelResult"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "upstream_clear": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unconfirmed",
+              "failed",
+              "not_requested",
+              "skipped"
+            ],
+            "title": "Upstream Clear"
+          },
+          "upstream_interrupt": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unconfirmed",
+              "failed",
+              "not_requested",
+              "skipped"
+            ],
+            "title": "Upstream Interrupt"
+          },
+          "epoch": {
+            "type": "string",
+            "title": "Epoch"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "message",
+          "mode",
+          "items",
+          "upstream_clear",
+          "upstream_interrupt",
+          "epoch",
+          "revision"
+        ],
+        "title": "CancelOperation"
+      },
+      "CancelRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "normal"
+            ],
+            "title": "Scope",
+            "default": "all"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "queued",
+              "all"
+            ],
+            "title": "Mode"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CancelTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "CancelRequest"
+      },
+      "CancelResult": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "submitting",
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "cancelled",
+                  "unconfirmed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "not_cancelled",
+              "already_terminal",
+              "unconfirmed",
+              "rejected"
+            ],
+            "title": "Outcome"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "prompt_id",
+          "status",
+          "outcome",
+          "message"
+        ],
+        "title": "CancelResult"
+      },
+      "CancelTarget": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CancelTarget"
       },
       "CategoryCreate": {
         "properties": {
@@ -6043,6 +7541,405 @@
         "type": "object",
         "title": "CurrentModelUpdate"
       },
+      "DatasetExportRequest": {
+        "properties": {
+          "export_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Dir"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir"
+          },
+          "status_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Filter",
+            "default": "APPROVED"
+          }
+        },
+        "type": "object",
+        "title": "DatasetExportRequest"
+      },
+      "DatasetItemResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "integer",
+            "title": "Project Id"
+          },
+          "slot_index": {
+            "type": "integer",
+            "title": "Slot Index"
+          },
+          "factors_json": {
+            "type": "string",
+            "title": "Factors Json"
+          },
+          "raw_prompt": {
+            "type": "string",
+            "title": "Raw Prompt"
+          },
+          "caption_text": {
+            "type": "string",
+            "title": "Caption Text"
+          },
+          "image_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Path"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "slot_index",
+          "factors_json",
+          "raw_prompt",
+          "caption_text",
+          "seed",
+          "status"
+        ],
+        "title": "DatasetItemResponse"
+      },
+      "DatasetItemUpdate": {
+        "properties": {
+          "factors_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factors Json"
+          },
+          "raw_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Prompt"
+          },
+          "caption_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Text"
+          },
+          "image_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Path"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "DatasetItemUpdate"
+      },
+      "DatasetProjectCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "character_trigger": {
+            "type": "string",
+            "title": "Character Trigger"
+          },
+          "outfit_trigger": {
+            "type": "string",
+            "title": "Outfit Trigger"
+          },
+          "workflow_id": {
+            "type": "integer",
+            "title": "Workflow Id"
+          },
+          "prompt_meta": {
+            "type": "string",
+            "title": "Prompt Meta"
+          },
+          "prompt_physical": {
+            "type": "string",
+            "title": "Prompt Physical"
+          },
+          "prompt_exclusive_outfit": {
+            "type": "string",
+            "title": "Prompt Exclusive Outfit"
+          },
+          "prompt_negative": {
+            "type": "string",
+            "title": "Prompt Negative",
+            "default": ""
+          },
+          "selected_alt_outfits": {
+            "type": "string",
+            "title": "Selected Alt Outfits",
+            "default": "[]"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "character_trigger",
+          "outfit_trigger",
+          "workflow_id",
+          "prompt_meta",
+          "prompt_physical",
+          "prompt_exclusive_outfit"
+        ],
+        "title": "DatasetProjectCreate"
+      },
+      "DatasetProjectResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "character_trigger": {
+            "type": "string",
+            "title": "Character Trigger"
+          },
+          "outfit_trigger": {
+            "type": "string",
+            "title": "Outfit Trigger"
+          },
+          "workflow_id": {
+            "type": "integer",
+            "title": "Workflow Id"
+          },
+          "prompt_meta": {
+            "type": "string",
+            "title": "Prompt Meta"
+          },
+          "prompt_physical": {
+            "type": "string",
+            "title": "Prompt Physical"
+          },
+          "prompt_exclusive_outfit": {
+            "type": "string",
+            "title": "Prompt Exclusive Outfit"
+          },
+          "prompt_negative": {
+            "type": "string",
+            "title": "Prompt Negative",
+            "default": ""
+          },
+          "selected_alt_outfits": {
+            "type": "string",
+            "title": "Selected Alt Outfits"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "character_trigger",
+          "outfit_trigger",
+          "workflow_id",
+          "prompt_meta",
+          "prompt_physical",
+          "prompt_exclusive_outfit",
+          "selected_alt_outfits",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DatasetProjectResponse"
+      },
+      "DatasetProjectUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "character_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Trigger"
+          },
+          "outfit_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outfit Trigger"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "prompt_meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Meta"
+          },
+          "prompt_physical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Physical"
+          },
+          "prompt_exclusive_outfit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Exclusive Outfit"
+          },
+          "prompt_negative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Negative"
+          },
+          "selected_alt_outfits": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Alt Outfits"
+          }
+        },
+        "type": "object",
+        "title": "DatasetProjectUpdate"
+      },
       "DiffAnalyzeRequest": {
         "properties": {
           "new_json_body": {
@@ -6099,6 +7996,70 @@
           "unmapped_new_nodes"
         ],
         "title": "DiffAnalyzeResponse"
+      },
+      "EvaluateBenchmarkRequest": {
+        "properties": {
+          "results": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "List of benchmark execution results per cell"
+          }
+        },
+        "type": "object",
+        "title": "EvaluateBenchmarkRequest"
+      },
+      "FailureView": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "unconfirmed"
+            ],
+            "title": "Outcome"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "outcome"
+        ],
+        "title": "FailureView"
+      },
+      "GeneratePromptsRequest": {
+        "properties": {
+          "lora_name": {
+            "type": "string",
+            "title": "Lora Name",
+            "description": "Target LoRA model name"
+          },
+          "character_trigger": {
+            "type": "string",
+            "title": "Character Trigger",
+            "description": "Character trigger word"
+          },
+          "outfit_trigger": {
+            "type": "string",
+            "title": "Outfit Trigger",
+            "description": "Outfit trigger word"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lora_name",
+          "character_trigger",
+          "outfit_trigger"
+        ],
+        "title": "GeneratePromptsRequest"
       },
       "GeneratedSpeechBubbleRead": {
         "properties": {
@@ -6212,6 +8173,63 @@
         "type": "object",
         "title": "HistoryActionRequest"
       },
+      "ImageAvailability": {
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": [
+              "present",
+              "missing",
+              "unknown"
+            ],
+            "title": "Availability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "availability"
+        ],
+        "title": "ImageAvailability"
+      },
+      "ImageView": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "view_url": {
+            "type": "string",
+            "title": "View Url"
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "title": "Thumbnail Url"
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "present",
+              "missing",
+              "unknown"
+            ],
+            "title": "Availability"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "index",
+          "view_url",
+          "thumbnail_url",
+          "availability"
+        ],
+        "title": "ImageView"
+      },
       "InterferenceItem": {
         "properties": {
           "tag": {
@@ -6229,6 +8247,159 @@
           "reason"
         ],
         "title": "InterferenceItem"
+      },
+      "JobView": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "prompt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "studio"
+            ],
+            "title": "Scope"
+          },
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "normal_group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Group Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "submitting",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "unconfirmed"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "node": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ImageView"
+            },
+            "type": "array",
+            "title": "Outputs"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "request_id",
+          "prompt_id",
+          "session_id",
+          "scope",
+          "batch_id",
+          "normal_group_id",
+          "project_id",
+          "status",
+          "started_at",
+          "finished_at",
+          "node",
+          "outputs",
+          "failure"
+        ],
+        "title": "JobView"
       },
       "LlmPromptRead": {
         "properties": {
@@ -6535,6 +8706,169 @@
         ],
         "title": "LoraReorder"
       },
+      "LoraTrainingJobCreate": {
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "title": "Project Id"
+          },
+          "lora_name": {
+            "type": "string",
+            "title": "Lora Name"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type",
+            "default": "anima_2b"
+          },
+          "config_toml_content": {
+            "type": "string",
+            "title": "Config Toml Content"
+          },
+          "epochs": {
+            "type": "integer",
+            "title": "Epochs"
+          },
+          "repeats": {
+            "type": "integer",
+            "title": "Repeats"
+          },
+          "batch_size": {
+            "type": "integer",
+            "title": "Batch Size"
+          },
+          "total_steps": {
+            "type": "integer",
+            "title": "Total Steps"
+          },
+          "network_dim": {
+            "type": "integer",
+            "title": "Network Dim"
+          },
+          "network_alpha": {
+            "type": "integer",
+            "title": "Network Alpha"
+          },
+          "learning_rate": {
+            "type": "string",
+            "title": "Learning Rate"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "IDLE"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "lora_name",
+          "config_toml_content",
+          "epochs",
+          "repeats",
+          "batch_size",
+          "total_steps",
+          "network_dim",
+          "network_alpha",
+          "learning_rate"
+        ],
+        "title": "LoraTrainingJobCreate"
+      },
+      "LoraTrainingJobResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "integer",
+            "title": "Project Id"
+          },
+          "lora_name": {
+            "type": "string",
+            "title": "Lora Name"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "config_toml_content": {
+            "type": "string",
+            "title": "Config Toml Content"
+          },
+          "epochs": {
+            "type": "integer",
+            "title": "Epochs"
+          },
+          "repeats": {
+            "type": "integer",
+            "title": "Repeats"
+          },
+          "batch_size": {
+            "type": "integer",
+            "title": "Batch Size"
+          },
+          "total_steps": {
+            "type": "integer",
+            "title": "Total Steps"
+          },
+          "network_dim": {
+            "type": "integer",
+            "title": "Network Dim"
+          },
+          "network_alpha": {
+            "type": "integer",
+            "title": "Network Alpha"
+          },
+          "learning_rate": {
+            "type": "string",
+            "title": "Learning Rate"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "final_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Loss"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "lora_name",
+          "model_type",
+          "config_toml_content",
+          "epochs",
+          "repeats",
+          "batch_size",
+          "total_steps",
+          "network_dim",
+          "network_alpha",
+          "learning_rate",
+          "status"
+        ],
+        "title": "LoraTrainingJobResponse"
+      },
       "MappingMasterCreate": {
         "properties": {
           "role": {
@@ -6677,6 +9011,68 @@
           "ordered_ids"
         ],
         "title": "MappingMasterReorder"
+      },
+      "NodeView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "max": {
+            "type": "number",
+            "title": "Max"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "value",
+          "max"
+        ],
+        "title": "NodeView"
+      },
+      "OutfitMasterPresetResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "prompt_tags": {
+            "type": "string",
+            "title": "Prompt Tags"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "title": "Is Builtin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "prompt_tags",
+          "is_builtin"
+        ],
+        "title": "OutfitMasterPresetResponse"
       },
       "ParamSyncGroupCreate": {
         "properties": {
@@ -7136,6 +9532,18 @@
               }
             ],
             "title": "Provider"
+          },
+          "repack": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repack",
+            "default": true
           }
         },
         "type": "object",
@@ -7205,6 +9613,28 @@
           "roi"
         ],
         "title": "ROIRequest"
+      },
+      "RequestLookup": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "batch_id",
+          "job_ids"
+        ],
+        "title": "RequestLookup"
       },
       "ScanMatchedItem": {
         "properties": {
@@ -7925,6 +10355,29 @@
         ],
         "title": "SnapshotTagSetRead"
       },
+      "SnapshotTriggerAssociation": {
+        "properties": {
+          "lora_id": {
+            "type": "integer",
+            "title": "Lora Id"
+          },
+          "trigger_set_id": {
+            "type": "integer",
+            "title": "Trigger Set Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lora_id",
+          "trigger_set_id",
+          "role"
+        ],
+        "title": "SnapshotTriggerAssociation"
+      },
       "SnapshotUpdate": {
         "properties": {
           "lora_ids": {
@@ -7954,6 +10407,34 @@
               }
             ],
             "title": "Tag Set Ids"
+          },
+          "tag_sets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotTagSetCreate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Sets"
+          },
+          "lora_trigger_sets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotTriggerAssociation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Trigger Sets"
           },
           "image_path": {
             "anyOf": [
@@ -9079,6 +11560,63 @@
         ],
         "title": "SpeechToneRewriteResponse"
       },
+      "StateSnapshot": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "epoch": {
+            "type": "string",
+            "title": "Epoch"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "normal_group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Group Id"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobView"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BatchView"
+            },
+            "type": "array",
+            "title": "Batches"
+          },
+          "upstream": {
+            "$ref": "#/components/schemas/UpstreamView"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "epoch",
+          "revision",
+          "normal_group_id",
+          "jobs",
+          "batches",
+          "upstream"
+        ],
+        "title": "StateSnapshot"
+      },
       "TagSetCreate": {
         "properties": {
           "name": {
@@ -9552,6 +12090,88 @@
           "words"
         ],
         "title": "TriggerWordSetRead"
+      },
+      "UpstreamQueueItem": {
+        "properties": {
+          "prompt_id": {
+            "type": "string",
+            "title": "Prompt Id"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt_id",
+          "client_id"
+        ],
+        "title": "UpstreamQueueItem"
+      },
+      "UpstreamQueueView": {
+        "properties": {
+          "running": {
+            "items": {
+              "$ref": "#/components/schemas/UpstreamQueueItem"
+            },
+            "type": "array",
+            "title": "Running"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/UpstreamQueueItem"
+            },
+            "type": "array",
+            "title": "Pending"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "running",
+          "pending"
+        ],
+        "title": "UpstreamQueueView"
+      },
+      "UpstreamView": {
+        "properties": {
+          "http_ready": {
+            "type": "boolean",
+            "title": "Http Ready"
+          },
+          "ws_connected": {
+            "type": "boolean",
+            "title": "Ws Connected"
+          },
+          "failure_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Since"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "http_ready",
+          "ws_connected",
+          "failure_since"
+        ],
+        "title": "UpstreamView"
       },
       "ValidationError": {
         "properties": {

@@ -1,0 +1,128 @@
+[Model Auto-Router] Action 'qa-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=qa-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 Test Plan Audit Report
+
+## Executive Summary
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Command Specificity | ⚠️ Mixed | PowerShell paths need environment verification |
+| Metric Ambiguity | ✅ Mostly Clear | Some "unconfirmed" states need quantification |
+| AI Escape Routes | ⚠️ Present | Several "unconfirmed" clauses allow reasoning shortcuts |
+| Evidence Requirements | ✅ Strong | Good logging and artifact tracking |
+
+---
+
+## Detailed Analysis
+
+### 1. Command Specificity Audit
+
+**PASS - Executable Commands:**
+```powershell
+Set-Location 'C:\Users\audih\ws\comfy-create-helper2'
+.\backend\.venv\Scripts\python.exe -m mypy backend
+.\backend\.venv\Scripts\python.exe -m pytest ... -q
+npm run typecheck
+npx vitest run ...
+```
+
+**ISSUES:**
+- Path `C:\Users\audih\ws\...` is environment-specific → **NOT reproducible across auditors**
+- Missing error threshold definitions (e.g., "what constitutes a failed test?")
+- No timeout specifications for long-running integration tests
+
+---
+
+### 2. Metric Ambiguity Check
+
+| Ambiguous Phrase | Issue | Recommendation |
+|------------------|-------|----------------|
+| "STUCKは連続HTTP失敗30秒超" | What counts as "failure"? HTTP 5xx? Timeout? | Define: `status >= 500 OR response_time > 10s` |
+| "running fraction" | Formula not specified | Add: `(running_count / total) * 100%` |
+| "unconfirmed" states | No quantification metric | Require: max 3 unconfirmed per batch |
+
+---
+
+### 3. AI Agent "Brain Test" Escape Routes
+
+**CRITICAL FINDINGS:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ESCAPE ROUTE #1: "未確認" (Unconfirmed) Loophole            │
+│  Location: RT08, FC18, FC19 multiple instances               │
+│  Risk: AI can claim "unconfirmed = not my problem"           │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  ESCAPE ROUTE #2: "既存通り" (As Before) Vague Reference     │
+│  Location: FC06, multiple places                             │
+│  Risk: No baseline defined for comparison                    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  ESCAPE ROUTE #3: "部分失敗" (Partial Failure) Ambiguity     │
+│  Location: FC02, RT05                                        │
+│  Risk: What percentage = partial? How to measure?            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4. Evidence Requirements Audit
+
+**STRONG POINTS:**
+- ✅ Pixel dimensions explicitly bounded (`<1024×1536`)
+- ✅ HTTP status codes specified per case
+- ✅ Logging commands provided with specific flags
+- ✅ Version/epoch tracking requirements present
+
+**WEAKNESSES:**
+```
+Missing Evidence Matrix:
+┌─────────────┬──────────────┬─────────────────┐
+│ Test Case   │ Expected    │ Evidence Type   │
+├─────────────┼──────────────┼─────────────────┤
+│ RT01        │ No dup add  │ DB diff log     │
+│ FC15        │ Scope send  │ Network capture │
+│ IG2         │ Snapshot    │ File checksum   │
+└─────────────┴──────────────┴─────────────────┘
+```
+
+---
+
+### 5. Boundary Condition Gaps
+
+| Gap | Location | Impact |
+|-----|----------|--------|
+| No network partition simulation | IG1-IG7 | Real-world resilience untested |
+| Undefined "normal" vs "Studio" scope behavior | FC16, FC17 | Cross-test inconsistency risk |
+| Missing rollback verification | FC02, FC03 | Data corruption undetected |
+
+---
+
+## Final Verdict & Recommendations
+
+### Overall Score: **7.5/10**
+
+The test plan is **technically comprehensive but operationally fragile**. An AI agent could reasonably claim "unconfirmed" or "as before" to avoid detailed verification.
+
+### Critical Fixes Required:
+
+```
+1. Replace environment-specific paths with Docker/container commands
+2. Define "failure" quantitatively (HTTP codes, timeouts, response sizes)
+3. Eliminate all "未確認" clauses - either specify metrics or remove
+4. Add evidence matrix requiring automated artifact collection
+5. Specify exact timeout values for each test tier (unit=10s, e2e=60s, integration=300s)
+```
+
+### AI-Proof Verification Command:
+```bash
+# Add to plan - forces concrete output
+./scripts/audit_test_plan.sh --verify-metrics --output-json --fail-on-unquantified
+```

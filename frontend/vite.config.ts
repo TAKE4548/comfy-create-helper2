@@ -72,18 +72,13 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
+        // Preserve the browser Host and Origin so the backend's exact same-origin WS check works on LAN.
+        changeOrigin: false,
         ws: true,
       },
       '/health': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-      },
-      '/comfy': {
-        target: 'http://127.0.0.1:8188',
-        changeOrigin: true,
-        ws: true,
-        rewrite: (path) => path.replace(/^\/comfy/, ''),
       },
     },
   },

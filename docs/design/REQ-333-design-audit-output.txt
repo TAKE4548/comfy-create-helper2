@@ -1,0 +1,82 @@
+[Local Model Adapter] Input size 42716 chars exceeds threshold 15000. Chunking into 4 parts...
+[Local Model Adapter] Processing chunk 1/4...
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Local Model Adapter] Processing chunk 2/4...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Local Model Adapter] Processing chunk 3/4...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Local Model Adapter] Processing chunk 4/4...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Local Model Adapter] Synthesizing final response from all chunks...
+[Model Auto-Router] Model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' is already active on GPU. Reusing session.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 設計監査統合レポート
+
+**対象:** REQ-333 Design Proposal / Architecture Review  
+**日付:** 2026-10-10  
+**作成者:** Technical Synthesist (Reasoning Gate)  
+
+---
+
+## 1. 概要
+REQ-333 の設計案は、WebSocket コミュニケーションと管理 UI の統合を意図しており、アーキテクチャ的な分離（Backend 8000 / Manager 8899）は妥当である。しかし、**論理的な矛盾**、**状態整合性（SSoT）のリスク**、および**高負荷・不安定ネットワーク下での挙動**に関する懸念点が複数確認された。本レポートでは、4 つの分析チャンクから抽出された重複する指摘を整理し、最も重要な改善点を統合した。
+
+---
+
+## 2. 主要な技術的課題と指摘事項
+
+### 2.1 アーキテクチャと状態整合性 (SSoT & Contracts)
+設計は「単一真理源（SSoT）」の維持を目指しているが、以下の点で整合性が脅かされている。
+
+*   **内部仕様矛盾:**
+    *   **CORS 設定:** Decision D5 で「Allowlist はプレフィックスチェックだが、プレフィックスチェックを使わない」という直接的な論理否定が見られる。実装前にマッチングアルゴリズム（厳密一致か、IP チェックかなど）を明確にする必要がある。
+    *   **スナップショット用語の曖昧さ:** T15, T21, T22 などで「Snapshot」という用語が異なる意味（状態保存、サムネイルキャッシュ、生成画像ストレージ）で使われている。実装前に定義を統一する必要がある。
+*   **SSoT の競合リスク:**
+    *   Backend が新しい `/api/generation/batches` を採用しつつ、レガシーな Comfy Proxy API も併存させることで、状態が二重に書き込まれる（Split-Brain）恐れがある。レガシー API の廃止スケジュールを設けるべき。
+*   **契約の不完全性:**
+    *   Protocol メソッド間に**タイムアウトやリトライポリシー**の定義がない（Chunk 2）。`submit()` や `queue()` などの重要 API に明確な期限を設定し、エラー時の振る舞いを規定する必要がある。
+
+### 2.2 WebSocket と接続管理 (Stability & Lifecycle)
+WebSocket の安定性に関する要件にギャップがあり、以下の問題が予測される。
+
+*   **接続ライフサイクルの矛盾:**
+    *   T14（購読完了時にソケットをクローズ）と T23（新しいソケットを作らない）の間で矛盾が生じる可能性がある。複数のサービスが並行して接続する際、競合条件が発生しやすい。
+*   **「死亡」vs「遅延」クライアントの区別:**
+    *   T18 は送信失敗時に即座に切断を指示するが、T11 はスロークライアント（Slow Reader）はブロックしないよう求めている。**Heartbeat 機構**を導入し、ネットワーク障害と単なる処理遅延を区別するロジックが必要。
+*   **リコネクションストーム:**
+    *   クライアント側で即座に再接続を行う仕様（Decision D2）は、サーバー側のファイルディスクリプタやメモリを枯渇させるリスクがある。**指数関数的なバックオフ**戦略を実装すべき。
+
+### 2.3 エッジケースとパフォーマンス (Edge Cases & Performance)
+高負荷時や異常時にシステムが不安定になる要因が複数確認された。
+
+*   **競合条件（Race Conditions）:**
+    *   **バッチ管理:** ブラウザリフレッシュ時の `batch_id` 衝突リスクがある。タイムスタンプベースのバージョン管理が必要。
+    *   **接続管理:** `active_connections` リストへの重複追加や、並行して `connect/disconnect` が呼ばれる際の競合を防ぐため、**Set データ構造**とロック機構の使用を推奨（Chunk 3）。
+*   **パフォーマンスボトルネック:**
+    *   **大規模ブロードキャスト:** `active_connections` に大量の接続が含まれる場合、大きなメッセージを送信すると OOM（メモリ不足）を引き起こす可能性がある。メッセージサイズ制限（例：1MB）と送信タイムアウトを追加する必要がある。
+
+### 2.4 ドキュメントと検証 (Documentation & Verification)
+*   **仕様書の未凍結:** 承認後に C1-C9 の外部仕様更新を延期しているが、実装開始前に「Spec Freeze」期間を設定し、ドキュメントと実装のズレを防ぐ必要がある。
+*   **テストカバレッジ不足:** WebSocket 管理クラスや負荷テスト（100+ 接続）、並行アクセステストが不足している。特に T28 の統合テストは依存関係が多く脆弱性が高い。
+
+---
+
+## 3. 優先度の高い改善アクション
+
+以下の項目を実装前に解決することを強く推奨する。
+
+| 優先度 | カテゴリ | 具体的なアクション |
+|--------|----------|---------------------|
+| **High** | **ロジック修正** | CORS のマッチングアルゴリズムと、スナップショットの定義を仕様書で明確化（Spec Freeze）。 |
+| **High** | **安定性** | WebSocket リコネクションのバックオフ戦略と、サーバー側の接続リソース制限を導入。 |
+| **Medium** | **SSoT 保護** | レガシー API の廃止スケジュールを設定し、状態整合性を保つための同期ロジックを強化。 |
+| **Medium** | **検証** | `active_connections` 操作のテスト（重複・競合）と、大規模メッセージ送信時の負荷テストを実行。 |
+
+---
+
+## 4. 結論
+REQ-333 の設計はアーキテクチャ的な方向性は正しいが、**運用面での堅牢性**に欠ける。特に WebSocket の安定性と状態管理の整合性を保証するロジックを補強し、仕様書の曖昧さを解消すれば、本番環境への導入が可能となる。**現在の状態では「実装前のレビュー修正」が必要**。

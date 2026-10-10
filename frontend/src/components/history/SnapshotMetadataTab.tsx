@@ -39,7 +39,7 @@ export const SnapshotMetadataTab: React.FC<SnapshotMetadataTabProps> = React.mem
       className="w-full md:w-[min(48%,640px)] shrink-0 overflow-y-auto p-5 bg-surface border-t md:border-l border-white/10"
       onClick={(e) => e.stopPropagation()}
     >
-      {(activeSnapshotId && isLoading) || isServerMetaLoading ? (
+      {(activeSnapshotId && isLoading) || (isServerMetaLoading && !view.record) ? (
         <div className="flex items-center justify-center py-10 gap-2 text-zinc-400 text-xs">
           <Loader2 size={16} className="animate-spin text-accent-green" />
           <span>Loading metadata...</span>
@@ -56,6 +56,7 @@ export const SnapshotMetadataTab: React.FC<SnapshotMetadataTabProps> = React.mem
               workflowName: view.workflowName,
               queuedAt: view.queuedAt,
               metadataSavedAt: activeSnapshotId ? null : recordedMetadata?.metadataSavedAt ?? null,
+              completedAt: view.completedAt ?? null,
               imageSavedAt: snapshot?.created_at ?? null,
               albums: albums?.filter((a) => a.items?.some((i) => i.snapshot_id === activeSnapshotId)).map((a) => a.name) ?? [],
             }}

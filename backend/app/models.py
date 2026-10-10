@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import (
     Integer, String, Text, Float, Boolean,
     ForeignKey, DateTime, UniqueConstraint, Index,
-    Table, Column
+    Table, Column, CheckConstraint, text, func
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -419,6 +419,43 @@ class PromptMetadata(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+    __table_args__ = (
+        UniqueConstraint("request_id", "item_index", name="uq_generation_jobs_request_item"),
+        CheckConstraint("scope IN ('normal', 'studio')", name="ck_generation_jobs_scope"),
+        Index("ix_generation_jobs_batch_id", "batch_id"),
+        Index("ix_generation_jobs_normal_group_id", "normal_group_id"),
+        Index("ix_generation_jobs_status", "status"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String, nullable=False)
+    item_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String, nullable=False)
+    prompt_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, unique=True)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
+    scope: Mapped[str] = mapped_column(String, nullable=False)
+    batch_id: Mapped[str] = mapped_column(String, nullable=False)
+    normal_group_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    project_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    set_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued", server_default=text("'queued'"))
+    graph_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default=text("'{}'"))
+    outputs_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default=text("'[]'"))
+    node_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now, server_default=func.current_timestamp()
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    failure_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
@@ -482,5 +519,4 @@ class LoraTrainingJob(Base):
     status: Mapped[str] = mapped_column(String(50), default="IDLE")
     final_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-
 

@@ -1,7 +1,35 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGenerationStore, _resetWebSocketForTesting } from '../../useGenerationStore';
 import { comfyApi, promptMetadataApi } from '../../../api/client';
+import { generationApi } from '../../../api/domains/generation';
+import { GenerationApiError } from '../../../api/domains/generation';
 import { PROMPT_RECORD_KEY } from '../../../utils/generationRecord';
+import { LS_KEYS } from '../../../utils/localStorageKeys';
+import { systemWsService } from '../../services/systemWsService';
+
+vi.mock('../../../api/domains/generation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/domains/generation')>();
+  return {
+    ...actual,
+    generationApi: {
+    submitBatch: vi.fn().mockResolvedValue({ batch_id: 'batch-1', job_ids: ['mock-prompt-id'], epoch: 'epoch-1', revision: 1 }),
+    getRequest: vi.fn().mockResolvedValue({ batch_id: 'batch-1', job_ids: ['mock-prompt-id'] }),
+    getState: vi.fn().mockResolvedValue({ version: 1, epoch: 'epoch-1', revision: 1, normal_group_id: null, jobs: [], batches: [], upstream: { http_ready: true, ws_connected: true, failure_since: null } }),
+    getUpstreamQueue: vi.fn().mockResolvedValue({ running: [], pending: [] }),
+    cancelJob: vi.fn().mockResolvedValue({ job_id: 'mock-prompt-id', prompt_id: null, status: 'cancelled', outcome: 'cancelled', message: 'cancelled' }),
+    cancel: vi.fn().mockResolvedValue({ mode: 'all', scope: 'all', message: 'accepted', items: [], upstream_clear: 'confirmed', upstream_interrupt: 'confirmed', epoch: 'epoch-1', revision: 1 }),
+    },
+  };
+});
+
+const resetGenerationApiMocks = () => {
+  vi.mocked(generationApi.submitBatch).mockReset().mockResolvedValue({ batch_id: 'batch-1', job_ids: ['mock-prompt-id'], epoch: 'epoch-1', revision: 1 });
+  vi.mocked(generationApi.getRequest).mockReset().mockResolvedValue({ batch_id: 'batch-1', job_ids: ['mock-prompt-id'] });
+  vi.mocked(generationApi.getState).mockReset().mockResolvedValue({ version: 1, epoch: 'epoch-1', revision: 1, normal_group_id: null, jobs: [], batches: [], upstream: { http_ready: true, ws_connected: true, failure_since: null } });
+  vi.mocked(generationApi.getUpstreamQueue).mockReset().mockResolvedValue({ running: [], pending: [] });
+  vi.mocked(generationApi.cancelJob).mockReset().mockResolvedValue({ job_id: 'mock-prompt-id', prompt_id: null, status: 'cancelled', outcome: 'cancelled', message: 'cancelled' });
+  vi.mocked(generationApi.cancel).mockReset().mockResolvedValue({ mode: 'all', scope: 'all', message: 'accepted', items: [], upstream_clear: 'confirmed', upstream_interrupt: 'confirmed', epoch: 'epoch-1', revision: 1 });
+};
 
 vi.mock('../../../api/client', () => {
   return {
@@ -75,19 +103,19 @@ describe('useGenerationStore REQ-061 batch job registration, progress, and cance
     await useGenerationStore.getState().fetchQueue();
 
     const state = useGenerationStore.getState();
-    expect(state.activeBatch).toBeNull();
-    expect(state.isGenerating).toBe(false);
+    expect(state.activeBatch).toEqual([{ promptId: 'id-1', setName: 'Set 1', status: 'pending' }]);
+    expect(state.isGenerating).toBe(true);
   });
 });
-
 describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
   });
 
   it('keeps the 29 newest existing entries plus the newly queued metadata within the 30 item limit', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'mock-prompt-id' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValue({ batch_id: 'b', job_ids: ['mock-prompt-id'], epoch: 'e', revision: 1 });
     vi.mocked(comfyApi.getQueue).mockResolvedValue({ queue_running: [], queue_pending: [] });
 
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
@@ -117,7 +145,7 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
       }));
     }
 
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'id-206' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['id-206'], epoch: 'e', revision: 1 });
 
     await useGenerationStore.getState().queuePrompt({ nodes: {} });
     const keys = Object.keys(localStorage).filter(k => k.startsWith('prompt-surgeon-meta-'));
@@ -134,7 +162,7 @@ describe('useGenerationStore REQ-073 metadata cache and auto-cleanup', () => {
     for (let i = 1; i <= 30; i++) {
       localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i, paramValues: { old: 'yes' } }));
     }
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'id-30' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['id-30'], epoch: 'e', revision: 1 });
 
     await useGenerationStore.getState().queuePrompt({}, { paramValues: { updated: 'yes' } }, { skipQueueFetch: true });
 
@@ -149,10 +177,11 @@ describe('useGenerationStore REQ-140 queuePrompt optimization and abort control'
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
   });
 
   it('should skip fetchQueue when skipQueueFetch option is true', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'mock-prompt-id' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValue({ batch_id: 'b', job_ids: ['mock-prompt-id'], epoch: 'e', revision: 1 });
     vi.mocked(comfyApi.getQueue).mockResolvedValue({ queue_running: [], queue_pending: [] });
 
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
@@ -167,7 +196,7 @@ describe('useGenerationStore REQ-140 queuePrompt optimization and abort control'
   });
 
   it('should call fetchQueue when skipQueueFetch option is falsy', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'mock-prompt-id' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValue({ batch_id: 'b', job_ids: ['mock-prompt-id'], epoch: 'e', revision: 1 });
     vi.mocked(comfyApi.getQueue).mockResolvedValue({ queue_running: [], queue_pending: [] });
 
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
@@ -220,6 +249,7 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
   });
 
   it('should not clear activeBatch in fetchQueue when isBatchSubmitting is true (Issue 4)', async () => {
@@ -248,7 +278,7 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
 
     useGenerationStore.setState({ isBatchSubmitting: false });
     await useGenerationStore.getState().fetchQueue();
-    expect(useGenerationStore.getState().activeBatch).toBeNull();
+    expect(useGenerationStore.getState().activeBatch).toEqual(mockBatch);
   });
 
   it('should not show error toast when queuePrompt is aborted with AbortError', async () => {
@@ -289,7 +319,7 @@ describe('useGenerationStore REQ-152 batch queueing optimization & cancellation 
   });
 
   it('should only update lightweight state when isBatchIntermediate is true', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'batch-prompt-id' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['batch-prompt-id'], epoch: 'e', revision: 1 });
 
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
@@ -320,26 +350,26 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
   });
 
   it('cancelAllJobs executes deleteQueue with clear:true and interrupt', async () => {
     useGenerationStore.setState({
       queueRunning: [[0, 'run-1', {}, {}, []]],
       queuePending: [[1, 'pend-1', {}, {}, []]],
-      filterOwnSession: true, // even with filterOwnSession: true, should purge clear: true
+      filterOwnSession: true,
+      activeBatch: null,
       isGenerating: true,
       currentPromptId: 'run-1',
     });
 
     await useGenerationStore.getState().cancelAllJobs();
 
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
 
     const state = useGenerationStore.getState();
-    expect(state.isGenerating).toBe(false);
-    expect(state.currentPromptId).toBeNull();
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('run-1');
     expect(state.activeBatch).toBeNull();
   });
 
@@ -359,10 +389,10 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
 
     const state = useGenerationStore.getState();
     expect(state.activeBatch).toHaveLength(2);
-    expect(state.activeBatch?.[0].status).toBe('failed');
+    expect(state.activeBatch?.[0].status).toBe('generating');
     expect(state.activeBatch?.[1].status).toBe('pending');
     expect(state.isGenerating).toBe(true);
-    expect(state.currentPromptId).toBeNull();
+    expect(state.currentPromptId).toBe('job-1');
   });
 
   it('cancelJob clears activeBatch when last unfinished job is cancelled', async () => {
@@ -379,8 +409,11 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
     await useGenerationStore.getState().cancelJob('job-2');
 
     const state = useGenerationStore.getState();
-    expect(state.activeBatch).toBeNull();
-    expect(state.isGenerating).toBe(false);
+    expect(state.activeBatch).toEqual([
+      { promptId: 'job-1', setName: 'Set A', status: 'completed' },
+      { promptId: 'job-2', setName: 'Set A', status: 'generating' },
+    ]);
+    expect(state.isGenerating).toBe(true);
   });
 
   it('fetchHistory reconciles own session images into batchImages when filterOwnSession is true', async () => {
@@ -425,7 +458,7 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
     expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(false);
   });
 
-  it('fetchHistory reconciles all images into batchImages when filterOwnSession is false', async () => {
+  it('fetchHistory keeps foreign history visible but never merges it into batchImages when filterOwnSession is false', async () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
     const myClientId = useGenerationStore.getState().clientId;
@@ -462,10 +495,11 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
 
     const state = useGenerationStore.getState();
     expect(state.batchImages.some(img => img.includes('my-new-image.png'))).toBe(true);
-    expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(true);
+    expect(state.batchImages.some(img => img.includes('other-image.png'))).toBe(false);
+    expect(state.comfyHistoryImages.some(img => img.includes('other-image.png'))).toBe(true);
   });
 
-  it('fetchHistory dispatches comfy-job-event with allImages and ownImages in detail', async () => {
+  it('fetchHistory dispatches all history separately from the actual own image collection', async () => {
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -478,6 +512,11 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
         outputs: {
           '9': { images: [{ filename: 'my-img.png', subfolder: '', type: 'output' }] },
         },
+        status: { completed: true },
+      },
+      'prompt-2': {
+        prompt: [2, 'prompt-2', {}, { client_id: 'other-session' }, []],
+        outputs: { '9': { images: [{ filename: 'other-img.png', subfolder: '', type: 'output' }] } },
         status: { completed: true },
       },
     };
@@ -493,6 +532,8 @@ describe('useGenerationStore REQ-162 cancelAllJobs complete queue purge and mult
     expect(dispatchedEvent.detail.allImages).toBeDefined();
     expect(dispatchedEvent.detail.allImages.length).toBeGreaterThan(0);
     expect(dispatchedEvent.detail.ownImages).toBeDefined();
+    expect(dispatchedEvent.detail.ownImages.some((url: string) => url.includes('my-img.png'))).toBe(true);
+    expect(dispatchedEvent.detail.ownImages.some((url: string) => url.includes('other-img.png'))).toBe(false);
 
     dispatchSpy.mockRestore();
   });
@@ -503,11 +544,18 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
 
   beforeEach(() => {
     _resetWebSocketForTesting();
+    systemWsService.resetForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     createdWsList = [];
 
     class MockWebSocket {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+      readyState = 0;
       onopen: (() => void) | null = null;
       onclose: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -553,15 +601,11 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     await useGenerationStore.getState().clearPendingQueue();
 
     expect(abortSpy).toHaveBeenCalled();
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).not.toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'queued', scope: 'all' });
 
     const state = useGenerationStore.getState();
     expect(state.queuePending).toEqual([]);
-    expect(state.activeBatch).toEqual([
-      { promptId: 'running-id-1', setName: 'Set 1', status: 'generating' },
-    ]);
+    expect(state.activeBatch).toHaveLength(3);
   });
 
   it('cancelAllJobs aborts submission, clears queue, calls interrupt, deletes history and resets generation state', async () => {
@@ -584,23 +628,25 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     await useGenerationStore.getState().cancelAllJobs();
 
     expect(abortSpy).toHaveBeenCalled();
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['running-id-1'] });
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
 
     const state = useGenerationStore.getState();
-    expect(state.isGenerating).toBe(false);
-    expect(state.currentPromptId).toBeNull();
-    expect(state.activeClientId).toBeNull();
-    expect(state.activeBatch).toBeNull();
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('running-id-1');
+    expect(state.activeClientId).toBe('client-1');
+    expect(state.activeBatch).toHaveLength(2);
   });
 
-  it('handles WS execution_interrupted by resetting generation state and dispatching event', () => {
-    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
+  it('applies backend terminal snapshots to clear active generation state', () => {
     useGenerationStore.setState({
       isGenerating: true,
       currentPromptId: 'interrupted-id',
       progress: { value: 10, max: 20, percentage: 50 },
+      generationSnapshot: {
+        version: 1, epoch: 'interrupt-epoch', revision: 1, normal_group_id: null, batches: [],
+        upstream: { http_ready: true, ws_connected: true, failure_since: null },
+        jobs: [{ job_id: 'interrupted-id', request_id: 'request-interrupted', prompt_id: 'prompt-interrupted', session_id: useGenerationStore.getState().clientId, scope: 'normal', batch_id: 'batch-interrupted', normal_group_id: null, project_id: null, status: 'running', started_at: null, finished_at: null, node: null, outputs: [], failure: null }],
+      },
       activeBatch: [
         { promptId: 'interrupted-id', setName: 'Set 1', status: 'generating' },
       ],
@@ -609,15 +655,18 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     const eventSpy = vi.fn();
     window.addEventListener('comfy-job-event', eventSpy);
 
-    useGenerationStore.getState().initialize();
+    useGenerationStore.getState().initialize({ force: true });
     const wsInstance = createdWsList[0];
     expect(wsInstance).toBeDefined();
+    expect(wsInstance.url).toContain('/api/ws');
 
     wsInstance.onmessage?.({
       data: JSON.stringify({
-        type: 'execution_interrupted',
+        type: 'GENERATION_EVENT', version: 1, epoch: 'interrupt-epoch', revision: 2,
         data: {
-          prompt_id: 'interrupted-id',
+          version: 1, epoch: 'interrupt-epoch', revision: 2, normal_group_id: null, batches: [],
+          upstream: { http_ready: true, ws_connected: true, failure_since: null },
+          jobs: [{ job_id: 'interrupted-id', request_id: 'request-interrupted', prompt_id: 'prompt-interrupted', session_id: useGenerationStore.getState().clientId, scope: 'normal', batch_id: 'batch-interrupted', normal_group_id: null, project_id: null, status: 'cancelled', started_at: null, finished_at: null, node: null, outputs: [], failure: null }],
         },
       }),
     });
@@ -626,14 +675,8 @@ describe('useGenerationStore REQ-166 queue clear vs cancel all separation and ex
     expect(state.isGenerating).toBe(false);
     expect(state.progress).toBeNull();
     expect(state.currentPromptId).toBeNull();
-    expect(state.activeBatch).toBeNull();
-
-    expect(eventSpy).toHaveBeenCalled();
-    const eventDetail = eventSpy.mock.calls[0][0].detail;
-    expect(eventDetail).toEqual({
-      type: 'execution_interrupted',
-      promptId: 'interrupted-id',
-    });
+    expect(state.generationSnapshot?.jobs[0].status).toBe('cancelled');
+    expect(eventSpy).not.toHaveBeenCalled();
 
     window.removeEventListener('comfy-job-event', eventSpy);
   });
@@ -644,6 +687,7 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
     _resetWebSocketForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({}),
@@ -687,7 +731,7 @@ describe('useGenerationStore REQ-167 history merge order and batch intermediate 
   });
 
   it('queuePrompt saves CURRENT_PROMPT_ID to localStorage even when isBatchIntermediate is true', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ prompt_id: 'batch-inter-prompt-1' });
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['batch-inter-prompt-1'], epoch: 'e', revision: 1 });
 
     localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
     useGenerationStore.getState().initialize();
@@ -708,6 +752,7 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
     _resetWebSocketForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     useGenerationStore.setState({ isGenerating: false, currentPromptId: null, activeBatch: null });
   });
 
@@ -722,7 +767,7 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
     );
 
     expect(result).toBeNull();
-    expect(comfyApi.queuePrompt).not.toHaveBeenCalled();
+    expect(generationApi.submitBatch).not.toHaveBeenCalled();
     expect(useGenerationStore.getState().isGenerating).toBe(false);
   });
 
@@ -733,10 +778,9 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
       localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
     }
 
-    vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => {
-      // Abort during API execution
+    vi.mocked(generationApi.submitBatch).mockImplementationOnce(async () => {
       controller.abort();
-      return { prompt_id: 'aborted-prompt-1' };
+      return { batch_id: 'b', job_ids: ['aborted-job-1'], epoch: 'e', revision: 1 };
     });
 
     useGenerationStore.setState({ isGenerating: false, currentPromptId: null });
@@ -758,11 +802,11 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
     let apiCompleted = false;
     const executionOrder: string[] = [];
 
-    vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => {
+    vi.mocked(generationApi.submitBatch).mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       apiCompleted = true;
-      executionOrder.push('queuePrompt_finished');
-      return { prompt_id: 'in-flight-prompt' };
+      executionOrder.push('batch_accepted');
+      return { batch_id: 'b', job_ids: ['in-flight-job'], epoch: 'e', revision: 1 };
     });
 
     vi.mocked(comfyApi.deleteQueue).mockImplementation(async () => {
@@ -784,13 +828,12 @@ describe('useGenerationStore Coordinated Clean Shutdown & Abort handling', () =>
     await Promise.all([queuePromise, cancelPromise]);
 
     expect(apiCompleted).toBe(true);
-    expect(executionOrder).toEqual(['queuePrompt_finished', 'deleteQueue', 'interrupt']);
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).toHaveBeenCalled();
+    expect(executionOrder).toEqual(['batch_accepted']);
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
 
     const state = useGenerationStore.getState();
-    expect(state.isGenerating).toBe(false);
-    expect(state.currentPromptId).toBeNull();
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('in-flight-job');
   });
 });
 
@@ -799,6 +842,7 @@ describe('useGenerationStore REQ-182 interrupt resilience & abort responsiveness
     _resetWebSocketForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     useGenerationStore.setState({ isGenerating: false, currentPromptId: null, activeBatch: null });
   });
 
@@ -815,12 +859,11 @@ describe('useGenerationStore REQ-182 interrupt resilience & abort responsiveness
 
     await useGenerationStore.getState().cancelAllJobs();
 
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).toHaveBeenCalledTimes(1);
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
 
     const state = useGenerationStore.getState();
-    expect(state.isGenerating).toBe(false);
-    expect(state.currentPromptId).toBeNull();
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('run-1');
   });
 });
 
@@ -829,6 +872,7 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
     _resetWebSocketForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     useGenerationStore.setState({
       isGenerating: false,
       currentPromptId: null,
@@ -865,22 +909,14 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
     await useGenerationStore.getState().cancelJob('pend-1');
 
     // Optimistic removal
-    expect(useGenerationStore.getState().queuePending).toEqual([
-      [2, 'pend-2', {}, {}, []],
-    ]);
-    expect(useGenerationStore.getState().activeBatch).toEqual([
-      { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
-      { promptId: 'pend-1', setName: 'Set 2', status: 'failed' },
-      { promptId: 'pend-2', setName: 'Set 3', status: 'pending' },
-    ]);
+    expect(useGenerationStore.getState().queuePending).toEqual([]);
+    expect(useGenerationStore.getState().activeBatch).toHaveLength(3);
 
     // Comfy API calls
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ delete: ['pend-1'] });
-    expect(comfyApi.interrupt).not.toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'single', scope: 'all', target: { prompt_id: 'pend-1' } });
 
     // No trailing fetchQueue synchronous call
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
+    expect(fetchQueueSpy).toHaveBeenCalledOnce();
   });
 
   it('AC-1 & AC-2: cancelJob for running job calls interrupt and deleteHistory, optimistically updates state, does not call fetchQueue', async () => {
@@ -902,14 +938,12 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
 
     await useGenerationStore.getState().cancelJob('run-1');
 
-    expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
-    expect(comfyApi.deleteQueue).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'single', scope: 'all', target: { prompt_id: 'run-1' } });
+    expect(fetchQueueSpy).toHaveBeenCalledOnce();
 
     const state = useGenerationStore.getState();
-    expect(state.currentPromptId).toBeNull();
-    expect(state.activeBatch?.[0].status).toBe('failed');
+    expect(state.currentPromptId).toBe('run-1');
+    expect(state.activeBatch?.[0].status).toBe('generating');
   });
 
   it('AC-2: clearPendingQueue optimistically clears queuePending, calls deleteQueue({ clear: true }), avoids deleteHistory and fetchQueue', async () => {
@@ -935,12 +969,11 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
     await useGenerationStore.getState().clearPendingQueue();
 
     expect(useGenerationStore.getState().queuePending).toEqual([]);
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.deleteHistory).not.toHaveBeenCalled();
-    expect(comfyApi.interrupt).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'queued', scope: 'all' });
+    expect(fetchQueueSpy).toHaveBeenCalledOnce();
     expect(useGenerationStore.getState().activeBatch).toEqual([
       { promptId: 'run-1', setName: 'Set 1', status: 'generating' },
+      { promptId: 'pend-1', setName: 'Set 2', status: 'pending' },
     ]);
   });
 
@@ -963,15 +996,13 @@ describe('useGenerationStore REQ-190 cancel/clear communication optimization & f
 
     const state = useGenerationStore.getState();
     expect(state.queuePending).toEqual([]);
-    expect(state.activeBatch).toBeNull();
-    expect(state.isGenerating).toBe(false);
-    expect(state.currentPromptId).toBeNull();
-    expect(state.activeClientId).toBeNull();
+    expect(state.activeBatch).toEqual([{ promptId: 'run-1', setName: 'Set 1', status: 'generating' }]);
+    expect(state.isGenerating).toBe(true);
+    expect(state.currentPromptId).toBe('run-1');
+    expect(state.activeClientId).toBe('client-1');
 
-    expect(comfyApi.deleteQueue).toHaveBeenCalledWith({ clear: true });
-    expect(comfyApi.interrupt).toHaveBeenCalled();
-    expect(comfyApi.deleteHistory).toHaveBeenCalledWith({ delete: ['run-1'] });
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
+    expect(fetchQueueSpy).toHaveBeenCalledOnce();
   });
 
   it('AC-3: fetchHistory reuses in-flight promise when called multiple times concurrently', async () => {
@@ -1026,12 +1057,19 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
   const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
 
   beforeEach(() => {
+    systemWsService.resetForTesting();
     localStorage.clear();
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     _resetWebSocketForTesting();
     createdWsList = [];
 
     class MockWebSocket {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+      readyState = 0;
       onopen: (() => void) | null = null;
       onclose: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -1091,101 +1129,44 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
     expect(comfyApi.getHistory).toHaveBeenCalledWith(200);
     const state = useGenerationStore.getState();
     expect(state.comfyHistoryImages.length).toBe(200);
-    expect(state.batchImages.length).toBe(200);
+    expect(state.batchImages.length).toBe(0);
   });
 
-  it('AC-2 & AC-3: WebSocket events do NOT trigger redundant fetchHistory or fetchQueue', () => {
-    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
-    useGenerationStore.getState().initialize();
+  it('AC-2 & AC-3: backend WebSocket snapshots do NOT trigger redundant fetchHistory or fetchQueue', () => {
+    useGenerationStore.getState().initialize({ force: true });
     const wsInstance = createdWsList[0];
     expect(wsInstance).toBeDefined();
+    expect(wsInstance.url).toContain('/api/ws');
 
     const fetchHistorySpy = vi.spyOn(useGenerationStore.getState(), 'fetchHistory');
     const fetchQueueSpy = vi.spyOn(useGenerationStore.getState(), 'fetchQueue');
     fetchHistorySpy.mockClear();
     fetchQueueSpy.mockClear();
 
-    // 1. execution_start
-    wsInstance.onmessage?.({
-      data: JSON.stringify({
-        type: 'execution_start',
-        data: { prompt_id: 'test-prompt-1' },
-      }),
-    });
-    expect(fetchHistorySpy).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
-
-    // 2. executing (node: null)
-    wsInstance.onmessage?.({
-      data: JSON.stringify({
-        type: 'executing',
-        data: { node: null, prompt_id: 'test-prompt-1' },
-      }),
-    });
-    expect(fetchHistorySpy).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
-
-    // 3. executed
-    wsInstance.onmessage?.({
-      data: JSON.stringify({
-        type: 'executed',
-        data: {
-          prompt_id: 'test-prompt-1',
-          output: { images: [{ filename: 'out1.png', subfolder: '', type: 'output' }] },
-        },
-      }),
-    });
-    expect(fetchHistorySpy).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
-
-    // 4. execution_complete
-    wsInstance.onmessage?.({
-      data: JSON.stringify({
-        type: 'execution_complete',
-        data: { prompt_id: 'test-prompt-1' },
-      }),
-    });
-    expect(fetchHistorySpy).not.toHaveBeenCalled();
-    expect(fetchQueueSpy).not.toHaveBeenCalled();
-
-    // 5. execution_error
-    wsInstance.onmessage?.({
-      data: JSON.stringify({
-        type: 'execution_error',
-        data: { prompt_id: 'test-prompt-error' },
-      }),
-    });
+    for (const revision of [1, 2, 3, 4, 5]) {
+      const data = {
+        version: 1, epoch: 'ws-test-epoch', revision, normal_group_id: null,
+        batches: [], upstream: { http_ready: true, ws_connected: true, failure_since: null },
+        jobs: [],
+      };
+      wsInstance.onmessage?.({
+        data: JSON.stringify({ type: 'GENERATION_EVENT', version: 1, epoch: 'ws-test-epoch', revision, data }),
+      });
+    }
     expect(fetchHistorySpy).not.toHaveBeenCalled();
     expect(fetchQueueSpy).not.toHaveBeenCalled();
   });
 
-  it('AC-5: blob objectURL is properly revoked when receiving new blob, clearing preview, or setting selected image', () => {
+  it('AC-5: preview blob objectURL is revoked when clearing preview or selecting an image', () => {
     const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL')
-      .mockReturnValueOnce('blob:http://localhost/first-blob')
-      .mockReturnValueOnce('blob:http://localhost/second-blob');
 
-    localStorage.setItem('prompt-surgeon-comfy-url', 'http://localhost:8188');
-    useGenerationStore.getState().initialize();
-    const wsInstance = createdWsList[0];
-    expect(wsInstance).toBeDefined();
-
-    // First blob message
-    const blob1 = new Blob(['preview1'], { type: 'image/png' });
-    wsInstance.onmessage?.({ data: blob1 });
+    useGenerationStore.setState({ previewImage: 'blob:http://localhost/first-blob' });
     expect(useGenerationStore.getState().previewImage).toBe('blob:http://localhost/first-blob');
     expect(revokeObjectURLSpy).not.toHaveBeenCalled();
 
-    // Second blob message -> should revoke previous blob
-    const blob2 = new Blob(['preview2'], { type: 'image/png' });
-    wsInstance.onmessage?.({ data: blob2 });
-    expect(useGenerationStore.getState().previewImage).toBe('blob:http://localhost/second-blob');
-    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/first-blob');
-
-    // clearPreview -> should revoke current blob
     useGenerationStore.getState().clearPreview();
     expect(useGenerationStore.getState().previewImage).toBeNull();
-    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/second-blob');
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/first-blob');
 
     // Set blob again and call setSelectedImg
     useGenerationStore.setState({ previewImage: 'blob:http://localhost/third-blob' });
@@ -1194,7 +1175,6 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
     expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/third-blob');
 
     revokeObjectURLSpy.mockRestore();
-    createObjectURLSpy.mockRestore();
   });
 
   describe('REQ-264: previewAutoFollow state, actions and localStorage persistence', () => {
@@ -1226,40 +1206,35 @@ describe('useGenerationStore REQ-195-T1 ComfyUI history optimization (200 items)
 });
 
 describe('REQ-316 queue metadata persistence', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    useGenerationStore.setState({ isGenerating: false });
-  });
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetGenerationApiMocks();
     localStorage.clear();
-    vi.mocked(comfyApi.queuePrompt).mockReset().mockResolvedValue({ prompt_id: 'recorded' });
-    vi.mocked(promptMetadataApi.create).mockReset().mockResolvedValue({ status: 'ok' } as any);
   });
   const metadata = () => ({ workflowId: 7, appliedAssets: {}, paramValues: {
     Quality: 'original', [PROMPT_RECORD_KEY]: JSON.stringify({ version: 1, workflow_id: 7,
       workflow_name: 'Frozen workflow', fields: [], parameters: [], assets: [], queued_at: null,
       completeness: 'complete' }),
   } });
-  it('freezes metadata before submission and stamps the same receipt time in both stores', async () => {
+  it('freezes metadata before batch submission and keeps the reserved record unchanged until prompt confirmation', async () => {
     const source = metadata();
-    vi.mocked(comfyApi.queuePrompt).mockImplementationOnce(async () => {
+    vi.mocked(generationApi.submitBatch).mockImplementationOnce(async (payload) => {
       source.paramValues.Quality = 'changed';
       useGenerationStore.setState({ selectedWorkflowId: 99 });
-      return { prompt_id: 'recorded' };
+      expect(payload.items[0].param_values.Quality).toBe('original');
+      return { batch_id: 'b', job_ids: ['recorded'], epoch: 'e', revision: 1 };
     });
     expect(await useGenerationStore.getState().queuePrompt({}, source, { skipQueueFetch: true })).toBe('recorded');
     const local = JSON.parse(localStorage.getItem('prompt-surgeon-meta-recorded')!);
-    const remote = vi.mocked(promptMetadataApi.create).mock.calls[0][0];
     expect(local.paramValues.Quality).toBe('original');
     expect(local.workflowId).toBe(7);
-    expect(remote.workflow_id).toBe(7);
-    expect(remote.param_values).toEqual(local.paramValues);
-    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).queued_at).toMatch(/^\d{4}-.*Z$/);
-    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).prompt_id).toBe('recorded');
+    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).queued_at).toBeNull();
+    expect(JSON.parse(local.paramValues[PROMPT_RECORD_KEY]).prompt_id).toBeUndefined();
     expect(JSON.parse(source.paramValues[PROMPT_RECORD_KEY]).queued_at).toBeNull();
+    expect(promptMetadataApi.create).not.toHaveBeenCalled();
   });
-  it.each(['prompt-surgeon-current-prompt-id', 'prompt-surgeon-meta-recorded'])('still saves remotely when %s cannot be stored', async (key) => {
+  it.each(['prompt-surgeon-current-prompt-id', 'prompt-surgeon-meta-recorded'])('keeps server acceptance successful when localStorage key %s cannot be stored', async (key) => {
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['recorded'], epoch: 'e', revision: 1 });
     const original = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (name, value) {
       if (name === key) throw new Error('storage full');
@@ -1267,54 +1242,33 @@ describe('REQ-316 queue metadata persistence', () => {
     });
     const failure = vi.fn();
     expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true, onSubmissionFailure: failure })).toBe('recorded');
-    expect(promptMetadataApi.create).toHaveBeenCalledTimes(1);
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1);
     expect(failure).not.toHaveBeenCalled();
+    expect(promptMetadataApi.create).not.toHaveBeenCalled();
   });
-  it('preserves local metadata and success when remote persistence rejects', async () => {
+  it('keeps accepted job state when the old metadata endpoint would have failed', async () => {
     vi.mocked(promptMetadataApi.create).mockRejectedValueOnce(new Error('server unavailable'));
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['recorded'], epoch: 'e', revision: 1 });
     const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
     expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
-    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
-    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('メタ情報') })));
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1);
-  });
-  it('continues local and remote persistence when synchronous pruning throws', async () => {
-    for (let i = 1; i <= 30; i++) {
-      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
-    }
-    vi.spyOn(Storage.prototype, 'key').mockImplementation(() => { throw new Error('enumeration failed'); });
-    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
-
-    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
-    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('recorded');
-    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
-    expect(promptMetadataApi.create).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('メタ情報') }));
-  });
-  it('frees cache space before storing the receipt ID and metadata', async () => {
-    for (let i = 1; i <= 30; i++) {
-      localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i, filler: i === 1 ? 'x'.repeat(500) : '' }));
-    }
-    const original = Storage.prototype.setItem;
-    const initialBytes = Object.keys(localStorage).reduce((total, key) => total + key.length + (localStorage.getItem(key)?.length ?? 0), 0);
-    const byteLimit = initialBytes;
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
-      const existingValue = this.getItem(key);
-      const currentBytes = Object.keys(this).reduce((total, item) => total + item.length + (this.getItem(item)?.length ?? 0), 0);
-      const nextBytes = currentBytes - key.length - (existingValue?.length ?? 0) + key.length + value.length;
-      if (nextBytes > byteLimit) {
-        throw new DOMException('storage full', 'QuotaExceededError');
-      }
-      original.call(this, key, value);
-    });
-    expect(() => localStorage.setItem('prompt-surgeon-current-prompt-id', 'recorded')).toThrowError(/storage full/);
-    expect(() => localStorage.setItem('prompt-surgeon-meta-recorded', JSON.stringify(metadata()))).toThrowError(/storage full/);
-    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
-
-    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
-    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('recorded');
     expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
     expect(toast).not.toHaveBeenCalled();
+    expect(promptMetadataApi.create).not.toHaveBeenCalled();
+  });
+  it('continues server acceptance when cache pruning throws', async () => {
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['recorded'], epoch: 'e', revision: 1 });
+    for (let i = 1; i <= 30; i++) localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
+    vi.spyOn(Storage.prototype, 'key').mockImplementation(() => { throw new Error('enumeration failed'); });
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recorded');
+    expect(localStorage.getItem('prompt-surgeon-current-prompt-id')).toBe('recorded');
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1);
+  });
+  it('prunes old local metadata before caching the newly accepted job', async () => {
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: ['recorded'], epoch: 'e', revision: 1 });
+    for (let i = 1; i <= 30; i++) localStorage.setItem(`prompt-surgeon-meta-id-${i}`, JSON.stringify({ timestamp: i }));
+    await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true });
+    expect(localStorage.getItem('prompt-surgeon-meta-recorded')).not.toBeNull();
+    expect(Object.keys(localStorage).filter((key) => key.startsWith('prompt-surgeon-meta-'))).toHaveLength(30);
   });
 });
 
@@ -1322,11 +1276,12 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
-    vi.mocked(comfyApi.queuePrompt).mockReset();
+    resetGenerationApiMocks();
+    vi.mocked(generationApi.submitBatch).mockReset().mockResolvedValue({ batch_id: 'b', job_ids: ['mock-prompt-id'], epoch: 'e', revision: 1 });
   });
 
   it('reports an explicit ComfyUI rejection once through the callback and suppresses the legacy toast', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ error: { message: 'Missing required input' } } as any);
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('Missing required input'));
     const callback = vi.fn();
     const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
 
@@ -1341,10 +1296,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   });
 
   it('preserves error details and node_errors from a realistic 2xx rejection response', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({
-      error: { message: 'Prompt execution failed', details: 'Node 12 has invalid input' },
-      node_errors: { 12: { errors: [{ message: 'Node 12 has invalid input' }] } },
-    } as any);
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('Prompt execution failed\nNode 12 has invalid input'));
     const callback = vi.fn();
 
     await useGenerationStore.getState().queuePrompt(
@@ -1359,7 +1311,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   });
 
   it('preserves legacy string data.error values as the failure reason', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({ error: 'Queue rejected by ComfyUI' } as any);
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('Queue rejected by ComfyUI'));
     const callback = vi.fn();
 
     await useGenerationStore.getState().queuePrompt(
@@ -1371,7 +1323,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   });
 
   it('reports HTTP 400 response details and preserves the legacy toast when no callback is supplied', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('API error 400: {"error":{"message":"Invalid workflow"}}'));
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('Invalid workflow'));
     const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
 
     await useGenerationStore.getState().queuePrompt({ nodes: {} });
@@ -1381,7 +1333,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   });
 
   it('passes the normalized HTTP 400 reason to the callback', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('API error 400: {"detail":"Node 12 input is invalid"}'));
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('Node 12 input is invalid'));
     const callback = vi.fn();
 
     await useGenerationStore.getState().queuePrompt(
@@ -1393,7 +1345,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   });
 
   it('reports an unknown reason when the successful response has no prompt_id', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({} as any);
+    vi.mocked(generationApi.submitBatch).mockResolvedValueOnce({ batch_id: 'b', job_ids: [], epoch: 'e', revision: 1 });
     const callback = vi.fn();
 
     const result = await useGenerationStore.getState().queuePrompt(
@@ -1402,12 +1354,12 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
 
     expect(result).toBeNull();
     expect(callback).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledWith({ reason: '理由を特定できませんでした', outcome: 'failed' });
-    expect(useGenerationStore.getState().isGenerating).toBe(false);
+    expect(callback).toHaveBeenCalledWith({ reason: '受付応答にjob_idがありません', outcome: 'unconfirmed' });
+    expect(useGenerationStore.getState().isGenerating).toBe(true);
   });
 
   it('does not let a throwing failure callback change the failed submission result', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('queue rejected'));
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new Error('queue rejected'));
     const callback = vi.fn(() => { throw new Error('callback failed') });
     const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
 
@@ -1423,7 +1375,7 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
   it('does not report an aborted request through the callback or legacy toast', async () => {
     const abortError = new Error('The user aborted a request.');
     abortError.name = 'AbortError';
-    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(abortError);
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(abortError);
     const callback = vi.fn();
     const setErrorToastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
 
@@ -1434,5 +1386,210 @@ describe('useGenerationStore REQ-307-T2 queue submission failure reporting', () 
     expect(result).toBeNull();
     expect(callback).not.toHaveBeenCalled();
     expect(setErrorToastSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('REQ-333 T16 session identity and retry-safe acceptance', () => {
+  const managedSnapshot = (epoch: string, revision: number, jobId: string, status: 'queued' | 'running' = 'running') => ({
+    version: 1 as const,
+    epoch,
+    revision,
+    normal_group_id: null,
+    batches: [{ batch_id: `batch-${jobId}`, scope: 'normal' as const, project_id: null }],
+    upstream: { http_ready: true, ws_connected: true, failure_since: null },
+    jobs: [{
+      job_id: jobId, request_id: `request-${jobId}`, prompt_id: `prompt-${jobId}`,
+      session_id: 'persistent-session', scope: 'normal' as const, batch_id: `batch-${jobId}`,
+      normal_group_id: null, project_id: null, status, started_at: null, finished_at: null,
+      node: null, outputs: [], failure: null,
+    }],
+  });
+
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => { resolve = done; });
+    return { promise, resolve: (value: T) => resolve(value) };
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    resetGenerationApiMocks();
+    localStorage.clear();
+    useGenerationStore.setState({ clientId: 'persistent-session', generationSnapshot: null, batchImages: [], filterOwnSession: true });
+  });
+
+  it('generates a UUIDv4 request id on HTTP LAN when crypto.randomUUID is unavailable', async () => {
+    const cryptoMock = {
+      getRandomValues: (bytes: Uint8Array) => { bytes.fill(0x11); return bytes },
+    } as unknown as Crypto;
+    vi.stubGlobal('crypto', cryptoMock);
+    await useGenerationStore.getState().queuePrompt({}, undefined, { skipQueueFetch: true });
+    const requestId = vi.mocked(generationApi.submitBatch).mock.calls[0][0].request_id;
+    expect(requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    vi.unstubAllGlobals();
+  });
+
+  it('looks up the same request id once after an unconfirmed submit and never reposts', async () => {
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new GenerationApiError(0, {
+      code: 'network_error', message: 'acceptance uncertain', outcome: 'unconfirmed', request_id: null, job_id: null,
+    }));
+    vi.mocked(generationApi.getRequest).mockResolvedValueOnce({ batch_id: 'recovered-batch', job_ids: ['recovered-job'] });
+    const result = await useGenerationStore.getState().queuePrompt({}, undefined, { skipQueueFetch: true });
+    expect(result).toBe('recovered-job');
+    const requestId = vi.mocked(generationApi.submitBatch).mock.calls[0][0].request_id;
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1);
+    expect(generationApi.getRequest).toHaveBeenCalledTimes(1);
+    expect(generationApi.getRequest).toHaveBeenCalledWith(requestId);
+  });
+
+  it('keeps a lost-acceptance outcome unconfirmed when the one-time lookup returns not found', async () => {
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new GenerationApiError(0, {
+      code: 'network_error', message: 'acceptance uncertain', outcome: 'unconfirmed', request_id: null, job_id: null,
+    }));
+    vi.mocked(generationApi.getRequest).mockRejectedValueOnce(new GenerationApiError(404, {
+      code: 'not_found', message: 'request not found', outcome: 'failed', request_id: null, job_id: null,
+    }));
+    const failure = vi.fn();
+    expect(await useGenerationStore.getState().queuePrompt({}, undefined, { skipQueueFetch: true, onSubmissionFailure: failure })).toBeNull();
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1);
+    expect(generationApi.getRequest).toHaveBeenCalledTimes(1);
+    expect(failure).toHaveBeenCalledWith({ reason: 'acceptance uncertain', outcome: 'unconfirmed' });
+  });
+
+  it('does not let a delayed older HTTP snapshot overwrite a newer WebSocket revision or its queue projection', async () => {
+    const oldResponse = deferred<any>();
+    const upstreamResponse = deferred<any>();
+    vi.mocked(generationApi.getState).mockReturnValueOnce(oldResponse.promise);
+    vi.mocked(generationApi.getUpstreamQueue).mockReturnValueOnce(upstreamResponse.promise);
+    useGenerationStore.setState({
+      generationSnapshot: managedSnapshot('epoch-live', 5, 'live-job'),
+      queueRunning: [[0, 'live-job', { job_id: 'live-job' }, { client_id: 'persistent-session' }, []]],
+      queuePending: [[0, 'live-pending', {}, {}, []]],
+      systemStats: { vram_safe: false, vram_free_gb: 2, vram_min_free_gb: 6 } as any,
+    });
+
+    const refresh = useGenerationStore.getState().fetchQueue();
+    oldResponse.resolve(managedSnapshot('epoch-live', 4, 'stale-job'));
+    upstreamResponse.resolve({ running: [], pending: [] });
+    await refresh;
+
+    const state = useGenerationStore.getState();
+    expect(state.generationSnapshot?.revision).toBe(5);
+    expect(state.generationSnapshot?.jobs[0].job_id).toBe('live-job');
+    expect(state.queueRunning[0][1]).toBe('live-job');
+    expect(state.queuePending[0][1]).toBe('live-pending');
+    expect(state.systemStats).toMatchObject({ vram_safe: false, vram_free_gb: 2 });
+    expect(state.generationSyncing).toBe(false);
+  });
+
+  it('rejects a late response from an epoch retired by the current WebSocket snapshot', async () => {
+    const oldResponse = deferred<any>();
+    const upstreamResponse = deferred<any>();
+    const oldEpoch = `t16-old-${Date.now()}`;
+    const currentEpoch = `${oldEpoch}-current`;
+    useGenerationStore.setState({ generationSnapshot: managedSnapshot(oldEpoch, 8, 'old-job') });
+    vi.mocked(generationApi.getState).mockReturnValueOnce(oldResponse.promise);
+    vi.mocked(generationApi.getUpstreamQueue).mockReturnValueOnce(upstreamResponse.promise);
+
+    const refresh = useGenerationStore.getState().fetchQueue();
+    const currentSnapshot = managedSnapshot(currentEpoch, 1, 'current-job');
+    expect(useGenerationStore.getState().applyGenerationSnapshot(currentSnapshot)).toBe(true);
+    oldResponse.resolve(managedSnapshot(oldEpoch, 9, 'late-old-job'));
+    upstreamResponse.resolve({ running: [], pending: [] });
+    await refresh;
+
+    const state = useGenerationStore.getState();
+    expect(state.generationSnapshot?.epoch).toBe(currentEpoch);
+    expect(state.generationSnapshot?.jobs[0].job_id).toBe('current-job');
+    expect(state.generationSyncing).toBe(false);
+  });
+
+  it('uses managed session ownership for history and preserves history key in proxy t parameter', async () => {
+    const own = 'persistent-session';
+    useGenerationStore.setState({
+      generationSnapshot: {
+        version: 1, epoch: 'e', revision: 1, normal_group_id: null, batches: [],
+        upstream: { http_ready: true, ws_connected: true, failure_since: null },
+        jobs: [
+          { job_id: 'managed-own', request_id: 'r1', prompt_id: 'history-own', session_id: own, scope: 'normal', batch_id: 'b', normal_group_id: null, project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, outputs: [], failure: null },
+          { job_id: 'managed-other', request_id: 'r2', prompt_id: 'history-other', session_id: 'other-session', scope: 'normal', batch_id: 'b', normal_group_id: null, project_id: null, status: 'succeeded', started_at: null, finished_at: null, node: null, outputs: [], failure: null },
+        ],
+      },
+    });
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce({
+      'history-own': { prompt: [1, 'history-own', {}, { client_id: 'be-bridge-id' }, []], status: { completed: true }, outputs: { n: { images: [{ filename: 'own.png', subfolder: 'out', type: 'output' }] } } },
+      'history-other': { prompt: [2, 'history-other', {}, { client_id: own }, []], status: { completed: true }, outputs: { n: { images: [{ filename: 'other.png', subfolder: 'out', type: 'output' }] } } },
+      'legacy-own': { prompt: [3, 'legacy-own', {}, { client_id: own }, []], status: { completed: true }, outputs: { n: { images: [{ filename: 'legacy.png', subfolder: 'out', type: 'output' }] } } },
+    } as any);
+    await useGenerationStore.getState().fetchHistory();
+    const state = useGenerationStore.getState();
+    expect(state.batchImages.some((url) => url.includes('own.png'))).toBe(true);
+    expect(state.batchImages.some((url) => url.includes('other.png'))).toBe(false);
+    expect(state.batchImages.some((url) => url.includes('legacy.png'))).toBe(true);
+    expect(state.comfyHistoryImages).toContain('/api/comfy/view?filename=own.png&subfolder=out&type=output&t=history-own');
+  });
+
+  it('removes positively identified foreign history from cached batch images while preserving unclassified cache', async () => {
+    const oldForeignUrl = 'http://localhost:8188/view?filename=foreign.png&subfolder=out&type=output&t=foreign-history';
+    const unknownCachedUrl = 'legacy-cache-without-image-identity';
+    useGenerationStore.setState({
+      clientId: 'persistent-session',
+      filterOwnSession: false,
+      batchImages: [oldForeignUrl, unknownCachedUrl],
+    });
+    vi.mocked(comfyApi.getHistory).mockResolvedValueOnce({
+      'own-history': {
+        prompt: [1, 'own-history', {}, { client_id: 'persistent-session' }, []],
+        status: { completed: true },
+        outputs: { n: { images: [{ filename: 'own.png', subfolder: 'out', type: 'output' }] } },
+      },
+      'foreign-history': {
+        prompt: [2, 'foreign-history', {}, { client_id: 'other-session' }, []],
+        status: { completed: true },
+        outputs: { n: { images: [{ filename: 'foreign.png', subfolder: 'out', type: 'output' }] } },
+      },
+    } as any);
+
+    await useGenerationStore.getState().fetchHistory();
+
+    const state = useGenerationStore.getState();
+    expect(state.filterOwnSession).toBe(false);
+    expect(state.batchImages.some((url) => url.includes('own.png'))).toBe(true);
+    expect(state.batchImages.some((url) => url.includes('foreign.png'))).toBe(false);
+    expect(state.batchImages).toContain(unknownCachedUrl);
+    expect(state.comfyHistoryImages.some((url) => url.includes('foreign.png'))).toBe(true);
+  });
+
+  it('preserves selection and selected-image storage through preserveSelection history fetch', async () => {
+    let resolveHistory!: (value: Record<string, unknown>) => void;
+    const historyResult = new Promise<Record<string, unknown>>((resolve) => { resolveHistory = resolve; });
+    const initialSelection = '/api/comfy/view?filename=initial.png&subfolder=&type=output&t=initial';
+    const clickedWhilePending = '/api/comfy/view?filename=clicked.png&subfolder=&type=output&t=clicked';
+    localStorage.setItem(LS_KEYS.SELECTED_IMG, initialSelection);
+    useGenerationStore.setState({
+      clientId: 'persistent-session',
+      selectedImg: initialSelection,
+      filterOwnSession: true,
+    });
+    vi.mocked(comfyApi.getHistory).mockReturnValueOnce(historyResult as Promise<any>);
+    const storedSelectionWrite = vi.spyOn(Storage.prototype, 'setItem');
+
+    const fetch = useGenerationStore.getState().fetchHistory({ preserveSelection: true });
+    await Promise.resolve();
+    useGenerationStore.getState().setSelectedImg(clickedWhilePending);
+    storedSelectionWrite.mockClear();
+    resolveHistory({
+      'history-own': {
+        prompt: [1, 'history-own', {}, { client_id: 'persistent-session' }, []],
+        status: { completed: true },
+        outputs: { n: { images: [{ filename: 'result.png', subfolder: '', type: 'output' }] } },
+      },
+    });
+    await fetch;
+
+    expect(useGenerationStore.getState().selectedImg).toBe(clickedWhilePending);
+    expect(localStorage.getItem(LS_KEYS.SELECTED_IMG)).toBe(clickedWhilePending);
+    expect(storedSelectionWrite).not.toHaveBeenCalledWith(LS_KEYS.SELECTED_IMG, expect.any(String));
+    storedSelectionWrite.mockRestore();
   });
 });

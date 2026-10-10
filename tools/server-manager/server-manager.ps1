@@ -252,6 +252,28 @@ function Start-BackendProcess ([bool]$asBackground) {
 
 function Stop-BackendProcess { Stop-PortProcesses $cfg.backend.port "Backend" }
 
+function Invoke-BackendRestart ([bool]$asBackground) {
+    Write-Host "Restarting Backend..." -ForegroundColor Yellow
+    Stop-BackendProcess
+    $closed = Wait-For-Port-Closed $cfg.backend.port 5 "Backend"
+    if (-not $closed) {
+        Write-Host "Backend port still open, retrying force stop..." -ForegroundColor Yellow
+        Stop-BackendProcess
+        $closed = Wait-For-Port-Closed $cfg.backend.port 5 "Backend"
+    }
+    if (-not $closed) {
+        throw "Backend port $($cfg.backend.port) did not close; refusing to start another backend process."
+    }
+
+    Start-BackendProcess $asBackground
+    $timeoutSec = if ($cfg.backend.wait_timeout_sec) { [int]$cfg.backend.wait_timeout_sec } else { 20 }
+    if ($timeoutSec -lt 20) { $timeoutSec = 20 }
+    $ready = Wait-For-Port $cfg.backend.port $timeoutSec "Backend"
+    if (-not $ready) {
+        throw "Backend port $($cfg.backend.port) did not become ready within ${timeoutSec}s."
+    }
+}
+
 # Vite Cache EPERM fix: clear ReadOnly bits and hollow deps before starting
 function Start-FrontendProcess ([bool]$asBackground) {
     if (Test-PortOpen $cfg.frontend.port) { Write-Host "Frontend is already running on port $($cfg.frontend.port)." -ForegroundColor Yellow; return }
@@ -377,18 +399,7 @@ switch ($Action.ToLower()) {
             switch ($Service.ToLower()) {
                 { $_ -in "comfy", "wsl" }  { Write-Host "Restarting WSL2 ComfyUI..." -ForegroundColor Yellow; Stop-ComfyUIProcess; Wait-For-Port-Closed $cfg.wsl.port 5 "WSL ComfyUI" | Out-Null; Start-ComfyUIProcess $Background; Wait-For-Port $cfg.wsl.port 30 "WSL ComfyUI" | Out-Null }
                 { $_ -in "backend", "be" } {
-                    Write-Host "Restarting Backend..." -ForegroundColor Yellow
-                    Stop-BackendProcess
-                    $closed = Wait-For-Port-Closed $cfg.backend.port 5 "Backend"
-                    if (-not $closed) {
-                        Write-Host "Backend port still open, retrying force stop..." -ForegroundColor Yellow
-                        Stop-BackendProcess
-                        Wait-For-Port-Closed $cfg.backend.port 5 "Backend" | Out-Null
-                    }
-                    Start-BackendProcess $Background
-                    $timeoutSec = if ($cfg.backend.wait_timeout_sec) { [int]$cfg.backend.wait_timeout_sec } else { 20 }
-                    if ($timeoutSec -lt 20) { $timeoutSec = 20 }
-                    Wait-For-Port $cfg.backend.port $timeoutSec "Backend" | Out-Null
+                    Invoke-BackendRestart $Background
                 }
                 { $_ -in "frontend", "fe" }{ Write-Host "Restarting Frontend..." -ForegroundColor Yellow; Stop-FrontendProcess; Wait-For-Port-Closed $cfg.frontend.port 5 "Frontend" | Out-Null; Start-FrontendProcess $Background; Wait-For-Port $cfg.frontend.port 15 "Frontend" | Out-Null }
                 default                    { Write-Host "Unknown service: $Service (choose: comfy/wsl, backend/be, frontend/fe)" -ForegroundColor Red }

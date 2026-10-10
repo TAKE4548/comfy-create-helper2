@@ -1,6 +1,14 @@
 import type { BypassProfile, ParamSyncGroup, ParamSyncGroupCreate, ParamSyncGroupUpdate, WorkflowPreset } from '../api/types'
 import type { TagChip } from '../components/TagChipEditor/useChipParser'
 import type { QueueSubmissionFailure } from '../utils/queueSubmissionFailure'
+import type {
+  BatchRequest,
+  CancelOperation,
+  CancelResult,
+  CancelScope,
+  GenerationSnapshot,
+  UpstreamQueueView,
+} from '../api/domains/generation'
 
 export type { QueueSubmissionFailure } from '../utils/queueSubmissionFailure'
 
@@ -120,6 +128,7 @@ export interface ConnectionActions {
   clearPreview: () => void;
   setSubmissionAbortController: (controller: AbortController | null) => void;
   abortSubmission: () => void;
+  applyGenerationSnapshot: (snapshot: GenerationSnapshot, upstream?: UpstreamQueueView) => boolean;
 }
 
 
@@ -130,7 +139,13 @@ export interface VramWaitStatus {
   waitDurationSec: number;
 }
 
-export interface JobQueueState {
+export interface GenerationServerState {
+  generationSnapshot: GenerationSnapshot | null
+  generationSyncing: boolean
+  generationSyncIssue?: { kind: 'unsupported' | 'error'; message: string } | null
+}
+
+export interface JobQueueState extends GenerationServerState {
   filterOwnSession: boolean;
   batchImages: string[];
   selectedImg: string | null;
@@ -162,11 +177,12 @@ export interface JobQueueActions {
     },
     options?: QueuePromptOptions
   ) => Promise<string | null>;
+  submitGenerationBatch: (payload: BatchRequest) => Promise<{ batch_id: string; job_ids: string[] }>;
   cancelGeneration: () => Promise<void>;
-  cancelJob: (promptId: string) => Promise<void>;
-  clearPendingQueue: () => Promise<void>;
-  cancelAllJobs: () => Promise<void>;
-  fetchHistory: () => Promise<void>;
+  cancelJob: (id: string) => Promise<CancelResult>;
+  clearPendingQueue: (scope?: CancelScope) => Promise<CancelOperation>;
+  cancelAllJobs: (scope?: CancelScope) => Promise<CancelOperation>;
+  fetchHistory: (options?: { preserveSelection?: boolean }) => Promise<void>;
   fetchQueue: () => Promise<void>;
 }
 

@@ -11,11 +11,24 @@ export function toThumbnailUrl(url: string | null | undefined, size: number = 25
       if (filename) {
         const subfolder = parsed.searchParams.get('subfolder') || ''
         const type = parsed.searchParams.get('type') || 'output'
-        return `/api/comfy/thumbnail?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}&size=${size}`
+        const t = parsed.searchParams.get('t')
+        const cacheBust = t === null ? '' : `&t=${encodeURIComponent(t)}`
+        return `/api/comfy/thumbnail?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}&size=${size}${cacheBust}`
       }
     }
   } catch (e) {
     // URL 解析に失敗した場合は元 URL をフォールバック返却
   }
   return url
+}
+
+/** Normalize legacy Comfy hosts to same-origin while preserving view parameters. */
+export function toSameOriginViewUrl(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (parsed.pathname !== '/view' || !parsed.searchParams.has('filename')) return url
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return url
+  }
 }

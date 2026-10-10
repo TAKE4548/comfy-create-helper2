@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import { Play, Pause, CheckSquare, Square, ImageOff } from 'lucide-react'
 import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 import { getPromptPrefix } from '../../../utils/formatUtils'
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import { generationApi } from '../../../api/domains/generation'
 import type { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 
@@ -20,6 +21,75 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
   gallery,
   isMobile = false,
 }) => {
+  const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(() => new Set())
+  const [availabilityStates, setAvailabilityStates] = useState<Map<string, 'checking' | 'present' | 'missing' | 'unknown'>>(() => new Map())
+  const [retryVersions, setRetryVersions] = useState<Map<string, number>>(() => new Map())
+  const probesRef = useRef(new Map<string, Promise<'present' | 'missing' | 'unknown'>>())
+  const completedProbesRef = useRef(new Map<string, 'present' | 'missing' | 'unknown'>())
+
+  const getImageIdentity = (imageUrl: string) => {
+    try {
+      const url = new URL(imageUrl, window.location.origin)
+      const filename = url.searchParams.get('filename')
+      if (!filename) return null
+      return {
+        key: JSON.stringify([filename, url.searchParams.get('subfolder') || '', url.searchParams.get('type') || 'output']),
+        request: { filename, subfolder: url.searchParams.get('subfolder') || '', type: url.searchParams.get('type') || 'output' },
+      }
+    } catch {
+      return null
+    }
+  }
+
+  const handleThumbnailError = (imageUrl: string) => {
+    const identity = getImageIdentity(imageUrl)
+    if (!identity) {
+      setThumbnailErrors((old) => new Set(old).add(imageUrl))
+      setAvailabilityStates((old) => new Map(old).set(imageUrl, 'unknown'))
+      window.dispatchEvent(new CustomEvent('comfy-image-availability', { detail: { url: imageUrl, availability: 'unknown' } }))
+      return
+    }
+    const { key, request } = identity
+    setThumbnailErrors((old) => new Set(old).add(key))
+    if (completedProbesRef.current.has(key) || probesRef.current.has(key)) return
+
+    setAvailabilityStates((old) => new Map(old).set(key, 'checking'))
+    const probe = generationApi.imageAvailability(request)
+      .then((result) => result.availability)
+      .catch(() => 'unknown' as const)
+    probesRef.current.set(key, probe)
+    void probe.then((availability) => {
+      probesRef.current.delete(key)
+      completedProbesRef.current.set(key, availability)
+      setAvailabilityStates((old) => new Map(old).set(key, availability))
+      window.dispatchEvent(new CustomEvent('comfy-image-availability', { detail: { url: imageUrl, availability } }))
+      if (availability === 'missing') {
+        useGenerationStore.setState((storeState) => ({
+          comfyHistoryImages: storeState.comfyHistoryImages.filter((candidate) => getImageIdentity(candidate)?.key !== key),
+          batchImages: storeState.batchImages.filter((candidate) => getImageIdentity(candidate)?.key !== key),
+        }))
+      }
+    })
+  }
+
+  const retryThumbnail = (imageUrl: string, event: React.MouseEvent | React.KeyboardEvent) => {
+    event.stopPropagation()
+    const identity = getImageIdentity(imageUrl)
+    const key = identity?.key ?? imageUrl
+    completedProbesRef.current.delete(key)
+    probesRef.current.delete(key)
+    setAvailabilityStates((old) => {
+      const next = new Map(old)
+      next.delete(key)
+      return next
+    })
+    setThumbnailErrors((old) => {
+      const next = new Set(old)
+      next.delete(key)
+      return next
+    })
+    setRetryVersions((old) => new Map(old).set(key, (old.get(key) ?? 0) + 1))
+  }
   const {
     thumbnailTab,
     setThumbnailTab,
@@ -295,18 +365,36 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                   }
                 >
                   <LazyThumbnail
+                    key={`${img}:${retryVersions.get(getImageIdentity(img)?.key ?? img) ?? 0}`}
                     src={toThumbnailUrl(img)}
                     alt={`Generated ${i + 1}`}
                     containerRef={isMobile ? undefined : gallery.scrollContainerRef}
-                    onError={() => {
-                      useGenerationStore.setState((storeState) => ({
-                        comfyHistoryImages: storeState.comfyHistoryImages.filter((x) => x !== img),
-                        batchImages: storeState.batchImages.filter((x) => x !== img),
-                      }))
-                    }}
+                    onError={() => handleThumbnailError(img)}
                     className="w-full h-full object-cover pointer-events-none select-none"
                     style={{ WebkitTouchCallout: 'none' }}
                   />
+                  {thumbnailErrors.has(getImageIdentity(img)?.key ?? img) && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
+                      {availabilityStates.get(getImageIdentity(img)?.key ?? img) === 'checking' ? (
+                        <span role="status" className="pointer-events-auto rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-200">
+                          原画を確認中…
+                        </span>
+                      ) : (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label="サムネイル再試行"
+                          onClick={(event) => retryThumbnail(img, event)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') retryThumbnail(img, event)
+                          }}
+                          className="pointer-events-auto cursor-pointer rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-100"
+                        >
+                          サムネイル再試行
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {getSetNameForImage(img) && (
                     <span
                       className={`absolute top-0.5 left-0.5 bg-black/75 text-accent-green ${

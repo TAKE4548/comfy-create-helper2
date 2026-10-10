@@ -4,9 +4,10 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MatrixGenerationStep, injectPromptAndSeed } from '../components/MatrixGenerationStep'
 import { DatasetStudioPage } from '../index'
 import { useStudioStore } from '../useStudioStore'
-import { datasetApi, workflowsApi, mappingMastersApi, comfyApi } from '../../../api/client'
+import { datasetApi, workflowsApi, mappingMastersApi } from '../../../api/client'
 import type { DatasetItem, DatasetProject, Workflow, MappingMaster } from '../../../api/types'
 import { saveStudioDraft, saveActiveProjectId } from '../utils/studioDraftStorage'
+import { useGenerationStore } from '../../../store/useGenerationStore'
 
 vi.mock('../../../api/client', () => ({
   datasetApi: {
@@ -25,9 +26,6 @@ vi.mock('../../../api/client', () => ({
   },
   mappingMastersApi: {
     list: vi.fn(),
-  },
-  comfyApi: {
-    queuePrompt: vi.fn(),
   },
 }))
 
@@ -102,9 +100,11 @@ describe('MatrixGenerationStep', () => {
   ]
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.clearAllMocks()
     sessionStorage.clear()
     useStudioStore.getState().resetStudio()
+    useGenerationStore.setState({ generationSnapshot: null, generationSyncing: false, errorToast: null })
     vi.mocked(datasetApi.getProjects).mockResolvedValue([mockProject])
     vi.mocked(workflowsApi.list).mockResolvedValue(mockWorkflows)
     vi.mocked(workflowsApi.get).mockResolvedValue(mockWorkflows[0])
@@ -175,10 +175,8 @@ describe('MatrixGenerationStep', () => {
     expect(useStudioStore.getState().currentStep).toBe(2)
   })
 
-  it('submits batch directly to ComfyUI port 8188 with progress tracking', async () => {
-    const mockDirectSubmit = vi.fn().mockImplementation(async () => {
-      // Mock successful direct submission
-    })
+  it('retains the batch submission extension and uses its returned batch identity', async () => {
+    const mockDirectSubmit = vi.fn().mockResolvedValue({ batch_id: 'studio-batch-1', job_ids: ['job-1'] })
 
     useStudioStore.getState().setItems(mockItems)
     render(<MatrixGenerationStep onDirectBatchSubmit={mockDirectSubmit} />)
@@ -190,11 +188,12 @@ describe('MatrixGenerationStep', () => {
     fireEvent.click(submitBtn)
 
     await waitFor(() => {
-      expect(mockDirectSubmit).toHaveBeenCalledWith(mockItems)
+      expect(mockDirectSubmit).toHaveBeenCalledWith(mockItems, mockWorkflows[0].json_body)
     })
 
     await waitFor(() => {
-      expect(screen.getByTestId('status-message')).toHaveTextContent(/ComfyUIへの20件の直接バッチ投入が完了しました/)
+      expect(screen.getByTestId('status-message')).toHaveTextContent(/Studioバッチ20件の受付が完了しました/)
+      expect(screen.getByTestId('batch-progress-container')).toHaveTextContent('0/20')
     })
   })
 
@@ -358,13 +357,15 @@ describe('MatrixGenerationStep', () => {
     })
   })
 
-  it('AC-4: passes positiveNodeId, negativeNodeId, negativePrompt, paramValues, and bypassed nodes when batch submitting to ComfyUI', async () => {
+  it('AC-4: submits all frozen Studio graphs in one project-scoped request and follows only that batch snapshot', async () => {
     // Setup store with items, customized paramValues, and bypassed node
     useStudioStore.getState().setItems(mockItems)
     useStudioStore.getState().setParamValues({ steps: '42' })
     useStudioStore.getState().toggleBypassedNodeId('7') // bypass negative node
 
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'pid-123' })
+    useStudioStore.getState().setActiveProject(mockProject)
+    const jobIds = Array.from({ length: 20 }, (_, index) => `studio-job-${index}`)
+    const submit = vi.spyOn(useGenerationStore.getState(), 'submitGenerationBatch').mockResolvedValue({ batch_id: 'studio-batch-accepted', job_ids: jobIds })
 
     // Provide workflow with parameter mapping
     const customWf: Workflow = {
@@ -386,20 +387,63 @@ describe('MatrixGenerationStep', () => {
     fireEvent.click(screen.getByTestId('submit-batch-button'))
 
     await waitFor(() => {
-      expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(20)
+      expect(submit).toHaveBeenCalledTimes(1)
     })
 
-    const firstCallArgs = vi.mocked(comfyApi.queuePrompt).mock.calls[0][0]
-    expect(firstCallArgs.prompt['6'].inputs.text).toBe(mockItems[0].raw_prompt)
-    expect(firstCallArgs.prompt['3'].inputs.steps).toBe(42)
-    expect(firstCallArgs.prompt['7'].mode).toBe(2) // bypassed node has mode=2
-    expect(firstCallArgs.client_id).toMatch(/^lora-studio-/)
+    const request = submit.mock.calls[0][0]
+    expect(request.scope).toBe('studio')
+    expect(request.project_id).toBe(mockProject.id)
+    expect(request.session_id).toBe(useGenerationStore.getState().clientId)
+    expect(request.items).toHaveLength(20)
+    expect(request.items[0].graph['6'].inputs.text).toBe(mockItems[0].raw_prompt)
+    expect(request.items[0].graph['3'].inputs.steps).toBe(42)
+    expect(request.items[0].graph['7'].mode).toBe(2)
+    expect(screen.getByTestId('status-message')).toHaveTextContent(/受付が完了しました/)
+    expect(useStudioStore.getState().currentStep).toBe(1)
+
+    const makeJob = (job_id: string, batch_id: string, scope: string, project_id: number | null, status: string, failure: any = null) => ({
+      job_id, request_id: `request-${job_id}`, prompt_id: `prompt-${job_id}`,
+      session_id: useGenerationStore.getState().clientId, scope, batch_id,
+      normal_group_id: null, project_id, status, started_at: null, finished_at: null,
+      node: null, outputs: [], failure,
+    })
+    const snapshotJobs = [
+      ...jobIds.slice(0, 12).map((job_id) => makeJob(job_id, 'studio-batch-accepted', 'studio', mockProject.id, 'succeeded')),
+      ...jobIds.slice(12).map((job_id) => makeJob(job_id, 'studio-batch-accepted', 'studio', mockProject.id, 'cancelled')),
+      makeJob('other-batch-job', 'different-batch', 'studio', mockProject.id, 'running'),
+      makeJob('normal-job', 'normal-batch', 'normal', null, 'succeeded'),
+    ]
+    const snapshot = {
+      version: 1, epoch: 'studio-progress-epoch', revision: 1, normal_group_id: null, jobs: snapshotJobs,
+      batches: [
+        { batch_id: 'studio-batch-accepted', scope: 'studio', project_id: mockProject.id },
+        { batch_id: 'different-batch', scope: 'studio', project_id: mockProject.id },
+      ],
+      upstream: { http_ready: true, ws_connected: true, failure_since: null },
+    }
+    act(() => {
+      useGenerationStore.setState({ generationSnapshot: snapshot as any })
+    })
+    expect(screen.getByTestId('batch-progress-container')).toHaveTextContent('12/20')
+    expect(screen.getByTestId('batch-progress-text')).toHaveTextContent('60%')
+    act(() => {
+      useGenerationStore.getState().applyGenerationSnapshot({
+        ...snapshot,
+        revision: 2,
+        jobs: snapshotJobs.map((job: any) => job.job_id === 'other-batch-job'
+          ? { ...job, status: 'failed', failure: { reason: 'Other batch failed', outcome: 'failed' } }
+          : job),
+      } as any)
+    })
+    expect(useGenerationStore.getState().errorToast?.message).toBe('Other batch failed')
+    expect(useStudioStore.getState().paramValues.steps).toBe('42')
+    expect(useStudioStore.getState().currentStep).toBe(1)
   })
 
-  it('REQ-330-T1 (Red Teaming): displays error message when comfyApi.queuePrompt fails', async () => {
+  it('REQ-330-T1 (Red Teaming): displays an error when batch acceptance fails', async () => {
     useStudioStore.getState().setItems(mockItems)
-
-    vi.mocked(comfyApi.queuePrompt).mockRejectedValueOnce(new Error('Connection refused to ComfyUI proxy'))
+    useStudioStore.getState().setActiveProject(mockProject)
+    vi.spyOn(useGenerationStore.getState(), 'submitGenerationBatch').mockRejectedValueOnce(new Error('Generation API unavailable'))
 
     render(<MatrixGenerationStep />)
 
@@ -412,16 +456,14 @@ describe('MatrixGenerationStep', () => {
     await waitFor(() => {
       expect(screen.getByTestId('status-message')).toBeInTheDocument()
     })
-    expect(screen.getByTestId('status-message')).toHaveTextContent('ComfyUI直接投入エラー: Connection refused to ComfyUI proxy')
+    expect(screen.getByTestId('status-message')).toHaveTextContent('Studioバッチ受付エラー: Generation API unavailable')
     expect(screen.getByTestId('submit-batch-button')).not.toBeDisabled()
   })
 
-  it('REQ-330-T1 (Red Teaming): handles ComfyUI internal error in response object', async () => {
+  it('REQ-330-T1 (Red Teaming): reports server generation rejection without per-item POSTs', async () => {
     useStudioStore.getState().setItems(mockItems)
-
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValueOnce({
-      error: { message: 'Invalid workflow node connection' },
-    } as any)
+    useStudioStore.getState().setActiveProject(mockProject)
+    vi.spyOn(useGenerationStore.getState(), 'submitGenerationBatch').mockRejectedValueOnce(new Error('Invalid workflow node connection'))
 
     render(<MatrixGenerationStep />)
 
@@ -434,7 +476,7 @@ describe('MatrixGenerationStep', () => {
     await waitFor(() => {
       expect(screen.getByTestId('status-message')).toBeInTheDocument()
     })
-    expect(screen.getByTestId('status-message')).toHaveTextContent('ComfyUI直接投入エラー: Invalid workflow node connection')
+    expect(screen.getByTestId('status-message')).toHaveTextContent('Studioバッチ受付エラー: Invalid workflow node connection')
     expect(screen.getByTestId('submit-batch-button')).not.toBeDisabled()
   })
 
@@ -895,4 +937,3 @@ describe('injectPromptAndSeed', () => {
     }).not.toThrow()
   })
 })
-

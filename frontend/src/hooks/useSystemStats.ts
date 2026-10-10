@@ -28,7 +28,7 @@ export function useSystemStats(): void {
       if (typeof setSystemWsConnected === 'function') setSystemWsConnected(false)
     }
 
-    systemWsService.connect(onMessage, onOpen, onClose)
+    const unsubscribe = systemWsService.subscribe(onMessage, onOpen, onClose)
 
     // Page Visibility API: タブ非表示時に WS を停止、復帰時に再開
     const handleVisibility = () => {
@@ -36,14 +36,14 @@ export function useSystemStats(): void {
         systemWsService.suspend()
         if (typeof setSystemWsConnected === 'function') setSystemWsConnected(false)
       } else {
-        systemWsService.resume({ onMessage, onOpen, onClose })
+        systemWsService.resume()
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
-      systemWsService.disconnect()
+      unsubscribe()
       if (typeof setSystemWsConnected === 'function') setSystemWsConnected(false)
     }
   }, [setSystemStats, setSystemWsConnected])

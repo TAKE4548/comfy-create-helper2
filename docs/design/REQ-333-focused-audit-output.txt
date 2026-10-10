@@ -1,0 +1,193 @@
+[Model Auto-Router] Action 'ba-audit' requires model 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'. Enforcing mutual exclusive load...
+[Model Auto-Router] Loading 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored' (GPU: max)...
+[Model Auto-Router] Successfully loaded 'qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored'.
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 設計監査報告書
+
+## 1. 論理矛盾の特定
+
+### 1.1 Snapshot命名の不一致（T15）
+
+| 位置 | 定義 | 矛盾点 |
+|------|------|--------|
+| 用語セクション | `Snapshot=既存保存画像DB+params` | DBストレージ層を指す |
+| T8 TypeScript | `GenerationSnapshot` = FE名として使用 | APIレスポンス層を指す |
+| ResponseModel | `StateSnapshot（FE名GenerationSnapshot）と同一JSON字段` | 2つの異なる概念が同一化されている |
+
+**影響**: クライアント側で「どのSnapshotを取得すべきか」の判断基準が不明確。バージョン不一致時の状態同期に不整合が生じる可能性。
+
+---
+
+### 1.2 WebSocketアーキテクチャの矛盾（T15）
+
+```
+T15: "単一WS" (single WS)
+↓
+用語セクション:
+- Old ComfyWebSocketService (1秒開始/15秒最大)
+- Client統合WS (1〜10秒)  
+- 新generation WS (Vite ws:true, port 8000)
+- 旧/comfy WS (port 8188)
+```
+
+**矛盾**: 「単一WS」の主張と、実際には複数のWebSocket経路が存在するアーキテクチャが不一致。T24 adapterが「単一WS」をどう実装するか不明確。
+
+---
+
+### 1.3 Atomicityモデルの不整合（FC02）
+
+```
+commit済みなら後続snapshot取得/通知失敗で受付を拒否扱いに戻さず、
+commitしたjob IDs/epoch/revisionから202を返す。
+request lookupを受付根拠とし、state取得失敗でmutationを再送しない。
+```
+
+**論理的問題**:
+1. Commit後にsnapshot取得が失敗しても202を返す → クライアントは「成功」を信じる
+2. 但し実際にはクライアントが状態を取得できない（503）
+3. `request lookup`が受付根拠だが、lookup自体もstateに依存する
+
+**結果**: 一貫性保証と可用性のトレードオフが明確に定義されていない。
+
+---
+
+## 2. エッジケースの欠落
+
+### 2.1 Heartbeat Timeoutの挙動（T15）
+
+```
+例外/既存30秒heartbeat受信timeoutでdead解除、
+1MB/100接続制限は追加しない。
+```
+
+| 未定義項目 | 問題 |
+|------------|------|
+| "dead解除"のトリガー条件 | タイムアウト超えた瞬間に切断？それともgrace period? |
+| 再接続時のstate同期 | disconnectedクライアントが再接続した際のepoch/revision整合性 |
+| Partial heartbeat受信 | 100msで切断された場合、残りのheartbeatはカウントされるか？ |
+
+---
+
+### 2.2 Version Negotiationの挙動（Runtime version）
+
+```
+同epochの未知versionについて自動state再取得は最大1回、
+なお非対応なら再読込を案内する同期非対応状態にし、
+連続refetch/自動reload/reconnectを起こさない。
+```
+
+**未定義**:
+- "未知version"の判定基準（`version !== 1`？それとも必須フィールド欠落？）
+- Grace periodの長さ（5回？10秒？）
+- Clientが手動操作でstateを再取得する際の挙動
+
+---
+
+### 2.3 Request LookupのStaleness（Atomicity）
+
+```
+request lookupを受付根拠とし、state取得失敗でmutationを再送しない。
+```
+
+**シナリオ**:
+1. Client: `lookup(request_id)` → `{job_ids: ["job-001"]}`
+2. Server: Job cleanup cronが実行され、`job-001`が削除される
+3. Client: `submit_batch(job_ids=["job-001"])` → 失敗または予期せぬ挙動
+
+**影響**: Lookup結果のTTL（Time-To-Live）が定義されていない。
+
+---
+
+### 2.4 TypeScript Number/Float精度（T8）
+
+| Python | TypeScript | 問題 |
+|--------|------------|------|
+| `float` | `number` | IEEE 754 double precisionで両方同様の精度だが、JSONシリアライズ時の振る舞いが異なる |
+| `value: float` | `value: number` | 大規模な整数値（>2^53）が精度を失う可能性 |
+
+---
+
+## 3. SSoT（Single Source of Truth）整合性
+
+### 3.1 State Hierarchyの不明確さ
+
+```
+GenerationServerState (合成)
+  └─ GenerationSnapshot (公開API)
+      └─ JobView[]
+          └─ NodeView / ImageView / FailureView
+```
+
+**問題点**:
+- `GenerationServerState`がどこで維持されるか（DB？Redis？メモリ？）
+- T15の「導出」プロセスが非同期の場合、一時的な不一致が発生する可能性
+- `normal_group_id: str | None`が複数箇所で使われるが、その意味が統一されていない
+
+---
+
+### 3.2 Snapshot vs GenerationSnapshotの役割混同
+
+| 用途 | Snapshot | GenerationSnapshot |
+|------|----------|-------------------|
+| 保存先 | DB+params | APIレスポンス |
+| Cleanup対象 | はい | いいえ（FE名として） |
+| バージョン管理 | 不明 | `version: Literal[1]` |
+
+**矛盾**: "相互に保存/cleanup対象を混同しない"という指示があるが、命名と用途の境界線が曖昧。
+
+---
+
+## 4. 実装DAGの整合性検証
+
+```
+T1 (Governance) → T2/T3 → T4→T2/T3
+                    ↓
+T28 (Verification) ← T7/T10/T12...← T15/T24
+                    ↑
+T29 (UI) ───────────┘
+```
+
+**問題**:
+- T29がT28に依存しないと主張しているが、T28はT15/T24に依存し、これらはT29のUI挙動（URL callbacks）を参照
+- **循環依存のリスク**: UI層が状態管理層の検証に影響を与える可能性
+
+---
+
+## 5. 監査結果サマリー
+
+| カテゴリ | 重大度 | 件数 |
+|----------|--------|------|
+| 論理矛盾 | High | 3 |
+| エッジケース欠落 | Medium | 4 |
+| SSoT整合性 | Medium | 2 |
+| タイピング/型整合 | Low | 1 |
+
+---
+
+## 6. 推奨対応
+
+### 優先度High
+1. **Snapshot命名の統一**: `GenerationSnapshot`をFE名として明確化し、DB層との境界線を引く
+2. **Eventual Consistency SLA**: Commit後の状態可視化までの最大遅延時間を定義（例: 5秒）
+3. **Version Grace Period**: 未知バージョンに対する再接続試行回数の上限を設定
+
+### 優先度Medium
+4. **WS Architecture Clarification**: 「単一WS」の具体像をT24 adapterレベルで明確化
+5. **Request Lookup TTL**: Lookup結果の有効期限と再取得メカニズムを追加
+
+### 優先度Low
+6. **Type Precision Handling**: 大規模数値の精度損失を防ぐための型定義を見直す
+
+---
+
+## 結論
+
+REQ-333は**論理的整合性の主要な問題点（命名矛盾、Atomicityギャップ、WSアーキテクチャ不整合）を有している**。実装前に以下の修正が推奨される：
+
+1. Snapshot関連の用語を文脈別に明確化
+2. Commit後の状態可視化保証を追加
+3. WebSocket接続モデルを再設計または明確に定義
+
+コードレベルでの検証（FC01-FC08）は、これらの論理的問題が解決された後に実施すべき。

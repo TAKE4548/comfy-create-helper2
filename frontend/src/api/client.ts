@@ -10,6 +10,7 @@ export * from './domains/loraStudio'
 export * from './domains/speech'
 export * from './domains/translation'
 export * from './domains/settings'
+export * from './domains/generation'
 
 // Re-export all types from ./types for complete backward compatibility
 export * from './types'

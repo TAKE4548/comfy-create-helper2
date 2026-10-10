@@ -1,0 +1,4 @@
+{"origin": "http://localhost:5173", "target": "localhost:5173", "connected": true, "types": ["GENERATION_SNAPSHOT", "SYSTEM_STATS"]}
+{"origin": "http://192.168.3.13:5173", "target": "192.168.3.13:5173", "connected": true, "types": ["GENERATION_SNAPSHOT", "SYSTEM_STATS"]}
+{"origin": "http://192.168.3.13:8000", "target": "192.168.3.13:8000", "connected": true, "types": ["GENERATION_SNAPSHOT", "SYSTEM_STATS"]}
+{"origin": "https://example.com", "target": "192.168.3.13:5173", "connected": false, "error": "server rejected WebSocket connection: HTTP 403"}

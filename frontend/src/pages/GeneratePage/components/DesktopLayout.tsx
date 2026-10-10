@@ -21,6 +21,7 @@ import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import { ResourceGaugeHUD } from '../../../components/ResourceGauge/ResourceGaugeHUD'
 import { useSystemStats } from '../../../hooks/useSystemStats'
+import { selectProgress, selectWait } from '../../../utils/generationSelectors'
 
 
 interface SetTabItemProps {
@@ -163,6 +164,10 @@ export const DesktopLayout = ({
   const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
 
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
+  const generationSnapshot = useGenerationStore((state) => state.generationSnapshot)
+  const generationSyncIssue = useGenerationStore((state) => state.generationSyncIssue)
+  const filterOwnSession = useGenerationStore((state) => state.filterOwnSession)
+  const generationClientId = useGenerationStore((state) => state.clientId)
   const currentNode = useGenerationStore((state) => state.currentNode)
   const generationStartTime = useGenerationStore((state) => state.generationStartTime)
   const bypassProfiles = useGenerationStore((state) => state.bypassProfiles)
@@ -224,18 +229,35 @@ export const DesktopLayout = ({
     }
   }, [errorToast, setErrorToast])
 
+  const normalSessionId = filterOwnSession ? generationClientId : null
+  const normalProgress = generationSnapshot
+    ? selectProgress(generationSnapshot, 'normal', normalSessionId)
+    : null
+  const normalJobs = generationSnapshot?.normal_group_id
+    ? generationSnapshot.jobs.filter((job) => job.scope === 'normal' && job.normal_group_id === generationSnapshot.normal_group_id && (normalSessionId === null || job.session_id === normalSessionId))
+    : []
+  const normalRunningJob = normalJobs.find((job) => job.status === 'running')
+  const normalUnfinished = normalJobs.some((job) => ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
+  const normalWait = generationSnapshot && normalUnfinished && !normalRunningJob
+    ? selectWait(generationSnapshot, 'normal', normalSessionId)
+    : null
+  const managedNodePercentage = normalRunningJob?.node && normalRunningJob.node.max > 0
+    ? Math.min(100, Math.max(0, (normalRunningJob.node.value / normalRunningJob.node.max) * 100))
+    : 0
+  const managedStartTime = normalRunningJob?.started_at ? Date.parse(normalRunningJob.started_at) : NaN
+  const managedElapsedTime = Number.isFinite(managedStartTime) ? Math.max(0, Math.floor((Date.now() - managedStartTime) / 1000)) : elapsedTime
   useEffect(() => {
-    if (!generationStartTime) {
-      setElapsedTime(0)
-      return
-    }
-    setElapsedTime(Math.round((Date.now() - generationStartTime) / 1000))
-    const timer = setInterval(() => {
-      setElapsedTime(Math.round((Date.now() - generationStartTime) / 1000))
-    }, 1000)
+    const startTime = Number.isFinite(managedStartTime) ? managedStartTime : generationStartTime
+    if (!startTime) { setElapsedTime(0); return }
+    const update = () => setElapsedTime(Math.max(0, Math.floor((Date.now() - startTime) / 1000)))
+    update()
+    const timer = setInterval(update, 1000)
     return () => clearInterval(timer)
-  }, [generationStartTime])
-
+  }, [managedStartTime, generationStartTime])
+  const displayProgressActive = generationSnapshot ? (normalUnfinished && normalWait?.kind !== 'session') : isGeneratingHere
+  const displayNodeName = generationSnapshot ? (normalRunningJob?.node?.name || (normalWait ? `${normalWait.label} 待機中 (${normalWait.remaining})` : '準備中...')) : currentNode?.name || '準備中...'
+  const displayNodePercentage = generationSnapshot ? managedNodePercentage : nodeProgress?.percentage || 0
+  const displayElapsedTime = generationSnapshot ? managedElapsedTime : elapsedTime
   const batchProgress = (() => {
     if (!activeBatch || activeBatch.length === 0) {
       return {
@@ -295,28 +317,28 @@ export const DesktopLayout = ({
       )
     }
 
-    if (isGeneratingHere) {
+    if (displayProgressActive) {
       return (
         <>
           {/* 全体バッチ進捗 */}
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-              <span>全体進捗: {currentBatchItemNumber}/{totalBatchCount} 枚目</span>
-              <span>{overallPercentage}%</span>
+              <span>全体進捗: {generationSnapshot && normalProgress ? `${normalProgress.finished}/${normalProgress.total}` : `${currentBatchItemNumber}/${totalBatchCount}`} 枚目</span>
+              <span>{generationSnapshot && normalProgress ? `${Math.round(normalProgress.fraction * 100)}%` : `${overallPercentage}%`}</span>
             </div>
             <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-              <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${overallPercentage}%` }} />
+              <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${generationSnapshot && normalProgress ? normalProgress.fraction * 100 : overallPercentage}%` }} />
             </div>
           </div>
 
           {/* 詳細ノード進捗 */}
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-              <span>実行中: {currentNode?.name || '準備中...'}</span>
-              <span>{nodeProgress?.percentage || 0}%</span>
+              <span>実行中: {displayNodeName}</span>
+              <span>{Math.round(displayNodePercentage)}%</span>
             </div>
             <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-              <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 0}%` }} />
+              <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${displayNodePercentage}%` }} />
             </div>
           </div>
 
@@ -324,7 +346,7 @@ export const DesktopLayout = ({
           <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
             <div className="flex items-center gap-2">
               <Loader2 size={12} className="animate-spin text-accent-green flex-shrink-0" />
-              <span>経過時間: {elapsedTime}秒</span>
+              <span>経過時間: {displayElapsedTime}秒</span>
               {eta !== null && (
                 <>
                   <span className="text-zinc-700">|</span>
@@ -343,7 +365,7 @@ export const DesktopLayout = ({
       )
     }
 
-    if (isOtherSessionGenerating) {
+    if (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) {
       return (
         <>
           {/* ステータスバッジ & 進捗 */}
@@ -351,19 +373,19 @@ export const DesktopLayout = ({
             <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-300 font-semibold">他セッションで生成中...</span>
+                <span className="text-amber-300 font-semibold">他セッションで生成中{normalWait?.kind === 'session' ? ` (${normalWait.remaining})` : '...'}</span>
               </span>
-              <span>{nodeProgress?.percentage || 0}%</span>
+              <span>{Math.round(displayNodePercentage)}%</span>
             </div>
             <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
-              <div className="h-full bg-amber-500 progress-shimmer transition-all duration-200" style={{ width: `${nodeProgress?.percentage || 100}%` }} />
+              <div className="h-full bg-amber-500 progress-shimmer transition-all duration-200" style={{ width: `${displayNodePercentage}%` }} />
             </div>
           </div>
 
           {/* 実行中ノード */}
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-              <span>実行中: {currentNode?.name || '処理中...'}</span>
+              <span>実行中: {displayNodeName}</span>
             </div>
           </div>
 
@@ -371,7 +393,7 @@ export const DesktopLayout = ({
           <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium pt-1">
             <div className="flex items-center gap-2">
               <Loader2 size={12} className="animate-spin text-amber-400 flex-shrink-0" />
-              <span>経過: {elapsedTime}秒</span>
+              <span>経過: {displayElapsedTime}秒</span>
             </div>
             <span 
               onClick={() => setIsJobModalOpen(true)}
@@ -646,6 +668,7 @@ export const DesktopLayout = ({
                   )}
                   {/* Status bar */}
                   <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
+                    {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
                     {renderStatusBar()}
                   </div>
                 </div>
@@ -695,6 +718,7 @@ export const DesktopLayout = ({
               )}
               {/* Status bar */}
               <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
+                {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
                 {renderStatusBar()}
               </div>
             </div>

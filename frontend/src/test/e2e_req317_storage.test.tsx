@@ -1,14 +1,14 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workflow } from '../api/types'
-import { comfyApi, promptMetadataApi } from '../api/client'
+import { promptMetadataApi } from '../api/client'
+import { generationApi } from '../api/domains/generation'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { useBrowserStorageUsage } from '../hooks/useBrowserStorageUsage'
 import { buildGenerationRecord, PROMPT_RECORD_KEY } from '../utils/generationRecord'
 
 vi.mock('../api/client', () => ({
   configApi: { get: vi.fn().mockResolvedValue({ comfy_url: 'http://localhost:8188' }) },
-  comfyApi: { queuePrompt: vi.fn().mockResolvedValue({ prompt_id: 'generated-prompt' }), getQueue: vi.fn().mockResolvedValue({ queue_running: [], queue_pending: [] }) },
   promptMetadataApi: { create: vi.fn(), get: vi.fn() },
 }))
 
@@ -19,7 +19,11 @@ describe('REQ-317 storage cache and monitor integration', () => {
     localStorage.clear()
     sessionStorage.clear()
     vi.clearAllMocks()
-    vi.mocked(comfyApi.queuePrompt).mockResolvedValue({ prompt_id: 'generated-prompt' })
+    vi.spyOn(generationApi, 'submitBatch').mockResolvedValue({
+      batch_id: '00000000-0000-4000-8000-000000000002',
+      job_ids: ['00000000-0000-4000-8000-000000000001'],
+      epoch: 'test-epoch', revision: 1,
+    })
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -30,7 +34,6 @@ describe('REQ-317 storage cache and monitor integration', () => {
     for (let i = 1; i <= 30; i += 1) {
       localStorage.setItem(`prompt-surgeon-meta-old-${i}`, JSON.stringify({ timestamp: i, paramValues: { old: i } }))
     }
-    vi.mocked(promptMetadataApi.create).mockImplementation(() => new Promise(() => {}))
     vi.useFakeTimers()
     const { result, unmount } = renderHook(() => useBrowserStorageUsage())
     const initialBytes = bytes(localStorage)
@@ -45,10 +48,10 @@ describe('REQ-317 storage cache and monitor integration', () => {
       workflowId: 7, appliedAssets: {}, paramValues: { [PROMPT_RECORD_KEY]: JSON.stringify(record) },
     }, { skipQueueFetch: true })
 
-    expect(queued).toBe('generated-prompt')
+    expect(queued).toBe('00000000-0000-4000-8000-000000000001')
     expect(localStorage.getItem('prompt-surgeon-meta-old-1')).toBeNull()
     expect(localStorage.getItem('prompt-surgeon-meta-old-30')).not.toBeNull()
-    expect(localStorage.getItem('prompt-surgeon-meta-generated-prompt')).not.toBeNull()
+    expect(localStorage.getItem('prompt-surgeon-meta-00000000-0000-4000-8000-000000000001')).not.toBeNull()
     expect(Object.keys(localStorage).filter(key => key.startsWith('prompt-surgeon-meta-'))).toHaveLength(30)
 
     const afterGenerationBytes = bytes(localStorage)
@@ -56,7 +59,12 @@ describe('REQ-317 storage cache and monitor integration', () => {
     act(() => { vi.advanceTimersByTime(2500) })
     expect(result.current.localStorage).toEqual({ status: 'ok', bytes: afterGenerationBytes })
     expect(result.current.sessionStorage).toEqual({ status: 'ok', bytes: bytes(sessionStorage) })
-    expect(promptMetadataApi.create).toHaveBeenCalledTimes(1)
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
+    expect(generationApi.submitBatch).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'normal',
+      items: [expect.objectContaining({ param_values: { [PROMPT_RECORD_KEY]: JSON.stringify(record) } })],
+    }), undefined)
+    expect(promptMetadataApi.create).not.toHaveBeenCalled()
     unmount()
   })
 })

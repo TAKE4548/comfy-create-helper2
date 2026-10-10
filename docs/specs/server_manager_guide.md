@@ -58,15 +58,15 @@ networkingMode=mirrored
 設定後、PowerShell等で `wsl --shutdown` を実行し、WSL2を再起動してください。
 
 ### 2.2 外部アクセス・ファイアウォール設定 (Port 8000 / 8188 / 8899)
-LAN 内の他端末やスマートフォン等から Web UI（Port 8000）、WSL2 ComfyUI（Port 8188）、Web Manager（Port 8899）へアクセスする場合、Windows ファイアウォールで受信接続を許可する必要があります。
+LAN 内のPCやスマートフォンから通常の生成アプリを使う場合は、Web UI/APIのポート `8000` への受信接続を許可します。生成リクエスト、状態取得、進捗イベントは同一オリジンのバックエンドAPIと共有WebSocket `/api/ws` を通るため、端末からWSL2 ComfyUIの `8188` へ直接接続する必要はありません。サービス管理はアプリの設定ページにあるsystem欄から行い、`8000` が停止している場合はPCブラウザーで既存のWeb Manager（`http://<PCホスト名>:8899`）を復旧入口として使用します。`8899` は `8000` とは別オリジンです。
 `tools/server-manager/` に管理者権限昇格対応の専用バッチファイルが用意されています：
 
-- **`allow_firewall_all.bat`**: バックエンド・Web UI (`8000`)、WSL2 ComfyUI (`8188`)、Web Manager (`8899`) の 3 つのポート受信許可ルールを一括登録・確認します。モバイル端末等から画像生成・進捗受信を行う場合は本スクリプトを実行してください。
+- **`allow_firewall_all.bat`**: バックエンド・Web UI (`8000`)、WSL2 ComfyUI (`8188`)、Web Manager (`8899`) の既存受信許可ルールを一括登録・確認します。通常のアプリ利用に必要なのは `8000` です。このスクリプトは `8188` も許可するため、通常のアプリ接続だけを目的に一括実行する必要はありません。
 - **`allow_firewall_8000.bat`**: バックエンドおよび内包 Web UI 向けポート `8000`（TCP）の受信を許可します。ダブルクリックすると UAC 昇格確認が表示され、安全にファイアウォールルールが追加されます。
 - **`allow_firewall_8899.bat`**: サーバーマネージャー（Web Dashboard）向けポート `8899`（TCP）の受信を許可します。
 
 > [!NOTE]
-> ファイアウォールの開放は、家庭内 LAN や信頼できるプライベートネットワーク環境下でのみ行ってください。また、モバイル等の外部端末からアクセスした際、バックエンド（`/api/config`）およびフロントエンド（`useComfyWebSocket`）がアクセス元ホスト名に基づき ComfyUI URL（`http://<SERVER_LAN_IP>:8188`）を自動的に動的解決します。
+> これらのバッチファイルやWindowsファイアウォール規則は本書の説明対象であり、このアーキテクチャ更新では変更しません。バックエンドはサーバー設定の `COMFY_URL` を読み取り、端末へのComfyUI URL編集機能は提供しません。
 
 ### 2.3 配布・内包モード（Bundled Mode）での運用
 フロントエンドがビルド済み（`frontend/dist/index.html` が存在）の場合、バックエンド（FastAPI / Uvicorn）が Web UI と API の両方をポート 8000 でホスティングします。
@@ -130,6 +130,14 @@ LAN 内の他端末やスマートフォン等から Web UI（Port 8000）、WSL
    - タブ別コンソール出力エリア：
      - **[Win BE]** / **[React FE]** / **[WSL ComfyUI]** / **[Manager 操作]** の 4 つのタブで各サービスの標準出力/エラーログを切り替え表示
      - 2秒ごとの自動更新、最新ログへの自動追従（スクロール位置が上部の場合は追従を維持）、表示行数（100 / 200 / 500行）の切り替え、今すぐ更新ボタンを完備
+
+通常のサービス管理はメインアプリ（`http://<PCホスト名>:8000`）の設定ページにあるsystem欄を利用します。この欄は、同じホスト名のポート `8899` にあるWeb Managerの `/api/status`、`/api/action`、`/api/logs` を直接利用します。メインアプリのポート `8000` が停止してsystem欄へアクセスできない場合に限り、PCブラウザーから `http://<PCホスト名>:8899` を開いて既存のWeb Manager画面で起動・停止・ログ確認を行います。通常の生成・進捗受信には端末から `8188` を開放する必要はありません。
+
+管理対象BEを管理者権限で起動している場合は、Managerも管理者権限で起動する必要があります。通常権限のManagerでは管理者権限のBEを停止できません。BE再起動は旧ポートの停止確認後に起動し、停止未確認・起動待ち失敗は非zero結果を返します。旧プロセスのLISTENを新プロセスの成功として扱いません。Managerの起動処理はstdout/stderrを通常一時ファイルへ収集し、長寿命子プロセスのPIPE EOF待ちを避けます。
+
+メインFEは状態・ログを7秒、操作を120秒で待機します。ManagerのBE再起動予算は最低60秒（設定の起動待ち＋35秒余裕）、ComfyUI再起動は50秒、全体再起動は90秒です。timeoutや通信断で応答が不明な場合は結果未確認として状態を再取得し、操作を自動再送しません。ログAPIの`lines`は総行数、`content`は表示本文です。
+
+**Web Manager API（ポート `8899`）のブラウザーOrigin境界**: クロスオリジン要求を許可するのは、`http://localhost:{5173,8000}`、`http://127.0.0.1:{5173,8000}`、`http://192.168.*.*:{5173,8000}`、`http://10.*.*.*:{5173,8000}` に該当するOriginだけです。許可した応答では `Access-Control-Allow-Origin` に検証済みOriginをそのまま返し、`Vary: Origin` を付けます。外部ホスト、`Origin: null`、不正なOrigin形式、許可ポート以外（例: `8080`）には `Access-Control-Allow-Origin` を返しません。ポート `8899` のWeb Manager画面を直接開く復旧経路は同一オリジンのため引き続き利用できます。この境界はWeb Manager APIだけに適用し、ポート `8000` のバックエンドAPI一般へは適用しません。
 
 
 
@@ -254,7 +262,7 @@ Web Manager（http://localhost:8899）上のタブ別コンソール出力エリ
 - **Python Web API レイヤー (`server_api.py`)**:
   - `/api/status`: `subprocess.run` に 6 秒のタイムアウトおよびスレッド排他ロック（`status_lock`）を導入。PowerShell プロセスの多重スタック・累積を防止。
   - タイムアウト発生時は即座に `taskkill /T /F` で強制終了し、Python 側のソケット直接接続検査（`check_port_listening`）によるフォールバック状態（FE/BE は実疎通、ComfyUI は `status = "TIMEOUT"`）を HTTP 200 で返却。
-  - `/api/action`: `subprocess.run` に 15 秒のタイムアウトを設定し、超過時は HTTP 504 Gateway Timeout を返却。
+  - `/api/action`: 指定サービスと操作に応じた時間予算を使い、超過時は HTTP 504 Gateway Timeout を返却。BE再起動は設定待機時間に余裕を加え最低60秒を確保する。出力は通常一時ファイルで有限取得し、PIPEを継承した子孫の終了待ちを行わない。
 - **フロントエンド Web UI レイヤー**:
   - `fetch('/api/status')` に `AbortController`（タイムアウト 7 秒）を付与し、ブラウザ側でのリクエストハングを物理遮断。
   - `setInterval` を廃止し、先行リクエストの完了を待ってから次回ポーリングをスケジュールする再帰的 `setTimeout`（多重リクエストガード `isFetchingStatus`）に変更。
@@ -267,5 +275,3 @@ Web Manager（http://localhost:8899）上のタブ別コンソール出力エリ
 - **Web Manager 監視側 (`server_status.py` / `server-manager.ps1`)**:
   - `check_port_listening` でソケット接続成功時に即座に RST を送信せず、`s.shutdown(socket.SHUT_RDWR)` による Graceful Shutdown を経てからクローズするよう改修。
   - PowerShell 側でも `TcpClient.Close()` 前にストリームを正常に処理し、相手側プロセスへの不要な RST 送信を防止。
-
-

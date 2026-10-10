@@ -4,8 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { comfyApi } from '../api/domains/settings'
-import { promptMetadataApi } from '../api/domains/snapshots'
+import { generationApi, GenerationApiError } from '../api/domains/generation'
 import { API_CACHE_BUSTER, createIndexedDBPersister } from '../utils/queryCachePersister'
 import { PROMPT_RECORD_KEY } from '../utils/generationRecord'
 import { buildGenerationRecord } from '../utils/generationRecord'
@@ -35,6 +34,13 @@ const seedLegacyCache = () => {
   createIndexedDBPersister({ indexedDB: new IDBFactory(), storage: localStorage, now: () => 1_800_000_000_000 })
 }
 let queueIndex = 0
+const jobIdFor = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+const installBatchApi = () => {
+  vi.spyOn(generationApi, 'submitBatch').mockImplementation(async () => {
+    const index = ++queueIndex
+    return { batch_id: jobIdFor(index + 1000), job_ids: [jobIdFor(index)], epoch: 'test-epoch', revision: index }
+  })
+}
 const seedPriorRecords = (base: number) => Array.from({ length: 30 }, (_, i) => {
   const id = `prior-${i + 1}`
   localStorage.setItem(`prompt-surgeon-meta-${id}`, JSON.stringify({
@@ -54,7 +60,6 @@ const makeRecord = (prompt: string, seed: number, steps: number) => {
 }
 const submit31 = async (base: number) => {
   vi.useFakeTimers()
-  vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => ({ prompt_id: `recovered-prompt-${++queueIndex}` } as never))
   const ids: string[] = []
   for (let i = 1; i <= 31; i++) {
     vi.setSystemTime(base + i * 1000)
@@ -77,8 +82,7 @@ describe('REQ-332 cache recovery integration', () => {
     originalErrorSetter = useGenerationStore.getState().setErrorToast
     useGenerationStore.setState({ setErrorToast: errorToast } as never)
     errorToast.mockClear()
-    vi.spyOn(comfyApi, 'queuePrompt').mockResolvedValue({ prompt_id: 'recovered-prompt' } as never)
-    vi.spyOn(promptMetadataApi, 'create').mockResolvedValue(undefined as never)
+    installBatchApi()
     useGenerationStore.setState({ errorToast: null } as never)
   })
 
@@ -89,9 +93,6 @@ describe('REQ-332 cache recovery integration', () => {
   })
 
   it('AC3/4: accepts 31 unique prompts and keeps only the newest 30 metadata records', async () => {
-    vi.mocked(comfyApi.queuePrompt).mockImplementation(async () => ({
-      prompt_id: `recovered-prompt-${++queueIndex}`,
-    } as never))
     for (let i = 1; i <= 30; i++) {
       localStorage.setItem(`prompt-surgeon-meta-existing-${i}`, JSON.stringify({ timestamp: i }))
     }
@@ -103,20 +104,20 @@ describe('REQ-332 cache recovery integration', () => {
         workflowId: 7, appliedAssets: {},
         paramValues: { [PROMPT_RECORD_KEY]: JSON.stringify({ version: 1, prompt: `prompt-${i}`, seed: i, steps: 20 }) },
       }, { skipQueueFetch: true })
-      expect(queued).toBe(`recovered-prompt-${i}`)
+      expect(queued).toBe(jobIdFor(i))
     }
     const keys = Object.keys(localStorage).filter(key => key.startsWith('prompt-surgeon-meta-')).sort()
     expect(keys).toHaveLength(30)
-    expect(keys).not.toContain('prompt-surgeon-meta-recovered-prompt-1')
+    expect(keys).not.toContain(`prompt-surgeon-meta-${jobIdFor(1)}`)
     for (let i = 2; i <= 31; i++) {
-      const value = JSON.parse(localStorage.getItem(`prompt-surgeon-meta-recovered-prompt-${i}`)!)
+      const value = JSON.parse(localStorage.getItem(`prompt-surgeon-meta-${jobIdFor(i)}`)!)
       const record = JSON.parse(value.paramValues[PROMPT_RECORD_KEY])
       expect(record).toMatchObject({ prompt: `prompt-${i}`, seed: i, steps: 20 })
       expect(value.timestamp).toBe(base + i * 1000)
     }
     expect(new Set(keys).size).toBe(30)
     expect(errorToast).not.toHaveBeenCalled()
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(31)
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(31)
   })
 
   it('REQ-332-T10 AC3: 31 submissions succeed without a metadata-prune notification', async () => {
@@ -127,19 +128,19 @@ describe('REQ-332 cache recovery integration', () => {
     expect(new Set(ids).size).toBe(31)
     expect(errorToast).not.toHaveBeenCalled()
     expect(warning).not.toHaveBeenCalled()
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(31)
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(31)
   })
 
   it('REQ-332-T10 AC4: every one of the newest 30 IDs retains its distinct record fields', async () => {
     seedLegacyCache()
     seedPriorRecords(Date.parse('2026-10-08T00:00:00Z'))
     const ids = await submit31(Date.parse('2026-10-08T00:00:00Z'))
-    const saved = Object.keys(localStorage).filter(key => key.startsWith('prompt-surgeon-meta-recovered-prompt-')).sort()
-    expect(ids).toEqual(Array.from({ length: 31 }, (_, i) => `recovered-prompt-${i + 1}`))
+    const saved = ids.filter(id => localStorage.getItem(`prompt-surgeon-meta-${id}`) !== null)
+    expect(ids).toEqual(Array.from({ length: 31 }, (_, i) => jobIdFor(i + 1)))
     expect(saved).toHaveLength(30)
-    expect(saved).not.toContain('prompt-surgeon-meta-recovered-prompt-1')
+    expect(saved).not.toContain(jobIdFor(1))
     for (let i = 2; i <= 31; i++) {
-      const record = readLocalRecordedMetadata(`recovered-prompt-${i}`)
+      const record = readLocalRecordedMetadata(jobIdFor(i))
       expect(record).not.toBeNull()
       const generation = JSON.parse(record!.paramValues[PROMPT_RECORD_KEY])
       expect(generation.fields.find((field: { role: string }) => field.role === 'positive').value).toBe(`prompt-${i}`)
@@ -171,8 +172,8 @@ describe('REQ-332 cache recovery integration', () => {
     readFailure.mockRestore()
     const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
 
-    expect(queued).toBe('recovered-prompt')
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+    expect(queued).toBe(jobIdFor(1))
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
   })
 
   it('REQ-332-T11 AC11 read rejection server fallback', async () => {
@@ -201,13 +202,13 @@ describe('REQ-332 cache recovery integration', () => {
     try {
       await waitFor(() => expect(workflowsApi.list).toHaveBeenCalledTimes(1))
       expect(result.current.data).toBeUndefined()
-      expect(comfyApi.queuePrompt).not.toHaveBeenCalled()
+      expect(generationApi.submitBatch).not.toHaveBeenCalled()
       resolveServer([{ id: 7, name: 'server workflow' }])
       await waitFor(() => expect(result.current.data).toEqual([{ id: 7, name: 'server workflow' }]))
       expect(workflowsApi.list.mock.calls[0]).toEqual([])
       expect(result.current.data?.[0].id).toBe(7)
-      expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recovered-prompt')
-      expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+      expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe(jobIdFor(1))
+      expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
       expect(localStorage.getItem('prompt-surgeon-settings')).toBe(settingsBefore)
       expect(values(sessionStorage)).toEqual(sessionBefore)
     } finally {
@@ -229,37 +230,45 @@ describe('REQ-332 cache recovery integration', () => {
     const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
     failedWrite.mockRestore()
 
-    expect(queued).toBe('recovered-prompt')
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+    expect(queued).toBe(jobIdFor(1))
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
   })
 
-  it('AC14: reports only metadata-storage failure while server create/get preserve the submitted record', async () => {
-    const serverRecords = new Map<string, unknown>()
-    vi.mocked(promptMetadataApi.create).mockImplementation(async data => {
-      serverRecords.set(data.prompt_id, data)
-      return undefined as never
-    })
-    vi.spyOn(promptMetadataApi, 'get').mockImplementation(async promptId => serverRecords.get(promptId) as never)
+  it('AC14: local metadata-cache quota failure does not affect BE acceptance or frozen request metadata', async () => {
     const original = Storage.prototype.setItem
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
-      if (key === 'prompt-surgeon-meta-recovered-prompt') throw new DOMException('quota', 'QuotaExceededError')
+      if (key === `prompt-surgeon-meta-${jobIdFor(1)}`) throw new DOMException('quota', 'QuotaExceededError')
       return original.call(this, key, value)
     })
     const submitted = metadata()
     const queued = await useGenerationStore.getState().queuePrompt({}, submitted, { skipQueueFetch: true })
 
-    expect(queued).toBe('recovered-prompt')
-    expect(promptMetadataApi.create).toHaveBeenCalledWith(expect.objectContaining({
-      prompt_id: 'recovered-prompt', workflow_id: 7,
-      param_values: expect.objectContaining({ [PROMPT_RECORD_KEY]: expect.any(String) }),
-    }))
-    const record = JSON.parse(vi.mocked(promptMetadataApi.create).mock.calls[0][0].param_values[PROMPT_RECORD_KEY])
+    expect(queued).toBe(jobIdFor(1))
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
+    const request = vi.mocked(generationApi.submitBatch).mock.calls[0][0]
+    expect(request.items[0]).toMatchObject({ workflow_id: 7, param_values: submitted.paramValues, applied_assets: {} })
+    const record = JSON.parse(request.items[0].param_values[PROMPT_RECORD_KEY] as string)
     expect(record).toMatchObject({ version: 1, prompt: 'submitted', seed: 42, steps: 20 })
-    const serverRecord = await promptMetadataApi.get('recovered-prompt')
-    expect(JSON.parse(serverRecord!.param_values[PROMPT_RECORD_KEY])).toMatchObject({
-      version: 1, prompt: 'submitted', seed: 42, steps: 20,
+    expect(localStorage.getItem(`prompt-surgeon-meta-${jobIdFor(1)}`)).toBeNull()
+  })
+
+  it('uses one request lookup after an ambiguous 202 response without resubmitting the batch', async () => {
+    vi.mocked(generationApi.submitBatch).mockRejectedValueOnce(new GenerationApiError(503, {
+      code: 'generation_submit_unconfirmed', message: 'acceptance unknown', outcome: 'unconfirmed',
+      request_id: null, job_id: null,
+    }))
+    vi.spyOn(generationApi, 'getRequest').mockResolvedValue({
+      batch_id: jobIdFor(1001), job_ids: [jobIdFor(1)],
     })
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+
+    const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
+    const submittedRequest = vi.mocked(generationApi.submitBatch).mock.calls[0][0]
+
+    expect(queued).toBe(jobIdFor(1))
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
+    expect(generationApi.getRequest).toHaveBeenCalledTimes(1)
+    expect(generationApi.getRequest).toHaveBeenCalledWith(submittedRequest.request_id)
+    expect(submittedRequest.items[0].param_values).toEqual(metadata().paramValues)
   })
 
   it('AC16/17: clears only the IDB cache and fetches the current workflow after restart', async () => {
@@ -284,10 +293,10 @@ describe('REQ-332 cache recovery integration', () => {
     const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
 
     expect(saved?.clientState.queries[0].state.data).toEqual([{ id: 7, name: 'latest' }])
-    expect(queued).toBe('recovered-prompt')
+    expect(queued).toBe(jobIdFor(1))
     expect(localStorage.getItem('prompt-surgeon-settings')).toBe('{"keep":true}')
     expect(sessionStorage.getItem('studio-draft')).toBe('{"keep":true}')
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
   })
 
   it('REQ-332-T9 AC16: interrupted first migration leaves no snapshot and retry queues once', async () => {
@@ -352,8 +361,8 @@ describe('REQ-332 cache recovery integration', () => {
       await restartedClient.fetchQuery({ queryKey: ['workflow', 7], queryFn: () => workflowsApi.get(7) })
       expect(restartedClient.getQueryData(['workflow', 7])).toMatchObject({ name: 'server workflow' })
       const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
-      expect(queued).toBe('recovered-prompt')
-      expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+      expect(queued).toBe(jobIdFor(1))
+      expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
       expect(localStorage.getItem('prompt-surgeon-settings')).toBe(expectedLocal.settings)
       expect(localStorage.getItem('prompt-surgeon-meta-keep')).toBe(expectedLocal.metadataValue)
       expect(sessionStorage.getItem('studio-draft-10')).toBe(expectedSession)
@@ -394,10 +403,10 @@ describe('REQ-332 cache recovery integration', () => {
     const next = new QueryClient()
     const serverFetch = vi.fn().mockResolvedValue([{ id: 7, name: 'latest' }])
     expect(await next.fetchQuery({ queryKey: ['workflows'], queryFn: serverFetch })).toEqual([{ id: 7, name: 'latest' }])
-    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe('recovered-prompt')
+    expect(await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })).toBe(jobIdFor(1))
     expect(localStorage.getItem('prompt-surgeon-settings')).toBe(localBefore['prompt-surgeon-settings'])
     expect(localStorage.getItem('prompt-surgeon-meta-keep')).toBe(localBefore['prompt-surgeon-meta-keep'])
     expect(values(sessionStorage)).toEqual(sessionBefore)
-    expect(comfyApi.queuePrompt).toHaveBeenCalledTimes(1)
+    expect(generationApi.submitBatch).toHaveBeenCalledTimes(1)
   })
 })

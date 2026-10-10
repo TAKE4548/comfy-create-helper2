@@ -1,0 +1,76 @@
+CAPTURE NOTE: The local model command exited 0 and produced the verdict below, but the terminal tool clipped the middle of its 1,256-token output at the configured 1,000-token display limit. This file preserves the visible captured excerpt, not the omitted raw text. The original prompt/input and explicit unload evidence are preserved separately.
+
+[Model Auto-Router] Unloading all loaded models (qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored) to free VRAM...
+[Model Auto-Router] All models unloaded from LM Studio. VRAM freed.
+<!-- [LLM Audit Trace: Action=ba-audit | Model=qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored | Domain=reasoning | Params=9.0B | Quant=Q6_K] -->
+# REQ-333 AC36 Analysis Report
+
+## Executive Summary
+
+After thorough analysis of the normal-only differential audit requirement, I identified **12 critical issues** including logical contradictions, ambiguous edge cases, and potential overlaps with existing feature behavior. The implementation risks inconsistent cancellation outcomes and unexpected Studio job interference.
+
+---
+
+## Detailed Findings
+
+### 1. Logical Contradictions
+
+| Issue | Location | Impact |
+|-------|----------|--------|
+| **Atomicity Paradox** | T2 Python/T8 TS section | Claims TOCTOU cannot be guaranteed atomically while demanding atomic target behavior |
+| **Protection Conflict** | FC17/FC18 | Normal scope protection vs. Studio running detection creates race condition window |
+| **Scope Default Ambiguity** | T30 testing | Initial "all" default conflicts with normal-only semantic intent |
+
+### 2. Missing Edge Cases
+
+```
+┌─────────────────────────────────────────────────────┐
+│              EDGE CASE MATRIX                       │
+├──────────────────┬─────────────────────────────────┤
+│ Scenario         │ Expected Behavior               │
+├──────────────────┼─────────────────────────────────┤
+│ Cross-session    │ Unclear if normal scope is                    │
+│ cancellation     │ session…[terminal output clipped here]       │
+```
+
+[The omitted middle of the model report is unavailable from the completed command session.]
+
+## Critical Gaps Requiring Resolution (captured ending)
+
+### Gap 1: Session-Scoping Definition
+**Question**: Is normal scope cancellation limited to the current user's session, or does it affect all sessions globally?
+
+**Recommendation**: Explicitly define `session_scope = 'local'|'global'` parameter with default `'local'`.
+
+### Gap 2: Legacy Job Detection Algorithm
+```python
+# Current (ambiguous):
+is_legacy = job.scope is None OR job.created_at < cutoff_date
+
+# Recommended:
+def is_protected_legacy(job: CancelTarget) -> bool:
+    return (job.metadata.get('studio_batch') or
+            job.prompt_id in PROTECTED_PROMPT_SET or
+            job.client_id not in KNOWN_CLIENTS and job.status == 'running')
+```
+
+### Gap 3: Timeout Retry Policy
+**Current**: "No automatic retry on timeout"  
+**Problem**: Users experience repeated partial failures without resolution path.
+
+**Recommendation**: Implement exponential backoff with max 3 retries, logging each attempt to audit trail.
+
+## Verification Checklist
+
+- [ ] Define session-scoping behavior explicitly in API contract
+- [ ] Create legacy job detection unit tests covering pre-cutoff scenarios
+- [ ] Add timeout retry policy with circuit breaker pattern
+- [ ] Document TOCTOU window (estimated: 50-200ms based on T2)
+- [ ] Verify cross-session cancellation behavior with integration test
+- [ ] Confirm Studio protection barrier doesn't block legitimate normal cancellations
+
+## Final Recommendation
+
+**Status**: **BLOCKED - Requires clarification before implementation**
+
+The requirement contains sufficient detail for backend implementation but lacks critical edge case definitions that will cause inconsistent user experience. Priority should be given to clarifying session-scoping and legacy job detection algorithms before code dispatch.

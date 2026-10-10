@@ -3,6 +3,9 @@ import { useGenerateAction } from '../useGenerateAction';
 import { useGenerationStore } from '../../../../store/useGenerationStore';
 import type { Workflow } from '../../../../api/types';
 import { PROMPT_RECORD_KEY } from '../../../../utils/generationRecord';
+import { generationApi } from '../../../../api/domains/generation';
+
+vi.spyOn(generationApi, 'cancelJob').mockResolvedValue({ status: 'cancelled' } as any);
 
 vi.mock('../../../../store/useGenerationStore', () => {
   const store = {
@@ -12,20 +15,26 @@ vi.mock('../../../../store/useGenerationStore', () => {
     batchSize: 1,
     seedMode: 'random',
     seed: 12345,
+    clientId: 'test-session',
     sets: [],
     appliedAssets: {},
     bypassProfiles: [],
     paramSyncGroups: [],
     isAnimaMode: false,
     queuePrompt: vi.fn(),
+    submitGenerationBatch: vi.fn(),
     setActiveBatch: vi.fn(),
     setSubmissionAbortController: vi.fn(),
     setIsBatchSubmitting: vi.fn(),
     fetchQueue: vi.fn(),
     setErrorToast: vi.fn(),
+    setVramWaitStatus: vi.fn(),
   };
   const hook: any = () => store;
   hook.getState = () => store;
+  const listeners = new Set<() => void>();
+  hook.subscribe = vi.fn((listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); });
+  store.publish = () => listeners.forEach((listener) => listener());
   return {
     useGenerationStore: hook,
   };
@@ -49,11 +58,27 @@ describe('useGenerateAction', () => {
     mockStore.paramSyncGroups = [];
     mockStore.isAnimaMode = false;
     mockStore.queuePrompt.mockReset();
+    mockStore.queuePrompt.mockResolvedValue('mock-job');
+    mockStore.submitGenerationBatch.mockReset().mockImplementation(async (payload: any) => {
+      const job_ids: string[] = [];
+      for (const item of payload.items) {
+        const promptId = await mockStore.queuePrompt(item.graph, {
+          paramValues: item.param_values,
+          appliedAssets: item.applied_assets,
+          workflowId: item.workflow_id,
+        }, { skipQueueFetch: true, isBatchIntermediate: payload.items.length > 1, onSubmissionFailure: vi.fn() });
+        if (promptId) job_ids.push(promptId);
+      }
+      await mockStore.fetchQueue();
+      return { batch_id: 'test-batch', job_ids };
+    });
     mockStore.setActiveBatch.mockReset();
     mockStore.setSubmissionAbortController.mockReset();
     mockStore.setIsBatchSubmitting.mockReset();
     mockStore.fetchQueue.mockReset();
     mockStore.setErrorToast.mockReset();
+    mockStore.setVramWaitStatus.mockReset();
+    vi.mocked(generationApi.cancelJob).mockClear();
   });
 
   const baseWorkflow: Workflow = {
@@ -380,7 +405,7 @@ describe('useGenerateAction', () => {
   });
 
   describe('handleGenerateSets REQ-140 batch queueing and abort control', () => {
-    it('should pass skipQueueFetch: true to queuePrompt and call fetchQueue once after all sets are queued', async () => {
+    it('submits every checked set in one batch request', async () => {
       mockStore.sets = [
         { id: '1', name: 'Set A', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
         { id: '2', name: 'Set B', checked: false, batchSize: 1, seedMode: 'random', seed: 200, paramValues: {}, appliedAssets: {} },
@@ -392,25 +417,12 @@ describe('useGenerateAction', () => {
       await handleGenerateSets();
 
       expect(mockStore.setSubmissionAbortController).toHaveBeenCalled();
-      // 2 jobs for Set A + 1 job for Set C = 3 calls
       expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
-      expect(mockStore.queuePrompt.mock.calls[0][2]).toMatchObject({
-        skipQueueFetch: true,
-        signal: expect.any(AbortSignal),
-        isBatchIntermediate: true,
-      });
-      expect(mockStore.queuePrompt.mock.calls[1][2]).toMatchObject({
-        skipQueueFetch: true,
-        signal: expect.any(AbortSignal),
-        isBatchIntermediate: true,
-      });
-      expect(mockStore.queuePrompt.mock.calls[2][2]).toMatchObject({
-        skipQueueFetch: true,
-        signal: expect.any(AbortSignal),
-        isBatchIntermediate: true,
-      });
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      expect(mockStore.submitGenerationBatch.mock.calls[0][0].items).toHaveLength(3);
+      expect(mockStore.submitGenerationBatch.mock.calls[0][0]).toMatchObject({ session_id: 'test-session', scope: 'normal' });
 
-      // Initial placeholder batch + per prompt updates + final batch
+      // Initial pending batch + accepted IDs + final persisted batch
       expect(mockStore.setActiveBatch).toHaveBeenCalled();
       expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
     });
@@ -438,14 +450,14 @@ describe('useGenerateAction', () => {
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      // Only 1 job should have been submitted because loop aborts before index 1
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
-      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      expect(mockStore.submitGenerationBatch.mock.calls[0][0].items).toHaveLength(3);
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(3);
     });
   });
 
   describe('handleGenerateSets REQ-152 batch queueing optimization & cancellation recovery fixes', () => {
-    it('should pass signal and isBatchIntermediate: true to queuePrompt (Issue 2 & Issue 3)', async () => {
+    it('sends one-item batches without direct-Comfy transport options', async () => {
       mockStore.sets = [
         { id: '1', name: 'Set A', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
       ];
@@ -454,15 +466,8 @@ describe('useGenerateAction', () => {
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.any(Object),
-        expect.objectContaining({
-          skipQueueFetch: true,
-          signal: expect.any(AbortSignal),
-          isBatchIntermediate: true,
-        })
-      );
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      expect(mockStore.submitGenerationBatch.mock.calls[0][0].items).toHaveLength(1);
     });
 
     it('should not overwrite setActiveBatch and not call fetchQueue in finally when aborted (Issue 1)', async () => {
@@ -483,8 +488,8 @@ describe('useGenerateAction', () => {
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
-      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
     });
 
     it('should immediately return and skip subsequent batch updates when aborted right after queuePrompt (Issue 1 & 2)', async () => {
@@ -506,9 +511,9 @@ describe('useGenerateAction', () => {
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1);
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
       expect(mockStore.setErrorToast).not.toHaveBeenCalled();
-      expect(mockStore.fetchQueue).not.toHaveBeenCalled();
+      expect(mockStore.fetchQueue).toHaveBeenCalledTimes(1);
     });
 
     it('should call setIsBatchSubmitting(true) on start and setIsBatchSubmitting(false) in finally (Issue 4)', async () => {
@@ -562,10 +567,8 @@ describe('useGenerateAction', () => {
       });
 
       // After first job queued: job 0 promptId updated to real-prompt-1
-      const callAfterJob0 = mockStore.setActiveBatch.mock.calls[1][0];
-      expect(callAfterJob0[0].promptId).toBe('real-prompt-1');
-      expect(callAfterJob0[1].promptId).toMatch(/^pending-Set 1-1-/);
-      expect(callAfterJob0[2].promptId).toMatch(/^pending-Set 2-0-/);
+      const acceptedBatch = mockStore.setActiveBatch.mock.calls[1][0];
+      expect(acceptedBatch.map((job: any) => job.promptId)).toEqual(['real-prompt-1', 'real-prompt-2', 'real-prompt-3']);
 
       // Final batch should have all real prompt IDs
       const finalCallBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
@@ -579,18 +582,12 @@ describe('useGenerateAction', () => {
         { id: '1', name: 'Set Fail', checked: true, batchSize: 2, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
       ];
 
-      // Job 0 succeeds, Job 1 returns null (failure)
-      mockStore.queuePrompt
-        .mockResolvedValueOnce('prompt-success')
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'Node input is missing', outcome: 'failed' });
-          return null;
-        });
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Node input is missing'));
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set Fail] (2/2) のキュー投入に失敗しました: Node input is missing',
+        message: '[Set Fail] (1/2) のキュー投入に失敗しました: Node input is missing\n[Set Fail] (2/2) のキュー投入に失敗しました: Node input is missing',
         type: 'error',
         persistent: true,
       });
@@ -598,9 +595,7 @@ describe('useGenerateAction', () => {
       // Check final activeBatch has status: 'failed' for second job
       const finalBatch = mockStore.setActiveBatch.mock.calls[mockStore.setActiveBatch.mock.calls.length - 1][0];
       expect(finalBatch).toHaveLength(2);
-      expect(finalBatch[0].promptId).toBe('prompt-success');
-      expect(finalBatch[0].status).toBe('pending');
-      expect(finalBatch[1].status).toBe('failed');
+      expect(finalBatch.map((job: any) => job.status)).toEqual(['failed', 'failed']);
     });
 
     it('uses the thrown queuePrompt error when the failure callback was not invoked', async () => {
@@ -608,7 +603,7 @@ describe('useGenerateAction', () => {
         { id: '1', name: 'Set Error', checked: true, batchSize: 1, seedMode: 'random', seed: 100, paramValues: {}, appliedAssets: {} },
       ];
 
-      mockStore.queuePrompt.mockRejectedValueOnce(new Error('Network error'));
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Network error'));
 
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
@@ -629,23 +624,14 @@ describe('useGenerateAction', () => {
         { id: '1', name: 'Set A', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
         { id: '2', name: 'Set B', checked: true, batchSize: 1, seedMode: 'random', seed: 20, paramValues: {}, appliedAssets: {} },
       ];
-      mockStore.queuePrompt
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'A failed', outcome: 'failed' });
-          return null;
-        })
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'B timed out', outcome: 'unconfirmed' });
-          return null;
-        });
-      mockStore.fetchQueue.mockRejectedValueOnce(new Error('Refresh failed'));
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Batch rejected'));
 
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledTimes(1);
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set A] (1/1) のキュー投入に失敗しました: A failed\n[Set B] (1/1) のキュー投入を確認できませんでした: B timed out',
+        message: '[Set A] (1/1) のキュー投入に失敗しました: Batch rejected\n[Set B] (1/1) のキュー投入に失敗しました: Batch rejected',
         type: 'error',
         persistent: true,
       });
@@ -658,23 +644,15 @@ describe('useGenerateAction', () => {
         { id: '1', name: 'Set Alpha', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
         { id: '2', name: 'Set Beta', checked: true, batchSize: 1, seedMode: 'random', seed: 20, paramValues: {}, appliedAssets: {} },
       ];
-      mockStore.queuePrompt
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'Alpha rejected', outcome: 'failed' });
-          return null;
-        })
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'Beta unavailable', outcome: 'failed' });
-          return null;
-        });
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Batch rejected'));
 
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
       expect(mockStore.setErrorToast).toHaveBeenCalledTimes(1);
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set Alpha] (1/1) のキュー投入に失敗しました: Alpha rejected\n[Set Beta] (1/1) のキュー投入に失敗しました: Beta unavailable',
+        message: '[Set Alpha] (1/1) のキュー投入に失敗しました: Batch rejected\n[Set Beta] (1/1) のキュー投入に失敗しました: Batch rejected',
         type: 'error',
         persistent: true,
       });
@@ -693,7 +671,7 @@ describe('useGenerateAction', () => {
       await handleGenerateSets();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '[Set Unknown] (1/1) のキュー投入に失敗しました: 理由を特定できませんでした',
+        message: '[Set Unknown] (1/1) のキュー投入を確認できませんでした: 受付応答にjob_idがありません',
         type: 'error',
         persistent: true,
       });
@@ -705,10 +683,9 @@ describe('useGenerateAction', () => {
       mockStore.sets = [
         { id: '1', name: 'Set Cancel', checked: true, batchSize: 1, seedMode: 'random', seed: 10, paramValues: {}, appliedAssets: {} },
       ];
-      mockStore.queuePrompt.mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
+      mockStore.submitGenerationBatch.mockImplementationOnce(async () => {
         controller?.abort();
-        options.onSubmissionFailure({ reason: 'Cancelled', outcome: 'failed' });
-        return null;
+        throw new Error('Cancelled');
       });
 
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
@@ -719,10 +696,7 @@ describe('useGenerateAction', () => {
 
     it('passes the submission failure callback and omits the index for one generation request', async () => {
       mockStore.batchSize = 1;
-      mockStore.queuePrompt.mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-        options.onSubmissionFailure({ reason: 'Invalid workflow', outcome: 'failed' });
-        return null;
-      });
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Invalid workflow'));
 
       const { handleGenerate } = useGenerateAction(baseWorkflow);
       await handleGenerate();
@@ -736,18 +710,13 @@ describe('useGenerateAction', () => {
 
     it('includes the batch position when a single-generation batch has multiple requests', async () => {
       mockStore.batchSize = 2;
-      mockStore.queuePrompt
-        .mockResolvedValueOnce('prompt-1')
-        .mockImplementationOnce(async (_wf: unknown, _metadata: unknown, options: any) => {
-          options.onSubmissionFailure({ reason: 'Rejected', outcome: 'failed' });
-          return null;
-        });
+      mockStore.submitGenerationBatch.mockRejectedValueOnce(new Error('Rejected'));
 
       const { handleGenerate } = useGenerateAction(baseWorkflow);
       await handleGenerate();
 
       expect(mockStore.setErrorToast).toHaveBeenCalledWith({
-        message: '生成 (2/2)のキュー投入に失敗しました: Rejected',
+        message: '生成 (1/2)のキュー投入に失敗しました: Rejected\n生成 (2/2)のキュー投入に失敗しました: Rejected',
         type: 'error',
         persistent: true,
       });
@@ -774,9 +743,57 @@ describe('useGenerateAction', () => {
       const { handleGenerate } = useGenerateAction(baseWorkflow);
       await handleGenerate();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
       expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(true);
       expect(mockStore.setIsBatchSubmitting).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('REQ-333-T17 server-side VRAM wait cancellation', () => {
+    it('captures all generation inputs before the single batch submission', async () => {
+      mockStore.batchSize = 2;
+      mockStore.seedMode = 'fixed';
+      mockStore.seed = 410;
+      mockStore.paramValues = { prompt: 'captured value' };
+      let release!: (value: any) => void;
+      mockStore.submitGenerationBatch.mockImplementationOnce((request: any) => new Promise((resolve) => {
+        release = resolve;
+        expect(request.items).toHaveLength(2);
+        expect(request.items[0].param_values.prompt).toBe('captured value');
+        expect(request.items[0].graph['3'].inputs.seed).toBe(410);
+        expect(request.items[1].graph['3'].inputs.seed).toBe(411);
+      }));
+
+      const pending = useGenerateAction(baseWorkflow).handleGenerate();
+      mockStore.paramValues.prompt = 'mutated after submit';
+      mockStore.seed = 900;
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      release({ batch_id: 'batch', job_ids: ['job-1', 'job-2'] });
+      await pending;
+      expect(mockStore.submitGenerationBatch.mock.calls[0][0].items[0].param_values.prompt).toBe('captured value');
+    });
+
+    it('accepts the frozen batch first and only guarded-cancels its queued jobs on explicit abort', async () => {
+      let capturedController: AbortController | null = null;
+      mockStore.setSubmissionAbortController.mockImplementation((value: AbortController) => { capturedController = value; });
+      mockStore.batchSize = 2;
+      mockStore.systemStats = { vram_safe: false, vram_free_gb: 1, vram_min_free_gb: 6 };
+      mockStore.generationSnapshot = undefined;
+      mockStore.submitGenerationBatch.mockImplementationOnce(async (request: any) => {
+        expect(request.items).toHaveLength(2);
+        return { batch_id: 'batch', job_ids: ['accepted-job'] };
+      });
+      const cancel = vi.spyOn(generationApi, 'cancelJob').mockResolvedValue({ status: 'cancelled' } as any);
+
+      await useGenerateAction(baseWorkflow).handleGenerate();
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
+      mockStore.generationSnapshot = { jobs: [{ job_id: 'accepted-job', status: 'queued', prompt_id: null }] };
+      mockStore.publish();
+      expect(mockStore.setVramWaitStatus).toHaveBeenCalledWith(expect.objectContaining({ isWaiting: true }));
+      capturedController?.abort();
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith('accepted-job', true);
+      cancel.mockRestore();
     });
   });
 
@@ -1222,7 +1239,7 @@ describe('useGenerateAction', () => {
       const { handleGenerateSets } = useGenerateAction(baseWorkflow);
       await handleGenerateSets();
 
-      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(mockStore.submitGenerationBatch).toHaveBeenCalledTimes(1);
 
       // Call 0 (active set)
       const call0Metadata = mockStore.queuePrompt.mock.calls[0][1];
@@ -1473,6 +1490,95 @@ describe('useGenerateAction', () => {
         expect(call1Wf['3'].inputs.cfg).toBe(12.0);
         expect(call1Wf['3'].inputs.scheduler).not.toBe('karras');
         expect(call1Wf['3'].inputs.scheduler).toBe('exponential');
+      });
+
+      it('T41 first-call batch freezes distinct saved values for multiple inactive presets and current editor state', async () => {
+        const workflowWithToggle: Workflow = {
+          ...realisticWorkflow,
+          json_body: {
+            ...realisticWorkflow.json_body,
+            '3': {
+              ...(realisticWorkflow.json_body['3'] as Record<string, unknown>),
+              inputs: {
+                ...((realisticWorkflow.json_body['3'] as { inputs: Record<string, unknown> }).inputs),
+                enabled: true,
+              },
+            },
+          },
+          mappings: [...realisticWorkflow.mappings, {
+            id: 6, master_id: 6, node_id: '3', role: 'Toggle_Enabled', param_name: 'enabled', input_type: 'boolean', display_name: 'Enabled',
+          }],
+        };
+        const asset = (assetId: number, name: string) => ({ Lora_Stack: [{
+          id: `lora-${assetId}`, type: 'lora' as const, assetId, name, enabled: true,
+          tags: [`tag-${name}`], loraPromptString: `<lora:${name}:1>`,
+        }] });
+        mockStore.sets = [
+          {
+            id: 'current', name: 'Current', batchSize: 1, seedMode: 'fixed', seed: 1, checked: true,
+            paramValues: { Sampler_Steps: '20', Sampler_cfg: '7.0', Sampler_Scheduler: 'normal', Main_Positive_Prompt: 'saved-current' },
+            promptChips: { Main_Positive_Prompt: [{ id: 'current-chip', text: 'saved-current-chip', enabled: true }] },
+            appliedAssets: asset(1, 'saved-current'),
+          },
+          {
+            id: 'preset-b', name: 'Preset B', batchSize: 2, seedMode: 'fixed', seed: 200, checked: true,
+            paramValues: { Sampler_Steps: '31', Sampler_cfg: '6.5', Sampler_Scheduler: 'euler', Main_Positive_Prompt: 'saved-b-fallback' },
+            promptChips: { Main_Positive_Prompt: [
+              { id: 'b-enabled', text: 'preset-b-chip', enabled: true },
+              { id: 'b-disabled', text: 'disabled-b-chip', enabled: false },
+            ] },
+            appliedAssets: asset(2, 'preset-b'),
+          },
+          {
+            id: 'preset-c', name: 'Preset C', batchSize: 1, seedMode: 'fixed', seed: 303, checked: true,
+            paramValues: { Sampler_Steps: '0', Sampler_cfg: '0', Sampler_Scheduler: '', Toggle_Enabled: 'false', Main_Positive_Prompt: 'saved-c-fallback' },
+            promptChips: { Main_Positive_Prompt: [{ id: 'c-enabled', text: 'preset-c-chip', enabled: true }] },
+            appliedAssets: asset(3, 'preset-c'),
+          },
+        ];
+        mockStore.activeSetId = 'current';
+        mockStore.paramValues = { Sampler_Steps: '44', Sampler_cfg: '8.5', Sampler_Scheduler: 'karras', Main_Positive_Prompt: 'current-editor-prompt' };
+        mockStore.promptChips = { Main_Positive_Prompt: [{ id: 'editor-chip', text: 'current-editor-chip', enabled: true }] };
+        mockStore.appliedAssets = asset(4, 'current-editor');
+        mockStore.seedMode = 'fixed';
+        mockStore.seed = 900;
+
+        let changedAfterFirstSubmission = false;
+        mockStore.queuePrompt.mockImplementation(async () => {
+          if (!changedAfterFirstSubmission) {
+            changedAfterFirstSubmission = true;
+            mockStore.sets[1].paramValues.Sampler_Steps = '999';
+            mockStore.sets[2].promptChips.Main_Positive_Prompt[0].text = 'edited-after-submit';
+            mockStore.paramValues.Sampler_Steps = '1000';
+            mockStore.appliedAssets = asset(5, 'edited-after-submit');
+          }
+          return 'preset-prompt';
+        });
+
+        await useGenerateAction(workflowWithToggle).handleGenerateSets();
+
+        expect(mockStore.queuePrompt).toHaveBeenCalledTimes(4);
+        const graphs = mockStore.queuePrompt.mock.calls.map(([graph]: any[]) => graph);
+        expect(graphs.map((graph: any) => graph['3'].inputs.seed)).toEqual([900, 200, 201, 303]);
+        expect(graphs.map((graph: any) => graph['3'].inputs.steps)).toEqual([44, 31, 31, 0]);
+        expect(graphs.map((graph: any) => graph['3'].inputs.cfg)).toEqual([8.5, 6.5, 6.5, 0]);
+        expect(graphs.map((graph: any) => graph['3'].inputs.scheduler)).toEqual(['karras', 'euler', 'euler', '']);
+        expect(graphs.map((graph: any) => graph['3'].inputs.enabled)).toEqual([true, true, true, false]);
+        expect(graphs.map((graph: any) => graph['6'].inputs.text)).toEqual([
+          'current-editor-chip', 'preset-b-chip', 'preset-b-chip', 'preset-c-chip',
+        ]);
+
+        const calls = mockStore.queuePrompt.mock.calls;
+        expect(calls.map(([, metadata]: any[]) => metadata.appliedAssets[Object.keys(metadata.appliedAssets)[0]][0].assetId))
+          .toEqual([4, 2, 2, 3]);
+        expect(calls.map(([, metadata]: any[]) => {
+          const record = JSON.parse(metadata.paramValues[PROMPT_RECORD_KEY]);
+          return record.assets[0].asset_id;
+        })).toEqual([4, 2, 2, 3]);
+        expect(calls.map(([, metadata]: any[]) => metadata.paramValues.Sampler_Steps)).toEqual(['44', '31', '31', '0']);
+        expect(calls[3][1].paramValues.Sampler_Scheduler).toBe('');
+        expect(calls[3][1].paramValues.Toggle_Enabled).toBe('false');
+        expect(graphs.every((graph: any) => !JSON.stringify(graph).includes(PROMPT_RECORD_KEY))).toBe(true);
       });
 
       it('Scenario 4: continuous editing without reload propagates each update to wfJson inputs on consecutive generations (Phenomenon 5 prevention)', async () => {

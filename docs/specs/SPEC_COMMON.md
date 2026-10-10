@@ -1,7 +1,7 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.2
-**最終更新**: 2026-10-08
+**バージョン**: 2.3
+**最終更新**: 2026-10-10
 **ステータス**: 現行実装に完全準拠（TagChipパース規則・イベント型契約・キャッシュライフサイクル定義）
 
 > 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md)
@@ -293,6 +293,7 @@ interface TagChipEventDetail {
   - `snapshots`一覧: 頻繁に更新されるsnapshot。
   - `workflow-presets`: 複数端末同期時の古いcacheによる初期化状態の上書きを避ける。
   - `prompt-metadata`: 生成時metadata cacheは別の保存契約を持つ。
+  - Generation snapshot/event: epoch/revisionで更新する実行中状態であり、IndexedDB query cacheやページ再読込後のBE再起動復元へ保存しない。
 - Stale-While-Revalidateにより、利用可能なquery cacheを初回表示に使い、stale queryは通常のquery動作で再検証する。`config` と `fonts` の `staleTime: Infinity` は別途記載の通りである。
 - ブラウザー保存量モニターは引き続きlocalStorage（現在origin全体）とsessionStorage（現在tab）を対象に、キーと値のUTF-16長×2 bytesで推定する。可視時2.5秒周期で計測し、1 MiB未満はKiB、それ以上はMiBで小数1桁表示する。拒否時等は「取得不可」とする。IndexedDBの使用量は測定せず、ブラウザー割当量を保証しない。詳細は[SPEC_GENERATE](./SPEC_GENERATE.md)を参照。
 - Studioのsession draft、同期済み状態、競合・復元の契約はAPI query cacheと独立し、sessionStorage上の既存動作を維持する。Studio draftをこのIndexedDB cacheへ移さない。
@@ -306,6 +307,16 @@ interface TagChipEventDetail {
 | マスター設定 | `param-type-masters`, `mapping-masters`, `speech-bubble-presets`, `snapshots/:id` (詳細) | 5分 (`5 * 60 * 1000`) |
 | 頻出アセット | `workflows`, `loras`, `tag-sets`, `albums`, `presets` | 1分 (`60 * 1000`) |
 | 動的データ | `snapshots` (一覧), `speech-batch-active-job` | 15秒 (`15 * 1000`) |
+
+## 7. Generate API・WebSocket・Manager境界 (REQ-333)
+
+- メインアプリのAPIとブラウザー向けWebSocket `/api/ws` は8000番を使う。ブラウザーの生成要求・進捗はメインAPI経由で扱い、ブラウザーからComfyUI上流WebSocketへ別接続しない。バックエンドはComfyUI上流に接続し、その `client_id` を利用者session identityから分離する。
+- Manager管理UIはメインアプリ設定ページのシステム欄から利用する。メインアプリ8000番が停止している場合は、既存8899番Managerの埋め込みFEから復旧操作する。Managerの存在はメインAPIのsession/job状態を置き換えない。
+- batch受付時にworkflow、graph、param values、applied assetsを凍結し、GenerationJobと受付情報を同一DB transactionで保存する。commit成功後に202を返す。上流送信結果不明はunconfirmedであり、POSTを自動再送しない。Comfy prompt IDの初回確認時に凍結metadataを同一transactionでprompt metadataへ永続化する。metadataのローカル30件・サーバー1000件保持、Snapshot `params` の独立性は既存契約を維持する。
+- Generation snapshot/eventは version・epoch・revisionと全snapshot dataを持つ。FEは同一epochで新しいrevisionだけを採用し、epoch切替時は全体置換する。SYSTEM_STATSとVRAM_RECOVEREDの既存message形式およびSYSTEM_STATSの2.5秒配信は独立して保持する。Generation stateは可視化用の同期状態であり、全stateのブラウザー永続化やバックエンド再起動後の完全復元を意味しない。
+- 利用者session ID、通常生成group ID、Studio project ID、Studio batch IDは異なるscopeである。履歴の自session filterは表示だけに作用する。一括取消の既定scopeは全生成（Studioを含む）で、通常生成のみは追加選択scopeとする。通常生成のみの一括取消は全sessionの識別可能なnormal jobを対象にし、Studio/未分類を保持する。
+- 待機jobは取消前にpendingであること、上流ACK、成功した取消後queueでrunning/pending双方からの不在、成功したhistoryでterminal記録がないことを合わせて確認できたときだけ取消確定とする。queue不在のみ、ACKのみ、照会エラー、または実行への競合は未確認である。実行中割り込みはterminal状態を確認する。empty-allも取消前後queueが成功応答で空でありACKを得た場合だけ確定する。未確認または保護scopeによるskippedを完了扱いにしない。
+- 試行画像の原画availabilityはGalleryの既存サムネイルerror時に限って問い合わせ、画像一覧を事前に全件probeしない。照会identityはfilename/subfolder/typeで、上流hostやURLの `t` を渡さない。同一identityの同時probeは共有し、結果/error後は明示retryまたはidentity変更まで自動再照会しない。confirmed missingだけを試行履歴から除外し、Snapshotデータとサムネイルcache品質/上限は変えない。
 
 ---
 

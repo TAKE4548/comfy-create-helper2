@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Sparkles, RefreshCw, Send, CheckCircle, AlertCircle, Layers, Shirt, Settings2, Sliders, ShieldAlert } from 'lucide-react'
 import { TagChipEditor } from '../../../components/TagChipEditor'
-import { datasetApi, workflowsApi, workflowPresetsApi, comfyApi } from '../../../api/client'
+import { datasetApi, workflowsApi, workflowPresetsApi } from '../../../api/client'
 import type { DatasetItem, Workflow, DatasetProject } from '../../../api/types'
 import { useStudioStore } from '../useStudioStore'
 import { OutfitMasterModal, distributeAltOutfits } from './OutfitMasterModal'
@@ -13,9 +13,11 @@ import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
 import { getInitialParams } from '../../../utils/workflowParamInjector'
 import { useStudioAutosave, type StudioFormData } from '../hooks/useStudioAutosave'
 import type { DatasetStudioDraft } from '../utils/studioDraftStorage'
+import { useStudioGeneration } from '../hooks/useStudioGeneration'
+import type { GenerationItem } from '../../../api/domains/generation'
 
 export interface MatrixGenerationStepProps {
-  onDirectBatchSubmit?: (items: DatasetItem[], workflowPromptJson?: any) => Promise<void>
+  onDirectBatchSubmit?: (items: DatasetItem[], workflowPromptJson?: any) => Promise<{ batch_id: string; job_ids: string[] }>
 }
 
 export interface InjectPromptOptions {
@@ -199,6 +201,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     bypassedNodeIds,
     toggleBypassedNodeId,
   } = useStudioStore()
+  const studioGeneration = useStudioGeneration(activeProject?.id ?? null)
 
   const [isBypassModalOpen, setIsBypassModalOpen] = useState(false)
 
@@ -381,7 +384,11 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
   // Operations state
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [batchProgress, setBatchProgress] = useState<number>(0)
+  const [activeStudioBatchId, setActiveStudioBatchId] = useState<string | null>(null)
+  const studioBatchProgress = activeStudioBatchId ? studioGeneration.progress(activeStudioBatchId) : { finished: 0, total: 0 }
+  const batchProgress = studioBatchProgress.total > 0
+    ? Math.round((studioBatchProgress.finished / studioBatchProgress.total) * 100)
+    : 0
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // REQ-331: SSoT merge strategy - merge workflow default parameter values with existing store values
@@ -553,7 +560,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     }
   };
 
-  // Submit direct 20 items batch to ComfyUI (Port 8188)
+  // Submit one immutable Studio batch through the generation API.
   const handleSubmitBatch = async () => {
     if (items.length === 0) {
       setStatusMessage({
@@ -564,72 +571,52 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
     }
 
     setIsSubmitting(true)
-    setBatchProgress(0)
+    setActiveStudioBatchId(null)
     setStatusMessage(null)
 
     try {
-      if (onDirectBatchSubmit) {
-        await onDirectBatchSubmit(items)
-        setBatchProgress(100)
-      } else {
-        // Direct ComfyUI batch submission via proxy
-        const clientId = 'lora-studio-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
-
-        // Fetch selected workflow JSON body and mappings if available
-        let workflowPromptJson: Record<string, any> = {}
-        let wfMappings: any[] = []
-        try {
-          const wf = await workflowsApi.get(selectedWorkflowId)
-          workflowPromptJson = wf?.json_body || {}
-          wfMappings = wf?.mappings || []
-        } catch {
-          workflowPromptJson = currentWorkflow?.json_body || {}
-          wfMappings = currentWorkflow?.mappings || []
-        }
-
-        const posMapping = wfMappings.find(
-          (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
-        )
-        const negMapping = wfMappings.find(
-          (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
-        )
-
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i]
-          const payload = injectPromptAndSeed(workflowPromptJson, item.raw_prompt, item.seed, {
-            positiveNodeId: posMapping?.node_id,
-            negativeNodeId: negMapping?.node_id,
-            negativePrompt: negativePrompt,
-            paramValues: paramValues,
-            mappings: wfMappings,
-            bypassedNodeIds: bypassedNodeIds,
-          })
-
-          const res = await comfyApi.queuePrompt({
-            prompt: payload,
-            client_id: clientId,
-          })
-
-          if (res?.error) {
-            const errorMsg =
-              typeof res.error === 'string'
-                ? res.error
-                : res.error.message || JSON.stringify(res.error)
-            throw new Error(errorMsg)
-          }
-
-          setBatchProgress(Math.round(((i + 1) / items.length) * 100))
-        }
+      let workflowPromptJson: Record<string, any> = {}
+      let wfMappings: any[] = []
+      try {
+        const wf = await workflowsApi.get(selectedWorkflowId)
+        workflowPromptJson = wf?.json_body || {}
+        wfMappings = wf?.mappings || []
+      } catch {
+        workflowPromptJson = currentWorkflow?.json_body || {}
+        wfMappings = currentWorkflow?.mappings || []
       }
+
+      const posMapping = wfMappings.find(
+        (m) => m.role === 'Main_Positive_Prompt' || (m.role && m.role.toLowerCase().includes('positive'))
+      )
+      const negMapping = wfMappings.find(
+        (m) => m.role === 'Negative_Prompt' || (m.role && m.role.toLowerCase().includes('negative'))
+      )
+      const generationItems: GenerationItem[] = items.map((item) => ({
+        graph: injectPromptAndSeed(workflowPromptJson, item.raw_prompt, item.seed, {
+          positiveNodeId: posMapping?.node_id,
+          negativeNodeId: negMapping?.node_id,
+          negativePrompt,
+          paramValues,
+          mappings: wfMappings,
+          bypassedNodeIds,
+        }),
+        workflow_id: selectedWorkflowId,
+        param_values: { ...paramValues, negative_prompt: negativePrompt },
+      }))
+      const accepted = onDirectBatchSubmit
+        ? await onDirectBatchSubmit(items, workflowPromptJson)
+        : { batch_id: await studioGeneration.submit(generationItems), job_ids: [] }
+      setActiveStudioBatchId(accepted.batch_id)
 
       setStatusMessage({
         type: 'success',
-        text: `ComfyUIへの${items.length}件の直接バッチ投入が完了しました！`,
+        text: `Studioバッチ${items.length}件の受付が完了しました。生成進捗はサーバー状態から同期します。`,
       })
     } catch (err: any) {
       setStatusMessage({
         type: 'error',
-        text: `ComfyUI直接投入エラー: ${err.message || '接続に失敗しました'}`,
+        text: `Studioバッチ受付エラー: ${err.message || '接続に失敗しました'}`,
       })
     } finally {
       setIsSubmitting(false)
@@ -1166,7 +1153,7 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Send className="w-4 h-4" />
-            ComfyUIに20件直接投入
+            Studioに20件を投入
           </button>
         </div>
 
@@ -1184,10 +1171,10 @@ export const MatrixGenerationStep: React.FC<MatrixGenerationStepProps> = ({
       </div>
 
       {/* Batch Progress Bar */}
-      {isSubmitting && (
+      {(isSubmitting || activeStudioBatchId !== null) && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2" data-testid="batch-progress-container">
           <div className="flex justify-between text-xs text-zinc-300 font-medium">
-            <span>ComfyUI直接バッチ投入中...</span>
+            <span>Studioバッチ進捗 {activeStudioBatchId ? `${studioBatchProgress.finished}/${studioBatchProgress.total || items.length}` : '受付中'} </span>
             <span data-testid="batch-progress-text">{batchProgress}%</span>
           </div>
           <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden border border-zinc-800">
