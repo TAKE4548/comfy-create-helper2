@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { X, Check } from 'lucide-react'
 import { workflowsApi, mappingMastersApi } from '../../../api/client'
 import type { Workflow, MappingMaster } from '../../../api/types'
+import { getNodeLabel } from '../../../utils/workflowNodeUtils'
+export { getNodeLabel } from '../../../utils/workflowNodeUtils'
 
 export interface TextCandidateNode {
   id: string
@@ -36,13 +38,6 @@ export function extractTextNodes(jsonBody: Record<string, any> | undefined): Tex
   return candidates
 }
 
-export function getNodeLabel(id: string, jsonBody?: Record<string, any>): string {
-  const node = jsonBody?.[id] as Record<string, any> | undefined
-  if (!node) return `#${id}`
-  const title = node._meta?.title || node.title || ''
-  const classType = node.class_type || ''
-  return `#${id} - ${title ? `[${title}] ` : ''}(${classType})`
-}
 
 export interface NodeRemapModalProps {
   workflow: Workflow

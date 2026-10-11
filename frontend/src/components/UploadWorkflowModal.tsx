@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
 import type { ScanResult, MappingMaster } from '../api/types'
 import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
+import { getNodeLabel } from '../utils/workflowNodeUtils'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
 
@@ -50,13 +51,6 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
 
   const { mainRows, notFoundRows } = buildRows()
 
-  const getNodeLabel = (id: string) => {
-    const node = workflowJson?.[id] as Record<string, any> | undefined
-    if (!node) return id
-    const title = node._meta?.title || ''
-    const classType = node.class_type || ''
-    return `${id} - [${title}] (${classType})`
-  }
 
   // ── Scan on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -255,7 +249,7 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
                               className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
                             >
                               {row.candidates.map((id) => (
-                                <option key={id} value={id}>{getNodeLabel(id)}</option>
+                                <option key={id} value={id}>{getNodeLabel(id, workflowJson as Record<string, any>)}</option>
                               ))}
                               <option value="">未指定</option>
                               <option value="custom">直接入力...</option>

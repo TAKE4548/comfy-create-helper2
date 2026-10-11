@@ -129,6 +129,23 @@ describe('NodeRemapModal & isStudioAllowedRole (REQ-331-T3)', () => {
       expect(screen.queryByText('Excluded Generic Prompt')).not.toBeInTheDocument()
     })
 
+    it('TC-COMP-03: renders candidate node options in parameter dropdown using unified format (REQ-342)', () => {
+      render(
+        <NodeRemapModal
+          workflow={mockWorkflow}
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+        />
+      )
+
+      const stepsSelect = screen.getByTestId('remap-select-steps')
+      const options = Array.from(stepsSelect.querySelectorAll('option')).map((opt) => opt.textContent)
+
+      expect(options).toContain('10 - [Positive Prompt] (CLIPTextEncode)')
+      expect(options).toContain('11 - [Negative Prompt] (CLIPTextEncode)')
+      expect(options).toContain('12 - [Main Sampler] (KSampler)')
+    })
+
     it('updates parameter mapping and saves successfully', async () => {
       const onSavedMock = vi.fn()
       const onCloseMock = vi.fn()

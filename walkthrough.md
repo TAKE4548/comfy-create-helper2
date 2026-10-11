@@ -1,64 +1,72 @@
-# Walkthrough: REQ-340 Settingsマッピングマスタ編集のUX強化
+# Walkthrough: REQ-342 ワークフロー登録・リマップ候補ノードラベルのタイトル/クラス併記統一
 
-## 1. 概要 (Overview)
-`REQ-340` の要請に基づき、Settingsページのマッピングマスタ編集において、作業効率と安全性を高める5大機能の実装および検証を完了しました。
+## 1. 概要と完了実績
+本改修では、`REQ-342` に基づき、ワークフロー登録モーダル（`UploadWorkflowModal`）、ワークフロー再スキャンモーダル（`RescanModal`）、およびデータセットスタジオのノードリマッピングモーダル（`NodeRemapModal`）における候補ノードのドロップダウン表示不整合（IDのみの表示、空の `[]`、マスタロール名の誤表示など）を根本解消しました。
 
-1. **タイトル検索パターンのコピペ＆インライン編集 (`PatternTagInput`)**
-   - パターンチップの一括クリップボードコピー（カンマ区切り）。
-   - カンマ・改行・空白区切り文字列の貼り付け時の一括チップ展開（引用符除去・トリム・重複排除）。
-   - ダブルクリックまたは編集アイコンによるインライン編集（Enter確定、Escapeキャンセル）。
-2. **パラメータ表記ゆれフォールバック (`FallbackParamsInput` & `workflow_scanner.py`)**
-   - `MappingMaster` に `fallback_param_names`（JSON配列文字列）カラムを追加。
-   - ノード探索時、プライマリ `param_name` に合致しない場合に登録された表記ゆれパラメータ名（優先順）を自動フォールバック探索。
-   - UI上でチップ追加・削除・優先順位並び替え（Up/Down）が可能。
-3. **ワークフロー指定リアルタイムプレビュー (`WorkflowMappingPreview`)**
-   - 既存登録ワークフロー（`GET /api/workflows`）選択または新規JSONファイルドロップ（最大10MB制限）。
-   - 現在のマッピング条件に合致するノード（ID、タイトル、ClassType）およびバインドパラメータ（プライマリ/フォールバック種別）をリアルタイム表示。
-4. **ワークフローからの逆引きノード登録 (`WorkflowNodePicker`)**
-   - ワークフロー内全ノードおよび引数の一覧ブラウズ・検索。
-   - 対象ノード・引数をクリックして「設定フォームへ反映」可能（手動入力値がある場合は上書き確認ダイアログを挟む非破壊設計）。
-5. **モーダル統合 & DBマイグレーション**
-   - `MappingMasterEditModal.tsx` に各機能をシームレス統合し、保存ペイロードへの配列順序保持およびnullガードを徹底。
+新設した共通解決ユーティリティ `frontend/src/utils/workflowNodeUtils.ts` (`resolveNodeMetadata`, `getNodeLabel`) により、ComfyUIのAPI辞書形式およびUIグラフ配列形式の双方からタイトルとクラス名を安全に解決し、統一フォーマット `${id} - [${title}] (${classType})` で表示するように統合しました。
 
 ---
 
-## 2. Acceptance Criteria (AC) Compliance Table
-
-| AC ID | 要件内容 | 検証結果 | 検証エビデンス |
-|---|---|:---:|---|
-| **AC-1** | タイトル検索パターンのコピー操作でクリップボード格納、ペースト時にカンマ・改行等で複数チップ一括展開 | **PASS** | `src/components/__tests__/PatternTagInput.test.tsx` (6 tests passed) |
-| **AC-2** | 登録済みタイトル検索パターンのダブルクリック/編集でインライン編集状態へ遷移、Enter確定・Escape破棄、モーダル保存時に永続化 | **PASS** | `src/components/__tests__/PatternTagInput.test.tsx` (インライン編集/キャンセル確認) |
-| **AC-3** | プライマリパラメータ名に加えて表記ゆれパラメータ名（`fallback_param_names`）を追加・登録、未合致時に定義順フォールバック探索 | **PASS** | `backend/tests/test_req340_backend_fallback.py` (2 tests) & `backend/tests/test_workflow_scanner.py` (10 tests) |
-| **AC-4** | リアルタイムプレビュー領域で登録済みWF選択またはJSONドロップ時に合致ノード名・ID・バインドパラメータをリアルタイム明瞭表示 | **PASS** | `src/components/__tests__/WorkflowMappingPreview.test.tsx` (2 tests passed) |
-| **AC-5** | 渡されたワークフロー内のノード一覧列挙、選択ノード・パラメータの上書き確認を経た安全なフォーム自動補完・反映 | **PASS** | `src/components/__tests__/WorkflowNodePicker.test.tsx` (2 tests passed) |
-| **AC-6** | 不正なワークフローJSON、10MB超過、セマンティックエラー時のクラッシュ防止と適切なエラー通知 | **PASS** | `WorkflowMappingPreview.test.tsx` (10MB超過拒否確認) & `WorkflowNodePicker.test.tsx` (空入力・異常系ガード確認) |
-
----
-
-## 3. Baseline 3-Gate Verification 実施結果
+## 2. 3-Gate Baseline 検証結果
 
 ### Gate 1: 静的型検査 (Static Typecheck)
-- **Frontend**: `cd frontend; npm run typecheck` → **0 errors (PASS)**
-- **Backend**: `mypy backend` (187 source files) → **0 errors (PASS)**
+- **コマンド**: `cd frontend; npm run typecheck` (`tsc -b --noEmit`)
+- **結果**: **PASS (0 型エラー)**
+- **実行証跡**:
+  ```text
+  > frontend@0.0.0 typecheck
+  > tsc -b --noEmit
+  (Exit code: 0)
+  ```
 
-### Gate 2: フルユニットテストスイート (Full Discovery Unit Tests)
-- **Frontend**:
-  - `src/components/__tests__/PatternTagInput.test.tsx`: 6 passed
-  - `src/components/__tests__/FallbackParamsInput.test.tsx`: 4 passed
-  - `src/components/__tests__/WorkflowMappingPreview.test.tsx`: 2 passed
-  - `src/components/__tests__/WorkflowNodePicker.test.tsx`: 2 passed
-  - `src/pages/SettingsPage/components/__tests__/MappingMasterSection.req340.test.tsx`: 1 passed
-  - **フロントエンド全スイート**: 46 test files / 386 passed (PASS)
-- **Backend**:
-  - `backend/tests/test_req340_backend_fallback.py`: 2 passed
-  - `backend/tests/test_workflow_scanner.py`: 10 passed (PASS)
+### Gate 2: フルテストスイートベースライン (Full Discovery Test Suite)
+- **コマンド**: `cd frontend; npx vitest run` (全件実行)
+- **結果**: **PASS (197テストスイート全件合格、1,854テスト全件合格、0件失敗)**
+- **実行証跡**:
+  ```text
+  Test Files  197 passed (197)
+       Tests  1854 passed (1854)
+    Duration  74.89s
+  (Exit code: 0)
+  ```
 
-### Gate 3: シナリオ・Red Team検証 (Scenario & Boundary Tests)
-- **RT-1 (パターントリム・重複排除)**:
-  - 引用符（`"`, `'`）や前後の空白を自動除去し、同一パターンの重複追加をセット処理で防止。
-- **RT-2 (壊れたJSON・10MB超過)**:
-  - 10MBを超えるファイルは読込前に即座にエラー通知。不正構文時はUIを破棄せず安全にエラーメッセージを表示。
-- **RT-3 (上書き防止確認ダイアログ)**:
-  - 逆引きノード選択時、`hasExistingValues` を検知して `window.confirm` を実行。ユーザーがキャンセルした場合は元の値を100%保護。
-- **RT-4 (フォールバック順序の厳格保持)**:
-  - `FallbackParamsInput` で設定された優先順位（配列インデックス順）をそのままDBおよびスキャンロジックに渡し、先頭の合致引数をバインド。
+### Gate 3: シナリオ & レッドチーミング検証
+- **新規単体テスト**: `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` (15 tests PASS)
+  - TC-UTIL-01〜06: API辞書形式、UIグラフ形式、タイトル未設定（クラス名補完）、直接 `node.title` 設定、ノード不在、`null/undefined` 安全性。
+  - TC-RED-01: 数値文字列ID vs 数値IDの相互マッチング検証。
+  - TC-RED-02: 破損・nullノードオブジェクトに対する安全フォールバック検証。
+- **コンポーネント統合テスト**: `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` (6 tests PASS)
+  - TC-COMP-03: パラメータドロップダウン選択肢における統一ラベル形式 `${id} - [${title}] (${classType})` のレンダリング検証。
+
+---
+
+## 3. 受入基準 (AC) 適合性マトリクス
+
+| AC ID | 要件 / 受入基準 | 判定 / ステータス | 検証内容 / Evidence |
+| :--- | :--- | :---: | :--- |
+| **AC-1** | `RescanModal` において、複数候補が存在するロール（duplicated や複数 candidate_node_ids）のドロップダウン選択肢すべてに、ノードID・ノードタイトル・ノードクラス（ロール名ではなくclass_type）が `${id} - [${title}] (${classType})` の形式で正しく表示されること。 | **PASS** | 不完全な先頭1件のみの `nodeTitleMap` を廃止し、`getNodeLabel(id, workflowJson)` を `<option>` レンダリングに適用。タイトルおよびクラス名がすべての候補IDで解決されるように改修。 |
+| **AC-2** | `UploadWorkflowModal` において、候補ノード選択肢に `_meta.title` だけでなく `node.title` や `class_type` がフォールバックされ、`${id} - [] (${classType})` のような空ブラケットや情報欠落が生じないこと。 | **PASS** | ローカルの `getNodeLabel` を共通関数 `getNodeLabel(id, workflowJson)` に差し替え。カスタムタイトル未設定時は `class_type` へ自動フォールバックし、空の `[]` を完全に排除。 |
+| **AC-3** | `NodeRemapModal` において、パラメータマッピング選択肢およびプロンプトノード選択肢で一貫したノード情報フォーマットが表示されること。 | **PASS** | ローカル関数を共通関数 `getNodeLabel` のインポートおよび再エクスポートに統一。パラメータマッピング側のドロップダウンでも `${id} - [${title}] (${classType})` で描画されることを TC-COMP-03 で検証。 |
+| **AC-4** | 既存テストおよび新規追加されるノードラベル解決テストがすべてグリーン（PASS）であること。 | **PASS** | `workflowNodeUtils.test.ts` (15/15 PASS), `NodeRemapModal.test.tsx` (6/6 PASS) を含むフルスイート 197 ファイル・1,854 テスト全件 PASS (0 failures)。 |
+
+---
+
+## 4. ローカルモデル QA 監査所見とトリアージ
+- **監査モデル**: `qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored` (Reasoning Domain)
+- **監査判定**: ⚠️ **Conditional Pass**
+- **所見内容**:
+  - コンポーネントテストの記述において、DOMテキストの検証に正規表現（`\[\w+\]`）などの明示的アサーションをより厳密に指定することで、AIエージェントによる意味論的な近似合格を防ぐ余地があるとの指摘。
+- **実装・テストでの対応状況**:
+  - 実際のテストコードでは `expect(options).toContain('10 - [Positive Prompt] (CLIPTextEncode)')` のように完全一致の文字列リテラルを用いて検証済みであり、正規表現よりもさらに厳格な完全一致アサーションが行われています。
+  - 実装ロジックでも `.trim()` により空白文字による空ブラケットの偽装抜けを防止しています。
+  - VRAMは監査完了直後に `local_model_adapter.py unload` により100%解放済みです。
+
+---
+
+## 5. 変更対象ファイル一覧
+- `[LOCAL NEW]` [`frontend/src/utils/workflowNodeUtils.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/workflowNodeUtils.ts)
+- `[LOCAL NEW]` [`frontend/src/utils/__tests__/workflowNodeUtils.test.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/__tests__/workflowNodeUtils.test.ts)
+- `[LOCAL MODIFY]` [`frontend/src/components/RescanModal.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/RescanModal.tsx)
+- `[LOCAL MODIFY]` [`frontend/src/components/UploadWorkflowModal.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/UploadWorkflowModal.tsx)
+- `[LOCAL MODIFY]` [`frontend/src/pages/DatasetStudioPage/components/NodeRemapModal.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/NodeRemapModal.tsx)
+- `[LOCAL MODIFY]` [`frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx)
