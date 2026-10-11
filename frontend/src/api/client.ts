@@ -11,6 +11,8 @@ export * from './domains/speech'
 export * from './domains/translation'
 export * from './domains/settings'
 export * from './domains/generation'
+export * from './domains/comfy'
+export { comfyApi } from './domains/comfy'
 
 // Re-export all types from ./types for complete backward compatibility
 export * from './types'

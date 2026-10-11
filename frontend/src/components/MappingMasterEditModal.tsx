@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X, Layers, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
 import { stageMastersApi } from '../api/domains/stageMasters'
 import { mappingGroupsApi } from '../api/domains/mappingGroups'
+import { useComfyNodeTypes } from '../hooks/useComfyNodeTypes'
 import type {
   MappingMasterV2,
   MappingMasterV2Create,
@@ -144,6 +145,17 @@ export function MappingMasterEditModal({
 
   if (!isOpen) return null
 
+  const { filterClassTypes, isLoading: isNodeTypesLoading, isError: isNodeTypesError } = useComfyNodeTypes()
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [highlightIndex, setHighlightIndex] = useState(-1)
+
+  const filteredCandidates = React.useMemo(() => {
+    if (!inputClass.trim() || isNodeTypesLoading || isNodeTypesError) {
+      return []
+    }
+    return filterClassTypes(inputClass, classTypes)
+  }, [inputClass, classTypes, filterClassTypes, isNodeTypesLoading, isNodeTypesError])
+
   // Class Type Chip Handlers
   const addClassType = (typeToAdd: string) => {
     const trimmed = typeToAdd.trim()
@@ -152,6 +164,8 @@ export function MappingMasterEditModal({
       setClassTypes([...classTypes, trimmed])
     }
     setInputClass('')
+    setShowDropdown(false)
+    setHighlightIndex(-1)
   }
 
   const removeClassType = (typeToRemove: string) => {
@@ -159,9 +173,39 @@ export function MappingMasterEditModal({
   }
 
   const handleClassKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showDropdown && filteredCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightIndex((prev) => (prev + 1) % filteredCandidates.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightIndex((prev) => (prev <= 0 ? filteredCandidates.length - 1 : prev - 1))
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowDropdown(false)
+        setHighlightIndex(-1)
+        return
+      }
+      if (e.key === 'Tab') {
+        if (highlightIndex >= 0 && filteredCandidates[highlightIndex]) {
+          e.preventDefault()
+          addClassType(filteredCandidates[highlightIndex])
+          return
+        }
+      }
+    }
+
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault()
-      addClassType(inputClass)
+      if (showDropdown && highlightIndex >= 0 && filteredCandidates[highlightIndex]) {
+        addClassType(filteredCandidates[highlightIndex])
+      } else {
+        addClassType(inputClass)
+      }
     }
   }
 
@@ -347,31 +391,69 @@ export function MappingMasterEditModal({
               <span className="text-[11px] text-zinc-500">Enter またはカンマで追加</span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 p-2 bg-zinc-900 rounded-lg border border-zinc-800 min-h-[42px]">
-              {classTypes.map((type) => (
-                <span
-                  key={type}
-                  className="inline-flex items-center gap-1 bg-[#7C6FDD]/20 text-[#7C6FDD] text-xs px-2 py-0.5 rounded"
-                >
-                  {type}
-                  <button
-                    type="button"
-                    onClick={() => removeClassType(type)}
-                    className="hover:text-white"
-                    aria-label={`${type} を削除`}
+            <div className="relative">
+              <div className="flex flex-wrap items-center gap-1.5 p-2 bg-zinc-900 rounded-lg border border-zinc-800 min-h-[42px]">
+                {classTypes.map((type) => (
+                  <span
+                    key={type}
+                    className="inline-flex items-center gap-1 bg-[#7C6FDD]/20 text-[#7C6FDD] text-xs px-2 py-0.5 rounded"
                   >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-              <input
-                type="text"
-                placeholder="クラス名を入力してEnter..."
-                value={inputClass}
-                onChange={(e) => setInputClass(e.target.value)}
-                onKeyDown={handleClassKeyDown}
-                className="bg-transparent text-xs text-zinc-200 outline-none flex-1 min-w-[140px]"
-              />
+                    {type}
+                    <button
+                      type="button"
+                      onClick={() => removeClassType(type)}
+                      className="hover:text-white"
+                      aria-label={`${type} を削除`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  placeholder="クラス名を入力してEnter..."
+                  value={inputClass}
+                  onChange={(e) => {
+                    setInputClass(e.target.value)
+                    setShowDropdown(true)
+                    setHighlightIndex(-1)
+                  }}
+                  onFocus={() => {
+                    if (inputClass.trim()) setShowDropdown(true)
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => setShowDropdown(false), 150)
+                  }}
+                  onKeyDown={handleClassKeyDown}
+                  className="bg-transparent text-xs text-zinc-200 outline-none flex-1 min-w-[140px]"
+                />
+              </div>
+
+              {/* Autocomplete Dropdown */}
+              {showDropdown && filteredCandidates.length > 0 && (
+                <ul
+                  data-testid="classtype-autocomplete-dropdown"
+                  className="absolute left-0 right-0 top-full mt-1 z-20 max-h-60 overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 text-xs list-none"
+                >
+                  {filteredCandidates.map((candidate, idx) => (
+                    <li
+                      key={candidate}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        addClassType(candidate)
+                      }}
+                      onMouseEnter={() => setHighlightIndex(idx)}
+                      className={`px-3 py-1.5 cursor-pointer transition-colors flex items-center justify-between ${
+                        idx === highlightIndex
+                          ? 'bg-[#7C6FDD]/20 text-[#7C6FDD] font-medium'
+                          : 'text-zinc-300 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span>{candidate}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {/* 代表的候補クラスパレット */}
