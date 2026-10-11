@@ -191,6 +191,7 @@ export interface WorkflowMapping {
   id: number
   master_id: number
   node_id: string
+  variant_id?: number | null
   role: string | null
   param_name: string | null
   input_type: string | null
@@ -216,7 +217,7 @@ export interface Workflow {
 export interface WorkflowCreate {
   name: string
   json_body: Record<string, unknown>
-  mappings: { master_id: number; node_id: string }[]
+  mappings: { master_id: number; node_id: string; variant_id?: number | null }[]
   target_base_model_id?: number | null
 }
 
@@ -224,7 +225,7 @@ export interface WorkflowUpdate {
   name?: string
   json_body?: Record<string, unknown>
   default_applied_assets?: string | null
-  mappings?: { master_id: number; node_id: string }[]
+  mappings?: { master_id: number; node_id: string; variant_id?: number | null }[]
   target_base_model_id?: number | null
 }
 
@@ -238,6 +239,7 @@ export interface ScanMatchedItem {
   node_title: string
   status: string
   node_ids?: string[]
+  variant_id?: number | null
 }
 
 export interface ScanWarningItem {
@@ -247,6 +249,7 @@ export interface ScanWarningItem {
   node_ids?: string[]
   node_id?: string
   actual_class_type?: string
+  variant_id?: number | null
 }
 
 export interface ScanResult {

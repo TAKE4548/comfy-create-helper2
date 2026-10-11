@@ -38,6 +38,7 @@ class WorkflowMappingRead(BaseModel):
     id: int
     master_id: int
     node_id: str
+    variant_id: Optional[int] = None
     role: Optional[str] = None
     param_name: Optional[str] = None
     input_type: Optional[str] = None
@@ -47,6 +48,7 @@ class WorkflowMappingRead(BaseModel):
 class WorkflowMappingCreate(BaseModel):
     master_id: int
     node_id: str
+    variant_id: Optional[int] = None
 
 
 # ─── Workflow ────────────────────────────────────────────────────
@@ -102,6 +104,9 @@ class ScanMatchedItem(BaseModel):
     node_title: str
     status: str = "ok"
     node_ids: Optional[list[str]] = None
+    variant_id: Optional[int] = None
+    stage_id: Optional[int] = None
+    stage_key: Optional[str] = None
 
 
 class ScanWarningItem(BaseModel):
@@ -111,6 +116,9 @@ class ScanWarningItem(BaseModel):
     node_ids: Optional[list[str]] = None
     node_id: Optional[str] = None
     actual_class_type: Optional[str] = None
+    variant_id: Optional[int] = None
+    stage_id: Optional[int] = None
+    stage_key: Optional[str] = None
 
 
 class ScanResult(BaseModel):

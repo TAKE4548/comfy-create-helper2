@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { X, ScanLine, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
-import type { ScanResult, MappingMaster } from '../api/types'
+import type { ScanResult, MappingMaster, MappingMasterV2 } from '../api/types'
 import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
-import { getNodeLabel } from '../utils/workflowNodeUtils'
+import { getNodeLabel, resolveNodeMetadata } from '../utils/workflowNodeUtils'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
 
@@ -20,6 +20,7 @@ function statusLabel(status: string): string {
     case 'not_found': return '未検出'
     case 'duplicated': return '複数候補'
     case 'class_type_mismatch': return 'クラス不一致'
+    case 'unassigned': return '未設定'
     default: return status
   }
 }
@@ -29,6 +30,7 @@ function statusColor(status: string): string {
     case 'not_found': return 'text-red-400 bg-red-500/10 border-red-500/20'
     case 'duplicated': return 'text-amber-400 bg-amber-500/10 border-amber-500/20'
     case 'class_type_mismatch': return 'text-orange-400 bg-orange-500/10 border-orange-500/20'
+    case 'unassigned': return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20'
     default: return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20'
   }
 }
@@ -42,12 +44,12 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
   const [customModes, setCustomModes] = useState<Record<number, boolean>>({})
 
   // Mapping masters for dropdowns
-  const { data: masters = [] } = useQuery<MappingMaster[]>({
+  const { data: masters = [] } = useQuery<(MappingMaster | MappingMasterV2)[]>({
     queryKey: ['mapping-masters'],
-    queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>,
+    queryFn: () => mappingMastersApi.list() as Promise<(MappingMaster | MappingMasterV2)[]>,
   })
 
-  const { buildRows, updateNodeId, initFromScan, getMappings } = useMasterMappingRows(masters, scanResult)
+  const { buildRows, updateNodeId, updateSlotNodeId, clearSlot, initFromScan, getMappings } = useMasterMappingRows(masters, scanResult)
 
   const { mainRows, notFoundRows } = buildRows()
 
@@ -121,7 +123,7 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     if (e.target === e.currentTarget && phase !== 'saving') onClose()
   }
 
-  const activeCount = [...mainRows, ...notFoundRows].filter(r => r.node_id.trim() !== '').length
+  const activeCount = getMappings(mainRows, notFoundRows).length
 
   return (
     <div
@@ -209,84 +211,160 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
                 )}
 
                 <div className="space-y-2">
-                  {mainRows.map((row) => (
-                    <div
-                      key={row.master.id}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
-                    >
-                      {/* Role info */}
-                      <div className="w-40 flex-shrink-0">
-                        <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
-                        <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
-                      </div>
+                  {mainRows.map((row) => {
+                    const isMultiStage = Boolean(row.stageSlots && row.stageSlots.length > 0)
+                    return (
+                      <div
+                        key={row.master.id}
+                        className={`p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] ${
+                          isMultiStage ? 'flex flex-col md:flex-row md:items-start gap-3' : 'flex items-center gap-3'
+                        }`}
+                      >
+                        {/* Role info */}
+                        <div className="w-40 flex-shrink-0">
+                          <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
+                          <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
+                        </div>
 
-                      {/* Combobox logic (Select with candidates + manual input fallback) */}
-                      <div className="flex-1 min-w-0 flex gap-2">
-                        {row.candidates.length > 0 ? (
-                          <>
-                            <select
-                              id={`node-select-${row.master.id}`}
-                              value={
-                                customModes[row.master.id]
-                                  ? 'custom'
-                                  : row.node_id === ''
-                                  ? ''
-                                  : row.candidates.includes(row.node_id)
-                                  ? row.node_id
-                                  : 'custom'
-                              }
-                              onChange={(e) => {
-                                const val = e.target.value
-                                if (val === 'custom') {
-                                  setCustomModes(prev => ({ ...prev, [row.master.id]: true }))
-                                  updateNodeId(row.master.id, '')
-                                } else {
-                                  setCustomModes(prev => ({ ...prev, [row.master.id]: false }))
-                                  updateNodeId(row.master.id, val)
-                                }
-                              }}
-                              disabled={phase === 'saving'}
-                              className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
-                            >
-                              {row.candidates.map((id) => (
-                                <option key={id} value={id}>{getNodeLabel(id, workflowJson as Record<string, any>)}</option>
-                              ))}
-                              <option value="">未指定</option>
-                              <option value="custom">直接入力...</option>
-                            </select>
-                            {(customModes[row.master.id] || (row.node_id !== '' && !row.candidates.includes(row.node_id))) && (
+                        {/* Combobox logic */}
+                        {isMultiStage ? (
+                          <div className="flex-1 min-w-0 flex flex-col gap-2">
+                            {row.stageSlots!.map((slot) => (
+                              <div key={slot.slotKey} className="flex items-center gap-2">
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60 min-w-[54px] text-center flex-shrink-0">
+                                  {slot.stageName || slot.stageKey}
+                                </span>
+                                {slot.candidates.length > 0 ? (
+                                  <select
+                                    id={`slot-select-${slot.slotKey}`}
+                                    data-testid={`slot-select-${slot.slotKey}`}
+                                    aria-label={`${slot.stageName || slot.stageKey} スロット`}
+                                    value={slot.node_id}
+                                    onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
+                                    disabled={phase === 'saving'}
+                                    className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[120px] flex-1"
+                                  >
+                                    <option value="">未設定</option>
+                                    {slot.candidates.map((id) => {
+                                      const meta = resolveNodeMetadata(id, workflowJson as Record<string, any>)
+                                      const isRecommended = slot.recommendedNodeIds?.includes(id)
+                                      const title = meta.title || meta.classType
+                                      const label = isRecommended
+                                        ? (title ? `★ [${id}] ${title} [推奨]` : `★ [${id}] [推奨]`)
+                                        : getNodeLabel(id, workflowJson as Record<string, any>)
+                                      return (
+                                        <option key={id} value={id}>
+                                          {label}
+                                        </option>
+                                      )
+                                    })}
+                                    {slot.node_id !== '' && !slot.candidates.includes(slot.node_id) && (
+                                      <option value={slot.node_id}>
+                                        {getNodeLabel(slot.node_id, workflowJson as Record<string, any>)}
+                                      </option>
+                                    )}
+                                  </select>
+                                ) : (
+                                  <input
+                                    id={`slot-input-${slot.slotKey}`}
+                                    data-testid={`slot-input-${slot.slotKey}`}
+                                    aria-label={`${slot.stageName || slot.stageKey} スロット`}
+                                    type="text"
+                                    value={slot.node_id}
+                                    onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
+                                    disabled={phase === 'saving'}
+                                    placeholder="ノードIDを直接入力…"
+                                    className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  id={`clear-slot-${slot.slotKey}`}
+                                  data-testid={`clear-slot-${slot.slotKey}`}
+                                  aria-label="未設定にする"
+                                  title="未設定にする"
+                                  onClick={() => clearSlot(slot.slotKey)}
+                                  disabled={phase === 'saving'}
+                                  className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                                >
+                                  <X size={13} />
+                                </button>
+                                {slot.status !== 'ok' && slot.status !== 'unassigned' && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(slot.status)}`}>
+                                    {statusLabel(slot.status)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-w-0 flex gap-2">
+                            {row.candidates.length > 0 ? (
+                              <>
+                                <select
+                                  id={`node-select-${row.master.id}`}
+                                  value={
+                                    customModes[row.master.id]
+                                      ? 'custom'
+                                      : row.node_id === ''
+                                      ? ''
+                                      : row.candidates.includes(row.node_id)
+                                      ? row.node_id
+                                      : 'custom'
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    if (val === 'custom') {
+                                      setCustomModes(prev => ({ ...prev, [row.master.id]: true }))
+                                      updateNodeId(row.master.id, '')
+                                    } else {
+                                      setCustomModes(prev => ({ ...prev, [row.master.id]: false }))
+                                      updateNodeId(row.master.id, val)
+                                    }
+                                  }}
+                                  disabled={phase === 'saving'}
+                                  className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
+                                >
+                                  {row.candidates.map((id) => (
+                                    <option key={id} value={id}>{getNodeLabel(id, workflowJson as Record<string, any>)}</option>
+                                  ))}
+                                  <option value="">未指定</option>
+                                  <option value="custom">直接入力...</option>
+                                </select>
+                                {(customModes[row.master.id] || (row.node_id !== '' && !row.candidates.includes(row.node_id))) && (
+                                  <input
+                                    id={`node-input-custom-${row.master.id}`}
+                                    type="text"
+                                    value={row.node_id}
+                                    onChange={(e) => updateNodeId(row.master.id, e.target.value)}
+                                    disabled={phase === 'saving'}
+                                    placeholder="直接入力…"
+                                    className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                                  />
+                                )}
+                              </>
+                            ) : (
                               <input
-                                id={`node-input-custom-${row.master.id}`}
+                                id={`node-select-${row.master.id}`}
                                 type="text"
                                 value={row.node_id}
                                 onChange={(e) => updateNodeId(row.master.id, e.target.value)}
                                 disabled={phase === 'saving'}
-                                placeholder="直接入力…"
-                                className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                                placeholder="ノードIDを直接入力…"
+                                className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
                               />
                             )}
-                          </>
-                        ) : (
-                          <input
-                            id={`node-select-${row.master.id}`}
-                            type="text"
-                            value={row.node_id}
-                            onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                            disabled={phase === 'saving'}
-                            placeholder="ノードIDを直接入力…"
-                            className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                          />
+                          </div>
+                        )}
+
+                        {!isMultiStage && row.status !== 'ok' && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
+                            {statusLabel(row.status)}
+                          </span>
                         )}
                       </div>
-
-                      {/* Status label if not OK */}
-                      {row.status !== 'ok' && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
-                          {statusLabel(row.status)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
@@ -305,35 +383,109 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
                   </p>
 
                   <div className="space-y-2">
-                    {notFoundRows.map((row) => (
-                      <div
-                        key={row.master.id}
-                        className="flex items-center gap-3 p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
-                      >
-                        {/* Role info */}
-                        <div className="w-40 flex-shrink-0">
-                          <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
-                          <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
-                        </div>
+                    {notFoundRows.map((row) => {
+                      const isMultiStage = Boolean(row.stageSlots && row.stageSlots.length > 0)
+                      return (
+                        <div
+                          key={row.master.id}
+                          className={`p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] ${
+                            isMultiStage ? 'flex flex-col md:flex-row md:items-start gap-3' : 'flex items-center gap-3'
+                          }`}
+                        >
+                          {/* Role info */}
+                          <div className="w-40 flex-shrink-0">
+                            <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
+                            <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
+                          </div>
 
-                        {/* Combobox logic (Not found generally has no candidates) */}
-                        <div className="flex-1 min-w-0">
-                          <input
-                            id={`node-select-${row.master.id}`}
-                            value={row.node_id}
-                            onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                            disabled={phase === 'saving'}
-                            placeholder="ノードIDを直接入力…"
-                            className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                          />
+                          {isMultiStage ? (
+                            <div className="flex-1 min-w-0 flex flex-col gap-2">
+                              {row.stageSlots!.map((slot) => (
+                                <div key={slot.slotKey} className="flex items-center gap-2">
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60 min-w-[54px] text-center flex-shrink-0">
+                                    {slot.stageName || slot.stageKey}
+                                  </span>
+                                  {slot.candidates.length > 0 ? (
+                                    <select
+                                      id={`slot-select-${slot.slotKey}`}
+                                      data-testid={`slot-select-${slot.slotKey}`}
+                                      aria-label={`${slot.stageName || slot.stageKey} スロット`}
+                                      value={slot.node_id}
+                                      onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
+                                      disabled={phase === 'saving'}
+                                      className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[120px] flex-1"
+                                    >
+                                      <option value="">未設定</option>
+                                      {slot.candidates.map((id) => {
+                                        const meta = resolveNodeMetadata(id, workflowJson as Record<string, any>)
+                                        const isRecommended = slot.recommendedNodeIds?.includes(id)
+                                        const title = meta.title || meta.classType
+                                        const label = isRecommended
+                                          ? (title ? `★ [${id}] ${title} [推奨]` : `★ [${id}] [推奨]`)
+                                          : getNodeLabel(id, workflowJson as Record<string, any>)
+                                        return (
+                                          <option key={id} value={id}>
+                                            {label}
+                                          </option>
+                                        )
+                                      })}
+                                      {slot.node_id !== '' && !slot.candidates.includes(slot.node_id) && (
+                                        <option value={slot.node_id}>
+                                          {getNodeLabel(slot.node_id, workflowJson as Record<string, any>)}
+                                        </option>
+                                      )}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      id={`slot-input-${slot.slotKey}`}
+                                      data-testid={`slot-input-${slot.slotKey}`}
+                                      aria-label={`${slot.stageName || slot.stageKey} スロット`}
+                                      type="text"
+                                      value={slot.node_id}
+                                      onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
+                                      disabled={phase === 'saving'}
+                                      placeholder="ノードIDを直接入力…"
+                                      className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                                    />
+                                  )}
+                                  <button
+                                    type="button"
+                                    id={`clear-slot-${slot.slotKey}`}
+                                    data-testid={`clear-slot-${slot.slotKey}`}
+                                    aria-label="未設定にする"
+                                    title="未設定にする"
+                                    onClick={() => clearSlot(slot.slotKey)}
+                                    disabled={phase === 'saving'}
+                                    className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(slot.status)}`}>
+                                    {statusLabel(slot.status)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  id={`node-select-${row.master.id}`}
+                                  value={row.node_id}
+                                  onChange={(e) => updateNodeId(row.master.id, e.target.value)}
+                                  disabled={phase === 'saving'}
+                                  placeholder="ノードIDを直接入力…"
+                                  className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
+                                />
+                              </div>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
+                                {statusLabel(row.status)}
+                              </span>
+                            </>
+                          )}
                         </div>
-
-                        {/* Status label (Always not_found here) */}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
-                          {statusLabel(row.status)}
-                        </span>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

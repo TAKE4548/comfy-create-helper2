@@ -15,21 +15,27 @@ import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
 import { ServiceConnectionCard } from './ServiceConnectionCard'
 
-type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string }[]; target_base_model_id: number | null; default_applied_assets: string | null }
-const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
-function graphNodeIds(graph: unknown): string[] {
+export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null }
+export const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
+export function graphNodeIds(graph: unknown): string[] {
   if (!record(graph) || !record(graph.nodes)) return []
   return Object.keys(graph.nodes).filter((id) => record(graph.nodes[id]))
 }
-function validateConfig(value: unknown, masterIds: number[], modelIds: number[]): ConfigDraft {
+export function validateConfig(value: unknown, masterIds: number[], modelIds: number[]): ConfigDraft {
   if (!record(value) || value.format !== 'prompt-surgeon-workflow-config' || value.version !== 1) throw new Error('形式またはバージョンが正しくありません')
   if (typeof value.name !== 'string' || !record(value.json_body) || !graphNodeIds(value.json_body).length || !Array.isArray(value.mappings)) throw new Error('ワークフロー名・グラフ・対応付けが不正です')
   const nodes = graphNodeIds(value.json_body)
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   const mappings = value.mappings.map((m: any) => {
-    if (!record(m) || !Number.isInteger(m.master_id) || m.master_id <= 0 || !masterIds.includes(m.master_id) || typeof m.node_id !== 'string' || !nodes.includes(m.node_id) || seen.has(m.master_id)) throw new Error('対応付けのマスターID・ノードIDが不正または重複しています')
-    seen.add(m.master_id)
-    return { master_id: m.master_id, node_id: m.node_id }
+    if (!record(m) || !Number.isInteger(m.master_id) || m.master_id <= 0 || !masterIds.includes(m.master_id) || typeof m.node_id !== 'string' || !nodes.includes(m.node_id)) throw new Error('対応付けのマスターID・ノードIDが不正です')
+    const key = m.variant_id ? `${m.master_id}_${m.variant_id}` : `${m.master_id}`
+    if (seen.has(key)) throw new Error('対応付けが重複しています')
+    seen.add(key)
+    return {
+      master_id: m.master_id,
+      node_id: m.node_id,
+      ...(m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
+    }
   })
   const modelId = value.target_base_model_id
   if (modelId !== null && (!Number.isInteger(modelId) || modelId <= 0 || !modelIds.includes(modelId))) throw new Error('ベースモデルIDが不正です')
@@ -89,7 +95,7 @@ export function WorkflowConnectionSection({
   const diffFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingDiffWorkflow, setPendingDiffWorkflow] = useState<WorkflowSummary | null>(null)
   const [configWorkflowId, setConfigWorkflowId] = useState<number | null>(null)
-  const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string }[]>([])
+  const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string; variant_id?: number }[]>([])
   const [configBaseModelId, setConfigBaseModelId] = useState('')
   const [configText, setConfigText] = useState('')
   const [exportText, setExportText] = useState('')
@@ -152,7 +158,7 @@ export function WorkflowConnectionSection({
 
   useEffect(() => {
     if (!configWorkflow || configWorkflow.id !== configWorkflowId) return
-    setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id }) => ({ master_id, node_id })))
+    setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
     setConfigBaseModelId(configWorkflow.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
   }, [configWorkflow, configWorkflowId])
 
@@ -189,10 +195,15 @@ export function WorkflowConnectionSection({
   const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number }>) => {
     if (!configWorkflow) return
     const mappingsToSave = updatedMappings || configMappings
+    const hasVariants = mappingMasters.some((m) => Array.isArray((m as any).variants) && (m as any).variants.length > 0) || configWorkflow.mappings.some((m) => m.variant_id != null)
     void saveWorkflowConfig({
       name: configWorkflow.name,
       json_body: configWorkflow.json_body,
-      mappings: mappingsToSave.map((m) => ({ master_id: m.master_id, node_id: m.node_id })),
+      mappings: mappingsToSave.map((m) => ({
+        master_id: m.master_id,
+        node_id: m.node_id,
+        ...(hasVariants && m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
+      })),
       target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null,
       default_applied_assets: configWorkflow.default_applied_assets ?? null,
     })
@@ -620,7 +631,7 @@ export function WorkflowConnectionSection({
                                 configDraftRevision.current += 1
                                 setSaved(null)
                                 setConfigError('')
-                                setConfigMappings(items.map((item) => ({ master_id: item.master_id, node_id: item.node_id })))
+                                setConfigMappings(items.map((item) => ({ master_id: item.master_id, node_id: item.node_id, ...(item.variant_id != null ? { variant_id: item.variant_id } : {}) })))
                               }}
                               isSaving={configSaving}
                             />

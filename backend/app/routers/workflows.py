@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.services.workflow_scanner import scan_workflow
+from app.services.workflow_scanner import scan_workflow, scan_workflow_variants
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -33,7 +33,7 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
     db.add(new_wf)
     db.flush()
     for m in src.mappings:
-        db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id))
+        db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id, variant_id=m.variant_id))
     for p in src.presets:
         db.add(models.WorkflowPreset(
             workflow_id=new_wf.id, name=p.name,
@@ -79,10 +79,11 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 id=m.id,
                 master_id=m.master_id,
                 node_id=m.node_id,
-                role=m.master.role if m.master else None,
-                param_name=m.master.param_name if m.master else None,
-                input_type=m.master.input_type if m.master else None,
-                display_name=m.master.display_name if m.master else None,
+                variant_id=m.variant_id,
+                role=(m.variant.computed_role if m.variant and m.variant.computed_role else (m.master.role if m.master else None)),
+                param_name=m.effective_master.param_name if m.effective_master else (m.master.param_name if m.master else None),
+                input_type=m.effective_master.input_type if m.effective_master else (m.master.input_type if m.master else None),
+                display_name=m.effective_master.display_name if m.effective_master else (m.master.display_name if m.master else None),
             )
             for m in wf.mappings
         ],
@@ -108,7 +109,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
     if payload.json_body is not None:
         # Backup current workflow state to workflow_history before replacing
         current_mappings = [
-            {"master_id": m.master_id, "node_id": m.node_id}
+            {"master_id": m.master_id, "node_id": m.node_id, "variant_id": m.variant_id}
             for m in wf.mappings
         ]
         history = models.WorkflowHistory(
@@ -140,6 +141,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
                 workflow_id=workflow_id,
                 master_id=m.master_id,
                 node_id=m.node_id,
+                variant_id=m.variant_id,
             ))
 
     db.commit()
@@ -202,6 +204,7 @@ def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
             workflow_id=workflow_id,
             master_id=m["master_id"],
             node_id=m["node_id"],
+            variant_id=m.get("variant_id"),
         ))
     db.delete(history)
     db.commit()
@@ -238,6 +241,7 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
             workflow_id=wf.id,
             master_id=m.master_id,
             node_id=m.node_id,
+            variant_id=m.variant_id,
         ))
     db.commit()
     db.refresh(wf)
@@ -255,8 +259,12 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db)):
 
 @router.post("/scan", response_model=schemas.ScanResult)
 def scan_workflow_json(payload: schemas.WorkflowScanRequest, db: Session = Depends(get_db)):
-    masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
-    result = scan_workflow(payload.json_body, masters)
+    variants = db.query(models.MappingVariant).order_by(models.MappingVariant.sort_order).all()
+    if variants:
+        result = scan_workflow_variants(payload.json_body, variants)
+    else:
+        masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
+        result = scan_workflow(payload.json_body, masters)
 
     from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
     ckpt_names = detect_checkpoint_names(payload.json_body)
