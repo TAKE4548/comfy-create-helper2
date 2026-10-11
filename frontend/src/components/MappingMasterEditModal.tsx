@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, Layers, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Layers } from 'lucide-react'
+import { PatternTagInput } from './PatternTagInput'
+import { FallbackParamsInput } from './FallbackParamsInput'
+import { WorkflowMappingPreview } from './WorkflowMappingPreview'
+import { WorkflowNodePicker } from './WorkflowNodePicker'
 import { stageMastersApi } from '../api/domains/stageMasters'
 import { mappingGroupsApi } from '../api/domains/mappingGroups'
 import { useComfyNodeTypes } from '../hooks/useComfyNodeTypes'
@@ -88,10 +92,11 @@ export function MappingMasterEditModal({
   const [groupId, setGroupId] = useState<number | null>(null)
   const [classTypes, setClassTypes] = useState<string[]>([])
   const [titlePatterns, setTitlePatterns] = useState<string[]>([])
+  const [fallbackParams, setFallbackParams] = useState<string[]>([])
+  const [isNodePickerOpen, setIsNodePickerOpen] = useState(false)
+  const [pickerWorkflowJson, setPickerWorkflowJson] = useState<Record<string, unknown> | null>(null)
   const [inputClass, setInputClass] = useState('')
-  const [inputPattern, setInputPattern] = useState('')
   const [variants, setVariants] = useState<VariantFormItem[]>([])
-  const [showPreview, setShowPreview] = useState(true)
 
   // Sync state when master changes or opens
   useEffect(() => {
@@ -104,6 +109,7 @@ export function MappingMasterEditModal({
       setGroupId(master.group_id ?? null)
       setClassTypes(master.expected_class_types || [])
       setTitlePatterns(master.base_title_patterns || master.title_patterns || [])
+      setFallbackParams(master.fallback_param_names || [])
 
       // Map variants from master and merge with available stages
       const existingVariants = master.variants || []
@@ -129,6 +135,7 @@ export function MappingMasterEditModal({
       setGroupId(groups[0]?.id ?? null)
       setClassTypes([])
       setTitlePatterns([])
+      setFallbackParams([])
       setVariants(
         stages.map((st) => ({
           stage_id: st.id,
@@ -209,26 +216,9 @@ export function MappingMasterEditModal({
     }
   }
 
-  // Pattern Chip Handlers
-  const addPattern = (patternToAdd: string) => {
-    const trimmed = patternToAdd.trim()
-    if (!trimmed) return
-    if (!titlePatterns.includes(trimmed)) {
-      setTitlePatterns([...titlePatterns, trimmed])
-    }
-    setInputPattern('')
-  }
 
-  const removePattern = (patternToRemove: string) => {
-    setTitlePatterns(titlePatterns.filter((p) => p !== patternToRemove))
-  }
 
-  const handlePatternKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault()
-      addPattern(inputPattern)
-    }
-  }
+
 
   // Variant Toggles and Edits
   const toggleVariant = (stageId: number) => {
@@ -243,6 +233,24 @@ export function MappingMasterEditModal({
         v.stage_id === stageId ? { ...v, custom_role_override: override } : v
       )
     )
+  }
+
+
+  const handleOpenNodePicker = (wfJson: Record<string, unknown>) => {
+    setPickerWorkflowJson(wfJson)
+    setIsNodePickerOpen(true)
+  }
+
+  const handleApplyPickedNode = (nodeInfo: { classType: string; title: string; paramName: string }) => {
+    if (nodeInfo.classType && !classTypes.includes(nodeInfo.classType)) {
+      setClassTypes([...classTypes, nodeInfo.classType])
+    }
+    if (nodeInfo.title && !titlePatterns.includes(nodeInfo.title)) {
+      setTitlePatterns([...titlePatterns, nodeInfo.title])
+    }
+    if (nodeInfo.paramName) {
+      setParamName(nodeInfo.paramName)
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -268,6 +276,7 @@ export function MappingMasterEditModal({
       expected_class_types: classTypes.length > 0 ? classTypes : null,
       base_title_patterns: titlePatterns.length > 0 ? titlePatterns : null,
       title_patterns: titlePatterns.length > 0 ? titlePatterns : null,
+      fallback_param_names: (fallbackParams && fallbackParams.length > 0) ? [...fallbackParams] : null,
       variants: variantItems,
     }
 
@@ -472,42 +481,18 @@ export function MappingMasterEditModal({
             </div>
           </div>
 
-          {/* Section 3: 共通タイトル検索パターン */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs text-zinc-400">
-                共通タイトル検索パターン (Base Title Patterns)
-              </label>
-              <span className="text-[11px] text-zinc-500">Enter またはカンマで追加</span>
-            </div>
+          {/* Section 2.5: 表記ゆれパラメータ名 */}
+          <FallbackParamsInput
+            primaryParamName={paramName}
+            fallbackParams={fallbackParams}
+            onChange={setFallbackParams}
+          />
 
-            <div className="flex flex-wrap items-center gap-1.5 p-2 bg-zinc-900 rounded-lg border border-zinc-800 min-h-[42px]">
-              {titlePatterns.map((pat) => (
-                <span
-                  key={pat}
-                  className="inline-flex items-center gap-1 bg-zinc-800 text-zinc-200 text-xs px-2 py-0.5 rounded border border-zinc-700"
-                >
-                  {pat}
-                  <button
-                    type="button"
-                    onClick={() => removePattern(pat)}
-                    className="hover:text-white"
-                    aria-label={`${pat} を削除`}
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-              <input
-                type="text"
-                placeholder="検索パターン (例: positive, sampler)..."
-                value={inputPattern}
-                onChange={(e) => setInputPattern(e.target.value)}
-                onKeyDown={handlePatternKeyDown}
-                className="bg-transparent text-xs text-zinc-200 outline-none flex-1 min-w-[140px]"
-              />
-            </div>
-          </div>
+          {/* Section 3: 共通タイトル検索パターン */}
+          <PatternTagInput
+            patterns={titlePatterns}
+            onChange={setTitlePatterns}
+          />
 
           {/* Section 4: バリアント一覧リスト (全ステージ) */}
           <div className="space-y-3">
@@ -572,43 +557,22 @@ export function MappingMasterEditModal({
             </div>
           </div>
 
-          {/* Section 5: リアルタイム合致プレビュー */}
-          <div className="border border-zinc-800 rounded-lg p-3 bg-zinc-950/40 space-y-2">
-            <button
-              type="button"
-              onClick={() => setShowPreview(!showPreview)}
-              className="w-full flex items-center justify-between text-xs font-medium text-zinc-300"
-            >
-              <div className="flex items-center gap-1.5 text-[#7C6FDD]">
-                <Sparkles size={14} />
-                <span>リアルタイム合致プレビュー (SSoT Inheritance Check)</span>
-              </div>
-              {showPreview ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
+          {/* Section 5: ワークフロー指定リアルタイム合致プレビュー */}
+          <WorkflowMappingPreview
+            expectedClassTypes={classTypes}
+            titlePatterns={titlePatterns}
+            primaryParamName={paramName}
+            fallbackParams={fallbackParams}
+            onOpenNodePicker={handleOpenNodePicker}
+          />
 
-            {showPreview && (
-              <div className="pt-2 text-[11px] text-zinc-400 space-y-1.5 border-t border-zinc-800/60">
-                <div className="flex items-center gap-2">
-                  <span className="text-zinc-500">合致対象クラス:</span>
-                  <span className="text-zinc-200 font-mono">
-                    {classTypes.length > 0 ? classTypes.join(', ') : '(全クラス対象)'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-zinc-500">継承タイトルパターン:</span>
-                  <span className="text-zinc-200 font-mono">
-                    {titlePatterns.length > 0 ? titlePatterns.join(', ') : '(パターン未指定)'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-zinc-500">有効ステージバリアント数:</span>
-                  <span className="text-zinc-200 font-bold">
-                    {variants.filter((v) => v.is_enabled).length} / {variants.length}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+          <WorkflowNodePicker
+            isOpen={isNodePickerOpen}
+            onClose={() => setIsNodePickerOpen(false)}
+            workflowJson={pickerWorkflowJson}
+            hasExistingValues={Boolean(classTypes.length > 0 || paramName || titlePatterns.length > 0)}
+            onSelectNode={handleApplyPickedNode}
+          />
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-800">

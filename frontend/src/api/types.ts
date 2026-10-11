@@ -118,6 +118,7 @@ export interface MappingMasterV2 {
   input_type: string
   expected_class_types: string[] | null
   base_title_patterns: string[] | null
+  fallback_param_names?: string[] | null
   sort_order: number
   variants: MappingVariant[]
   // Legacy compatibility fields
@@ -137,6 +138,7 @@ export interface MappingMasterV2Create {
   expected_class_types?: string[] | null
   title_patterns?: string[] | null
   base_title_patterns?: string[] | null
+  fallback_param_names?: string[] | null
   sort_order?: number
   variants?: MappingVariantUpdateItem[]
 }
@@ -149,6 +151,7 @@ export interface MappingMasterV2Update {
   input_type?: string
   expected_class_types?: string[] | null
   base_title_patterns?: string[] | null
+  fallback_param_names?: string[] | null
   sort_order?: number
   variants?: MappingVariantUpdateItem[]
   role?: string

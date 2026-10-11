@@ -90,10 +90,16 @@ def scan_workflow(workflow_json: dict, mapping_masters: list) -> dict:
             "title_patterns",
         )
 
-        # Parse param_name as potentially comma-separated aliases
+        # Parse param_name as primary, plus fallback_param_names in order
         param_names = []
         if getattr(master, "param_name", None):
             param_names = [p.strip().lower() for p in master.param_name.split(",") if p.strip()]
+        fallbacks = _safe_parse_json_list(getattr(master, "fallback_param_names", None), master_id, "fallback_param_names")
+        for fb in fallbacks:
+            if isinstance(fb, str) and fb.strip():
+                fb_clean = fb.strip().lower()
+                if fb_clean not in param_names:
+                    param_names.append(fb_clean)
 
         candidates = _find_candidate_nodes(
             workflow_json, title_patterns, expected_class_types, param_names
@@ -225,6 +231,13 @@ def scan_workflow_variants(workflow_json: dict, mapping_variants: list) -> dict:
         param_names = []
         if master and getattr(master, "param_name", None):
             param_names = [p.strip().lower() for p in master.param_name.split(",") if p.strip()]
+        if master:
+            fallbacks = _safe_parse_json_list(getattr(master, "fallback_param_names", None), master_id, "fallback_param_names")
+            for fb in fallbacks:
+                if isinstance(fb, str) and fb.strip():
+                    fb_clean = fb.strip().lower()
+                    if fb_clean not in param_names:
+                        param_names.append(fb_clean)
 
         candidates = _find_candidate_nodes(
             workflow_json, combined_title_patterns, expected_class_types, param_names

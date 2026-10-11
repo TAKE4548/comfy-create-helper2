@@ -70,6 +70,7 @@ class MappingMaster(Base):
     input_type: Mapped[str] = mapped_column(String, nullable=False)  # textarea/int/float/select
     expected_class_types: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
     base_title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    fallback_param_names: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Legacy compatibility fields

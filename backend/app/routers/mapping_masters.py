@@ -37,6 +37,7 @@ class MappingMasterV2Read(BaseModel):
     input_type: str
     expected_class_types: Optional[list[str]] = None
     base_title_patterns: Optional[list[str]] = None
+    fallback_param_names: Optional[list[str]] = None
     sort_order: int
     variants: list[MappingVariantRead] = []
 
@@ -63,6 +64,7 @@ class MappingMasterUpdate(BaseModel):
     input_type: Optional[str] = None
     expected_class_types: Optional[list[str]] = None
     base_title_patterns: Optional[list[str]] = None
+    fallback_param_names: Optional[list[str]] = None
     sort_order: Optional[int] = None
     variants: Optional[list[MappingVariantUpdateItem]] = None
 
@@ -83,6 +85,7 @@ class MappingMasterCreatePayload(BaseModel):
     expected_class_types: Optional[list[str]] = None
     title_patterns: Optional[list[str]] = None
     base_title_patterns: Optional[list[str]] = None
+    fallback_param_names: Optional[list[str]] = None
     sort_order: Optional[int] = None
     variants: Optional[list[MappingVariantUpdateItem]] = None
 
@@ -116,6 +119,7 @@ def create_master(payload: MappingMasterCreatePayload, db: Session = Depends(get
         input_type=payload.input_type,
         expected_class_types=json.dumps(payload.expected_class_types) if payload.expected_class_types else None,
         base_title_patterns=json.dumps(base_title_patterns) if base_title_patterns else None,
+        fallback_param_names=json.dumps(payload.fallback_param_names) if payload.fallback_param_names else None,
         sort_order=sort_order,
         # Legacy fields
         role=role,
@@ -210,6 +214,8 @@ def update_master(master_id: int, payload: MappingMasterUpdate, db: Session = De
         mm.expected_class_types = json.dumps(payload.expected_class_types) if payload.expected_class_types else None
     if payload.base_title_patterns is not None:
         mm.base_title_patterns = json.dumps(payload.base_title_patterns) if payload.base_title_patterns else None
+    if payload.fallback_param_names is not None:
+        mm.fallback_param_names = json.dumps(payload.fallback_param_names) if payload.fallback_param_names else None
     if payload.sort_order is not None:
         mm.sort_order = payload.sort_order
 
@@ -326,6 +332,7 @@ def _to_schema_v2(mm: models.MappingMaster) -> MappingMasterV2Read:
         input_type=mm.input_type,
         expected_class_types=expected_class_types,
         base_title_patterns=base_title_patterns,
+        fallback_param_names=json.loads(mm.fallback_param_names) if mm.fallback_param_names else None,
         sort_order=mm.sort_order,
         variants=variants,
         # backward compatibility
@@ -344,5 +351,6 @@ def _to_schema(mm: models.MappingMaster) -> schemas.MappingMasterRead:
         input_type=mm.input_type,
         display_name=mm.display_name or mm.name or "",
         title_patterns=json.loads(mm.title_patterns) if mm.title_patterns else None,
+        fallback_param_names=json.loads(mm.fallback_param_names) if mm.fallback_param_names else None,
         sort_order=mm.sort_order,
     )

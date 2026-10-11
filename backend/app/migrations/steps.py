@@ -600,6 +600,9 @@ def step_029_workflow_mapping_v2_normalization(conn: Connection, inspector: Insp
         if "base_title_patterns" not in cols:
             conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN base_title_patterns TEXT"))
             logger.info("Migrated: Added 'base_title_patterns' column to 'mapping_masters' table.")
+        if "fallback_param_names" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN fallback_param_names TEXT"))
+            logger.info("Migrated: Added 'fallback_param_names' column to 'mapping_masters' table.")
 
     # 5. Create mapping_variants table if not exists
     if "mapping_variants" not in table_names:

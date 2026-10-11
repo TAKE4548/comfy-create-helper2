@@ -14,6 +14,7 @@ class MappingMasterBase(BaseModel):
     input_type: str
     display_name: str
     title_patterns: Optional[list[str]] = None
+    fallback_param_names: Optional[list[str]] = None
     sort_order: int = 0
 
 
