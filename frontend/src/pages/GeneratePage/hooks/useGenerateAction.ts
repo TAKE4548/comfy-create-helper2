@@ -13,8 +13,11 @@ import { promptToSetMapCache } from '../../../utils/promptToSetMapCache'
 import type { QueueSubmissionFailure } from '../../../store/types'
 import { parseQueueSubmissionFailure } from '../../../utils/queueSubmissionFailure'
 import { buildGenerationRecord, PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
+import type { CaptureAssetInput } from '../../../utils/generationRecord'
+import type { PrepareSeedBatchOptions, ResolvedSeedItem } from '../../../utils/seedBatch'
 import { generationApi } from '../../../api/domains/generation'
 import type { BatchRequest, GenerationItem } from '../../../api/domains/generation'
+import { prepareSeedBatch, validateSeedBatch } from '../../../utils/seedBatch'
 
 const freeze = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const cleanParams = (values: Record<string, string>) => Object.fromEntries(Object.entries(values).filter(([key]) => key !== PROMPT_RECORD_KEY && key !== ASSOCIATIONS_KEY))
@@ -153,13 +156,16 @@ export function useGenerateAction(
 
   const applyParamSync = (
     paramValues: Record<string, string>,
-    groups: ParamSyncGroup[] = []
+    groups: ParamSyncGroup[] = [],
+    workflowMappings: Workflow['mappings'] = []
   ): Record<string, string> => {
     const activeGroups = (groups || []).filter((g) => g.is_enabled)
     if (activeGroups.length === 0) return paramValues
 
     const merged = { ...paramValues }
+    const seedRoles = new Set(workflowMappings.filter((mapping) => mapping.input_type === 'seed' && mapping.role).map((mapping) => mapping.role as string))
     activeGroups.forEach((g) => {
+      if (seedRoles.has(g.master_role) || g.slave_roles.some((role) => seedRoles.has(role))) return
       const masterVal = merged[g.master_role]
       if (masterVal !== undefined) {
         g.slave_roles.forEach((slaveRole: string) => {
@@ -182,15 +188,17 @@ export function useGenerateAction(
     if (!workflow) return
     options?.onBeforeGenerate?.()
 
+    const state = getLatestState()
+    const currentParamValues = cleanParams(freeze(state.paramValues))
+    const currentSets = freeze(state.sets || [])
+    const currentWorkflow = freeze(workflow)
     const capturedWorkflow = captureWorkflow()
     if (!capturedWorkflow) return
 
-    const state = getLatestState()
     const activeSet = state.activeSetId == null
       ? undefined
-      : state.sets.find((set) => String(set.id) === String(state.activeSetId))
+      : currentSets.find((set) => String(set.id) === String(state.activeSetId))
     const activeSetName = activeSet?.name
-    const currentParamValues = cleanParams(state.paramValues)
     const currentPromptChips = freeze(state.promptChips || {})
     const isAnimaMode = state.isAnimaMode
     const promptRoleAllowlist = (capturedWorkflow.mappings || [])
@@ -214,14 +222,26 @@ export function useGenerateAction(
 
     const effectiveParamValues = applyParamSync(
       getEffectiveParamValues(currentParamValues, currentPromptChips, isAnimaMode, promptRoleAllowlist),
-      currentParamSyncGroups
+      currentParamSyncGroups,
+      capturedWorkflow.mappings
     )
+    const seedOptions = freeze({ workflow: currentWorkflow, paramValues: effectiveParamValues, batchSize: currentBatchSize, paramSyncGroups: currentParamSyncGroups })
+    let resolvedSeeds
+    try {
+      validateSeedBatch(seedOptions)
+      resolvedSeeds = prepareSeedBatch(seedOptions)
+    } catch (error) {
+      setErrorToast?.({ message: `生成: ${error instanceof Error ? error.message : String(error)}`, type: 'error' })
+      return
+    }
     const items: GenerationItem[] = []
     for (let index = 0; index < currentBatchSize; index++) {
+      const resolved = resolvedSeeds[index]
       const injectedGraph = injectWorkflowParams({
         workflow: capturedWorkflow,
-        paramValues: effectiveParamValues,
+        paramValues: resolved.actualParamValues,
         seedOptions: { seedMode: currentSeedMode, seed: currentSeed, index },
+        resolvedSeeds: resolved.seedsBySlot,
         cloneJson: true,
       })
       let finalGraph = injectedGraph
@@ -230,7 +250,7 @@ export function useGenerateAction(
         graph: finalGraph,
         workflow_id: capturedWorkflow.id,
         param_values: {
-          ...effectiveParamValues,
+          ...resolved.actualParamValues,
           [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, currentAppliedAssets)),
         },
         applied_assets: currentAppliedAssets,
@@ -277,13 +297,14 @@ export function useGenerateAction(
   const handleGenerateSets = async () => {
     if (!workflow) return
     options?.onBeforeGenerate?.()
+    const state = getLatestState()
+    const currentParamValues = cleanParams(freeze(state.paramValues))
+    const currentSets = freeze(state.sets || [])
+    const currentWorkflow = freeze(workflow)
     const capturedWorkflow = captureWorkflow()
     if (!capturedWorkflow) return
 
-    const state = getLatestState()
-    const currentParamValues = freeze(cleanParams(state.paramValues))
     const currentPromptChips = freeze(state.promptChips || {})
-    const currentSets = freeze(state.sets)
     const currentAppliedAssets = freeze(state.appliedAssets || {})
     const currentActiveSetId = state.activeSetId
     const currentParamSyncGroups = freeze(state.paramSyncGroups || [])
@@ -303,6 +324,43 @@ export function useGenerateAction(
       return
     }
 
+    const plans: Array<{ setItem: (typeof checkedSets)[number]; itemAssets: Record<string, CaptureAssetInput[]>; effectiveBatchSize: number; effectiveSeedMode: 'fixed' | 'random'; effectiveSeed: number; seedOptions: PrepareSeedBatchOptions; resolvedSeeds?: ResolvedSeedItem[] }> = []
+    let validatingSetName = checkedSets[0]?.name ?? 'セット'
+    try {
+      for (const setItem of checkedSets) {
+        validatingSetName = setItem.name
+        const isActive = currentActiveSetId != null && String(setItem.id) === String(currentActiveSetId)
+        const itemParams = isActive
+          ? { ...cleanParams(setItem.paramValues || {}), ...currentParamValues }
+          : cleanParams(setItem.paramValues || {})
+        const itemAssets = freeze((isActive ? currentAppliedAssets : setItem.appliedAssets) || {})
+        const itemChips = isActive
+          ? (Object.keys(currentPromptChips).length > 0 ? currentPromptChips : (setItem.promptChips || {}))
+          : (setItem.promptChips || {})
+        const textareaRoles = (capturedWorkflow.mappings || [])
+          .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
+          .map((mapping) => mapping.role as string)
+        const syncedParamValues = applyParamSync(
+          getEffectiveParamValues(itemParams, itemChips, state.isAnimaMode, textareaRoles),
+          currentParamSyncGroups,
+          capturedWorkflow.mappings
+        )
+        const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
+        const effectiveSeedMode = isActive ? (state.seedMode ?? setItem.seedMode) : setItem.seedMode
+        const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
+        const seedOptions: PrepareSeedBatchOptions = freeze({ workflow: currentWorkflow, paramValues: syncedParamValues, batchSize: effectiveBatchSize, paramSyncGroups: currentParamSyncGroups })
+        validateSeedBatch(seedOptions)
+        plans.push({ setItem, itemAssets, effectiveBatchSize, effectiveSeedMode, effectiveSeed, seedOptions })
+      }
+      for (const plan of plans) {
+        validatingSetName = plan.setItem.name
+        plan.resolvedSeeds = prepareSeedBatch(plan.seedOptions)
+      }
+    } catch (error) {
+      setErrorToast?.({ message: `${validatingSetName}: ${error instanceof Error ? error.message : String(error)}`, type: 'error' })
+      return
+    }
+
     const abortController = new AbortController()
     setSubmissionAbortController?.(abortController)
     setIsBatchSubmitting?.(true)
@@ -310,37 +368,21 @@ export function useGenerateAction(
     const items: GenerationItem[] = []
     const itemTargets: Array<{ setName: string; batchIndex: number; batchSize: number }> = []
 
-    for (const setItem of checkedSets) {
-      const isActive = currentActiveSetId != null && String(setItem.id) === String(currentActiveSetId)
-      const itemParams = isActive
-        ? { ...cleanParams(setItem.paramValues), ...currentParamValues }
-        : cleanParams(setItem.paramValues)
-      const itemAssets = freeze((isActive ? currentAppliedAssets : setItem.appliedAssets) || {})
-      const itemChips = isActive
-        ? (Object.keys(currentPromptChips).length > 0 ? currentPromptChips : (setItem.promptChips || {}))
-        : (setItem.promptChips || {})
-      const textareaRoles = (capturedWorkflow.mappings || [])
-        .filter((mapping) => mapping.role != null && mapping.input_type === 'textarea')
-        .map((mapping) => mapping.role as string)
-      const syncedParamValues = applyParamSync(
-        getEffectiveParamValues(itemParams, itemChips, state.isAnimaMode, textareaRoles),
-        currentParamSyncGroups
-      )
-      const effectiveBatchSize = isActive ? (state.batchSize ?? setItem.batchSize) : setItem.batchSize
-      const effectiveSeedMode = isActive ? (state.seedMode ?? setItem.seedMode) : setItem.seedMode
-      const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
-
+    for (const plan of plans) {
+      const { setItem, itemAssets, effectiveBatchSize, effectiveSeedMode, effectiveSeed, resolvedSeeds } = plan
       for (let index = 0; index < effectiveBatchSize; index++) {
+        const resolved = resolvedSeeds![index]
         const injectedGraph = injectWorkflowParams({
           workflow: capturedWorkflow,
-          paramValues: syncedParamValues,
+          paramValues: resolved.actualParamValues,
           seedOptions: { seedMode: effectiveSeedMode, seed: effectiveSeed, index },
+          resolvedSeeds: resolved.seedsBySlot,
           cloneJson: true,
         })
         let finalGraph = injectedGraph
         if (activeBypassNodeIds.length > 0) finalGraph = applyBypass(finalGraph, activeBypassNodeIds, comfyObjectInfo)
         const paramValues = {
-          ...syncedParamValues,
+          ...resolved.actualParamValues,
           [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, itemAssets)),
         }
         items.push({

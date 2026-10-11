@@ -7,6 +7,7 @@ import { useGenerationStore } from '../../../../store/useGenerationStore';
 import { LS_KEYS } from '../../../../utils/localStorageKeys';
 import type { Workflow } from '../../../../api/types';
 import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../../utils/generationRecord';
+import { SEED_MODES_KEY, readSeedSettings } from '../../../../utils/seedModel';
 
 it('REQ-316 excludes both reserved keys from restored inputs, including unknown records', () => {
   const source = { Quality: '', Sampler_Seed: 42, [PROMPT_RECORD_KEY]: '{broken', [ASSOCIATIONS_KEY]: '{"version":99}' };
@@ -16,6 +17,64 @@ it('REQ-316 excludes both reserved keys from restored inputs, including unknown 
   expect(useGenerationStore.getState().seed).toBe(42);
   expect(useGenerationStore.getState().seedMode).toBe('fixed');
   expect(source[PROMPT_RECORD_KEY]).toBe('{broken');
+});
+
+describe('REQ-350 dedicated seed initialization', () => {
+  const seedWorkflow: Workflow = {
+    id: 350,
+    name: 'Seed Workflow',
+    created_at: '',
+    json_body: {
+      '10': { inputs: { seed: 123 } },
+      '11': { inputs: { seed: 456 } },
+    },
+    mappings: [
+      { id: 10, master_id: 10, node_id: '10', variant_id: 1, role: 'MainSeed', param_name: 'seed', input_type: 'seed', display_name: 'Main Seed' },
+      { id: 11, master_id: 11, node_id: '11', variant_id: 1, role: 'RoughSeed', param_name: 'seed', input_type: 'seed', display_name: 'Rough Seed' },
+    ],
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    useGenerationStore.setState({ paramValues: {}, sets: [], activeSetId: null });
+  });
+
+  it('uses graph seed defaults while preserving existing role values and valid modes', () => {
+    const mapping = seedWorkflow.mappings[0];
+    const params = { MainSeed: '0', RoughSeed: '456', [SEED_MODES_KEY]: JSON.stringify({ version: 1, modes: { 'master:10:variant:1': 'random' } }) };
+    useGenerationStore.setState({ paramValues: params });
+
+    renderHook(() => useWorkflowParams(seedWorkflow, 350), { wrapper: createWrapper() });
+
+    const values = useGenerationStore.getState().paramValues;
+    expect(values.MainSeed).toBe('0');
+    expect(values.RoughSeed).toBe('456');
+    expect(readSeedSettings(mapping, values)).toEqual({ mode: 'random', seed: 0 });
+  });
+
+  it('restores snapshot dedicated seeds as fixed and excludes mode metadata from ordinary params', () => {
+    const { result } = renderHook(() => useWorkflowParams(seedWorkflow, 350), { wrapper: createWrapper() });
+    act(() => result.current.loadSnapshotParams({ MainSeed: 0, RoughSeed: 99, Sampler_Seed: 77, [SEED_MODES_KEY]: 'invalid', [PROMPT_RECORD_KEY]: '{}' }));
+
+    const values = useGenerationStore.getState().paramValues;
+    expect(values[SEED_MODES_KEY]).toBeDefined();
+    expect(values[SEED_MODES_KEY]).not.toBe('invalid');
+    expect(values[PROMPT_RECORD_KEY]).toBeUndefined();
+    expect(readSeedSettings(seedWorkflow.mappings[0], values)).toEqual({ mode: 'fixed', seed: 0 });
+    expect(readSeedSettings(seedWorkflow.mappings[1], values)).toEqual({ mode: 'fixed', seed: 99 });
+    expect(useGenerationStore.getState().seed).toBe(77);
+    expect(useGenerationStore.getState().seedMode).toBe('fixed');
+  });
+
+  it('resets dedicated seed values to graph defaults in fixed mode', () => {
+    useGenerationStore.setState({ paramValues: { MainSeed: '999', RoughSeed: '999' } });
+    const { result } = renderHook(() => useWorkflowParams(seedWorkflow, 350), { wrapper: createWrapper() });
+    act(() => result.current.handleResetDefaultParams());
+
+    const values = useGenerationStore.getState().paramValues;
+    expect(readSeedSettings(seedWorkflow.mappings[0], values)).toEqual({ mode: 'fixed', seed: 123 });
+    expect(readSeedSettings(seedWorkflow.mappings[1], values)).toEqual({ mode: 'fixed', seed: 456 });
+  });
 });
 
 const createWrapper = () => {

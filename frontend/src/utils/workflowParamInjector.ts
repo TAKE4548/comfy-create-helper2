@@ -4,6 +4,7 @@
  */
 
 import type { Workflow, StageMaster } from '../api/types'
+import { parseSeedValue, SEED_MODES_KEY, seedSlotKey } from './seedModel'
 
 export interface WorkflowNode {
   inputs?: Record<string, any>
@@ -23,6 +24,7 @@ export interface InjectWorkflowParamsOptions {
   seedOptions?: SeedInjectionOptions
   cloneJson?: boolean
   stages?: StageMaster[]
+  resolvedSeeds?: Record<string, number>
 }
 
 /**
@@ -239,17 +241,44 @@ export function injectGeneralParam(
  * Injects parameters, LoRA stacks, and optional seeds into a workflow JSON object.
  */
 export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Record<string, any> {
-  const { workflow, paramValues: inputParamValues, seedOptions, cloneJson = true, stages } = options
+  const { workflow, paramValues: inputParamValues, seedOptions, cloneJson = true, stages, resolvedSeeds } = options
   const wfJson: Record<string, any> = cloneJson
     ? JSON.parse(JSON.stringify(workflow.json_body || {}))
     : (workflow.json_body || {})
 
   const defaultParams = getInitialParams(workflow, stages)
   const healedInputs: Record<string, string> = { ...inputParamValues }
+  const dedicatedSeedMappings = workflow.mappings.filter((m) => m.input_type === 'seed' && m.role)
+  const dedicatedSeedRoles = new Set(dedicatedSeedMappings.map((m) => m.role as string))
   if (stages && stages.length > 0) {
     const knownRoles = workflow.mappings.map((m) => m.role).filter(Boolean) as string[]
+    // Dedicated seed values may follow only an exact role or one unambiguous history chain.
+    for (const [key, value] of Object.entries(inputParamValues)) {
+      if (key === SEED_MODES_KEY || dedicatedSeedRoles.has(key)) continue
+      const seedMatches = new Set<string>()
+      for (const stage of stages) {
+        let previousSuffixes = stage.previous_suffixes
+        if (typeof previousSuffixes === 'string') {
+          try {
+            previousSuffixes = JSON.parse(previousSuffixes)
+          } catch {
+            previousSuffixes = null
+          }
+        }
+        if (!Array.isArray(previousSuffixes)) continue
+        for (const suffix of previousSuffixes.slice(0, 10)) {
+          if (typeof suffix !== 'string' || !key.endsWith(suffix)) continue
+          const candidate = `${key.slice(0, -suffix.length)}${stage.suffix}`
+          if (dedicatedSeedRoles.has(candidate)) seedMatches.add(candidate)
+        }
+      }
+      if (seedMatches.size > 1) throw new Error(`Ambiguous historical role for dedicated seed: ${key}`)
+      if (seedMatches.size === 1) healedInputs[[...seedMatches][0]] = value
+    }
     for (const [k, v] of Object.entries(inputParamValues)) {
+      if (k === SEED_MODES_KEY || dedicatedSeedRoles.has(k)) continue
       const resolved = resolveRoleWithHistoryFallback(k, stages, knownRoles)
+      if (dedicatedSeedRoles.has(resolved)) continue
       if (resolved && resolved !== k && !(resolved in healedInputs)) {
         healedInputs[resolved] = v
       }
@@ -265,6 +294,17 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
 
     if (m.input_type === 'lora_stack') {
       injectLoraStackParams(node.inputs, m.role, paramValues, node.class_type)
+    } else if (m.input_type === 'seed') {
+      const slotKey = seedSlotKey(m)
+      const rawSeed = resolvedSeeds
+        ? resolvedSeeds[slotKey]
+        : paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
+      if (rawSeed === undefined) throw new Error(`Missing resolved seed for slot ${slotKey}`)
+      const seed = parseSeedValue(String(rawSeed), m.display_name || m.role)
+      const targetParam = m.param_name && node.inputs[m.param_name] !== undefined
+        ? m.param_name
+        : node.inputs.value !== undefined ? 'value' : m.param_name || 'seed'
+      node.inputs[targetParam] = seed
     } else if (m.role !== 'Sampler_Seed' || !seedOptions) {
       const targetParam = m.param_name || 'value'
       const rawVal = paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
@@ -273,7 +313,7 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
   })
 
   if (seedOptions) {
-    const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed')
+    const seedNode = workflow.mappings.find((m) => m.role === 'Sampler_Seed' && m.input_type !== 'seed')
     if (seedNode && seedNode.node_id) {
       const node = wfJson[seedNode.node_id] as WorkflowNode | undefined
       if (node) {

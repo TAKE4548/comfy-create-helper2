@@ -13,8 +13,9 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     paramMappings: [
       { id: 1, role: 'prompt', display_name: 'Prompt', input_type: 'string' },
       { id: 2, role: 'cfg', display_name: 'CFG Scale', input_type: 'float' },
+      { id: 3, role: 'Sampler_Seed', display_name: 'Sampler Seed', input_type: 'int' },
     ],
-    paramValues: { prompt: 'test prompt', cfg: '7.5' },
+    paramValues: { prompt: 'test prompt', cfg: '7.5', Sampler_Seed: '12345' },
     setParamValues: vi.fn(),
     batchSize: 1,
     setBatchSize: vi.fn(),
@@ -55,6 +56,19 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     // Bypasses section elements
     expect(screen.getByText('Bypasses')).toBeInTheDocument()
     expect(screen.getByText('Face Restore Bypass')).toBeInTheDocument()
+  })
+
+  it('renders a dedicated Seed control without adding a Seed toggle to CFG', () => {
+    render(<ParamPanel {...defaultProps}
+      paramMappings={[
+        { id: 2, role: 'cfg', display_name: 'CFG Scale', input_type: 'float' },
+        { id: 4, role: 'seed_main', display_name: 'Dedicated Seed', input_type: 'seed' },
+      ]}
+      paramValues={{ cfg: '7.5', seed_main: '12345' }} />)
+
+    expect(screen.getByLabelText('Dedicated Seedの値')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'ランダムにする' })).toHaveLength(1)
+    expect(screen.getByText('CFG Scale')).toBeInTheDocument()
   })
 
   it('collapses and expands Parameters section on click and persists to localStorage', () => {

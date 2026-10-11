@@ -9,6 +9,7 @@ import { workflowsApi } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { Workflow } from '../../../api/types'
 import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
+import { SEED_MODES_KEY, setSeedModeForMapping } from '../../../utils/seedModel'
 import {
   extractGeneralParam,
   extractLoraStackParams,
@@ -81,10 +82,23 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
   const loadSnapshotParams = (snapshotParams: Record<string, any>) => {
     const newParams: Record<string, string> = {}
     Object.entries(snapshotParams).forEach(([key, val]) => {
-      if (key === PROMPT_RECORD_KEY || key === ASSOCIATIONS_KEY) return
+      if (key === PROMPT_RECORD_KEY || key === ASSOCIATIONS_KEY || key === SEED_MODES_KEY) return
       newParams[key] = String(val)
     })
-    setParamValues(healLegacyParamKeys(newParams))
+
+    // A snapshot represents the values actually used for this run. Dedicated
+    // seed controls restore those values as fixed, independently of metadata
+    // that may have been present in the snapshot's source workflow.
+    const restoredParams = healLegacyParamKeys(newParams)
+    if (workflow) {
+      for (const mapping of workflow.mappings.filter((item) => item.input_type === 'seed')) {
+        if (!mapping.role) continue
+        const snapshotValue = snapshotParams[mapping.role] ?? snapshotParams['Sampler_Seed'] ?? getInitialParams(workflow)[mapping.role]
+        if (snapshotValue !== undefined) restoredParams[mapping.role] = String(snapshotValue)
+        Object.assign(restoredParams, setSeedModeForMapping(mapping, restoredParams, 'fixed'))
+      }
+    }
+    setParamValues(restoredParams)
 
     if (snapshotParams['Sampler_Seed'] !== undefined) {
       const seedVal = Number(snapshotParams['Sampler_Seed'])
@@ -130,7 +144,13 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
 
   const handleResetDefaultParams = () => {
     if (!workflow || !selectedWorkflowId) return
-    const init = getInitialParams(workflow)
+    const init = healLegacyParamKeys(getInitialParams(workflow))
+    if (paramValues[SEED_MODES_KEY] !== undefined) init[SEED_MODES_KEY] = paramValues[SEED_MODES_KEY]
+    for (const mapping of workflow.mappings.filter((item) => item.input_type === 'seed')) {
+      if (mapping.role && init[mapping.role] !== undefined) {
+        Object.assign(init, setSeedModeForMapping(mapping, init, 'fixed'))
+      }
+    }
     setParamValues(init)
 
     // Reset default applied assets

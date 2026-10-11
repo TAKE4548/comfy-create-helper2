@@ -284,5 +284,119 @@ describe('workflowParamInjector', () => {
       })
       expect((randomResult['1'] as any).inputs.seed).toBeGreaterThanOrEqual(0)
     })
+
+    it('injects dedicated seeds as numbers and preserves nested source graph values', () => {
+      const dedicatedWorkflow: Workflow = {
+        ...mockWorkflow,
+        json_body: {
+          ...mockWorkflow.json_body,
+          '1': { inputs: { seed: 10, nested: { keep: true } } },
+          '4': { inputs: { seed: 20 } },
+        },
+        mappings: [
+          { ...mockWorkflow.mappings[0], input_type: 'seed' },
+          { ...mockWorkflow.mappings[0], id: 4, master_id: 4, variant_id: 2, node_id: '4', role: 'Sampler_Seed_Rough', input_type: 'seed' },
+        ],
+      }
+
+      const result = injectWorkflowParams({
+        workflow: dedicatedWorkflow,
+        paramValues: { Sampler_Seed: '31', Sampler_Seed_Rough: '41' },
+        seedOptions: { seedMode: 'fixed', seed: 999 },
+        resolvedSeeds: { 'master:1:variant:legacy': 32, 'master:4:variant:2': 42 },
+      })
+
+      expect((result['1'] as any).inputs.seed).toBe(32)
+      expect((result['4'] as any).inputs.seed).toBe(42)
+      expect((result['1'] as any).inputs.seed).not.toBe('32')
+      expect((result['1'] as any).inputs.nested.keep).toBe(true)
+      expect((dedicatedWorkflow.json_body as any)['1'].inputs.seed).toBe(10)
+      expect((dedicatedWorkflow.json_body as any)['1'].inputs.nested.keep).toBe(true)
+    })
+
+    it('requires resolved values for generation and validates saved dedicated seed values', () => {
+      const dedicatedWorkflow: Workflow = {
+        ...mockWorkflow,
+        mappings: [{ ...mockWorkflow.mappings[0], input_type: 'seed' }],
+      }
+      expect(() => injectWorkflowParams({
+        workflow: dedicatedWorkflow,
+        paramValues: { Sampler_Seed: '7' },
+        resolvedSeeds: {},
+      })).toThrow(/resolved seed/i)
+
+      const invalidValues = ['-1', '4294967296', '1.5', 'nope']
+      for (const seed of invalidValues) {
+        expect(() => injectWorkflowParams({
+          workflow: dedicatedWorkflow,
+          paramValues: { Sampler_Seed: seed },
+        })).toThrow()
+      }
+    })
+
+    it('uses the value input and restores historical seed roles only through a unique stage suffix', () => {
+      const historicalWorkflow: Workflow = {
+        ...mockWorkflow,
+        json_body: { ...mockWorkflow.json_body, '1': { inputs: { value: 8 } } },
+        mappings: [{ ...mockWorkflow.mappings[0], role: 'Sampler_Seed_v2', input_type: 'seed' }],
+      }
+      const stage = { suffix: '_v2', previous_suffixes: ['_v1'] } as any
+      const result = injectWorkflowParams({
+        workflow: historicalWorkflow,
+        paramValues: { Sampler_Seed_v1: '19' },
+        stages: [stage],
+      })
+      expect((result['1'] as any).inputs.value).toBe(19)
+
+      const ambiguousWorkflow = {
+        ...historicalWorkflow,
+        mappings: [
+          ...historicalWorkflow.mappings,
+          { ...historicalWorkflow.mappings[0], id: 7, master_id: 7, role: 'Sampler_Seed_Final' },
+        ],
+      }
+      expect(() => injectWorkflowParams({
+        workflow: ambiguousWorkflow,
+        paramValues: { Sampler_Seed_v1: '19' },
+        stages: [stage, { suffix: '_Final', previous_suffixes: ['_v1'] } as any],
+      })).toThrow(/ambiguous historical role/i)
+    })
+
+    it('keeps legacy global seed injection separate from dedicated seed values', () => {
+      const dedicatedWorkflow: Workflow = {
+        ...mockWorkflow,
+        mappings: [
+          mockWorkflow.mappings[0],
+          { ...mockWorkflow.mappings[0], id: 5, master_id: 5, variant_id: 3, node_id: '4', role: 'Sampler_Seed_Rough', input_type: 'seed' },
+        ],
+        json_body: { ...mockWorkflow.json_body, '4': { inputs: { seed: 0 } } },
+      }
+      const result = injectWorkflowParams({
+        workflow: dedicatedWorkflow,
+        paramValues: { Sampler_Seed: '10', Sampler_Seed_Rough: '77', __seed_modes_v1: '{"version":1}' },
+        seedOptions: { seedMode: 'fixed', seed: 100, index: 2 },
+        resolvedSeeds: { 'master:5:variant:3': 77 },
+      })
+      expect((result['1'] as any).inputs.seed).toBe(102)
+      expect((result['4'] as any).inputs.seed).toBe(77)
+      expect(JSON.stringify(result)).not.toContain('__seed_modes_v1')
+    })
+
+    it('retains ordinary float injection while adding dedicated seed injection', () => {
+      const workflow: Workflow = {
+        ...mockWorkflow,
+        json_body: { ...mockWorkflow.json_body, '4': { inputs: { cfg: 1.25 } } },
+        mappings: [
+          { ...mockWorkflow.mappings[0], input_type: 'seed' },
+          { ...mockWorkflow.mappings[1], id: 6, master_id: 6, node_id: '4', role: 'Cfg', param_name: 'cfg', input_type: 'float' },
+        ],
+      }
+      const result = injectWorkflowParams({
+        workflow,
+        paramValues: { Sampler_Seed: '5', Cfg: '3.75' },
+        resolvedSeeds: { 'master:1:variant:legacy': 5 },
+      })
+      expect((result['4'] as any).inputs.cfg).toBe(3.75)
+    })
   })
 })

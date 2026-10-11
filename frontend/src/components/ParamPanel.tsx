@@ -4,6 +4,9 @@ import type { Lora, ParamTypeMaster, ParamSyncGroup } from '../api/types'
 import { LoraStackEditor } from './LoraStackEditor'
 import { SearchableLoraSelect } from './SearchableLoraSelect'
 import { LS_KEYS } from '../utils/localStorageKeys'
+import type { WorkflowMapping } from '../api/types'
+import { readSeedSettings, resolveSeedSyncRoots, seedSlotKey } from '../utils/seedModel'
+import { SeedField } from './SeedField'
 
 export const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
@@ -150,6 +153,12 @@ export const ParamPanel = ({
     })
   })
 
+  const seedMappings = paramMappings.filter((mapping) => mapping.input_type === 'seed') as WorkflowMapping[]
+  let seedRoots: Record<string, string> = {}
+  let seedSyncError = ''
+  try { seedRoots = resolveSeedSyncRoots(paramMappings as WorkflowMapping[], paramSyncGroups) }
+  catch (error) { seedSyncError = error instanceof Error ? error.message : 'Seed同期設定が無効です' }
+
   return (
     <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
       {/* Parameters Header */}
@@ -181,10 +190,31 @@ export const ParamPanel = ({
           const adjusted = Math.min(numericMax ?? Infinity, Math.max(numericMin ?? -Infinity, current + numericStep * direction))
           setParamValues({ ...paramValues, [m.role!]: adjusted.toFixed(precision) })
         }
+        if (m.input_type !== 'seed' && m.role === 'Sampler_Seed') return null
         const syncGroup = activeSlaveMap.get(m.role!)
         const isSyncedSlave = Boolean(syncGroup)
         const masterDisplayName = syncGroup ? (paramMappings.find((pm) => pm.role === syncGroup.master_role)?.display_name || syncGroup.master_role) : ''
 
+        if (m.input_type === 'seed') {
+          const mapping = m as WorkflowMapping
+          const rootSlot = seedRoots[seedSlotKey(mapping)]
+          const rootMapping = seedMappings.find((candidate) => seedSlotKey(candidate) === rootSlot)
+          let effectiveSettings
+          let settingsError = seedSyncError
+          if (!settingsError && rootMapping) {
+            try { effectiveSettings = readSeedSettings(rootMapping, paramValues) }
+            catch (error) { settingsError = error instanceof Error ? error.message : 'Seed設定が無効です' }
+          }
+          return (
+            <div key={m.id} className="space-y-1">
+              <SeedField mapping={mapping} paramValues={paramValues} onChange={setParamValues} mobile={mobile}
+                disabled={isSyncedSlave || Boolean(seedSyncError) || !rootMapping}
+                effectiveSettings={effectiveSettings} />
+              {settingsError && <span role="alert" className="text-xs text-red-400">{settingsError}</span>}
+              {isSyncedSlave && <span className="text-[9px] text-accent-green/80 flex items-center gap-0.5"><Link size={9} /> Synced: {masterDisplayName}</span>}
+            </div>
+          )
+        }
         if (m.input_type === 'lora_stack') {
           return (
             <LoraStackEditor
@@ -343,7 +373,7 @@ export const ParamPanel = ({
             className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right`} />
         </div>
       )}
-      {typeof seed === 'number' && setSeed && seedMode && setSeedMode && (
+      {paramMappings.some((mapping) => mapping.input_type !== 'seed' && mapping.role === 'Sampler_Seed') && typeof seed === 'number' && setSeed && seedMode && setSeedMode && (
         <div className="flex items-center justify-between gap-4">
           <label className="text-xs text-zinc-400">Seed</label>
           <div className="flex items-center gap-2">

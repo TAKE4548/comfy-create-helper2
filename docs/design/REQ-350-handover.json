@@ -1,0 +1,276 @@
+{
+  "pbi_id": "REQ-350",
+  "status": "human-design-review-required",
+  "design_document": "docs/design/REQ-350.md",
+  "test_plan": "docs/design/REQ-350-test-plan.md",
+  "implementation_plan": "implementation_plan.md",
+  "preserved_previous_plan": "docs/design/REQ-343-implementation_plan.md",
+  "audit_document": "docs/design/REQ-350-design-audit.md",
+  "dag_mermaid": "graph TD\n  T1[\"REQ-350-T1 保存契約\"] --> T3[\"T3 Batch planner\"]\n  T1 --> T4[\"T4 Injector\"]\n  T1 --> T5[\"T5 Seed UI\"]\n  T11[\"REQ-350-T11 表示前処理\"] --> T5\n  T1 --> T6[\"T6 Lifecycle\"]\n  T3 --> T7[\"T7 生成要求\"]\n  T4 --> T7\n  T6 --> T7\n  T5 --> T8[\"T8 保存契約テスト\"]\n  T6 --> T8\n  T2[\"REQ-350-T2 型選択\"] --> T9[\"T9 結合E2E\"]\n  T7 --> T9\n  T8 --> T9\n  T7 --> T10[\"T10 SSoT同期\"]\n  T8 --> T10\n  T5 --> T12[\"T12 legacy Seed fixture\"]",
+  "max_depth": 4,
+  "tasks": [
+    {
+      "task_id": "REQ-350-T1",
+      "card_path": "docs/backlog/task/active/REQ-350-T1.md",
+      "title": "Seed 設定の保存形式と入力検証を定義する",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/utils/seedModel.ts",
+        "frontend/src/utils/__tests__/seedModel.test.ts"
+      ],
+      "estimated_changed_lines": 260,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/utils/__tests__/seedModel.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/utils/__tests__/seedModel.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T2",
+      "card_path": "docs/backlog/task/active/REQ-350-T2.md",
+      "title": "マッピング編集で標準 Seed 型を選択・保存する",
+      "subsystem": "frontend/backend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/components/MappingMasterEditModal.tsx",
+        "frontend/src/components/__tests__/MappingMasterEditModal.seed.test.tsx",
+        "backend/tests/test_req350_seed_mapping_api.py"
+      ],
+      "estimated_changed_lines": 240,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/components/__tests__/MappingMasterEditModal.seed.test.tsx",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/components/__tests__/MappingMasterEditModal.seed.test.tsx",
+        "cd backend; $env:PYTHONPATH='.'; ./.venv/Scripts/python.exe -m pytest tests/test_req350_seed_mapping_api.py"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T3",
+      "card_path": "docs/backlog/task/active/REQ-350-T3.md",
+      "title": "各スロットのバッチ Seed を先に確定する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T1"
+      ],
+      "impacted_files": [
+        "frontend/src/utils/seedBatch.ts",
+        "frontend/src/utils/__tests__/seedBatch.test.ts"
+      ],
+      "estimated_changed_lines": 295,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/utils/__tests__/seedBatch.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/utils/__tests__/seedBatch.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T4",
+      "card_path": "docs/backlog/task/active/REQ-350-T4.md",
+      "title": "専用 Seed をグラフへ数値として注入する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T1"
+      ],
+      "impacted_files": [
+        "frontend/src/utils/workflowParamInjector.ts",
+        "frontend/src/utils/__tests__/workflowParamInjector.test.ts"
+      ],
+      "estimated_changed_lines": 220,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/utils/__tests__/workflowParamInjector.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/utils/__tests__/workflowParamInjector.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T5",
+      "card_path": "docs/backlog/task/active/REQ-350-T5.md",
+      "title": "専用 Seed 入力にランダム・固定操作を表示する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T1",
+        "REQ-350-T11"
+      ],
+      "impacted_files": [
+        "frontend/src/components/SeedField.tsx",
+        "frontend/src/components/__tests__/SeedField.test.tsx",
+        "frontend/src/components/ParamPanel.tsx"
+      ],
+      "estimated_changed_lines": 260,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/components/__tests__/SeedField.test.tsx src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/components/__tests__/SeedField.test.tsx src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T6",
+      "card_path": "docs/backlog/task/active/REQ-350-T6.md",
+      "title": "既存プリセットとスナップショットの Seed 初期化を整える",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T1"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useWorkflowParams.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts"
+      ],
+      "estimated_changed_lines": 200,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T7",
+      "card_path": "docs/backlog/task/active/REQ-350-T7.md",
+      "title": "通常生成とセット生成の要求を個別 Seed で凍結する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T3",
+        "REQ-350-T4",
+        "REQ-350-T6"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateAction.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts"
+      ],
+      "estimated_changed_lines": 295,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T8",
+      "card_path": "docs/backlog/task/active/REQ-350-T8.md",
+      "title": "モード・値の保存とセット切替を契約検証する",
+      "subsystem": "frontend/backend",
+      "depends_on": [
+        "REQ-350-T5",
+        "REQ-350-T6"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/__tests__/usePresetAutoSave.seed.test.ts",
+        "frontend/src/store/__tests__/multiSetSlice.seed.test.ts",
+        "backend/tests/test_req350_seed_preset_roundtrip.py"
+      ],
+      "estimated_changed_lines": 270,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/usePresetAutoSave.seed.test.ts src/store/__tests__/multiSetSlice.seed.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/usePresetAutoSave.seed.test.ts src/store/__tests__/multiSetSlice.seed.test.ts",
+        "cd backend; $env:PYTHONPATH='.'; ./.venv/Scripts/python.exe -m pytest tests/test_req350_seed_preset_roundtrip.py"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T9",
+      "card_path": "docs/backlog/task/active/REQ-350-T9.md",
+      "title": "受入経路と異常系を結合 E2E で確認する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-350-T2",
+        "REQ-350-T7",
+        "REQ-350-T8"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req350_seed.test.tsx"
+      ],
+      "estimated_changed_lines": 280,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/test/e2e_req350_seed.test.tsx",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/test/e2e_req350_seed.test.tsx"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T10",
+      "card_path": "docs/backlog/task/active/REQ-350-T10.md",
+      "title": "Seed 型とバッチ規則を仕様書へ同期する",
+      "subsystem": "system",
+      "depends_on": [
+        "REQ-350-T7",
+        "REQ-350-T8"
+      ],
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_SETTINGS.md"
+      ],
+      "estimated_changed_lines": 140,
+      "atomicity_check": "PASS",
+      "verification_command": "git diff --check -- docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md",
+      "verification_commands": [
+        "git diff --check -- docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T11",
+      "card_path": "docs/backlog/task/active/REQ-350-T11.md",
+      "title": "生成ページの Seed マッピング除外フィルタを更新する",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useWorkflowManagement.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts"
+      ],
+      "estimated_changed_lines": 160,
+      "atomicity_check": "PASS",
+      "verification_command": "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts"
+      ]
+    },
+    {
+      "task_id": "REQ-350-T12",
+      "card_path": "docs/backlog/task/active/REQ-350-T12.md",
+      "title": "ParamPanelのlegacy Seed表示とfloat境界をテストする",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": ["frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx"],
+      "estimated_changed_lines": 30,
+      "atomicity_check": "PASS",
+      "verification_commands": [
+        "cd frontend; npm run typecheck",
+        "cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx"
+      ]
+    }
+  ],
+  "verification_executed": {
+    "application_tests": "未実行（設計のみ）",
+    "git_diff_check": "exit 0、空白エラーなし（最終git確認は昇格権限で実施）",
+    "card_line_limit": "全11カード300行未満",
+    "source_changes": "アプリソース変更なし"
+  },
+  "audit": {
+    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py ba-audit",
+    "exit_code": 0,
+    "model": "qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored",
+    "domain": "reasoning",
+    "result": "モデル判定FAIL相当。設計者が指摘を照合し補足修正、補足後再監査未実施",
+    "unload_exit_code": 0,
+    "model_release_verified": "lms ps: No models are currently loaded",
+    "gpu_memory_100_percent_freed": "実測未確認（nvidia-smi未導入）"
+  },
+  "trade_offs_and_risks": "専用固定も32bit、overflow全セット拒否、mode JSON reserved key、legacy globalから独立、mixed sync/graph-reference拒否、dedicated seedセットの既存UI上限8を生成前検証。V2 OpenAPI snapshot driftは別PBI。mode slotはvariant再作成でfixedへ初期化。",
+  "unresolved_questions": [],
+  "human_review_decisions": [
+    "専用固定値0..4294967295とoverflow全セット拒否",
+    "globalとの独立およびmetadata不在fixed",
+    "master/variant slot mode JSON保存",
+    "mixed型sync/参照Seedを生成前拒否",
+    "専用seedを含むセットに既存UI上限8を適用"
+  ]
+}

@@ -53,6 +53,7 @@ const DEFAULT_INPUT_TYPES = [
   { id: 'textarea', name: 'textarea' },
   { id: 'int', name: 'int' },
   { id: 'float', name: 'float' },
+  { id: 'seed', name: 'Seed (ランダム / 固定)' },
   { id: 'select', name: 'select' },
   { id: 'lora_stack', name: 'lora_stack' },
   { id: 'select_sampler', name: 'select_sampler' },
@@ -363,7 +364,7 @@ export function MappingMasterEditModal({
                   </optgroup>
                   {paramTypeMasters.length > 0 && (
                     <optgroup label="カスタム型">
-                      {paramTypeMasters.map((pt) => (
+                      {paramTypeMasters.filter((pt) => pt.name !== 'seed').map((pt) => (
                         <option key={pt.id} value={pt.name}>
                           {pt.name} ({pt.widget_type})
                         </option>

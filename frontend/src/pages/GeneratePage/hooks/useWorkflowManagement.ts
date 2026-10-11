@@ -164,7 +164,7 @@ export function useWorkflowManagement({
   const validMappings = workflow?.mappings.filter((m) => m.role != null) ?? []
   const invalidMappings = workflow?.mappings.filter((m) => m.role == null) ?? []
   const textMappings = validMappings.filter((m) => m.input_type === 'textarea')
-  const paramMappings = validMappings.filter((m) => m.input_type !== 'textarea' && m.role !== 'Sampler_Seed')
+  const paramMappings = validMappings.filter((m) => m.input_type !== 'textarea')
 
   return {
     qc,

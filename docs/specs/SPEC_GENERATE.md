@@ -86,11 +86,14 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 ### 2-5. パラメータ入力パネル (`ParamPanel.tsx`)
 
-`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` のマッピングを動的生成。
+`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` のマッピングを動的生成。
 
 - **サンプラ・スケジューラ選択 UI**: ComfyUI の `/object_info` から動的取得（オフライン時は定数フォールバック）。
 - **動的 LoRA スタック UI (`LoraStackEditor.tsx`)**: 最大10スロットの動的追加・削除・詰め直し、説明文照合表示。
 - **固定パラメータ**: Batch Size（枚数入力）、Seed（🎲 Shuffle / 🔒 Fixed）。
+- **専用Seed欄**: `seed` mappingはslotごとに固定値またはランダムを選ぶ。Seed値はrole別に保存し、モードはmaster/variantの安定slot単位で保存する。legacy global Seedとは別のSSoTであり、専用欄の値をglobal Seedへ同期・上書きしない。legacy global Seed欄と専用欄が同じworkflowにあっても、それぞれ独立して扱う。自動移行は行わない。
+- 固定値は10進整数 `0..4294967295`。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について `Math.floor(Math.random() * 2**32)` で生成する（重複を許す）。
+- 同期対象Seedは同期親の確定実値を子へ共有し、子側で再抽選・再加算しない。モードmetadataの欠落・破損・未知形式、およびgraph参照Seedは専用Seedとして曖昧に解釈せず、投入前に拒否する。snapshot復元は保存済みSeed値とmodeを固定値として扱い、復元時にランダム化しない。
 
 ### 2-6. ワークフロープリセット (`PresetManagerPanel.tsx`, `usePresetState.ts`)
 
@@ -275,7 +278,7 @@ frontend/src/store/
 1. `paramValues` → input_type に応じた型変換・ノード入力代入
 2. LoRA スタックノードの動的展開・余剰キークリア
 3. バイパス対象ノードのバイパス処理
-4. シード値（Random時は 32bit乱数 / Fixed時は seed + batchIndex）
+4. legacy global Seedの従来処理と、専用`seed` mappingの確定処理を分離する。専用Seedはslotごとに値/modeを解決し、固定時はbase + 0始まりbatch index、ランダム時は各jobの32bit値を生成する。同期親子は親の実値を共有する。専用Seedは全バッチの範囲・metadata・対応graphを検証し、全件が有効な場合だけ投入する（境界外や曖昧な設定は要求全体を事前拒否）。
 
 ### 5-2. 生成前バイパス処理およびスキーマ整合性保証 (REQ-230)
 

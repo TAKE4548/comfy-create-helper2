@@ -96,7 +96,7 @@ interface MappingMaster {
   role: string;
   expected_class_types: string[];
   param_name: string;
-  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean';
+  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean' | 'seed';
   display_name: string;
   title_patterns: string[];
   sort_order: number;
@@ -112,6 +112,8 @@ interface ParamTypeMaster {
   step?: number;
 }
 ```
+
+標準の `input_type: 'seed'` は32bit unsigned Seed専用の入力型であり、`ParamTypeMaster.widget_type` に追加するカスタム型ではない。値は既存のrole別パラメータ保存領域に10進文字列として保存し、固定値またはランダムの選択モードはmaster/variantの安定したslot単位の予約JSONメタデータに保存する。Seed型の割当・編集はMappingMasterの既存操作を使い、手動の型変更を除き、データベースmigrationや自動移行は行わない。既存のmappingとlegacy global Seedの保存・動作は維持する。
 
 ### 4-2. BaseModel & CheckpointMapping
 
