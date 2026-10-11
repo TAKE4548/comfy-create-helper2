@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 
@@ -16,6 +16,12 @@ vi.mock('../../../api/client', () => ({
   api: {
     workflows: { get: vi.fn().mockResolvedValue({}), update: vi.fn().mockResolvedValue({}) },
     bypassProfiles: { list: vi.fn().mockResolvedValue([]) },
+  },
+}))
+
+vi.mock('../../../api/domains/workflows', () => ({
+  bypassProfilesApi: {
+    list: vi.fn().mockResolvedValue([]),
   },
 }))
 
@@ -161,26 +167,97 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     handleResetDefaultParams: vi.fn(),
   })
 
-  it('renders ResourceGaugeChips in Global Header and removes overlay HUD from preview area', () => {
+  it('renders PageHeader with left clustering and ResourceHoverMonitor, removing preview HUD', () => {
     const state = createMockState()
     const { container } = render(<DesktopLayout state={state as any} />)
 
-    // Global Header contains Generate title
+    // PageHeader contains Generate title
     const headerTitle = screen.getByText('Generate')
     expect(headerTitle).toBeInTheDocument()
 
-    // Global Header container has the resource chips
-    const header = headerTitle.closest('.bg-surface\\/50')
+    // Header container contains resource chips via ResourceHoverMonitor
+    const header = headerTitle.closest('.bg-surface')
     expect(header).not.toBeNull()
+    expect(screen.getByTestId('resource-hover-monitor')).toBeInTheDocument()
     expect(header).toHaveTextContent('CPU')
     expect(header).toHaveTextContent('RAM')
     expect(header).toHaveTextContent('GPU')
     expect(header).toHaveTextContent('VRAM')
 
+    // AC-2: Left clustering elements present in header
+    expect(screen.getByRole('combobox')).toHaveAttribute('id', 'workflow-select')
+    expect(screen.getByRole('button', { name: 'ワークフロー設定' })).toBeInTheDocument()
+    expect(screen.getByText('Anima特化')).toBeInTheDocument()
+    expect(container.querySelector('#header-undo-btn')).toBeInTheDocument()
+    expect(container.querySelector('#header-redo-btn')).toBeInTheDocument()
+
+    // AC-5: No direct ComfyUI URL input in header
+    expect(screen.queryByLabelText('ComfyUI URL（本体設定）')).toBeNull()
+    expect(screen.queryByPlaceholderText('http://localhost:8188')).toBeNull()
+
     // Preview area (.bg-grid) does NOT contain absolute HUD overlay
     const previewGrid = container.querySelector('.bg-grid')
     expect(previewGrid).not.toBeNull()
-    // It should not contain absolute top-3 right-3 HUD
     expect(previewGrid?.querySelector('.bg-\\[\\#18181C\\]\\/80')).toBeNull()
+  })
+
+  it('opens WorkflowActionsMenu and executes actions on click (AC-6)', () => {
+    const handleSaveDefaultParams = vi.fn()
+    const handleResetDefaultParams = vi.fn()
+    const setWorkflowManageMode = vi.fn()
+    const setRescanOpen = vi.fn()
+    const mutateBaseModel = vi.fn()
+
+    const state = createMockState()
+    state.handleSaveDefaultParams = handleSaveDefaultParams
+    state.handleResetDefaultParams = handleResetDefaultParams
+    state.setWorkflowManageMode = setWorkflowManageMode
+    state.setRescanOpen = setRescanOpen
+    state.updateWorkflowBaseModelMutation = { mutate: mutateBaseModel } as any
+    state.baseModels = [{ id: 10, name: 'SDXL 1.0' }] as any
+
+    render(<DesktopLayout state={state as any} />)
+
+    const menuBtn = screen.getByRole('button', { name: 'ワークフロー設定' })
+    fireEvent.click(menuBtn)
+
+    // Dropdown menu is open
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.getByText('ワークフロー個別設定')).toBeInTheDocument()
+
+    // Test Save Defaults
+    const saveBtn = screen.getByRole('button', { name: 'デフォルト保存' })
+    fireEvent.click(saveBtn)
+    expect(handleSaveDefaultParams).toHaveBeenCalledTimes(1)
+
+    // Reopen menu for next action
+    fireEvent.click(menuBtn)
+    const resetBtn = screen.getByRole('button', { name: 'リセット' })
+    fireEvent.click(resetBtn)
+    expect(handleResetDefaultParams).toHaveBeenCalledTimes(1)
+
+    // Reopen menu for rename
+    fireEvent.click(menuBtn)
+    const renameBtn = screen.getByRole('button', { name: '名前を変更' })
+    fireEvent.click(renameBtn)
+    expect(setWorkflowManageMode).toHaveBeenCalledWith('rename')
+
+    // Reopen menu for duplicate
+    fireEvent.click(menuBtn)
+    const copyBtn = screen.getByRole('button', { name: '複製' })
+    fireEvent.click(copyBtn)
+    expect(setWorkflowManageMode).toHaveBeenCalledWith('copy')
+
+    // Reopen menu for rescan
+    fireEvent.click(menuBtn)
+    const rescanBtn = screen.getByRole('button', { name: 'ノード再スキャン' })
+    fireEvent.click(rescanBtn)
+    expect(setRescanOpen).toHaveBeenCalledWith(true)
+
+    // Reopen menu for base model update
+    fireEvent.click(menuBtn)
+    const baseModelSelect = screen.getByLabelText('ベースモデル')
+    fireEvent.change(baseModelSelect, { target: { value: '10' } })
+    expect(mutateBaseModel).toHaveBeenCalledWith({ id: 1, target_base_model_id: 10 })
   })
 })

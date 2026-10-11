@@ -179,15 +179,21 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(screen.getByText('テキスト入力モード切替')).toBeInTheDocument()
   })
 
-  it('labels the mobile workflow connection settings button and keeps its open callback', () => {
-    const setIsSettingsOpen = vi.fn()
-    const state = createMockState({ setIsSettingsOpen })
+  it('renders WorkflowActionsMenu next to mobile workflow select and executes workflow actions (AC-6)', () => {
+    const handleSaveDefaultParams = vi.fn()
+    const state = createMockState({ handleSaveDefaultParams })
     render(<MobileLayout state={state} />)
 
-    const settingsButton = screen.getByRole('button', { name: 'ワークフロー / 接続設定' })
-    expect(settingsButton).toHaveAttribute('title', 'ワークフロー / 接続設定')
-    fireEvent.click(settingsButton)
-    expect(setIsSettingsOpen).toHaveBeenCalledWith(true)
+    const actionsBtn = screen.getByRole('button', { name: 'ワークフロー設定' })
+    expect(actionsBtn).toHaveAttribute('title', 'ワークフロー設定')
+    fireEvent.click(actionsBtn)
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.getByText('ワークフロー個別設定')).toBeInTheDocument()
+
+    const saveBtn = screen.getByRole('button', { name: 'デフォルト保存' })
+    fireEvent.click(saveBtn)
+    expect(handleSaveDefaultParams).toHaveBeenCalledTimes(1)
   })
 
   it('switches between Chips Mode and Text Mode when clicking toggle button', () => {
@@ -400,22 +406,20 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(handleSelectPresetTabMock).toHaveBeenCalledWith('102')
   })
 
-  it('renders ResourceGaugeChips in the first line of the header next to Generate title', () => {
+  it('renders PageHeader with Generate title, ResourceHoverMonitor, and mobile actions row', () => {
     const state = createMockState()
     render(<MobileLayout state={state} />)
 
     const title = screen.getByText('Generate')
     expect(title).toBeInTheDocument()
 
-    // 1段目の親コンテナ (justify-between)
-    const headerRow1 = title.closest('.justify-between')
-    expect(headerRow1).not.toBeNull()
+    // PageHeader contains ResourceHoverMonitor in right cluster
+    expect(screen.getByTestId('resource-hover-monitor')).toBeInTheDocument()
 
-    // ResourceGaugeChips 内のチップ (CPU, RAM, GPU, VRAM) が 1段目ヘッダーに含まれること
-    expect(headerRow1).toHaveTextContent('CPU')
-    expect(headerRow1).toHaveTextContent('RAM')
-    expect(headerRow1).toHaveTextContent('GPU')
-    expect(headerRow1).toHaveTextContent('VRAM')
+    // Actions row contains workflow selector, WorkflowActionsMenu, and Anima toggle
+    expect(screen.getByRole('combobox')).toHaveAttribute('id', 'workflow-select-mobile')
+    expect(screen.getByRole('button', { name: 'ワークフロー設定' })).toBeInTheDocument()
+    expect(screen.getByText('Anima特化')).toBeInTheDocument()
   })
 
   it('keeps the portrait preview, progress, and actions above the mobile navigation safe area', () => {
@@ -472,9 +476,9 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(root).toHaveClass('h-[100dvh]', 'flex', 'flex-col')
       expect(root.style.overscrollBehaviorY).toBe('contain')
 
-      // Check outer padding token px-3 py-2.5 on header and action bar
-      const header = container.querySelector('.bg-surface-2')
-      expect(header).toHaveClass('px-3', 'py-2.5')
+      // Check outer padding token px-3 py-2.5 on progress section and action bar
+      const progressSection = container.querySelector('[data-testid="mobile-progress-line"]')?.nextElementSibling
+      expect(progressSection).toHaveClass('px-3', 'py-2.5')
 
       const actionBar = screen.getByTestId('mobile-action-bar')
       expect(actionBar).toHaveClass('px-3', 'py-2.5', 'gap-2')

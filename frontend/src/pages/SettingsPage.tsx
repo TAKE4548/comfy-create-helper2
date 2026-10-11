@@ -13,6 +13,7 @@ import { WorkflowConnectionSection } from './SettingsPage/components/WorkflowCon
 import { ServiceConnectionCard } from './SettingsPage/components/ServiceConnectionCard'
 import { VramGuardSection } from './SettingsPage/components/VramGuardSection'
 import { SettingsTabBar } from './SettingsPage/components/SettingsTabBar'
+import { PageHeader } from '../components/common/PageHeader'
 import { useSettingsTab, type SettingsTabId } from './SettingsPage/hooks/useSettingsTab'
 import './SettingsPage/SettingsResponsive.css'
 
@@ -140,10 +141,10 @@ export function SettingsPage() {
 
   return (
     <div className="req314-settings flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
-        <Settings size={17} className="text-zinc-400" />
-        <h1 className="text-base font-semibold text-zinc-200">Settings</h1>
-      </div>
+      <PageHeader
+        title="Settings"
+        icon={Settings}
+      />
       <SettingsTabBar activeTab={activeTab} onSelect={selectTab} />
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-5">
         {panels.map(({ id, content }) => {

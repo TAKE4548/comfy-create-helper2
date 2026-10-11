@@ -293,8 +293,29 @@ export function HistoryPage() {
           <PageHeader
             title="History"
             icon={Clock}
+            badge={<span className="text-xs text-zinc-500 font-normal">({view === 'snapshots' ? (allSnapshots?.length ?? snapshots?.length ?? 0) : (albums?.length ?? 0)})</span>}
             actions={
-              <>
+              <div className="flex items-center gap-2">
+                {/* View Toggle */}
+                <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] flex-shrink-0">
+                  {(['snapshots', 'albums'] as const).map((v) => (
+                    <button
+                      key={v}
+                      id={`view-${v}`}
+                      onClick={() => setView(v)}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-colors ${
+                        view === v
+                          ? 'bg-surface-2 text-zinc-200'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {v === 'snapshots'
+                        ? `Snapshots (${allSnapshots?.length ?? snapshots?.length ?? 0})`
+                        : `Albums (${albums?.length ?? 0})`}
+                    </button>
+                  ))}
+                </div>
+
                 <button
                   id="open-batch-speech-modal-btn"
                   onClick={() => setIsBatchSpeechModalOpen(true)}
@@ -318,26 +339,7 @@ export function HistoryPage() {
                     <span>Add to Album</span>
                   </button>
                 )}
-                {/* View Toggle */}
-                <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] flex-shrink-0">
-                  {(['snapshots', 'albums'] as const).map((v) => (
-                    <button
-                      key={v}
-                      id={`view-${v}`}
-                      onClick={() => setView(v)}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-colors ${
-                        view === v
-                          ? 'bg-surface-2 text-zinc-200'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                    >
-                      {v === 'snapshots'
-                        ? `Snapshots (${allSnapshots?.length ?? snapshots?.length ?? 0})`
-                        : `Albums (${albums?.length ?? 0})`}
-                    </button>
-                  ))}
-                </div>
-              </>
+              </div>
             }
           />
 

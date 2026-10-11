@@ -100,4 +100,26 @@ describe('SystemStatusBadge', () => {
     expect(screen.getByText('READY')).toBeTruthy()
     expect(screen.getByLabelText(/Comfy.*running/i)).toBeTruthy()
   })
+
+  it('renders slim variant by default without redundant inline service labels', () => {
+    render(<SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable />)
+    expect(screen.getByText('READY')).toBeTruthy()
+    expect(screen.queryByText(/FE running · BE running/i)).toBeNull()
+    const badge = screen.getByTestId('system-status-badge')
+    expect(badge.getAttribute('title')).toContain('Comfy running (FastAPI中継 OK)')
+  })
+
+  it('renders full variant with inline service labels', () => {
+    render(<SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="full" />)
+    expect(screen.getByText(/FE running · BE running · Comfy running/i)).toBeTruthy()
+  })
+
+  it('renders dot variant for mobile as 7px glowing dot without text', () => {
+    render(<SystemStatusBadge upstream={upstream} reconnecting={false} manager={manager} managerAvailable variant="dot" />)
+    expect(screen.queryByText('READY')).toBeNull()
+    const dot = screen.getByTestId('system-status-badge')
+    expect(dot.className).toContain('w-[7px]')
+    expect(dot.className).toContain('h-[7px]')
+    expect(dot.className).toContain('rounded-full')
+  })
 })

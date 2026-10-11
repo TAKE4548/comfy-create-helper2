@@ -28,7 +28,37 @@ describe('Common PageHeader component', () => {
     )
     expect(screen.getByText('Action Button')).toBeDefined()
     expect(screen.getByTestId('child-filter')).toBeDefined()
-    const flexWrapContainers = container.querySelectorAll('.flex-wrap')
-    expect(flexWrapContainers.length).toBeGreaterThanOrEqual(1)
+    const row = container.querySelector('.min-h-\\[50px\\]')
+    expect(row).not.toBeNull()
+  })
+
+  it('renders right cluster with ResourceHoverMonitor and HeaderKebabMenu exactly once unless hideRightCluster is true', () => {
+    const { unmount } = render(
+      <PageHeader title="Workflows" />
+    )
+    expect(screen.getAllByTestId('resource-hover-monitor')).toHaveLength(1)
+    expect(screen.getAllByTestId('header-kebab-menu-button')).toHaveLength(1)
+    unmount()
+
+    render(
+      <PageHeader title="Workflows" hideRightCluster />
+    )
+    expect(screen.queryByTestId('resource-hover-monitor')).toBeNull()
+    expect(screen.queryByTestId('header-kebab-menu-button')).toBeNull()
+  })
+
+  it('provides responsive single layout with scrollable actions wrapper', () => {
+    const { container } = render(
+      <PageHeader
+        title="Generations"
+        actions={<button>Generate</button>}
+      />
+    )
+    const row = container.querySelector('.flex.flex-wrap.md\\:flex-nowrap')
+    expect(row).not.toBeNull()
+
+    const scrollRow = container.querySelector('.overflow-x-auto')
+    expect(scrollRow).not.toBeNull()
+    expect(screen.getAllByText('Generate')).toHaveLength(1)
   })
 })

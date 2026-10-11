@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { useAppLifecycleSync } from '../../../hooks/useAppLifecycleSync'
 import {
-  Library, Loader2, Redo2, Settings, ImageOff, Download, Plus, Undo2, X,
+  Library, Loader2, Redo2, ImageOff, Download, Plus, Undo2, X,
   ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
-import { SettingsPopover } from './SettingsPopover'
+import { PageHeader } from '../../../components/common/PageHeader'
+import { WorkflowActionsMenu } from './WorkflowActionsMenu'
 import { AddAssetModal } from './AddAssetModal'
 import { AppliedAssetChips } from './AppliedAssetChips'
 import { AuditPanel } from './AuditPanel'
@@ -17,7 +18,6 @@ import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
-import { ResourceGaugeChips } from '../../../components/ResourceGauge/ResourceGaugeChips'
 import { useSystemStats } from '../../../hooks/useSystemStats'
 import { selectProgress, selectWait } from '../../../utils/generationSelectors'
 
@@ -32,8 +32,7 @@ export const MobileLayout = ({
 }) => {
   useSystemStats()
   const {
-    isConnected, isGenerating, progress, previewImage, activeClientId,
-    clientId,
+    isConnected, isGenerating, progress, previewImage,
     selectedWorkflowId, setSelectedWorkflowId,
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
@@ -51,9 +50,6 @@ export const MobileLayout = ({
     setRescanOpen,
     selectedMasters, setSelectedMasters,
     openAddAssetRole, setOpenAddAssetRole,
-    isSettingsOpen, setIsSettingsOpen,
-    localComfyUrl, setLocalComfyUrl,
-    setComfyUrl,
     setModalPreviewIndex,
     setIsModalPreviewOpen,
     setIsJobModalOpen,
@@ -346,64 +342,52 @@ export const MobileLayout = ({
         }
       }}
     >
-      {/* Header */}
-      <div className="flex flex-col gap-2 px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold text-zinc-200">Generate</h1>
-            <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-accent-green animate-pulse' : 'bg-zinc-600'}`} />
-            {isGenerating && activeClientId !== clientId && (
-              <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
+      {/* PageHeader (Tier 1: Title + status + VRAM pill + Kebab menu, Tier 2: actions) */}
+      <PageHeader
+        title="Generate"
+        icon={Zap}
+        actions={
+          <div className="flex items-center gap-2 w-full">
+            <select
+              id="workflow-select-mobile"
+              value={selectedWorkflowId ?? ''}
+              onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
+              className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 truncate min-w-[140px]"
+            >
+              <option value="">新しいワークフローを追加 (Upload New...)</option>
+              {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <WorkflowActionsMenu
+              workflowId={selectedWorkflowId}
+              workflow={workflow}
+              baseModels={baseModels}
+              onSaveDefaults={handleSaveDefaultParams}
+              isSavePending={saveDefaultParamsMutation.isPending}
+              onResetDefaults={handleResetDefaultParams}
+              onUpdateBaseModel={(baseModelId) => {
+                if (selectedWorkflowId) {
+                  updateWorkflowBaseModelMutation?.mutate({ id: selectedWorkflowId, target_base_model_id: baseModelId })
+                }
+              }}
+              onRenameWorkflow={() => setWorkflowManageMode?.('rename')}
+              onDuplicateWorkflow={() => setWorkflowManageMode?.('copy')}
+              onRescanNodes={() => setRescanOpen?.(true)}
+            />
+            {selectedWorkflowId && (
+              <label className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 hover:bg-surface-2 transition-colors shrink-0">
+                <input
+                  id="anima-mode-toggle-mobile"
+                  type="checkbox"
+                  checked={isAnimaMode}
+                  onChange={(e) => setIsAnimaMode(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
+                />
+                <span>Anima特化</span>
+              </label>
             )}
           </div>
-          <ResourceGaugeChips />
-        </div>
-        <div className="flex gap-2">
-          <select id="workflow-select-mobile" value={selectedWorkflowId ?? ''}
-            onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
-            className="flex-1 text-xs bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/50 truncate">
-            <option value="">新しいワークフローを追加 (Upload New...)</option>
-            {workflows?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-          {selectedWorkflowId && (
-            <label className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none bg-surface border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1.5 hover:bg-surface-2 transition-colors">
-              <input
-                id="anima-mode-toggle-mobile"
-                type="checkbox"
-                checked={isAnimaMode}
-                onChange={(e) => setIsAnimaMode(e.target.checked)}
-                className="w-3.5 h-3.5 accent-[#7C6FDD] rounded border-zinc-800"
-              />
-              <span>Anima特化</span>
-            </label>
-          )}
-          <div className="relative flex-shrink-0 flex items-center">
-            <button id="settings-toggle-btn-mobile" type="button" onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              aria-label="ワークフロー / 接続設定"
-              className={`p-1.5 rounded-md border transition-all ${isSettingsOpen ? 'border-accent-green bg-accent-green/10 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:text-accent-green hover:border-accent-green/40 hover:bg-accent-green/5'}`} title="ワークフロー / 接続設定">
-              <Settings size={14} />
-            </button>
-            {isSettingsOpen && (
-              <SettingsPopover
-                setIsSettingsOpen={setIsSettingsOpen}
-                localComfyUrl={localComfyUrl}
-                setLocalComfyUrl={setLocalComfyUrl}
-                setComfyUrl={setComfyUrl}
-                selectedWorkflowId={selectedWorkflowId}
-                workflow={workflow}
-                handleSaveDefaultParams={handleSaveDefaultParams}
-                isSavePending={saveDefaultParamsMutation.isPending}
-                handleResetDefaultParams={handleResetDefaultParams}
-                mobile
-                baseModels={baseModels}
-                updateWorkflowBaseModelMutation={updateWorkflowBaseModelMutation}
-                setWorkflowManageMode={setWorkflowManageMode}
-                setRescanOpen={setRescanOpen}
-              />
-            )}
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Compact progress stays visible below the scrolling header. */}
       <div data-testid="mobile-progress-line" className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[10px] font-mono text-zinc-300">

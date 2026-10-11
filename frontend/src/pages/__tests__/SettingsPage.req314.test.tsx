@@ -8,7 +8,18 @@ import { LS_KEYS } from '../../utils/localStorageKeys'
 import { SettingsPage } from '../SettingsPage'
 
 vi.mock('../../hooks/useSystemStats', () => ({ useSystemStats: vi.fn() }))
-vi.mock('../../store/useGenerationStore', () => ({ useGenerationStore: { getState: () => ({}) } }))
+vi.mock('../../store/useGenerationStore', () => {
+  const defaultState = {
+    isConnected: true,
+    generationSnapshot: null,
+    generationSyncing: false,
+    systemStats: null,
+  }
+  const hook = vi.fn((selector) => (selector ? selector(defaultState) : defaultState)) as any
+  hook.getState = () => defaultState
+  hook.setState = vi.fn()
+  return { useGenerationStore: hook }
+})
 vi.mock('../../api/client', () => ({
   llmPromptsApi: {
     list: vi.fn(), getModels: vi.fn(), getCurrentModel: vi.fn(),

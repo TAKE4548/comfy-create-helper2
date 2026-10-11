@@ -21,6 +21,7 @@ import type { TagSet, Category, BaseModel } from '../api/types'
 import { useAccordionSections } from '../hooks/useAccordionSections'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
+import { PageHeader } from '../components/common/PageHeader'
 import {
   TagSetCreateModal,
   TagSetEditModal,
@@ -598,35 +599,43 @@ export function TagsPage() {
         />
       )}
 
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
-        <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-          <Tag size={17} className="text-accent-green" />Tag Sets
-          <span className="text-xs text-zinc-500 font-normal ml-1">({filtered.length})</span>
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCatModal(true)}
-            className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200 transition-all"
-            title="カテゴリ管理"
-          >
-            <Settings2 size={15} />
-          </button>
-          <button id="create-tagset-btn" onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all">
-            <Plus size={14} />New Tag Set
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Tag Sets"
+        icon={Tag}
+        badge={<span className="text-xs text-zinc-500 font-normal">({filtered.length})</span>}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative w-48 sm:w-64">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                id="tag-search"
+                type="text"
+                placeholder="Search tags…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/60"
+              />
+            </div>
+            <button
+              id="create-tagset-btn"
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all whitespace-nowrap"
+            >
+              <Plus size={14} />New Tag Set
+            </button>
+            <button
+              onClick={() => setShowCatModal(true)}
+              className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200 transition-all flex-shrink-0"
+              title="カテゴリ管理"
+            >
+              <Settings2 size={15} />
+            </button>
+          </div>
+        }
+      />
 
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input id="tag-search" type="text" placeholder="Search tags…" value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/60" />
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
-          <button id="tag-filter-all" onClick={() => setSelectedCategoryIds([])}
+      <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/50 overflow-x-auto custom-scrollbar">
+        <button id="tag-filter-all" onClick={() => setSelectedCategoryIds([])}
             className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             All
           </button>
@@ -646,7 +655,6 @@ export function TagsPage() {
             未分類
           </button>
         </div>
-      </div>
 
       {/* Base Model Filters */}
       <div className="flex items-center gap-4 px-5 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface/30">

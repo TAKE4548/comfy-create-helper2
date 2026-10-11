@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 import { lorasApi, loraCategoriesApi, baseModelsApi } from '../api/client'
 import type { Lora, Category, BaseModel } from '../api/types'
+import { PageHeader } from '../components/common/PageHeader'
 import { useAccordionSections } from '../hooks/useAccordionSections'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
@@ -624,37 +625,46 @@ export function LoRAsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
-        <h1 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-          <Layers size={17} className="text-accent-green" />LoRAs
-          <span className="text-xs text-zinc-500 font-normal ml-1">({filteredLoras.length})</span>
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCatModal(true)}
-            className="p-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200 transition-all"
-            title="カテゴリ管理"
-          >
-            <Settings2 size={15} />
-          </button>
-          <button id="register-lora-btn" onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all">
-            <Plus size={14} />Register Model
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="LoRAs"
+        icon={Layers}
+        badge={<span className="text-xs text-zinc-500 font-normal">({filteredLoras.length})</span>}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative w-48 sm:w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                id="lora-search"
+                type="text"
+                placeholder="Search LoRAs…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/40"
+              />
+            </div>
+            <button
+              id="register-lora-btn"
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all shrink-0"
+            >
+              <Plus size={14} />Register Model
+            </button>
+            <button
+              onClick={() => setShowCatModal(true)}
+              className="p-1 rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200 transition-all shrink-0"
+              title="カテゴリ管理"
+            >
+              <Settings2 size={15} />
+            </button>
+          </div>
+        }
+      />
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input id="lora-search" type="text" placeholder="Search LoRAs…" value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-accent-green/40" />
-        </div>
+      {/* Category Filters */}
+      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface/50">
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
           <button id="lora-filter-all" onClick={() => setSelectedCategoryIds([])}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            className={`flex-shrink-0 text-xs px-3 py-1 rounded-lg border transition-all ${selectedCategoryIds.length === 0 ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             All
           </button>
           {categories?.map((cat) => {
@@ -662,14 +672,14 @@ export function LoRAsPage() {
             return (
               <button key={cat.id} id={`lora-filter-${cat.id}`}
                 onClick={() => setSelectedCategoryIds(prev => prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id])}
-                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${isSelected ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+                className={`flex-shrink-0 text-xs px-3 py-1 rounded-lg border transition-all ${isSelected ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
                 {cat.name}
               </button>
             )
           })}
           <button id="lora-filter-uncategorized"
             onClick={() => setSelectedCategoryIds(prev => prev.includes('uncategorized') ? prev.filter(id => id !== 'uncategorized') : [...prev, 'uncategorized'])}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
+            className={`flex-shrink-0 text-xs px-3 py-1 rounded-lg border transition-all ${selectedCategoryIds.includes('uncategorized') ? 'bg-accent-green/10 border-accent-green/40 text-accent-green' : 'border-[rgba(255,255,255,0.08)] text-zinc-400 hover:border-zinc-600'}`}>
             未分類
           </button>
         </div>

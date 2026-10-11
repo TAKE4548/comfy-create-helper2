@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Sparkles, Layers, Sliders, CheckCircle, Type, Plus } from 'lucide-react'
+import { PageHeader } from '../../components/common/PageHeader'
 import { useStudioStore } from './useStudioStore'
 import { MatrixGenerationStep } from './components/MatrixGenerationStep'
 import { CuratorGrid } from './components/CuratorGrid'
@@ -207,80 +208,77 @@ export const DatasetStudioPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 overflow-y-auto">
-      {/* Wizard Header Bar */}
-      <header className="border-b border-zinc-800 bg-zinc-900/80 px-6 py-4 sticky top-0 z-10 backdrop-blur">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2 text-white">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
-                LoRA Studio
-              </h1>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                直交計画マトリクス生成からローカル学習・4軸ストレステスト評価までの統合ワークフロー
-              </p>
-            </div>
+      {/* Header */}
+      <PageHeader
+        title="LoRA Studio"
+        icon={Sparkles}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <select
+              data-testid="project-selector"
+              value={activeProject?.id || ''}
+              onChange={handleProjectSelect}
+              className="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 max-w-[200px]"
+            >
+              {projectsList.length === 0 && <option value="">プロジェクトなし</option>}
+              {projectsList.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
 
-            {/* Project Selector & Actions */}
-            <div className="flex items-center gap-2.5 pt-1 sm:pt-0">
-              <select
-                data-testid="project-selector"
-                value={activeProject?.id || ''}
-                onChange={handleProjectSelect}
-                className="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 max-w-[200px]"
-              >
-                {projectsList.length === 0 && <option value="">プロジェクトなし</option>}
-                {projectsList.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+            <button
+              type="button"
+              data-testid="open-create-project-modal-btn"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 shadow-sm flex-shrink-0"
+            >
+              <Plus size={14} aria-hidden="true" />
+              <span>新規プロジェクト</span>
+            </button>
 
+            {renderSaveStatusBadge()}
+
+            {/* Stepper Navigation */}
+            <nav className="flex items-center gap-1.5 bg-zinc-950/60 p-1 rounded-lg border border-zinc-800">
+              {STEPS.map(({ step, label, icon: Icon }) => {
+                const isActive = currentStep === step
+                return (
+                  <button
+                    key={step}
+                    type="button"
+                    data-testid={`studio-step-tab-${step}`}
+                    onClick={() => setCurrentStep(step)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                  </button>
+                )
+              })}
               <button
                 type="button"
-                data-testid="open-create-project-modal-btn"
-                onClick={() => setIsCreateModalOpen(true)}
-                className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1 shadow-sm flex-shrink-0"
+                data-testid="open-post-training-evaluation"
+                aria-pressed={evaluationView}
+                onClick={() => setEvaluationView(!evaluationView)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  evaluationView
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                }`}
               >
-                <Plus size={14} aria-hidden="true" />
-                <span>新規プロジェクト</span>
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>学習後評価</span>
               </button>
-
-              {renderSaveStatusBadge()}
-            </div>
+            </nav>
           </div>
-
-          {/* Stepper Navigation */}
-          <nav className="flex items-center gap-2 bg-zinc-950/60 p-1.5 rounded-lg border border-zinc-800">
-            {STEPS.map(({ step, label, icon: Icon }) => {
-              const isActive = currentStep === step
-              return (
-                <button
-                  key={step}
-                  type="button"
-                  data-testid={`studio-step-tab-${step}`}
-                  onClick={() => setCurrentStep(step)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    isActive
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{label}</span>
-                </button>
-              )
-            })}
-            <button type="button" data-testid="open-post-training-evaluation" aria-pressed={evaluationView}
-              onClick={() => setEvaluationView(!evaluationView)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${evaluationView ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}>
-              <CheckCircle className="w-3.5 h-3.5" />
-              <span>学習後評価</span>
-            </button>
-          </nav>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main Step Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6">

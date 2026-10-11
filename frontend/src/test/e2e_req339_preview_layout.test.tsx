@@ -301,7 +301,7 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
 
     // 1. Header contains the resource stats
     const headerTitle = screen.getByText('Generate')
-    const header = headerTitle.closest('.bg-surface\\/50')
+    const header = headerTitle.closest('.bg-surface')
     expect(header).not.toBeNull()
     expect(header).toHaveTextContent('CPU')
     expect(header).toHaveTextContent('RAM')

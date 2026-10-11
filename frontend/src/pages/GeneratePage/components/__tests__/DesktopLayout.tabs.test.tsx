@@ -233,7 +233,8 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     const globalHeader = children[0] as HTMLElement
     expect(globalHeader).toBeInTheDocument()
     expect(globalHeader.querySelector('#workflow-select')).toBeInTheDocument()
-    expect(globalHeader.querySelector('#settings-toggle-btn')).toBeInTheDocument()
+    expect(globalHeader.querySelector('#workflow-actions-btn')).toBeInTheDocument()
+    expect(globalHeader.querySelector('#header-kebab-btn')).toBeInTheDocument()
     expect(globalHeader).toHaveClass('w-full')
 
     // 2nd child is #desktop-preset-tabs-bar

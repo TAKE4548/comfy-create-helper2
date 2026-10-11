@@ -162,7 +162,7 @@ describe('REQ-333 progress bars use managed snapshots on desktop and mobile', ()
 
     expect(view.container.querySelector('#desktop-action-bar')).toBeInTheDocument()
     expect(view.container.querySelector('[style="width: 330px;"]')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ワークフロー / 接続設定' })).toBeInTheDocument()
+    expect(view.container.querySelector('#workflow-actions-btn')).toBeInTheDocument()
     expect(view.container.querySelectorAll('#generate-btn')).toHaveLength(1)
     expect(view.container.querySelectorAll('#save-snapshot-btn')).toHaveLength(1)
     expect(view.container.querySelectorAll('.bg-accent-green.progress-shimmer')).toHaveLength(1)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GeneratePage, GeneratePageErrorBoundary } from '../GeneratePage';
@@ -106,6 +106,7 @@ describe('GeneratePage Component Regression Tests', () => {
 
   beforeEach(() => {
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
+    window.dispatchEvent(new Event('resize'));
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -114,6 +115,11 @@ describe('GeneratePage Component Regression Tests', () => {
       },
     });
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
+    window.dispatchEvent(new Event('resize'));
   });
 
   const renderPage = () => {
@@ -139,23 +145,23 @@ describe('GeneratePage Component Regression Tests', () => {
     expect(uploadOption).not.toHaveTextContent(/^\s*\+/);
   });
 
-  it('toggles settings popover when settings button is clicked', async () => {
-    renderPage();
+  it('toggles workflow actions menu when workflow actions button is clicked', async () => {
+    const { container } = renderPage();
 
-    const settingsBtn = screen.getByTitle('ワークフロー / 接続設定');
-    expect(settingsBtn).toBeInTheDocument();
+    const actionsBtn = await screen.findByTitle('ワークフロー設定');
+    expect(actionsBtn).toBeInTheDocument();
 
-    // Settings popover should not be visible initially
-    expect(screen.queryByText('ComfyUI URL（本体設定）')).not.toBeInTheDocument();
+    // Menu should not be visible initially
+    expect(container.querySelector('[role="menu"]')).not.toBeInTheDocument();
 
-    // Click to open popover
-    fireEvent.click(settingsBtn);
-    expect(screen.getByText('ComfyUI URL（本体設定）')).toBeInTheDocument();
+    // Click to open menu
+    fireEvent.click(actionsBtn);
+    expect(container.querySelector('[role="menu"]')).toBeInTheDocument();
+    expect(screen.getByText('ワークフロー個別設定')).toBeInTheDocument();
 
-    // In our popover code: <button type="button" onClick={() => setIsSettingsOpen(false)} ...><X size={14} /></button>
-    // We can simulate clicking it or close via popover toggle
-    fireEvent.click(settingsBtn); // toggles off
-    expect(screen.queryByText('ComfyUI URL（本体設定）')).not.toBeInTheDocument();
+    // Click again to close
+    fireEvent.click(actionsBtn);
+    expect(container.querySelector('[role="menu"]')).not.toBeInTheDocument();
   });
 
   it('supports switching to mobile mode based on innerWidth', async () => {
@@ -167,9 +173,9 @@ describe('GeneratePage Component Regression Tests', () => {
 
     renderPage();
 
-    // Verify mobile layout elements (e.g. settings-toggle-btn-mobile or similar)
-    const mobileSettingsBtn = screen.getByTitle('ワークフロー / 接続設定');
-    expect(mobileSettingsBtn).toBeInTheDocument();
+    // Verify mobile layout elements
+    const mobileActionsBtn = await screen.findByTitle('ワークフロー設定');
+    expect(mobileActionsBtn).toBeInTheDocument();
     const mobileUploadOption = screen.getByRole('option', { name: '新しいワークフローを追加 (Upload New...)' });
     expect(mobileUploadOption).toHaveValue('');
     expect(mobileUploadOption).not.toHaveTextContent(/^\s*\+/);
@@ -194,14 +200,14 @@ describe('GeneratePage Component Regression Tests', () => {
     });
   });
 
-  it('REQ-112: settings popover contains workflow management items', async () => {
+  it('REQ-112: workflow actions menu contains workflow management items', async () => {
     const { container } = renderPage();
-    const settingsBtn = screen.getByTitle('ワークフロー / 接続設定');
-    fireEvent.click(settingsBtn);
+    const actionsBtn = await screen.findByTitle('ワークフロー設定');
+    fireEvent.click(actionsBtn);
     await waitFor(() => {
-      expect(container.querySelector('#popover-rename-btn')).toBeInTheDocument();
-      expect(container.querySelector('#popover-copy-btn')).toBeInTheDocument();
-      expect(container.querySelector('#popover-rescan-btn')).toBeInTheDocument();
+      expect(container.querySelector('#workflow-actions-rename')).toBeInTheDocument();
+      expect(container.querySelector('#workflow-actions-duplicate')).toBeInTheDocument();
+      expect(container.querySelector('#workflow-actions-rescan')).toBeInTheDocument();
     });
   });
 
