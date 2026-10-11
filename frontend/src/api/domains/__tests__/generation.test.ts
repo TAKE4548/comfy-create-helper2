@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   decodeGenerationEnvelope,
   decodeGenerationSnapshot,
+  decodeResidualHistoryResponse,
   generationApi,
   GenerationApiError,
   type BatchRequest,
   type CancelOperation,
   type GenerationSnapshot,
   type ImageAvailability,
+  type ResidualHistoryRequest,
 } from '../generation'
 
 const snapshot: GenerationSnapshot = {
@@ -218,6 +220,51 @@ describe('generationApi', () => {
 
     await expect(generationApi.getUpstreamQueue()).resolves.toEqual(queue)
     expect(fetchMock).toHaveBeenCalledWith('/api/generation/upstream-queue', expect.any(Object))
+  })
+
+  it('requests residual history with the exact known identities and signal', async () => {
+    const body: ResidualHistoryRequest = {
+      known: [{ filename: 'known.png', subfolder: 'output', type: 'output' }],
+      examined: [{ filename: 'gone.png', subfolder: '', type: 'temp' }],
+    }
+    const result = {
+      items: [{ identity: { filename: 'new.png', subfolder: '', type: 'output' },
+        view_url: '/api/comfy/view?filename=new.png&subfolder=&type=output', session_id: null, availability: 'present' }],
+      rejected: [], has_more: false,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(result))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await expect(generationApi.residualHistory(body, controller.signal)).resolves.toEqual(result)
+    expect(fetchMock).toHaveBeenCalledWith('/api/generation/history/residual', expect.objectContaining({
+      method: 'POST', body: JSON.stringify(body), signal: controller.signal,
+    }))
+    const headers = fetchMock.mock.calls[0][1].headers as Headers
+    expect(headers.get('Content-Type')).toBe('application/json')
+    expect(decodeResidualHistoryResponse(result)).toEqual(result)
+    expect(JSON.stringify(result)).not.toContain('host')
+    expect(JSON.stringify(result)).not.toContain(' t=')
+  })
+
+  it('rejects malformed residual history and preserves HTTP failures without fallback', async () => {
+    const malformed = [
+      { items: [], rejected: [], has_more: true },
+      { items: [{ identity: { filename: 'x', subfolder: '', type: 'output' }, view_url: 'https://evil.test/api/comfy/view?filename=x&subfolder=&type=output', session_id: null, availability: 'present' }], rejected: [], has_more: false },
+      { items: [{ identity: { filename: 'x', subfolder: '', type: 'output' }, view_url: '/api/comfy/view?filename=y&subfolder=&type=output', session_id: null, availability: 'present' }], rejected: [], has_more: false },
+      { items: [], rejected: [], has_more: false, extra: true },
+    ]
+    for (const value of malformed) expect(() => decodeResidualHistoryResponse(value)).toThrow(/invalid residual history response/i)
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ detail: 'bad request' }, 422))
+      .mockResolvedValueOnce(jsonResponse({ detail: 'unavailable' }, 503))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = { known: [], examined: [] }
+    await expect(generationApi.residualHistory(request)).rejects.toMatchObject({ status: 422 })
+    await expect(generationApi.residualHistory(request)).rejects.toMatchObject({ status: 503 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.every(([url]) => url === '/api/generation/history/residual')).toBe(true)
   })
 
   it('uses image identity for legacy originals and preserves unavailable as unknown', async () => {

@@ -220,7 +220,8 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 - 表示順: 「新しい順（降順）」「古い順（昇順）」切替。
 - 複数選択一括保存: `Ctrl/Shift/長押し` で複数選択し、一括でスナップショットとしてアルバム保存可能。
 - 履歴画像URLは同一originの `/view` 表現へ正規化し、`filename` / `subfolder` / `type` / `t` を保持する。一覧には既存thumbnailを使い、main/拡大表示には同一originのview URLを使う。旧hostと新hostの同一画像はfilename・subfolder・type identityで重複表示しない。`t` はURL/cache bust用で画像identityには含めない。
-- Galleryのサムネイル取得失敗だけでは履歴を削除しない。画像identityごとに原画availabilityを確認し、上流原画の404が確定した場合だけmissingとする。thumbnailの404、変換失敗、HEAD非対応、503、ネットワーク失敗・timeoutはunknownとして扱い、履歴・選択・原画プレビューを保持する。明示再試行は同じサムネイルURLを再取得し、再試行操作は画像行の選択に伝播しない。
+- Gallery rowのthumbnail load/errorを、その画像identityのlazy availability需要として扱い、一覧の全件先行probeはしない。identityはfilename/subfolder/typeで定義し、同一identityの照会は共有する。上流原画の404が確認された場合だけavailabilityを `missing` とし、試行履歴から除外する。サムネイルの404、変換失敗、HEAD非対応、503、通信失敗・timeoutなど原画missingを確定できない結果は `unknown` として履歴・選択・原画プレビューを保持する。明示再試行は同じthumbnail URLで行い、再試行操作は画像行の選択に伝播しない。保存Snapshot branchには適用しない。
+- persisted queryの復元完了後、有効な非空の表示済みhistoryをbaselineとして、document reload epochごとに一度だけBE差分同期を行う。baselineが空なら要求しない。reloadで全件GETやhistory(200)の再取得、表示query全置換を行わず、BEがpresentと確認した未表示候補だけを既存表示へ追加する。既存項目のURL・相対順・選択・metadataは維持する。照合・追加はfilename/subfolder/type identityで行い、同一画像の重複を作らない。
 - 原画missingの確認と再試行は保存Snapshot branchへ適用しない。保存済みSnapshotの本体、params、表示は試行履歴の削除から独立して保持する。missing確定時も付随サムネイルやmetadataを即時削除せず、既存の一時保存上限・cleanupに任せる。サムネイル寸法/aspect比、cache品質・原画cache回復、30件local/1000件server metadata上限、IndexedDBの10分maxAgeを含む既存データライフサイクルは従来仕様を維持する。
 
 ---
@@ -268,7 +269,7 @@ frontend/src/store/
   - **キープアライブ (Ping 送信)**: 接続確立中、25秒周期で定期的なキープアライブ Ping（`{"type":"ping"}`）を送信し、非アクティブ放置時における Chromium / OS のアイドルタイムアウト切断を能動防止する。
   - **指数バックオフ自動再接続**: `onClose` または `onError` 検知時、指数バックオフ（1s → 2s → 4s → 8s → 最大15s）で自動再接続を自律的・継続的に試行する。接続確立時にリトライ間隔を初期値（1秒系）へリセットする。
   - **タブ復帰時（VisibilityChange / Focus）即時回復**: ブラウザタブが非アクティブからアクティブ（`visibilityState === 'visible'` または `focus`）に復帰した際、WebSocket が未接続状態（`!isConnected`）であれば待機タイマーを待たずに即座に再接続初期化（`initialize({ force: true })`）を能動トリガーする。
-  - **状態同期**: 再接続時は `GET /api/generation/state` と共有WebSocketの最新Generation snapshotを使ってjob状態を同期し、履歴画像の再取得はAPI経由のhistory照会で行う。進捗はsnapshot、表示履歴はhistoryデータを正本とし、上流queue/historyの欠落だけで取消済み・完了を推定しない。
+  - **状態同期**: 再接続時は `GET /api/generation/state` と共有WebSocketの最新Generation snapshotを使ってjob状態を同期し、履歴画像の再取得はAPI経由のhistory照会で行う。進捗はsnapshot、表示履歴はhistoryデータを正本とし、上流queue/historyの欠落だけで取消済み・完了を推定しない。document reload epochの差分同期は、persisted query復元済みの非空baselineに対して一度だけ行い、空baselineでは要求しない。BE候補窓は既存の最新200件に限り、同期は最大20 page/200検査とする。上限到達などで全候補を検査できない場合はpartial状態を示し、自動タイマー再試行をしない。200件より古い履歴の回復は保証しない。
 
 ---
 

@@ -3401,6 +3401,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/generation/history/residual:
+    post:
+      tags:
+      - generation
+      summary: Get Residual History
+      operationId: get_residual_history_api_generation_history_residual_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResidualHistoryRequest'
+      responses:
+        '200':
+          description: Only new images with confirmed present originals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidualHistoryResponse'
+        '422':
+          description: Invalid identity or request bound
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: Residual history could not be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/generation/state:
     get:
       tags:
@@ -5285,6 +5316,37 @@ components:
       - position
       - style
       title: GeneratedSpeechBubbleRead
+    ErrorDetail:
+      type: object
+      required:
+      - code
+      - message
+      - outcome
+      - request_id
+      - job_id
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        outcome:
+          anyOf:
+          - type: string
+            enum:
+            - failed
+            - unconfirmed
+          - type: 'null'
+        request_id:
+          type: [string, 'null']
+        job_id:
+          type: [string, 'null']
+    ErrorEnvelope:
+      type: object
+      required:
+      - detail
+      properties:
+        detail:
+          $ref: '#/components/schemas/ErrorDetail'
     HTTPValidationError:
       properties:
         detail:
@@ -5323,6 +5385,21 @@ components:
       required:
       - availability
       title: ImageAvailability
+    ImageIdentity:
+      type: object
+      additionalProperties: false
+      required:
+      - filename
+      - subfolder
+      - type
+      properties:
+        filename:
+          type: string
+          minLength: 1
+        subfolder:
+          type: string
+        type:
+          type: string
     ImageView:
       properties:
         node_id:
@@ -5353,6 +5430,72 @@ components:
       - thumbnail_url
       - availability
       title: ImageView
+    ResidualHistoryItem:
+      type: object
+      required:
+      - identity
+      - view_url
+      - session_id
+      - availability
+      properties:
+        identity:
+          $ref: '#/components/schemas/ImageIdentity'
+        view_url:
+          type: string
+        session_id:
+          type: [string, 'null']
+        availability:
+          type: string
+          const: present
+    ResidualHistoryRejected:
+      type: object
+      required:
+      - identity
+      - availability
+      properties:
+        identity:
+          $ref: '#/components/schemas/ImageIdentity'
+        availability:
+          type: string
+          enum:
+          - missing
+          - unknown
+    ResidualHistoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - known
+      - examined
+      properties:
+        known:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ImageIdentity'
+        examined:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ImageIdentity'
+    ResidualHistoryResponse:
+      type: object
+      required:
+      - items
+      - rejected
+      - has_more
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/ResidualHistoryItem'
+        rejected:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/ResidualHistoryRejected'
+        has_more:
+          type: boolean
     InterferenceItem:
       properties:
         tag:

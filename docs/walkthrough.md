@@ -1,188 +1,68 @@
-# REQ-292 3-Gate 検証ウォークスルー
+# REQ-345 検証 walkthrough
 
-**PBI ID**: REQ-292  
-**検証日時**: 2026-09-28T10:23 JST  
-**検証者**: Tester/Reviewer (dev-verify)
+## 対象と判定基準
 
----
+再読込時にBEが保持する最新200候補のうち、FEの表示済み・除外済みidentityとの差分だけを照会し、原画が存在する未表示画像を履歴へ追加する変更を検証する。ACの正本は `docs/design/REQ-345-test-plan.md`。この文書は実行証跡を追記していく。
 
-## Gate 1: 型チェック / コンパイルベースライン
+## 受入基準と検証対応
 
-### 実行コマンド
-`
-npm run typecheck
-# (内部: tsc -b --noEmit)
-`
+| AC | 確認内容 | 検証証跡 | 状態 |
+|---|---|---|---|
+| AC-1 | サムネイルcache成功と原画missing判定を分離 | `e2e_req345_trial_availability.test.tsx` | 自動テストPASS |
+| AC-2 | missing後の表示・選択・原画再要求を抑止 | T1/T3/T4/T5対象テスト群 | 自動テストPASS |
+| AC-3 | reload残存差分でpresentだけ追加しmissing/unknownを除外 | `e2e_req345_residual_history.test.tsx`; `test_residual_history.py` | 自動テストPASS |
+| AC-4 | 通信/API異常をmissing扱いせず、明示retryだけ許可 | `e2e_req345_trial_availability.test.tsx`; controller tests | 自動テストPASS |
+| AC-5 | 履歴除外でmetadata/cache/保存データを削除しない | backend full suite + REQ-345 API tests | 自動テストPASS、実環境の保持値未採取 |
+| AC-6 | Snapshotを原画確認・履歴差分から隔離 | `e2e_req345_residual_history.test.tsx` | 自動テストPASS |
+| AC-7 | identity重複、URL、順序、選択を維持 | `e2e_req345_residual_history.test.tsx` | 自動テストPASS |
+| AC-8 | 復元後1回の差分同期、full GET/全件置換ゼロ | T11 residual tests + T13 integration test | 自動テストPASS |
+| AC-9 | 差分失敗、session分類、遅延応答の安全性 | T11 residual tests + T13 integration test | 自動テストPASS |
 
-### 実行結果
+## 必須の負荷境界
 
-`
-> frontend@0.0.0 typecheck
-> tsc -b --noEmit
+- BE候補窓は最新200画像。known/examinedを存在確認より前に除外し、1ページ最大10件、同時probe最大2件。
+- FEは1論理同期最大20ページ/200検査identity。上限到達や継続候補なしを `partial` で止め、無限 `has_more` を回避。
+- 200件を超える無条件のフル履歴転送・全表示原画probeを行わない。既存200件は保持し、空き枠に差分を追加。
 
-(エラー出力なし)
-`
+## 実行証跡
 
-| 項目 | 結果 |
-|------|------|
-| **終了コード** | 0 |
-| **TypeScript エラー数** | 0 |
-| **判定** | ✅ **PASS** |
+<execution_evidence>
 
----
+### Gate 1: Typecheck / Compile
 
-## Gate 2: フルテストスイート
+- `frontend`: `npm run typecheck` — exit 0 (`tsc -b --noEmit`)
+- `backend`: `backend/.venv/Scripts/python.exe -m mypy backend` — exit 0、192 source files / no issues
+- `git -c core.fsmonitor=false diff --check` — exit 0。通常の `git diff --check` は fsmonitor IPC error で起動せず、fsmonitorを無効化した同一検査を実施。
+- API contract: `python C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/openapi.yaml get-endpoint /api/generation/history/residual post` — exit 0。schemaにknown/examined最大1000、items/rejected最大10、present-only items、has_more、422/503を確認。
+- Production frontend build: `cd frontend; npm run build` — exit 0、Vite produced `dist/index.html` and JS/CSS assets. The JS chunk exceeds 500 kB and Vite emitted its standard chunk-size advisory. Backend `settings.frontend_dist_path` resolves to `frontend/dist` when the configured path is absent.
 
-### 実行コマンド
-`
-npx vitest run
-`
+### Gate 2: Full Test Suites
 
-### 実行結果サマリー
+- `frontend`: `npm test -- --run` — exit 0、220 files passed / 2017 tests passed。
+- `backend`: `backend/.venv/Scripts/python.exe -m pytest` — exit 0、729 passed / 3 warnings / 112.92 s。
 
-`
- Test Files  88 passed (88)
-      Tests  845 passed (845)
-   Start at  10:23:05
-   Duration  28.93s
-`
+### Gate 3: REQ-345 integration and failure scenarios
 
-### REQ-292 関連テストスイート (確認済み)
+- `frontend`: `npx vitest run src/services/__tests__/trialImageAvailability.test.ts src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.req345.test.tsx src/test/e2e_req345_trial_availability.test.tsx src/test/e2e_req345_residual_history.test.tsx src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req345.test.tsx` — serial rerun exit 0、6 files / 32 tests passed。
+- relevant failure coverage: thumbnail-only failure/API-unknown retention and explicit retry; residual API/error and missing/unknown identity non-addition assertions; 20-page cap followed by a baseline-known response. The paging boundary failed once when a focused Vitest process overlapped the full-suite Vitest process (`checking` remained at assertion timeout), then the isolated case passed, and the whole focused suite passed when run serially. This concurrency-sensitive observation is retained as a risk.
+- `backend/tests/test_residual_history.py` ran in the full backend suite (7 tests passed); full suite also includes generation API and Comfy proxy failure tests.
+- No live browser/ComfyUI restart plus Network capture was performed in this verification turn. That real-server check specified by the test plan, including before/after metadata/Snapshot captures, remains unverified.
+- Follow-up inspection of `tools/server-manager/logs/backend.log` found a live request sequence at 2026-10-12 04:59:28–04:59:31: `GET /api/comfy/history` returned 200 (the backend then queried ComfyUI `/history?max_items=200`), followed by `POST /api/generation/history/residual` returning 200. This confirms residual sync ran, but also proves an unnecessary bounded full-history fetch occurred before it. The focus/visibility handler could run while persisted Query restoration left residual status at `waiting`; REQ-345-T18 now suppresses history refresh during `waiting`/`checking` while retaining queue refresh and terminal-state focus refresh. Its regression test passed (7/7) and typecheck passed. A post-fix live server-log confirmation is still pending.
+- After REQ-345-T18, the user reloaded again. The backend log records one frontend full-history request, `GET /api/comfy/history`, at 05:03:50.566. A later `GET http://localhost:8188/history?max_items=200` at 05:03:53.126 is the expected bounded backend candidate enumeration for the successful residual POST at 05:03:53.660; another such upstream request at 05:03:56.519 is paired with a residual POST at 05:03:56.605. REQ-345-T19 now records whether a nonempty baseline was observed and suppresses full-history focus refresh for that document, including after the residual sync reaches a terminal state. Its typecheck and focused hook suite passed (8/8). Middleware logs contain no client/tab identifier or request body, so a new post-T19 live reload log is required before marking the no-frontend-full-history-GET scenario PASS.
+- Post-T19 live reload evidence (2026-10-12): a full-history GET appears at 05:08:55.253, followed by successful residual syncs at 05:08:57.934 and 05:09:00.942. After the user's later explicit reload, a residual sync returned 200 at 05:23:47.692 and no newer `GET /api/comfy/history` appears in the log. The latest explicit reload therefore used residual sync without a new full-history request; the earlier 05:08:55 request remains in the aggregate log. The manager log has no tab/request correlation ID. This is real-server request evidence only; it does not include before/after metadata or Snapshot value captures.
 
-`
-✓ src/hooks/__tests__/useSceneSpeechGeneration.test.ts  (6テスト)
-✓ src/components/__tests__/SpeechBubbleEditorModal.test.tsx  (REQ-292セクション含む全テスト)
-`
+### Local model QA audit and unload
 
-| 項目 | 結果 |
-|------|------|
-| **テストファイル数** | 88 ファイル |
-| **テスト総数** | 845 テスト |
-| **失敗数** | 0 |
-| **終了コード** | 0 (stderrはintentional fault-injection console.errorのみ) |
-| **判定** | ✅ **PASS** |
+- `python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --help` — exit 0; CLI supports explicit `--context-length`, `--timeout`, and `--unload-after`; it exposes no output-token-limit option.
+- `python ...\local_model_adapter.py --model qwen/qwen3.5-9b --context-length 32768 --timeout 600 --unload-after qa-audit docs/design/REQ-345-test-plan.md` — exit 0, qwen/qwen3.5-9b Q6_K, reasoning effort none. The audit report verdict was FAIL (critical ambiguities detected): narrative test plan lacks sufficiently binary assertions, and it called the T# references undefined absent cross-document mapping/checksum. Findings are preserved for coordinator triage; this reviewer did not alter implementation/design.
+- `python ...\local_model_adapter.py unload` — exit 0; LM Studio reported no models loaded. This confirms model unload, not that all GPU memory is free.
 
-> **NOTE**: PowerShell の exit code 1 はテスト失敗ではなく、既存 fault-injection テストで意図的に発生する console.error 出力によるものです。すべてのテストアサーションは PASSED です。
+</execution_evidence>
 
----
+## ローカルモデル監査と受入判断
 
-## Gate 3: シナリオ & レッドチーミング検証
+qa-audit は FAIL (critical ambiguities detected)。指摘はテスト計画の判定条件の機械判定可能性と、未定義の `T#` 参照。2026-10-12、ユーザーは指摘を許容してクローズする判断をしたため、これらを未修正の許容事項として記録する。3-Gate自動検証はPASS。最新の明示リロードは残存差分同期のみで成功し、全件取得なし。実環境でのComfyUI再起動やmetadata/Snapshotのbefore/after値取得は未実施。
 
-### TEST-UI-01: 「シーン一括生成」ボタンの描画確認
+## クローズ
 
-**テストコード** (SpeechBubbleEditorModal.test.tsx L1218-L1231):
-- primaryTagSetId={1} 付きでレンダー
-- screen.getByTestId('scene-batch-generate-btn') が存在すること → **PASS**
-
-**実装確認** (index.tsx L412-L430):
-- data-testid="scene-batch-generate-btn" 属性付きボタン ✅
-- <Sparkles size={14} /> アイコン (非ローディング時) ✅
-- <Loader2 size={14} className="animate-spin" /> (ローディング時) ✅
-- disabled={isSceneGenerating} ✅
-
-**結果**: ✅ PASS
-
----
-
-### TEST-UI-02: クリック時 handleBatchGenerateClick 発火確認
-
-**テストコード** (SpeechBubbleEditorModal.test.tsx L1233-L1254):
-- speechBubblePresetsApi.getByTagSetId が preset 返却するよう設定
-- ボタンクリック後、mockGenerateDraftApi が snapshot_id 含む引数で呼ばれること → **PASS**
-
-**実装確認** (index.tsx L163-L172):
-- useSceneSpeechGeneration フック接続 ✅
-- handleBatchGenerateClick を onClick で呼出 ✅
-
-**結果**: ✅ PASS
-
----
-
-### TEST-UI-03: primaryTagSetId=null でも API 呼出継続
-
-**テストコード** (SpeechBubbleEditorModal.test.tsx L1256-L1275):
-- primaryTagSetId={null} でレンダー
-- mockGenerateDraftApi が { target_tag_set_id: null } で呼ばれること → **PASS**
-- speechBubblePresetsApi.getByTagSetId が呼ばれないこと → **PASS**
-
-**実装確認** (useSceneSpeechGeneration.ts L66-L81):
-- primaryTagSetId != null の else 分岐に 	arget_tag_set_id: null で API呼出 ✅
-- エラーキャッチのみ (サイレント終了なし) ✅
-
-**結果**: ✅ PASS
-
----
-
-### TEST-UI-04: 「編集設定」タブ中に生成後 preview タブへ自動遷移
-
-**テストコード** (SpeechBubbleEditorModal.test.tsx L1277-L1299):
-- 「編集設定」タブへ切替後、一括生成ボタン押下
-- 生成完了後、preview タブボタンが g-blue-600 クラスを持つ → **PASS**
-
-**実装確認** (index.tsx L415-L420):
-`	ypescript
-onClick={() => {
-  handleBatchGenerateClick().finally(() => {
-    if (activeMobileTab === 'controls') {
-      setActiveMobileTab('preview')
-    }
-  })
-}}
-`
-生成完了後 .finally() で setActiveMobileTab('preview') ✅
-
-**結果**: ✅ PASS
-
----
-
-### レッドチーミング: 並行競合シナリオ (useSceneSpeechGeneration.test.ts)
-
-| テスト名 | シナリオ | 結果 |
-|---------|---------|------|
-| TEST-PAR-03 variant 1 | モーダル確認 → API完了 (順序: 確認先) | ✅ PASS |
-| TEST-PAR-03 variant 2 | API完了 → モーダル確認 (順序: API先) | ✅ PASS |
-| CRIT-01 rescue (v1) | モーダルキャンセル → API完了 (キャンセル先) | ✅ PASS |
-| CRIT-01 rescue (v2) | API完了 → モーダルキャンセル (API先) | ✅ PASS |
-| null route | primaryTagSetId=null → API直接呼出 | ✅ PASS |
-| normal path | preset存在 → ワンクリック自動展開 | ✅ PASS |
-
----
-
-## AC 達成マトリクス
-
-| # | 受入条件 | 実装確認 | テスト確認 | 判定 |
-|---|---------|---------|-----------|------|
-| AC-1 | ヘッダーに「シーン一括生成」ボタン（Sparklesアイコン + disabled={isSceneGenerating} + loading spinner）が描画される | index.tsx L412-L430: testid, Sparkles/Loader2, disabled prop 確認済み | TEST-UI-01 PASS | ✅ **PASS** |
-| AC-2 | useSceneSpeechGeneration フックが接続され、クリック時に handleBatchGenerateClick が発火する | index.tsx L163-L172: フック呼出 & onClick連結確認 | TEST-UI-02 PASS | ✅ **PASS** |
-| AC-3 | primaryTagSetId が null でも 	arget_tag_set_id: null でAPI呼出継続（サイレント終了しない） | useSceneSpeechGeneration.ts L66-81: else分岐でnull指定、エラーキャッチのみ | TEST-UI-03 PASS + null-route unit test PASS | ✅ **PASS** |
-| AC-4 | モバイルで「編集設定」タブ中に押すと生成完了後に preview タブへ自動遷移 | index.tsx L415-420: .finally()でsetActiveMobileTab('preview') | TEST-UI-04 PASS | ✅ **PASS** |
-| AC-5 | TEST-UI-01〜04 が全てパス、
-pm run typecheck エラー0件 | Gate 1: 0エラー, Gate 2: 845/845 PASS, TEST-UI-01〜04全PASS | 全ゲート通過 | ✅ **PASS** |
-
-**AC達成率: 5/5 (100%)**
-
----
-
-## 総合判定
-
-| Gate | コマンド | 結果 | 詳細 |
-|------|---------|------|------|
-| Gate 1 | 
-pm run typecheck (tsc -b --noEmit) | ✅ **PASS** | exit code 0, エラー 0件 |
-| Gate 2 | 
-px vitest run | ✅ **PASS** | 88ファイル / 845テスト 全PASS |
-| Gate 3 | シナリオ & レッドチーミング | ✅ **PASS** | TEST-UI-01〜04全PASS, 6種競合シナリオ全PASS |
-
-## 🏆 最終ベルディクト: **PASS**
-
----
-
-## 実装ファイル一覧
-
-| ファイル | 役割 |
-|---------|------|
-| rontend/src/hooks/useSceneSpeechGeneration.ts | シーン一括生成ロジックフック |
-| rontend/src/hooks/__tests__/useSceneSpeechGeneration.test.ts | フックユニットテスト (6ケース) |
-| rontend/src/components/SpeechBubbleEditorModal/index.tsx | モーダルコンポーネント (ボタン実装) |
-| rontend/src/components/SpeechBubbleEditorModal/types.ts | Props型定義 (primaryTagSetId等) |
-| rontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx | 統合テスト (TEST-UI-01〜04含む) |
+REQ-345とT1〜T19をdoneとしてアーカイブした。Gitの通常実行では `git status` がwork treeエラーとなり、絶対パスを指定した `git -C` はPermission deniedとなった。権限付き実行では同じ作業フォルダのstatusが成功したため、原因はサンドボックスのアクセス制限と判断した。リポジトリ設定を変更せず、権限付きGit操作でREQ-345の変更をコミットする。

@@ -63,8 +63,24 @@ vi.mock('../../../../store/useGenerationStore', () => {
     getEffectiveParamValues: vi.fn(),
     fetchParamSyncGroups: vi.fn(),
   }
+  const listeners = new Set<(state: typeof store, previousState: typeof store) => void>()
+  const useGenerationStore = (selector?: (state: typeof store) => unknown) =>
+    selector ? selector(store) : store
+  Object.assign(useGenerationStore, {
+    getState: () => store,
+    getInitialState: () => store,
+    setState: (updater: Partial<typeof store> | ((state: typeof store) => Partial<typeof store>)) => {
+      const previousState = { ...store }
+      Object.assign(store, typeof updater === 'function' ? updater(store) : updater)
+      listeners.forEach((listener) => listener(store, previousState))
+    },
+    subscribe: (listener: (state: typeof store, previousState: typeof store) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  })
   return {
-    useGenerationStore: () => store,
+    useGenerationStore,
   }
 })
 

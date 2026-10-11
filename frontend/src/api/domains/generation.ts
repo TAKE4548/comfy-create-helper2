@@ -93,6 +93,18 @@ export interface UpstreamQueueView {
 }
 export interface ImageIdentity { filename: string; subfolder: string; type: string }
 export interface ImageAvailability { availability: 'present' | 'missing' | 'unknown' }
+export interface ResidualHistoryRequest { known: ImageIdentity[]; examined: ImageIdentity[] }
+export interface ResidualHistoryItem {
+  identity: ImageIdentity
+  view_url: string
+  session_id: string | null
+  availability: 'present'
+}
+export interface ResidualHistoryResponse {
+  items: ResidualHistoryItem[]
+  rejected: Array<{ identity: ImageIdentity; availability: 'missing' | 'unknown' }>
+  has_more: boolean
+}
 export interface ErrorDetail {
   code: string
   message: string
@@ -277,6 +289,49 @@ export function decodeGenerationEnvelope(value: unknown): GenerationEnvelope {
   return { type: value.type, version: 1, epoch: value.epoch, revision: value.revision, data }
 }
 
+export function decodeResidualHistoryResponse(value: unknown): ResidualHistoryResponse {
+  const invalid = (): never => { throw new Error('Invalid residual history response') }
+  const exactKeys = (record: Record<string, unknown>, keys: string[]) =>
+    Object.keys(record).length === keys.length && keys.every(key => key in record)
+  const identity = (value: unknown): value is ImageIdentity => isRecord(value) &&
+    exactKeys(value, ['filename', 'subfolder', 'type']) && isString(value.filename) && value.filename.length > 0 &&
+    isString(value.subfolder) && isString(value.type) && value.type.length > 0
+  const key = (item: ImageIdentity) => JSON.stringify([item.filename, item.subfolder, item.type])
+  const validViewUrl = (raw: unknown, item: ImageIdentity) => {
+    if (!isString(raw)) return false
+    try {
+      const url = new URL(raw, globalThis.location?.origin ?? 'http://localhost')
+      const origin = globalThis.location?.origin ?? 'http://localhost'
+      return url.origin === origin && (url.pathname === '/api/comfy/view' || url.pathname === '/view') &&
+        ['filename', 'subfolder', 'type'].every(name => url.searchParams.getAll(name).length === 1 &&
+          url.searchParams.get(name) === item[name as keyof ImageIdentity]) && [...url.searchParams.keys()].length === 3
+    } catch { return false }
+  }
+  if (!isRecord(value) || !exactKeys(value, ['items', 'rejected', 'has_more']) ||
+      !Array.isArray(value.items) || !Array.isArray(value.rejected) || typeof value.has_more !== 'boolean' ||
+      value.items.length + value.rejected.length > 10 || (!value.items.length && value.has_more)) return invalid()
+  const seen = new Set<string>()
+  const addIdentity = (raw: unknown) => {
+    if (!identity(raw)) return false
+    const normalized = key(raw)
+    if (seen.has(normalized)) return false
+    seen.add(normalized)
+    return true
+  }
+  const items = value.items.map(raw => {
+    if (!isRecord(raw) || !exactKeys(raw, ['identity', 'view_url', 'session_id', 'availability']) ||
+        !addIdentity(raw.identity) || !validViewUrl(raw.view_url, raw.identity as ImageIdentity) ||
+        (raw.session_id !== null && !isString(raw.session_id)) || raw.availability !== 'present') return invalid()
+    return raw as unknown as ResidualHistoryItem
+  })
+  const rejected = value.rejected.map(raw => {
+    if (!isRecord(raw) || !exactKeys(raw, ['identity', 'availability']) || !addIdentity(raw.identity) ||
+        (raw.availability !== 'missing' && raw.availability !== 'unknown')) return invalid()
+    return raw as unknown as ResidualHistoryResponse['rejected'][number]
+  })
+  return { items, rejected, has_more: value.has_more }
+}
+
 export const generationApi = {
   submitBatch: (body: BatchRequest, signal?: AbortSignal): Promise<BatchAccepted> =>
     call('/generation/batches', {
@@ -307,4 +362,8 @@ export const generationApi = {
   },
   availability: (jobId: string): Promise<JobView['outputs']> =>
     call(`/generation/images/${encodeURIComponent(jobId)}/availability`),
+  residualHistory: async (body: ResidualHistoryRequest, signal?: AbortSignal): Promise<ResidualHistoryResponse> =>
+    decodeResidualHistoryResponse(await call<unknown>('/generation/history/residual', {
+      method: 'POST', body: JSON.stringify(body), ...(signal ? { signal } : {}),
+    })),
 }

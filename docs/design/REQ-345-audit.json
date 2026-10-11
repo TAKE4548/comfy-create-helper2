@@ -1,0 +1,47 @@
+{
+  "pbi_id": "REQ-345",
+  "date": "2026-10-12",
+  "action": "ba-audit",
+  "status": "INCONCLUSIVE",
+  "blocker": "configured_exact_model_unavailable",
+  "configured_model_id": "qwen/qwen3.5-9b",
+  "actual_model_id": null,
+  "inference_started": false,
+  "result": "Configured audit model was not found by exact ID; no alternate model selected.",
+  "targets": [
+    "docs/design/REQ-345.md",
+    "docs/design/REQ-345-test-plan.md",
+    "docs/backlog/task/active/REQ-345-T1.md",
+    "docs/backlog/task/active/REQ-345-T2.md",
+    "docs/backlog/task/active/REQ-345-T3.md",
+    "docs/backlog/task/active/REQ-345-T4.md",
+    "docs/backlog/task/active/REQ-345-T5.md",
+    "docs/backlog/task/active/REQ-345-T6.md"
+  ],
+  "runtime": {
+    "lm_studio_version": null,
+    "llama_cpp_version": null,
+    "reasoning_effort_requested_default": "none",
+    "reasoning_effort_verified": null,
+    "context_length_default": 8192,
+    "context_length_verified": null
+  },
+  "chunks_completed": 0,
+  "elapsed_seconds": null,
+  "audit_exit_code": 1,
+  "audit_log": "docs/design/REQ-345-ba-audit.log",
+  "unload": {
+    "attempted": true,
+    "exit_code": 1,
+    "confirmed": false,
+    "result": "lms ps --json timed out after 5 seconds before loaded-model state could be verified",
+    "log": "docs/design/REQ-345-unload.log"
+  },
+  "catalog_diagnostic": {
+    "exit_code": 1,
+    "result": "No local models detected via LM Studio."
+  },
+  "human_design_review": "pending",
+  "implementation_started": false,
+  "tests_executed": false
+}

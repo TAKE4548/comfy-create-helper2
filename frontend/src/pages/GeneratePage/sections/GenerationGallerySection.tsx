@@ -1,10 +1,8 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Play, Pause, CheckSquare, Square, ImageOff, X } from 'lucide-react'
 import { LazyThumbnail } from '../../../components/LazyThumbnail'
 import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 import { getPromptPrefix } from '../../../utils/formatUtils'
-import { useGenerationStore } from '../../../store/useGenerationStore'
-import { generationApi } from '../../../api/domains/generation'
 import type { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 
@@ -22,74 +20,10 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
   isMobile = false,
 }) => {
   const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(() => new Set())
-  const [availabilityStates, setAvailabilityStates] = useState<Map<string, 'checking' | 'present' | 'missing' | 'unknown'>>(() => new Map())
   const [retryVersions, setRetryVersions] = useState<Map<string, number>>(() => new Map())
-  const probesRef = useRef(new Map<string, Promise<'present' | 'missing' | 'unknown'>>())
-  const completedProbesRef = useRef(new Map<string, 'present' | 'missing' | 'unknown'>())
-
-  const getImageIdentity = (imageUrl: string) => {
-    try {
-      const url = new URL(imageUrl, window.location.origin)
-      const filename = url.searchParams.get('filename')
-      if (!filename) return null
-      return {
-        key: JSON.stringify([filename, url.searchParams.get('subfolder') || '', url.searchParams.get('type') || 'output']),
-        request: { filename, subfolder: url.searchParams.get('subfolder') || '', type: url.searchParams.get('type') || 'output' },
-      }
-    } catch {
-      return null
-    }
-  }
-
-  const handleThumbnailError = (imageUrl: string) => {
-    const identity = getImageIdentity(imageUrl)
-    if (!identity) {
-      setThumbnailErrors((old) => new Set(old).add(imageUrl))
-      setAvailabilityStates((old) => new Map(old).set(imageUrl, 'unknown'))
-      window.dispatchEvent(new CustomEvent('comfy-image-availability', { detail: { url: imageUrl, availability: 'unknown' } }))
-      return
-    }
-    const { key, request } = identity
-    setThumbnailErrors((old) => new Set(old).add(key))
-    if (completedProbesRef.current.has(key) || probesRef.current.has(key)) return
-
-    setAvailabilityStates((old) => new Map(old).set(key, 'checking'))
-    const probe = generationApi.imageAvailability(request)
-      .then((result) => result.availability)
-      .catch(() => 'unknown' as const)
-    probesRef.current.set(key, probe)
-    void probe.then((availability) => {
-      probesRef.current.delete(key)
-      completedProbesRef.current.set(key, availability)
-      setAvailabilityStates((old) => new Map(old).set(key, availability))
-      window.dispatchEvent(new CustomEvent('comfy-image-availability', { detail: { url: imageUrl, availability } }))
-      if (availability === 'missing') {
-        useGenerationStore.setState((storeState) => ({
-          comfyHistoryImages: storeState.comfyHistoryImages.filter((candidate) => getImageIdentity(candidate)?.key !== key),
-          batchImages: storeState.batchImages.filter((candidate) => getImageIdentity(candidate)?.key !== key),
-        }))
-      }
-    })
-  }
-
-  const retryThumbnail = (imageUrl: string, event: React.MouseEvent | React.KeyboardEvent) => {
-    event.stopPropagation()
-    const identity = getImageIdentity(imageUrl)
-    const key = identity?.key ?? imageUrl
-    completedProbesRef.current.delete(key)
-    probesRef.current.delete(key)
-    setAvailabilityStates((old) => {
-      const next = new Map(old)
-      next.delete(key)
-      return next
-    })
-    setThumbnailErrors((old) => {
-      const next = new Set(old)
-      next.delete(key)
-      return next
-    })
-    setRetryVersions((old) => new Map(old).set(key, (old.get(key) ?? 0) + 1))
-  }
+  const ownerRef = useRef<object>({})
+  const observedImagesRef = useRef(new Set<string>())
+  const [availabilityRevision, setAvailabilityRevision] = useState(0)
   const {
     thumbnailTab,
     setThumbnailTab,
@@ -111,7 +45,56 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
     selectedImg,
     getSetNameForImage,
     sortedSnapshots,
+    trialAvailability,
+    residualHistoryStatus,
+    retryResidualHistory,
   } = state
+
+  useEffect(() => trialAvailability.subscribe(() => setAvailabilityRevision((revision) => revision + 1)), [trialAvailability])
+
+  useEffect(() => {
+    if (thumbnailTab !== 'history') {
+      trialAvailability.releaseOwner(ownerRef.current)
+      observedImagesRef.current.clear()
+      return
+    }
+    const visibleImages = new Set(sortedDisplayImages)
+    observedImagesRef.current.forEach((image) => { if (!visibleImages.has(image)) observedImagesRef.current.delete(image) })
+    trialAvailability.retainOwnerImages(ownerRef.current, [...observedImagesRef.current])
+  }, [sortedDisplayImages, thumbnailTab, trialAvailability])
+
+  useEffect(() => () => trialAvailability.releaseOwner(ownerRef.current), [trialAvailability])
+
+  const getImageIdentity = (imageUrl: string) => trialAvailability.getIdentity(imageUrl)
+  const getAvailability = (imageUrl: string) => {
+    void availabilityRevision
+    return trialAvailability.getStatus(imageUrl)
+  }
+
+  const observeThumbnail = (imageUrl: string) => {
+    if (thumbnailTab !== 'history') return
+    observedImagesRef.current.add(imageUrl)
+    trialAvailability.observe(imageUrl, ownerRef.current)
+    trialAvailability.retainOwnerImages(ownerRef.current, [...observedImagesRef.current])
+    setAvailabilityRevision((revision) => revision + 1)
+  }
+
+  const handleThumbnailLoad = (imageUrl: string) => observeThumbnail(imageUrl)
+
+  const handleThumbnailError = (imageUrl: string) => {
+    const identity = getImageIdentity(imageUrl)
+    setThumbnailErrors((old) => new Set(old).add(identity?.key ?? imageUrl))
+    observeThumbnail(imageUrl)
+  }
+
+  const retryThumbnail = (imageUrl: string, event: React.MouseEvent | React.KeyboardEvent) => {
+    event.stopPropagation()
+    const identity = getImageIdentity(imageUrl)
+    const key = identity?.key ?? imageUrl
+    if (getAvailability(imageUrl) === 'unknown') void trialAvailability.check(imageUrl, { retry: true })
+    setThumbnailErrors((old) => new Set([...old].filter((item) => item !== key)))
+    setRetryVersions((old) => new Map(old).set(key, (old.get(key) ?? 0) + 1))
+  }
 
   const autoFollowId = isMobile
     ? 'preview-autofollow-toggle-mobile'
@@ -320,9 +303,13 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
   }
 
   const renderHistoryList = () => {
+    const residualLabel = residualHistoryStatus === 'error' ? '履歴の追加確認に失敗' : residualHistoryStatus === 'partial' ? '一部の履歴を確認済み' : null
+    const renderResidualStatus = () => residualLabel ? <p role="status" className="flex items-center gap-2 text-[10px] text-zinc-400">{residualLabel}<button type="button" onClick={(event) => { event.stopPropagation(); retryResidualHistory() }} className="underline underline-offset-2">再試行</button></p> : (residualHistoryStatus === 'waiting' || residualHistoryStatus === 'checking') ? <p role="status" className="text-[10px] text-zinc-500">履歴を確認中…</p> : null
+
     if (sortedDisplayImages.length > 0) {
       return (
         <div className={isMobile ? 'space-y-2' : 'h-full flex flex-col justify-between'}>
+          {renderResidualStatus()}
           {renderMultiSelectBar()}
           <div
             ref={gallery.scrollContainerRef}
@@ -336,12 +323,17 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
             {sortedDisplayImages.map((img, i) => {
               const isSel = isSelected(img)
               const itemProps = gallery.getThumbnailItemProps(img, i)
+              const identity = getImageIdentity(img)
+              const key = identity?.key ?? img
+              const availability = getAvailability(img)
+              const canInteract = availability === 'present' || availability === 'unknown'
               return (
                 <button
                   key={img || i}
                   type="button"
                   id={isMobile ? `thumb-mobile-${i}` : `thumb-${i}`}
-                  {...itemProps}
+                  {...(canInteract ? itemProps : {})}
+                  disabled={!canInteract}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={
                     isMobile
@@ -370,17 +362,19 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                     src={toThumbnailUrl(img)}
                     alt={`Generated ${i + 1}`}
                     containerRef={isMobile ? undefined : gallery.scrollContainerRef}
+                    onLoad={() => handleThumbnailLoad(img)}
                     onError={() => handleThumbnailError(img)}
                     className="w-full h-full object-cover pointer-events-none select-none"
                     style={{ WebkitTouchCallout: 'none' }}
                   />
-                  {thumbnailErrors.has(getImageIdentity(img)?.key ?? img) && (
+                  {(availability === undefined || availability === 'checking' || availability === 'missing') ? (
                     <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
-                      {availabilityStates.get(getImageIdentity(img)?.key ?? img) === 'checking' ? (
-                        <span role="status" className="pointer-events-auto rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-200">
-                          原画を確認中…
-                        </span>
-                      ) : (
+                      <span role="status" className="pointer-events-auto rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-200">
+                        {availability === 'missing' ? '原画が見つかりません' : '原画を確認中…'}
+                      </span>
+                    </div>
+                  ) : (thumbnailErrors.has(key) || availability === 'unknown') && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
                         <span
                           role="button"
                           tabIndex={0}
@@ -391,9 +385,8 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                           }}
                           className="pointer-events-auto cursor-pointer rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-100"
                         >
-                          サムネイル再試行
+                          {availability === 'unknown' ? '原画を再確認' : 'サムネイル再試行'}
                         </span>
-                      )}
                     </div>
                   )}
                   {getSetNameForImage(img) && (
@@ -451,11 +444,7 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
       )
     }
 
-    return (
-      <p className={isMobile ? 'text-[10px] text-zinc-500 py-1' : 'text-xs text-zinc-600 py-2'}>
-        No history images found for this session.
-      </p>
-    )
+    return <div className="space-y-2">{renderResidualStatus()}<p className={isMobile ? 'text-[10px] text-zinc-500 py-1' : 'text-xs text-zinc-600 py-2'}>No history images found for this session.</p></div>
   }
 
   const renderSnapshotsList = () => {

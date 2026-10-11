@@ -3,9 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GenerationApiError, generationApi } from '../api/domains/generation'
+import { GenerationApiError } from '../api/domains/generation'
 import { systemManagerApi } from '../api/domains/systemManager'
-import { configApi, datasetApi, workflowsApi, workflowPresetsApi } from '../api/client'
+import { configApi, datasetApi, generationApi, workflowsApi, workflowPresetsApi } from '../api/client'
 import { useConfig } from '../hooks/useConfig'
 import { useManagerStatus } from '../hooks/useManagerStatus'
 import { useGenerationStore } from '../store/useGenerationStore'
@@ -34,8 +34,10 @@ vi.mock('../api/domains/generation', async (importOriginal) => {
 vi.mock('../api/domains/systemManager', () => ({ systemManagerApi: { status: vi.fn(), action: vi.fn(), logs: vi.fn() } }))
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
+  const domainGeneration = await import('../api/domains/generation')
   return {
     ...actual,
+    generationApi: domainGeneration.generationApi,
     configApi: { ...actual.configApi, get: vi.fn() },
     datasetApi: { ...actual.datasetApi, getProjects: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), calculateMatrix: vi.fn() },
     workflowsApi: { ...actual.workflowsApi, list: vi.fn(), get: vi.fn(), update: vi.fn() },
@@ -71,9 +73,9 @@ function StudioProgressProbe(): React.JSX.Element {
   })}</ul>
 }
 
-function DisplayCacheListener(): null {
-  useGenerateDisplayState({ selectedWorkflowId: null })
-  return null
+function DisplayCacheListener({ children }: { children: (state: ReturnType<typeof useGenerateDisplayState>) => React.ReactNode }): React.ReactNode {
+  const state = useGenerateDisplayState({ selectedWorkflowId: null })
+  return children(state)
 }
 
 function renderGenerationAndSettings(client: QueryClient) {
@@ -93,14 +95,15 @@ function renderGenerationAndSettings(client: QueryClient) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/']}>
-        <DisplayCacheListener />
-        <GenerationGallerySection
-          state={state as any}
-          gallery={{
-            scrollContainerRef: { current: null }, handleWheelScroll: vi.fn(),
-            getThumbnailItemProps: () => ({}), handleSnapshotClick: vi.fn(),
-          } as any}
-        />
+        <DisplayCacheListener>
+          {(displayState) => <GenerationGallerySection
+            state={{ ...displayState, ...state, sortedDisplayImages: displayState.sortedDisplayImages, trialAvailability: displayState.trialAvailability } as any}
+            gallery={{
+              scrollContainerRef: { current: null }, handleWheelScroll: vi.fn(),
+              getThumbnailItemProps: () => ({}), handleSnapshotClick: vi.fn(),
+            } as any}
+          />}
+        </DisplayCacheListener>
         <SettingsPopover {...settingsProps} />
         <ServiceConnectionCard />
       </MemoryRouter>

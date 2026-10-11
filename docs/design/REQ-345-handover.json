@@ -1,0 +1,283 @@
+{
+  "pbi_id": "REQ-345",
+  "design_revision": "2026-10-12-reload-delta",
+  "design_document": "docs/design/REQ-345.md",
+  "test_plan": "docs/design/REQ-345-test-plan.md",
+  "implementation_plan": "implementation_plan.md",
+  "implementation_plan_archive": "docs/design/REQ-345-implementation_plan.md",
+  "previous_plan_archive": "docs/design/REQ-350-implementation_plan.md",
+  "dag_mermaid": "graph TD\n  REQ-345-T1 --> REQ-345-T3\n  REQ-345-T1 --> REQ-345-T4\n  REQ-345-T2 --> REQ-345-T4\n  REQ-345-T3 --> REQ-345-T4\n  REQ-345-T3 --> REQ-345-T5\n  REQ-345-T4 --> REQ-345-T5\n  REQ-345-T6 --> REQ-345-T5\n  REQ-345-T3 --> REQ-345-T11\n  REQ-345-T8 --> REQ-345-T11\n  REQ-345-T9 --> REQ-345-T11\n  REQ-345-T10 --> REQ-345-T11\n  REQ-345-T7 --> REQ-345-T12\n  REQ-345-T7 --> REQ-345-T13\n  REQ-345-T11 --> REQ-345-T13\n  REQ-345-T6 --> REQ-345-T13\n  REQ-345-T12 --> REQ-345-T13\n  REQ-345-T4 --> REQ-345-T13",
+  "max_dag_depth": 4,
+  "task_card_count": 13,
+  "tasks": [
+    {
+      "task_id": "REQ-345-T1",
+      "card_path": "docs/backlog/task/active/REQ-345-T1.md",
+      "title": "原画availabilityの共有controllerを作る",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/services/trialImageAvailability.ts",
+        "frontend/src/services/__tests__/trialImageAvailability.test.ts"
+      ],
+      "line_budget": 300,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/services/__tests__/trialImageAvailability.test.ts",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T2",
+      "card_path": "docs/backlog/task/active/REQ-345-T2.md",
+      "title": "LazyThumbnailに成功通知を追加する",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/components/LazyThumbnail.tsx",
+        "frontend/src/components/__tests__/LazyThumbnail.req345.test.tsx"
+      ],
+      "line_budget": 160,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/components/__tests__/LazyThumbnail.req345.test.tsx",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T3",
+      "card_path": "docs/backlog/task/active/REQ-345-T3.md",
+      "title": "表示cacheと選択へmissingを一括反映する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-345-T1"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.req345.test.tsx"
+      ],
+      "line_budget": 290,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.req345.test.tsx src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.test.tsx",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T4",
+      "card_path": "docs/backlog/task/active/REQ-345-T4.md",
+      "title": "Galleryのサムネ成功にも需要確認を接続する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-345-T1",
+        "REQ-345-T2",
+        "REQ-345-T3"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx",
+        "frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req345.test.tsx",
+        "frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx"
+      ],
+      "line_budget": 290,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req345.test.tsx src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T5",
+      "card_path": "docs/backlog/task/active/REQ-345-T5.md",
+      "title": "全ACとSnapshot・metadata保護を結合検証する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-345-T3",
+        "REQ-345-T4",
+        "REQ-345-T6"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req345_trial_availability.test.tsx"
+      ],
+      "line_budget": 280,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req345_trial_availability.test.tsx\nnpm test -- --run\n# root\n& backend/.venv/Scripts/python.exe -m pytest backend/tests/test_comfy_proxy_fault.py backend/tests/test_comfy_proxy.py",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T6",
+      "card_path": "docs/backlog/task/active/REQ-345-T6.md",
+      "title": "需要確認と欠損抑止の正本を同期する",
+      "subsystem": "system",
+      "depends_on": [],
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_COMMON.md",
+        "docs/specs/SPEC_HISTORY.md"
+      ],
+      "line_budget": 200,
+      "verification_command": "git diff --check -- docs/specs/SPEC_GENERATE.md docs/specs/SPEC_COMMON.md docs/specs/SPEC_HISTORY.md",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "prior_revision_only"
+    },
+    {
+      "task_id": "REQ-345-T7",
+      "card_path": "docs/backlog/task/active/REQ-345-T7.md",
+      "title": "BEで未表示の残存候補だけ原画確認する",
+      "subsystem": "backend",
+      "depends_on": [],
+      "impacted_files": [
+        "backend/app/services/residual_history.py",
+        "backend/app/routers/generation.py",
+        "backend/tests/test_residual_history.py"
+      ],
+      "line_budget": 300,
+      "verification_command": "& backend/.venv/Scripts/python.exe -m mypy backend\n& backend/.venv/Scripts/python.exe -m pytest backend/tests/test_residual_history.py backend/tests/test_generation_api.py",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T8",
+      "card_path": "docs/backlog/task/active/REQ-345-T8.md",
+      "title": "残存差分APIのFE型と厳格decoderを追加する",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/api/domains/generation.ts",
+        "frontend/src/api/domains/__tests__/generation.test.ts"
+      ],
+      "line_budget": 200,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/api/domains/__tests__/generation.test.ts",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T9",
+      "card_path": "docs/backlog/task/active/REQ-345-T9.md",
+      "title": "残存差分を既存履歴へ追加する純粋関数を作る",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/services/residualHistory.ts",
+        "frontend/src/services/__tests__/residualHistory.test.ts"
+      ],
+      "line_budget": 240,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/services/__tests__/residualHistory.test.ts",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T10",
+      "card_path": "docs/backlog/task/active/REQ-345-T10.md",
+      "title": "初回snapshotからの無条件全履歴取得を止める",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/store/slices/connectionSlice.ts",
+        "frontend/src/store/__tests__/slices/connectionSlice.test.ts"
+      ],
+      "line_budget": 240,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/store/__tests__/slices/connectionSlice.test.ts",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T11",
+      "card_path": "docs/backlog/task/active/REQ-345-T11.md",
+      "title": "復元後の残存差分同期を表示stateへ接続する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-345-T3",
+        "REQ-345-T8",
+        "REQ-345-T9",
+        "REQ-345-T10"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts",
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx"
+      ],
+      "line_budget": 280,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.req345.test.tsx",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T12",
+      "card_path": "docs/backlog/task/active/REQ-345-T12.md",
+      "title": "残存差分APIのOpenAPI正本を同期する",
+      "subsystem": "system",
+      "depends_on": [
+        "REQ-345-T7"
+      ],
+      "impacted_files": [
+        "docs/openapi.yaml"
+      ],
+      "line_budget": 200,
+      "verification_command": "git diff --check -- docs/openapi.yaml\npython C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/openapi.yaml get-endpoint /api/generation/history/residual post",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    },
+    {
+      "task_id": "REQ-345-T13",
+      "card_path": "docs/backlog/task/active/REQ-345-T13.md",
+      "title": "再読込の差分追加と全件取得ゼロを結合検証する",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-345-T7",
+        "REQ-345-T11",
+        "REQ-345-T6",
+        "REQ-345-T12",
+        "REQ-345-T4"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req345_residual_history.test.tsx"
+      ],
+      "line_budget": 280,
+      "verification_command": "Set-Location frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req345_residual_history.test.tsx\nnpm test -- --run",
+      "status": "draft",
+      "design_gate": "pending",
+      "atomicity_check": "PASS_PLANNED",
+      "audit_coverage": "revised_card_not_audited"
+    }
+  ],
+  "trade_offs_and_risks": "非空persist baselineがhydrateされたdocument reload epochのみ差分同期。BE内部は既存200件候補列挙、FE full GET/全件置換なし。known/examined除外後10候補page/最大2probe、presentのみ追加。新規unknown保留/既存unknown保持。既存URL/相対順/選択優先、200行空きslotのみ追加、20page/200検査でpartial。HEAD fallback原画転送・待ち時間は既存契約。同identity missingは同page固定、reloadで新epoch。",
+  "audit_status": "ISSUES_DETECTED",
+  "audit_metadata": "docs/design/REQ-345-audit-32k.json",
+  "audit_response": "docs/design/REQ-345-audit-response.md",
+  "historical_audit_status": "INCONCLUSIVE",
+  "historical_audit_metadata": "docs/design/REQ-345-audit-retry.json",
+  "historical_audit_result": "3 chunks completed; final synthesis stopped at output token limit; unload exit0 confirmed.",
+  "latest_audit_result": "Current 16-target audit: CRITICAL DEFECTS DETECTED; 7 chunks; exit0; unload confirmed.",
+  "current_revision_audit": "16 targets audited at context32768/timeout600; 7 chunks; exit0; CRITICAL DEFECTS DETECTED; unload confirmed. Evidence: docs/design/REQ-345-audit-current.json and .log.",
+  "current_revision_audit_reason": "Latest run covers design, implementation plan, test plan, and all 13 Task Cards. Verdict is not PASS; review the 200-candidate BE ceiling as an explicit residual-history limitation.",
+  "audit_dispositions": "docs/design/REQ-345-audit-response.md: true-reload missing recovery=specified (test explicitly); unknown retry/reload=specified; 200-candidate BE window=supported residual-history completeness limitation (older entries not guaranteed); HTTP 404 layers=distinguished; overlapping manual sync=unresolved single-flight rule; recovered-row metadata=unresolved response/mapper fields; SSoT/session/type/partial UI=partly specified, canonical identity ownership and visible partial status unresolved. Human review pending; implementation_ready=false.",
+  "human_design_review": "approved_by_user_2026-10-12",
+  "implementation_ready": true,
+  "implementation_started": false,
+  "tests_executed": false,
+  "blocked_reason": null,
+  "validation": {
+    "physical_task_cards": 13,
+    "acyclic_dag": true,
+    "max_depth": 4,
+    "all_planned_file_counts_at_most": 3,
+    "all_planned_line_budgets_at_most": 300,
+    "implementation_plan_saved_copy": "identical_confirmed"
+  },
+  "user_approval_scope": "User accepted the 200-candidate BE history window and directed implementation to proceed with maximum parallel engineers."
+}

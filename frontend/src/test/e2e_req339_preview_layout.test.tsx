@@ -1,9 +1,12 @@
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { GenerateParallelPreview } from '../pages/GeneratePage/components/GenerateParallelPreview'
 import { DesktopLayout } from '../pages/GeneratePage/components/DesktopLayout'
 import { useGenerationStore } from '../store/useGenerationStore'
+import { createTrialAvailabilityController } from '../services/trialImageAvailability'
+
+const trialAvailabilityControllers: ReturnType<typeof createTrialAvailabilityController>[] = []
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -50,6 +53,8 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
       },
     })
   })
+
+  afterEach(() => trialAvailabilityControllers.splice(0).forEach((controller) => controller.dispose()))
 
   it('AC-1..3: displays images at uniform height matching native aspect ratios without distortion', () => {
     const images = ['img-wide', 'img-square', 'img-tall']
@@ -172,7 +177,10 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
   })
 
   it('AC-6 & AC-7: relocates resource monitor to desktop global header with zero preview occlusion', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
     const mockState: any = {
+      trialAvailability,
       isConnected: true,
       isGenerating: false,
       progress: 0,

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MobileLayout } from '../MobileLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
+import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -13,7 +14,18 @@ vi.mock('react-router-dom', () => ({
 // Mock lucide-react icons if necessary (lucide-react works normally in tests)
 
 describe('MobileLayout - TagChipEditor Integration', () => {
-  afterEach(() => vi.useRealTimers())
+  const availabilityControllers = new Set<{ dispose: () => void }>()
+  const createAvailabilityController = () => {
+    const controller = createTrialAvailabilityController(async () => ({ availability: 'present' as const }))
+    availabilityControllers.add(controller)
+    return controller
+  }
+
+  afterEach(() => {
+    availabilityControllers.forEach((controller) => controller.dispose())
+    availabilityControllers.clear()
+    vi.useRealTimers()
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -46,6 +58,7 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       setSeed: vi.fn(),
       selectedImg: null,
       setSelectedImg: vi.fn(),
+      trialAvailability: createAvailabilityController(),
       comfyHistoryImages: [],
       appliedAssets: {},
       addAppliedAsset: vi.fn(),

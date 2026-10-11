@@ -1,8 +1,9 @@
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
+import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -26,6 +27,18 @@ vi.mock('../../../api/domains/workflows', () => ({
 }))
 
 describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
+  const availabilityControllers = new Set<{ dispose: () => void }>()
+  const createAvailabilityController = () => {
+    const controller = createTrialAvailabilityController(async () => ({ availability: 'present' as const }))
+    availabilityControllers.add(controller)
+    return controller
+  }
+
+  afterEach(() => {
+    availabilityControllers.forEach((controller) => controller.dispose())
+    availabilityControllers.clear()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     useGenerationStore.setState({
@@ -63,6 +76,7 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     setSeed: vi.fn(),
     selectedImg: null,
     setSelectedImg: vi.fn(),
+    trialAvailability: createAvailabilityController(),
     comfyHistoryImages: [],
     appliedAssets: {},
     addAppliedAsset: vi.fn(),

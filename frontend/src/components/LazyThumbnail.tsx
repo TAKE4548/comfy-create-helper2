@@ -7,6 +7,7 @@ export interface LazyThumbnailProps {
   className?: string
   style?: React.CSSProperties
   rootMargin?: string
+  onLoad?: () => void
   onError?: () => void
 }
 
@@ -17,6 +18,7 @@ export function LazyThumbnail({
   className = '',
   style,
   rootMargin = '0px 150px 0px 150px',
+  onLoad,
   onError,
 }: LazyThumbnailProps) {
   const [isVisible, setIsVisible] = useState(false)
@@ -63,7 +65,10 @@ export function LazyThumbnail({
           src={src}
           alt={alt}
           decoding="async"
-          onLoad={() => setIsLoaded(true)}
+          onLoad={() => {
+            setIsLoaded(true)
+            onLoad?.()
+          }}
           onError={() => {
             onError?.()
           }}

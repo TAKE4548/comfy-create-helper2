@@ -137,33 +137,25 @@ describe('connectionSlice - server generation state', () => {
     sockets[sockets.length - 1].message({ type, version, epoch: data.epoch, revision: data.revision, data })
   }
 
-  it('keeps the stored client ID and preserves a user selection made during bootstrap history loading', async () => {
-    let resolveHistory!: (value: Response) => void
-    const historyResponse = new Promise<Response>((resolve) => { resolveHistory = resolve })
+  it('does not request or merge history when applying the initial snapshot', async () => {
     const clicked = '/api/comfy/view?filename=clicked.png&subfolder=&type=output&t=clicked'
     const clientId = useGenerationStore.getState().clientId
     useGenerationStore.setState({ selectedImg: null })
+    stateResponse = snapshot(7, [job({ status: 'succeeded', session_id: clientId, outputs: [
+      { node_id: 'image', index: 0, view_url: '/initial.png', thumbnail_url: '/initial-thumb.png', availability: 'present' },
+    ] })])
     fetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/generation/state') return response(stateResponse)
       if (url === '/api/generation/upstream-queue') return response({ running: [], pending: [] })
-      if (String(url).startsWith('/api/comfy/history')) return historyResponse
       throw new Error(`Unexpected fetch: ${url}`)
     })
     const historyFetch = vi.spyOn(useGenerationStore.getState(), 'fetchHistory')
     await connect()
     expect(localStorage.getItem(LS_KEYS.CLIENT_ID)).toBe(clientId)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('8188'))).toBe(false)
-    expect(historyFetch).toHaveBeenCalledTimes(1)
-    expect(historyFetch).toHaveBeenCalledWith({ preserveSelection: true })
-    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/comfy/history'))).toBe(true))
+    expect(historyFetch).not.toHaveBeenCalled()
+    expect(useGenerationStore.getState().comfyHistoryImages).not.toContain('/initial.png')
     useGenerationStore.getState().setSelectedImg(clicked)
-    resolveHistory(response({
-      'legacy-prompt': {
-        prompt: [1, 'legacy-prompt', {}, { client_id: clientId }, []],
-        outputs: { n: { images: [{ filename: 'history.png', subfolder: '', type: 'output' }] } },
-      },
-    }))
-    await vi.waitFor(() => expect(useGenerationStore.getState().comfyHistoryImages).toContain('/api/comfy/view?filename=history.png&subfolder=&type=output&t=legacy-prompt'))
     expect(useGenerationStore.getState().selectedImg).toBe(clicked)
     expect(localStorage.getItem(LS_KEYS.SELECTED_IMG)).toBe(clicked)
   })
@@ -278,7 +270,7 @@ describe('connectionSlice - server generation state', () => {
     expect(useGenerationStore.getState().generationSnapshot?.revision).toBe(1)
   })
 
-  it('reconstructs initial succeeded history with original URLs and separates all-session from own-session images', async () => {
+  it('does not merge historical succeeded jobs from an initial snapshot', async () => {
     const own = useGenerationStore.getState().clientId
     const oldOwnUrl = 'http://localhost:8188/view?filename=own.png&subfolder=&type=output&t=legacy-prompt'
     const oldForeignUrl = 'http://localhost:8188/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign'
@@ -303,21 +295,22 @@ describe('connectionSlice - server generation state', () => {
     const state = useGenerationStore.getState()
     expect(state.comfyHistoryImages).toContain('/legacy/all.png')
     expect(state.comfyHistoryImages).toContain('/unmanaged/old.png')
-    expect(state.comfyHistoryImages).toContain('/api/comfy/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign')
-    expect(state.comfyHistoryImages).not.toContain(oldForeignUrl)
+    expect(state.comfyHistoryImages).not.toContain('/api/comfy/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign')
+    expect(state.comfyHistoryImages).toContain(oldForeignUrl)
+    expect(state.comfyHistoryImages).toContain(oldForeignUrl)
     expect(state.comfyHistoryImages).not.toContain('/api/comfy/view?filename=foreign-thumb.png')
     expect(state.comfyHistoryImages).not.toContain('/api/comfy/view?filename=missing.png&t=prompt-foreign')
     expect(state.batchImages).toContain('/legacy/own.png')
     expect(state.batchImages).toContain('/unmanaged/own.png')
-    expect(state.batchImages).toContain('/api/comfy/view?filename=own.png&subfolder=&type=output&t=prompt-own')
-    expect(state.batchImages).not.toContain(oldOwnUrl)
-    expect(state.batchImages).not.toContain(oldForeignUrl)
+    expect(state.batchImages).not.toContain('/api/comfy/view?filename=own.png&subfolder=&type=output&t=prompt-own')
+    expect(state.batchImages).toContain(oldOwnUrl)
+    expect(state.batchImages).toContain(oldForeignUrl)
     expect(state.selectedImg).toBe('/legacy/selected.png')
     expect(dispatch.mock.calls.some(([event]) => event.type === 'comfy-job-event')).toBe(false)
     useGenerationStore.setState({ filterOwnSession: true })
-    expect(useGenerationStore.getState().batchImages).not.toContain('/api/comfy/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign')
+    expect(useGenerationStore.getState().batchImages).toContain(oldForeignUrl)
     useGenerationStore.setState({ filterOwnSession: false })
-    expect(useGenerationStore.getState().comfyHistoryImages).toContain('/api/comfy/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign')
+    expect(useGenerationStore.getState().comfyHistoryImages).not.toContain('/api/comfy/view?filename=foreign.png&subfolder=&type=output&t=prompt-foreign')
   })
 
   it('does not rewrite history arrays on node/preview revisions and emits original URLs for a live own completion', async () => {

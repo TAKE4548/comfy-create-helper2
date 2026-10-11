@@ -70,7 +70,6 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
   let snapshotApplySequence = 0
   let httpRequestSequence = 0
   let queueRequestSequence = 0
-  let historyBootstrapped = false
   let lastManagedHistorySignature: string | null = null
   let lastObservedPreview: { epoch: string; jobId: string; url: string } | null = null
   const automaticResyncEpochs = new Set<string>()
@@ -153,18 +152,6 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     })
   }
 
-  const bootstrapHistoryOnce = (snapshot: GenerationSnapshot) => {
-    if (historyBootstrapped) return
-    historyBootstrapped = true
-    try {
-      void Promise.resolve(get().fetchHistory({ preserveSelection: true })).catch(() => undefined).finally(() => {
-        mergeManagedHistory(get().generationSnapshot ?? snapshot, true)
-      })
-    } catch {
-      mergeManagedHistory(snapshot, true)
-    }
-  }
-
   const applyGenerationSnapshot = (candidate: GenerationSnapshot, upstream?: UpstreamQueueView): boolean => {
     let snapshot: GenerationSnapshot
     try { snapshot = decodeGenerationSnapshot(candidate) } catch { return false }
@@ -186,6 +173,10 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     if (previous && previous.epoch !== snapshot.epoch) lastObservedPreview = null
     snapshotApplySequence++
     const autoFollowImage = notifyTransitions(previous, snapshot)
+    const completedJobs = previous?.epoch === snapshot.epoch
+      ? snapshot.jobs.filter((job) => job.status === 'succeeded' &&
+        previous.jobs.find((prior) => prior.job_id === job.job_id)?.status !== 'succeeded')
+      : []
 
     const ownActive = snapshot.jobs.filter((job) => job.session_id === clientId &&
       ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
@@ -261,8 +252,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     if (autoFollowImage) {
       try { localStorage.setItem(LS_KEYS.SELECTED_IMG, autoFollowImage.image) } catch { /* selection persistence is optional */ }
     }
-    mergeManagedHistory(snapshot)
-    bootstrapHistoryOnce(snapshot)
+    if (completedJobs.length > 0) mergeManagedHistory({ ...snapshot, jobs: completedJobs })
     try {
       if (currentPromptId) localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, currentPromptId)
       else localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)

@@ -334,7 +334,8 @@ interface TagChipEventDetail {
 - Generation snapshot/eventは version・epoch・revisionと全snapshot dataを持つ。FEは同一epochで新しいrevisionだけを採用し、epoch切替時は全体置換する。SYSTEM_STATSとVRAM_RECOVEREDの既存message形式およびSYSTEM_STATSの2.5秒配信は独立して保持する。Generation stateは可視化用の同期状態であり、全stateのブラウザー永続化やバックエンド再起動後の完全復元を意味しない。
 - 利用者session ID、通常生成group ID、Studio project ID、Studio batch IDは異なるscopeである。履歴の自session filterは表示だけに作用する。一括取消の既定scopeは全生成（Studioを含む）で、通常生成のみは追加選択scopeとする。通常生成のみの一括取消は全sessionの識別可能なnormal jobを対象にし、Studio/未分類を保持する。
 - 待機jobは取消前にpendingであること、上流ACK、成功した取消後queueでrunning/pending双方からの不在、成功したhistoryでterminal記録がないことを合わせて確認できたときだけ取消確定とする。queue不在のみ、ACKのみ、照会エラー、または実行への競合は未確認である。実行中割り込みはterminal状態を確認する。empty-allも取消前後queueが成功応答で空でありACKを得た場合だけ確定する。未確認または保護scopeによるskippedを完了扱いにしない。
-- 試行画像の原画availabilityはGalleryの既存サムネイルerror時に限って問い合わせ、画像一覧を事前に全件probeしない。照会identityはfilename/subfolder/typeで、上流hostやURLの `t` を渡さない。同一identityの同時probeは共有し、結果/error後は明示retryまたはidentity変更まで自動再照会しない。confirmed missingだけを試行履歴から除外し、Snapshotデータとサムネイルcache品質/上限は変えない。
+- 試行履歴のavailability照会はGallery rowのサムネイルload/errorを需要契機とし、一覧を事前に全件probeしない。identityはfilename/subfolder/typeで定義し、上流hostやURLの `t` を含めない。同一identityの同時probeは共有し、全identityのprobe並列数は最大2とする。availabilityは `present` / `missing` / `unknown` で扱い、上流原画の404を確認した場合だけ `missing` として試行履歴から除外する。サムネイルerror、上流原画以外のHTTP error、通信失敗・timeoutは `unknown` として履歴・選択・原画プレビューを保持する。結果確定または `unknown` 後は明示retryかidentity変更まで自動再照会しない。保存Snapshot branchは照会・除外の対象外とし、Snapshotデータとサムネイルcache品質/上限は変えない。
+- document reload epochのhistory差分同期は、persisted query復元後の非空baselineに対して一度だけ行い、BEの最新200件候補窓を対象とする。filename/subfolder/type identityで既表示項目を維持し、BE presentの未表示候補だけを追加する。上限・partial状態を含む詳細は[SPEC_GENERATE](./SPEC_GENERATE.md)を参照する。
 
 ---
 

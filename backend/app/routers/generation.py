@@ -27,6 +27,11 @@ from app.schemas.generation import (
     UpstreamQueueView,
 )
 from app.services.generation_service import GenerationService
+from app.services.residual_history import (
+    ResidualHistoryRequest,
+    ResidualHistoryResponse,
+    get_residual_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,3 +253,11 @@ async def get_image_availability(job_id: str, service: GenerationService = Depen
     except Exception:
         logger.exception("Image availability check failed for %s", job_id)
         return _error_response(503, "image_availability_unavailable", "Image availability is unknown", outcome="unconfirmed", job_id=job_id)
+
+
+@router.post("/history/residual", response_model=ResidualHistoryResponse)
+async def get_residual_generation_history(
+    payload: ResidualHistoryRequest,
+    service: GenerationService = Depends(_service),
+) -> ResidualHistoryResponse:
+    return await get_residual_history(payload, service)

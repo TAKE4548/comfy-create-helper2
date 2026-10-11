@@ -1,0 +1,30 @@
+{
+  "pbi_id": "REQ-345",
+  "date": "2026-10-12",
+  "action": "ba-audit-retry",
+  "status": "INCONCLUSIVE",
+  "configured_model_id": "qwen/qwen3.5-9b",
+  "actual_model_id": "qwen/qwen3.5-9b",
+  "inference_started": true,
+  "targets": [
+    "docs/design/REQ-345.md",
+    "docs/design/REQ-345-test-plan.md",
+    "docs/backlog/task/active/REQ-345-T1.md",
+    "docs/backlog/task/active/REQ-345-T2.md",
+    "docs/backlog/task/active/REQ-345-T3.md",
+    "docs/backlog/task/active/REQ-345-T4.md",
+    "docs/backlog/task/active/REQ-345-T5.md",
+    "docs/backlog/task/active/REQ-345-T6.md"
+  ],
+  "chunks_processed": 3,
+  "result": "Chunk processing reached final synthesis, but LM Studio stopped at the output token limit before completing the response. No complete BA audit result was produced.",
+  "audit_exit_code": 1,
+  "unload": {
+    "attempted": true,
+    "exit_code": 0,
+    "confirmed": true,
+    "result": "LM Studio reports no models loaded."
+  },
+  "implementation_started": false,
+  "tests_executed": false
+}
