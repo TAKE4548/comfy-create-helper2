@@ -69,4 +69,56 @@ describe('GenerateParallelPreview', () => {
     expect(globalKey).not.toHaveBeenCalled()
     document.removeEventListener('keydown', globalKey)
   })
+
+  it('adapts visible count dynamically according to aspect ratios (16:9, 1:1, mixed)', () => {
+    const customAR: Record<string, number> = {
+      'img-1': 16 / 9, // Landscape (~1.778, width at H=600 is ~1066.7px)
+      'img-2': 16 / 9,
+      'img-3': 1.0,    // Square (1.0, width at H=600 is 600px)
+      'img-4': 1.0,
+      'img-5': 2 / 3,  // Portrait (0.667, width at H=600 is 400px)
+      'img-6': 2 / 3,
+    }
+    const { container } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        aspectRatios={customAR}
+      />
+    )
+    // For 16:9 at H=600: 1 image is 1066.7px. Two images need 1066.7*2 + 12 = 2145.4px
+    const root = setPreviewSize(container, 1200, 600)
+    expect(root.querySelectorAll('img')).toHaveLength(1)
+
+    // With 2200px width, two 16:9 images fit
+    setPreviewSize(container, 2200, 600)
+    expect(root.querySelectorAll('img')).toHaveLength(2)
+  })
+
+  it('calculates mixed aspect ratios cleanly with uniform height', () => {
+    const mixedImages = ['img-sq', 'img-port1', 'img-port2']
+    const customAR: Record<string, number> = {
+      'img-sq': 1.0,    // 600px
+      'img-port1': 2 / 3, // 400px
+      'img-port2': 2 / 3, // 400px
+    }
+    const { container } = render(
+      <GenerateParallelPreview
+        images={mixedImages}
+        selectedImage="img-sq"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        aspectRatios={customAR}
+      />
+    )
+    // 600px + 12 + 400px = 1012px -> 2 images fit at 1020px
+    const root = setPreviewSize(container, 1020, 600)
+    expect(root.querySelectorAll('img')).toHaveLength(2)
+
+    // 600px + 12 + 400px + 12 + 400px = 1424px -> all 3 fit at 1430px
+    setPreviewSize(container, 1430, 600)
+    expect(root.querySelectorAll('img')).toHaveLength(3)
+  })
 })

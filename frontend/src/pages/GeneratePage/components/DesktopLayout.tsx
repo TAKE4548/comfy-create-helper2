@@ -20,7 +20,7 @@ import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
-import { ResourceGaugeHUD } from '../../../components/ResourceGauge/ResourceGaugeHUD'
+import { ResourceGaugeChips } from '../../../components/ResourceGauge/ResourceGaugeChips'
 import { useSystemStats } from '../../../hooks/useSystemStats'
 import { selectProgress, selectWait } from '../../../utils/generationSelectors'
 
@@ -658,8 +658,6 @@ export const DesktopLayout = ({
               <div className="w-full h-full relative overflow-hidden flex flex-col">
                 {/* Main Preview */}
                 <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none" tabIndex={0}>
-                  {/* ★ ResourceGaugeHUD をプレビューエリア右上に配置 */}
-                  <ResourceGaugeHUD />
                   {previewContent}
                   {/* Status bar */}
                   <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
@@ -717,7 +715,8 @@ export const DesktopLayout = ({
           <span className="text-[10px] text-zinc-555 bg-surface-2 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.06)] animate-pulse">他セッションで生成中...</span>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <ResourceGaugeChips />
         <div className="relative flex items-center gap-1">
           <select id="workflow-select" value={selectedWorkflowId ?? ''}
             onChange={(e) => setSelectedWorkflowId(Number(e.target.value) || null)}
