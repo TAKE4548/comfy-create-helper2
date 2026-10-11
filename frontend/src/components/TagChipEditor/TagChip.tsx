@@ -116,7 +116,7 @@ export const TagChip: React.FC<TagChipProps> = ({
 
   const handleChipClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isEditing) return;
+    if (isEditing || isDragging) return;
     const next = !isMenuOpen;
     setIsMenuOpen(next);
     setIsTranslationOpen(next);
@@ -237,11 +237,13 @@ export const TagChip: React.FC<TagChipProps> = ({
       style={style}
       tabIndex={isEditing ? -1 : 0}
       onKeyDown={handleKeyDown}
+      onClick={handleChipClick}
       className={`
-        relative flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none
-        ${isEditing ? 'bg-[#18181C] border-[#7C6FDD]' : ''}
-        ${!isEditing && enabled ? 'bg-[#1F1F25] border-[rgba(255,255,255,0.08)] text-[#E4E4E7] hover:border-[rgba(255,255,255,0.15)] focus:border-[#7C6FDD]' : ''}
+        relative flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none touch-manipulation
+        ${!isEditing && !isDragging ? "active:scale-[0.97] transition-transform before:content-[''] before:absolute before:-inset-0.5" : ''}
+        ${!isEditing && enabled ? 'bg-[#1F1F25] border-[rgba(255,255,255,0.08)] text-[#E4E4E7] [@media(hover:hover)]:hover:border-[rgba(255,255,255,0.15)] focus:border-[#7C6FDD] focus-visible:ring-1 focus-visible:ring-[#7C6FDD]' : ''}
         ${!isEditing && !enabled ? 'bg-zinc-900 border-dashed border-[rgba(255,255,255,0.05)] text-[#71717A] opacity-50 line-through' : ''}
+        ${isEditing ? 'bg-[#18181C] border-[#7C6FDD]' : ''}
       `}
       title="クリックでメニュー / ダブルクリックで編集 / Spaceで切替 / Delで削除 / Ctrl+Dで複製"
       aria-roledescription="ドラッグで並び替え可能"
@@ -250,6 +252,7 @@ export const TagChip: React.FC<TagChipProps> = ({
       {!isEditing && (
         <div
           {...dragProps}
+          onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
           className="cursor-grab text-zinc-500 hover:text-zinc-300 active:cursor-grabbing p-0.5 touch-none select-none"
           style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
           onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => e.preventDefault()}

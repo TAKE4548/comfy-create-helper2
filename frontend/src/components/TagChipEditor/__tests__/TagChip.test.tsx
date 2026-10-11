@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import { TagChip } from '../TagChip';
+import { TagChipViewer } from '../../TagChipViewer';
 import { translateApi } from '../../../api/client';
 
 vi.mock('../../../api/client', () => ({
@@ -799,5 +800,135 @@ describe('TagChip', () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
+  });
+
+  describe('REQ-338-T6: Hit-Slop and touch feedback', () => {
+    it('applies touch-manipulation, active scale, compact hit-slop, and focus ring to TagChip', () => {
+      const { container } = render(
+        <TagChip
+          id="1"
+          text="touch-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      const chipEl = container.querySelector('[data-ux-tag-chip="true"]');
+      expect(chipEl).toBeInTheDocument();
+      expect(chipEl?.className).toContain('touch-manipulation');
+      expect(chipEl?.className).toContain('active:scale-[0.97]');
+      expect(chipEl?.className).toContain('transition-transform');
+      expect(chipEl?.className).toContain('before:-inset-0.5');
+      // Must not use wide before:-inset-2 which causes overlap in gap-1.5
+      expect(chipEl?.className).not.toContain('before:-inset-2');
+      // Accessibility focus ring
+      expect(chipEl?.className).toContain('focus-visible:ring-1');
+      expect(chipEl?.className).toContain('focus-visible:ring-[#7C6FDD]');
+    });
+
+    it('opens submenu when clicking chip body / hit-slop outside text', () => {
+      const { container } = render(
+        <TagChip
+          id="1"
+          text="hitslop-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      const chipEl = container.querySelector('[data-ux-tag-chip="true"]')!;
+      fireEvent.click(chipEl);
+      expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+    });
+
+    it('does not toggle menu when clicking drag handle', () => {
+      render(
+        <TagChip
+          id="1"
+          text="drag-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      const handle = screen.getByLabelText('並び替えハンドル');
+      fireEvent.click(handle);
+      expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
+    });
+
+    it('disables active scale and hit-slop while in editing mode', () => {
+      render(
+        <TagChip
+          id="1"
+          text="editing-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      fireEvent.doubleClick(screen.getByText('editing-tag'));
+      const chipEl = screen.getByRole('textbox').closest('[data-ux-tag-chip="true"]');
+      expect(chipEl?.className).not.toContain('before:-inset-0.5');
+      expect(chipEl?.className).not.toContain('active:scale-[0.97]');
+    });
+
+    it('TagChipViewer applies compact hit-slop, touch-manipulation, and handles proximity hit snap', () => {
+      const onTagClick = vi.fn();
+      const { container } = render(
+        <TagChipViewer tags={['cat', 'dog']} onTagClick={onTagClick} />
+      );
+
+      const chips = container.querySelectorAll('[data-ux-tag-chip="true"]');
+      expect(chips).toHaveLength(2);
+      expect(chips[0].className).toContain('touch-manipulation');
+      expect(chips[0].className).toContain('active:scale-[0.97]');
+      expect(chips[0].className).toContain('before:-inset-0.5');
+      expect(chips[0].className).not.toContain('before:-inset-2');
+
+      // Proximity Hit Snap via container onTouchEnd
+      const chipsContainer = container.querySelector('.flex.flex-wrap')!;
+
+      vi.spyOn(chips[0], 'getBoundingClientRect').mockReturnValue({
+        left: 10,
+        right: 40,
+        top: 10,
+        bottom: 30,
+        width: 30,
+        height: 20,
+        x: 10,
+        y: 10,
+        toJSON: () => {},
+      });
+      vi.spyOn(chips[1], 'getBoundingClientRect').mockReturnValue({
+        left: 50,
+        right: 80,
+        top: 10,
+        bottom: 30,
+        width: 30,
+        height: 20,
+        x: 50,
+        y: 10,
+        toJSON: () => {},
+      });
+
+      // Touch near first chip (x=44, y=20 - in the gap between chip 0 and chip 1, closer to chip 0)
+      fireEvent.touchEnd(chipsContainer, {
+        changedTouches: [{ clientX: 44, clientY: 20 }],
+      });
+
+      expect(onTagClick).toHaveBeenCalledWith('cat');
+    });
   });
 });

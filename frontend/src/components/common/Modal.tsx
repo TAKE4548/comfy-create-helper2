@@ -25,6 +25,27 @@ const sizeClasses: Record<ModalSize, string> = {
   full: 'max-w-full',
 }
 
+let activeModalCount = 0
+let originalOverflow: string | null = null
+
+function lockBodyScroll() {
+  if (typeof document === 'undefined') return
+  if (activeModalCount === 0) {
+    originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
+  activeModalCount += 1
+}
+
+function unlockBodyScroll() {
+  if (typeof document === 'undefined') return
+  activeModalCount = Math.max(0, activeModalCount - 1)
+  if (activeModalCount === 0) {
+    document.body.style.overflow = originalOverflow ?? ''
+    originalOverflow = null
+  }
+}
+
 export function Modal({
   isOpen,
   onClose,
@@ -39,6 +60,15 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+
+  useLayoutEffect(() => {
+    if (!isOpen) return
+
+    lockBodyScroll()
+    return () => {
+      unlockBodyScroll()
+    }
+  }, [isOpen])
 
   useLayoutEffect(() => {
     if (!isOpen) return
@@ -91,7 +121,7 @@ export function Modal({
 
   return (
     <div
-      className={`modal-backdrop animate-fade-in items-end md:items-center p-0 md:p-4 ${className}`}
+      className={`modal-backdrop animate-fade-in items-end md:items-center p-0 md:p-4 overscroll-contain ${className}`}
       onClick={(event) => {
         if (event.target === event.currentTarget && closeOnBackdropClick && !event.defaultPrevented) {
           onClose()

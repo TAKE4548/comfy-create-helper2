@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import { useAppLifecycleSync } from '../../../hooks/useAppLifecycleSync'
 import {
   Library, Loader2, Redo2, Settings, ImageOff, Download, Plus, Undo2, X,
   ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
@@ -132,6 +133,58 @@ export const MobileLayout = ({
   const setRoleTextMode = useGenerationStore((state) => state.setRoleTextMode)
   const vramWaitStatus = useGenerationStore((state) => state.vramWaitStatus)
   const cancelVramWait = useGenerationStore((state) => state.cancelVramWait)
+
+  useAppLifecycleSync({ debounceMs: 0 })
+
+  const [isInputFocused, setIsInputFocused] = useState(false)
+
+  const isTextInput = (target: unknown): target is HTMLElement => {
+    if (!target || !(target instanceof HTMLElement)) return false
+    const tag = target.tagName.toLowerCase()
+    return tag === 'input' || tag === 'textarea' || target.isContentEditable
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+
+    const handleFocusIn = (e: FocusEvent) => {
+      if (isTextInput(e.target)) {
+        setIsInputFocused(true)
+      }
+    }
+
+    const handleFocusOut = (e: FocusEvent) => {
+      if (!isTextInput(e.relatedTarget)) {
+        setIsInputFocused(false)
+      }
+    }
+
+    const handleOrientationOrResize = () => {
+      const activeEl = document.activeElement
+      if (!isTextInput(activeEl)) {
+        setIsInputFocused(false)
+      }
+    }
+
+    document.addEventListener('focusin', handleFocusIn)
+    document.addEventListener('focusout', handleFocusOut)
+    window.addEventListener('orientationchange', handleOrientationOrResize)
+    window.addEventListener('resize', handleOrientationOrResize)
+    const vv = window.visualViewport
+    if (vv) {
+      vv.addEventListener('resize', handleOrientationOrResize)
+    }
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn)
+      document.removeEventListener('focusout', handleFocusOut)
+      window.removeEventListener('orientationchange', handleOrientationOrResize)
+      window.removeEventListener('resize', handleOrientationOrResize)
+      if (vv) {
+        vv.removeEventListener('resize', handleOrientationOrResize)
+      }
+    }
+  }, [])
 
   const handleChipsChange = useCallback((role: string, chips: any) => {
     setPromptChips(role, chips)
@@ -279,9 +332,22 @@ export const MobileLayout = ({
   const isNegative = activePromptTabMapping?.role?.toLowerCase().includes('negative')
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)] pb-[calc(54px+env(safe-area-inset-bottom)+72px)] bg-surface relative w-full">
+    <div
+      className="flex flex-col h-[100dvh] overflow-y-auto overscroll-contain overscroll-y-contain scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)] pb-[calc(54px+env(safe-area-inset-bottom)+72px)] bg-surface relative w-full"
+      style={{ overscrollBehaviorY: 'contain' }}
+      onFocus={(e) => {
+        if (isTextInput(e.target)) {
+          setIsInputFocused(true)
+        }
+      }}
+      onBlur={(e) => {
+        if (!isTextInput(e.relatedTarget)) {
+          setIsInputFocused(false)
+        }
+      }}
+    >
       {/* Header */}
-      <div className="flex flex-col gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
+      <div className="flex flex-col gap-2 px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold text-zinc-200">Generate</h1>
@@ -348,7 +414,7 @@ export const MobileLayout = ({
       </div>
 
       {/* Progress Line */}
-      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-4 py-2 flex flex-col gap-2">
+      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-3 py-2.5 flex flex-col gap-2">
         {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
         {vramWaitStatus?.isWaiting ? (
           <div className="flex items-center justify-between text-[10px]">
@@ -497,7 +563,7 @@ export const MobileLayout = ({
         )}
       </div>
 
-      <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-2">
+      <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-2.5">
         {([
           ['prompt', 'プロンプト'],
           ['parameters', 'パラメータ'],
@@ -522,7 +588,7 @@ export const MobileLayout = ({
 
       {/* Multi-Set Tab Bar (Mobile) */}
       {selectedWorkflowId && (
-        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-4 py-2.5 space-y-2.5">
+        <div className="flex flex-col border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-3 py-2.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Profiles</span>
             <div className="flex items-center gap-2.5">
@@ -596,7 +662,7 @@ export const MobileLayout = ({
 
       {/* Mobile Prompt Tabs */}
       {textMappings.length > 0 && (
-        <div className="px-4 py-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
+        <div className="px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
           <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-1 no-scrollbar">
             {textMappings.map((m) => (
               <button key={m.id} type="button" onClick={() => setActivePromptTab(m.role || '')}
@@ -608,11 +674,11 @@ export const MobileLayout = ({
         </div>
       )}
 
-      {textMappings.length === 0 && !selectedWorkflowId && <div className="px-4 py-6">{renderUploadZone()}</div>}
+      {textMappings.length === 0 && !selectedWorkflowId && <div className="px-3 py-4">{renderUploadZone()}</div>}
 
       {/* Active Prompt Textarea (Mobile) */}
       {textMappings.length > 0 && activePromptTab && activePromptTabMapping && (
-        <div className="px-4 py-3 space-y-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
+        <div className="px-3 py-2.5 space-y-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -696,7 +762,7 @@ export const MobileLayout = ({
       {/* Mobile Settings & Parameters */}
       <section id="mobile-parameters-panel" data-testid="mobile-parameters-panel" aria-label="パラメータ"
         hidden={mobileSegment !== 'parameters'} style={{ display: mobileSegment === 'parameters' ? undefined : 'none' }}>
-      <div className="px-4 py-3 space-y-4">
+      <div className="px-3 py-2.5 space-y-2.5">
         <AuditPanel
           auditOpen={auditOpen}
           setAuditOpen={setAuditOpen}
@@ -767,7 +833,13 @@ export const MobileLayout = ({
           </button>
         </div>
       )}
-      <div data-testid="mobile-action-bar" className="fixed bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))] left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-4 py-2 flex items-center gap-3">
+      <div
+        data-testid="mobile-action-bar"
+        className={`fixed bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))] left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-3 py-2.5 items-center gap-2 ${
+          isInputFocused ? 'hidden pointer-events-none' : 'flex'
+        }`}
+        style={{ maxHeight: '40vh' }}
+      >
         <button id="generate-btn-mobile" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
           className="flex-1 min-h-[44px] flex items-center justify-center gap-2 py-2 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all active:scale-95">
           <Zap size={16} />{isGenerating ? 'Generate Batch (キュー追加)' : 'Generate Batch'}
@@ -783,6 +855,38 @@ export const MobileLayout = ({
           Queue {(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}
         </button>
       </div>
+
+      {/* Tag Suggest Accessory Bar */}
+      {isInputFocused && (
+        <div
+          data-testid="mobile-tag-suggest-bar"
+          aria-label="タグサジェストバー"
+          className="fixed bottom-[calc(env(keyboard-inset-height,0px))] left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-[rgba(255,255,255,0.1)] px-3 py-2 flex items-center gap-2 overflow-x-auto shadow-lg"
+        >
+          <span className="text-[10px] text-zinc-400 font-medium shrink-0">Tags:</span>
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {['masterpiece', 'best quality', '1girl', 'solo', 'detailed'].map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                }}
+                onClick={() => {
+                  if (activePromptTab && activePromptTabMapping) {
+                    const currentVal = paramValues[activePromptTabMapping.role!] ?? ''
+                    const newVal = currentVal ? `${currentVal}, ${tag}` : tag
+                    setParamValues({ ...paramValues, [activePromptTabMapping.role!]: newVal })
+                  }
+                }}
+                className="text-xs px-2.5 py-1 rounded-full bg-surface-2 border border-white/10 text-zinc-200 hover:text-accent-green hover:border-accent-green/40 whitespace-nowrap min-h-[32px] flex items-center"
+              >
+                +{tag}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <GenerateModalsOverlay
         state={state}

@@ -462,4 +462,103 @@ describe('MobileLayout - TagChipEditor Integration', () => {
 
     expect(screen.getByRole('button', { name: 'キュー管理: 7件' })).toBeInTheDocument()
   })
+
+  describe('REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone', () => {
+    it('applies 100dvh, overscroll-behavior-y contain, and compressed spacing tokens', () => {
+      const state = createMockState()
+      const { container } = render(<MobileLayout state={state} />)
+
+      const root = container.firstElementChild as HTMLElement
+      expect(root).toHaveClass('h-[100dvh]', 'flex', 'flex-col')
+      expect(root.style.overscrollBehaviorY).toBe('contain')
+
+      // Check outer padding token px-3 py-2.5 on header and action bar
+      const header = container.querySelector('.bg-surface-2')
+      expect(header).toHaveClass('px-3', 'py-2.5')
+
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar).toHaveClass('px-3', 'py-2.5', 'gap-2')
+    })
+
+    it('retracts Action Bar and displays Tag Suggest Bar upon input focus, restoring on blur', () => {
+      const setParamValues = vi.fn()
+      const state = createMockState({
+        textMappings: [
+          { id: 1, role: 'Main_Positive_Prompt', display_name: 'Positive', is_active: true }
+        ],
+        activePromptTab: 'Main_Positive_Prompt',
+        paramValues: {
+          Main_Positive_Prompt: '1girl'
+        },
+        setParamValues
+      })
+
+      const { container } = render(<MobileLayout state={state} />)
+
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar).toHaveClass('flex')
+      expect(actionBar).not.toHaveClass('hidden')
+      expect(screen.queryByTestId('mobile-tag-suggest-bar')).not.toBeInTheDocument()
+
+      // Focus an input field
+      const input = container.querySelector('input') || container.querySelector('textarea')
+      expect(input).not.toBeNull()
+
+      fireEvent.focus(input!)
+
+      // Action Bar should be hidden and Tag Suggest Bar should be displayed
+      expect(actionBar).toHaveClass('hidden', 'pointer-events-none')
+      const tagSuggestBar = screen.getByTestId('mobile-tag-suggest-bar')
+      expect(tagSuggestBar).toBeInTheDocument()
+
+      // Click a tag suggestion button
+      const tagBtn = screen.getByRole('button', { name: '+masterpiece' })
+      expect(tagBtn).toBeInTheDocument()
+      fireEvent.click(tagBtn)
+      expect(setParamValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Main_Positive_Prompt: '1girl, masterpiece'
+        })
+      )
+
+      // Blur input
+      fireEvent.blur(input!)
+
+      expect(actionBar).toHaveClass('flex')
+      expect(actionBar).not.toHaveClass('hidden')
+      expect(screen.queryByTestId('mobile-tag-suggest-bar')).not.toBeInTheDocument()
+    })
+
+    it('enforces Natural Zone ergonomics with maxHeight 40vh and 44px touch targets', () => {
+      const state = createMockState()
+      render(<MobileLayout state={state} />)
+
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar.style.maxHeight).toBe('40vh')
+
+      const generateBtn = screen.getByRole('button', { name: /Generate Batch/ })
+      expect(generateBtn).toHaveClass('min-h-[44px]')
+
+      const saveBtn = screen.getByRole('button', { name: 'Snapshot保存' })
+      expect(saveBtn).toHaveClass('min-h-[44px]')
+
+      const queueBtn = screen.getByRole('button', { name: /キュー管理/ })
+      expect(queueBtn).toHaveClass('min-h-[44px]')
+    })
+
+    it('resets input retreat on orientationchange and resize if activeElement is not an input', () => {
+      const { container } = render(<MobileLayout state={createMockState()} />)
+      const actionBar = screen.getByTestId('mobile-action-bar')
+
+      const input = container.querySelector('input')
+      if (input) {
+        fireEvent.focus(input)
+        expect(actionBar).toHaveClass('hidden')
+
+        // Trigger orientationchange
+        fireEvent(window, new Event('orientationchange'))
+        expect(actionBar).toHaveClass('flex')
+      }
+    })
+  })
 })

@@ -192,4 +192,69 @@ describe('Common Modal component', () => {
     expect(handleClose).not.toHaveBeenCalled()
     expect(input).toHaveValue('Updated text')
   })
+
+  it('locks body scroll when opened and restores original overflow on close and unmount', () => {
+    document.body.style.overflow = ''
+    const { rerender, unmount } = render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+
+    expect(document.body.style.overflow).toBe('hidden')
+
+    rerender(
+      <Modal isOpen={false} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    expect(document.body.style.overflow).toBe('')
+
+    rerender(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+
+    unmount()
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('preserves body scroll lock when multiple modals are open and restores only when all are closed', () => {
+    document.body.style.overflow = ''
+    const { unmount: unmountModal1 } = render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal 1</div>
+      </Modal>,
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+
+    const { unmount: unmountModal2 } = render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal 2</div>
+      </Modal>,
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+
+    unmountModal2()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    unmountModal1()
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('includes overscroll-contain on both the backdrop and dialog container', () => {
+    const { container } = render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop?.className).toContain('overscroll-contain')
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.className).toContain('overscroll-contain')
+  })
 })

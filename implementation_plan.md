@@ -1,145 +1,126 @@
-# REQ-336 実装計画 (Prompt Surgeon ワークフローマッピング新アーキテクチャ統合)
+# REQ-338: Prompt Surgeon モバイル最適化および全ビュー共通基盤改修 実装計画書
 
-## Architectural Overview & Objective
-本PBIは、ワークフローマッピングの肥大化および多段階サンプラ（3段以上）やリージョン分割等の高度なComfyUIワークフロー適応不全を解決するため、「セマンティックロール（普遍的親定義）× ステージ（ユーザー拡張可能な適用工程）」の2軸直交正規化を行い、交差エンティティ（バリアント）による動的Role導出と完全データ駆動型アダプティブ配線UIを導入します。
+## 1. Executive Summary
+本PBIは、スマートフォン・タブレット端末（360px〜768px未満）におけるUI要素の押し潰れ・親指タップ不能・Safariツールバー潜水・キーボード遮蔽・背面連動スクロールといった課題を抜本的に解決するとともに、デスクトップ（PC）の生産性をも同時に向上させる「全ビュー共通基盤（Part 1）」と「モバイル特化仕様（Part 2）」の二大再編改修を実施する計画です。
 
 ---
 
-## Task Dependency & DAG Visualization
+## 2. Proposed Changes
+
+### PART 1: 全ビュー共通基盤 (Desktop / Tablet / Mobile 共通)
+
+#### [LOCAL NEW] [frontend/src/components/common/StepperSlider.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/StepperSlider.tsx)
+- 粗調整スライダーに [-] [+] ステッパーボタンと直接数値入力を統合した共通コンポーネント。
+- 数値表示に `tabular-nums font-mono` を徹底し、桁揺れ・レイアウトシフトを抑止。
+- プリセット値（0.50, 0.70, 1.00, 1.20 等）のクイックピル表示をサポート。
+
+#### [LOCAL NEW] [frontend/src/components/common/__tests__/StepperSlider.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/StepperSlider.test.tsx)
+- ステッパー増減、直接入力バリデーション、最小値・最大値クランプ、キーボード操作の単体テスト。
+
+#### [LOCAL NEW] [frontend/src/components/common/LightboxModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/LightboxModal.tsx)
+- 全画面固定の画像検査モーダルコンポーネント。`Escape` キーでのクローズをサポート。
+
+#### [LOCAL NEW] [frontend/src/components/common/CurtainCompareView.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/CurtainCompareView.tsx)
+- マウスホイールによる等倍ズーム（100%〜400%）およびドラッグパン操作。
+- 2画像選択時の垂直スプリットカーテン比較（中央バーのドラッグによる境界比率 0%〜100% の無段階変更）。
+- [Space] 比較切り替え、[K] キープ、[D] 破棄ショートカット対応。
+
+#### [LOCAL NEW] [frontend/src/components/common/__tests__/CurtainCompareView.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/CurtainCompareView.test.tsx)
+- ホイールズーム、パン座標更新、カーテン境界変更、キーボードイベントの単体テスト。
+
+#### [LOCAL NEW] [frontend/src/hooks/useAppLifecycleSync.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/useAppLifecycleSync.ts)
+- `document.visibilitychange` および `window.focus` イベントを監視する共通フック。
+- スリープ・タブ復帰時に古い Half-Open ソケットを破棄して `systemWsService.resume()` を実行し、並行して `generationApi.getState()` を即座にフェッチして 0 秒で最新の生成スナップショット（Epoch / Revision）を反映。
+
+#### [LOCAL NEW] [frontend/src/hooks/__tests__/useAppLifecycleSync.test.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/__tests__/useAppLifecycleSync.test.ts)
+- `visibilitychange` (state: visible) および `focus` イベント発火時のソケット再開と REST API 状態フェッチの並行実行・リカバリ検証。
+
+#### [LOCAL MODIFY] [frontend/src/components/common/Modal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/Modal.tsx)
+- モーダル展開時の Body Scroll Lock (`body { overflow: hidden }`) 適用および参照カウント式の復元処理。
+- ダイアログ内部コンテナへの `overscroll-behavior: contain` 徹底と、下部決定ボタンの Sticky Footer 化。
+
+#### [LOCAL NEW] [frontend/src/components/common/__tests__/Modal.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/Modal.test.tsx)
+- モーダル開閉時の `document.body.style.overflow` 設定・復元、ネスト展開時の Lock 排他制御テスト。
+
+---
+
+### PART 2: モバイル特化仕様 (Mobile-Only: < 768px)
+
+#### [LOCAL NEW] [frontend/src/components/common/BottomSheet.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/BottomSheet.tsx)
+- 画面幅 768px 未満専用のボトムシート（Drawer）コンポーネント。
+- 上部ドラッグハンドルによる下スワイプ即クローズ（移動量 > 80px）と親指ゾーン Sticky Footer。
+
+#### [LOCAL NEW] [frontend/src/components/common/__tests__/BottomSheet.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/__tests__/BottomSheet.test.tsx)
+- 開閉、タッチスワイプ（下スワイプクローズ）、Sticky Footer レンダリングの単体テスト。
+
+#### [LOCAL MODIFY] [frontend/src/components/TagChipViewer.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipViewer.tsx)
+- チップ間の見た目の余白（`gap-1.5`）と高密度な表示を完全に維持。
+- 上下左右の判定重複を避けるコンパクトな Hit-Slop と `touch-action: manipulation`（300ms 遅延防止）を付与。
+
+#### [LOCAL MODIFY] [frontend/src/components/TagChipEditor/TagChip.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/TagChipEditor/TagChip.tsx)
+- チップおよびボタンに自然な近接吸着・適正 Hit-Slop と `active:scale-[0.97]` タッチフィードバックを適用。密度の低下（スカスカ感）を抑止。
+
+#### [LOCAL MODIFY] [frontend/src/pages/GeneratePage/components/MobileLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileLayout.tsx)
+- ルートコンテナの `100dvh` 動的追従とセーフエリアクリアランス（`pb-[calc(env(safe-area-inset-bottom)+12px)]`）。
+- 画面外枠 `px-3 py-2.5`、カード内 `p-2.5`、グリッド `gap-2` による情報密度圧縮。
+- 入力欄フォーカス時の固定 Action Bar 自動退避（`hidden`）およびキーボード直上タグサジェストバー吸着。
+- 下部 40% Natural Zone への Generate、選別、キュー管理アクション集約。
+- 最外層スクロールへの `overscroll-behavior-y: contain` 付与による Pull-to-refresh 暴発防止。
+- 端末回転（縦 ↔ 横）時のセーフエリア・ボタン配置の堅牢性維持。
+
+#### [LOCAL NEW] [frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx)
+- 360px モバイル環境における余白クラス、Action Bar 退避、Natural Zone 配置、回転適応のテスト。
+
+---
+
+## 3. Task Dependency Visualization & Parallel Design
 
 ```mermaid
 graph TD
-  REQ-336-T1["REQ-336-T1: Backend 2軸正規化モデル & 冪等Migration (Step 029)"]
-  REQ-336-T2["REQ-336-T2: 動的Role導出 & Cascade置換サービス & StageMaster API"]
-  REQ-336-T3["REQ-336-T3: MappingMaster/Variant CRUD API改修 & Scanner連携"]
-  REQ-336-T4["REQ-336-T4: Frontend 型定義拡張 & ComfyUI ObjectInfo Autocomplete Hook"]
-  REQ-336-T5["REQ-336-T5: Settings画面 統合マッピング管理UI & 統合編集Modal"]
-  REQ-336-T6["REQ-336-T6: ワークフロー配線画面 完全データ駆動型アダプティブ配線UI"]
-  REQ-336-T7["REQ-336-T7: 外部PNG履歴チェーンフォールバック & 結合E2E/RedTeam検証"]
+  REQ-338-T1["REQ-338-T1: Hybrid Stepper Slider コンポーネント (並列可)"]
+  REQ-338-T2["REQ-338-T2: Lightbox & カーテン比較 (並列可)"]
+  REQ-338-T3["REQ-338-T3: スリープ復帰0秒同期 useAppLifecycleSync (並列可)"]
+  REQ-338-T4["REQ-338-T4: Modal Scroll Lock & Sticky Footer (並列可)"]
+  REQ-338-T5["REQ-338-T5: モバイルボトムシート Drawer (並列可)"]
+  REQ-338-T6["REQ-338-T6: タグチップ Hit-Slop 拡張 (並列可)"]
+  REQ-338-T7["REQ-338-T7: MobileLayout 統合 (集約タスク)"]
 
-  REQ-336-T1 --> REQ-336-T2
-  REQ-336-T1 --> REQ-336-T3
-  REQ-336-T1 --> REQ-336-T4
-  REQ-336-T2 --> REQ-336-T4
-  REQ-336-T3 --> REQ-336-T5
-  REQ-336-T4 --> REQ-336-T5
-  REQ-336-T3 --> REQ-336-T6
-  REQ-336-T4 --> REQ-336-T6
-  REQ-336-T2 --> REQ-336-T7
-  REQ-336-T5 --> REQ-336-T7
-  REQ-336-T6 --> REQ-336-T7
+  REQ-338-T3 --> REQ-338-T7
+  REQ-338-T4 --> REQ-338-T7
+  REQ-338-T5 --> REQ-338-T7
+  REQ-338-T6 --> REQ-338-T7
 ```
 
-### 並列実行可能性 (Parallel Execution Strategy)
-- **Phase 1 (Foundation)**: `REQ-336-T1` (単独実行・スキーマ基礎)
-- **Phase 2 (Core Services & Client Foundation - 並列実行可能)**:
-  - `REQ-336-T2` (Backend Cascade & Stage API)
-  - `REQ-336-T3` (Backend Master/Variant API & Scanner)
-  - `REQ-336-T4` (Frontend Types & ObjectInfo Hook)
-- **Phase 3 (UI Implementation - 並列実行可能)**:
-  - `REQ-336-T5` (Settings 統合マッピング管理画面)
-  - `REQ-336-T6` (WorkflowConnection アダプティブ配線画面)
-- **Phase 4 (Integration & Gate 3 Baseline)**:
-  - `REQ-336-T7` (外部PNG履歴フォールバック・全AC照合・Red Teaming)
+### 並行実行性分析
+- **第1フェーズ (並列実行可能)**: `REQ-338-T1`, `REQ-338-T2`, `REQ-338-T3`, `REQ-338-T4`, `REQ-338-T5`, `REQ-338-T6` の6タスクは互いに依存せず、完全に独立して実装・単体テスト可能です。
+- **第2フェーズ (集約統合)**: `REQ-338-T7` は、T3（ライフサイクルフック）、T4/T5（モーダル・ボトムシート基盤）、T6（Hit-Slop タグ）の成果物を `MobileLayout.tsx` に統合します。
+- **DAG 最大深度**: 2層（ボトルネックなし、高並行性達成）。
 
 ---
 
-## Proposed Changes & File Impact
+## 4. Verification Plan
 
-#### [LOCAL MODIFY] [backend/app/models.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/models.py)
-- `MappingGroupMaster`, `StageMaster`, `MappingVariant` モデルの追加。
-- `MappingMaster` への `group_id`, `base_key`, `base_title_patterns` カラムおよびリレーションシップの追加。
-- `WorkflowMapping` への `variant_id` カラム追加。
-
-#### [LOCAL MODIFY] [backend/app/migrations/steps.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/migrations/steps.py)
-- `step_029_workflow_mapping_v2_normalization` の追加。
-- 既存 `mapping_master` からの冪等かつ安全なデータ分解・移行とロールバック保護。
-
-#### [LOCAL MODIFY] [backend/app/seeder.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/seeder.py)
-- 初期シード時のグループ、ステージ、親マスタ、バリアントの投入処理改修。
-
-#### [LOCAL NEW] [backend/app/services/mapping_service.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/mapping_service.py)
-- Cascade Rename プレビュー算出および排他ロック下トランザクション一括置換。
-- 3重削除ガードロジックおよび旧接尾辞履歴（上限10件）管理。
-
-#### [LOCAL NEW] [backend/app/schemas/mapping.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/schemas/mapping.py)
-- Group, Stage, Master, Variant, CascadePreview, CascadeRenameRequest の Pydantic スキーマ定義。
-
-#### [LOCAL NEW] [backend/app/routers/stage_masters.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/stage_masters.py)
-- StageMaster CRUD、Cascade Preview / Rename エンドポイント。
-
-#### [LOCAL NEW] [backend/app/routers/mapping_groups.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/mapping_groups.py)
-- MappingGroupMaster CRUD エンドポイント。
-
-#### [LOCAL MODIFY] [backend/app/routers/mapping_masters.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/mapping_masters.py)
-- 親マスターとバリアント一覧を統合管理するエンドポイント改修（後方互換性維持）。
-
-#### [LOCAL MODIFY] [backend/app/services/workflow_scanner.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/services/workflow_scanner.py)
-- バリアント単位スキャンおよび StageMaster 検索キーワード合致判定の実装。
-
-#### [LOCAL MODIFY] [frontend/src/api/types.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/api/types.ts)
-- `MappingGroupMaster`, `StageMaster`, `MappingMasterV2`, `MappingVariant`, `CascadePreviewResponse` 等の TypeScript 型定義追加。
-
-#### [LOCAL NEW] [frontend/src/hooks/useComfyNodeTypes.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/useComfyNodeTypes.ts)
-- `/api/comfy/object_info` キャッシュ連動のインクリメンタル・オートコンプリート候補抽出フック。
-
-#### [LOCAL MODIFY] [frontend/src/pages/SettingsPage/components/MappingMasterSection.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/MappingMasterSection.tsx)
-- 大カテゴリタブ切り替え、バリアント同居テーブル行表示。
-
-#### [LOCAL NEW] [frontend/src/components/MappingMasterEditModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/MappingMasterEditModal.tsx)
-- 親共通設定・チップ入力（Class Types / 検索パターン）・バリアント統合編集モーダル。
-
-#### [LOCAL NEW] [frontend/src/components/StageManagerModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/StageManagerModal.tsx)
-- ステージ追加・編集・Cascadeプレビュー確認ダイアログ・3重削除ガード。
-
-#### [LOCAL MODIFY] [frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx)
-- アダプティブ配線UIの統合。
-
-#### [LOCAL NEW] [frontend/src/components/AdaptiveWorkflowWiring.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/AdaptiveWorkflowWiring.tsx)
-- アクティブステージ動的タブ展開、合致ノード0件ステージの自動非表示UI。
-
-#### [LOCAL NEW] [frontend/src/utils/workflowAdaptiveStageDetector.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/workflowAdaptiveStageDetector.ts)
-- ワークフローメタデータと StageMaster キーワード照合によるアクティブステージ判定。
-
-#### [LOCAL MODIFY] [frontend/src/utils/workflowParamInjector.ts](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/utils/workflowParamInjector.ts)
-- 外部PNG画像メタデータの `previous_suffixes` 履歴チェーンおよび `base_key` フォールバック解決。
-
-#### [LOCAL NEW] [backend/tests/test_req336_e2e_integration.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/test_req336_e2e_integration.py)
-- 全ACライフサイクルおよび Red Teaming 4シナリオの結合テスト。
+### Automated Baseline 3-Gate Verification
+1. **Gate 1: Static Typecheck Baseline**
+   - コマンド: `npm --prefix frontend run typecheck`
+   - 期待値: 0 errors (Exit code 0)
+2. **Gate 2: Full Test Suite Baseline**
+   - コマンド: `npm --prefix frontend test`
+   - 期待値: 全テスト PASS (Exit code 0)
+3. **Gate 3: Scenario & Red Teaming (AC 100% 準拠)**
+   - 各 Task 単体テスト（T1〜T7）の全件 PASS
+   - Red Team 異常系テスト（スライダー境界値、オフライン復帰、複数モーダル Lock 排他、高速スワイプ）の全件 PASS
 
 ---
 
-## Trade-off Disclosure (技術的トレードオフの開示)
+## 5. Trade-off Disclosure (トレードオフ開示)
 
-1. **DB内完全置換 (Cascade Rename) vs エイリアス永続保持**:
-   - **検討した代替案**: ステージ接尾辞変更時に旧Role名をエイリアステーブルに永久保持し、実行時に動的リダイレクトする手法。
-   - **採用案と理由**: エイリアス保持はコード内に無限のフォールバック分岐と技術的負債を残すため、DB内データ（プリセット・スナップショット・バリアント）は単一トランザクションで100%最新Role名に一括置換する方針を採用。これにより実行時参照が常に $O(1)$ で完了し、シンプルなコードベースを維持できる。
-   - **トレードオフ**: 接尾辞変更時にトランザクション排他ロックを伴うため、大量のプリセットが存在する場合は数ミリ秒のロックが発生する。事前プレビューダイアログの提示と確認トグルにより安全性を担保する。
-
-2. **外部PNG画像の履歴チェーン (上限10件) vs 無制限履歴**:
-   - **検討した代替案**: 過去の旧接尾辞を無制限に追跡する履歴テーブルの構築。
-   - **採用案と理由**: 外部PNG画像はDB外に存在するため一括置換できないが、実運用上タイポ修正やサフィックス変更が1つのステージで10回を超えることは極めて稀。`previous_suffixes` JSON配列に上限10件で直近履歴を収め、上限超過時は最古の履歴を切り捨て、`base_key` 分割によるグレイスフル解決へフォールバックさせる。
-   - **トレードオフ**: 10世代以上前の超長期画像でかつ非標準サフィックスの場合、`base_key` 解決となりステージ特有のパラメータ復元がデフォルト値になる可能性があるが、DB肥大化と探索オーバーヘッドを確実に防ぐ。
-
-3. **動的Role導出 (Computed Property) vs DBカラム物理保存**:
-   - **検討した代替案**: `mapping_variants` に結合後のRole名をカラムとして保存し、ステージ変更時に全バリアント行を UPDATE する手法。
-   - **採用案と理由**: 単方向プロパティ導出（`base_key + suffix` または `custom_role_override`）を採用。`workflow_mappings` は数値の `variant_id` で結合されているため、Role名変更に伴う配線切断が物理的に発生しない。
-   - **トレードオフ**: SQLクエリ上で直接 Role 文字列によるフィルタリングを行う際は JOIN が必要となるが、ORMモデルのリレーションおよびインデックスによりパフォーマンス影響は皆無である。
-
----
-
-## Acceptance Criteria Mapping
-
-| AC ID | 対象タスク | 検証手法 |
-|---|---|---|
-| AC-1 | REQ-336-T1, T7 | `test_req336_models_migration.py` による2軸正規化・既存データ整合性・冪等性テスト |
-| AC-2 | REQ-336-T5 | `MappingMasterSection.req336.test.tsx` による大カテゴリタブ絞り込み・バリアント同居行テスト |
-| AC-3 | REQ-336-T5 | `MappingMasterSection.req336.test.tsx` によるチップ入力・全バリアント一元反映・プレビューテスト |
-| AC-4 | REQ-336-T1, T2 | `test_req336_models_migration.py` による `computed_role` 単方向導出および一意性テスト |
-| AC-5 | REQ-336-T2, T5 | `test_req336_cascade_service.py` によるプレビュー確認およびトランザクション一括置換テスト |
-| AC-6 | REQ-336-T2, T3 | `test_req336_stage_api.py` によるシステム既定・参照中削除ブロックおよび非活性化連動テスト |
-| AC-7 | REQ-336-T6 | `WorkflowAdaptiveStaging.test.tsx` による未知ステージ追加とワークフロー自動マッチングテスト |
-| AC-8 | REQ-336-T6 | `WorkflowAdaptiveStaging.test.tsx` による合致0件ステージ自動非表示・空行ゼロテスト |
-| AC-9 | REQ-336-T7 | `test_req336_e2e_integration.py` による外部PNG履歴チェーン解決およびグレイスフル解決テスト |
-| AC-10 | REQ-336-T4, T5 | `useComfyNodeTypes.test.ts` による `/api/comfy/object_info` オートコンプリートおよび非同期手入力テスト |
-
+1. **共通基盤化 vs モバイル個別実装の分離コスト**:
+   - スライダーや Lightbox、モーダル基盤を全ビュー共通基盤として昇格させることで、PC 版にも恩恵が波及する一方、PC 側の既存レイアウト（ParamPanel, GeneratePage）との統合テストが必要になります。
+   - **判定**: 既存の `Modal.tsx` の互換性を 100% 維持しつつ Body Scroll Lock と Sticky Footer を付与し、既存コードへの波及リスクを最小化します。
+2. **タッチ判定 Hit-Slop と要素近接衝突**:
+   - `before:-inset-2` による 40px タップ領域拡張を単純適用すると、密集するタグチップ間で判定が重複し、意図しないタグがタップされるリスクがあります。一方、単に gap を広げると情報密度が低下してスカスカになってしまいます。
+   - **判定**: チップ間の見た目の余白（`gap-1.5`）と高密度な表示は完全に維持します。静的な矩形拡張による重複を避け、重複のないコンパクトな Hit-Slop とタッチポイントへの自然な近接判定吸着（および `touch-manipulation` + `active:scale-[0.97]`）を適用し、密集度とタップ精度の両立を実現します。
+3. **IME キーボード検知のブラウザ差異**:
+   - iOS Safari と Android Chrome で仮想キーボード起動時の `window.visualViewport` 挙動や `resize` イベントのタイミングが異なります。
+   - **判定**: 単純な Viewport リサイズ判定に依存せず、input / textarea の `focus` / `blur` イベント駆動と `visualViewport.height` のハイブリッド検知を適用し、環境依存の誤作動を防止します。
