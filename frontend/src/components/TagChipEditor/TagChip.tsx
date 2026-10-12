@@ -240,7 +240,8 @@ export const TagChip: React.FC<TagChipProps> = ({
       onClick={handleChipClick}
       className={`
         relative flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors select-none outline-none touch-manipulation
-        ${!isEditing && !isDragging ? "active:scale-[0.97] transition-transform before:content-[''] before:absolute before:-inset-0.5" : ''}
+        ${!isEditing && !isDragging ? "before:content-[''] before:absolute before:-inset-0.5 before:z-0" : ''}
+        ${!isEditing && !isDragging && !isMenuOpen ? 'active:scale-[0.97] transition-transform' : ''}
         ${!isEditing && enabled ? 'bg-[#1F1F25] border-[rgba(255,255,255,0.08)] text-[#E4E4E7] [@media(hover:hover)]:hover:border-[rgba(255,255,255,0.15)] focus:border-[#7C6FDD] focus-visible:ring-1 focus-visible:ring-[#7C6FDD]' : ''}
         ${!isEditing && !enabled ? 'bg-zinc-900 border-dashed border-[rgba(255,255,255,0.05)] text-[#71717A] opacity-50 line-through' : ''}
         ${isEditing ? 'bg-[#18181C] border-[#7C6FDD]' : ''}
@@ -253,7 +254,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         <div
           {...dragProps}
           onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
-          className="cursor-grab text-zinc-500 hover:text-zinc-300 active:cursor-grabbing p-0.5 touch-none select-none"
+          className="relative z-10 cursor-grab text-zinc-500 hover:text-zinc-300 active:cursor-grabbing p-0.5 touch-none select-none"
           style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
           onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => e.preventDefault()}
           title="ドラッグして並び替え"
@@ -278,7 +279,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         <span
           onDoubleClick={handleDoubleClick}
           onClick={handleChipClick}
-          className="cursor-pointer flex-grow"
+          className="relative z-10 cursor-pointer flex-grow"
         >
           {text}
         </span>
@@ -291,7 +292,7 @@ export const TagChip: React.FC<TagChipProps> = ({
           e.stopPropagation();
           onDelete(id);
         }}
-        className="text-zinc-500 hover:text-zinc-300 rounded p-0.5 transition-colors focus:outline-none focus:ring-1 focus:ring-zinc-400"
+        className="relative z-10 text-zinc-500 hover:text-zinc-300 rounded p-0.5 transition-colors focus:outline-none focus:ring-1 focus:ring-zinc-400"
         aria-label={`タグ ${text} を削除`}
       >
         <X size={13} />

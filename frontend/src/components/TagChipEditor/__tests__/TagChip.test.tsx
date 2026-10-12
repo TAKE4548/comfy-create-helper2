@@ -110,9 +110,11 @@ describe('TagChip', () => {
       />
     );
 
+    const callsBeforeClick = mockOnDelete.mock.calls.length;
     const deleteBtn = screen.getByRole('button', { name: /タグ deletable-tag を削除/ });
     fireEvent.click(deleteBtn);
 
+    expect(mockOnDelete).toHaveBeenCalledTimes(callsBeforeClick + 1);
     expect(mockOnDelete).toHaveBeenCalledWith('1');
   });
 
@@ -822,6 +824,7 @@ describe('TagChip', () => {
       expect(chipEl?.className).toContain('active:scale-[0.97]');
       expect(chipEl?.className).toContain('transition-transform');
       expect(chipEl?.className).toContain('before:-inset-0.5');
+      expect(chipEl?.className).toContain('before:z-0');
       // Must not use wide before:-inset-2 which causes overlap in gap-1.5
       expect(chipEl?.className).not.toContain('before:-inset-2');
       // Accessibility focus ring
@@ -845,6 +848,59 @@ describe('TagChip', () => {
       const chipEl = container.querySelector('[data-ux-tag-chip="true"]')!;
       fireEvent.click(chipEl);
       expect(screen.getByTestId('translation-card')).toBeInTheDocument();
+      expect(chipEl.className).toContain('before:-inset-0.5');
+      expect(chipEl.className).not.toContain('active:scale-[0.97]');
+    });
+
+    it('keeps the drag handle, text, and delete button above the hit-slop layer', () => {
+      render(
+        <TagChip
+          id="layered"
+          text="layered-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      expect(screen.getByLabelText('並び替えハンドル').className).toContain('relative z-10');
+      expect(screen.getByText('layered-tag').className).toContain('relative z-10');
+      expect(screen.getByRole('button', { name: 'タグ layered-tag を削除' }).className).toContain('relative z-10');
+    });
+
+    it('keeps the submenu open while step buttons and the enabled toggle are used', () => {
+      const onEdit = vi.fn();
+      const InteractiveTagChip = () => {
+        const [text, setText] = useState('(interactive:1.0)');
+        return (
+          <TagChip
+            id="interactive"
+            text={text}
+            enabled={true}
+            onEdit={(id, nextText) => {
+              onEdit(id, nextText);
+              setText(nextText);
+            }}
+            onDelete={mockOnDelete}
+            onToggle={mockOnToggle}
+            onDuplicate={mockOnDuplicate}
+          />
+        );
+      };
+      render(<InteractiveTagChip />);
+
+      fireEvent.click(screen.getByText('(interactive:1.0)'));
+      fireEvent.click(screen.getByRole('button', { name: '+0.1' }));
+      fireEvent.click(screen.getByRole('button', { name: '+0.1' }));
+      expect(onEdit).toHaveBeenNthCalledWith(1, 'interactive', '(interactive:1.1)');
+      expect(onEdit).toHaveBeenNthCalledWith(2, 'interactive', '(interactive:1.2)');
+      expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '有効' }));
+      expect(mockOnToggle).toHaveBeenCalledTimes(1);
+      expect(mockOnToggle).toHaveBeenCalledWith('interactive');
+      expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
     });
 
     it('does not toggle menu when clicking drag handle', () => {

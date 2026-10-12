@@ -1,0 +1,81 @@
+{
+  "pbi_id": "REQ-357",
+  "audit_date_jst": "2026-10-13",
+  "action": "ba-audit",
+  "model_id": "qwen/qwen3.5-9b",
+  "parameters": "9.0B",
+  "quantization": "Q6_K",
+  "targets": [
+    "docs/design/REQ-357.md",
+    "docs/design/REQ-357-test-plan.md",
+    "docs/backlog/task/active/REQ-357-T1.md",
+    "docs/backlog/task/active/REQ-357-T2.md"
+  ],
+  "settings": {
+    "context_length": 32768,
+    "sandbox_permissions": "require_escalated",
+    "reasoning_effort_required": "none",
+    "reasoning_effort_observed": null
+  },
+  "runtime": {
+    "required": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0 (skill contract)",
+    "observed_version": null,
+    "unavailable_reason": "Adapter CLI stdout did not expose runtime versions or reasoning-control evidence."
+  },
+  "chunks": {
+    "target_files": 4,
+    "inference_chunks": null,
+    "unavailable_reason": "Adapter stdout did not report inference chunk count."
+  },
+  "elapsed_seconds": null,
+  "elapsed_unavailable_reason": "Audit-specific total elapsed time was not emitted by the adapter; the command completed.",
+  "cli_exit_code": 0,
+  "original_verdict": "CRITICAL FLAWS DETECTED",
+  "cleanup": {
+    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+    "sandbox_permissions": "require_escalated",
+    "exit_code": 0,
+    "observed": "LM Studio reports no models loaded.",
+    "all_gpu_memory_free_claim": false
+  },
+  "findings": [
+    {
+      "id": "z-index",
+      "finding": "Audit treated existing source excerpts as proposed implementation and questioned stacking.",
+      "disposition": "Clarified pre-change excerpts and added planned pseudo z-0/relative z-10 and split active/hit-slop conditions. Negative z-index proposal not adopted."
+    },
+    {
+      "id": "state",
+      "finding": "Audit suggested onReorder callback and potential backend/state work.",
+      "disposition": "Verified actual upstream contracts are onChipsChange/onChange. Added order/output verification, no invented callback/API changes."
+    },
+    {
+      "id": "sensors",
+      "finding": "Audit asserted unified PointerSensor and missing drag-distance calculation.",
+      "disposition": "Incorrect for this repository. Added exact 25-line MouseSensor8/TouchSensor5/KeyboardSensor source excerpt; no new distance logic."
+    },
+    {
+      "id": "menu-context",
+      "finding": "Audit suggested fixed root or preserve-3d.",
+      "disposition": "Unsubstantiated. Retained non-menu-active ancestor transform condition and actual rect/target verification."
+    },
+    {
+      "id": "translation-overlay",
+      "finding": "Translation card may physically cover menu.",
+      "disposition": "Already in plan. Retained card shown/hidden hit-target comparison and additional design if outside T1 surface."
+    },
+    {
+      "id": "jsdom",
+      "finding": "Audit questioned unit/full test exit0 vs real-browser acceptance.",
+      "disposition": "Plan already required real browser. Added explicit unit/full success does not satisfy AC acceptance."
+    },
+    {
+      "id": "hit-slop",
+      "finding": "Audit requested precise external pseudo-element point.",
+      "disposition": "Added left-1/central-y and top-1/central-x corrected by computed inset/zoom; extension-in delegates to body, extension-out blank has no body action."
+    }
+  ],
+  "post_audit_clarifications": true,
+  "reaudit_performed": false,
+  "review_gate": "Human design review required; original CRITICAL verdict remains disclosed."
+}
