@@ -280,6 +280,7 @@ frontend/src/store/
 2. LoRA スタックノードの動的展開・余剰キークリア
 3. バイパス対象ノードのバイパス処理
 4. legacy global Seedの従来処理と、専用`seed` mappingの確定処理を分離する。専用Seedはslotごとに値/modeを解決し、固定時はbase + 0始まりbatch index、ランダム時は各jobの32bit値を生成する。同期親子は親の実値を共有する。専用Seedは全バッチの範囲・metadata・対応graphを検証し、全件が有効な場合だけ投入する（境界外や曖昧な設定は要求全体を事前拒否）。
+   - 実入力名は`param_name`、続いて登録済み`fallback_param_names`の順に既存own inputから解決する。seed mappingでは暗黙の`value` fallbackや未登録keyの追加をしない。解決不能または選択keyがgraph referenceの場合は、ComfyUIへのPOST前に要求全体を拒否する。初期表示と履歴記録もこの解決済みkeyを使う。
 
 ### 5-2. 生成前バイパス処理およびスキーマ整合性保証 (REQ-230)
 

@@ -85,6 +85,30 @@ describe('prepareSeedBatch', () => {
     expect(() => validateSeedBatch({ workflow: workflow({ ...a, role: null }), paramValues: {}, batchSize: 1 })).toThrow(/role/i)
   })
 
+  it('resolves registered fallback inputs and rejects missing or conflicting destinations', () => {
+    const a = mapping('a')
+    a.fallback_param_names = ['noise_seed']
+    const noiseOnly = { ...workflow(a), json_body: { [a.node_id]: { inputs: { noise_seed: 0 } } } }
+    const params = setSeedModeForMapping(a, values(['a', '1']), 'random')
+    const result = prepareSeedBatch({ workflow: noiseOnly, paramValues: params, batchSize: 3, randomUint32: vi.fn().mockReturnValueOnce(11).mockReturnValueOnce(22).mockReturnValueOnce(33) })
+    expect(result.map(item => item.seedsBySlot['master:1:variant:1'])).toEqual([11, 22, 33])
+    expect(result.map(item => item.actualParamValues.a)).toEqual(['11', '22', '33'])
+
+    expect(() => validateSeedBatch({ workflow: { ...noiseOnly, json_body: { [a.node_id]: { inputs: { other: 0 } } } }, paramValues: params, batchSize: 1 })).toThrow(/node/)
+
+    const b = mapping('b', a.node_id, 2)
+    b.param_name = 'noise_seed'
+    const aliases = { ...workflow(a, b), json_body: { [a.node_id]: { inputs: { noise_seed: 0 } } } }
+    expect(() => validateSeedBatch({ workflow: aliases, paramValues: values(['a', '1'], ['b', '2']), batchSize: 1 })).toThrow(/conflicting seed graph destination/)
+  })
+
+  it('rejects a graph reference at the primary even when a scalar fallback exists', () => {
+    const a = mapping('a')
+    a.fallback_param_names = ['noise_seed']
+    const source = { ...workflow(a), json_body: { [a.node_id]: { inputs: { seed: ['5', 0], noise_seed: 9 } } } }
+    expect(() => validateSeedBatch({ workflow: source, paramValues: values(['a', '1']), batchSize: 1 })).toThrow(/reference/i)
+  })
+
   it('rejects seed sync cycles, mixed types, and duplicate parents', () => {
     const a = mapping('a'); const b = mapping('b', 'b', 2); const c = mapping('c', 'c', 3)
     const group = (master_role: string, slave_roles: string[]) => ({ id: 1, workflow_id: 1, name: 'sync', master_role, slave_roles, is_enabled: true, created_at: '' })

@@ -12379,6 +12379,18 @@
           "node_id": {
             "type": "string",
             "title": "Node Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Variant Id"
           }
         },
         "type": "object",
@@ -12401,6 +12413,18 @@
           "node_id": {
             "type": "string",
             "title": "Node Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Variant Id"
           },
           "role": {
             "anyOf": [
@@ -12445,6 +12469,20 @@
               }
             ],
             "title": "Display Name"
+          },
+          "fallback_param_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Param Names"
           }
         },
         "type": "object",

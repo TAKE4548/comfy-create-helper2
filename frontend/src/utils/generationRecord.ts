@@ -1,5 +1,6 @@
 import type { Workflow, WorkflowMapping } from '../api/types'
 import type { AppliedAsset } from '../store/types'
+import { resolveSeedInputKey } from './seedInputResolver'
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 export interface CapturedField {
@@ -35,9 +36,10 @@ function capture(mapping: WorkflowMapping, injected: Record<string, unknown>, su
   const raw = (prompt ? injected : submitted)[mapping.node_id]
   const node = object(raw) ? raw : undefined
   const inputs = node && object(node.inputs) ? node.inputs : undefined
-  const key = inputs && mapping.param_name != null && inputs[mapping.param_name] !== undefined
-    ? mapping.param_name : inputs && inputs.value !== undefined ? 'value' : mapping.param_name || (mapping.role === 'Sampler_Seed' ? 'seed' : 'value')
-  const value = mapping.input_type === 'lora_stack' ? inputs : inputs?.[key]
+  const resolvedSeedKey = mapping.input_type === 'seed' ? resolveSeedInputKey(mapping, inputs) : null
+  const key = resolvedSeedKey ?? (inputs && mapping.param_name != null && inputs[mapping.param_name] !== undefined
+    ? mapping.param_name : inputs && inputs.value !== undefined ? 'value' : mapping.param_name || (mapping.role === 'Sampler_Seed' ? 'seed' : 'value'))
+  const value = mapping.input_type === 'lora_stack' ? inputs : mapping.input_type === 'seed' ? (resolvedSeedKey ? inputs?.[resolvedSeedKey] : undefined) : inputs?.[key]
   const recorded = prompt ? typeof value === 'string' : json(value)
   const wasBypassed = object(injected[mapping.node_id]) && !object(submitted[mapping.node_id])
   const status = !recorded ? (wasBypassed ? 'bypassed' : 'missing') : wasBypassed ? 'bypassed' : 'submitted'

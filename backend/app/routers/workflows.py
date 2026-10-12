@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.schemas.workflow import parse_fallback_param_names
 from app.services.workflow_scanner import scan_workflow, scan_workflow_variants
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -84,6 +85,9 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 param_name=m.effective_master.param_name if m.effective_master else (m.master.param_name if m.master else None),
                 input_type=m.effective_master.input_type if m.effective_master else (m.master.input_type if m.master else None),
                 display_name=m.effective_master.display_name if m.effective_master else (m.master.display_name if m.master else None),
+                fallback_param_names=parse_fallback_param_names(
+                    m.effective_master.fallback_param_names if m.effective_master else (m.master.fallback_param_names if m.master else None)
+                ),
             )
             for m in wf.mappings
         ],

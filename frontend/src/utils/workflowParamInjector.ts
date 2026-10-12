@@ -5,6 +5,7 @@
 
 import type { Workflow, StageMaster } from '../api/types'
 import { parseSeedValue, SEED_MODES_KEY, seedSlotKey } from './seedModel'
+import { resolveSeedInputKey } from './seedInputResolver'
 
 export interface WorkflowNode {
   inputs?: Record<string, any>
@@ -130,6 +131,11 @@ export function getInitialParams(workflow: Workflow, stages?: StageMaster[]): Re
       if (m.input_type === 'lora_stack') {
         const node = m.node_id ? wfJson[m.node_id] : null
         Object.assign(init, extractLoraStackParams(node, resolvedRole))
+      } else if (m.input_type === 'seed') {
+        const node = m.node_id ? wfJson[m.node_id] : null
+        const key = resolveSeedInputKey(m, node?.inputs)
+        const value = key ? node?.inputs?.[key] : undefined
+        init[resolvedRole] = value !== undefined && !Array.isArray(value) ? String(value) : ''
       } else {
         const node = m.node_id ? wfJson[m.node_id] : null
         init[resolvedRole] = m.param_name ? extractGeneralParam(node, m.param_name) : ''
@@ -247,9 +253,9 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
     : (workflow.json_body || {})
 
   const defaultParams = getInitialParams(workflow, stages)
+  const dedicatedSeedMappings = workflow.mappings.filter((m) => m.input_type === 'seed')
   const healedInputs: Record<string, string> = { ...inputParamValues }
-  const dedicatedSeedMappings = workflow.mappings.filter((m) => m.input_type === 'seed' && m.role)
-  const dedicatedSeedRoles = new Set(dedicatedSeedMappings.map((m) => m.role as string))
+  const dedicatedSeedRoles = new Set(dedicatedSeedMappings.map((m) => m.role).filter(Boolean) as string[])
   if (stages && stages.length > 0) {
     const knownRoles = workflow.mappings.map((m) => m.role).filter(Boolean) as string[]
     // Dedicated seed values may follow only an exact role or one unambiguous history chain.
@@ -285,6 +291,27 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
     }
   }
   const paramValues = { ...defaultParams, ...healedInputs }
+  const preparedSeeds = new Map<object, { key: string; seed: number }>()
+  for (const m of dedicatedSeedMappings) {
+    const label = m.display_name || m.role || 'Seed'
+    const node = m.node_id ? wfJson[m.node_id] as WorkflowNode | undefined : undefined
+    if (!m.role || !m.node_id || !node || !node.inputs) {
+      throw new Error(`${label}: seed用workflow node/inputsがありません (node ${m.node_id || '(なし)'})`)
+    }
+    const key = resolveSeedInputKey(m, node.inputs)
+    if (!key) {
+      const candidates = [m.param_name, ...(m.fallback_param_names ?? [])].filter(Boolean).join(', ') || '(なし)'
+      throw new Error(`${label}: seed入力を解決できません (node ${m.node_id}, 候補: ${candidates})`)
+    }
+    if (Array.isArray(node.inputs[key])) {
+      throw new Error(`${label}: seed入力がworkflow参照です (node ${m.node_id}.${key})`)
+    }
+    const slotKey = seedSlotKey(m)
+    const rawSeed = resolvedSeeds ? resolvedSeeds[slotKey] : paramValues[m.role]
+    if (rawSeed === undefined) throw new Error(`${label}: seed値がありません (resolved seed未指定; node ${m.node_id}.${key})`)
+    const seed = parseSeedValue(String(rawSeed), label)
+    preparedSeeds.set(m, { key, seed })
+  }
 
   workflow.mappings.forEach((m) => {
     if (!m.role || !m.node_id) return
@@ -295,16 +322,9 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
     if (m.input_type === 'lora_stack') {
       injectLoraStackParams(node.inputs, m.role, paramValues, node.class_type)
     } else if (m.input_type === 'seed') {
-      const slotKey = seedSlotKey(m)
-      const rawSeed = resolvedSeeds
-        ? resolvedSeeds[slotKey]
-        : paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
-      if (rawSeed === undefined) throw new Error(`Missing resolved seed for slot ${slotKey}`)
-      const seed = parseSeedValue(String(rawSeed), m.display_name || m.role)
-      const targetParam = m.param_name && node.inputs[m.param_name] !== undefined
-        ? m.param_name
-        : node.inputs.value !== undefined ? 'value' : m.param_name || 'seed'
-      node.inputs[targetParam] = seed
+      const prepared = preparedSeeds.get(m)
+      if (!prepared) throw new Error(`${m.display_name || m.role}: seed入力の準備に失敗しました`)
+      node.inputs[prepared.key] = prepared.seed
     } else if (m.role !== 'Sampler_Seed' || !seedOptions) {
       const targetParam = m.param_name || 'value'
       const rawVal = paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]

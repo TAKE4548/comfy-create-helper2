@@ -194,6 +194,7 @@ export interface WorkflowMapping {
   variant_id?: number | null
   role: string | null
   param_name: string | null
+  fallback_param_names?: string[] | null
   input_type: string | null
   display_name: string | null
 }

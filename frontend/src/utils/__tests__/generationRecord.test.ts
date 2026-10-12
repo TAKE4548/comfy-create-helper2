@@ -40,6 +40,24 @@ describe('buildGenerationRecord', () => {
     ;(graph['6'].inputs.text as { x: unknown[] }).x.push('changed')
     expect(record.parameters[5].value).toEqual({ x: ['2', 0] })
   })
+  it('captures a dedicated seed from its resolved submitted input while preserving its declared primary', () => {
+    const seed = mapping(1, 'seed', 'detail_seed')
+    seed.param_name = 'seed'
+    seed.fallback_param_names = ['noise_seed']
+    const record = buildGenerationRecord(workflow([seed]), {}, { '1': { class_type: 'KSampler', inputs: { noise_seed: 8361 } } }, {})
+    expect(record.parameters[0]).toMatchObject({ param_name: 'seed', recorded: true, value: 8361, status: 'submitted' })
+  })
+  it('returns bypassed or missing for unavailable dedicated seed inputs without throwing', () => {
+    const bypass = mapping(1, 'seed', 'seed-bypass')
+    bypass.param_name = 'seed'; bypass.fallback_param_names = ['noise_seed']
+    const missing = mapping(2, 'seed', 'seed-missing')
+    missing.param_name = 'seed'; missing.fallback_param_names = ['noise_seed']
+    const record = buildGenerationRecord(workflow([bypass, missing]), { '1': node(42) }, { '2': { inputs: {} } }, {})
+    expect(record.parameters[0]).toMatchObject({ recorded: false, value: null, status: 'bypassed' })
+    expect(record.parameters[1]).toMatchObject({ recorded: false, value: null, status: 'missing' })
+    const empty = buildGenerationRecord(workflow([missing]), {}, {}, {})
+    expect(empty.parameters[0]).toMatchObject({ recorded: false, value: null, status: 'missing' })
+  })
   it('keeps graph references and separate LoRA model/clip strengths, without fabricating bypassed parameters', () => {
     const lora = mapping(1, 'lora_stack'); const ref = mapping(2, 'select'); const bypass = mapping(3, 'float')
     const graph = { '1': { class_type: 'LoRALoader', inputs: { model: ['7', 0], strength_model: 0.8, strength_clip: 0.5 } }, '2': node(['1', 0]) }

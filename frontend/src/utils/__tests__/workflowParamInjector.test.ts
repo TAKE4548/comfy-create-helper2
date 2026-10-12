@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   extractGeneralParam,
   extractLoraStackParams,
@@ -8,6 +8,8 @@ import {
   injectWorkflowParams,
 } from '../workflowParamInjector'
 import type { Workflow } from '../../../api/types'
+import { setSeedModeForMapping } from '../seedModel'
+import { prepareSeedBatch } from '../seedBatch'
 
 describe('workflowParamInjector', () => {
   describe('extractGeneralParam', () => {
@@ -314,6 +316,59 @@ describe('workflowParamInjector', () => {
       expect((dedicatedWorkflow.json_body as any)['1'].inputs.nested.keep).toBe(true)
     })
 
+    it('injects resolved values only into registered noise_seed inputs and validates every seed before mutation', () => {
+      const first = { ...mockWorkflow.mappings[0], input_type: 'seed', fallback_param_names: ['noise_seed'] }
+      const second = { ...first, id: 4, master_id: 4, node_id: '4', role: 'Sampler_Seed_Rough', param_name: 'seed' }
+      const graph = { ...mockWorkflow.json_body, '1': { inputs: { noise_seed: 1 } }, '4': { inputs: { noise_seed: 2 } } }
+      const dedicated: Workflow = { ...mockWorkflow, json_body: graph, mappings: [first, second] }
+      const original = JSON.stringify(graph)
+      const result = injectWorkflowParams({
+        workflow: dedicated,
+        paramValues: { Sampler_Seed: '11', Sampler_Seed_Rough: '22' },
+        resolvedSeeds: { 'master:1:variant:legacy': 11, 'master:4:variant:legacy': 22 },
+      })
+      expect((result['1'] as any).inputs).toEqual({ noise_seed: 11 })
+      expect((result['4'] as any).inputs).toEqual({ noise_seed: 22 })
+      expect(JSON.stringify(graph)).toBe(original)
+
+      const invalidGraph = { ...graph, '4': { inputs: { other: 2 } } }
+      const invalid: Workflow = { ...dedicated, json_body: invalidGraph }
+      const before = JSON.stringify(invalidGraph)
+      expect(() => injectWorkflowParams({ workflow: invalid, paramValues: { Sampler_Seed: '11', Sampler_Seed_Rough: '22' }, cloneJson: false })).toThrow(/seed入力/)
+      expect(JSON.stringify(invalidGraph)).toBe(before)
+    })
+
+    it('reads dedicated seed defaults through fallback inputs and returns empty values for missing or referenced inputs', () => {
+      const primary = { ...mockWorkflow.mappings[0], input_type: 'seed', fallback_param_names: ['noise_seed'] }
+      const missing = { ...primary, id: 4, master_id: 4, node_id: '4', role: 'missing_seed' }
+      const reference = { ...primary, id: 5, master_id: 5, node_id: '5', role: 'reference_seed' }
+      const source: Workflow = {
+        ...mockWorkflow,
+        mappings: [primary, missing, reference],
+        json_body: { ...mockWorkflow.json_body, '1': { inputs: { noise_seed: 71 } }, '4': { inputs: { other: 1 } }, '5': { inputs: { noise_seed: ['9', 0] } } },
+      }
+      expect(getInitialParams(source)).toMatchObject({ Sampler_Seed: '71', missing_seed: '', reference_seed: '' })
+    })
+
+    it('maps deterministic random batch draws 11, 22, and 33 to numeric graph inputs', () => {
+      const seeds = ['A', 'B', 'C'].map((role, index) => ({
+        ...mockWorkflow.mappings[0], id: index + 1, master_id: index + 1, node_id: String(index + 1), role: `seed_${role}`,
+        input_type: 'seed', fallback_param_names: ['noise_seed'],
+      }))
+      const source: Workflow = {
+        ...mockWorkflow,
+        mappings: seeds,
+        json_body: Object.fromEntries(seeds.map(seed => [seed.node_id, { inputs: { noise_seed: 0 } }])),
+      }
+      let params: Record<string, string> = { seed_A: '1', seed_B: '2', seed_C: '3' }
+      seeds.forEach(seed => { params = setSeedModeForMapping(seed, params, 'random') })
+      const draw = vi.fn().mockReturnValueOnce(11).mockReturnValueOnce(22).mockReturnValueOnce(33)
+      const batch = prepareSeedBatch({ workflow: source, paramValues: params, batchSize: 1, randomUint32: draw })
+      const result = injectWorkflowParams({ workflow: source, paramValues: batch[0].actualParamValues, resolvedSeeds: batch[0].seedsBySlot })
+      expect(seeds.map(seed => (result[seed.node_id] as any).inputs.noise_seed)).toEqual([11, 22, 33])
+      expect(seeds.every(seed => (result[seed.node_id] as any).inputs.seed === undefined)).toBe(true)
+    })
+
     it('requires resolved values for generation and validates saved dedicated seed values', () => {
       const dedicatedWorkflow: Workflow = {
         ...mockWorkflow,
@@ -338,7 +393,7 @@ describe('workflowParamInjector', () => {
       const historicalWorkflow: Workflow = {
         ...mockWorkflow,
         json_body: { ...mockWorkflow.json_body, '1': { inputs: { value: 8 } } },
-        mappings: [{ ...mockWorkflow.mappings[0], role: 'Sampler_Seed_v2', input_type: 'seed' }],
+        mappings: [{ ...mockWorkflow.mappings[0], role: 'Sampler_Seed_v2', input_type: 'seed', fallback_param_names: ['value'] }],
       }
       const stage = { suffix: '_v2', previous_suffixes: ['_v1'] } as any
       const result = injectWorkflowParams({

@@ -2,6 +2,7 @@ import type { Workflow, WorkflowMapping, ParamSyncGroup } from '../api/types'
 import {
   UINT32_MAX, readSeedSettings, resolveSeedSyncRoots, seedSlotKey,
 } from './seedModel'
+import { resolveSeedInputKey } from './seedInputResolver'
 
 export interface ResolvedSeedItem {
   seedsBySlot: Record<string, number>
@@ -39,9 +40,11 @@ function collectTargets(workflow: Workflow): SeedTarget[] {
     const node = workflow.json_body[mapping.node_id]
     if (!isRecord(node) || !isRecord(node.inputs)) throw new Error(`${label}: workflow node ${mapping.node_id} or inputs are missing`)
     const inputs = node.inputs
-    const key = mapping.param_name && Object.prototype.hasOwnProperty.call(inputs, mapping.param_name)
-      ? mapping.param_name
-      : Object.prototype.hasOwnProperty.call(inputs, 'value') ? 'value' : mapping.param_name || 'value'
+    const key = resolveSeedInputKey(mapping, inputs)
+    if (!key) {
+      const candidates = [mapping.param_name, ...(mapping.fallback_param_names ?? [])].filter(Boolean).join(', ') || '(なし)'
+      throw new Error(`${label}: seed入力を解決できません (node ${mapping.node_id}, 候補: ${candidates})`)
+    }
     const target = `${mapping.node_id}\u0000${key}`
     if (targets.has(target)) throw new Error(`${label}: conflicting seed graph destination ${mapping.node_id}.${key}`)
     targets.add(target)

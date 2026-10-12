@@ -1,8 +1,9 @@
 """Workflow and MappingMaster Pydantic schemas."""
 
+import json
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 # ─── MappingMaster ────────────────────────────────────────────────
@@ -31,6 +32,19 @@ class MappingMasterReorder(BaseModel):
     ordered_ids: list[int]
 
 
+def parse_fallback_param_names(value: Any) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("fallback_param_names must be valid JSON") from exc
+    if not isinstance(value, list):
+        raise ValueError("fallback_param_names must be a list or null")
+    return value
+
+
 # ─── WorkflowMapping ─────────────────────────────────────────────
 
 class WorkflowMappingRead(BaseModel):
@@ -43,6 +57,12 @@ class WorkflowMappingRead(BaseModel):
     param_name: Optional[str] = None
     input_type: Optional[str] = None
     display_name: Optional[str] = None
+    fallback_param_names: Optional[list[str]] = None
+
+    @field_validator("fallback_param_names", mode="before")
+    @classmethod
+    def parse_fallback_param_names(cls, value: Any) -> Optional[list[str]]:
+        return parse_fallback_param_names(value)
 
 
 class WorkflowMappingCreate(BaseModel):
