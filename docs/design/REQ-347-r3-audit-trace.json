@@ -1,0 +1,178 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "scroll-root-contract-r3",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "target_count": 13,
+  "targets": [
+    {
+      "sha256": "D03D48C852A70FCC985BB6E5E9472912BCFE8111479BDA5AB7BE9AB7E0EF6F4B",
+      "bytes": 20353,
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "sha256": "80EE1BF3A4964208126C5EFBB64A9556139264A2CE8F2571AA1C1B6445C25913",
+      "bytes": 10227,
+      "path": "docs/design/REQ-347-test-plan.md"
+    },
+    {
+      "sha256": "CF82BB0C306170F7EF52D25E6231B4E4DA93A4E205AD2B788C55D43BFA0630A2",
+      "bytes": 5578,
+      "path": "docs/backlog/task/active/REQ-347-T1.md"
+    },
+    {
+      "sha256": "C318DEE578F6CBE2259D063DAD9F385F71FA44BEB9755D1C6F225FBB36B38FB0",
+      "bytes": 7147,
+      "path": "docs/backlog/task/active/REQ-347-T2.md"
+    },
+    {
+      "sha256": "AAA10D656D5CCF91DE6C3B0A2E2B7F59785A42A8B4CCDC4FBD91D4A3A5C3B1C1",
+      "bytes": 8969,
+      "path": "docs/backlog/task/active/REQ-347-T3.md"
+    },
+    {
+      "sha256": "7CE58F3B084A8681AC6688B6F7F5C3A3EE057D7319F0578AB2C961BB79B405AA",
+      "bytes": 8471,
+      "path": "docs/backlog/task/active/REQ-347-T4.md"
+    },
+    {
+      "sha256": "F5442629818B76727751BACFC4D27710712CA98E59792C49416B65803C5BF73D",
+      "bytes": 9587,
+      "path": "docs/backlog/task/active/REQ-347-T5.md"
+    },
+    {
+      "sha256": "4BD73E2AED9EC1770C082E2EBEE699447E3A79DF422EB2D12333541D1FBDC669",
+      "bytes": 6734,
+      "path": "docs/backlog/task/active/REQ-347-T6.md"
+    },
+    {
+      "sha256": "792C6C00538DDB2DBB32087D344707BE08D3ACD4D7C885CFE14F52236302E8FC",
+      "bytes": 8268,
+      "path": "docs/backlog/task/active/REQ-347-T7.md"
+    },
+    {
+      "sha256": "7AAA875D5E7766C5320E309CEB67C0CC194DA333625ED75F14CB213FAD79EBE7",
+      "bytes": 10066,
+      "path": "docs/backlog/task/active/REQ-347-T8.md"
+    },
+    {
+      "sha256": "D1ACB5A565DF93B5A69BFB635AB5915EF0BACD6DA64B50E6B457FBE6397D3B0A",
+      "bytes": 7350,
+      "path": "docs/backlog/task/active/REQ-347-T9.md"
+    },
+    {
+      "sha256": "F09948B061ACD70DBA4AFBDF945F20DA674C039BDE8DB41519671056F74FB87B",
+      "bytes": 5815,
+      "path": "docs/backlog/task/active/REQ-347-T10.md"
+    },
+    {
+      "sha256": "4C6CE7A56F3B8762D122BCF6CB5C66A236E104FA5B25FD2F10C8A918F6804A63",
+      "bytes": 10370,
+      "path": "implementation_plan.md"
+    }
+  ],
+  "started_at_utc": "2026-10-12T03:36:32.1458198Z",
+  "previous_trace": "docs/design/REQ-347-r2-audit-trace.json",
+  "previous_raw_verdict": "FAIL (実装着手禁止)",
+  "log_path": "docs/design/REQ-347-r3-audit.log",
+  "unload_log": "docs/design/REQ-347-r3-unload.log",
+  "response_path": "docs/design/REQ-347-audit-response.md",
+  "implementation_acceptance": "not-verified",
+  "execution_exit_code": 0,
+  "unload_exit_code": 0,
+  "elapsed_seconds": 477.335,
+  "finished_at_utc": "2026-10-12T03:44:29.5132756Z",
+  "chunks": 4,
+  "audit_timeout_seconds_per_inference": 300,
+  "post_audit_reporting_audited": false,
+  "unload_evidence": "REQ-347-r3-unload.log: LM Studio reports no models loaded",
+  "architect_disposition": "root/CSS/query/legacy/empty/jsdom指摘は既存契約と前提不一致。保存中再編集のrefetch draft上書きは実コードで根拠確認し採用、r4でT8のsession/revision保護へ具体化する。raw FAILを保持。",
+  "loaded_models_after_unload": [],
+  "quantization": "Q6_K",
+  "raw_verdict": "FAIL (実装停止推奨)",
+  "final_synthesis_completed": true,
+  "input_characters": 89679,
+  "status": "completed",
+  "current_target_hashes": [
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "D03D48C852A70FCC985BB6E5E9472912BCFE8111479BDA5AB7BE9AB7E0EF6F4B",
+      "drift_classification": "none",
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "80EE1BF3A4964208126C5EFBB64A9556139264A2CE8F2571AA1C1B6445C25913",
+      "drift_classification": "none",
+      "path": "docs/design/REQ-347-test-plan.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T1.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T2.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T3.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T4.md"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "F5442629818B76727751BACFC4D27710712CA98E59792C49416B65803C5BF73D",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T5.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T6.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "B6CA763B18B4B2E00142845C7A2A775190E038B0AB6E4BB2A9F2ACB9CAC2E35F",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T7.md"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "7AAA875D5E7766C5320E309CEB67C0CC194DA333625ED75F14CB213FAD79EBE7",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T8.md"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "D1ACB5A565DF93B5A69BFB635AB5915EF0BACD6DA64B50E6B457FBE6397D3B0A",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T9.md"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD",
+      "drift_classification": "metadata-only-status-frontmatter; coordinator-confirmed",
+      "path": "docs/backlog/task/active/REQ-347-T10.md"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "sha256": "4C6CE7A56F3B8762D122BCF6CB5C66A236E104FA5B25FD2F10C8A918F6804A63",
+      "drift_classification": "none",
+      "path": "implementation_plan.md"
+    }
+  ],
+  "drift_confirmation": "Parent coordinator confirmed T1/T2/T3/T6/T10 changed only status frontmatter via pbi_manager; task behavior/body unchanged. Body hashes were not captured before r3, so classification uses coordinator mutation provenance."
+}

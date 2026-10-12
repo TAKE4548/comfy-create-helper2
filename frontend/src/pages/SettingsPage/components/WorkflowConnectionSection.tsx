@@ -16,6 +16,7 @@ import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../componen
 import { ServiceConnectionCard } from './ServiceConnectionCard'
 
 export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null }
+interface ConfigDraftSession { epoch: number; workflowId: number | null; hydrated: boolean; acknowledgedRevision: number }
 export const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 export function graphNodeIds(graph: unknown): string[] {
   if (!record(graph) || !record(graph.nodes)) return []
@@ -69,6 +70,7 @@ export function WorkflowConnectionSection({
   const [storageError, setStorageError] = useState<string | null>(null)
   const [configSaving, setConfigSaving] = useState(false)
   const configDraftRevision = useRef(0)
+  const configDraftSession = useRef<ConfigDraftSession>({ epoch: 0, workflowId: null, hydrated: false, acknowledgedRevision: 0 })
   const [comfyUrl, setComfyUrl] = useState('http://localhost:8188')
   const [longPressMultiSelect, setLongPressMultiSelect] = useState(0.8)
   const [longPressCardMove, setLongPressCardMove] = useState(0.5)
@@ -136,10 +138,11 @@ export function WorkflowConnectionSection({
     enabled: group !== 'system',
   })
 
-  const { data: configWorkflow } = useQuery({
+  const { data: configWorkflow, isFetching: isFetchingConfigWorkflow } = useQuery({
     queryKey: ['workflow-config', configWorkflowId],
     queryFn: () => workflowsApi.get(configWorkflowId!) as Promise<Workflow>,
     enabled: group !== 'system' && configWorkflowId !== null,
+    refetchOnMount: 'always',
   })
   const { data: mappingMasters = [] } = useQuery({ queryKey: ['mapping-masters'], queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>, enabled: group !== 'system' })
   const { data: baseModels = [] } = useQuery({ queryKey: ['base-models'], queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>, enabled: group !== 'system' })
@@ -157,33 +160,50 @@ export function WorkflowConnectionSection({
   }, [configWorkflow?.json_body, stageMasters])
 
   useEffect(() => {
-    if (!configWorkflow || configWorkflow.id !== configWorkflowId) return
+    const session = configDraftSession.current
+    if (!configWorkflow || isFetchingConfigWorkflow || configWorkflow.id !== configWorkflowId || session.workflowId !== configWorkflowId || session.hydrated) return
     setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
     setConfigBaseModelId(configWorkflow.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
-  }, [configWorkflow, configWorkflowId])
+    configDraftSession.current = { ...session, hydrated: true, acknowledgedRevision: configDraftRevision.current }
+  }, [configWorkflow, configWorkflowId, isFetchingConfigWorkflow])
 
   const saveWorkflowConfig = async (draft: ConfigDraft) => {
-    if (configWorkflowId === null || configSaving) return
+    const session = configDraftSession.current
+    if (configWorkflowId === null || configSaving || !session.hydrated || session.workflowId !== configWorkflowId || configWorkflow?.id !== configWorkflowId) return
+    const saveId = configWorkflowId
+    const saveEpoch = configDraftSession.current.epoch
     const revision = configDraftRevision.current
+    const snapshot = { ...draft, mappings: draft.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })) }
+    const sameSession = () => configDraftSession.current.epoch === saveEpoch && configDraftSession.current.workflowId === saveId
+    const latestSnapshot = () => sameSession() && configDraftRevision.current === revision
     setConfigSaving(true)
     setSaved(null)
     setConfigError('')
     try {
-      await workflowsApi.update(configWorkflowId, {
-        json_body: draft.json_body,
-        mappings: draft.mappings,
-        target_base_model_id: draft.target_base_model_id,
-        default_applied_assets: draft.default_applied_assets,
+      await workflowsApi.update(saveId, {
+        json_body: snapshot.json_body,
+        mappings: snapshot.mappings,
+        target_base_model_id: snapshot.target_base_model_id,
+        default_applied_assets: snapshot.default_applied_assets,
       })
-      await qc.invalidateQueries({ queryKey: ['workflows'] })
-      await qc.invalidateQueries({ queryKey: ['workflow-config', configWorkflowId] })
-      if (revision === configDraftRevision.current) {
+      await Promise.allSettled([
+        qc.invalidateQueries({ queryKey: ['workflows'] }),
+        qc.invalidateQueries({ queryKey: ['workflow-config', saveId] }),
+        qc.invalidateQueries({ queryKey: ['workflow', saveId] }),
+      ])
+      if (sameSession()) {
+        configDraftSession.current = { ...configDraftSession.current, acknowledgedRevision: revision }
+      }
+      if (latestSnapshot()) {
+        setConfigMappings(snapshot.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
+        setConfigBaseModelId(snapshot.target_base_model_id ? String(snapshot.target_base_model_id) : '')
         setConfigPreview(null)
         setConfirmConfigApply(false)
         setSaved('workflow-config')
+        setConfigError('')
       }
     } catch (err: any) {
-      if (revision === configDraftRevision.current) {
+      if (latestSnapshot()) {
         setSaved(null)
         setConfigError(`保存に失敗しました: ${err.message || err}（設定は未保存です）`)
       }
@@ -614,12 +634,16 @@ export function WorkflowConnectionSection({
 
                         <div className="flex justify-end gap-2 px-4 pb-3">
                           <button type="button" aria-expanded={configWorkflowId === wf.id} onClick={() => {
-                            setConfigWorkflowId(configWorkflowId === wf.id ? null : wf.id)
-                            setConfigPreview(null); setConfigError(''); setExportText('')
+                            const nextId = configWorkflowId === wf.id ? null : wf.id
+                            const revision = configDraftRevision.current + 1
+                            configDraftRevision.current = revision
+                            configDraftSession.current = { epoch: configDraftSession.current.epoch + 1, workflowId: nextId, hydrated: false, acknowledgedRevision: revision }
+                            setConfigWorkflowId(nextId)
+                            setConfigPreview(null); setConfigError(''); setExportText(''); setSaved(null)
                           }} className="rounded border border-[rgba(255,255,255,0.08)] px-3 py-1.5 text-xs text-zinc-300">対応付け・設定</button>
                         </div>
                         {configWorkflowId === wf.id && <div className="space-y-3 border-t border-zinc-800 bg-zinc-950 p-4" aria-label="ワークフロー対応付け設定">
-                          {!configWorkflow ? <p className="text-xs text-zinc-500">設定を読み込み中...</p> : <>
+                          {!(configWorkflow?.id === wf.id && configDraftSession.current.workflowId === wf.id && configDraftSession.current.hydrated) ? <p className="text-xs text-zinc-500">設定を読み込み中...</p> : <>
                             <h3 className="text-sm font-semibold">{configWorkflow.name} の対応付け</h3>
                             <AdaptiveWorkflowWiring
                               workflow={configWorkflow}
@@ -640,6 +664,7 @@ export function WorkflowConnectionSection({
                                 <option value="">未指定</option>{baseModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                               </select>
                             </label>
+                            {configDraftSession.current.hydrated && configDraftRevision.current !== configDraftSession.current.acknowledgedRevision && <p className="text-xs text-amber-300">変更は未保存です</p>}
                             {saved === 'workflow-config' && <p role="status" className="text-xs text-emerald-300">設定を保存しました</p>}
                             <div className="flex gap-2">
                               <button type="button" onClick={() => setExportText(JSON.stringify({ format: 'prompt-surgeon-workflow-config', version: 1, name: configWorkflow.name, json_body: configWorkflow.json_body, mappings: configMappings, target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null, default_applied_assets: configWorkflow.default_applied_assets ?? null }, null, 2))} className="rounded border border-zinc-700 px-3 py-2 text-xs">設定JSONをエクスポート</button>

@@ -1,0 +1,124 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "visual-polish-r12",
+  "status": "completed-original-frozen-snapshot",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "timeout_seconds_per_inference": 600,
+  "target_count": 8,
+  "scope": "full-current-visual-revision-related-design-test-plan-all5-new-cards-plan",
+  "scope_reason": "T1-T15 complete baseline historical contracts unchanged; new user-authorized visual behavior fully owned by T16-T20",
+  "target_paths": [
+    "docs/design/REQ-347.md",
+    "docs/design/REQ-347-test-plan.md",
+    "docs/backlog/task/active/REQ-347-T16.md",
+    "docs/backlog/task/active/REQ-347-T17.md",
+    "docs/backlog/task/active/REQ-347-T18.md",
+    "docs/backlog/task/active/REQ-347-T19.md",
+    "docs/backlog/task/active/REQ-347-T20.md",
+    "implementation_plan.md"
+  ],
+  "targets": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "ADFEF4E795B0029693EB373FA10A1C33F792F4ADB91043A73BC2389CB0D45F8D",
+      "body_sha256": "46348F3A481E4EDDD035B509B1CDF1117F4DCF58318E6991F0E770AB5140FA96",
+      "lines": 243
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "C7455B6F9957C4C1E81529CB2ED06008B31FEB090458384E415E5FA42E47F6FB",
+      "body_sha256": "DF7C5B2E42B65D8EC0FEE5255CEBC677D2CDA126229C3FFC6A732635734F2CB2",
+      "lines": 166
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T16.md",
+      "sha256": "CC091B2E576B5790632ACFE0B3DF5E1D8E978DE94226CCB295B706E9C88C04EC",
+      "body_sha256": "186CE0FE73CC63D4708FAC7A36B34F380DBA434EFE69BF059739CB505739B274",
+      "lines": 90
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T17.md",
+      "sha256": "92762BE92E3610B3B74CE9DA9CF0D9990A7E77F928E10F31AB152910C1427F3F",
+      "body_sha256": "38A9FB31F68B77035C4C6975F7F994B07DAB6D8A10503AF2E0B41EE12C94E0D8",
+      "lines": 84
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T18.md",
+      "sha256": "EEE441AC5087411C40644750A36560ECEB9B8D5C28F4E45F762717E157EB9397",
+      "body_sha256": "ADAFF627B2F86A3B4278B5AE212DBF3FC1A3DF35C3D1B22DDC3E91F59BA305AB",
+      "lines": 81
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T19.md",
+      "sha256": "7A9CD8044ADFDD0DA106762C7BF72FCDC637737B45EE26A2E8B51437558DFB83",
+      "body_sha256": "20C0A822FF4797887BDA760792E61B6AFDE400DEA0620B5C64A962EBD87F21B0",
+      "lines": 77
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T20.md",
+      "sha256": "75E49F98C80E2F43700FF75501F3D9E406F861BD40B5D9057794A9E485248E6F",
+      "body_sha256": "947A4BFB2A1FB288EEF74B65AE75BD4EFCEA525CE1369B7A6FFCB5C9ECAC96C5",
+      "lines": 65
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "FD3C9951AA1818FF166954514A66DA9717B7A6113313E26261BB6A0932D5A839",
+      "body_sha256": "FD3C9951AA1818FF166954514A66DA9717B7A6113313E26261BB6A0932D5A839",
+      "lines": 71
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T16.md docs/backlog/task/active/REQ-347-T17.md docs/backlog/task/active/REQ-347-T18.md docs/backlog/task/active/REQ-347-T19.md docs/backlog/task/active/REQ-347-T20.md implementation_plan.md",
+  "environment": {
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none",
+    "PYTHONIOENCODING": "utf-8"
+  },
+  "source_hashes": [
+    {
+      "path": "frontend/src/components/StageInputGroup.tsx",
+      "sha256": "8798D6A6B5BA6C301EDDF4460B098A8E46A26BD964ABA9CA6FEAEEB91919A63A"
+    },
+    {
+      "path": "frontend/src/components/StageInputGroup.css",
+      "sha256": "BE372C1D0DBB8A99ED0F578D187FE9771ADF7A48F497040BE30DE6FBDB808F19"
+    },
+    {
+      "path": "frontend/src/components/__tests__/StageInputGroup.test.tsx",
+      "sha256": "5128B13FA7FFEF7106B800545B220A9DABE04B65A146ACE975101876528A01DA"
+    },
+    {
+      "path": "frontend/src/components/TagChipEditor/index.tsx",
+      "sha256": "3843A3919F7DB565D5453025F837583E4E2A51F2735ACC61F22D2567E6D6C9A9"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "sha256": "0EC83ECAC35655E19A01439C8C8BD1F563B88537996E961798C453D924A71A5D"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx",
+      "sha256": "62E6118C9A96143465373252DBB6ED03F10C1293929D37EB2CD87D1C6DC6D155"
+    },
+    {
+      "path": "frontend/src/components/ParamPanel.tsx",
+      "sha256": "76A3269E2FA77DED2B98829C064E560F7834D115C2FCDEAE084E84321515550C"
+    },
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "sha256": "BD6875C8713391999670B58208C2D75468BFF3BAF500196949053F093A30504B"
+    }
+  ],
+  "previous_trace": "docs/design/REQ-347-r11-audit-trace.json",
+  "audit_log": "docs/design/REQ-347-r12-audit.log",
+  "trace_path": "docs/design/REQ-347-r12-audit-trace.json",
+  "unload_log": "docs/design/REQ-347-r12-unload.log",
+  "response_path": "docs/design/REQ-347-r12-audit-response.md",
+  "remaining_human_decisions": [],
+  "prepared_at_utc": "2026-10-12T12:33:25.7890216Z"
+}

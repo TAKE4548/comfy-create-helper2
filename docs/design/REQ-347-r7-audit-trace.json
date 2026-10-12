@@ -1,0 +1,171 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "settings-slot-accessibility-r7",
+  "status": "completed",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "audit_timeout_seconds_per_inference": 600,
+  "target_count": 5,
+  "scope": "targeted-changed-design-test-plan-T7-T12-implementation-plan",
+  "scope_reason": "parent explicitly requested targeted revision audit after complete 17-target r6; only these five target bodies changed; unchanged cards remain covered by r6 snapshot",
+  "targets": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "4F67D51CA59FAD74CB9D4F6FEC306CAFA45F40ACE30072CB39796270C9F7E087",
+      "body_sha256": "3C9C7AF59C6D8CF1B55103E0D530C2030A64CD88052538CC406F38D708368FD9",
+      "lines": 263
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "0F352B7000BC4E6DE366C193973C3859B16A78DA2F727555F0FB551EF68F275A",
+      "body_sha256": "A157924ECDA8D9355319F161AA433E527DB714BE454F8288821D2C55F44ED7A7",
+      "lines": 116
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "28EA516375A5455A5ABCDD79B38A9639B2CB669E509681F805B7BF0F29296011",
+      "body_sha256": "09D5A59E259C2603614F2273D97EFFF7D54F5FA0C80D804771650625F55538FC",
+      "lines": 189
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T12.md",
+      "sha256": "D672A6536273FE5FE14C989A07987D2A441A09F564BA0AA82AE49A4EE435D7B7",
+      "body_sha256": "D95227571215751BE5F14AD8028182CEC0554ECF45FD1E5C26A1E3B17B1EACB3",
+      "lines": 84
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "9F9B30544902CE6863CCD10323F4D043BD346800FC21C358FD6EC16DC49A542B",
+      "body_sha256": "5E2BD1A5522B6CB984AA790F7A4BCB764D937737BC674F2A8DA48E35975ABAE6",
+      "lines": 125
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T12.md implementation_plan.md",
+  "environment": {
+    "PYTHONIOENCODING": "utf-8",
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none"
+  },
+  "previous_trace": "docs/design/REQ-347-r6-audit-trace.json",
+  "audit_plan_path": "docs/design/REQ-347-r7-audit-plan.json",
+  "log_path": "docs/design/REQ-347-r7-audit.log",
+  "unload_log": "docs/design/REQ-347-r7-unload.log",
+  "response_path": "docs/design/REQ-347-audit-response.md",
+  "execution_exit_code": 0,
+  "raw_verdict": "CRITICAL FAILURE（重大な失敗）",
+  "remaining_human_decisions": [],
+  "post_audit_behavior_changed": false,
+  "post_audit_reporting_audited": false,
+  "implementation_acceptance": "not-verified",
+  "started_at_utc": "2026-10-12T05:32:43.1699827Z",
+  "unload_exit_code": 0,
+  "lms_ps_exit_code": 0,
+  "lms_ps_json": "[]",
+  "elapsed_seconds": 308.519,
+  "finished_at_utc": "2026-10-12T05:37:51.7200903Z",
+  "raw_report_heading": "結論：実装禁止（Design Gate FAIL）",
+  "before_reporting_target_hashes": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "4F67D51CA59FAD74CB9D4F6FEC306CAFA45F40ACE30072CB39796270C9F7E087",
+      "body_sha256": "3C9C7AF59C6D8CF1B55103E0D530C2030A64CD88052538CC406F38D708368FD9",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "0F352B7000BC4E6DE366C193973C3859B16A78DA2F727555F0FB551EF68F275A",
+      "body_sha256": "A157924ECDA8D9355319F161AA433E527DB714BE454F8288821D2C55F44ED7A7",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "28EA516375A5455A5ABCDD79B38A9639B2CB669E509681F805B7BF0F29296011",
+      "body_sha256": "09D5A59E259C2603614F2273D97EFFF7D54F5FA0C80D804771650625F55538FC",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T12.md",
+      "sha256": "D672A6536273FE5FE14C989A07987D2A441A09F564BA0AA82AE49A4EE435D7B7",
+      "body_sha256": "D95227571215751BE5F14AD8028182CEC0554ECF45FD1E5C26A1E3B17B1EACB3",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "9F9B30544902CE6863CCD10323F4D043BD346800FC21C358FD6EC16DC49A542B",
+      "body_sha256": "5E2BD1A5522B6CB984AA790F7A4BCB764D937737BC674F2A8DA48E35975ABAE6",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    }
+  ],
+  "input_characters": 53701,
+  "chunks": 3,
+  "quantization": "Q6_K",
+  "final_synthesis_completed": true,
+  "loaded_models_after_unload": [],
+  "raw_log_sha256": "1B0EA88149C259007556E762123A1578AA650B91665D4D86A2E61072AED08EA0",
+  "unload_log_sha256": "A128A1D1C3D5B42CE5EC6A0B5849915B7FADAFC545B7F66F6460DEAF4654ECB0",
+  "after_reporting_target_hashes": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "04F58E3CBB8BE032F8FAECBE3B7A682D2A922EDCAF3D9B9407C4B6FFF3DAE578",
+      "body_sha256": "467DC4126FB98876017E7203DEFE43406CC4038B00E1E94E1A7115CEEB579B78",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false,
+      "drift_classification": "audit-result-reporting-only"
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "C21E89B0ADE4586A9193FCAB424AE43425D802C9395B59BCE59643CB5C0C3AB9",
+      "body_sha256": "C64A39F584E65FADCA6056C28536035FF13EF5037FA0F13D61CAAABB98E731A2",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false,
+      "drift_classification": "audit-result-reporting-only"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "EF4880AD12D8B236040EF3A4E057F808F8D7B717FA2F23340BBC27E4A45D7AB0",
+      "body_sha256": "09D5A59E259C2603614F2273D97EFFF7D54F5FA0C80D804771650625F55538FC",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "metadata-only"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T12.md",
+      "sha256": "D672A6536273FE5FE14C989A07987D2A441A09F564BA0AA82AE49A4EE435D7B7",
+      "body_sha256": "D95227571215751BE5F14AD8028182CEC0554ECF45FD1E5C26A1E3B17B1EACB3",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true,
+      "drift_classification": "none"
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "2CA735EB8BDCE0519465DE4291DDAC9952C78AC78AB1A38323B8A45F5D4ADF05",
+      "body_sha256": "FD1E7A7BB13E66F521B00FC998E4BD35B6FA6ED0CF856965317754BF05F606EE",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false,
+      "drift_classification": "audit-result-reporting-only"
+    }
+  ],
+  "architect_disposition": "raw CRITICAL FAILURE保持。日付/終了後処理/draft永続化/section-rootへの前提不一致を実時刻・契約・traceで照合。T7/T12 param付きlabelは実装可能、カード凍結。新たな具体的label契約欠陥や人間判断なし。実装test/全体Gate2/Gate3は別途確認。",
+  "current_utc_independent_check": "2026-10-12 05:38:20 UTC",
+  "contract_frozen": true,
+  "design_implementable": true,
+  "genuine_unresolved_design_issues": [],
+  "remaining_verification": [
+    "T7 label source/local test repair and IT-S10",
+    "T12 all consumer tests after T7",
+    "T8 IT-S6/7/8/9 acceptance governed by coordinator",
+    "Full frontend Gate2 and three-root real-browser Gate3"
+  ]
+}

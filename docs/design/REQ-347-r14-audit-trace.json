@@ -1,0 +1,247 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "visual-popup-anchor-contract-r14",
+  "status": "completed-with-evidence-based-dispositions",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "target_count": 6,
+  "targets": [
+    {
+      "sha256": "66114AB59FBFF434B6D8ACBE33D560F041C52567423DDCDDFD7D6A1665F5F42D",
+      "lines": 249,
+      "body_sha256": "8D5E7B0DE104A4D3CF8C2C88DA012928C07BDF136580F6DDFFAECAB23179B17D",
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "sha256": "A9219CF48DDA01B71A55D6002B1EA28CFDC2E669F086C4027A628822A1A4891F",
+      "lines": 170,
+      "body_sha256": "84798B5182EF6E85F52282FEB1FB469DBDA41FD6B3092837EDD61C5EC8E74726",
+      "path": "docs/design/REQ-347-test-plan.md"
+    },
+    {
+      "sha256": "4712637BCBF91E06AD6E07F3BA5BFC4C299121E0EAB7C0505E5F431664DE31DE",
+      "lines": 127,
+      "body_sha256": "7875EF55A8AB5B576D56CD87F209508C502D3AF69DBFAD11A98B9B4701833829",
+      "path": "docs/backlog/task/active/REQ-347-T18.md"
+    },
+    {
+      "sha256": "AB6B22B29A2747B1ED0DE93AD7D10D3841F68C026E2B8CEFB564184579614E65",
+      "lines": 78,
+      "body_sha256": "9844184DBA52823B6DD2719643B1B9C1B14781D7D6FCF74BBEFE885A5C91D340",
+      "path": "docs/backlog/task/active/REQ-347-T19.md"
+    },
+    {
+      "sha256": "F51A4312E850A54DC7C59CE16A008115AEE21B7A9EE8933F53A830308233E74C",
+      "lines": 66,
+      "body_sha256": "CB76FECC8130CA4E534D85E31F32BCCA1116E3F0F0320C76A885FCBDE3EAA64E",
+      "path": "docs/backlog/task/active/REQ-347-T20.md"
+    },
+    {
+      "sha256": "85E109019D132769DFAF1723011340810EFEEA953FAC4834DE8AF005FB95C176",
+      "lines": 137,
+      "body_sha256": "85E109019D132769DFAF1723011340810EFEEA953FAC4834DE8AF005FB95C176",
+      "path": "implementation_plan.md"
+    }
+  ],
+  "source_hashes": [
+    {
+      "path": "frontend/src/components/StageInputGroup.tsx",
+      "sha256": "8798D6A6B5BA6C301EDDF4460B098A8E46A26BD964ABA9CA6FEAEEB91919A63A"
+    },
+    {
+      "path": "frontend/src/components/StageInputGroup.css",
+      "sha256": "BE372C1D0DBB8A99ED0F578D187FE9771ADF7A48F497040BE30DE6FBDB808F19"
+    },
+    {
+      "path": "frontend/src/components/__tests__/StageInputGroup.test.tsx",
+      "sha256": "5128B13FA7FFEF7106B800545B220A9DABE04B65A146ACE975101876528A01DA"
+    },
+    {
+      "path": "frontend/src/components/TagChipEditor/index.tsx",
+      "sha256": "3843A3919F7DB565D5453025F837583E4E2A51F2735ACC61F22D2567E6D6C9A9"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "sha256": "0EC83ECAC35655E19A01439C8C8BD1F563B88537996E961798C453D924A71A5D"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx",
+      "sha256": "62E6118C9A96143465373252DBB6ED03F10C1293929D37EB2CD87D1C6DC6D155"
+    },
+    {
+      "path": "frontend/src/components/ParamPanel.tsx",
+      "sha256": "76A3269E2FA77DED2B98829C064E560F7834D115C2FCDEAE084E84321515550C"
+    },
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "sha256": "BD6875C8713391999670B58208C2D75468BFF3BAF500196949053F093A30504B"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/PromptSectionClipboardMenu.tsx",
+      "sha256": "DDCB7E65B5DEA6A1E9156DF29BC1866F3F84F3ECB4D83B58F5CBBB661F440D09"
+    }
+  ],
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T18.md docs/backlog/task/active/REQ-347-T19.md docs/backlog/task/active/REQ-347-T20.md implementation_plan.md",
+  "environment": {
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none",
+    "PYTHONIOENCODING": "utf-8"
+  },
+  "execution_exit_code": 0,
+  "raw_verdict": "現状のドキュメントは「マージ不可（UNSAFE FOR MERGE）」です。",
+  "unload_exit_code": 0,
+  "independent_lms_ps_exit_code": 0,
+  "independent_lms_ps_path": "docs/design/REQ-347-r14-lms-ps.json",
+  "started_at_utc": "2026-10-12T12:56:38.3847833Z",
+  "finished_at_utc": "2026-10-12T13:07:21.9868015Z",
+  "elapsed_seconds": 643.5914079,
+  "log_path": "docs/design/REQ-347-r14-audit.log",
+  "unload_log": "docs/design/REQ-347-r14-unload.log",
+  "audit_plan_path": "docs/design/REQ-347-r14-audit-plan.json",
+  "response_path": "docs/design/REQ-347-r14-audit-response.md",
+  "previous_trace": "docs/design/REQ-347-r13-audit-trace.json",
+  "unchanged_r12_target_coverage": [
+    "docs/backlog/task/active/REQ-347-T16.md",
+    "docs/backlog/task/active/REQ-347-T17.md"
+  ],
+  "contract_frozen": true,
+  "input_characters": 61453,
+  "chunks": 3,
+  "quantization": "Q6_K",
+  "loaded_models_after_unload": [],
+  "final_target_hashes": [
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "docs/design/REQ-347.md",
+      "body_sha256": "8D5E7B0DE104A4D3CF8C2C88DA012928C07BDF136580F6DDFFAECAB23179B17D",
+      "body_matches_audited_snapshot": true,
+      "sha256": "66114AB59FBFF434B6D8ACBE33D560F041C52567423DDCDDFD7D6A1665F5F42D"
+    },
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "docs/design/REQ-347-test-plan.md",
+      "body_sha256": "84798B5182EF6E85F52282FEB1FB469DBDA41FD6B3092837EDD61C5EC8E74726",
+      "body_matches_audited_snapshot": true,
+      "sha256": "A9219CF48DDA01B71A55D6002B1EA28CFDC2E669F086C4027A628822A1A4891F"
+    },
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "docs/backlog/task/active/REQ-347-T18.md",
+      "body_sha256": "7875EF55A8AB5B576D56CD87F209508C502D3AF69DBFAD11A98B9B4701833829",
+      "body_matches_audited_snapshot": true,
+      "sha256": "4712637BCBF91E06AD6E07F3BA5BFC4C299121E0EAB7C0505E5F431664DE31DE"
+    },
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "docs/backlog/task/active/REQ-347-T19.md",
+      "body_sha256": "9844184DBA52823B6DD2719643B1B9C1B14781D7D6FCF74BBEFE885A5C91D340",
+      "body_matches_audited_snapshot": true,
+      "sha256": "AB6B22B29A2747B1ED0DE93AD7D10D3841F68C026E2B8CEFB564184579614E65"
+    },
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "docs/backlog/task/active/REQ-347-T20.md",
+      "body_sha256": "CB76FECC8130CA4E534D85E31F32BCCA1116E3F0F0320C76A885FCBDE3EAA64E",
+      "body_matches_audited_snapshot": true,
+      "sha256": "F51A4312E850A54DC7C59CE16A008115AEE21B7A9EE8933F53A830308233E74C"
+    },
+    {
+      "drift_classification": "none",
+      "matches_audited_snapshot": true,
+      "path": "implementation_plan.md",
+      "body_sha256": "85E109019D132769DFAF1723011340810EFEEA953FAC4834DE8AF005FB95C176",
+      "body_matches_audited_snapshot": true,
+      "sha256": "85E109019D132769DFAF1723011340810EFEEA953FAC4834DE8AF005FB95C176"
+    }
+  ],
+  "source_hashes_after_audit": [
+    {
+      "sha256": "8798D6A6B5BA6C301EDDF4460B098A8E46A26BD964ABA9CA6FEAEEB91919A63A",
+      "path": "frontend/src/components/StageInputGroup.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "BE372C1D0DBB8A99ED0F578D187FE9771ADF7A48F497040BE30DE6FBDB808F19",
+      "path": "frontend/src/components/StageInputGroup.css",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "5128B13FA7FFEF7106B800545B220A9DABE04B65A146ACE975101876528A01DA",
+      "path": "frontend/src/components/__tests__/StageInputGroup.test.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "3843A3919F7DB565D5453025F837583E4E2A51F2735ACC61F22D2567E6D6C9A9",
+      "path": "frontend/src/components/TagChipEditor/index.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "0EC83ECAC35655E19A01439C8C8BD1F563B88537996E961798C453D924A71A5D",
+      "path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "62E6118C9A96143465373252DBB6ED03F10C1293929D37EB2CD87D1C6DC6D155",
+      "path": "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "76A3269E2FA77DED2B98829C064E560F7834D115C2FCDEAE084E84321515550C",
+      "path": "frontend/src/components/ParamPanel.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A",
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "BD6875C8713391999670B58208C2D75468BFF3BAF500196949053F093A30504B",
+      "path": "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "matches_before_audit": true
+    },
+    {
+      "sha256": "DDCB7E65B5DEA6A1E9156DF29BC1866F3F84F3ECB4D83B58F5CBBB661F440D09",
+      "path": "frontend/src/pages/GeneratePage/components/PromptSectionClipboardMenu.tsx",
+      "matches_before_audit": true
+    }
+  ],
+  "unchanged_r12_card_hashes": [
+    {
+      "audited_by": "r12",
+      "matches_audited_snapshot": true,
+      "path": "docs/backlog/task/active/REQ-347-T16.md",
+      "body_sha256": "186CE0FE73CC63D4708FAC7A36B34F380DBA434EFE69BF059739CB505739B274",
+      "body_matches_audited_snapshot": true,
+      "sha256": "CC091B2E576B5790632ACFE0B3DF5E1D8E978DE94226CCB295B706E9C88C04EC"
+    },
+    {
+      "audited_by": "r12",
+      "matches_audited_snapshot": true,
+      "path": "docs/backlog/task/active/REQ-347-T17.md",
+      "body_sha256": "38A9FB31F68B77035C4C6975F7F994B07DAB6D8A10503AF2E0B41EE12C94E0D8",
+      "body_matches_audited_snapshot": true,
+      "sha256": "92762BE92E3610B3B74CE9DA9CF0D9990A7E77F928E10F31AB152910C1427F3F"
+    }
+  ],
+  "current_revision_target_coverage_count": 8,
+  "full_hash_match_count": 6,
+  "body_hash_match_count": 6,
+  "source_hash_match_count": 10,
+  "unchanged_card_full_body_match_count": 2,
+  "raw_log_sha256": "E4DC26834CA2394EAA215B15C6746DDD724C8FCACB517ED2B16C3DA86B482C2C",
+  "unload_log_sha256": "3FA30ECAF7403ABE5C2CBDD3203F521A85FBBD7DFFB756C297A3B9B90FDC624D",
+  "remaining_human_decisions": [],
+  "architect_disposition": "原UNSAFE FOR MERGEを保持。section/root区別・focus同期実測・独立3root・全幅popup anchor・fallback・component-local useRef・PBI別scope・固定line baselineを照合し具体的な新しいcard欠陥無し。5card実装可能、新視覚受入は未実施、Gate3外部能力ブロックは維持。",
+  "implementation_dispatch_ready": true
+}

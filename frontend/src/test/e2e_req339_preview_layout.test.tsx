@@ -1,12 +1,20 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GenerateParallelPreview } from '../pages/GeneratePage/components/GenerateParallelPreview'
 import { DesktopLayout } from '../pages/GeneratePage/components/DesktopLayout'
 import { useGenerationStore } from '../store/useGenerationStore'
 import { createTrialAvailabilityController } from '../services/trialImageAvailability'
 
 const trialAvailabilityControllers: ReturnType<typeof createTrialAvailabilityController>[] = []
+
+function renderGroupedDesktop(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  client.setQueryData(['stage-masters'], [])
+  client.setQueryData(['mapping-masters'], [])
+  return render(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 // Mock react-router-dom
 vi.mock('react-router-dom', () => ({
@@ -305,7 +313,7 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
       handleResetDefaultParams: vi.fn(),
     }
 
-    const { container } = render(<DesktopLayout state={mockState} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={mockState} />)
 
     // 1. Header contains the resource stats
     const headerTitle = screen.getByText('Generate')

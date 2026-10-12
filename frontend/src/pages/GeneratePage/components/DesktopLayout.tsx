@@ -23,6 +23,8 @@ import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import { useSystemStats } from '../../../hooks/useSystemStats'
 import { selectProgress, selectWait } from '../../../utils/generationSelectors'
+import { useMappingStageGroups } from '../../../hooks/useMappingStageGroups'
+import StageInputGroup from '../../../components/StageInputGroup'
 
 
 interface SetTabItemProps {
@@ -153,6 +155,8 @@ export const DesktopLayout = ({
     setIsAnimaMode,
     promptTranslation,
   } = state
+
+  const textStageGroups = useMappingStageGroups(textMappings, mappingMasters, true)
 
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
@@ -487,59 +491,35 @@ export const DesktopLayout = ({
         initialSize={0.55}
         minSize={120}
         first={(
-          <div id="desktop-prompt-scroll" className="w-full h-full min-h-0 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
-        {textMappings.map((m) => {
+          <div id="desktop-prompt-scroll" data-stage-scroll-root="" className="stage-input-scroll-root w-full h-full min-h-0 overflow-y-auto px-5 custom-scrollbar">
+        <div className="space-y-0">
+        {textStageGroups.map((group) => (
+          <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
+            <div className="space-y-0">
+        {group.mappings.map((m) => {
           const isNegative = m.role?.toLowerCase().includes('negative')
           const isCollapsed = getIsRoleCollapsed(m.role!)
+          const promptName = m.display_name?.trim()
+            ? m.display_name
+            : m.param_name?.trim() || m.role?.trim() || 'プロンプト'
+          const promptDescriptionId = `prompt-description-${m.id}`
           return (
-            <div key={m.id} className="space-y-1.5 relative">
-              <div className="flex items-center justify-between">
+            <div key={m.id} data-prompt-mapping-id={m.id} className="space-y-1.5 relative">
+              <span id={promptDescriptionId} className="sr-only">{group.stageKey} / {m.role}</span>
+              <h4 data-prompt-item-heading="" className="m-0 min-w-0 w-full break-words text-base leading-6 font-semibold text-zinc-200">
                 <button
                   type="button"
                   onClick={() => setRoleCollapsed(m.role!, !isCollapsed)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+                  aria-label={promptName}
+                  aria-expanded={!isCollapsed}
+                  aria-controls={`prompt-${m.role!}`}
+                  aria-describedby={promptDescriptionId}
+                  className="flex min-w-0 w-full items-center gap-1.5 break-words text-left text-base leading-6 font-semibold text-zinc-200 hover:text-zinc-100 transition-colors focus:outline-none"
                 >
                   {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                  <span>{m.display_name}</span>
+                  <span className="min-w-0 break-words">{promptName}</span>
                 </button>
-                {!isCollapsed && (
-                  <div className="relative flex items-center gap-1.5">
-                    <PromptSectionClipboardMenu
-                      role={m.role!}
-                      currentValue={paramValues[m.role!] ?? ''}
-                      onChangeValue={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
-                      onOpenSaveAsTagSet={() => setSaveAsTagSetRole(m.role!)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => promptTranslation.openTranslation(m.role!, paramValues[m.role!] || '')}
-                      className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
-                        promptTranslation.isOpen && promptTranslation.activeRole === m.role
-                          ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
-                          : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
-                      }`}
-                    >
-                      <span>翻訳</span>
-                    </button>
-                    <button type="button" id={`add-asset-btn-${m.role!}`}
-                      onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
-                      <Plus size={10} />Add Asset
-                    </button>
-                    {openAddAssetRole === m.role && (
-                      <AddAssetModal
-                        role={m.role!}
-                        loras={loras}
-                        tagSets={tagSets}
-                        onClose={() => setOpenAddAssetRole(null)}
-                        addAppliedAsset={addAppliedAsset}
-                        setRoleCollapsed={setRoleCollapsed}
-                        activeBaseModelId={workflow?.target_base_model_id}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
+              </h4>
               {!isCollapsed && (
                 <>
                   <TagChipEditor
@@ -549,7 +529,46 @@ export const DesktopLayout = ({
                     chips={promptChips?.[m.role!]}
                     onChipsChange={(chips) => handleChipsChange(m.role!, chips)}
                     onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
-                    placeholder={`Enter ${m.display_name}…`}
+                    showModeStatus={false}
+                    toolbarStart={(
+                      <div className="relative flex w-full min-w-0 flex-wrap items-center gap-1.5">
+                        <PromptSectionClipboardMenu
+                          role={m.role!}
+                          currentValue={paramValues[m.role!] ?? ''}
+                          onChangeValue={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                          onOpenSaveAsTagSet={() => setSaveAsTagSetRole(m.role!)}
+                          menuAlign="start"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => promptTranslation.openTranslation(m.role!, paramValues[m.role!] || '')}
+                          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 border rounded transition-all ${
+                            promptTranslation.isOpen && promptTranslation.activeRole === m.role
+                              ? 'border-[#7C6FDD] bg-[#7C6FDD]/15 text-[#7C6FDD]'
+                              : 'bg-surface-2 border-[rgba(255,255,255,0.06)] text-zinc-400 hover:text-[#7C6FDD] hover:border-[#7C6FDD]/40'
+                          }`}
+                        >
+                          <span>翻訳</span>
+                        </button>
+                        <button type="button" id={`add-asset-btn-${m.role!}`}
+                          onClick={() => setOpenAddAssetRole(openAddAssetRole === m.role ? null : m.role!)}
+                          className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded text-zinc-400 hover:text-accent-green hover:border-accent-green/30 transition-all">
+                          <Plus size={10} />Add Asset
+                        </button>
+                        {openAddAssetRole === m.role && (
+                          <AddAssetModal
+                            role={m.role!}
+                            loras={loras}
+                            tagSets={tagSets}
+                            onClose={() => setOpenAddAssetRole(null)}
+                            addAppliedAsset={addAppliedAsset}
+                            setRoleCollapsed={setRoleCollapsed}
+                            activeBaseModelId={workflow?.target_base_model_id}
+                          />
+                        )}
+                      </div>
+                    )}
+                    placeholder={`Enter ${promptName}…`}
                     variant={isNegative ? 'negative' : 'positive'}
                     defaultTextMode={roleTextModes?.[m.role!] ?? false}
                     isAnimaMode={isAnimaMode}
@@ -558,15 +577,20 @@ export const DesktopLayout = ({
                       setRoleTextMode?.(m.role!, isText)
                     }}
                   />
-</>
+                </>
               )}
             </div>
           )
         })}
+            </div>
+          </StageInputGroup>
+        ))}
+        </div>
           </div>
         )}
         second={(
-          <div id="desktop-controls-scroll" className="w-full h-full min-h-0 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
+          <div id="desktop-controls-scroll" data-stage-scroll-root="" className="stage-input-scroll-root w-full h-full min-h-0 overflow-y-auto px-5 custom-scrollbar">
+        <div className="space-y-5 py-4">
         <AuditPanel
           auditOpen={auditOpen}
           setAuditOpen={setAuditOpen}
@@ -611,7 +635,9 @@ export const DesktopLayout = ({
           paramSyncGroups={paramSyncGroups}
           onToggleParamSync={(groupId, isEnabled) => toggleParamSyncGroup(groupId, isEnabled)}
           onOpenParamSyncSettings={() => setIsParamSyncSettingsOpen(true)}
+          stageGrouping={true}
         />
+          </div>
           </div>
         )}
         className="w-full flex-1 min-h-0"

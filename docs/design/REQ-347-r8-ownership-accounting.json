@@ -1,0 +1,64 @@
+{
+  "revision": "settings-ownership-split-r8",
+  "baseline_commit": "3b901040c1887b24c56cc517e75768b777913a5e",
+  "count_contract": "sum of additions plus deletions, all owned-file diff against fixed baseline, no net/revision-only/move exclusions",
+  "command": "git -c core.fsmonitor=false diff --numstat -- frontend/src/components/AdaptiveWorkflowWiring.tsx frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx",
+  "baseline_matches_current_HEAD": true,
+  "command_exit": 0,
+  "original_combined_task": "REQ-347-T7",
+  "original_combined_count": 360,
+  "original_combined_cap": 300,
+  "original_combined_line_bound": "FAIL",
+  "reallocated_ownership": [
+    {
+      "deleted": 198,
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "task_id": "REQ-347-T7",
+      "cap": 300,
+      "added": 57,
+      "total": 255
+    },
+    {
+      "deleted": 24,
+      "path": "frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx",
+      "task_id": "REQ-347-T15",
+      "cap": 150,
+      "added": 81,
+      "total": 105
+    }
+  ],
+  "source_test_hashes": [
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx",
+      "sha256": "64471786BCAE753DC536865B59B5F0A7BD677E41AE6D8893F293AFD3E5AB5A8B"
+    }
+  ],
+  "passing_test_evidence": {
+    "provenance": "parent reports engineer completion",
+    "architect_executed_tests": false,
+    "typecheck": "PASS",
+    "tests_passed": 10,
+    "tests_failed": 0,
+    "vitest_file": "frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx"
+  },
+  "source_edits_by_architect": false,
+  "remaining_human_decisions": [],
+  "after_audit_code_hashes": [
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A",
+      "matches_before_audit": true
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx",
+      "sha256": "64471786BCAE753DC536865B59B5F0A7BD677E41AE6D8893F293AFD3E5AB5A8B",
+      "matches_before_audit": true
+    }
+  ],
+  "after_audit_numstat_verified": true,
+  "after_audit_numstat_command": "git -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- frontend/src/components/AdaptiveWorkflowWiring.tsx frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx"
+}

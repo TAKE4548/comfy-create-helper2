@@ -1,0 +1,235 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "settings-ownership-split-r8",
+  "status": "completed-original-snapshot",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "timeout_seconds_per_inference": 600,
+  "target_count": 6,
+  "scope": "targeted-changed-design-test-plan-T7-T12-new-T15-implementation-plan",
+  "scope_reason": "parent explicitly requested targeted ownership-split audit; these six bodies changed; other twelve card bodies match full r6 snapshot",
+  "target_paths": [
+    "docs/design/REQ-347.md",
+    "docs/design/REQ-347-test-plan.md",
+    "docs/backlog/task/active/REQ-347-T7.md",
+    "docs/backlog/task/active/REQ-347-T12.md",
+    "docs/backlog/task/active/REQ-347-T15.md",
+    "implementation_plan.md"
+  ],
+  "targets": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "02F84A3279EB1BD9860E84CE3297CC72EB43CAFBF0DC599CB993772B274872D7",
+      "body_sha256": "C15817A5A600993EBAB7156E602AE084E60A598225DD91DBA0D8A0FBCE7DFB6F",
+      "lines": 272
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "DB52D538B6E2708E14E52E59904342655DF1371B470A32C2DA7D2F10EFD0299D",
+      "body_sha256": "9D457747B407E4BD83159E3AD0E0BADE7BCE5F6365A38E88F44C3E3A7BBD0DFA",
+      "lines": 122
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "62F2077C61B3AA6AD4DCC9030AC79F5D0ED4CE05A8F6F4DB193FA06A1F69BA7A",
+      "body_sha256": "89FE6545410D30A0E2DD28CD5F935D93329056102CD5254E78D69BD405421186",
+      "lines": 192
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T12.md",
+      "sha256": "2A968AB77420E19D81C1DB67B7C1123369B97E40E5E786C07D8540DF17095032",
+      "body_sha256": "1E649781D79130177888E76D47B67D9FDCE7D0DBAC1D7187332E00236CDFC23D",
+      "lines": 86
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T15.md",
+      "sha256": "FCC9C49B8FF1379392B4B9519FA4D60B0E1409E5B73BE75AFA54A736DEAC9B98",
+      "body_sha256": "2D5D7CD6F91FDA7E325733B53E78463BF2071C485BF623751E15BE31B5D468EE",
+      "lines": 88
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "E668E64906616791BF456F66F0126DD3A6FCFACE397AC05A4CAD99ECF0A75E7D",
+      "body_sha256": "E17D9C791A8DE9873E17844EA9B98795D1152573F7D727EB4F97713E021EFADB",
+      "lines": 135
+    }
+  ],
+  "complete_current_target_count": 18,
+  "complete_current_target_hashes": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "02F84A3279EB1BD9860E84CE3297CC72EB43CAFBF0DC599CB993772B274872D7",
+      "body_sha256": "C15817A5A600993EBAB7156E602AE084E60A598225DD91DBA0D8A0FBCE7DFB6F",
+      "lines": 272
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "DB52D538B6E2708E14E52E59904342655DF1371B470A32C2DA7D2F10EFD0299D",
+      "body_sha256": "9D457747B407E4BD83159E3AD0E0BADE7BCE5F6365A38E88F44C3E3A7BBD0DFA",
+      "lines": 122
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12",
+      "body_sha256": "C31D2B409C6E2D319A1C6466A8EA948372A2171F977BCBB1777272636AE10155",
+      "lines": 160
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030",
+      "body_sha256": "EC85E002D291412CCBDC444BEB4893E3E85ACD3559F8A323EF5FC22D7865738C",
+      "lines": 107
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A",
+      "body_sha256": "CC38B6D523D058D79CA54D59F22EC37C25BA399B9A557935CFFDFEF04E1C5DB0",
+      "lines": 209
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A",
+      "body_sha256": "99AE66EB703C9C56F79D893EB10F47493213B3CFB0B70786F50DD5C28739F1F6",
+      "lines": 173
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "sha256": "3231D2AA7C07FC55A5F97579BC04974067632DD7E62A58217E3FDEFFA297F885",
+      "body_sha256": "2254190BEAE49FB6BE18B80E896D08957A45B4C30DAE7D7E78EA45FCFAF4B1C8",
+      "lines": 229
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C",
+      "body_sha256": "A7A26CBFDC46EA38854553CE2DF220B4C94E2815E9D1B21C914AE2A6D9452A74",
+      "lines": 176
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "62F2077C61B3AA6AD4DCC9030AC79F5D0ED4CE05A8F6F4DB193FA06A1F69BA7A",
+      "body_sha256": "89FE6545410D30A0E2DD28CD5F935D93329056102CD5254E78D69BD405421186",
+      "lines": 192
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "sha256": "50CC19FFED51A548E89AC5F4D535D81730A980675D1387AE75D507A28C6A2262",
+      "body_sha256": "5627873C6891F200A575A840839F2AE4D427E761ABFB5DBB8AA1455FF25C4B52",
+      "lines": 240
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "sha256": "9B7C74EB29FB4CE3A505910C6CFA1FA309DE8C50108DE1BED7A660B7A3872DD7",
+      "body_sha256": "B2DFEF391EEE04DC33693A9CCDD2E8F44B523C2E912AF2A648207BE3C96DD677",
+      "lines": 186
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD",
+      "body_sha256": "141EDEC23A066120380F840F3BF3ABD125E10E3129159E1130A77FF762AE9B17",
+      "lines": 90
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T11.md",
+      "sha256": "DDFD57E15270961CD41707B556EFB207F67FA40E80FE42062BC230AA980BA638",
+      "body_sha256": "5AC2E50D8C8E36904E81E04E5A8546A6FC673333697BC2AF1456B90F6C63B7FB",
+      "lines": 97
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T12.md",
+      "sha256": "2A968AB77420E19D81C1DB67B7C1123369B97E40E5E786C07D8540DF17095032",
+      "body_sha256": "1E649781D79130177888E76D47B67D9FDCE7D0DBAC1D7187332E00236CDFC23D",
+      "lines": 86
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T13.md",
+      "sha256": "1BE33ED2FCDB203EBC73B5FA09F00D85538A33991BE6DAA4CAA552AA10A822C3",
+      "body_sha256": "7820AF9A7C83BEEC841F0686D3C7ACED978892FE78D69263CAE02A42989B6B50",
+      "lines": 105
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T14.md",
+      "sha256": "823F110EC3A388086B6F4A58B1346ACAAE785164476A5FE07DE4504C6719CD64",
+      "body_sha256": "71A0EE42B280703E1694B8E8FBA2AACCFB32235602CBDAC0CF2C3DC894959741",
+      "lines": 81
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T15.md",
+      "sha256": "FCC9C49B8FF1379392B4B9519FA4D60B0E1409E5B73BE75AFA54A736DEAC9B98",
+      "body_sha256": "2D5D7CD6F91FDA7E325733B53E78463BF2071C485BF623751E15BE31B5D468EE",
+      "lines": 88
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "E668E64906616791BF456F66F0126DD3A6FCFACE397AC05A4CAD99ECF0A75E7D",
+      "body_sha256": "E17D9C791A8DE9873E17844EA9B98795D1152573F7D727EB4F97713E021EFADB",
+      "lines": 135
+    }
+  ],
+  "unchanged_card_previous_audit_coverage": [
+    {
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T11.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T13.md",
+      "body_matches_previous_r6": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T14.md",
+      "body_matches_previous_r6": true
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T15.md implementation_plan.md",
+  "environment": {
+    "PYTHONIOENCODING": "utf-8",
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none"
+  },
+  "audit_log": "docs/design/REQ-347-r8-audit.log",
+  "trace_path": "docs/design/REQ-347-r8-audit-trace.json",
+  "unload_log": "docs/design/REQ-347-r8-unload.log",
+  "previous_trace": "docs/design/REQ-347-r7-audit-trace.json",
+  "ownership_accounting_path": "docs/design/REQ-347-r8-ownership-accounting.json",
+  "max_dag_depth": 4.0,
+  "remaining_human_decisions": [],
+  "implementation_acceptance": "engineer reports prior typecheck/staging10 pass; split T15 verification pending",
+  "prepared_at_utc": "2026-10-12T05:52:21.3634915Z"
+}

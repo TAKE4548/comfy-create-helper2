@@ -1,0 +1,149 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "hook-query-contract-r2",
+  "status": "completed",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "target_count": 13,
+  "targets": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "1CB825F9149A293417DFAFEAFD7915EF446B1DAAE388354A4E5FA6BDC8F3E43B"
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "9C9E906074D037A7616AC96D74FA234C2608ED6C67307725F6B9CD7448424944"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "sha256": "CF82BB0C306170F7EF52D25E6231B4E4DA93A4E205AD2B788C55D43BFA0630A2"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "sha256": "5BC7D743F7E32C9BE0C8DE5BBA98B7706ECE77F1DE1E6B61BAD637FA2C1A1945"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "sha256": "AAA10D656D5CCF91DE6C3B0A2E2B7F59785A42A8B4CCDC4FBD91D4A3A5C3B1C1"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "sha256": "222080531494DD042A1A3F6D1727CCAB09B0968AECB203E938F3A016D5EF2720"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "sha256": "9D8BCB0E656F1DD5E12649E205C11935FFE29540873FCF3453A59B72A6DCFCD7"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "sha256": "4BD73E2AED9EC1770C082E2EBEE699447E3A79DF422EB2D12333541D1FBDC669"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "2C83D44BF77345638E1F54D6C6A9A2C41E433CA473BE98823E19918ADDCEDEDD"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "sha256": "7AAA875D5E7766C5320E309CEB67C0CC194DA333625ED75F14CB213FAD79EBE7"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "sha256": "D1ACB5A565DF93B5A69BFB635AB5915EF0BACD6DA64B50E6B457FBE6397D3B0A"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "sha256": "F09948B061ACD70DBA4AFBDF945F20DA674C039BDE8DB41519671056F74FB87B"
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "1C389BF5BA202047BF935D3625716C1780C091022DBBCF9215998D7DBF532500"
+    }
+  ],
+  "initial_trace": "docs/design/REQ-347-audit-trace.json",
+  "initial_raw_verdict": "Design Gate FAIL",
+  "previously_post_audit_revision_audited": false,
+  "log_path": "docs/design/REQ-347-r2-audit.log",
+  "unload_log": "docs/design/REQ-347-r2-unload.log",
+  "execution_exit_code": 0,
+  "raw_verdict": "FAIL (実装着手禁止)",
+  "unload_exit_code": 0,
+  "quantization": "Q6_K",
+  "chunks": 4,
+  "input_characters": 79982,
+  "final_synthesis_completed": true,
+  "loaded_models_after_unload": [],
+  "response_path": "docs/design/REQ-347-audit-response.md",
+  "architect_disposition": "前提不一致を文書・既存コード・backend schemaで評価。元raw FAILを保持。新規の人間判断事項なし。",
+  "implementation_acceptance": "not-verified",
+  "post_audit_changes": "design/test-plan/implementation_planへの監査結果記録とaudit-response/trace/handoverのみ。Task Cardの挙動契約変更なし。",
+  "post_audit_reporting_audited": false,
+  "app_version_verified_this_run": false,
+  "current_target_hashes": [
+    {
+      "path": "docs/design/REQ-347.md",
+      "sha256": "72AA423EAC662845D5D3ECB54ED22DF0F7181E68BEC89196393560F5468D3111",
+      "matches_audited_snapshot": false
+    },
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "48559D33D5A2605C4AC0C6BFE3D223CBBB14039A3CD1317B1E46E1CDE5B056D0",
+      "matches_audited_snapshot": false
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "sha256": "CF82BB0C306170F7EF52D25E6231B4E4DA93A4E205AD2B788C55D43BFA0630A2",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "sha256": "5BC7D743F7E32C9BE0C8DE5BBA98B7706ECE77F1DE1E6B61BAD637FA2C1A1945",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "sha256": "AAA10D656D5CCF91DE6C3B0A2E2B7F59785A42A8B4CCDC4FBD91D4A3A5C3B1C1",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "sha256": "222080531494DD042A1A3F6D1727CCAB09B0968AECB203E938F3A016D5EF2720",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "sha256": "9D8BCB0E656F1DD5E12649E205C11935FFE29540873FCF3453A59B72A6DCFCD7",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "sha256": "4BD73E2AED9EC1770C082E2EBEE699447E3A79DF422EB2D12333541D1FBDC669",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "sha256": "2C83D44BF77345638E1F54D6C6A9A2C41E433CA473BE98823E19918ADDCEDEDD",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "sha256": "7AAA875D5E7766C5320E309CEB67C0CC194DA333625ED75F14CB213FAD79EBE7",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "sha256": "D1ACB5A565DF93B5A69BFB635AB5915EF0BACD6DA64B50E6B457FBE6397D3B0A",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "sha256": "F09948B061ACD70DBA4AFBDF945F20DA674C039BDE8DB41519671056F74FB87B",
+      "matches_audited_snapshot": true
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "1A8CBE03259A93C876848EC879958CF0A61AF04516D80B9D831149F9F15D4BA4",
+      "matches_audited_snapshot": false
+    }
+  ]
+}

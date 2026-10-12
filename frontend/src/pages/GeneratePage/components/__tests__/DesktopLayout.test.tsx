@@ -1,6 +1,7 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
@@ -24,6 +25,13 @@ vi.mock('../../../api/domains/workflows', () => ({
   bypassProfilesApi: {
     list: vi.fn().mockResolvedValue([]),
   },
+}))
+
+vi.mock('../../../api/domains/stageMasters', () => ({
+  stageMastersApi: { list: vi.fn().mockResolvedValue([
+    { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: [], previous_suffixes: [], is_builtin: true, is_active: true, sort_order: 0 },
+    { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: [], previous_suffixes: [], is_builtin: true, is_active: true, sort_order: 1 },
+  ]) },
 }))
 
 describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
@@ -181,9 +189,14 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     handleResetDefaultParams: vi.fn(),
   })
 
+  const renderWithQueryClient = (ui: React.ReactElement) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+  }
+
   it('renders PageHeader with left clustering and ResourceHoverMonitor, removing preview HUD', () => {
     const state = createMockState()
-    const { container } = render(<DesktopLayout state={state as any} />)
+    const { container } = renderWithQueryClient(<DesktopLayout state={state as any} />)
 
     // PageHeader contains Generate title
     const headerTitle = screen.getByText('Generate')
@@ -230,7 +243,7 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     state.updateWorkflowBaseModelMutation = { mutate: mutateBaseModel } as any
     state.baseModels = [{ id: 10, name: 'SDXL 1.0' }] as any
 
-    render(<DesktopLayout state={state as any} />)
+    renderWithQueryClient(<DesktopLayout state={state as any} />)
 
     const menuBtn = screen.getByRole('button', { name: 'ワークフロー設定' })
     fireEvent.click(menuBtn)
@@ -273,5 +286,47 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     const baseModelSelect = screen.getByLabelText('ベースモデル')
     fireEvent.change(baseModelSelect, { target: { value: '10' } })
     expect(mutateBaseModel).toHaveBeenCalledWith({ id: 1, target_base_model_id: 10 })
+  })
+
+  it('keeps prompt and controls in independent stage scroll roots and groups prompts by stage', async () => {
+    const state = createMockState()
+    useGenerationStore.setState({ roleTextModes: { Rough_Positive_Prompt: true } } as any)
+    state.paramValues = {
+      Main_Positive_Prompt: 'main original',
+      Rough_Positive_Prompt: '',
+    }
+    state.mappingMasters = [{
+      id: 7, group_id: null, base_key: 'prompt', name: 'Prompt', param_name: 'text', input_type: 'textarea',
+      expected_class_types: null, base_title_patterns: null, sort_order: 0,
+      variants: [
+        { id: 71, master_id: 7, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'Main_Positive_Prompt', extra_title_patterns: null, is_enabled: true },
+        { id: 72, master_id: 7, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'Rough_Positive_Prompt', extra_title_patterns: null, is_enabled: true },
+      ],
+    }] as any
+    state.textMappings = [
+      { id: 11, master_id: 7, variant_id: 71, node_id: '1', role: 'Main_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Main Prompt' },
+      { id: 12, master_id: 7, variant_id: 72, node_id: '2', role: 'Rough_Positive_Prompt', param_name: 'text', input_type: 'textarea', display_name: 'Rough Prompt' },
+    ] as any
+
+    const { container } = renderWithQueryClient(<DesktopLayout state={state as any} />)
+    const promptRoot = container.querySelector('#desktop-prompt-scroll')
+    const controlsRoot = container.querySelector('#desktop-controls-scroll')
+    expect(promptRoot).toHaveAttribute('data-stage-scroll-root', '')
+    expect(promptRoot).toHaveClass('stage-input-scroll-root')
+    expect(controlsRoot).toHaveAttribute('data-stage-scroll-root', '')
+    expect(controlsRoot).toHaveClass('stage-input-scroll-root')
+    expect(promptRoot).not.toBe(controlsRoot)
+    expect(controlsRoot?.querySelector('.rounded-lg.border')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Main (main)' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Rough (rough)' })).toBeInTheDocument()
+    expect(container.querySelectorAll('.stage-input-group')).toHaveLength(2)
+
+    const roughInput = container.querySelector<HTMLTextAreaElement>('#prompt-Rough_Positive_Prompt textarea')
+    expect(roughInput).not.toBeNull()
+    fireEvent.change(roughInput!, { target: { value: 'rough edited' } })
+    expect(state.setParamValues).toHaveBeenCalledWith({
+      Main_Positive_Prompt: 'main original',
+      Rough_Positive_Prompt: 'rough edited',
+    })
   })
 })

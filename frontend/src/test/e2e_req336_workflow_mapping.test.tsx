@@ -298,8 +298,10 @@ describe('REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite', () => {
         />
       )
 
-      expect(screen.getByRole('tab', { name: /Main Stage/ })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /Rough Stage/ })).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'Main Stage (main)' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Main Stage (main)' })).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'Rough Stage (rough)' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Rough Stage (rough)' })).toBeInTheDocument()
     })
   })
 

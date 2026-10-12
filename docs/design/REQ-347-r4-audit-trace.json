@@ -1,0 +1,326 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "settings-draft-session-r4",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "audit_timeout_seconds_per_inference": 600,
+  "target_count": 13,
+  "targets": [
+    {
+      "bytes": 25347,
+      "body_sha256": "AC7DCA128ADF94322F16519719337FFBEA17D5EF14757C3B45424FA1CC9A30E4",
+      "sha256": "AC1CA3089190A69E063B338E50457762F39ABB46BB6C413E24E94AE6124E53EB",
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "bytes": 11852,
+      "body_sha256": "7733A7C0060DF9C705909AD9769AE57E9E7772C3CC191EEA23B3AD1635C84188",
+      "sha256": "A1EB677EB09DEE881115BE54161D610E67FEA2224F7733D60A7E77D1EDB47F8D",
+      "path": "docs/design/REQ-347-test-plan.md"
+    },
+    {
+      "bytes": 5489,
+      "body_sha256": "C31D2B409C6E2D319A1C6466A8EA948372A2171F977BCBB1777272636AE10155",
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12",
+      "path": "docs/backlog/task/active/REQ-347-T1.md"
+    },
+    {
+      "bytes": 7111,
+      "body_sha256": "EC85E002D291412CCBDC444BEB4893E3E85ACD3559F8A323EF5FC22D7865738C",
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030",
+      "path": "docs/backlog/task/active/REQ-347-T2.md"
+    },
+    {
+      "bytes": 8858,
+      "body_sha256": "CC38B6D523D058D79CA54D59F22EC37C25BA399B9A557935CFFDFEF04E1C5DB0",
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A",
+      "path": "docs/backlog/task/active/REQ-347-T3.md"
+    },
+    {
+      "bytes": 8383,
+      "body_sha256": "99AE66EB703C9C56F79D893EB10F47493213B3CFB0B70786F50DD5C28739F1F6",
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A",
+      "path": "docs/backlog/task/active/REQ-347-T4.md"
+    },
+    {
+      "bytes": 9478,
+      "body_sha256": "9BE13FED0764474D8666C6B8BA09DB428D9E49880C41925FC10A3E4480E2E96D",
+      "sha256": "530B91B0BBBD2C690F1E5BB6FF0D47F7E0FEC7BA46C14858ED92E5BAEE152B24",
+      "path": "docs/backlog/task/active/REQ-347-T5.md"
+    },
+    {
+      "bytes": 6633,
+      "body_sha256": "A7A26CBFDC46EA38854553CE2DF220B4C94E2815E9D1B21C914AE2A6D9452A74",
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C",
+      "path": "docs/backlog/task/active/REQ-347-T6.md"
+    },
+    {
+      "bytes": 8168,
+      "body_sha256": "47C98E80AEF9DC72068BF24DB1B53EFFF4C56966886D314155201211F01297A3",
+      "sha256": "B6CA763B18B4B2E00142845C7A2A775190E038B0AB6E4BB2A9F2ACB9CAC2E35F",
+      "path": "docs/backlog/task/active/REQ-347-T7.md"
+    },
+    {
+      "bytes": 13682,
+      "body_sha256": "90C290040A21A49D3E8640D486CFE4F57DE253A88623075C45E04BF49EC8653B",
+      "sha256": "BA8C39A942F37ED7E7E02EDAF663F1612A322833A4DDE4DC8A8B09DFD0CE69F3",
+      "path": "docs/backlog/task/active/REQ-347-T8.md"
+    },
+    {
+      "bytes": 7350,
+      "body_sha256": "B2DFEF391EEE04DC33693A9CCDD2E8F44B523C2E912AF2A648207BE3C96DD677",
+      "sha256": "D1ACB5A565DF93B5A69BFB635AB5915EF0BACD6DA64B50E6B457FBE6397D3B0A",
+      "path": "docs/backlog/task/active/REQ-347-T9.md"
+    },
+    {
+      "bytes": 5781,
+      "body_sha256": "141EDEC23A066120380F840F3BF3ABD125E10E3129159E1130A77FF762AE9B17",
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD",
+      "path": "docs/backlog/task/active/REQ-347-T10.md"
+    },
+    {
+      "bytes": 12080,
+      "body_sha256": "C0A494C4B1453EFFB79AF93C5EE89C28A76EEBEFE11CBFA0BE0E6E5D87188324",
+      "sha256": "C4B3FDD0DFE9F08043FC62FDB95C3059F1CA7963E8A3E165C05070BD40C50019",
+      "path": "implementation_plan.md"
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 text with first YAML frontmatter removed and CRLF normalized to LF",
+  "started_at_utc": "2026-10-12T03:57:00.927942Z",
+  "previous_trace": "docs/design/REQ-347-r3-audit-trace.json",
+  "previous_raw_verdict": "FAIL (実装停止推奨)",
+  "log_path": "docs/design/REQ-347-r4-audit.log",
+  "unload_log": "docs/design/REQ-347-r4-unload.log",
+  "response_path": "docs/design/REQ-347-audit-response.md",
+  "implementation_acceptance": "not-verified",
+  "execution_exit_code": 0,
+  "unload_exit_code": 0,
+  "elapsed_seconds": 464.031,
+  "finished_at_utc": "2026-10-12T04:04:44.9836124Z",
+  "raw_verdict": "Design Gate FAIL（設計ゲート失敗）",
+  "status": "completed",
+  "post_audit_reporting_audited": false,
+  "post_audit_behavior_changed": false,
+  "unload_evidence": "REQ-347-r4-unload.log: LM Studio reports no models loaded",
+  "chunks": 5,
+  "final_synthesis_completed": true,
+  "input_characters": 96492,
+  "quantization": "Q6_K",
+  "architect_disposition": "r3保存競合をT8 session/revision/snapshot契約へ具体化して全13対象再監査。r4指摘は既存契約との前提不一致/要求外拡張/既存ブラウザー実測リスクとして根拠付き応答。raw FAIL保持、実装受入未確認、人間の新規判断0。",
+  "remaining_human_decisions": [],
+  "loaded_models_after_unload": [],
+  "before_reporting_target_hashes": [
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/design/REQ-347.md",
+      "body_sha256": "AC7DCA128ADF94322F16519719337FFBEA17D5EF14757C3B45424FA1CC9A30E4",
+      "body_matches_audited_snapshot": true,
+      "sha256": "AC1CA3089190A69E063B338E50457762F39ABB46BB6C413E24E94AE6124E53EB"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/design/REQ-347-test-plan.md",
+      "body_sha256": "7733A7C0060DF9C705909AD9769AE57E9E7772C3CC191EEA23B3AD1635C84188",
+      "body_matches_audited_snapshot": true,
+      "sha256": "A1EB677EB09DEE881115BE54161D610E67FEA2224F7733D60A7E77D1EDB47F8D"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "body_sha256": "C31D2B409C6E2D319A1C6466A8EA948372A2171F977BCBB1777272636AE10155",
+      "body_matches_audited_snapshot": true,
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "body_sha256": "EC85E002D291412CCBDC444BEB4893E3E85ACD3559F8A323EF5FC22D7865738C",
+      "body_matches_audited_snapshot": true,
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "body_sha256": "CC38B6D523D058D79CA54D59F22EC37C25BA399B9A557935CFFDFEF04E1C5DB0",
+      "body_matches_audited_snapshot": true,
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "body_sha256": "99AE66EB703C9C56F79D893EB10F47493213B3CFB0B70786F50DD5C28739F1F6",
+      "body_matches_audited_snapshot": true,
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "body_sha256": "9BE13FED0764474D8666C6B8BA09DB428D9E49880C41925FC10A3E4480E2E96D",
+      "body_matches_audited_snapshot": true,
+      "sha256": "530B91B0BBBD2C690F1E5BB6FF0D47F7E0FEC7BA46C14858ED92E5BAEE152B24"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "body_sha256": "A7A26CBFDC46EA38854553CE2DF220B4C94E2815E9D1B21C914AE2A6D9452A74",
+      "body_matches_audited_snapshot": true,
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "body_sha256": "47C98E80AEF9DC72068BF24DB1B53EFFF4C56966886D314155201211F01297A3",
+      "body_matches_audited_snapshot": true,
+      "sha256": "B6CA763B18B4B2E00142845C7A2A775190E038B0AB6E4BB2A9F2ACB9CAC2E35F"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "body_sha256": "90C290040A21A49D3E8640D486CFE4F57DE253A88623075C45E04BF49EC8653B",
+      "body_matches_audited_snapshot": true,
+      "sha256": "BA8C39A942F37ED7E7E02EDAF663F1612A322833A4DDE4DC8A8B09DFD0CE69F3"
+    },
+    {
+      "matches_audited_snapshot": false,
+      "drift_classification": "metadata-only",
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "body_sha256": "B2DFEF391EEE04DC33693A9CCDD2E8F44B523C2E912AF2A648207BE3C96DD677",
+      "body_matches_audited_snapshot": true,
+      "sha256": "9B7C74EB29FB4CE3A505910C6CFA1FA309DE8C50108DE1BED7A660B7A3872DD7"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "body_sha256": "141EDEC23A066120380F840F3BF3ABD125E10E3129159E1130A77FF762AE9B17",
+      "body_matches_audited_snapshot": true,
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD"
+    },
+    {
+      "matches_audited_snapshot": true,
+      "drift_classification": "none",
+      "path": "implementation_plan.md",
+      "body_sha256": "C0A494C4B1453EFFB79AF93C5EE89C28A76EEBEFE11CBFA0BE0E6E5D87188324",
+      "body_matches_audited_snapshot": true,
+      "sha256": "C4B3FDD0DFE9F08043FC62FDB95C3059F1CA7963E8A3E165C05070BD40C50019"
+    }
+  ],
+  "current_target_hashes": [
+    {
+      "sha256": "6DD634F681CE219F3D394255FBFD4CEC4FC320D13135BF74AD03C438E3FB3C7E",
+      "drift_classification": "post-audit-result-reporting-only",
+      "path": "docs/design/REQ-347.md",
+      "body_sha256": "5C153C84FF9E22543C3B109528D38414CB6814DDAAACFA0EAD5E751F4208EE1C",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false
+    },
+    {
+      "sha256": "03C37829771DC517EFBCBA80DD87A1A67D1AD7D82B519278C2A10728432D988B",
+      "drift_classification": "post-audit-result-reporting-only",
+      "path": "docs/design/REQ-347-test-plan.md",
+      "body_sha256": "D72306ED3B4D5372562B57CCA9843F140AA56431374A218D7FBDB7680E7C453F",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false
+    },
+    {
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T1.md",
+      "body_sha256": "C31D2B409C6E2D319A1C6466A8EA948372A2171F977BCBB1777272636AE10155",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T2.md",
+      "body_sha256": "EC85E002D291412CCBDC444BEB4893E3E85ACD3559F8A323EF5FC22D7865738C",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T3.md",
+      "body_sha256": "CC38B6D523D058D79CA54D59F22EC37C25BA399B9A557935CFFDFEF04E1C5DB0",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T4.md",
+      "body_sha256": "99AE66EB703C9C56F79D893EB10F47493213B3CFB0B70786F50DD5C28739F1F6",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "530B91B0BBBD2C690F1E5BB6FF0D47F7E0FEC7BA46C14858ED92E5BAEE152B24",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T5.md",
+      "body_sha256": "9BE13FED0764474D8666C6B8BA09DB428D9E49880C41925FC10A3E4480E2E96D",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T6.md",
+      "body_sha256": "A7A26CBFDC46EA38854553CE2DF220B4C94E2815E9D1B21C914AE2A6D9452A74",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "B6CA763B18B4B2E00142845C7A2A775190E038B0AB6E4BB2A9F2ACB9CAC2E35F",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T7.md",
+      "body_sha256": "47C98E80AEF9DC72068BF24DB1B53EFFF4C56966886D314155201211F01297A3",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "BA8C39A942F37ED7E7E02EDAF663F1612A322833A4DDE4DC8A8B09DFD0CE69F3",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T8.md",
+      "body_sha256": "90C290040A21A49D3E8640D486CFE4F57DE253A88623075C45E04BF49EC8653B",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "9B7C74EB29FB4CE3A505910C6CFA1FA309DE8C50108DE1BED7A660B7A3872DD7",
+      "drift_classification": "metadata-only",
+      "path": "docs/backlog/task/active/REQ-347-T9.md",
+      "body_sha256": "B2DFEF391EEE04DC33693A9CCDD2E8F44B523C2E912AF2A648207BE3C96DD677",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD",
+      "drift_classification": "none",
+      "path": "docs/backlog/task/active/REQ-347-T10.md",
+      "body_sha256": "141EDEC23A066120380F840F3BF3ABD125E10E3129159E1130A77FF762AE9B17",
+      "matches_audited_snapshot": true,
+      "body_matches_audited_snapshot": true
+    },
+    {
+      "sha256": "BDD02073AE429D34A4F74EC910E8BCE33D82E5841A8780F9BE771F433611EB03",
+      "drift_classification": "post-audit-result-reporting-only",
+      "path": "implementation_plan.md",
+      "body_sha256": "66F33E743AB00F614EE0B0DE4D31C673775446831626509BDBBB19BDFC3C7CAC",
+      "matches_audited_snapshot": false,
+      "body_matches_audited_snapshot": false
+    }
+  ],
+  "post_audit_changes": "design/test-plan/implementation_plan audit result appendices and audit-response/trace/handover only; all task behavior bodies unchanged"
+}

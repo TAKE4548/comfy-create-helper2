@@ -1,0 +1,156 @@
+---
+id: REQ-347-test-plan
+status: draft
+design_gate: pending
+tags: [REQ-347, test-plan, generate, settings, stage]
+related_paths: [docs/design/REQ-347.md, docs/backlog/pbi/active/REQ-347.md, frontend/src/components/AdaptiveWorkflowWiring.tsx]
+---
+
+# REQ-347 結合・受入・境界テスト計画
+
+## Current Execution Context (r9)
+
+workspaceは`C:/Users/audih/ws/comfy-create-helper2`、frontendは同rootの`frontend`。この計画の有効な動作契約はFixtures/各Gate表/本r9のFixture RecipeとMeasurement Oracle。後段の監査履歴は時点証跡であり実行の前提ではない。status:draft/design_gate:pendingは受入完了を意味しない。現在Gate1と有効な全体Gate2再実行はPASS（226 files/2,053 tests）、Gate3は実ブラウザー前提未充足でINCONCLUSIVE。以前の全ケース未実行/未監査等はその時点の記録。
+
+既存lockfileに沿うNode/npmと依存が必要。`Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend`の後にtypecheck/Vitestを実行し、command/exit/全結果を保存する。jsdomのVitest1.6（vite.config.ts）はGate1/2専用。現在ブラウザー接続/5173・8000起動/fixture公開は存在しない。以下のbrowser oracleはrunnerに渡す仕様であり実行済みとしない。
+
+ブラウザーGate3の前提は(1)対応する実ブラウザー/制御接続、(2)現在sourceから起動した画面、(3)実DOMの矩形・computedStyle・scrollTop/valueを取得しpixel単位のroot scrollとnative click/Tab/resize/200%zoomを操作できるrunner、(4)隔離したfixture/API応答制御、(5)画像と生観測JSONの保存。いずれか未充足はそのcaseをINCONCLUSIVEにする。存在しないURL/driver/workerへ接続できたと仮定しない。新しいbrowser依存やtool未対応APIを本計画から自動導入しない。
+
+## Fixtures and Preconditions
+
+Main(id1,key main,order0)、Rough(id2,key rough,order1)、Detail(id3,order2)、ユーザー定義第四stage。V2 Prompt/Steps masterにはMain/Rough enabled variantsを用意。表示名は同じPrompt/Steps、computed_roleはPrompt/Prompt_rough、Sampler_Steps/Sampler_Steps_rough。Prompt=A/B、Steps=20/30、paramSyncGroups=[]。Settings Main Steps=nodeA、Rough Steps=nodeB、変更候補nodeC。nodes titleにMain/Rough検索keywordを含めstageを有効にする。
+
+scroll試験では各工程本文がpane高さの2倍以上のfixtureを用意。mapping数、長いtextarea、LoRA stackで長さを確保。同じroleを重複登録せず追加mappingは別role/variant ID。nodeCは既存graphに含める。devtoolsでCSSだけ変更してPASSとしない。
+
+### Browser Fixture Recipe and Deferred API Ground Truth
+
+基準dataは物理ファイル`frontend/src/test/e2e_req347_generate_stage_groups.test.tsx`のstages/masters/textMappings/paramMappings/初期paramValuesと、`e2e_req347_settings_stage_groups.test.tsx`のworkflow()/stageMasters/mappingMasters/baseModels/deferred()。Vitestのvi.mockを実ブラウザーのmockとみなさない。browser fixture adapter/harnessは未実装・未起動であり、dataを隔離した環境へ公開できること自体を事前確認する。実ユーザーDBや通常originの保存値を変更しない。
+
+- 基準viewportはCSS pxで1280×720、境界は800×600、Settings幅375/767/768/1024。root高さはproduction layoutの実clientHeightを記録し固定CSSで上書きしない。headingはproduction CSSのheight36/font-size12、padding44/margin44。フォント読込み終了後の実computed font-family/font-sizeとbrowser/version/DPR/zoomを証拠へ保存し、OS依存のimage hashをgolden値としない。
+- 長いlist用は各stage各入力種別32slot。既存fixtureのPrompt/Steps templateをindex i=0..31で生成し、i=0は既存ID/role/値を維持。i>0はmaster_id=`1000+2*i`（Prompt）/`1001+2*i`（Steps）、variant_id=`10000+4*i+s`（Prompt）/`10002+4*i+s`（Steps）、s=0 Main/1 Rough。roleは既存computed_roleへ`_fixture_<i>`を付与し各roleを一意にする。slot元IDをAPI payloadへ保持、nodeは基準graph内のMain/Rough nodeだけを使用。値はi=0のA/Bと20/30、i>0は既存初期値とindexを明示した固定文字列/20+i、30+i。これは既存schemaから生成する制御fixtureでありproduction dataや実測結果ではない。
+- Settingsの長listも同じSteps templateを使用、Main node=A/Rough node=B。C/Dは既存workflow()のKSampler nodeとrough keywordをそのまま使う。各本文実height>=2*root.clientHeight、root.scrollHeight>root.clientHeightをbrowserで確認する。32slotでも条件未充足ならfixture不成立としてINCONCLUSIVE、textarea内スクロールだけをsectionの長さとみなさない。
+- BR-11/IT-S6の初期GETはworkflow(target=1,id=7,roughNode='B')。保存1はPUT `/api/workflows/7`のsnapshotにMain A/variant11とRough C/variant12、target_base_model_id=2、元json_body/default_applied_assetsを含み、応答を手動解放まで保持。待ち中のUIでRough D/model1へ編集後、保存1成功とGETの旧C/model2を返す。最新UIはA/D/model1・未保存表示・旧保存済み表示無し。保存2がD/model1を送信し成功した時だけ保存済み。close/reopenはfresh GETの最新D/model1で初期化する。本文slot増量caseとこの基準2slotの競合caseは分ける。
+- 失敗caseは既存IT-S7と同じadapterのPromise rejection `Error('old failure')`/`Error('offline')`を制御。HTTP adapterを用いる場合は500と`{detail:'offline'}`を返すというtest transportを明示し、旧snapshot失敗/現在snapshot失敗を別に記録する。server本来の障害codeと同一だと主張しない。制御adapterがなければ遅延/失敗のbrowser caseはINCONCLUSIVE、実APIへ故意の障害を起こさない。
+
+## Gate 1 — Static and Local Units
+
+`Set-Location frontend; npm run typecheck`。unitコマンドは各Task Cardへ物理記載。
+
+| ID | 対象 | 必須assert |
+|---|---|---|
+| UT-G1 | 純粋grouping | interleaved mapping→Main/Rough各1、sort_order優先、工程内順/元object保持、空stageなし |
+| UT-G2 | grouping境界 | explicit未解決unknown、legacy一意/曖昧、inactive参照保持、定義欠落、同名区別、array非破壊、masters/stages=[]、masterだけ取得済みからstage到着で元mapping参照保持 |
+| UT-H1 | query hook | 両query key、list(true)、T1の第三引数、masters提供/明示[]時fetch抑止、disabledはcache有無とも返却[]・自身のfetch無し、再有効化、pending/errorでcacheまたはfallbackを使いinput保持、refetchでvalue更新なし |
+| UT-C1 | 共通group | section/name/key/title、CSS raw import等で `.stage-input-scroll-root[data-stage-scroll-root]` のscroll-padding44とsection内controlのscroll-margin44規則。mock root.clientTop/clientHeight/header/target矩形で隠れた時だけ露出（top100/header100..136/target120..150ならtop=-24,behavior=auto）、露出済み/欠落root/section外/可視header無しは0回、最寄りrootだけ/別rootのscrollBy=0 |
+| UT-S1 | Settings投影 | 対象stage全enabled variants、未設定候補、legacy1回、v:1/m:1衝突なし |
+| UT-CMP1 | ParamPanel互換性/T5 | Provider無しのdefault=false/明示false/mobile/emptyで既存数値表示と編集、group child非mount。Provider内false→true→falseで値と親hook順序保持、Batch/Seed1回 |
+
+jsdomはCSS sticky・レイアウトを計算しない。mock矩形はfocusの局所試験でありAC-2/3/5の実ブラウザー証拠ではない。
+
+## Gate 2 — Integration and Data Acceptance
+
+| ID | 操作 | 期待 / AC |
+|---|---|---|
+| IT-P1 | Desktopへ同名Main/Rough Prompt | Prompt root内Main/Rough各1、所有section一致 / 1 |
+| IT-P2 | Rough Prompt B→C、chips更新、rerender | Main A、Rough C、disabled chip/collapse/text mode/assets混線なし / 7 |
+| IT-V1 | ParamPanel stageGrouping=true | Parameter内Main/Rough各1、Batch/global Seed等1回、空stage無し / 1 |
+| IT-V2 | Rough Steps30→40 | Main20、Rough40、sync off、専用/global Seed独立 / 4 |
+| IT-PV1 | 実Desktopと実ParamPanelを同時render | 両root内独立heading、片側のheadingで他方を代替しない / 8 |
+| IT-R1 | T4でDesktop両root、T5局所fixture、T7でSettings rootをrender | Desktopの `#desktop-prompt-scroll` / `#desktop-controls-scroll` は別HTMLElement、Settingsの `#settings-mapping-scroll` は独立scroll div。各divに `data-stage-scroll-root=""` / `stage-input-scroll-root` があり、group内control.closest('[data-stage-scroll-root]')が当該div。ParamPanel/sectionに新root無し、Settings saveはroot外。T5単体は同契約のtest-only controls divを使用 |
+| IT-CMP2 | 既存Mobile/Matrixを変更せず再実行 | T5によりflatのquery hook依存を除去。Mobile18例外とint mappingを持つMatrixのmissing submit secondary failureが解消する。残れば新診断で再分類 |
+| IT-CMP3 | T11のDesktop grouped consumer 3test | stable QueryClient wrapper/metadata seed、rerender保持、既存toolbar/chips/preview/進捗assertを維持して10/5/1のProvider例外を解消 |
+| IT-CMP4 | T12のREQ-336/Settings旧UI期待 | stage region/headingとstage付きselect名で所属を確認し、保存payload等の既存assertを保持して旧tab/labelの2失敗を解消 |
+| IT-BASE1 | T14のvisible復帰 | 非空の復元baselineはqueue同期/history冗長fetchなし、cold empty baselineではcomplete後にqueue/history fallback。sourceを旧無条件fetchへ戻さない |
+| SC-API1 | T13 OpenAPI文書 | YAML/JSONのWorkflowMappingCreate/Read.variant_idがPydantic fieldと一致しoptional integer/null、required/endpoint不変 |
+| IT-M1 | 実hook/grouping、shared QueryClientのmetadataを遅延・失敗・再取得 | stage/master片方ずつ到着→両取得、cold error→回復、cache有refetchでもmapping/role別値/chips保持、名前/順だけ更新。Desktop mastersのundefined/[]を区別、Mobile/default=falseはcache有でも元renderer。UT-H1の局所assertと合わせ共有fetchの重複/不要fetchを検証 |
+| IT-S1 | 実AdaptiveとWorkflowConnection連携 | Main/Rough別section、未設定enabled slot/未指定option保持 / 1 |
+| IT-S2 | Rough nodeB→C、save、成功mock、再取得/再表示 | 元master/variant ID、Main nodeA/Rough nodeC、save1回 / 6 |
+| IT-S3 | Rough解除→save、別case保存失敗 | 当該variantだけ除去、Main保持、失敗時draft/未保存表示、import/export variant保持 |
+| IT-S4 | variant1 とlegacy master1混在 | 互いに上書きしない、legacy payloadにvariant_idを捏造しない |
+| IT-S5 | Settings成功保存後Generateの同workflow cacheを再利用 | ['workflow',id]をinvalidate/refetchし変更済みmappingを取得。失敗時はcache/draft保持、Stage/master rename成功の既存query invalidateも確認 |
+| IT-S6 | updateをdeferred、Rough Cで保存→待ち中D/baseModel変更→古いC取得を返す→成功refetch完了 | Main A/Rough Dと新baseModelを保持、未保存表示、旧成功表示/preview解除なし、saving解除。次の明示保存はD/new modelを送信し成功表示。API成功後refetch失敗でも旧cacheにdraftを戻さない |
+| IT-S7 | 同じ保存待ち中の再編集→古いupdateをreject | 最新draft/validation error保持、旧errorによる上書き/自動再送なし、saving解除。最新revisionの失敗は既存失敗・未保存errorを表示 |
+| IT-S8 | 保存中workflow変更/同IDを閉じ直して別epoch | 旧成功は捕捉した元IDだけをinvalidate。現在sessionのフォーム/preview/保存表示へ適用せず、新sessionは最初の取得で1回初期化。保存後import snapshotも最新revisionだけ反映 |
+| IT-S9 | warm workflow-config cache＋初回GETをdeferred、開閉/対象変更 | hydratedまではmapping/baseModel/import/export/保存を非mount、送信なし。fresh GET後だけ初期値を表示、編集後の背景取得ではdraft保持。保存成功後の開閉/対象変更で旧保存表示を解除。実QueryClient/実Settings UI、T8所有2ファイル内 |
+| IT-S10 | 同Main内にsampling/steps、sampling/cfgの2slot | param付きcombobox名で各1を取得し異なるnodeを選択、両master payload保持。T7がproduction、T15所有のstaging testがlabel/保存、T12既存consumerがsteps選択を検証。重複slot削除/位置選択で回避しない |
+
+T8: `Set-Location frontend; npx vitest run src/test/e2e_req347_settings_stage_groups.test.tsx`
+T9: `Set-Location frontend; npx vitest run src/test/e2e_req347_generate_stage_groups.test.tsx`
+
+e2e_*.test.tsx は既存Vitest結合試験の命名。実QueryClient・実対象UI・API境界mockを用い、groupやParamPanelをmockして自己検証しない。実ブラウザーE2Eは下記で別途行う。
+
+hookのcold error試験だけはtest用QueryClientのretry=falseで待機を固定する。本番retry/staleTimeは既存設定を継承する。enabled=falseの「fetch無し」はそのhookのobserverを単独mountしcache有/無しでAPI呼出0をassertし、共有observerによるfetchと混同しない。query refetch failureは最後の成功dataを保持するcase、初回failureは空metadataのfallback caseとして分ける。
+
+## Gate 3 — Browser Acceptance and Red Team
+
+実対象ページをブラウザー操作しroot selector、viewport、scrollTop、header/target矩形、before/after値、画面証拠を記録。ツールを使えない場合はINCONCLUSIVE。3領域ごとに実施し結果を流用しない。
+
+各3rootについてDOM属性/class、実際のoverflow-y、computed scroll-padding-top=44px、group内対象controlのcomputed scroll-margin-top=44px、headingの実高さ36pxを記録する。CSSの定義元はT2のStageInputGroup.css、DOM接続所有はDesktop両root=T4/Settings=T7。T5のwrapper追加でcontrolsに二重scrollができていないことを確認する。これらのstyle値だけで追従/切替/非遮蔽をPASSにせず下記BRを実操作する。
+
+| ID | シナリオ | 判定 |
+|---|---|---|
+| E2E-G1 | 生成2欄にMain/Roughを表示 | 両rootそれぞれMain/Rough各1、所属一致 / AC-1/8 |
+| E2E-G2 | Rough Steps30→40 | Main20、Rough40 / AC-4 |
+| E2E-G3 | Rough Prompt B→C | Main A、Rough C / AC-7 |
+| E2E-S1 | Settings対応付け表示 | Main/Rough各1、未設定候補維持 / AC-1 |
+| E2E-S2 | Settings Rough→nodeC、save、再表示 | Main nodeA、Rough nodeC、payload両variant保持 / AC-6 |
+| BR-1-P/V/S | 同stage本文途中scroll | 当該root上端に所属名、外page上端とは区別 / AC-2 |
+| BR-2-P/V/S | Rough見出し到達前→到達→先→逆戻り | 到達前Mainは所属内、Rough通常位置root上端到達時Rough、逆でMain。viewport入場だけで切替しない / AC-3 |
+| BR-3-P/V/S | sticky直下inputをclick・Tab/Shift+Tabでfocus、編集 | target上端>=header下端、操作部可視、click阻害なし、必要時だけfocus露出 / AC-5 |
+| BR-4 | PromptだけRoughへ、ParameterはMain途中 | 他方Mainのまま、逆も成立 / AC-8 |
+| BR-5 | 分割最小120px、drag、800×600、zoom200% | header36px、scrollして編集可、長名full name/key識別、横overflowで隠れない |
+| BR-6 | 長名/同名2stage、短い本文、単一/0 mapping | title/accessible name、key区別、空生成groupなし、短い2groupで早期切替なし |
+| BR-7 | collapse、preset/workflow切替、master refetch | 値/disabled chips/role state消失なし、stale headingなし |
+| BR-8 | query失敗、master欠落、inactive参照、第四stage | 入力保持、unknown名、sort_order、Settings候補保持 |
+| BR-9 | sync enabled、Seed、LoRA/候補popup | disabled契約、専用/global Seed独立、popup操作をheaderが妨げない |
+| BR-10 | Settings幅375/767、768/1024境界 | 独立rootと外pageを区別、save到達、既存44px対象寸法維持 |
+| BR-11 | Settingsのsave応答を遅延しRough C保存後Dへ再編集、完了・再表示・次保存 | 開いたsessionはMain A/Rough D、未保存表示で編集可。旧C responseでDを戻さず、明示の次保存でDだけを確定。閉じ直し時は最新保存dataで初期化 / AC-6とSPEC_SETTINGS draft保護 |
+
+BR-2のroot上端はborder/clientTop基準、丸め許容1px。paddingをviewport基準と取り違えない。section押し出し後に次header到達まで識別が欠けるならFAIL、section高さ/spacingを調整する。
+
+### Measurement Oracle (independent of PASS labels)
+
+許容誤差eps=1 CSS px。採取JSONはroot selector/clientTop/clientLeft/clientHeight/clientWidth/scrollTop/scrollWidth、各section/header/name/key/controlのrect、input value、computed style、API request/response順序を含む。rectは実browserのgetBoundingClientRectで取得しmockへ置換しない。観測者のPASS記述ではなく、次の入力→計算expected→observed比較で判定する。数値未取得/fixture未成立はINCONCLUSIVE、比較不成立はFAIL。画像は矩形の目視交差確認と証跡に使い、それだけでPASSにしない。
+
+- root viewportは`Vt=root.rect.top+root.clientTop`、`Vb=Vt+root.clientHeight`、`Vl=root.rect.left+root.clientLeft`、`Vr=Vl+root.clientWidth`。heading36/padding44/margin44はcomputed/rectを独立に比較するが、これだけでAC-2/3/5をPASSにしない。
+- BR-1/2: sectionのnormal topをS、bottomをE、header実heightをHとし、productionのmargin0/top0/section自身にoverflow無しの前提で期待sticky top=`max(S,min(Vt,E-H))`。observed header.topとの絶対差<=epsを比較。Roughがviewportへ入っただけの`S>Vt+eps`ではheader.top=S（root上端へ固定されない）、root上端到達の`abs(S-Vt)<=eps`と本文中の`S<Vt<E-H`ではtop=Vt。Main/Rough/逆順を連続採取し、押出し区間もsection範囲に対して比較する。文字/keyの可視矩形がrootと交差しない識別欠落はFAIL、単なるposition:stickyの存在で代替しない。
+- 境界scroll位置は先に未scroll時のRough section normal topから`d=Srough-Vt`を計算し、rootのみをd-2/d/d+max(36,root.clientHeight/2)へscroll（0..scrollHeight-clientHeightでclamp）。実scrollTopとrectを再取得し、clampで必要な到達sampleを作れなければfixture不成立とする。逆戻りも同じ座標sampleを取る。driverがpixel scrollを操作できない場合はこの精密caseをINCONCLUSIVEとし未対応APIを呼ばない。
+- BR-3: focus対象はownsection内control、visible header bottom=`min(Vb,header.bottom)`。native click/Tab/Shift+Tab後にcontrol.top>=visibleHeaderBottom-eps、controlのviewport交差width/height>0、入力変更後に期待値が保持されることを比較。click点の実hit targetがcontrolまたはその子であることを確認。完全可視controlではscrollTopが変わらず、隠れたcontrolの露出後も別2rootのscrollTop/値が変わらない。focus時のownroot scroll期待はT2既存のrect式で計算し、clamp範囲を考慮する。
+- BR-4: 片側だけ操作した前後の別root scrollTop/valueが同一（scrollTop差<=eps）、そのrootのheader expected位置も維持。共有名でもselector/sectionを領域ごとに分離する。
+- BR-5/10: viewport/zoom/分割変更後、root.scrollWidth<=root.clientWidth+eps、documentElement.scrollWidth<=documentElement.clientWidth+eps、各可視操作control/heading keyのrectがVl..Vrへ収まり、root内scroll後の編集/保存が成功することを比較。長名はtitle/accessible nameがfixture全文と一致しkeyで同名stageを区別、nameの省略表示を全文欠落と混同しない。zoomは実browser200%を確認、CSS transformで代替しない。heading高さはCSS pxの36を比較、physical image pxへ誤適用しない。
+- BR-11: 上記固定API台本と実input/select valueを比較。送信1=C/model2、再編集後と旧応答後=D/model1、送信2=D/model1、未保存/保存済み表示と送信回数1→2をJSONへ残す。adapterの未解放promise/request logとUI観測を独立に照合し、旧応答の終了を確認せず「保持した」と判定しない。
+
+外部validatorは追加のAI判定器や任意golden screenshot hashを意味しない。上記expected計算と生の観測JSON/画像/API台本を別成果物として保存し、QA/親が同じ数式を再計算できることを求める。ブラウザーtelemetry/fixture transportがない現在はGate3 INCONCLUSIVEを維持する。
+
+## Regression and Evidence
+
+実装後にDesktopLayout/ParamPanel/WorkflowAdaptiveStaging/WorkflowConnectionSection、既存MobileLayoutと `npm test` をverify担当が確認。unit fixtureはQueryClient providerを追加。MobileのstageGrouping default=falseを維持する。
+
+r5ではProvider追加をgrouped Desktop consumerに限定し、flat ParamPanel/Mobile/StudioはProvider無しでも使えることをT5で検証する。QueryClient hook自体のdisabled observer契約はT3で引き続き検証。T11～T14の局所commandを全て実行後、full frontend suiteを再実行し旧38失敗との差を記録する。
+
+AC-1/2/3/5をPrompt/Parameter/Settingsの3列でPASS/FAIL/INCONCLUSIVE、AC-4/7/8とAC-6を別欄に記録。sticky classだけでAC-2/3/5をPASSにしない。全ケース未実行。T6の `frontend/src/utils/__tests__/wiringStageGroups.test.ts` は部分作成済み・未検証であり、再開時に既存内容を確認して担当T6が継続する。
+
+2026-10-12 `hook-query-contract-r2` はUT-G2/UT-H1/IT-M1を拡張した設計改訂。初版raw Design Gate FAILと監査後の未監査改訂の履歴を維持し、今回の改訂も現時点ではローカルモデル再監査未実行・初回レビュー承認と追加の自律修正指示を親調整役が確認して再開する。
+
+同日、上記改訂を含む全13対象の再監査が完了（audit exit0、raw FAIL (実装着手禁止)、unload exit0/no models loaded）。指摘への証拠付き応答はREQ-347-audit-response.md R2節。試験計画の振舞いは変更しておらず、全試験は引き続き未実行。
+
+2026-10-12 `scroll-root-contract-r3`: UT-C1/IT-R1とGate3のstyle/DOM記録を明確化。r3はローカルモデル未監査。初版/r2 raw FAILと応答を保持し、実装受入結果は試験担当が記録する。
+
+r3監査はaudit exit0/raw FAIL (実装停止推奨)/unload exit0で完了。実コードに基づく保存後refetchのdraft上書きを採用し、`settings-draft-session-r4` としてIT-S6/7/8/BR-11を追加した。実QueryClientとdeferred API responseを使用し、単なるsetState helperの自己検証にしない。r4全13対象を再監査し、r3以前のraw verdictと証跡は保存する。
+
+r4全13対象再監査は5 chunks＋最終合成、audit exit0/raw Design Gate FAIL（設計ゲート失敗）/unload exit0で完了。指摘応答はREQ-347-audit-response.md R4節。全対象本文hashは一致し、T9のstatus metadata driftのみ検出。監査後の本追記は結果記録であり試験契約を変更しない。遅延保存と3領域sticky/非遮蔽の実装受入はverify担当が別途確認する。
+
+`consumer-compatibility-r5` はQA JSONの38 failed/2012 passedを全件取り込んだ改訂。34件が直接Provider不足、Matrix1は同例外の二次症状、旧UI2は受入表示変更の追従不足、visibilitychange1は非空履歴baselineの既存抑止条件とのtest不整合。変更前baseline未実行のため歴史的判定は保留する。OpenAPI snapshotのvariant_id欠落もSC-API1で扱う。r4以前の監査は本改訂を評価しておらず、全14カードを含む17対象のr5監査を別証跡で行う。
+
+r5全17対象監査完了（6 chunks＋最終合成、audit exit0、raw【設計ゲート FAIL】（実装着手禁止）、unload exit0、lms ps --json=[]）。全full/body hashは完了時まで一致。モデルの状態誤認と実測未確認事項を監査応答R5節で分離した。実コード照合で見つかったwarm-cache初期化前編集をT8/IT-S9で追加保護する改訂はsettings-initial-hydration-r6、r5後の未監査内容。初期化までは編集フォーム非mount、初期化後背景取得はdraft保持、開閉/対象変更で保存済み表示解除。改訂監査とIT-S9/Gate2/Gate3は未確認。
+
+r6全17文書監査完了（122,815文字/6 chunks＋最終合成、627.849秒、audit exit0/raw【実装着手禁止】 (Implementation Prohibited)、unload0、lms ps0/[]）。本文17一致、metadata-only driftはT11～T14。rawと応答を分離し実装受入は別途要求。settings-slot-accessibility-r7のIT-S10/T7/T12 param付きlabelはr6後の追加契約として5文書を別auditする。
+
+r7変更5文書のtargeted監査完了（53,701文字/3 chunks＋最終合成、308.519秒、audit0/raw CRITICAL FAILURE（重大な失敗）、unload0/lms ps0/[]）、全5全文/本文hash一致。応答はR7節。IT-S10のparam付きlabelと各master保存、T12全局所test、全体Gate2/Gate3は実装担当/QAが検証する。新たな具体的試験契約不足・人間判断は未確認、既存契約を凍結し結果だけ追記した。
+
+
+## Settings Test Ownership Split (r8)
+
+staging局所testのすべての変更/確認はT15（固定baselineから105/150行）、productionはT7（255/300行）。IT-S10、stage連続region/root/save配置/候補/ID保存の既存testを維持し、passing codeを変更する必要はない。T7も既存testをread-onlyで実行できる。engineer報告typecheck成功/staging10/10は保存するが旧combined T7の360/300行違反を覆さない。T15が局所再検証し、その後T12がT8/T15両方の完了を待ってconsumer全testを検証。Gate3の実測契約は不変。本r8所有改訂を6対象の別監査へ回す。
+
+r8の6文書監査完了（61,169文字/3 chunks＋最終合成、342.099秒、audit0/raw【実装禁止 / Design Gate FAIL】、unload0/lms ps0/[]）。6全文/本文とsource/test hash一致。責務と実行順序は既存r8契約にある。T15の105/150行/局所10件確認とT12 consumer再検証を親が実行し、全体Gate2/Gate3は別途必要。旧T7 combined360/300違反と以前のpassing10件報告を保持、カードの試験契約は凍結。人間判断0。

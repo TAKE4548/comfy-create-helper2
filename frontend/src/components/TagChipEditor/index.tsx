@@ -34,6 +34,8 @@ interface TagChipEditorProps {
   defaultTextMode?: boolean;
   isAnimaMode?: boolean;
   onTextModeToggle?: (isTextMode: boolean) => void;
+  toolbarStart?: React.ReactNode;
+  showModeStatus?: boolean;
 }
 
 export const TagChipEditor: React.FC<TagChipEditorProps> = ({
@@ -46,6 +48,8 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   defaultTextMode = false,
   isAnimaMode = false,
   onTextModeToggle,
+  toolbarStart,
+  showModeStatus = true,
 }) => {
   const initialChips = useMemo(() => {
     return chipsProp && chipsProp.length > 0 ? chipsProp : parseToChips(value, isAnimaMode);
@@ -354,9 +358,10 @@ export const TagChipEditor: React.FC<TagChipEditorProps> = ({
   return (
     <div className="w-full flex flex-col gap-1.5" id={id}>
       {/* モードトグルとステータス表示 */}
-      <div className="flex justify-between items-center text-xs text-[#A1A1AA]">
+      <div data-prompt-toolbar="" className="flex flex-wrap items-center gap-1.5 min-w-0 text-xs text-[#A1A1AA]">
+        {toolbarStart}
         <span>
-          {isTextMode ? 'Text Mode (Comma separated)' : 'Chips Mode'}
+          {showModeStatus && (isTextMode ? 'Text Mode (Comma separated)' : 'Chips Mode')}
           {(!isTextMode && (canUndo || canRedo)) && (
             <span className="ml-2 opacity-60">
               ({canUndo ? 'Ctrl+Z: Undo' : ''} {canRedo ? 'Ctrl+Y: Redo' : ''})

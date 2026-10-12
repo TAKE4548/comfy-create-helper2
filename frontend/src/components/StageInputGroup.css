@@ -1,0 +1,49 @@
+.stage-input-scroll-root[data-stage-scroll-root] {
+  padding-top: 0;
+  padding-bottom: 0;
+  scroll-padding-top: 44px;
+}
+
+.stage-input-group {
+  display: block;
+  margin: 0;
+}
+
+.stage-input-group__heading {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  background: #18181b;
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stage-input-group__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-input-group__body {
+  padding: 8px 0 12px;
+}
+
+.stage-input-group input,
+.stage-input-group textarea,
+.stage-input-group select,
+.stage-input-group button,
+.stage-input-group [tabindex],
+.stage-input-group [contenteditable="true"] {
+  scroll-margin-top: 44px;
+}

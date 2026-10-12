@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ParamPanel } from '../ParamPanel'
 import { LS_KEYS } from '../../../../utils/localStorageKeys'
 
@@ -220,6 +221,75 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     />)
     expect(document.getElementById('param-Sampler_Denoise')).not.toHaveAttribute('min')
     expect(document.getElementById('param-Sampler_Denoise')).not.toHaveAttribute('max')
+  })
+
+  it('groups visible parameters inside the external desktop scroll root when enabled', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+    queryClient.setQueryData(['stage-masters'], [
+      { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 0 },
+      { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
+    ])
+    queryClient.setQueryData(['mapping-masters'], [{
+      id: 10, group_id: null, base_key: 'cfg', name: 'CFG', param_name: 'cfg', input_type: 'float',
+      expected_class_types: null, base_title_patterns: null, sort_order: 0,
+      variants: [
+        { id: 11, master_id: 10, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', custom_role_override: null, computed_role: 'cfg_main', extra_title_patterns: null, is_enabled: true },
+        { id: 12, master_id: 10, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', custom_role_override: null, computed_role: 'cfg_rough', extra_title_patterns: null, is_enabled: true },
+      ],
+    }])
+    const mappings = [
+      { id: 1, master_id: 10, variant_id: 11, role: 'cfg_main', param_name: 'cfg', input_type: 'float', display_name: 'Main CFG' },
+      { id: 2, master_id: 10, variant_id: 12, role: 'cfg_rough', param_name: 'cfg', input_type: 'float', display_name: 'Rough CFG' },
+      { id: 3, master_id: 99, role: 'Sampler_Seed', param_name: 'seed', input_type: 'int', display_name: 'Hidden alternate' },
+    ]
+    let currentParamValues = { cfg_main: '20', cfg_rough: '30' }
+    const setParamValues = vi.fn((values: typeof currentParamValues) => { currentParamValues = values })
+    let currentSeedMode: 'random' | 'fixed' = 'random'
+    const setSeedMode = vi.fn((mode: 'random' | 'fixed') => { currentSeedMode = mode })
+    const renderAt = (stageGrouping: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <div id="desktop-controls-scroll" data-stage-scroll-root="" className="stage-input-scroll-root">
+          <ParamPanel {...defaultProps} stageGrouping={stageGrouping} paramMappings={mappings} paramValues={currentParamValues}
+            setParamValues={setParamValues} seedMode={currentSeedMode} setSeedMode={setSeedMode} />
+        </div>
+      </QueryClientProvider>
+    )
+    const { container, rerender } = render(renderAt(false))
+    expect(screen.queryByRole('heading', { name: 'Main (main)' })).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('20')).toBeInTheDocument()
+    rerender(renderAt(true))
+
+    expect(screen.getByRole('heading', { name: 'Main (main)' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Rough (rough)' })).toBeInTheDocument()
+    expect(screen.getByText('Main CFG')).toBeInTheDocument()
+    expect(screen.getByText('Rough CFG')).toBeInTheDocument()
+    expect(screen.queryByText('Hidden alternate')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Batch Size')).toHaveLength(1)
+    expect(screen.getAllByText('Seed')).toHaveLength(1)
+
+    const panel = container.querySelector('#desktop-controls-scroll > div')
+    const section = screen.getByRole('heading', { name: 'Main (main)' }).closest('section')
+    const control = document.getElementById('param-cfg_main')
+    expect(panel).not.toHaveAttribute('data-stage-scroll-root')
+    expect(section).not.toHaveAttribute('data-stage-scroll-root')
+    expect(control.closest('[data-stage-scroll-root]')).toBe(container.querySelector('#desktop-controls-scroll'))
+    fireEvent.change(document.getElementById('param-cfg_rough')!, { target: { value: '40' } })
+    expect(setParamValues).toHaveBeenLastCalledWith({ cfg_main: '20', cfg_rough: '40' })
+    fireEvent.click(document.getElementById('seed-toggle')!)
+    expect(setSeedMode).toHaveBeenLastCalledWith('fixed')
+    rerender(renderAt(false))
+    expect(screen.queryByRole('heading', { name: 'Main (main)' })).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('20')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('40')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('12345')).not.toBeDisabled()
+    expect(screen.getAllByText('Batch Size')).toHaveLength(1)
+    expect(screen.getAllByText('Seed')).toHaveLength(1)
+  })
+
+  it('keeps the legacy renderer by default for mobile callers', () => {
+    render(<ParamPanel {...defaultProps} mobile />)
+    expect(screen.getByText('CFG Scale')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /\(unknown\)/ })).not.toBeInTheDocument()
   })
 
   it('disables numeric stepper buttons for synchronized slave parameters', () => {

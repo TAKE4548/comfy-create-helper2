@@ -1,0 +1,243 @@
+---
+id: REQ-347-design
+status: draft
+design_gate: pending
+tags: [REQ-347, generate, settings, stage, design]
+related_paths:
+  - docs/backlog/pbi/active/REQ-347.md
+  - docs/specs/SPEC_GENERATE.md
+  - docs/specs/SPEC_SETTINGS.md
+  - frontend/src/pages/GeneratePage/components/DesktopLayout.tsx
+  - frontend/src/components/ParamPanel.tsx
+  - frontend/src/components/AdaptiveWorkflowWiring.tsx
+---
+
+# REQ-347 ステージグループと追従見出しの設計
+
+## Scope and Feasibility
+
+実現可能。対象は生成ページの水平の仕切りで分かれたプロンプト・パラメータ入力、および Settings → ワークフロー →「対応付け・設定」のノード対応編集の3領域。既存の `desktop-prompt-scroll` / `desktop-controls-scroll` は独立したscroll root。内部の `ResizableSplitLayout direction="vertical"` は上下配置と水平の仕切りを表す。入力とプレビューの左右分割とは区別する。
+
+Workspace / Git root は `C:/Users/audih/ws/comfy-create-helper2`。frontend・docsともこのroot配下、外部実装パスなし（Git_Root_Mismatch=No）。backend実装は変更なし。T13は既存API契約のOpenAPI snapshotのみ同期する。規定scriptはcontextから `GLOBAL_SCRIPTS=C:/Users/audih/.gemini/antigravity/scripts` に解決。
+
+## Evidence and SSoT Impact
+
+`doc_mapper.py docs/specs docs/backlog/pbi/active/REQ-347.md` は No mapped documents found。PBIの明示参照と変更箇所から下記を特定。未検出を影響なしの根拠にしない。
+
+| 正本・依存 | 観測された契約 | 本要求の反映 |
+|---|---|---|
+| SPEC_GENERATE §2/2-3/2-5 | textareaとそれ以外を別入力へ描画。desktopタブの文書記述が実装と相違 | 2領域の独立group・追従・切替と既存role別値を記述 |
+| SPEC_SETTINGS §3-1/4-1/7 | draft保護・variant対応付け・保存 | 連続stage groupと専用scrollを追記 |
+| REQ-336設計 / api/types.ts | master→variant→stage、computed_roleが値キー | 既存型を参照、共有API型を変更しない |
+| REQ-343設計 / WorkflowConnectionSection | variant_idを保持、未設定保存可 | 既存onChangeMappings/onSaveMappingsを使用 |
+| REQ-348 ready PBI | 未設定ロール追加・全有効stage対応 | Settingsのenabled variant候補を保持。smart置換・検出の拡張はREQ-348 |
+
+上流は useWorkflowManagement の validMappings/textMappings/paramMappings、既存 mapping-masters/stage-masters query、Settings activeStages。下流は TagChipEditor・assets・translation・paramValues・ParamSync・SeedField・workflow保存・preset。元mappingとroleをそのまま渡し、値・chips・asset・collapseキーを再構成しない。
+
+取得元の根拠は `frontend/src/api/domains/stageMasters.ts` L10（`list(include_inactive = true): Promise<StageMaster[]>`）、`frontend/src/components/StageManagerModal.tsx` L42（`['stage-masters']` と `list(true)`）、`frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx` L146（同key、`list()`）、`frontend/src/pages/GeneratePage/hooks/useWorkflowManagement.ts` L3/L44（client importと `['mapping-masters']`）。master APIは生成と同じclientからimportし、実体 `frontend/src/api/domains/workflows.ts` L43の `list: () => request('/mapping-masters')` をqueryFnで `Promise<(MappingMaster | MappingMasterV2)[]>` にcastする。stage APIはclientからexportされていないためdomains/stageMastersから直接importする。別の型付きdomains/mappingMastersへ切り替えない。生成stateから工程一覧を受け取る既存propはないため、T3のhookが共有queryへ接続する。
+
+既存API取得を利用するUI変更で、runtime endpoint・request/response契約は変更しない。r5では実装済みoptional variant_idがOpenAPI snapshotへ未反映と確認したため、T13でdocs/openapi.yamlとbackend/openapi.jsonを同期する。schema/endpointはopenapi_parserで抽出済み。
+
+## Generation Grouping Contract
+
+`utils/mappingStageGroups.ts` に純粋関数、`hooks/useMappingStageGroups.ts` に取得接続を置く。
+
+~~~ts
+interface MappingStageGroup {
+  key: string; stageId?: number; stageKey: string;
+  stageName: string; mappings: WorkflowMapping[];
+}
+function groupMappingsByStage(
+  mappings: readonly WorkflowMapping[],
+  masters: readonly (MappingMaster | MappingMasterV2)[],
+  stages: readonly StageMaster[],
+): MappingStageGroup[];
+function useMappingStageGroups(
+  mappings: readonly WorkflowMapping[],
+  masters?: readonly (MappingMaster | MappingMasterV2)[],
+  enabled?: boolean,
+): MappingStageGroup[];
+~~~
+
+- 明示variant_idは同master内の同idだけを採用。StageMaster.idの名前/順を優先し、定義欠落・取得前はvariant.stage_key/stage_nameを使う。suffix推測は禁止。
+- legacy（variant無し）は同master内の computed_role完全一致variantが1つなら採用。曖昧/variant無しはlegacy Mainにまとめ、値キーを改名しない。
+- 明示variant未解決は `unknown-variant:<id>` / `ステージ不明 (variant #<id>)` で入力保持。取得前にMainと断定しない。
+- 有効StageMasterをsort_order順、同値は元定義順。既存mappingが参照するinactive/定義欠落stageは末尾初出順で保持。同stageは1group、group内は元mapping順、入力array非破壊。
+- 各領域に渡されたmapped入力だけを表示。空stageを追加しない。既存 `Sampler_Seed` 代替で描画しないmapping等はParamPanel側で除外してからgroup化。
+- hookの既定値は `enabled=true`。T3が `useQuery<StageMaster[]>({ queryKey: ['stage-masters'], queryFn: () => stageMastersApi.list(true), enabled })` を内部で呼び、純粋関数の必須第三引数へ `stageQuery.data ?? []` を渡す。呼出側に `stages` 引数や新しいstate/propを追加しない。T1は三引数の純粋関数だけを所有する。
+- master queryは既存key `['mapping-masters']`、`queryFn: () => mappingMastersApi.list()`、`enabled: enabled && masters === undefined`。解決値は `masters ?? masterQuery.data ?? []`。明示 `masters=[]` は取得済み空一覧として扱い、cacheやfetchで補わない。
+- 両useQueryは毎renderで同順に呼び、その後 `enabled ? groupMappingsByStage(mappings, resolvedMasters, resolvedStages) : []` を返す。enabled=falseはこのhookのquery observerからfetchを開始せず、cacheがあっても返却groupは空。Mobile/default=false側は既存の平坦な描画を続ける。別observerが行う共有queryのfetchをcancelする契約ではない。
+- pending/errorはstatusを理由に入力を消さず、最後のquery.dataがあれば利用し、なければ空metadataで純粋関数のfallbackを使う。取得待ち/失敗と成功空一覧は戻り型を変えず区別表示を追加しない。stage未取得かつmaster有はvariant名/順fallback、master未取得かつexplicit variant有はunknown、legacyは既存legacy Main規則。再取得成功時は名前・順を再投影し、値・chips・callbackを変更しない。retry/staleTime等は既存QueryClient設定を継承する。
+
+呼出接続は Desktop Prompt が `useMappingStageGroups(textMappings, mappingMasters, true)`。ParamPanel親はquery hookを呼ばず、stageGrouping=falseはprovider不要の元renderer。trueかつParameters本文を表示する時だけ同ファイル内の非export子 `StageGroupedParameters` をReact componentとしてmountし、子は `useMappingStageGroups(mappings, undefined, true)` を毎render同順に呼ぶ。空のParamPanelは子をmountしない。子の非mountによる取得抑止と、T3 hook自体のenabled=false契約は区別する。T3のqueryが必要な全 `StageMaster[]` を明示してT1へ渡すため、T1で取得処理を実装しない。
+
+~~~ts
+interface StageGroupedParametersProps {
+  mappings: readonly WorkflowMapping[];
+  renderMapping: (mapping: WorkflowMapping) => React.ReactNode;
+}
+// 非export、ParamPanel.tsx内。関数として直接呼ばずJSXでmountする。
+function StageGroupedParameters(props: StageGroupedParametersProps): React.JSX.Element;
+~~~
+
+T5は描画対象だけをvisibleParamMappingsへ絞り、既存renderParamMapping callbackと元objectを子へ渡す。子はgroupごとのStageInputGroupと本文space-y-3のみを返す。親のBatch/global Seed/ParamSync/Bypassは各1回、既存値/callback/disabled/collapseを維持する。stageGrouping false↔trueの切替は子のmount/unmountとなり、親のhooks順序とReact Rules of Hooksを守る。query取得は表示中のgroup子だけで行い、flat/Mobile/StudioへQueryClient依存を追加しない。
+
+ParamPanelに `stageGrouping?: boolean` をdefault=falseで導入しDesktopだけtrue。既存Mobile Prompt tabsを拡張しない。T3でprop型を先に公開してT4/T5の型依存を解消する。
+
+## Settings Grouping and Identity
+
+`utils/wiringStageGroups.ts` に既存slot投影を抽出する。activeStagesをsort_orderと元順で並べ、各工程のenabled variantsを連続groupへ描画。未設定enabled候補も保持し、0slotなら既存説明本文を表示。対象workflowに有効なstageの検出・smart置換は変更しない。工程情報のないlegacy slotはMain（なければ先頭対象工程）へ1度だけ置き、全工程に複製しない。
+
+~~~ts
+interface WiringStageSlot {
+  slotKey: string; variantId?: number; masterId: number;
+  role: string; paramName: string; displayName: string;
+  inputType: string; stageId: number;
+}
+interface WiringStageGroup {
+  info: ActiveStageInfo; slots: WiringStageSlot[];
+}
+function buildWiringStageGroups(
+  activeStages: readonly ActiveStageInfo[],
+  masters: readonly (MappingMaster | MappingMasterV2)[],
+  currentMappings: readonly WiringMappingItem[],
+): WiringStageGroup[];
+~~~
+
+mapキーは `v:<variantId>` と `m:<masterId>` に分離。数値衝突で別slotを上書きしない。V2送信には元variant_id、legacy送信にはmaster_id/node_idだけ。選択・解除は当該slotだけ、保存は全工程の最新draftを一度だけ渡す。推奨nodeは各stage.matchedNodeIdsから生成する。
+
+## Sticky Header and Editing Contract
+
+共通 `StageInputGroup.tsx` とCSSでsection内に通常フロー高さ36pxの `position:sticky; top:0` 見出しを1つ置く。不透明背景、局所z-index10、sectionに新overflow/transformを設けない。名前は1行省略、完全名をtitle/accessible nameへ保持。r12では可視keyを省略し、ARIAのname (key)とdata属性で長名・同名を識別する。
+
+~~~ts
+interface StageInputGroupProps {
+  groupKey: string; stageName: string; stageKey: string;
+  children: React.ReactNode;
+}
+~~~
+
+scroll root の唯一の検出selectorは `[data-stage-scroll-root]`。実際に `overflow-y:auto` を持つHTMLElementへ `data-stage-scroll-root=""` と `className` の `stage-input-scroll-root` を併せて付ける。sectionやParamPanelの非scroll wrapper、外pageへ付けない。T2が `frontend/src/components/StageInputGroup.css` に `.stage-input-scroll-root[data-stage-scroll-root] { scroll-padding-top: 44px; }` を定義し、StageInputGroup.tsxから同CSSを静的importする。CSSはコンポーネントのrender有無に依存せず読まれる。新しい全体CSSファイルやroot用prop/exportを追加しない。
+
+T2のsection classは `stage-input-group`、見出しは `stage-input-group__heading`、本文は `stage-input-group__body`。同CSSのsection内 `input, textarea, select, button, [tabindex], [contenteditable="true"]` 各selectorに `scroll-margin-top:44px` を与える（各selectorは `.stage-input-group` でscope）。見出しは `height:36px; box-sizing:border-box; position:sticky; top:0`、通常フローに残す。44pxは見出し36px＋露出後の8px余白。focus補正の発火に固定44pxを使わず、見出しの実矩形を使う。
+
+T2はsectionのonFocusCaptureで `event.target` のHTMLElementを対象とし、`target.closest('[data-stage-scroll-root]')` を唯一のrootとする。own section内の対象/own heading refを使い、root欠落やsection外（portal経由の候補等）、高さ0の矩形はno-op。rootの表示範囲は `rootRect.top + root.clientTop` から `+ root.clientHeight`、見出しの可視範囲はその範囲とheaderRectの交差。対象上端が可視見出し下端より上で、対象下端が可視見出し上端より下の場合のみ `root.scrollBy({ top: targetRect.top - (visibleHeaderBottom + 8), behavior: 'auto' })` を1回呼ぶ。これで上側へscrollして対象上端を見出し下へ露出する。別root/window/sectionのscroll、scrollIntoView、focus/valueの変更は行わない。browserのscroll範囲clampを尊重し、補正後の非遮蔽はBR-3で実測する。scroll監視や共有activeStage stateは導入しない。resize・分割drag・折り畳みはCSS再レイアウトに追従する。
+
+| root / 接続箇所 | 属性とclassの実装所有 | 利用側 |
+|---|---|---|
+| `#desktop-prompt-scroll` / DesktopLayout.tsx のfirst | T4: 既存divへ両方を追加、既存overflowを保持 | T4のPrompt group |
+| `#desktop-controls-scroll` / DesktopLayout.tsx のsecond | T4: 既存divへ両方を追加、既存overflowを保持 | T5のParamPanel group。T5はDesktopLayoutや別rootを編集しない |
+| `#settings-mapping-scroll` / AdaptiveWorkflowWiring.tsx | T7: 新規の工程一覧scroll divへ両方を追加、overflow-y:autoとmax-height:min(60vh,480px) | T7のSettings group。saveはroot外 |
+
+T2は外部scroll divを編集せず、3領域へのclass/属性の適用はT4/T7だけが行う。T5の局所testは同じ属性/classを持つtest-only rootでParamPanelをwrapする。T4のtestで両Desktop rootの属性/classを、r8でT7から所有分割したT15のtestでSettings rootの属性/classとsaveのroot外配置をassertする。T2のtestでは実CSSのselectorと44px規則をraw import等で検証する。jsdomのCSSレイアウトを根拠にstickyの受入PASSを出さない。
+
+次工程がroot上端へ到達するまで、旧工程見出しが所属section内に残る。末尾では次見出しに押し出され、次見出し通常位置がroot上端へ到達すると次タイトルが上端に残る。次工程がviewportへ入っただけで早期切替しない。境界の識別と非遮蔽は実ブラウザーで検証する。
+
+group一覧は間隔0の専用wrapperに置く。既存space-y/gap/marginを工程section間に適用せず、入力の余白はsection本文内に置く。これにより旧見出し消失後に空白を挟んで次見出しが到達する区間を作らない。focus rootは target.closest('[data-stage-scroll-root]') のHTMLElementであり、section自身をscroll可能にする必要はない。
+
+生成はWorkflowMapping→MappingStageGroup、Settingsはmaster/variants＋WiringMappingItem→WiringStageGroup/WiringStageSlotを別投影する。共通StageInputGroupは表示名/key/childrenだけを受け、どちらのAPI型も直接参照しない。Settingsの選択時serializeはvariantIdがあるslotだけにvariant_idを含める。
+
+StageManagerModalは成功時stage-masters/mapping-mastersを既にinvalidateする。SettingsのsaveWorkflowConfigは改訂前にはworkflows/workflow-configだけをinvalidateし、生成の['workflow',id] cacheを残すため、T8で成功時に同queryもinvalidateする。失敗時はinvalidateせずdraftを保持。値の同期を新規導入せずmapping再取得を正しい既存queryへ通知する。
+
+## Settings Draft Session and Save Revision Contract
+
+r3時点の保存競合指摘を改訂前コードで確認した（T8で修正済みの設計根拠）。WorkflowConnectionSection.tsx L159-163はconfigWorkflow再取得で無条件にconfigMappings/configBaseModelIdを置換し、L180のrevision gateは成功表示だけを保護する。保存したRough=Cの応答待ちにDへ編集すると旧refetchでCへ戻り得るため、SPEC_SETTINGS §4-1のdraft保護をT8で具体化する。
+
+T8は同じ2所有ファイルで、既存configDraftRevisionに下記1つのrefを追加する。新hook/API/schema/依存は不要。
+
+~~~ts
+interface ConfigDraftSession {
+  epoch: number; workflowId: number | null;
+  hydrated: boolean; acknowledgedRevision: number;
+}
+// useRef<ConfigDraftSession>({epoch:0, workflowId:null,
+//   hydrated:false, acknowledgedRevision:0})
+~~~
+
+- 「対応付け・設定」の開閉/対象切替handlerはnextWorkflowIdを計算し、revisionを1増やしてepochも1増やした新sessionを同期的にrefへ設定する。workflowId=nextWorkflowId、hydrated=false、acknowledgedRevision=更新後revisionとし、既存setConfigWorkflowId/preview/errorリセットとsetSaved(null)を実行する。同じworkflowを閉じて再度開いても別epoch。render中にref/counterを変更しない。
+- configWorkflow取得effectはdata.idと選択workflowIdとsession.workflowIdが一致し、session.hydrated=falseの時だけmappings/baseModelIdを初期化し、hydrated=true/acknowledgedRevision=現在revisionとする。同一sessionの後続refetch（保存/背景/再接続を含む）はこれらフォーム値を置換しない。初回取得が失敗したらhydrated=falseのまま、回復時に一度初期化する。query dataは引き続きgraph/候補/metadata表示とcache更新に使う。
+- mapping/baseModel/import text/previewの既存編集handlerはrevisionを増やし、savedを消す契約を維持。hydratedかつcurrentRevision!=acknowledgedRevisionなら「変更は未保存です」を保存表示付近に表示する。古い成功/errorで最新draftへ誤った保存表示を付けず、既存の新しいvalidation errorも消さない。
+- saveWorkflowConfigは受付時に非nullの保存対象ID、session epoch、revision、送信draft snapshotを捕捉。updateと成功時の3query invalidateはその捕捉IDだけを使う。保存受付時のrevisionがAPIへ送ったsnapshotに対応し、元draftや現在の選択IDをawait後に再読して送信内容を変更しない。
+- API成功時、現在sessionのID/epochが捕捉値と同じ場合だけacknowledgedRevisionを送信revisionへ更新する。3queryは成功時だけinvalidate。最新のID/epoch/revisionが全て捕捉値と同じ場合だけsnapshotのmappings/baseModelIdをフォームへ明示適用し（variant_idはnull/undefinedなら省略）、preview/confirm解除と保存済み表示を行う。importで送ったsnapshotも同じ規則。ユーザーが再編集してrevisionが増えた場合はそのdraftを保持し未保存表示、旧snapshot/preview解除を適用しない。
+- 失敗時はquery通知/ack変更を行わない。ID/epoch/revisionが全て一致する場合だけ既存の保存失敗・未保存errorを表示し、それ以外は最新draft/errorを保持。finallyでconfigSaving=falseを必ず実行し、現在のdraftを再保存可能にする。自動再送しない。異なるworkflow/epochへの古い成功は元IDのcache更新だけを行う。
+
+r6で追加した初回hydration保護も現行契約として維持する。warm cacheの初回GET pending中はmapping/baseModel/import/export/保存フォームを非mountにし、選択ID/session/dataID一致かつhydrated=trueの後だけ操作可能にする。未初期化保存は拒否し、toggle/対象切替で旧savedを解除。初期化後の背景refetchは編集を止めず、IT-S9の現行5件Settings結合証拠を保持する。r12はこの保存契約を変更しない。
+
+フォームを一度だけ初期化する方針は、同一編集sessionで外部から変更されたmapping/baseModel値を自動適用しないという制約を持つ。閉じて再度開くと最新query dataで初期化する。工程名/候補/graphなどmetadataの再取得は継続する。保存成功が最新draftに一致すれば送信snapshotを明示採用するので、成功後の旧cache/取得失敗でもフォームが保存前へ戻らない。実APIが受け付けた値の保持を優先し、外部更新との自動mergeや新警告flowは追加しない。
+
+| 領域 | 統合 |
+|---|---|
+| Prompt | desktop-prompt-scroll内でgroup→元textMappings描画。m.id、TagChipEditorのactiveSetId-role keyを保持 |
+| Parameter | desktop-controls-scrollがroot。ParamPanelのmapped入力だけgroup化。Batch/global Seed/ParamSync/Bypassはgroup外各1回、Audit/MappingError/assetsの既存配置を維持 |
+| Settings | AdaptiveWorkflowWiring内にsettings-mapping-scroll、max-height:min(60vh,480px)。stage tabs→連続group、saveはscroll外 |
+
+## AC Traceability
+
+| AC | 責務 | 証拠 |
+|---|---|---|
+| 1 | T1/T3/T4/T5/T6/T7、3領域Main/Rough各1 | IT-P1/V1/S1、E2E-G1/S1 |
+| 2 | T2と各root | BR-1-P/V/S |
+| 3 | T2、境界押し出し | BR-2-P/V/S |
+| 4 | T5/T9、role別paramValues | IT-V2、E2E-G2 |
+| 5 | T2/T4/T5/T7、focus露出 | BR-3-P/V/S |
+| 6 | T6/T7/T8、slot別mapと保存 | IT-S2、E2E-S2 |
+| 7 | T4/T9、role別chips/文字列 | IT-P2、E2E-G3 |
+| 8 | T4/T5/T9、両欄個別heading | IT-PV1、BR-4 |
+
+## Current Revision — Visual Polish r12
+
+2026-10-12、ユーザーは現UIの動作を「全部OK」と確認し、見た目3点の修正を依頼した。これは変更前画面へのユーザー確認であり、自動Gate3 telemetryや改訂後PASSとして扱わない。T1–T15の実装は完了済み。旧Gate1/有効Gate2（226 files、2053 tests）はPASS、新改訂の試験は未実施、Gate3は実ブラウザーcapability/隔離fixture未充足でINCONCLUSIVE。旧時点の未実行/停止/FAIL原文はdesign-history-pre-r12/test-plan-historyと既存各audit trace/logへ保存し現状態と分ける。
+
+### Exact UI Elements and Names
+
+- 工程group見出し（h3）: 現実装は `stageName` と `stageKey` の2span。StageMasterに独立のdisplay_nameはなく、工程管理で設定された `StageMaster.name` がstageName、keyは技術識別子。r12では可視文字をnameだけとし、工程group自体は所属表示として残す。name欠落/空白だけならkey、さらに空なら「ステージ不明」。titleは全文、ARIAはresolvedName (stageKeyまたはgroupKey)、section data/heading useIdを保持する。
+- Prompt項目見出し（現collapse button）: 現sourceは `m.display_name` のみでstage名を付加していない。backendのeffective_masterもmaster設定display_nameをそのまま返す。設定値に利用者が「Rough Prompt」と入力した場合、その文字を削除しない。非空設定値を加工せず表示し、欠落/空白だけならparam_name→role→「プロンプト」。工程名を足す新しい表示ロジックは作らない。
+- Settingsのslot本文はrole→paramを保存先情報として表示し、select名はstage+role→param。これらはh3の技術key併記とは別のUIであり、r7の同名select独立性を維持する。r12はこのslot表示/accessible名を変更しない。
+
+### Acceptance Supplement
+
+既存AC1–8を維持し、次の視覚ACを追加する。
+
+| ID | Given / When / Then | 所有・証拠 |
+|---|---|---|
+| AC-V1 | 各独立rootで長い本文をscrollして同stage headerが固定中、header.topはroot client topから1px以内。root由来の上端padding帯がなく、前の本文がheaderの上/背景へ漏れない。境界押出しは従来AC3のnative section規則で判定 | T16/T18、BR-VIS1 |
+| AC-V2 | 設定された工程名/Prompt表示名を表示、可視見出しは設定名のみ（欠落時の明示fallbackを除く）。工程key/工程名を入力表示名に追加せず、同名でもARIA/data/元IDで区別し元role編集を保持 | T16/T18/T19、UT-VIS1/IT-VIS1/BR-VIS2 |
+| AC-V3 | Desktop Prompt項目名は16px/24px/weight600の独立h4行。copy/history/翻訳/assetsとmode切替を次のwrap toolbarへまとめ、Chips Mode/Text Modeの独立captionは省略。330px paneと200%zoomでもbuttonは到達可能、横overflowで切れず、元操作/値/chips/collapseは保持 | T17/T18/T19、UT-VIS2/IT-VIS1/BR-VIS3 |
+
+### Geometry and Toolbar Contract
+
+3rootの物理padding-top/bottomを0にする。共通CSS `.stage-input-scroll-root[data-stage-scroll-root]` で明記し、Desktopのpy-4を除去。上下余白は工程bodyまたはgroup外の内側本文へ移す。水平px-5は保持、scroll-padding44/scroll-margin44は物理paddingと別で維持。header36px/top0/opaque #18181b/z10/通常フロー、工程section間margin/gap0とfocus補正実矩形式は変更しない。root client top基準をpadding edgeと取り違えない。
+
+Prompt h4はmargin0、buttonを全幅/16px/24px/600/min-width0/wrap/break-word、タイトルの行へaction controlsを置かない。wrapper data-prompt-mapping-idは元m.id、h4 data-prompt-item-heading、collapse aria-expanded/aria-controlsは既存editor ID。見出しの名前は設定表示名。同stage同名はmapping IDからDOM scopeを選び、ARIA region/controlsの元IDと値callbackで区別。React keyと元roleを変更しない。
+
+TagChipEditorに `toolbarStart?: React.ReactNode` と `showModeStatus?: boolean = true`。Desktopだけslotに元clipboard/history→翻訳→Add Asset群、falseを渡す。editorがその後に既存mode buttonを各1回描画する。toolbar/data-prompt-toolbarはflex-wrap/align-center/gap6/min-width0、overflow clip無し。canUndo/Redo hintを別spanに保持し、mode buttonの既存名前/handlerは維持。props省略のMobile/Studioは既存caption/機能を維持。copy dropdown/AddAssetModalのrelative anchorと開閉を保持しeditorのparse/history/DnD/mount寿命を変えない。
+
+## Active Task Cards and DAG
+
+r12の関連監査対象は設計/test-plan/本plan/T16–T20の8文書。旧15カードは完了済みの時点契約で、raw監査/line-bound FAILは消さない。固定baseline 3b901040c1887b24c56cc517e75768b777913a5eから所有ファイルの追加＋削除を累積測定し、未追跡も全行を加算する。net差分/本revision分だけ/移動除外は使わない。
+
+| Task | 責務 | 所有数 | 累積上限 | 依存 |
+|---|---|---:|---:|---|
+| T16 | StageInputGroup tsx/css/既存局所test | 3 | 300 | なし |
+| T17 | TagChipEditor index/新toolbar局所test | 2 | 250 | なし |
+| T18 | DesktopLayout視覚接続source | 1 | 250 | T17 |
+| T19 | 新visual結合test/既存tabs caption期待 | 2 | 300 | T16,T18 |
+| T20 | Generate/Settings正本同期 | 2 | 160 | なし |
+
+新規カードの各ファイル数<=3/上限<=300/カード自身300行未満。T16の3未追跡ファイル現合計250行、T18 source既存差分19行、T19 tabs既存差分28行、T20 specs既存差分32行を含める。実装中の超過見込みはArchitectへ自律再分割。旧T7 source255/test105とcombined360の過去違反は別保存。新revisionの実測成功はまだない。
+
+~~~mermaid
+graph TD
+  T16[REQ-347-T16 Common Header] --> T19[REQ-347-T19 Integration]
+  T17[REQ-347-T17 Editor Toolbar] --> T18[REQ-347-T18 Desktop]
+  T18 --> T19
+  T20[REQ-347-T20 SSoT]
+~~~
+
+完了済みbaselineの後の改訂DAGは最長3層、旧DAGは変更せずhistoryに保持。T16/T17/T20並列。T18はT17型公開後、T19はT16/T18後。書込所有競合なし、不要な新query/state/API依存なし。
+
+## Trade-offs and Audit Gate
+
+工程の技術keyを可視から外すことで同名工程の視覚区別は所属位置に依存するが、ARIA name(key)/data/heading idは保持する。設定名は利用者の語彙として保持する。項目名拡大で高さが増えるがtoolbarを折り返せる独立行へまとめ狭幅でもタイトル幅を確保する。JS固定header/新scroll observer/全page mode caption変更は導入しない。Settingsの既存slot識別/保存競合保護を維持する。
+
+dev-designによる変更設計レビューを親調整役へ返す。今回の直接の修正依頼と既存のArchitect自律修正指示を承認根拠として記録し、通常の追加確認で停止しない。避けられない人間判断事項0。モデル/32768/noneで上記8対象を明示監査し、raw判定を保持した根拠応答と直後unload/独立lms ps []を保存する。r12は監査準備中、実行成功を設計PASSへ置き換えない。

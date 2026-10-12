@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { detectActiveStages } from '../../../../utils/workflowAdaptiveStageDetector'
 import { AdaptiveWorkflowWiring } from '../../../../components/AdaptiveWorkflowWiring'
 import type { StageMaster, MappingMasterV2, Workflow } from '../../../../api/types'
@@ -269,7 +269,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
     ],
   }
 
-  it('各ステージタブ内に、該当ステージのバリアントスロットのみを表示（空スロット・無関係な警告を排除）', () => {
+  it('各ステージgroup内に該当ステージのバリアントスロットのみを表示する', () => {
     const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
     render(
       <AdaptiveWorkflowWiring
@@ -279,22 +279,35 @@ describe('AdaptiveWorkflowWiring Component', () => {
       />
     )
 
-    // Stage tabs should exist for active stages
-    expect(screen.getByRole('tab', { name: /Main Stage/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Rough Stage/ })).toBeInTheDocument()
+    const mainGroup = screen.getByRole('region', { name: 'Main Stage (main)' })
+    const roughGroup = document.querySelector('[data-stage-key="rough"]') as HTMLElement
+    expect(mainGroup).toBeInTheDocument()
+    expect(roughGroup).toBeInTheDocument()
+    expect(within(mainGroup).getByText(/sampler_name → sampler_name/)).toBeInTheDocument()
+    expect(within(mainGroup).getByText(/steps → steps/)).toBeInTheDocument()
+    expect(within(mainGroup).queryByText(/sampler_name_rough/)).toBeNull()
+    expect(within(roughGroup).getByText(/sampler_name_rough → sampler_name/)).toBeInTheDocument()
+    expect(within(roughGroup).queryByText(/steps → steps/)).toBeNull()
+  })
 
-    // Under Main tab, Main variants (1001 sampler_name, 1003 steps) should appear
-    expect(screen.getByText(/sampler_name → sampler_name/)).toBeInTheDocument()
-    expect(screen.getByText(/steps → steps/)).toBeInTheDocument()
-    // Rough variant should NOT appear in Main tab
-    expect(screen.queryByText(/sampler_name_rough/)).toBeNull()
+  it('Settingsの工程groupだけを独立scroll rootに含め、保存操作をroot外に置く', () => {
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    render(
+      <AdaptiveWorkflowWiring
+        workflow={mockWorkflow}
+        activeStages={activeStages}
+        mappingMasters={mappingMasters}
+      />
+    )
 
-    // Switch to Rough tab
-    fireEvent.click(screen.getByRole('tab', { name: /Rough Stage/ }))
-    // Under Rough tab, only Rough variant (1002 sampler_name_rough) should appear
-    expect(screen.getByText(/sampler_name_rough → sampler_name/)).toBeInTheDocument()
-    // Main-only steps variant should NOT appear in Rough tab (zero empty rows)
-    expect(screen.queryByText(/steps → steps/)).toBeNull()
+    const root = document.querySelector('#settings-mapping-scroll') as HTMLElement
+    expect(root).toHaveAttribute('data-stage-scroll-root', '')
+    expect(root).toHaveClass('stage-input-scroll-root')
+    expect(root.querySelectorAll('.stage-input-group')).toHaveLength(activeStages.length)
+    const select = screen.getByLabelText(/Main Stage sampler_name → sampler_name のノード/)
+    expect(select.closest('[data-stage-scroll-root]')).toBe(root)
+    expect(select).toHaveClass('min-h-[44px]')
+    expect(screen.getByRole('button', { name: /対応付けを保存/ }).closest('[data-stage-scroll-root]')).toBeNull()
   })
 
   it('ノード選択ドロップダウンにおいて、ステージキーワードに合致する候補ノードを優先ハイライトする', () => {
@@ -307,10 +320,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
       />
     )
 
-    // Switch to Rough tab
-    fireEvent.click(screen.getByRole('tab', { name: /Rough Stage/ }))
-
-    const select = screen.getByLabelText(/sampler_name_rough のノード/) as HTMLSelectElement
+    const select = screen.getByLabelText(/Rough Stage sampler_name_rough → sampler_name のノード/) as HTMLSelectElement
     expect(select).toBeInTheDocument()
 
     // Node 20 matched "Rough" keywords, so it should be prioritized / marked
@@ -332,8 +342,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
       />
     )
 
-    // Change node on Main tab
-    const select = screen.getByLabelText(/steps のノード/)
+    const select = screen.getByLabelText(/Main Stage steps → steps のノード/)
     fireEvent.change(select, { target: { value: '10' } })
 
     // Click save button
@@ -344,6 +353,10 @@ describe('AdaptiveWorkflowWiring Component', () => {
     const savedMappings = onSave.mock.calls[0][0]
     expect(savedMappings).toEqual(
       expect.arrayContaining([
+        {
+          master_id: 101,
+          node_id: '10',
+        },
         expect.objectContaining({
           variant_id: 1003,
           master_id: 102,
@@ -351,5 +364,49 @@ describe('AdaptiveWorkflowWiring Component', () => {
         }),
       ])
     )
+  })
+
+  it('同じroleの異なるparamを個別に選択し、master別のpayloadを保存する', () => {
+    const onSave = vi.fn()
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const stepsMaster = {
+      ...mappingMasters[1],
+      param_name: 'steps',
+      variants: [{ ...mappingMasters[1].variants[0], computed_role: 'sampling' }],
+    }
+    const cfgMaster = {
+      ...stepsMaster,
+      id: 103,
+      base_key: 'cfg',
+      name: 'CFG',
+      param_name: 'cfg',
+      sort_order: 3,
+      variants: [{ ...stepsMaster.variants[0], id: 1004, master_id: 103 }],
+    }
+
+    render(
+      <AdaptiveWorkflowWiring
+        workflow={mockWorkflow}
+        activeStages={activeStages}
+        mappingMasters={[mappingMasters[0], stepsMaster, cfgMaster]}
+        onSaveMappings={onSave}
+      />
+    )
+
+    const mainGroup = document.querySelector('[data-stage-key="main"]') as HTMLElement
+    const stepsSelect = within(mainGroup).getByRole('combobox', { name: 'Main Stage sampling → steps のノード' })
+    const cfgSelect = within(mainGroup).getByRole('combobox', { name: 'Main Stage sampling → cfg のノード' })
+    expect(within(mainGroup).getAllByRole('combobox', { name: 'Main Stage sampling → steps のノード' })).toHaveLength(1)
+    expect(within(mainGroup).getAllByRole('combobox', { name: 'Main Stage sampling → cfg のノード' })).toHaveLength(1)
+
+    fireEvent.change(stepsSelect, { target: { value: '10' } })
+    fireEvent.change(cfgSelect, { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: /対応付けを保存/ }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toEqual(expect.arrayContaining([
+      { master_id: 102, node_id: '10', variant_id: 1003 },
+      { master_id: 103, node_id: '20', variant_id: 1004 },
+    ]))
   })
 })

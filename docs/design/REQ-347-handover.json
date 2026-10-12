@@ -1,0 +1,1149 @@
+{
+  "pbi_id": "REQ-347",
+  "status": "in-progress",
+  "latest_design_revision_id": "visual-popup-anchor-contract-r14",
+  "design_document": "docs/design/REQ-347.md",
+  "test_plan": "docs/design/REQ-347-test-plan.md",
+  "implementation_plan": "implementation_plan.md",
+  "dag_mermaid": "graph TD\n  T1[REQ-347-T1 Grouping] --> T3[REQ-347-T3 Query Hook]\n  T2[REQ-347-T2 Sticky Group] --> T4[REQ-347-T4 Prompt]\n  T3 --> T4\n  T2 --> T5[REQ-347-T5 Parameters]\n  T3 --> T5\n  T2 --> T7[REQ-347-T7 Settings Groups]\n  T6[REQ-347-T6 Slot Projection] --> T7\n  T7 --> T8[REQ-347-T8 Settings Integration]\n  T4 --> T9[REQ-347-T9 Generate Integration]\n  T5 --> T9\n  T10[REQ-347-T10 SSoT]\n  T4 --> T11[REQ-347-T11 Desktop Test Provider]\n  T7 --> T15[REQ-347-T15 Settings Staging Tests]\n  T15 --> T12[REQ-347-T12 Settings Assertions]\n  T8 --> T12\n  T13[REQ-347-T13 OpenAPI Snapshot]\n  T14[REQ-347-T14 Visibility Test Baseline]\n  T16[REQ-347-T16 Common Header] --> T19[REQ-347-T19 Visual Integration]\n  T17[REQ-347-T17 Editor Toolbar] --> T18[REQ-347-T18 Desktop and Clipboard Popup]\n  T18 --> T19\n  T20[REQ-347-T20 Visual SSoT]",
+  "max_dag_depth": 4,
+  "tasks": [
+    {
+      "task_id": "REQ-347-T1",
+      "card_path": "docs/backlog/task/active/REQ-347-T1.md",
+      "title": "生成mappingのステージ投影",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/utils/mappingStageGroups.ts",
+        "frontend/src/utils/__tests__/mappingStageGroups.test.ts"
+      ],
+      "estimated_changed_lines": 260,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/mappingStageGroups.test.ts",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T2",
+      "card_path": "docs/backlog/task/active/REQ-347-T2.md",
+      "title": "共通ステージ見出しとfocus露出",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/components/StageInputGroup.tsx",
+        "frontend/src/components/StageInputGroup.css",
+        "frontend/src/components/__tests__/StageInputGroup.test.tsx"
+      ],
+      "estimated_changed_lines": 250,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/components/__tests__/StageInputGroup.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T3",
+      "card_path": "docs/backlog/task/active/REQ-347-T3.md",
+      "title": "ステージ取得hookとParamPanel prop公開",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T1"
+      ],
+      "impacted_files": [
+        "frontend/src/hooks/useMappingStageGroups.ts",
+        "frontend/src/hooks/__tests__/useMappingStageGroups.test.tsx",
+        "frontend/src/components/ParamPanel.tsx"
+      ],
+      "estimated_changed_lines": 200,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/hooks/__tests__/useMappingStageGroups.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T4",
+      "card_path": "docs/backlog/task/active/REQ-347-T4.md",
+      "title": "Desktopプロンプトの工程groupと独立root",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T2",
+        "REQ-347-T3"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx"
+      ],
+      "estimated_changed_lines": 220,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T5",
+      "card_path": "docs/backlog/task/active/REQ-347-T5.md",
+      "title": "ParamPanel grouped子とProvider不要flat互換性",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T2",
+        "REQ-347-T3"
+      ],
+      "impacted_files": [
+        "frontend/src/components/ParamPanel.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx"
+      ],
+      "estimated_changed_lines": 300,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx\nnpx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T6",
+      "card_path": "docs/backlog/task/active/REQ-347-T6.md",
+      "title": "Settingsの全工程slot投影",
+      "subsystem": "frontend",
+      "depends_on": [],
+      "impacted_files": [
+        "frontend/src/utils/wiringStageGroups.ts",
+        "frontend/src/utils/__tests__/wiringStageGroups.test.ts"
+      ],
+      "estimated_changed_lines": 260,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/utils/__tests__/wiringStageGroups.test.ts",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T7",
+      "card_path": "docs/backlog/task/active/REQ-347-T7.md",
+      "title": "Settings対応付けproductionと保存identity",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T2",
+        "REQ-347-T6"
+      ],
+      "impacted_files": [
+        "frontend/src/components/AdaptiveWorkflowWiring.tsx"
+      ],
+      "estimated_changed_lines": 300,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/components/AdaptiveWorkflowWiring.tsx",
+      "measured_changed_lines": 255,
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T8",
+      "card_path": "docs/backlog/task/active/REQ-347-T8.md",
+      "title": "Settings保存結合検証・cache通知・draft session保護",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T7"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req347_settings_stage_groups.test.tsx",
+        "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx"
+      ],
+      "estimated_changed_lines": 300,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_settings_stage_groups.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T9",
+      "card_path": "docs/backlog/task/active/REQ-347-T9.md",
+      "title": "生成2領域の工程別編集独立性の結合検証",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T4",
+        "REQ-347-T5"
+      ],
+      "impacted_files": [
+        "frontend/src/test/e2e_req347_generate_stage_groups.test.tsx"
+      ],
+      "estimated_changed_lines": 260,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req347_generate_stage_groups.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T10",
+      "card_path": "docs/backlog/task/active/REQ-347-T10.md",
+      "title": "生成・Settings正本の対象箇所同期",
+      "subsystem": "system",
+      "depends_on": [],
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_SETTINGS.md"
+      ],
+      "estimated_changed_lines": 160,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2\nrg -n 'REQ-347|ステージ|stage|追従|scroll|対応付け' docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md",
+      "status": "done-baseline"
+    },
+    {
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx src/test/e2e_req339_preview_layout.test.tsx",
+      "title": "Desktop grouped consumerの既存test Provider fixture同期",
+      "card_path": "docs/backlog/task/active/REQ-347-T11.md",
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx",
+        "frontend/src/test/e2e_req339_preview_layout.test.tsx"
+      ],
+      "task_id": "REQ-347-T11",
+      "atomicity": "PASS",
+      "estimated_changed_lines": 120,
+      "depends_on": [
+        "REQ-347-T4"
+      ],
+      "subsystem": "frontend",
+      "status": "done-baseline"
+    },
+    {
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/test/e2e_req336_workflow_mapping.test.tsx src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx",
+      "title": "Settings工程groupの旧UI期待同期",
+      "card_path": "docs/backlog/task/active/REQ-347-T12.md",
+      "impacted_files": [
+        "frontend/src/test/e2e_req336_workflow_mapping.test.tsx",
+        "frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
+      ],
+      "task_id": "REQ-347-T12",
+      "atomicity": "PASS",
+      "estimated_changed_lines": 100,
+      "depends_on": [
+        "REQ-347-T8",
+        "REQ-347-T15"
+      ],
+      "subsystem": "frontend",
+      "status": "done-baseline"
+    },
+    {
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2\nbackend\\.venv\\Scripts\\python -c \"import sys,json;sys.path.insert(0,'backend');from app.schemas.workflow import WorkflowMappingCreate,WorkflowMappingRead;from pathlib import Path;s=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(s[m.__name__]['properties']['variant_id']==m.model_json_schema()['properties']['variant_id'] and 'variant_id' not in s[m.__name__].get('required',[]) for m in (WorkflowMappingCreate,WorkflowMappingRead));print('Pydantic field parity OK')\"\npython -c \"import json,yaml;from pathlib import Path;a=yaml.safe_load(Path('docs/openapi.yaml').read_text(encoding='utf-8'))['components']['schemas'];b=json.loads(Path('backend/openapi.json').read_text(encoding='utf-8'))['components']['schemas'];assert all(a[n]['properties']['variant_id']==b[n]['properties']['variant_id'] and a[n].get('required',[])==b[n].get('required',[]) and 'variant_id' not in a[n].get('required',[]) for n in ('WorkflowMappingCreate','WorkflowMappingRead'));print('OpenAPI snapshot parity OK')\"\npython C:/Users/audih/.gemini/antigravity/scripts/openapi_parser.py docs/openapi.yaml get-endpoint '/api/workflows/{workflow_id}' put",
+      "title": "Workflow variant_idのOpenAPI snapshot同期",
+      "card_path": "docs/backlog/task/active/REQ-347-T13.md",
+      "impacted_files": [
+        "docs/openapi.yaml",
+        "backend/openapi.json"
+      ],
+      "task_id": "REQ-347-T13",
+      "atomicity": "PASS",
+      "estimated_changed_lines": 80,
+      "depends_on": [],
+      "subsystem": "system",
+      "status": "done-baseline"
+    },
+    {
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx",
+      "title": "可視復帰の履歴baseline条件を既存testへ同期",
+      "card_path": "docs/backlog/task/active/REQ-347-T14.md",
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx"
+      ],
+      "task_id": "REQ-347-T14",
+      "atomicity": "PASS",
+      "estimated_changed_lines": 80,
+      "depends_on": [],
+      "subsystem": "frontend",
+      "status": "done-baseline"
+    },
+    {
+      "task_id": "REQ-347-T15",
+      "card_path": "docs/backlog/task/active/REQ-347-T15.md",
+      "title": "Settings staging局所testの所有分割と確認",
+      "subsystem": "frontend",
+      "depends_on": [
+        "REQ-347-T7"
+      ],
+      "impacted_files": [
+        "frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx"
+      ],
+      "estimated_changed_lines": 150,
+      "measured_changed_lines": 105,
+      "atomicity": "PASS",
+      "verification_command": "Set-Location C:/Users/audih/ws/comfy-create-helper2/frontend\nnpm run typecheck\nnpx vitest run src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx\ngit -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx",
+      "status": "done-baseline"
+    },
+    {
+      "estimated_changed_lines": 300,
+      "verification_command": "npm run typecheck; npx vitest run src/components/__tests__/StageInputGroup.test.tsx",
+      "impacted_files": [
+        "frontend/src/components/StageInputGroup.tsx",
+        "frontend/src/components/StageInputGroup.css",
+        "frontend/src/components/__tests__/StageInputGroup.test.tsx"
+      ],
+      "depends_on": [],
+      "title": "共通工程見出しの上端余白除去と可視名簡潔化",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T16.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T16",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 250,
+      "verification_command": "npm run typecheck; npx vitest run src/components/TagChipEditor/__tests__/TagChipEditor.toolbar.test.tsx src/components/TagChipEditor/__tests__/TagChipEditor.test.tsx",
+      "impacted_files": [
+        "frontend/src/components/TagChipEditor/index.tsx",
+        "frontend/src/components/TagChipEditor/__tests__/TagChipEditor.toolbar.test.tsx"
+      ],
+      "depends_on": [],
+      "title": "TagChipEditor操作slotとcaption省略",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T17.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T17",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 250,
+      "verification_command": "npm run typecheck; npx vitest run src/pages/GeneratePage/components/__tests__/PromptSectionClipboardMenu.test.tsx",
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/PromptSectionClipboardMenu.tsx"
+      ],
+      "depends_on": [
+        "REQ-347-T17"
+      ],
+      "title": "Desktop項目名拡大とtoolbar接続",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T18.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T18",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 300,
+      "verification_command": "npm run typecheck; npx vitest run src/test/e2e_req347_visual_polish.test.tsx src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/test/e2e_req347_generate_stage_groups.test.tsx src/test/e2e_req347_settings_stage_groups.test.tsx",
+      "impacted_files": [
+        "frontend/src/test/e2e_req347_visual_polish.test.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx"
+      ],
+      "depends_on": [
+        "REQ-347-T16",
+        "REQ-347-T18"
+      ],
+      "title": "視覚改訂の実Desktop結合検証",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T19.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T19",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 160,
+      "verification_command": "git -c core.fsmonitor=false diff --check; git -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md",
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_SETTINGS.md"
+      ],
+      "depends_on": [],
+      "title": "Generate/Settings正本同期",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T20.md",
+      "subsystem": "docs",
+      "task_id": "REQ-347-T20",
+      "status": "done"
+    }
+  ],
+  "trade_offs_and_risks": "CSS stickyの境界と入力非遮蔽は各3領域の実ブラウザー証拠が必要。Settingsはタブから連続一覧になり専用scrollを持つ。初期metadata欠落はunknown/fallback表示で入力保持。未設定候補拡張はREQ-348。同期・seed・chips・assets・presetは回帰対象。成功保存後workflow cache通知をT8に含める。",
+  "local_audit": {
+    "model_id": "qwen/qwen3.5-9b",
+    "quantization": "Q6_K",
+    "context_length": 32768,
+    "reasoning_effort": "none",
+    "target_count": 13,
+    "targets": [
+      "docs/design/REQ-347.md",
+      "docs/design/REQ-347-test-plan.md",
+      "docs/backlog/task/active/REQ-347-T1.md",
+      "docs/backlog/task/active/REQ-347-T2.md",
+      "docs/backlog/task/active/REQ-347-T3.md",
+      "docs/backlog/task/active/REQ-347-T4.md",
+      "docs/backlog/task/active/REQ-347-T5.md",
+      "docs/backlog/task/active/REQ-347-T6.md",
+      "docs/backlog/task/active/REQ-347-T7.md",
+      "docs/backlog/task/active/REQ-347-T8.md",
+      "docs/backlog/task/active/REQ-347-T9.md",
+      "docs/backlog/task/active/REQ-347-T10.md",
+      "implementation_plan.md"
+    ],
+    "chunks": 3,
+    "final_synthesis_completed": true,
+    "execution_exit_code": 0,
+    "raw_verdict": "Design Gate FAIL",
+    "selected_runtime": "llama.cpp-win-x86_64-amd-rocm-avx2@2.55.0",
+    "lms_cli_commit": "69d945a",
+    "app_version_verified_this_run": false,
+    "log_path": "docs/design/REQ-347-audit.log",
+    "trace_path": "docs/design/REQ-347-audit-trace.json",
+    "response_path": "docs/design/REQ-347-audit-response.md",
+    "unload_log": "docs/design/REQ-347-unload.log",
+    "unload_exit_code": 0,
+    "loaded_models_after_unload": [],
+    "post_audit_revision_audited": false,
+    "response_summary": "root/型投影/pending/jsdom/統合試験の前提不一致を証拠で評価。境界gap0・legacy conditional serialize・mixed投影・workflow cache通知を改訂。raw FAILを保持し無条件PASSにしない。"
+  },
+  "implementation_started": true,
+  "implementation_tests_run": false,
+  "review_gate": {
+    "status": "initial-review-approved-autonomous-revision-authorized",
+    "source": "C:/Users/audih/.gemini/config/skills/dev-design/SKILL.md",
+    "reason": "2026-10-12ユーザー追加指示により、通常のエンジニア差し戻しはArchitectが自律修正し、再承認待ちで止めない。今回の取得接続の明確化は承認済み要件内であり人間の新規判断事項はない。初回レビュー承認とこの追加指示を実装再開の承認根拠として親調整役へ返す。"
+  },
+  "limitations": [
+    "初版raw Design Gate FAILおよびr2 raw FAILを保持。r2全13対象監査は完了し、監査後追記は結果・根拠応答のみで未再推論。",
+    "T6のfrontend/src/utils/__tests__/wiringStageGroups.test.tsは部分作成済み・未検証。削除せずT6へ引継ぐ。",
+    "git statusはmust be run in a work treeで取得できない。今回の編集所有はdocs/とimplementation_plan.mdのみ。",
+    "r3とr4の全13対象監査完了。r4 raw Design Gate FAILを保持し根拠付き応答を記録。T8契約凍結済み、実装受入未確認。",
+    "r3カード差分は調整役のstatus更新履歴でmetadata-onlyと確認。r4はfull/body hashで全対象本文一致、T9 metadata-only driftと直接判別。監査後の結果追記は未再推論。",
+    "r5修正設計は未監査。r4以前のraw FAILと証跡を保持し、全14カードを含む17対象の新監査が必要。",
+    "全体Gate2は38 failed/2012 passed。T5/T11～T14の修正後局所検証とfull-suite再検証、Gate3の実ブラウザー受入は未確認。",
+    "r5全17対象監査完了、raw【設計ゲート FAIL】（実装着手禁止）を保持。17対象full/bodyは完了時まで一致。過去の未監査記述は時点履歴。",
+    "settings-initial-hydration-r6はr5後に追加したT8具体的修正契約で未監査。実装sourceはBA監査対象ではない。修正/再監査/IT-S9は未完了、人間判断事項0。",
+    "r6全17文書監査完了、raw【実装着手禁止】 (Implementation Prohibited)を保持。全17本文一致、T11～T14のみmetadata drift。r7 slot label契約は別targeted監査対象。",
+    "r7変更5文書監査完了、raw CRITICAL FAILURE（重大な失敗）保持、5全文/本文一致、unload/lms ps空を確認。根拠応答後の結果追記は未再推論、挙動契約は凍結。",
+    "Architectの設計判断は実装可能、ローカルモデルraw判定をPASSへ変更しない。T7/T12実装受入とGate2/Gate3結果は親が管理。",
+    "r8所有分割監査6対象完了/raw【実装禁止 / Design Gate FAIL】保持。6全文/本文hashとsource/test hash一致。結果追記は未再推論、カード挙動契約は凍結。",
+    "旧T7 combined360/300行違反はFAILとして保持。分割後T7source255/300・T15test105/150。engineerのtypecheck/staging10件PASS証拠を保持、T15分割後検証とT12/Gate2/Gate3は親が実行。",
+    "r9 test-planの再現性手順を単独監査、raw CRITICAL FAILURE (Design Gate FAIL)保持、target全文/本文と6source hashes一致。原final QA FAIL/statusも保持。",
+    "Gate1/valid Gate2 PASS。Gate3はbrowser/telemetry/隔離fixture transport不足でexternally blocked-INCONCLUSIVE。新dependencyや架空測定を導入せず、再開能力はreadiness-r9に列挙。新しいproduct判断0。",
+    "r10 raw CRITICAL FLAWS DETECTED、r11 raw REJECT (with conditions)を保持。active plan全文/本文と6source hashes一致、即unload/独立lms ps=[]。r9/r10/r11全文snapshotとr2～r8原文archiveを保存。",
+    "再現性手順は凍結。実Gate3はsupported browser/telemetry/隔離fixture transport不足でexternally blocked-INCONCLUSIVE。新dependency/source/製品scopeを追加せず、人間のproduct判断事項0。"
+  ],
+  "scroll_root_revision": {
+    "id": "scroll-root-contract-r3",
+    "trigger": "REQ-347-T2 engineer escalation: root selector/CSS class and external call-site ownership unspecified",
+    "audit_status": "completed-raw-fail-with-evidence-backed-response",
+    "raw_verdict": "FAIL (実装停止推奨)",
+    "previous_audit_revision": "hook-query-contract-r2",
+    "root_selector": "[data-stage-scroll-root]",
+    "root_attribute": "data-stage-scroll-root=\"\"",
+    "root_class": "stage-input-scroll-root",
+    "css_owner": "REQ-347-T2; frontend/src/components/StageInputGroup.css; static import in StageInputGroup.tsx",
+    "css_contract": ".stage-input-scroll-root[data-stage-scroll-root] {scroll-padding-top:44px}; section .stage-input-group scoped input/textarea/select/button/[tabindex]/[contenteditable=true] {scroll-margin-top:44px}; heading height36px, border-box, sticky top0",
+    "root_ownership": [
+      {
+        "selector": "#desktop-prompt-scroll",
+        "task_id": "REQ-347-T4",
+        "file": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "change": "existing first overflow div receives attribute and class"
+      },
+      {
+        "selector": "#desktop-controls-scroll",
+        "task_id": "REQ-347-T4",
+        "file": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "change": "existing second overflow div receives attribute and class; T5 consumes ancestor root without creating a root"
+      },
+      {
+        "selector": "#settings-mapping-scroll",
+        "task_id": "REQ-347-T7",
+        "file": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+        "change": "new stage-list overflow div receives attribute/class and max-height:min(60vh,480px); save remains outside"
+      }
+    ],
+    "focus_contract": "own section HTMLElement target, own header ref, closest attribute root; clip header rect to rootRect.top+clientTop..+clientHeight; on visible header overlap only scrollBy({top:targetRect.top-(visibleHeaderBottom+8),behavior:'auto'}); missing root/outside section/zero rect/no overlap no-op; other roots/window unchanged",
+    "updated_cards": [
+      "REQ-347-T2",
+      "REQ-347-T4",
+      "REQ-347-T5",
+      "REQ-347-T7"
+    ],
+    "atomicity": "file ownership/count/line limits and DAG unchanged; no split required",
+    "verification": [
+      "T2 stylesheet raw contract and mock focus geometry/closest-root isolation; T4 both Desktop root attribute/class; T5 test-only contracted root and no nested root; T7 Settings root and save-outside assertions",
+      "Gate3 records computed padding44/margin44/header36 for all three roots and real browser sticky/boundary/non-obscuring evidence separately"
+    ],
+    "remaining_human_decisions": [],
+    "authorization": "initial design approval and 2026-10-12 user instruction authorizing autonomous Architect resolution of engineer escalations",
+    "audit_trace_path": "docs/design/REQ-347-r3-audit-trace.json",
+    "audit_log_path": "docs/design/REQ-347-r3-audit.log",
+    "audit_exit_code": 0,
+    "unload_exit_code": 0,
+    "loaded_models_after_unload": []
+  },
+  "design_revision": {
+    "id": "hook-query-contract-r2",
+    "final_hook_contract": "useMappingStageGroups(mappings: readonly WorkflowMapping[], masters?: readonly (MappingMaster | MappingMasterV2)[], enabled = true): MappingStageGroup[]",
+    "pure_function_contract": "groupMappingsByStage(mappings, masters, stages: readonly StageMaster[])",
+    "stage_source": "../api/domains/stageMasters; ['stage-masters']; stageMastersApi.list(true); stageQuery.data ?? []",
+    "master_source": "../api/client (api/domains/workflows.ts); ['mapping-masters']; mappingMastersApi.list() cast to Promise<(MappingMaster | MappingMasterV2)[]>; enabled && masters === undefined",
+    "disabled_behavior": "query observer無効、返却[]、元renderer利用。他observerをcancelしない。",
+    "loading_error_behavior": "最後のquery.dataまたは空metadataを純粋関数へ渡し元入力保持。明示masters=[]はcacheより優先。",
+    "audit_trace_path": "docs/design/REQ-347-r2-audit-trace.json",
+    "audit_log_path": "docs/design/REQ-347-r2-audit.log",
+    "audit_status": "completed-raw-fail-with-evidence-backed-response",
+    "remaining_human_decisions": [],
+    "audit_exit_code": 0,
+    "raw_verdict": "FAIL (実装着手禁止)",
+    "unload_exit_code": 0,
+    "loaded_models_after_unload": [],
+    "architect_disposition": "前提不一致を文書・既存コード・backend schemaで評価。元raw FAILを保持。新規の人間判断事項なし。",
+    "remaining_verification": [
+      "カード記載のtypecheck/local units、UT-H1/IT-M1の取得接続と入力保持、T8/T9のrole/variant独立性、Gate3実ブラウザー3領域sticky/非遮蔽。",
+      "T6部分testの内容確認と継続。sourceは未実装、testは未実行。"
+    ]
+  },
+  "draft_session_revision": {
+    "id": "settings-draft-session-r4",
+    "audit_status": "completed-raw-fail-with-evidence-backed-response",
+    "trigger": "r3 audit concrete draft overwrite: configWorkflow refetch effect replaces values during re-edit",
+    "owner_task": "REQ-347-T8",
+    "impacted_files": [
+      "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "frontend/src/test/e2e_req347_settings_stage_groups.test.tsx"
+    ],
+    "estimated_changed_lines": 300,
+    "atomicity": "PASS",
+    "session_contract": "epoch/workflowId/hydrated/acknowledgedRevision in one ref; initial data hydrates once per open session; later refetch keeps form draft",
+    "save_contract": "capture ID/epoch/revision/snapshot; invalidate captured ID only after API success; latest revision applies submitted snapshot and saved status; preserve re-edits/errors, finally release saving",
+    "trade_off": "external mapping/baseModel form updates apply on close/reopen; query metadata still refreshes",
+    "test_cases": [
+      "IT-S6",
+      "IT-S7",
+      "IT-S8",
+      "BR-11"
+    ],
+    "remaining_human_decisions": [],
+    "raw_verdict": "Design Gate FAIL（設計ゲート失敗）",
+    "remaining_verification": [
+      "T8 IT-S6/7/8 deferred save/re-edit/stale refetch/failure/session switch and snapshot persistence",
+      "Gate3 all three roots sticky/boundary/non-obscuring plus BR-11 Settings draft protection"
+    ],
+    "audit_log_path": "docs/design/REQ-347-r4-audit.log",
+    "elapsed_seconds": 464.031,
+    "post_audit_reporting_audited": false,
+    "chunks": 5,
+    "unload_log_path": "docs/design/REQ-347-r4-unload.log",
+    "loaded_models_after_unload": [],
+    "audit_exit_code": 0,
+    "architect_disposition": "r3の保存draft上書きをr4で修正・全13対象再監査。r4指摘を既存契約/実コード/ユーザー承認へ照合して応答。raw FAILを保持し、実装受入を別途確認。人間の新規判断事項0。",
+    "input_characters": 96492,
+    "target_count": 13,
+    "post_audit_behavior_changed": false,
+    "audit_trace_path": "docs/design/REQ-347-r4-audit-trace.json",
+    "unload_exit_code": 0,
+    "contract_frozen": true
+  },
+  "current_local_audit": {
+    "unchanged_r12_card_match_count": 2,
+    "revision": "visual-popup-anchor-contract-r14",
+    "source_hash_match_count": 10,
+    "full_hash_match_count": 6,
+    "independent_lms_ps_exit": 0,
+    "contract_frozen": true,
+    "status": "completed-with-evidence-based-dispositions",
+    "loaded_models": [],
+    "architect_dispatch_ready": true,
+    "unload_exit": 0,
+    "execution_exit": 0,
+    "current_contract_coverage": 8,
+    "response": "docs/design/REQ-347-r14-audit-response.md",
+    "target_count": 6,
+    "raw_not_converted_to_PASS": true,
+    "raw_verdict": "現状のドキュメントは「マージ不可（UNSAFE FOR MERGE）」です。",
+    "body_hash_match_count": 6,
+    "trace": "docs/design/REQ-347-r14-audit-trace.json"
+  },
+  "previous_local_audits": [
+    {
+      "response_path": "docs/design/REQ-347-audit-response.md",
+      "quantization": "Q6_K",
+      "model_id": "qwen/qwen3.5-9b",
+      "loaded_models_after_unload": [],
+      "context_length": 32768,
+      "target_count": 13,
+      "unload_exit_code": 0,
+      "revision": "settings-draft-session-r4",
+      "app_version_verified_this_run": false,
+      "trace_path": "docs/design/REQ-347-r4-audit-trace.json",
+      "reasoning_effort": "none",
+      "execution_exit_code": 0,
+      "chunks": 5,
+      "raw_verdict": "Design Gate FAIL（設計ゲート失敗）"
+    },
+    {
+      "status": "completed-raw-fail-with-evidence-backed-response",
+      "revision": "consumer-compatibility-r5",
+      "model_id": "qwen/qwen3.5-9b",
+      "quantization": "Q6_K",
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "target_count": 17,
+      "input_characters": 120119,
+      "chunks": 6,
+      "final_synthesis_completed": true,
+      "execution_exit_code": 0,
+      "raw_verdict": "【設計ゲート FAIL】（実装着手禁止）",
+      "elapsed_seconds": 754.925,
+      "trace_path": "docs/design/REQ-347-r5-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r5-audit.log",
+      "response_path": "docs/design/REQ-347-audit-response.md",
+      "unload_log": "docs/design/REQ-347-r5-unload.log",
+      "unload_exit_code": 0,
+      "lms_ps_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "audited_snapshot_unchanged_through_completion": true,
+      "post_audit_revision_audited": false,
+      "remaining_human_decisions": []
+    },
+    {
+      "status": "completed-raw-fail-with-evidence-backed-response",
+      "revision": "settings-initial-hydration-r6",
+      "model_id": "qwen/qwen3.5-9b",
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "quantization": "Q6_K",
+      "target_count": 17,
+      "chunks": 6,
+      "input_characters": 122815,
+      "execution_exit_code": 0,
+      "raw_verdict": "【実装着手禁止】 (Implementation Prohibited)",
+      "raw_report_heading": "REQ-347 統合設計レビューレポート：実装着手禁止（Design Gate FAIL）",
+      "elapsed_seconds": 627.849,
+      "trace_path": "docs/design/REQ-347-r6-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r6-audit.log",
+      "response_path": "docs/design/REQ-347-audit-response.md",
+      "unload_log": "docs/design/REQ-347-r6-unload.log",
+      "unload_exit_code": 0,
+      "lms_ps_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "body_hash_match_count": 17,
+      "full_hash_match_count": 13,
+      "metadata_only_drift_tasks": [
+        "REQ-347-T11",
+        "REQ-347-T12",
+        "REQ-347-T13",
+        "REQ-347-T14"
+      ],
+      "post_audit_revision_audited": false,
+      "remaining_human_decisions": []
+    },
+    {
+      "status": "completed-raw-fail-with-evidence-backed-response",
+      "revision": "settings-slot-accessibility-r7",
+      "scope": "targeted-changed-design-test-plan-T7-T12-implementation-plan",
+      "scope_reason": "parent explicitly requested targeted revision audit after complete 17-target r6; only these five target bodies changed; unchanged cards remain covered by r6 snapshot",
+      "model_id": "qwen/qwen3.5-9b",
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "quantization": "Q6_K",
+      "target_count": 5,
+      "chunks": 3,
+      "input_characters": 53701,
+      "execution_exit_code": 0,
+      "raw_verdict": "CRITICAL FAILURE（重大な失敗）",
+      "raw_report_heading": "結論：実装禁止（Design Gate FAIL）",
+      "elapsed_seconds": 308.519,
+      "trace_path": "docs/design/REQ-347-r7-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r7-audit.log",
+      "response_path": "docs/design/REQ-347-audit-response.md",
+      "unload_log": "docs/design/REQ-347-r7-unload.log",
+      "unload_exit_code": 0,
+      "lms_ps_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "body_hash_match_count": 5,
+      "full_hash_match_count": 5,
+      "post_audit_behavior_changed": false,
+      "post_audit_reporting_audited": false,
+      "contract_frozen": true,
+      "design_implementable": true,
+      "remaining_human_decisions": []
+    },
+    {
+      "status": "completed-raw-fail-with-evidence-backed-response",
+      "revision": "settings-ownership-split-r8",
+      "scope": "targeted-changed-design-test-plan-T7-T12-new-T15-implementation-plan",
+      "scope_reason": "parent explicitly requested targeted ownership-split audit; these six bodies changed; other twelve card bodies match full r6 snapshot",
+      "model_id": "qwen/qwen3.5-9b",
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "quantization": "Q6_K",
+      "target_count": 6,
+      "complete_current_target_count": 18,
+      "unchanged_card_previous_r6_coverage_count": 12,
+      "chunks": 3,
+      "input_characters": 61169,
+      "execution_exit_code": 0,
+      "raw_verdict": "【実装禁止 / Design Gate FAIL】",
+      "raw_final_verdict": "【実装禁止】",
+      "elapsed_seconds": 342.099,
+      "trace_path": "docs/design/REQ-347-r8-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r8-audit.log",
+      "response_path": "docs/design/REQ-347-audit-response.md",
+      "unload_log": "docs/design/REQ-347-r8-unload.log",
+      "unload_exit_code": 0,
+      "lms_ps_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "body_hash_match_count": 6,
+      "full_hash_match_count": 6,
+      "source_test_hash_match_count": 2,
+      "post_audit_behavior_changed": false,
+      "post_audit_reporting_audited": false,
+      "contract_frozen": true,
+      "design_implementable": true,
+      "remaining_human_decisions": []
+    },
+    {
+      "status": "completed-raw-fail-with-evidence-backed-response",
+      "revision": "gate3-reproducibility-r9",
+      "scope": "targeted-changed-test-plan-reproducibility-procedures-only",
+      "scope_reason": "only test-plan normative procedures changed; response/readiness/handover are evidence reporting; cards/design/implementation_plan and implementation source unchanged",
+      "model_id": "qwen/qwen3.5-9b",
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "quantization": "Q6_K",
+      "target_count": 1,
+      "input_characters": 16897,
+      "execution_exit_code": 0,
+      "raw_verdict": "CRITICAL FAILURE (Design Gate FAIL)",
+      "elapsed_seconds": 87.153,
+      "trace_path": "docs/design/REQ-347-r9-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r9-audit.log",
+      "response_path": "docs/design/REQ-347-final-qa-response-r9.md",
+      "unload_log": "docs/design/REQ-347-r9-unload.log",
+      "unload_exit_code": 0,
+      "lms_ps_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "body_hash_match_count": 1,
+      "full_hash_match_count": 1,
+      "source_hash_match_count": 6,
+      "post_audit_behavior_changed": false,
+      "contract_frozen": true,
+      "gate3_status": "externally-blocked-inconclusive",
+      "remaining_human_decisions": []
+    },
+    {
+      "revision": "test-plan-history-clarification-r10",
+      "raw_verdict": "CRITICAL FLAWS DETECTED",
+      "gate_classification": "Design Gate FAIL",
+      "trace_path": "docs/design/REQ-347-r10-audit-trace.json",
+      "log_path": "docs/design/REQ-347-r10-audit.log",
+      "unload_log": "docs/design/REQ-347-r10-unload.log",
+      "execution_exit_code": 0,
+      "unload_exit_code": 0,
+      "loaded_models_after_unload": [],
+      "target_count": 1,
+      "full_body_hash_match": true,
+      "original_snapshot": "docs/design/REQ-347-test-plan-r10-snapshot.md"
+    }
+  ],
+  "consumer_compatibility_revision": {
+    "stale_ui_expectations": 2,
+    "audit_status": "completed-raw-fail-with-evidence-backed-response",
+    "visibility_contract_mismatch": 1,
+    "passed_tests": 2012,
+    "provider_direct_failures": 34,
+    "matrix_secondary_provider_failures": 1,
+    "source_edits_by_architect": false,
+    "failed_tests": 38,
+    "new_task_ids": [
+      "REQ-347-T11",
+      "REQ-347-T12",
+      "REQ-347-T13",
+      "REQ-347-T14"
+    ],
+    "audit_plan_path": "docs/design/REQ-347-r5-audit-plan.json",
+    "rework_existing_tasks": [
+      "REQ-347-T5"
+    ],
+    "param_panel_contract": "flat parent never mounts query hook; internal JSX grouped child calls hook unconditionally when mounted; hook enabled=false contract itself unchanged",
+    "visibility_disposition": "failure line367 is history; queue passed. Nonempty baseline guard in useGenerateDisplayState matches SPEC; no pre-change baseline run evidence, so historical FAIL unconfirmed. T14 tests baseline guard and cold fallback",
+    "remaining_human_decisions": [],
+    "id": "consumer-compatibility-r5",
+    "diagnostic_report": "tmp/REQ-347-vitest-report.json",
+    "openapi_disposition": "adopt snapshot drift: sync optional nullable variant_id in WorkflowMappingCreate/Read across docs/openapi.yaml and backend/openapi.json; runtime/backend schema unchanged",
+    "r4_audit_stale_for_r5": true
+  },
+  "initial_hydration_revision": {
+    "id": "T8-warm-cache-initial-hydration",
+    "owner_task": "REQ-347-T8",
+    "evidence": "WorkflowConnectionSection.tsx L162-168/L635-663; source inspection only, no reproduction executed",
+    "status": "design-contract-updated-implementation-and-re-audit-pending",
+    "revision": "settings-initial-hydration-r6",
+    "card_path": "docs/backlog/task/active/REQ-347-T8.md",
+    "contract": "Do not mount editable form until current ID/session/data match and hydrated=true; guard save entry; reset saved on toggle; background refetch after hydration preserves editable draft",
+    "test": "IT-S9 real QueryClient warm cache + deferred initial GET, later edit/refetch draft retention, saved reset",
+    "human_decision_required": false
+  },
+  "genuine_unresolved_issues": [
+    {
+      "owner": "coordinator/QA",
+      "kind": "external-browser-capability-and-controlled-fixture-transport",
+      "status": "Gate3-INCONCLUSIVE",
+      "readiness_path": "docs/design/REQ-347-gate3-readiness-r9.json",
+      "required_capabilities": [
+        "supported real browser/control/telemetry surface",
+        "actual target rendering with native scroll/focus/resize/zoom and DOM rect/value/screenshots",
+        "isolated repo-derived fixture/deferred API transport"
+      ],
+      "product_judgment_required": false,
+      "new_unsupported_browser_dependencies_added": false
+    }
+  ],
+  "remaining_human_decisions": [],
+  "engineer_handoff": {
+    "task_ids": [
+      "REQ-347-T15",
+      "REQ-347-T12"
+    ],
+    "action": "Parent acknowledges existing source255/typecheck/staging10 evidence and marks T7 done; dispatch T15 existing-test verification; T12 after T8/T15",
+    "ownership": "T7 AdaptiveWorkflowWiring.tsx only255/300; T15 WorkflowAdaptiveStaging.test.tsx only105/150; T12 existing two consumer test files<=100",
+    "baseline_commit": "3b901040c1887b24c56cc517e75768b777913a5e",
+    "line_count_method": "fixed-baseline additions+deletions per exclusive file ownership",
+    "code_changes_required": false,
+    "code_preserved": true,
+    "verification": "T15 card commands/typecheck/full staging test/fixed-baseline numstat; then T12 full consumer tests; Gate2/Gate3",
+    "dispatch_authorization": "existing user approval and autonomous Architect escalation instruction",
+    "design_implementable": true,
+    "contract_frozen": true,
+    "remaining_human_decisions": [],
+    "current_execution_status": "T7/T15/T12 cards are done; no timeout repair card; no further source implementation required by this Architect review",
+    "remaining_dispatch_task_ids": []
+  },
+  "slot_accessibility_revision": {
+    "id": "T12-same-role-different-param-label-collision",
+    "owner_tasks": [
+      "REQ-347-T7",
+      "REQ-347-T12"
+    ],
+    "revision": "settings-slot-accessibility-r7",
+    "status": "audited-raw-fail-with-evidence-backed-response-contract-frozen-ready-for-t7-repair",
+    "evidence": "Settings test has sampling/steps and sampling/cfg slots; AdaptiveWorkflowWiring label only stage+role",
+    "contract": "stageName role → paramName-or-— のノード; select steps and cfg within Main region by exact accessible name",
+    "test": "IT-S10 independent slot selection/payload",
+    "human_decision_required": false,
+    "audit_trace_path": "docs/design/REQ-347-r7-audit-trace.json",
+    "raw_verdict": "CRITICAL FAILURE（重大な失敗）",
+    "design_implementable": true
+  },
+  "genuine_unresolved_design_issues": [],
+  "latest_complete_target_audit": {
+    "revision": "settings-initial-hydration-r6",
+    "target_count": 17,
+    "trace_path": "docs/design/REQ-347-r6-audit-trace.json",
+    "body_hash_match_count": 17,
+    "full_hash_match_count": 13,
+    "metadata_only_drift_tasks": [
+      "REQ-347-T11",
+      "REQ-347-T12",
+      "REQ-347-T13",
+      "REQ-347-T14"
+    ],
+    "later_changed_contracts": "T7/T12 and design/test-plan/plan audited as five-target r7"
+  },
+  "ownership_split_revision": {
+    "id": "settings-ownership-split-r8",
+    "trigger": "original combined T7 diff360 > explicit cap300",
+    "accounting_path": "docs/design/REQ-347-r8-ownership-accounting.json",
+    "task_count": 15,
+    "source_count": 255,
+    "test_count": 105,
+    "original_combined_line_bound": "FAIL",
+    "max_depth": 4,
+    "code_preserved": true,
+    "passing_test_evidence_preserved": true,
+    "audit_status": "completed-raw-fail-with-evidence-backed-response-contract-frozen",
+    "remaining_human_decisions": [],
+    "trace_path": "docs/design/REQ-347-r8-audit-trace.json",
+    "raw_verdict": "【実装禁止 / Design Gate FAIL】",
+    "design_implementable": true,
+    "source_test_hashes_preserved": true,
+    "audit_complete_current_target_count": 18
+  },
+  "r8_final_status_confirmed": "2026-10-12T06:17:45.9024669Z",
+  "gate2_timeout_triage": {
+    "report_path": "docs/design/REQ-347-gate2-mobile-timeout-triage.md",
+    "status": "resolved-transient-nonreproducing-timeout",
+    "initial_raw_failure": "Test timed out in 5000ms",
+    "initial_run_exit": 1,
+    "initial_run_total_duration_seconds": 52.17,
+    "test_duration_52_seconds_claim": "corrected-by-QA-whole-run-duration",
+    "functional_regression_evidence": false,
+    "precise_host_load_cause_proven": false,
+    "historical_baseline_flakiness_proven": false,
+    "code_test_timeout_changes": false,
+    "new_task_required": false,
+    "filtered_same_timeout": {
+      "total_seconds": 3.52,
+      "test_duration_ms": 161,
+      "skipped_by_filter": 12,
+      "passed": 1,
+      "exit": 0,
+      "log": "tmp/REQ-347-REQ161-filtered.log"
+    },
+    "file_same_timeout": {
+      "log": "tmp/REQ-347-GeneratePage-file.log",
+      "total_seconds": 5.46,
+      "passed": 13,
+      "exit": 0,
+      "failed": 0
+    },
+    "valid_full_run": {
+      "report": "tmp/REQ-347-final-vitest-report.json",
+      "tests_failed": 0,
+      "tests_passed": 2053,
+      "nested_suites_passed": 640,
+      "sha256": "EB68DAD7A81163A40C130F21667EEC033B60AA741B3BF2C316A4BB7D94AE657F",
+      "files_failed": 0,
+      "exit": 0,
+      "success": true,
+      "files_passed": 226
+    },
+    "restricted_report_attempt": "EPERM-before-collection-not-product-test-result",
+    "gate2_disposition": "PASS-on-valid-unchanged-full-rerun-preserve-original-timeout",
+    "remaining_human_decisions": []
+  },
+  "latest_verification_summary": {
+    "revision": "visual-popup-anchor-contract-r14",
+    "scope": "post-implementation acceptance; T16-T20 completed",
+    "gate1": "PASS-typecheck",
+    "gate2": "USER-ACCEPTED-EXCEPTION; raw full-suite failures retained, no PASS claim",
+    "gate2_focused_suites": {
+      "T16": {
+        "status": "PASS",
+        "tests_passed": 6
+      },
+      "T17": {
+        "status": "PASS",
+        "tests_passed": 31
+      },
+      "T18": {
+        "status": "PASS",
+        "tests_passed": 8
+      },
+      "T19": {
+        "status": "PASS",
+        "tests_passed": 20
+      }
+    },
+    "gate2_full_unfiltered_reruns": {
+      "status": "MIXED-FAILURES-RAW-RESULTS-PRESERVED",
+      "observed_test_totals": [
+        2078,
+        2079
+      ],
+      "existing_full_run_only_failure": "useGenerateDisplayState.residual; isolated file passes 8/8",
+      "REQ-161_timeout": "appeared in another run/file; filtered reruns passed",
+      "pass_claim": false,
+      "raw_artifacts": "preserved unchanged; latest run 2078/2079 exit 1; acceptance is not a PASS claim",
+      "latest_observed": {
+        "observed_tests": "2078/2079",
+        "exit_code": 1
+      },
+      "user_accepted_for_this_pbi": true
+    },
+    "gate3": "INCONCLUSIVE-BR-VIS1-3-telemetry-not-measured",
+    "gate3_evidence": "BR-VIS1–3 real-browser instrumentation/telemetry was not measured; user accepts the current display/behavior. Do not claim Gate3 PASS.",
+    "pbi_status": "in-progress",
+    "task_statuses": {
+      "REQ-347-T16": "done",
+      "REQ-347-T17": "done",
+      "REQ-347-T18": "done",
+      "REQ-347-T19": "done",
+      "REQ-347-T20": "done"
+    },
+    "human_decisions": [],
+    "archive": false,
+    "commit": false,
+    "gate2_user_acceptance": {
+      "decision": "accepted-for-REQ-347; instability is tracked in a separate PBI",
+      "source": "explicit user acceptance in current conversation",
+      "accepted_outcome": "proceed with REQ-347 closure readiness despite the unstable full-suite failures",
+      "raw_latest_run": {
+        "observed_tests": "2078/2079",
+        "exit_code": 1
+      },
+      "raw_artifacts": "preserved unchanged"
+    },
+    "gate3_user_acceptance": {
+      "decision": "current display and behavior accepted by user",
+      "source": "explicit user acceptance in current conversation",
+      "br_vis1_3_status": "not measured; remains INCONCLUSIVE"
+    },
+    "closure_readiness": {
+      "status": "USER-ACCEPTED-EXCEPTION-READY-FOR-PHASE-4-COORDINATOR-CHECK",
+      "basis": "user accepted the current display/behavior and accepted the full-suite instability as tracked in a separate PBI; focused visual suites and Gate1 pass",
+      "gate_results_are_not_rewritten": true,
+      "pending": "parent coordinator git scope review before any archive or commit",
+      "archive": false,
+      "commit": false
+    }
+  },
+  "final_qa_response": {
+    "response_path": "docs/design/REQ-347-final-qa-response-r9.md",
+    "raw_log": "docs/design/REQ-347-final-qa-audit.log",
+    "raw_verdict": "FAIL (Critical Ambiguities Detected)",
+    "raw_status": "Do Not Execute. Requires Refactoring before any test automation can be generated or run.",
+    "revision": "test-plan-fixture-event-portability-r11",
+    "concrete_doc_gaps_fixed": [
+      "current execution context",
+      "deterministic repo-derived fixture recipe",
+      "quantitative observed-versus-expected oracle",
+      "controlled save/refetch/error ground truth"
+    ],
+    "source_contract_changed": false,
+    "new_browser_dependencies_added": false,
+    "remaining_product_decisions": [],
+    "gate3": "externally-blocked-inconclusive",
+    "readiness_path": "docs/design/REQ-347-gate3-readiness-r9.json",
+    "test_plan_revision_audit": "completed-r11-raw-reject-with-evidence-backed-dispositions",
+    "ba_audit_trace_path": "docs/design/REQ-347-r11-audit-trace.json",
+    "ba_raw_verdict": "REJECT (with conditions)",
+    "contract_frozen": true
+  },
+  "test_plan_history_clarification": {
+    "revision": "test-plan-history-clarification-r10",
+    "history_archive": "docs/design/REQ-347-test-plan-history.md",
+    "r9_original_snapshot": "docs/design/REQ-347-test-plan-r9-snapshot.md",
+    "snapshot_matches_r9_audited_full_hash": true,
+    "stale_active_statements_removed": true,
+    "historical_original_text_preserved": true,
+    "audit_status": "completed-r10-raw-critical-flaws-with-evidence-backed-dispositions",
+    "source_card_procedures_unchanged": true
+  },
+  "latest_plan_clarification": {
+    "remaining_product_decisions": [],
+    "contract_frozen": true,
+    "audit_status": "completed-r14-raw-UNSAFE-FOR-MERGE-preserved-with-evidence-based-dispositions",
+    "plan": "docs/design/REQ-347-test-plan.md",
+    "scope": "clipboard popup anchor/hidden identity/setting string preservation",
+    "revision": "visual-popup-anchor-contract-r14",
+    "current_trace_path": "docs/design/REQ-347-r14-audit-trace.json",
+    "response_path": "docs/design/REQ-347-r14-audit-response.md"
+  },
+  "active_revision_tasks": [
+    "REQ-347-T16",
+    "REQ-347-T17",
+    "REQ-347-T18",
+    "REQ-347-T19",
+    "REQ-347-T20"
+  ],
+  "active_tasks": [
+    {
+      "estimated_changed_lines": 300,
+      "verification_command": "npm run typecheck; npx vitest run src/components/__tests__/StageInputGroup.test.tsx",
+      "impacted_files": [
+        "frontend/src/components/StageInputGroup.tsx",
+        "frontend/src/components/StageInputGroup.css",
+        "frontend/src/components/__tests__/StageInputGroup.test.tsx"
+      ],
+      "depends_on": [],
+      "title": "共通工程見出しの上端余白除去と可視名簡潔化",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T16.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T16",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 250,
+      "verification_command": "npm run typecheck; npx vitest run src/components/TagChipEditor/__tests__/TagChipEditor.toolbar.test.tsx src/components/TagChipEditor/__tests__/TagChipEditor.test.tsx",
+      "impacted_files": [
+        "frontend/src/components/TagChipEditor/index.tsx",
+        "frontend/src/components/TagChipEditor/__tests__/TagChipEditor.toolbar.test.tsx"
+      ],
+      "depends_on": [],
+      "title": "TagChipEditor操作slotとcaption省略",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T17.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T17",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 250,
+      "verification_command": "npm run typecheck; npx vitest run src/pages/GeneratePage/components/__tests__/PromptSectionClipboardMenu.test.tsx",
+      "impacted_files": [
+        "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+        "frontend/src/pages/GeneratePage/components/PromptSectionClipboardMenu.tsx"
+      ],
+      "depends_on": [
+        "REQ-347-T17"
+      ],
+      "title": "Desktop項目名拡大とtoolbar接続",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T18.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T18",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 300,
+      "verification_command": "npm run typecheck; npx vitest run src/test/e2e_req347_visual_polish.test.tsx src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/test/e2e_req347_generate_stage_groups.test.tsx src/test/e2e_req347_settings_stage_groups.test.tsx",
+      "impacted_files": [
+        "frontend/src/test/e2e_req347_visual_polish.test.tsx",
+        "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx"
+      ],
+      "depends_on": [
+        "REQ-347-T16",
+        "REQ-347-T18"
+      ],
+      "title": "視覚改訂の実Desktop結合検証",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T19.md",
+      "subsystem": "frontend",
+      "task_id": "REQ-347-T19",
+      "status": "done"
+    },
+    {
+      "estimated_changed_lines": 160,
+      "verification_command": "git -c core.fsmonitor=false diff --check; git -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- docs/specs/SPEC_GENERATE.md docs/specs/SPEC_SETTINGS.md",
+      "impacted_files": [
+        "docs/specs/SPEC_GENERATE.md",
+        "docs/specs/SPEC_SETTINGS.md"
+      ],
+      "depends_on": [],
+      "title": "Generate/Settings正本同期",
+      "atomicity": "PASS",
+      "card_path": "docs/backlog/task/active/REQ-347-T20.md",
+      "subsystem": "docs",
+      "task_id": "REQ-347-T20",
+      "status": "done"
+    }
+  ],
+  "active_revision_dag_mermaid": "graph TD\n  T16 --> T19\n  T17 --> T18\n  T18 --> T19\n  T20",
+  "active_revision_max_dag_depth": 3,
+  "visual_revision": {
+    "manual_confirmation_not_automated_gate3": true,
+    "exact_ui_elements": {
+      "prompt_item_h4": "WorkflowMapping.display_name is already not appended with stage; preserve nonblank configured string",
+      "stage_group_h3": "StageMaster.name displayed with technical stageKey; no separate stage display_name schema"
+    },
+    "revision": "visual-popup-anchor-contract-r14",
+    "requested_by_user": true,
+    "remaining_human_decisions": [],
+    "user_verified_previous_behavior": "fully OK",
+    "new_acceptance": [
+      "AC-V1",
+      "AC-V2",
+      "AC-V3"
+    ],
+    "dispatch_ready": true,
+    "audit_response": "docs/design/REQ-347-r14-audit-response.md",
+    "popup_risk": "right-0 w72 at left toolbar would overflow; start with full-width relative anchor and max-width100%",
+    "card_count": 5,
+    "total_card_history_count": 20,
+    "ready_tasks": [
+      "REQ-347-T16",
+      "REQ-347-T17",
+      "REQ-347-T20"
+    ],
+    "dispatch_order": "T16/T17/T20 parallel; T17 -> T18; T16+T18 -> T19",
+    "default_component_compatibility": "T17 default true/no slot retains existing toolbar placement/caption; new Desktop slot wraps",
+    "acceptance_status": "user-accepted; BR-VIS1–3 instrumentation not measured and remains INCONCLUSIVE",
+    "current_display_user_accepted": true
+  },
+  "previous_verification_summary_pre_visual_r14": {
+    "gate1": "PASS-reported-by-parent-QA",
+    "gate2": "PASS-valid-full-rerun226files2053tests",
+    "gate3": "INCONCLUSIVE-parent-QA-managed",
+    "raw_final_qa_verdict": "FAIL (Critical Ambiguities Detected)",
+    "raw_final_qa_log": "docs/design/REQ-347-final-qa-audit.log",
+    "gate3_not_overridden_by_gate2": true,
+    "applicability": "pre-r12-source-baseline-only",
+    "new_visual_revision": "unimplemented-unverified"
+  },
+  "user_acceptance": {
+    "source": "explicit user instruction in current conversation",
+    "current_display_and_behavior": "accepted",
+    "full_suite_instability": "accepted for REQ-347; tracked in a separate PBI",
+    "preserve_raw_mixed_results": true,
+    "closure_readiness": "accepted exception; awaiting parent coordinator git scope check",
+    "archive": false,
+    "commit": false
+  }
+}

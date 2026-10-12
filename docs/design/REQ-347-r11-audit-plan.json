@@ -1,0 +1,67 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "test-plan-fixture-event-portability-r11",
+  "status": "completed-original-snapshot",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "timeout_seconds_per_inference": 600,
+  "target_count": 1,
+  "scope": "targeted-exact-active-test-plan-fixture-request-response-and-portable-command-clarification",
+  "scope_reason": "parent requested concrete fourth-stage and event evidence clarification; only active plan procedures changed; product/card/source contracts unchanged",
+  "target_paths": [
+    "docs/design/REQ-347-test-plan.md"
+  ],
+  "targets": [
+    {
+      "path": "docs/design/REQ-347-test-plan.md",
+      "sha256": "B0F9427498A3F8E437FA9935F8B66C610ED3309D223DC6724063354A0CEA2CA1",
+      "body_sha256": "74599311EDB2DCE10E0B30623958CE1F141D0E0F74369B90961A3E18237E1AC7",
+      "lines": 136
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347-test-plan.md",
+  "environment": {
+    "PYTHONIOENCODING": "utf-8",
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none"
+  },
+  "previous_trace": "docs/design/REQ-347-r10-audit-trace.json",
+  "audit_log": "docs/design/REQ-347-r11-audit.log",
+  "trace_path": "docs/design/REQ-347-r11-audit-trace.json",
+  "unload_log": "docs/design/REQ-347-r11-unload.log",
+  "response_path": "docs/design/REQ-347-final-qa-response-r9.md",
+  "source_hashes": [
+    {
+      "path": "frontend/src/components/StageInputGroup.tsx",
+      "sha256": "8798D6A6B5BA6C301EDDF4460B098A8E46A26BD964ABA9CA6FEAEEB91919A63A"
+    },
+    {
+      "path": "frontend/src/components/StageInputGroup.css",
+      "sha256": "BE372C1D0DBB8A99ED0F578D187FE9771ADF7A48F497040BE30DE6FBDB808F19"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "sha256": "0EC83ECAC35655E19A01439C8C8BD1F563B88537996E961798C453D924A71A5D"
+    },
+    {
+      "path": "frontend/src/components/ParamPanel.tsx",
+      "sha256": "76A3269E2FA77DED2B98829C064E560F7834D115C2FCDEAE084E84321515550C"
+    },
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "sha256": "BD6875C8713391999670B58208C2D75468BFF3BAF500196949053F093A30504B"
+    }
+  ],
+  "history_archive": "docs/design/REQ-347-test-plan-history.md",
+  "r9_original_snapshot": "docs/design/REQ-347-test-plan-r9-snapshot.md",
+  "r10_original_snapshot": "docs/design/REQ-347-test-plan-r10-snapshot.md",
+  "remaining_human_decisions": [],
+  "gate3_status": "externally-blocked-inconclusive",
+  "prepared_at_utc": "2026-10-12T06:52:49.0763008Z"
+}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WorkflowConnectionSection } from '../WorkflowConnectionSection'
 import { LS_KEYS } from '../../../../utils/localStorageKeys'
@@ -13,9 +13,11 @@ const api = vi.hoisted(() => ({
   snapshotsApi: { list: vi.fn() },
   mappingMastersApi: { list: vi.fn() },
   baseModelsApi: { list: vi.fn() },
+  stageMastersApi: { list: vi.fn() },
 }))
 
 vi.mock('../../../../api/client', () => api)
+vi.mock('../../../../api/domains/stageMasters', () => ({ stageMastersApi: api.stageMastersApi }))
 vi.mock('../../../../hooks/useConfig', () => ({ useConfig: () => ({ data: { comfy_url: 'http://localhost:8188' } }) }))
 vi.mock('../../../../hooks/useComfyWebSocket', () => ({ resolveComfyUrl: (url: string) => url }))
 vi.mock('../../../../store/useGenerationStore', () => ({ useGenerationStore: (selector: (state: any) => unknown) => selector({ comfyUrl: null, setComfyUrl: vi.fn() }) }))
@@ -64,6 +66,17 @@ describe('WorkflowConnectionSection groups', () => {
     api.workflowsApi.rollback.mockResolvedValue(undefined)
     api.workflowPresetsApi.list.mockResolvedValue([])
     api.snapshotsApi.list.mockResolvedValue([])
+    api.stageMastersApi.list.mockResolvedValue([{
+      id: 1,
+      key: 'main',
+      name: 'Main',
+      suffix: '',
+      search_keywords: null,
+      previous_suffixes: null,
+      is_builtin: true,
+      is_active: true,
+      sort_order: 0,
+    }])
     api.mappingMastersApi.list.mockResolvedValue([{ id: 1, role: 'sampling', param_name: 'steps', input_type: 'int', display_name: 'Steps' }, { id: 2, role: 'sampling', param_name: 'cfg', input_type: 'float', display_name: 'CFG' }])
     api.baseModelsApi.list.mockResolvedValue([{ id: 1, name: 'SD 1.5' }, { id: 2, name: 'SDXL' }])
   })
@@ -167,7 +180,9 @@ describe('WorkflowConnectionSection groups', () => {
     fireEvent.click(screen.getByRole('button', { name: '対応付け・設定' }))
     await screen.findByText((_, node) => node?.textContent === 'sampling → steps')
     expect(screen.getByText((_, node) => node?.textContent === 'sampling → steps')).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('sampling のノード'), { target: { value: '2' } })
+    const mainStage = within(screen.getByRole('region', { name: 'Main (main)' }))
+    expect(mainStage.getByRole('combobox', { name: 'Main sampling → cfg のノード' })).toBeInTheDocument()
+    fireEvent.change(mainStage.getByRole('combobox', { name: 'Main sampling → steps のノード' }), { target: { value: '2' } })
     fireEvent.change(screen.getByLabelText('ベースモデル関連'), { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: '対応付けを保存' }))
     await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({

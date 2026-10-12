@@ -1,0 +1,96 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "visual-name-contract-clarification-r13",
+  "status": "completed-original-frozen-snapshot",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "timeout_seconds_per_inference": 600,
+  "target_count": 3,
+  "scope": "targeted-T19-auto-appending-versus-configured-string-preservation-and-design-plan-audit-record",
+  "scope_reason": "No product behavior change; concrete r12 wording ambiguity in T19 resolved; unmodified visual documents covered by exact r12 hashes",
+  "target_paths": [
+    "docs/design/REQ-347.md",
+    "docs/backlog/task/active/REQ-347-T19.md",
+    "implementation_plan.md"
+  ],
+  "targets": [
+    {
+      "sha256": "9379D784EAE2CA433DE5D0CF8E41F3CB21B318BFAEB60429906CEAD5540DB767",
+      "body_sha256": "335F76BBEA0953E22746D1B79365DFE3FB10F88A0B4F61BD0A0BAC961765D457",
+      "lines": 243,
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "sha256": "E66EE29E9FA4104D066E176D76D5CDB86464B622BCA7BD8BEB730BB7C0628C80",
+      "body_sha256": "A34A78FFE9626BFFF315FAD662F219EC40F07733BC13F9C8E43D594065741155",
+      "lines": 77,
+      "path": "docs/backlog/task/active/REQ-347-T19.md"
+    },
+    {
+      "sha256": "E6DACBB693D910EF5018194825057C419CD37E2F43B4782CEEB8B539FE493D86",
+      "body_sha256": "E6DACBB693D910EF5018194825057C419CD37E2F43B4782CEEB8B539FE493D86",
+      "lines": 130,
+      "path": "implementation_plan.md"
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/backlog/task/active/REQ-347-T19.md implementation_plan.md",
+  "environment": {
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none",
+    "PYTHONIOENCODING": "utf-8"
+  },
+  "source_hashes": [
+    {
+      "path": "frontend/src/components/StageInputGroup.tsx",
+      "sha256": "8798D6A6B5BA6C301EDDF4460B098A8E46A26BD964ABA9CA6FEAEEB91919A63A"
+    },
+    {
+      "path": "frontend/src/components/StageInputGroup.css",
+      "sha256": "BE372C1D0DBB8A99ED0F578D187FE9771ADF7A48F497040BE30DE6FBDB808F19"
+    },
+    {
+      "path": "frontend/src/components/__tests__/StageInputGroup.test.tsx",
+      "sha256": "5128B13FA7FFEF7106B800545B220A9DABE04B65A146ACE975101876528A01DA"
+    },
+    {
+      "path": "frontend/src/components/TagChipEditor/index.tsx",
+      "sha256": "3843A3919F7DB565D5453025F837583E4E2A51F2735ACC61F22D2567E6D6C9A9"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/DesktopLayout.tsx",
+      "sha256": "0EC83ECAC35655E19A01439C8C8BD1F563B88537996E961798C453D924A71A5D"
+    },
+    {
+      "path": "frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx",
+      "sha256": "62E6118C9A96143465373252DBB6ED03F10C1293929D37EB2CD87D1C6DC6D155"
+    },
+    {
+      "path": "frontend/src/components/ParamPanel.tsx",
+      "sha256": "76A3269E2FA77DED2B98829C064E560F7834D115C2FCDEAE084E84321515550C"
+    },
+    {
+      "path": "frontend/src/components/AdaptiveWorkflowWiring.tsx",
+      "sha256": "8BEAD15F48D67EECC730B57C54D0B1ECDCE925246AB0A1923692EBA21C0F189A"
+    },
+    {
+      "path": "frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx",
+      "sha256": "BD6875C8713391999670B58208C2D75468BFF3BAF500196949053F093A30504B"
+    }
+  ],
+  "previous_trace": "docs/design/REQ-347-r12-audit-trace.json",
+  "audit_log": "docs/design/REQ-347-r13-audit.log",
+  "trace_path": "docs/design/REQ-347-r13-audit-trace.json",
+  "unload_log": "docs/design/REQ-347-r13-unload.log",
+  "response_path": "docs/design/REQ-347-r13-audit-response.md",
+  "remaining_human_decisions": [],
+  "prepared_at_utc": "2026-10-12T12:45:59.6743146Z",
+  "unchanged_r12_target_coverage": [
+    "docs/design/REQ-347-test-plan.md",
+    "docs/backlog/task/active/REQ-347-T16.md",
+    "docs/backlog/task/active/REQ-347-T17.md",
+    "docs/backlog/task/active/REQ-347-T18.md",
+    "docs/backlog/task/active/REQ-347-T20.md"
+  ]
+}

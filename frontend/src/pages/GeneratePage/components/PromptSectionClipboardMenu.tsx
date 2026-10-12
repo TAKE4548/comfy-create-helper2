@@ -8,6 +8,7 @@ export interface PromptSectionClipboardMenuProps {
   currentValue: string;
   onChangeValue: (newValue: string) => void;
   onOpenSaveAsTagSet?: () => void;
+  menuAlign?: 'end' | 'start';
 }
 
 export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProps> = ({
@@ -15,6 +16,7 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
   currentValue,
   onChangeValue,
   onOpenSaveAsTagSet,
+  menuAlign = 'end',
 }) => {
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -76,7 +78,7 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
   };
 
   return (
-    <div className="relative inline-flex items-center gap-1" ref={menuRef}>
+    <div className={`${menuAlign === 'end' ? 'relative ' : ''}inline-flex items-center gap-1`} ref={menuRef} data-prompt-clipboard-menu="" data-menu-align={menuAlign}>
       <button
         type="button"
         onClick={handleCopySection}
@@ -102,7 +104,7 @@ export const PromptSectionClipboardMenu: React.FC<PromptSectionClipboardMenuProp
 
       {isOpen && (
         <div
-          className="absolute right-0 top-full mt-1.5 z-50 w-72 p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
+          className={`absolute ${menuAlign === 'start' ? 'left-0 max-w-full' : 'right-0'} top-full mt-1.5 z-50 w-72 p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex flex-col gap-1 border-b border-[rgba(255,255,255,0.08)] pb-2">

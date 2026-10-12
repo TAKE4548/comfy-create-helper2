@@ -1,0 +1,81 @@
+---
+id: REQ-347-T18
+title: Desktop Prompt見出し拡大と操作行再配置
+status: ready
+design_gate: pending
+atomicity: PASS
+estimated_changed_lines: 250
+depends_on: [REQ-347-T17]
+tags: [REQ-347, frontend, task, visual-r12]
+related_paths: [docs/design/REQ-347.md, frontend/src/pages/GeneratePage/components/DesktopLayout.tsx]
+---
+
+# REQ-347-T18 — Desktop視覚接続
+
+## Objective and Ownership
+
+`frontend/src/pages/GeneratePage/components/DesktopLayout.tsx` の1ファイルのみ。固定baseline `3b901040c1887b24c56cc517e75768b777913a5e` から追加＋削除<=250（既存16+3=19行も含む）。T17後に着手。T16は共通CSS、T19はtest所有でsource競合なし。他の担当者の編集を巻き戻さない。上限超過はArchitectへ返す。
+
+## Hermetic Context
+
+実editorは `../../../components/TagChipEditor` のdirectory index。別のPromptChipEditorを編集しない。
+
+~~~ts
+// T17追加props
+toolbarStart?: React.ReactNode;
+showModeStatus?: boolean; // default=true
+// WorkflowMapping display_name/param_name/roleはstring|null
+// roleはvalue/chips/collapse/text mode/assetsの既存キー。
+~~~
+
+map先頭25行。既存callbacksを移動して使う。
+
+~~~tsx
+        {textStageGroups.map((group) => (
+          <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
+            <div className="space-y-0">
+        {group.mappings.map((m) => {
+          const isNegative = m.role?.toLowerCase().includes('negative')
+          const isCollapsed = getIsRoleCollapsed(m.role!)
+          return (
+            <div key={m.id} className="space-y-1.5 relative">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setRoleCollapsed(m.role!, !isCollapsed)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none"
+                >
+                  {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  <span>{m.display_name}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="relative flex items-center gap-1.5">
+                    <PromptSectionClipboardMenu
+                      role={m.role!}
+                      currentValue={paramValues[m.role!] ?? ''}
+                      onChangeValue={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
+                      onOpenSaveAsTagSet={() => setSaveAsTagSetRole(m.role!)}
+                    />
+~~~
+
+## Contract
+
+- 両Desktop rootからpy-4を除去、horizontal px-5を保持。ControlsのAudit/MappingError/AppliedAsset等のgroup外本文に必要な上下余白は内側wrapperへ置く。root/工程section間へ上下padding/gapを戻さず、新scroll rootを作らない。
+- Prompt項目名は独立h4（margin0）内の既存collapse button。font-size16px/line-height24px/weight600/zinc200、幅全体/min-width0/wrap/break-word。copy等は同じ見出し行へ置かない。
+- 表示名は非空白 `m.display_name` をそのまま。欠落/空白のみなら非空白param_name、次にrole、最後「プロンプト」。段階名/キーを付加せず、設定文字列中の段階名を削らない。placeholderも同じ解決名。wrapperに `data-prompt-mapping-id={m.id}`、h4に `data-prompt-item-heading=""`。
+- collapse buttonの名前は解決名、aria-expanded=!isCollapsed、aria-controls=`prompt-${m.role}`。同名は所属regionと元mapping ID/roleで区別。キー/callback/入力値を表示名から再構成しない。editor key=`${activeSetId}-${m.role}` を維持。
+- 展開中だけ実editorへ showModeStatus=false と toolbarStart を渡す。slotに元clipboard/history→translation→Add Asset順、wrap/gap6/min-width0/非clipのwrapper。mode切替はeditorが次順に描画。copy等のcallback/aria-label/title/idは不変。AddAssetModalのrelative anchor/開閉/roleを保持。mode切替でdraftやassetを初期化しない。
+- collapse時はeditor/操作群が両方非mount、見出しだけ残る。Mobile/Parameter/Settings slot表示は変更しない。
+
+## Verification
+
+- [ ] typecheck、固定baseline累積<=250。全文整形で差分を増やさない。
+- [ ] T19へ変更箇所/実差分/契約を引渡す。testはT19が所有し局所結合testを実行する。
+
+~~~powershell
+Set-Location (Join-Path (git rev-parse --show-toplevel).Trim() 'frontend')
+npm run typecheck
+git -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/pages/GeneratePage/components/DesktopLayout.tsx
+~~~
+
+T19はT16/T18後に実Desktop試験。root上端/折返し/非遮蔽はBR-VIS1/3へ残す。ユーザーの改訂前の動作OKを新改訂の検証PASSへ流用しない。

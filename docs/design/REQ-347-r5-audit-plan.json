@@ -1,0 +1,518 @@
+{
+  "pbi_id": "REQ-347",
+  "revision": "consumer-compatibility-r5",
+  "status": "completed-original-snapshot",
+  "model_id": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "timeout_seconds_per_inference": 600,
+  "target_count": 17,
+  "target_paths": [
+    "docs/design/REQ-347.md",
+    "docs/design/REQ-347-test-plan.md",
+    "docs/backlog/task/active/REQ-347-T1.md",
+    "docs/backlog/task/active/REQ-347-T2.md",
+    "docs/backlog/task/active/REQ-347-T3.md",
+    "docs/backlog/task/active/REQ-347-T4.md",
+    "docs/backlog/task/active/REQ-347-T5.md",
+    "docs/backlog/task/active/REQ-347-T6.md",
+    "docs/backlog/task/active/REQ-347-T7.md",
+    "docs/backlog/task/active/REQ-347-T8.md",
+    "docs/backlog/task/active/REQ-347-T9.md",
+    "docs/backlog/task/active/REQ-347-T10.md",
+    "docs/backlog/task/active/REQ-347-T11.md",
+    "docs/backlog/task/active/REQ-347-T12.md",
+    "docs/backlog/task/active/REQ-347-T13.md",
+    "docs/backlog/task/active/REQ-347-T14.md",
+    "implementation_plan.md"
+  ],
+  "targets": [
+    {
+      "body_sha256": "F7EC6494BED60A15AE441C9CD6FDCA66194B20C5ACD8E31B35C8B30EC34958CC",
+      "lines": 249,
+      "sha256": "20E9C3750951F46C1F320985A4F02373A3736C579F625CA63BA6EE9EBFC323D4",
+      "path": "docs/design/REQ-347.md"
+    },
+    {
+      "body_sha256": "B0A430DA005467FDC2274A7FFBCD8CA227FFEA4AA9C49DEAA1330B5C8731C6A9",
+      "lines": 110,
+      "sha256": "9DB880F7A098BD4B45370CC16B58DBFE173A69F7BDA3025EE4959FD1736A7C15",
+      "path": "docs/design/REQ-347-test-plan.md"
+    },
+    {
+      "body_sha256": "C31D2B409C6E2D319A1C6466A8EA948372A2171F977BCBB1777272636AE10155",
+      "lines": 160,
+      "sha256": "77AFFA80A81C766E54B10F5A38DB3855B7727B74D87AC564490D28F419565F12",
+      "path": "docs/backlog/task/active/REQ-347-T1.md"
+    },
+    {
+      "body_sha256": "EC85E002D291412CCBDC444BEB4893E3E85ACD3559F8A323EF5FC22D7865738C",
+      "lines": 107,
+      "sha256": "1AC445E4CE793E0F85E1BBB39E59F69A8231B7ABA19A99F76D276D26222C9030",
+      "path": "docs/backlog/task/active/REQ-347-T2.md"
+    },
+    {
+      "body_sha256": "CC38B6D523D058D79CA54D59F22EC37C25BA399B9A557935CFFDFEF04E1C5DB0",
+      "lines": 209,
+      "sha256": "9D26763704EF7C295E568D346EA0136774A3E833DF22C85CA06435AF81BBA57A",
+      "path": "docs/backlog/task/active/REQ-347-T3.md"
+    },
+    {
+      "body_sha256": "99AE66EB703C9C56F79D893EB10F47493213B3CFB0B70786F50DD5C28739F1F6",
+      "lines": 173,
+      "sha256": "8674053E4B41C14D4AFAADD5778A91C4D0387334DA3B00C81787E017F1EB337A",
+      "path": "docs/backlog/task/active/REQ-347-T4.md"
+    },
+    {
+      "body_sha256": "2254190BEAE49FB6BE18B80E896D08957A45B4C30DAE7D7E78EA45FCFAF4B1C8",
+      "lines": 229,
+      "sha256": "3231D2AA7C07FC55A5F97579BC04974067632DD7E62A58217E3FDEFFA297F885",
+      "path": "docs/backlog/task/active/REQ-347-T5.md"
+    },
+    {
+      "body_sha256": "A7A26CBFDC46EA38854553CE2DF220B4C94E2815E9D1B21C914AE2A6D9452A74",
+      "lines": 176,
+      "sha256": "D53E0301870B6B1C2BD11C6C7565890786C164D1DDD8DEECA353B51E20D9B51C",
+      "path": "docs/backlog/task/active/REQ-347-T6.md"
+    },
+    {
+      "body_sha256": "47C98E80AEF9DC72068BF24DB1B53EFFF4C56966886D314155201211F01297A3",
+      "lines": 186,
+      "sha256": "B6CA763B18B4B2E00142845C7A2A775190E038B0AB6E4BB2A9F2ACB9CAC2E35F",
+      "path": "docs/backlog/task/active/REQ-347-T7.md"
+    },
+    {
+      "body_sha256": "90C290040A21A49D3E8640D486CFE4F57DE253A88623075C45E04BF49EC8653B",
+      "lines": 238,
+      "sha256": "59D928FC867E96EDC54E1F955F9346799820C609AD2B989E35295EECAA7DF3E7",
+      "path": "docs/backlog/task/active/REQ-347-T8.md"
+    },
+    {
+      "body_sha256": "B2DFEF391EEE04DC33693A9CCDD2E8F44B523C2E912AF2A648207BE3C96DD677",
+      "lines": 186,
+      "sha256": "9B7C74EB29FB4CE3A505910C6CFA1FA309DE8C50108DE1BED7A660B7A3872DD7",
+      "path": "docs/backlog/task/active/REQ-347-T9.md"
+    },
+    {
+      "body_sha256": "141EDEC23A066120380F840F3BF3ABD125E10E3129159E1130A77FF762AE9B17",
+      "lines": 90,
+      "sha256": "C0FBDC91C3311B764D8989EAB192505BD6E8A04409636DADE5CC881944FC93DD",
+      "path": "docs/backlog/task/active/REQ-347-T10.md"
+    },
+    {
+      "body_sha256": "5AC2E50D8C8E36904E81E04E5A8546A6FC673333697BC2AF1456B90F6C63B7FB",
+      "lines": 92,
+      "sha256": "57E962AF0398479758920BC705F8ECEDF49F06F1BB8FA2198CDD70EA1F1551BA",
+      "path": "docs/backlog/task/active/REQ-347-T11.md"
+    },
+    {
+      "body_sha256": "14A36CA5861EC25B1188DD56900A68530282E76B3B735308D6CD125CD2695248",
+      "lines": 76,
+      "sha256": "18BE94BF41A99690112F19B48BAA35837D100772E38B04B194158AE9E6BA8247",
+      "path": "docs/backlog/task/active/REQ-347-T12.md"
+    },
+    {
+      "body_sha256": "7820AF9A7C83BEEC841F0686D3C7ACED978892FE78D69263CAE02A42989B6B50",
+      "lines": 101,
+      "sha256": "20FB822F500A7FF008A358611BE6782F189814F6F1833072A7C47DD5BEE930D5",
+      "path": "docs/backlog/task/active/REQ-347-T13.md"
+    },
+    {
+      "body_sha256": "71A0EE42B280703E1694B8E8FBA2AACCFB32235602CBDAC0CF2C3DC894959741",
+      "lines": 76,
+      "sha256": "85EC2C5365FF4303C0F528F7C01FDB6941C0AE865A64277D8C88CDFFAC2A4C2F",
+      "path": "docs/backlog/task/active/REQ-347-T14.md"
+    },
+    {
+      "body_sha256": "0D026E80BF24107EF807267776E9874A27F6E7BB7FC96F44B52C094B1F29E210",
+      "lines": 111,
+      "sha256": "F6809CFA9591AACB5CD8CA47F978638228F4D9DBE4B905BB8D0DD4046FED2630",
+      "path": "implementation_plan.md"
+    }
+  ],
+  "body_hash_algorithm": "SHA256 UTF8 body with first YAML frontmatter removed and CRLF normalized to LF",
+  "audit_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --timeout 600 --context-length 32768 ba-audit docs/design/REQ-347.md docs/design/REQ-347-test-plan.md docs/backlog/task/active/REQ-347-T1.md docs/backlog/task/active/REQ-347-T2.md docs/backlog/task/active/REQ-347-T3.md docs/backlog/task/active/REQ-347-T4.md docs/backlog/task/active/REQ-347-T5.md docs/backlog/task/active/REQ-347-T6.md docs/backlog/task/active/REQ-347-T7.md docs/backlog/task/active/REQ-347-T8.md docs/backlog/task/active/REQ-347-T9.md docs/backlog/task/active/REQ-347-T10.md docs/backlog/task/active/REQ-347-T11.md docs/backlog/task/active/REQ-347-T12.md docs/backlog/task/active/REQ-347-T13.md docs/backlog/task/active/REQ-347-T14.md implementation_plan.md",
+  "environment": {
+    "PYTHONIOENCODING": "utf-8",
+    "LOCAL_AUDIT_MODEL_KEY": "qwen/qwen3.5-9b",
+    "LOCAL_AUDIT_REASONING_EFFORT": "none"
+  },
+  "requires_elevated_lm_studio_access": true,
+  "unload_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+  "planned_artifacts": [
+    "docs/design/REQ-347-r5-audit.log",
+    "docs/design/REQ-347-r5-audit-trace.json",
+    "docs/design/REQ-347-r5-unload.log"
+  ],
+  "previous_trace": "docs/design/REQ-347-r4-audit-trace.json",
+  "previous_raw_verdict": "Design Gate FAIL（設計ゲート失敗）",
+  "diagnostics": {
+    "passed": 2012,
+    "total": 2050,
+    "matrix_provider_stack": "QA raw console: useQueryClient -> useBaseQuery -> useQuery -> useMappingStageGroups:12 -> ParamPanel:151; Matrix mount: test406/component971",
+    "failure_summary": [
+      {
+        "failed": 1,
+        "failures": [
+          {
+            "message": "Unable to find an accessible element with the role \"tab\" and name `/Main Stage/`\n\nHere are the accessible roles:\n\n  region:\n\n  Name \"Main Stage (main)\":\n  \u001b[36m<section\u001b[39m\n    \u001b[33maria-labelledby\u001b[",
+            "location": {
+              "line": 37,
+              "column": 19
+            },
+            "test": " REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite AC-6: Adaptive Stage Detection & Wiring Integration renders AdaptiveWorkflowWiring with detected stage tabs and slots"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req336_workflow_mapping.test.tsx"
+      },
+      {
+        "failed": 1,
+        "failures": [
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Header Resource Monitor AC-6 & AC-7: relocates resource monitor to desktop global header with zero preview occlusion"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/test/e2e_req339_preview_layout.test.tsx"
+      },
+      {
+        "failed": 1,
+        "failures": [
+          {
+            "message": "Unable to find an element by: [data-testid=\"submit-batch-button\"]\n\nIgnored nodes: comments, script, style\n\u001b[36m<body>\u001b[39m\n  \u001b[36m<div />\u001b[39m\n\u001b[36m</body>\u001b[39m",
+            "location": {
+              "line": 37,
+              "column": 19
+            },
+            "test": " MatrixGenerationStep AC-4: submits all frozen Studio graphs in one project-scoped request and follows only that batch snapshot"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx"
+      },
+      {
+        "failed": 10,
+        "failures": [
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar clamps the main pane to 330px on tablet resize and restores desktop bounds without unmounting controls"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-1 & AC-2: renders Global Header at top level before #desktop-preset-tabs-bar and ResizableSplitLayout"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-2: renders all open preset tabs inside an overflow-x-auto container within #desktop-preset-tabs-bar"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-3 & AC-4: renders #left-pane-toolbar with justify-start in exact order: name badge, undo/redo, add-set, manage"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-5: handles tab selection, checkbox toggle, tab removal, and undo/redo clicks"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar Red Team: does not crash when sets is empty or activeSet is null, rendering left-pane-toolbar cleanly"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar Red Team: does not crash or render tabs bar when selectedWorkflowId is null, but renders Global Header"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-4: initial Anima mode displays TagChipEditor in chip mode, persists text mode across preset tab switches after manual toggle"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar AC-16–18: keeps prompt and controls in independent scroll panes and preserves prompt draft across preset tabs"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pane Toolbar shows a seconds-based remaining ETA when the generation start and progress are known"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx"
+      },
+      {
+        "failed": 5,
+        "failures": [
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-333 progress bars use managed snapshots on desktop and mobile shows integer percentages while preserving fractional overall and node bar widths"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-333 progress bars use managed snapshots on desktop and mobile keeps Studio waits separate, uses session-only waits only when filtered, and keeps idle widths finite"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-333 progress bars use managed snapshots on desktop and mobile preserves last visible progress while reporting sync issue and keeps legacy no-snapshot fallback"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-333 progress bars use managed snapshots on desktop and mobile keeps queue, generate, and snapshot actions in the right action bar with unknown timing labels"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " REQ-333 progress bars use managed snapshots on desktop and mobile computes remaining seconds from the managed running-job start time and progress"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx"
+      },
+      {
+        "failed": 18,
+        "failures": [
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration renders TagChipEditor in chip mode by default on mobile"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration renders WorkflowActionsMenu next to mobile workflow select and executes workflow actions (AC-6)"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration switches between Chips Mode and Text Mode when clicking toggle button"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration opens translation modal when clicking 翻訳 button"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration switches the mounted mobile panels without losing the prompt draft or history selection"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration renders undo/redo inline next to manage presets button and handles click"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration closes the selected mobile set from its labeled icon button"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration preserves prompt values and does not overwrite with empty strings when switching prompt tabs on mobile"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration calls handleSelectPresetTab when preset tab is clicked on mobile"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration renders PageHeader with Generate title, ResourceHoverMonitor, and mobile actions row"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration keeps the portrait preview, progress, and actions above the mobile navigation safe area"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration shows a seconds-based remaining ETA when the generation start and progress are known"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration keeps the generated portrait preview from shrinking and exposes mobile queue and save actions"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration uses the all-session queue count while another session is generating"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone applies 100dvh, overscroll-behavior-y contain, and compressed spacing tokens"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone retracts Action Bar and displays Tag Suggest Bar upon input focus, restoring on blur"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone enforces Natural Zone ergonomics with maxHeight 40vh and 44px touch targets"
+          },
+          {
+            "message": "No QueryClient set, use QueryClientProvider to set one",
+            "location": {
+              "line": 18,
+              "column": 11
+            },
+            "test": " MobileLayout - TagChipEditor Integration REQ-338-T7: Mobile layout integration, 100dvh, IME defense, Natural Thumb Zone resets input retreat on orientationchange and resize if activeElement is not an input"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx"
+      },
+      {
+        "failed": 1,
+        "failures": [
+          {
+            "message": "expected \"spy\" to be called at least once",
+            "location": {
+              "line": 367,
+              "column": 30
+            },
+            "test": " useGeneratePageState should sync queue and history on visibilitychange when document becomes visible (REQ-159)"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx"
+      },
+      {
+        "failed": 1,
+        "failures": [
+          {
+            "message": "Unable to find a label with the text of: sampling のノード\n\nIgnored nodes: comments, script, style\n\u001b[36m<body>\u001b[39m\n  \u001b[36m<div>\u001b[39m\n    \u001b[36m<section\u001b[39m\n      \u001b[33mclass\u001b[39m=\u001b[32m\"border border-[rgba",
+            "location": {
+              "line": 37,
+              "column": 19
+            },
+            "test": " WorkflowConnectionSection groups edits role-node-widget mapping and base model in one workflow update"
+          }
+        ],
+        "path": "C:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx"
+      }
+    ],
+    "path": "tmp/REQ-347-vitest-report.json",
+    "sha256": "8ED259384136398AB09F956F06C06F0F251933CBE865A370390C15CCABFDEF0A",
+    "failed": 38
+  },
+  "max_dag_depth": 4,
+  "remaining_human_decisions": [],
+  "implementation_acceptance": "not-verified",
+  "prepared_at_utc": "2026-10-12T04:49:43.4394317Z",
+  "result_trace_path": "docs/design/REQ-347-r5-audit-trace.json",
+  "post_audit_revision": "settings-initial-hydration-r6",
+  "post_audit_revision_audited": false
+}

@@ -1,0 +1,77 @@
+---
+id: REQ-347-T19
+title: Desktop視覚契約と既存操作の結合検証
+status: ready
+design_gate: pending
+atomicity: PASS
+estimated_changed_lines: 300
+depends_on: [REQ-347-T16, REQ-347-T18]
+tags: [REQ-347, frontend, task, visual-r12]
+related_paths: [docs/design/REQ-347-test-plan.md, frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx]
+---
+
+# REQ-347-T19 — 視覚改訂の結合検証
+
+## Objective and Ownership
+
+2testだけ。固定baseline `3b901040c1887b24c56cc517e75768b777913a5e` から追加＋削除<=300、新規全行と既存consumer差分も加算。production編集禁止。他の担当者の変更を巻き戻さない。超過はArchitectへ返す。
+
+- `frontend/src/test/e2e_req347_visual_polish.test.tsx`（新規）
+- `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx`
+
+## Hermetic Context
+
+Vitest/RTLと実DesktopLayout/StageInputGroup/TagChipEditor/QueryClient。既存 `e2e_req347_generate_stage_groups.test.tsx` のfixture/Harness構造を参考に最小stateを新testへ物理配置。他testをimportして二重登録しない。group/editorをmockして自己検証しない。
+
+~~~ts
+import { DesktopLayout } from '../pages/GeneratePage/components/DesktopLayout'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+// stage1 main Main / stage2 rough Rough、master7 Prompt textarea
+// variants71/72、mapping11/12、元role Main_Positive_Prompt/Rough_Positive_Prompt
+// display_name両方「描写」、Main=A/Rough=B、disabled chipを含む。
+// query keys ['stage-masters'], ['mapping-masters']; retry:false/staleTime:Infinity
+// API/router境界のみmock、実UI/store。元role/IDを保つ。
+~~~
+
+既存caption期待変更箇所の20行。独立captionへの期待だけを同期しmode/入力assertを保持。
+
+~~~tsx
+    expect(container.querySelector('#left-pane-toolbar')).not.toBeInTheDocument()
+  })
+
+  it('AC-4: initial Anima mode displays TagChipEditor in chip mode, persists text mode across preset tab switches after manual toggle', () => {
+    const state = createMockState({
+      isAnimaMode: true,
+      activeSetId: 'set-1',
+    })
+
+    const { rerender } = renderGroupedDesktop(<DesktopLayout state={state} />)
+
+    // 1. Initial render with Anima mode -> Chip mode by default
+    expect(screen.getByText('Chips Mode')).toBeInTheDocument()
+    expect(screen.getByText('テキスト入力モード切替')).toBeInTheDocument()
+
+    // 2. User manually switches to Text mode
+    fireEvent.click(screen.getByText('テキスト入力モード切替'))
+
+    // Text mode is now active
+    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+~~~
+
+## Verification
+
+- [ ] 工程heading可視textContent=Main/Roughのみ、ARIAはkey付き各1。Prompt h4は両方「描写」でstage suffixなし、h4とtoolbar別DOM行。欠落/空白display_nameのparam_name→role→固定名fallbackも小caseで確認。
+- [ ] 各toolbarにcopy/history/translation/Add Asset/mode各1組、caption無し、元role/value callback。両root属性/py除去/新root無し。
+- [ ] `within(region 'Main (main)'/'Rough (rough)')` で同名collapse buttonを別々に操作。さらに同stage同名caseはdata-prompt-mapping-idからscopeし配列位置で選ばない。Main/Roughのtextareaを元role IDで編集、他方値保持。
+- [ ] mode/collapse/disabled chips/assetanchor保持。collapse対象だけeditor/操作非mount、再展開後値/chips保持。mode button名を弱い位置selectorへ変えない。
+- [ ] tabsのChips Mode期待をqueryByText=nullへ同期、既存操作assertは維持。T9/Settings結合testも変更せず再実行。
+- [ ] class/DOMのみでは実文字サイズ/空白/折返しをPASSとせずBR-VIS1–3へ残す。
+
+~~~powershell
+Set-Location (Join-Path (git rev-parse --show-toplevel).Trim() 'frontend')
+npm run typecheck
+npx vitest run src/test/e2e_req347_visual_polish.test.tsx src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx src/test/e2e_req347_generate_stage_groups.test.tsx src/test/e2e_req347_settings_stage_groups.test.tsx
+git -c core.fsmonitor=false diff --numstat 3b901040c1887b24c56cc517e75768b777913a5e -- src/test/e2e_req347_visual_polish.test.tsx src/pages/GeneratePage/components/__tests__/DesktopLayout.tabs.test.tsx
+~~~
+
+未追跡全行込み<=300/exit0/各test数を報告。既存consumerの累積差分が大きければ新testを縮めてassertを弱めず、Architectへ分割差し戻し。

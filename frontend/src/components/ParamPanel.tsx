@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Shuffle, Lock, Settings, Link, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import type { Lora, ParamTypeMaster, ParamSyncGroup } from '../api/types'
 import { LoraStackEditor } from './LoraStackEditor'
@@ -7,6 +7,8 @@ import { LS_KEYS } from '../utils/localStorageKeys'
 import type { WorkflowMapping } from '../api/types'
 import { readSeedSettings, resolveSeedSyncRoots, seedSlotKey } from '../utils/seedModel'
 import { SeedField } from './SeedField'
+import StageInputGroup from './StageInputGroup'
+import { useMappingStageGroups } from '../hooks/useMappingStageGroups'
 
 export const DEFAULT_SAMPLERS = [
   'euler', 'euler_ancestral', 'heun', 'heunpp2', 'dpm_2', 'dpm_2_ancestral',
@@ -66,6 +68,23 @@ const getSamplerNumericBounds = (
   return {}
 }
 
+function StageGroupedParameters({
+  mappings,
+  renderMapping,
+}: {
+  mappings: readonly WorkflowMapping[]
+  renderMapping: (mapping: WorkflowMapping) => ReactNode
+}): React.JSX.Element {
+  const stageGroups = useMappingStageGroups(mappings, undefined, true)
+  return <>
+    {stageGroups.map((group) => (
+      <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
+        <div className="space-y-3">{group.mappings.map(renderMapping)}</div>
+      </StageInputGroup>
+    ))}
+  </>
+}
+
 const NumericStepperButtons = ({
   label,
   disabled,
@@ -102,6 +121,7 @@ export interface ParamPanelProps {
   onToggleParamSync?: (groupId: number, isEnabled: boolean) => void
   onOpenParamSyncSettings?: () => void
   activeBaseModelId?: number | null
+  stageGrouping?: boolean
 }
 
 export const ParamPanel = ({
@@ -125,6 +145,7 @@ export const ParamPanel = ({
   onToggleParamSync,
   onOpenParamSyncSettings,
   activeBaseModelId,
+  stageGrouping = false,
 }: ParamPanelProps) => {
   const [expandedSections, setExpandedSections] = useState<GenerateSectionsExpandedState>(() => {
     try {
@@ -143,6 +164,8 @@ export const ParamPanel = ({
     });
   };
 
+  const visibleParamMappings = paramMappings.filter((mapping) => !(mapping.input_type !== 'seed' && mapping.role === 'Sampler_Seed'))
+
   if (paramMappings.length === 0) return null
 
   // Active slave roles and their master group mapping
@@ -159,22 +182,8 @@ export const ParamPanel = ({
   try { seedRoots = resolveSeedSyncRoots(paramMappings as WorkflowMapping[], paramSyncGroups) }
   catch (error) { seedSyncError = error instanceof Error ? error.message : 'Seed同期設定が無効です' }
 
-  return (
-    <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
-      {/* Parameters Header */}
-      <button
-        type="button"
-        id={`parameters-section-toggle${mobile ? '-mobile' : ''}`}
-        onClick={() => toggleSection('parameters')}
-        className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors w-full text-left focus:outline-none"
-      >
-        {expandedSections.parameters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span>Parameters</span>
-      </button>
+  const renderParamMapping = (m: any): ReactNode => {
 
-      {expandedSections.parameters && (
-        <div className="space-y-3 pt-1">
-      {paramMappings.map((m) => {
         const customType = paramTypeMasters?.find((ptm) => ptm.name === m.input_type)
         const samplerNumericField = m.role ? SAMPLER_NUMERIC_FIELDS[m.role] : undefined
         const numericStep = samplerNumericField?.step ?? customType?.step ?? (customType
@@ -190,7 +199,6 @@ export const ParamPanel = ({
           const adjusted = Math.min(numericMax ?? Infinity, Math.max(numericMin ?? -Infinity, current + numericStep * direction))
           setParamValues({ ...paramValues, [m.role!]: adjusted.toFixed(precision) })
         }
-        if (m.input_type !== 'seed' && m.role === 'Sampler_Seed') return null
         const syncGroup = activeSlaveMap.get(m.role!)
         const isSyncedSlave = Boolean(syncGroup)
         const masterDisplayName = syncGroup ? (paramMappings.find((pm) => pm.role === syncGroup.master_role)?.display_name || syncGroup.master_role) : ''
@@ -364,7 +372,27 @@ export const ParamPanel = ({
             })()}
           </div>
         )
-      })}
+
+  }
+
+  return (
+    <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2 ${mobile ? 'p-3.5' : 'p-3'} space-y-3`}>
+      {/* Parameters Header */}
+      <button
+        type="button"
+        id={`parameters-section-toggle${mobile ? '-mobile' : ''}`}
+        onClick={() => toggleSection('parameters')}
+        className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors w-full text-left focus:outline-none"
+      >
+        {expandedSections.parameters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>Parameters</span>
+      </button>
+
+      {expandedSections.parameters && (
+        <div className={stageGrouping ? 'pt-1' : 'space-y-3 pt-1'}>
+      {stageGrouping
+        ? <StageGroupedParameters mappings={visibleParamMappings as WorkflowMapping[]} renderMapping={renderParamMapping} />
+        : visibleParamMappings.map(renderParamMapping)}
       {typeof batchSize === 'number' && setBatchSize && (
         <div className="flex items-center justify-between gap-4">
           <label className="text-xs text-zinc-400">Batch Size</label>
