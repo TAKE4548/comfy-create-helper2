@@ -238,19 +238,21 @@ describe('GeneratePage Component Regression Tests', () => {
     const btn = container.querySelector('#generate-btn') as HTMLButtonElement;
     expect(btn).toBeInTheDocument();
     expect(btn.disabled).toBe(true);
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalledWith(1));
 
     // After workflow loads, button becomes enabled
-    await act(async () => {
-      resolveWorkflow!({
-        id: 1,
-        name: 'Standard Workflow',
-        json_body: { '3': { inputs: { seed: 123 } } },
-        mappings: [],
-      });
+    resolveWorkflow!({
+      id: 1,
+      name: 'Standard Workflow',
+      json_body: { '3': { inputs: { seed: 123 } } },
+      mappings: [],
     });
 
+    await waitFor(() => expect(queryClient.getQueryState(['workflow', 1])?.status).toBe('success'));
     await waitFor(() => {
-      expect(btn.disabled).toBe(false);
+      const button = container.querySelector('#generate-btn') as HTMLButtonElement;
+      expect(button).toBeInTheDocument();
+      expect(button).toBeEnabled();
     });
   });
 
@@ -270,18 +272,20 @@ describe('GeneratePage Component Regression Tests', () => {
     const mobileBtn = container.querySelector('#generate-btn-mobile') as HTMLButtonElement;
     expect(mobileBtn).toBeInTheDocument();
     expect(mobileBtn.disabled).toBe(true);
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalledWith(1));
 
-    await act(async () => {
-      resolveWorkflow!({
-        id: 1,
-        name: 'Standard Workflow',
-        json_body: { '3': { inputs: { seed: 123 } } },
-        mappings: [],
-      });
+    resolveWorkflow!({
+      id: 1,
+      name: 'Standard Workflow',
+      json_body: { '3': { inputs: { seed: 123 } } },
+      mappings: [],
     });
 
+    await waitFor(() => expect(queryClient.getQueryState(['workflow', 1])?.status).toBe('success'));
     await waitFor(() => {
-      expect(mobileBtn.disabled).toBe(false);
+      const button = container.querySelector('#generate-btn-mobile') as HTMLButtonElement;
+      expect(button).toBeInTheDocument();
+      expect(button).toBeEnabled();
     });
   });
 

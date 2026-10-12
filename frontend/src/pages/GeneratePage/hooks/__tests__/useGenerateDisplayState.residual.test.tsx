@@ -197,7 +197,11 @@ describe('useGenerateDisplayState residual history sync', () => {
       calls += 1
       return calls <= 20 ? response([item(`page-${calls}.png`)], true) : response([item('B.png')], true)
     })
-    const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: null }), { wrapper: makeWrapper(client) })
+    let hook!: ReturnType<typeof renderHook<ReturnType<typeof useGenerateDisplayState>, unknown>>
+    await act(async () => {
+      hook = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: null }), { wrapper: makeWrapper(client) })
+    })
+    const { result } = hook
     await waitFor(() => expect(result.current.residualHistoryStatus).toBe('partial'))
     expect(calls).toBe(20)
 

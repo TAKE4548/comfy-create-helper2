@@ -398,3 +398,7 @@ pages/GeneratePage/
 ## REQ-334 最終時間表示契約
 
 管理ジョブのETAは表示中の集約進捗と実行開始時刻、従来生成は全体進捗と生成開始時刻を使用する。開始時刻・有効な進捗・経過時間の根拠がないときは「未取得」。既知の経過時間・ETAは整数秒表示で、VRAM値・Seed・Queue件数とともに等幅字体・等幅数字を用いる。アセット追加のLoRA強度は既存0〜2範囲内で0.05刻み、範囲未定義のスタック倍率へ新たな範囲を課さない。
+
+## REQ-344 GeneratePage回帰テスト契約
+
+GeneratePage回帰テストは既存の13ケースを維持し、workflow未ロード時のDesktop/Mobileボタンdisabled状態から、workflow解決後にボタンがenabledになる状態遷移を対象とする。非同期テストは `get(1)` を待ち、deferred mockを広範囲の非同期`act`の外でresolveし、QueryClientのsuccessを待ってからボタンを再取得してenabledをassertする。この記述はテストの同期方法とカバレッジを記録するもので、製品/APIの動作を変更せず、将来の無条件な成功率も保証しない。詳細は[REQ-344設計](../design/REQ-344.md)、[検証計画](../design/REQ-344-test-plan.md)、[最小差分検証記録](../design/REQ-344-minimal-verification.md)を参照。
