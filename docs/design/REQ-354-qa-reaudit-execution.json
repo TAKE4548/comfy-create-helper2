@@ -1,0 +1,9 @@
+{
+  "started_at_utc": "2026-10-12T18:41:12.9811074Z",
+  "ended_at_utc": "2026-10-12T18:43:44.2702203Z",
+  "elapsed_seconds": 151.2891129,
+  "exit_code": 0,
+  "target_sha256": "E2AD3026D416B65130B84F7D1F5F1F6A09C2158AD96DC21331040B4E395E5A14",
+  "reasoning_effort": "none",
+  "context_length": 32768
+}

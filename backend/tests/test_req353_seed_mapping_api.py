@@ -60,12 +60,12 @@ class TestReq353SeedMappingAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
-    def _create_workflow(self, name, mappings):
+    def _create_workflow(self, name, mappings, json_body=None):
         response = self.client.post(
             "/api/workflows",
             json={
                 "name": name,
-                "json_body": {"1": {"class_type": "KSampler", "inputs": {}}},
+                "json_body": json_body or {"1": {"class_type": "KSampler", "inputs": {}}},
                 "mappings": mappings,
             },
         )
@@ -92,6 +92,60 @@ class TestReq353SeedMappingAPI(unittest.TestCase):
         self.assertEqual(mappings[1]["fallback_param_names"], ["noise_seed", "seed_alt"])
         self.assertEqual(mappings[1]["master_id"], master["id"])
         self.assertEqual(mappings[1]["variant_id"], variant_id)
+
+    def test_get_workflow_returns_seed_alias_for_seven_sampler_custom_mappings(self):
+        master = self._create_master("req354_noise_seed", ["noise_seed"])
+        variant_id = master["variants"][0]["id"]
+        node_ids = [
+            "1260:1398",
+            "1260:1396",
+            "1260:1394",
+            "1260:1392",
+            "1260:1390",
+            "1260:1388",
+            "1260:1386",
+        ]
+        json_body = {
+            node_id: {"class_type": "SamplerCustom", "inputs": {"noise_seed": 0}}
+            for node_id in node_ids
+        }
+        mappings_to_create = [
+            {"master_id": master["id"], "node_id": node_ids[0]},
+            *[
+                {"master_id": master["id"], "variant_id": variant_id, "node_id": node_id}
+                for node_id in node_ids[1:]
+            ],
+        ]
+        workflow_id = self._create_workflow(
+            "REQ-354 seven noise_seed mappings", mappings_to_create, json_body=json_body
+        )
+
+        response = self.client.get(f"/api/workflows/{workflow_id}")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(len(result["mappings"]), 7)
+        self.assertEqual(
+            {node_id: node["inputs"] for node_id, node in result["json_body"].items()},
+            {node_id: {"noise_seed": 0} for node_id in node_ids},
+        )
+        self.assertTrue(
+            all("seed" not in node["inputs"] for node in result["json_body"].values())
+        )
+        for mapping, expected_node_id in zip(result["mappings"], node_ids):
+            with self.subTest(node_id=expected_node_id):
+                self.assertEqual(mapping["master_id"], master["id"])
+                self.assertEqual(mapping["node_id"], expected_node_id)
+                self.assertEqual(mapping["param_name"], "seed")
+                self.assertEqual(mapping["input_type"], "seed")
+                self.assertEqual(mapping["fallback_param_names"], ["noise_seed"])
+                expected_variant_id = None if expected_node_id == node_ids[0] else variant_id
+                self.assertEqual(mapping["variant_id"], expected_variant_id)
+
+        master_response = self.client.get(f"/api/mapping-masters/{master['id']}")
+        self.assertEqual(master_response.status_code, 200, master_response.text)
+        self.assertEqual(master_response.json()["param_name"], "seed")
+        self.assertEqual(master_response.json()["fallback_param_names"], ["noise_seed"])
 
     def test_get_workflow_preserves_null_and_empty_fallbacks(self):
         null_master = self._create_master("req353_null")

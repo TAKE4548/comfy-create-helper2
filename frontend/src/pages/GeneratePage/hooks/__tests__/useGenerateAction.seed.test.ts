@@ -87,30 +87,54 @@ describe('useGenerateAction dedicated seed submission', () => {
 
   it('rejects missing primary and fallback seed inputs before normal submission state changes', async () => {
     const fallbackMapping = { ...seedMapping, fallback_param_names: ['noise_seed'] }
+    const laterMapping = {
+      ...seedMapping, id: 2, master_id: 2, node_id: '4', role: 'Other_Seed',
+      fallback_param_names: ['noise_seed'],
+    }
     const missingWorkflow: Workflow = {
       ...workflow,
-      json_body: { '3': { inputs: {} } },
-      mappings: [fallbackMapping],
+      json_body: { '3': { inputs: { seed: 0 } }, '4': { inputs: {} } },
+      mappings: [fallbackMapping, laterMapping],
     }
+    store.paramValues = setSeedModeForMapping(
+      laterMapping,
+      setSeedModeForMapping(fallbackMapping, { Sampler_Seed: '40', Other_Seed: '50' }, 'fixed'),
+      'fixed'
+    )
 
     await useGenerateAction(missingWorkflow).handleGenerate()
 
     expect(store.submitGenerationBatch).not.toHaveBeenCalled()
+    expect(store.setActiveBatch).not.toHaveBeenCalled()
     expect(store.setIsBatchSubmitting).not.toHaveBeenCalled()
     expect(store.setErrorToast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error', message: expect.stringContaining('Sampler Seed'),
     }))
+    const errorMessage = store.setErrorToast.mock.calls[0][0].message
+    expect(errorMessage).toContain('node 4')
+    expect(errorMessage).toContain('seed, noise_seed')
   })
 
   it('rejects checked sets when the seed target is missing before any submission state changes', async () => {
     const fallbackMapping = { ...seedMapping, fallback_param_names: ['noise_seed'] }
+    const laterMapping = {
+      ...seedMapping, id: 2, master_id: 2, node_id: '4', role: 'Other_Seed',
+      fallback_param_names: ['noise_seed'],
+    }
     const missingWorkflow: Workflow = {
       ...workflow,
-      json_body: { '3': { inputs: {} } },
-      mappings: [fallbackMapping],
+      json_body: { '3': { inputs: { seed: 0 } }, '4': { inputs: {} } },
+      mappings: [fallbackMapping, laterMapping],
     }
     store.sets = [
-      { id: 'a', name: 'First set', checked: true, batchSize: 1, paramValues: { Sampler_Seed: '5' } },
+      {
+        id: 'a', name: 'First set', checked: true, batchSize: 1,
+        paramValues: setSeedModeForMapping(
+          laterMapping,
+          setSeedModeForMapping(fallbackMapping, { Sampler_Seed: '5', Other_Seed: '6' }, 'fixed'),
+          'fixed'
+        ),
+      },
     ]
 
     await useGenerateAction(missingWorkflow).handleGenerateSets()
@@ -121,6 +145,9 @@ describe('useGenerateAction dedicated seed submission', () => {
     expect(store.setErrorToast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error', message: expect.stringContaining('First set'),
     }))
+    const errorMessage = store.setErrorToast.mock.calls[0][0].message
+    expect(errorMessage).toContain('node 4')
+    expect(errorMessage).toContain('seed, noise_seed')
   })
 
   it('rejects all checked sets when a later set has no base seed value', async () => {

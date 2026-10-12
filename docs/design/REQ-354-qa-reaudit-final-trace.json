@@ -1,0 +1,100 @@
+{
+  "pbi_id": "REQ-354",
+  "action": "qa-audit",
+  "revision": "final",
+  "target": "docs/design/REQ-354-test-plan.md",
+  "target_sha256": "D03EF9F9590E16D9352B09EB535F6CABC76283FE3C0093CDC4199B5BA238C9D1",
+  "final_target_hash_matches_audited_hash": true,
+  "model_key": "qwen/qwen3.5-9b",
+  "configured_model_catalog": "qwen/qwen3.5-9b (FOUND)",
+  "model_selection": "Configured LOCAL_AUDIT_MODEL_KEY resolved by adapter; no diagnostic model override",
+  "observed_model": "qwen/qwen3.5-9b",
+  "quantization": "Q6_K",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "runtime_expected": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0",
+  "runtime_version_observed": null,
+  "reasoning_control_response_observed": null,
+  "runtime_evidence_note": "Adapter succeeded with requested context and reasoning settings; stdout does not expose runtime version or raw reasoning-control evidence.",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 --unload-after qa-audit docs/design/REQ-354-test-plan.md",
+  "execution": {
+    "started_at_utc": "2026-10-12T18:45:46.431653Z",
+    "ended_at_utc": "2026-10-12T18:48:03.1948284Z",
+    "elapsed_seconds": 136.7631754,
+    "exit_code": 0,
+    "target_sha256": "D03EF9F9590E16D9352B09EB535F6CABC76283FE3C0093CDC4199B5BA238C9D1",
+    "reasoning_effort": "none",
+    "context_length": 32768
+  },
+  "raw_verdict": "FAIL (Critical Ambiguities Detected)",
+  "risk_level": "High",
+  "raw_log": "docs/design/REQ-354-qa-reaudit-final.log",
+  "chunks": "One explicit test-plan target; no chunk metadata printed",
+  "audit_exit_interpretation": "Exit0 proves audit report returned; does not imply raw verdict PASS",
+  "finding_dispositions": [
+    {
+      "disposition": "不採用",
+      "reason": "保存済みT1-T4/3-Gateは実行証拠。文書のみ改訂で製品source/環境は不変。計画は新規実装/環境変更時の関連再実行を明記し、固定stub自動テストと稼働実random captureを区別する。稼働への固定RNG追加と有償再生成は承認設計外。",
+      "raw_concern": "Retained runtime evidence creates static evidence versus current execution contradiction; require fresh live Generate with fixed 11/22/33.",
+      "id": "A",
+      "evidence": "test-plan Integration Scenarios / Runtime E2E Scenarios / Completion Rule; REQ-354-verification.md T4; REQ-354-walkthrough.md 3-Gate"
+    },
+    {
+      "disposition": "不採用",
+      "reason": "現在のクライアント日は2026-10-13で未来日ではない。ユーザーはT3 normal/checked-set unit証拠を明示承認済み。I4はsubmit/state setter未呼出しassertを列挙。HTTP countは未測定と明記し0と主張しない。",
+      "raw_concern": "AC-4 relies on approved future-date evidence; require fresh runtime HTTP POST count.",
+      "id": "B",
+      "evidence": "test-plan Acceptance Criteria / I4 / Completion Rule; user approval 2026-10-13"
+    },
+    {
+      "disposition": "限定的な記述改善提案として保留、今回追加改訂なし",
+      "reason": "計画はnullと[]を区別し登録alias順序を保持する期待と対象BE/resolver回帰を明示。新しいshape_preserved出力は製品/テスト新要求。既存機械assertの実行結果を証拠とし、目視だけでPASSにしない。",
+      "raw_concern": "I2 null/[] shape and no speculation require programmatic boolean or JSON diff.",
+      "id": "C",
+      "evidence": "test-plan I2 / Commands / Gate 3 matrix; existing backend API regression"
+    },
+    {
+      "disposition": "不採用",
+      "reason": "実行環境不足はINCONCLUSIVE、schema/assertion差異はFAIL、default除去禁止を計画に明示済み。コマンド失敗をファイル存在でPASSへ変える規則はない。",
+      "raw_concern": "Schema comparison command can crash on environment drift and lead to unclear result.",
+      "id": "D",
+      "evidence": "test-plan Schema Baseline / Commands and Result Handling"
+    },
+    {
+      "disposition": "新規要件は不採用、I3回数の直接assert不足は既知制約として保持",
+      "reason": "warning本文/発生元/件数とexit/合否を分離し根拠なしに既存/無害と呼ばない。warningゼロと時計許容差はAC外。I3は先頭request3件と値をassertし、呼出回数1回の測定済み主張を避ける。この回数assert欠如を監査PASSへ読み替えない。",
+      "raw_concern": "Warnings must all be zero or explicitly expected; timestamps need tolerance; I3 count is not directly measured.",
+      "id": "E",
+      "evidence": "test-plan I3 / Commands and Result Handling; useGenerateAction.seed.test.ts lines 64-85"
+    }
+  ],
+  "disposition_summary": "raw FAIL/Highを維持。承認済み証拠範囲・default省略・Windows対象・文書のみ変更の既存実行結果継承を維持し、追加source変更やrawをPASSにするための追加改訂は行わない。最終判断をcoordinatorへ返す。",
+  "verification": {
+    "retained_test_evidence": "REQ-354-verification.md and REQ-354-walkthrough.md, actual T1-T4 and 3-Gate executions",
+    "document_check_exit_code": 0,
+    "product_tests_rerun_this_revision": false,
+    "reason": "Only test-plan prose changed; no implementation source/test source/runtime changes made in this revision.",
+    "document_check": "AC-1..4 exactly match approved PBI; 2 inline Python command bodies compile",
+    "document_check_log": "docs/design/REQ-354-qa-reaudit-doc-check.log"
+  },
+  "unload": {
+    "independent_log": "docs/design/REQ-354-qa-reaudit-final-models.json",
+    "execution": {
+      "unload_exit_code": 0,
+      "independent_lms_ps_exit_code": 0,
+      "checked_at_utc": "2026-10-12T18:48:21.2798977Z"
+    },
+    "independent_command": "lms ps --json",
+    "claim": "No model loaded; does not assert all GPU memory is free.",
+    "independent_stdout": "[]",
+    "automatic_log": "LM Studio reports no models loaded",
+    "automatic": "--unload-after",
+    "manual_log": "docs/design/REQ-354-qa-reaudit-final-unload.log"
+  },
+  "original_raw_trace_preserved": "docs/design/REQ-354-qa-audit-trace.json",
+  "original_trace_sha256": "E37F287965A7A4525EA46D4FF570776FF45E64096A0835901AF989C3D7FDF167",
+  "intermediate_raw_trace_preserved": "docs/design/REQ-354-qa-reaudit-trace.json",
+  "post_audit_target_changes": false,
+  "source_edits": false,
+  "status_archive_commit_operations": false
+}

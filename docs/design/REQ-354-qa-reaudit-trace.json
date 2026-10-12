@@ -1,0 +1,77 @@
+{
+  "pbi_id": "REQ-354",
+  "action": "qa-audit",
+  "revision": 1,
+  "target": "docs/design/REQ-354-test-plan.md",
+  "target_sha256": "E2AD3026D416B65130B84F7D1F5F1F6A09C2158AD96DC21331040B4E395E5A14",
+  "model_key": "qwen/qwen3.5-9b",
+  "configured_model_catalog": "qwen/qwen3.5-9b (FOUND)",
+  "observed_model": "qwen/qwen3.5-9b",
+  "quantization": "Q6_K",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "runtime_expected": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0",
+  "runtime_version_observed": null,
+  "reasoning_control_response_observed": null,
+  "runtime_evidence_note": "Adapter succeeded with requested context and reasoning settings; stdout does not expose runtime version or raw reasoning-control evidence.",
+  "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 --unload-after qa-audit docs/design/REQ-354-test-plan.md",
+  "execution": {
+    "started_at_utc": "2026-10-12T18:41:12.9811074Z",
+    "ended_at_utc": "2026-10-12T18:43:44.2702203Z",
+    "elapsed_seconds": 151.2891129,
+    "exit_code": 0,
+    "target_sha256": "E2AD3026D416B65130B84F7D1F5F1F6A09C2158AD96DC21331040B4E395E5A14",
+    "reasoning_effort": "none",
+    "context_length": 32768
+  },
+  "raw_verdict": "FAIL (Critical Ambiguities Detected)",
+  "risk_level": "HIGH",
+  "final_status_in_raw": "REJECT",
+  "raw_log": "docs/design/REQ-354-qa-reaudit.log",
+  "chunks": "One test-plan target; no chunk metadata printed",
+  "finding_dispositions": [
+    {
+      "reason": "実行済み証拠の継承条件と新規検証時の実コマンド実行を最終改訂で明記。文書のみの改訂で製品実行を繰り返す新要求は採用しない。",
+      "raw_concern": "Historical evidence can substitute for current execution.",
+      "disposition": "限定採用",
+      "id": "A"
+    },
+    {
+      "reason": "I4にsubmitGenerationBatch/setActiveBatch/setIsBatchSubmitting未呼出しassertionを既に記載。ユーザー承認のnormal/checked-set証拠範囲を維持する。",
+      "raw_concern": "AC-4 requires HTTP interception; mock verification is missing.",
+      "disposition": "不採用",
+      "id": "B"
+    },
+    {
+      "reason": "ユーザー承認の4者一致/default省略契約に反する。正規化禁止と差異時FAILを最終改訂で明記。",
+      "raw_concern": "Default key should be stripped before schema comparison.",
+      "disposition": "不採用",
+      "id": "C"
+    },
+    {
+      "reason": "本PBI対象は指定Windows workspaceの稼働復旧。Dockerは新要求。環境不足をPASSと扱わない。",
+      "raw_concern": "Use portability or Docker to avoid Windows workspace restrictions.",
+      "disposition": "不採用",
+      "id": "D"
+    },
+    {
+      "reason": "warningの本文/発生元/件数を実測exitと別記録し、根拠なしの既存/無害表現を使わないと明記。",
+      "raw_concern": "Warnings with no impact is subjective.",
+      "disposition": "採用",
+      "id": "E"
+    }
+  ],
+  "unload": {
+    "independent_stdout": "[]",
+    "independent_exit_code": 0,
+    "claim": "No model loaded; does not assert all GPU memory is free.",
+    "manual_log": "docs/design/REQ-354-qa-reaudit-unload.log",
+    "manual_exit_code": 0,
+    "automatic": "--unload-after",
+    "independent_command": "lms ps --json",
+    "automatic_log": "LM Studio reports no models loaded"
+  },
+  "final_revision_reaudited": false,
+  "original_raw_trace_preserved": "docs/design/REQ-354-qa-audit-trace.json",
+  "original_trace_sha256": "E37F287965A7A4525EA46D4FF570776FF45E64096A0835901AF989C3D7FDF167"
+}

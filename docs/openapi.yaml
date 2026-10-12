@@ -8174,6 +8174,13 @@ components:
           - type: string
           - type: 'null'
           title: Display Name
+        fallback_param_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fallback Param Names
       type: object
       required:
       - id

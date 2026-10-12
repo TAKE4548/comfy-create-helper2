@@ -1,0 +1,136 @@
+{
+  "pbi_id": "REQ-354",
+  "action": "ba-audit",
+  "model_key": "qwen/qwen3.5-9b",
+  "configured_key_found": true,
+  "targets": [
+    "docs/design/REQ-354.md",
+    "docs/design/REQ-354-test-plan.md",
+    "docs/backlog/task/active/REQ-354-T1.md",
+    "docs/backlog/task/active/REQ-354-T2.md",
+    "docs/backlog/task/active/REQ-354-T3.md",
+    "docs/backlog/task/active/REQ-354-T4.md",
+    "implementation_plan.md"
+  ],
+  "target_hashes_before_audit_annotation": [
+    {
+      "path": "docs/design/REQ-354.md",
+      "sha256": "05B0C7EB6D6369283AC85809ECE2800E7B88B2179D270B3359F7AE6B676F12A4"
+    },
+    {
+      "path": "docs/design/REQ-354-test-plan.md",
+      "sha256": "D6A410528300A380C6D9657804A15CA6155C4D6873B61636A9417F24D94B8C87"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T1.md",
+      "sha256": "355C94E3FD3888C88C6AA67912BF59E4DFC96D1520D47495FCC69F046C73742A"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T2.md",
+      "sha256": "B2D5090CA272D670F44E56ECEF0601B53AEAA9B2EFED3C7B03DD17AEF22956F0"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T3.md",
+      "sha256": "2D25CFE6C1C00DD0E43318BAD4D7A702D5C3B3A5677315AFF7060C76F3BF6C98"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T4.md",
+      "sha256": "7694F460386C87304C11395B7997713A9E8548169FDA57DDDDD210A67F7F430A"
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "E0E236AED19F777019404EA898761BDCD24075CB0B81C9D169BA1105AC8533F1"
+    }
+  ],
+  "context_length": 32768,
+  "reasoning_effort_requested": "none",
+  "runtime_expected": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0",
+  "started_at_utc": "2026-10-12T14:48:10.9793599Z",
+  "result": "FINDINGS_REQUIRE_HUMAN_REVIEW",
+  "model_verdict": "CRITICAL INCONSISTENCY DETECTED",
+  "audit_exit_code": 0,
+  "ended_at_utc": "2026-10-12T14:52:05.9302952Z",
+  "elapsed_seconds": 235.0,
+  "input_chars_before_audit": 23217,
+  "chunks_reported": null,
+  "chunks_expected_at_24000_char_threshold": 1,
+  "chunks_result": "all explicitly listed targets returned one combined audit response",
+  "runtime_observed": null,
+  "reasoning_control_response_evidence": null,
+  "runtime_metadata_note": "Adapter returned exit0; detailed runtime/reasoning settings were not printed in captured output.",
+  "audit_log": "docs/design/REQ-354-ba-audit.log",
+  "unload_log": "docs/design/REQ-354-unload.log",
+  "unload_exit_code": 0,
+  "unload_verified_at_utc": "2026-10-12T14:52:22.132047Z",
+  "loaded_models_after_unload": [],
+  "unload_evidence": "LM Studio reports no models loaded",
+  "post_audit_revisions_reaudited": false,
+  "manual_disposition": "runtime gateの見落とし、回帰testを製品logic変更とする指摘、単一repo内3ディレクトリでcommit一致を求める指摘は根拠不足。gate/null/関連DB列のread-only照合/localと稼働OpenAPIの区別を明確化。raw判定を保持し人のレビューへ返す。",
+  "finding_dispositions": [
+    {
+      "id": 1,
+      "decision": "一部採用",
+      "details": "T1は既にrestart前module/root確認と外部root保留を要求。gateを明確化。T2は回帰保証でruntime修復の証明ではないと追記。"
+    },
+    {
+      "id": 2,
+      "decision": "採用",
+      "details": "null/undefined/[]は候補なし。保存alias存在時のnull応答は契約違反。"
+    },
+    {
+      "id": 3,
+      "decision": "根拠不足",
+      "details": "T4は3ファイル/180行/全先行依存で制約内。local比較をruntime代替にしないと明確化。"
+    },
+    {
+      "id": 4,
+      "decision": "限定採用",
+      "details": "関連table/列型/effective master/接続DBをread-only照合。全DB dumpは不要。"
+    },
+    {
+      "id": 5,
+      "decision": "採用",
+      "details": "T4 import pathとT1 runtime gate必須、live OpenAPI型比較を明記。"
+    }
+  ],
+  "root_implementation_plan_concurrent_change": "監査開始前はREQ-354のhashを記録。監査中に別REQ-344へ同時更新され、読取時点のroot plan内容は保証不能。最終root内容は他の更新を保持。",
+  "final_implementation_plan": "docs/design/REQ-354-implementation-plan.md",
+  "final_target_hashes": [
+    {
+      "path": "docs/design/REQ-354.md",
+      "sha256": "20FE177E175FD83D5959573ED10B2CD3B8724074128A27D48BBD0AB50024F36A",
+      "lines": 93
+    },
+    {
+      "path": "docs/design/REQ-354-test-plan.md",
+      "sha256": "D6A410528300A380C6D9657804A15CA6155C4D6873B61636A9417F24D94B8C87",
+      "lines": 72
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T1.md",
+      "sha256": "12AFEB64ED1B356866AF7528C386C705307660845AAC332B952249B7EFDEEDAA",
+      "lines": 83
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T2.md",
+      "sha256": "B2D5090CA272D670F44E56ECEF0601B53AEAA9B2EFED3C7B03DD17AEF22956F0",
+      "lines": 68
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T3.md",
+      "sha256": "A40D3278E915FAB49B806C848AD0A7F371DC584B2A99BB7128EA48B5D14B6E22",
+      "lines": 72
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-354-T4.md",
+      "sha256": "213AABB46DE043B7AFEF6E1BEB1952D221D242DAAC9F7C02957008EF545B0764",
+      "lines": 77
+    },
+    {
+      "path": "docs/design/REQ-354-implementation-plan.md",
+      "sha256": "6AC034276C191E4752045E3B6D856EB29F1A9C44E18182F099FAC2829309C6A3",
+      "lines": 49
+    }
+  ],
+  "previous_implementation_plan_preserved_at": "docs/design/REQ-354-previous-implementation-plan.md"
+}

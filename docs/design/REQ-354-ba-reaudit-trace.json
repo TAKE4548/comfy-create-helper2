@@ -1,0 +1,144 @@
+{
+  "pbi_id": "REQ-354",
+  "action": "ba-audit",
+  "model_key": "qwen/qwen3.5-9b",
+  "targets": [
+    "docs/design/REQ-354.md",
+    "docs/design/REQ-354-test-plan.md",
+    "docs/design/REQ-354-implementation-plan.md",
+    "docs/backlog/task/active/REQ-354-T1.md",
+    "docs/backlog/task/active/REQ-354-T2.md",
+    "docs/backlog/task/active/REQ-354-T3.md",
+    "docs/backlog/task/active/REQ-354-T4.md"
+  ],
+  "context_length": 32768,
+  "reasoning_effort_requested": "none",
+  "started_at_utc": "2026-10-12T18:17:37.3003079Z",
+  "approval": "2026-10-13 user approved default omission and T3 automated AC-4 acceptance",
+  "target_hashes_before_audit": [
+    {
+      "sha256": "B5697B541960D5876FB61A2EECAFBAE6F7EC5B20E650256F6003838D6BC0571A",
+      "path": "docs/design/REQ-354.md"
+    },
+    {
+      "sha256": "E26D2AF4C811A26B71E8555A8DAAFD09A26E4A4A2E930CFAF977E5FCF74A5BF3",
+      "path": "docs/design/REQ-354-test-plan.md"
+    },
+    {
+      "sha256": "29CEDAD2CEFBB63BAB086E403AC62EF9D03ADF60A645EB0687C42DCDC0DDF9F7",
+      "path": "docs/design/REQ-354-implementation-plan.md"
+    },
+    {
+      "sha256": "9B5EFB22B7F7D0D8BACF19FF6C2F7D41CBF109291AE2A21CCD69891FB32CE58C",
+      "path": "docs/backlog/task/active/REQ-354-T1.md"
+    },
+    {
+      "sha256": "13BE57D55145A00EBAE0DB89DA3490A088D917501638378BA670027CC0B37ACA",
+      "path": "docs/backlog/task/active/REQ-354-T2.md"
+    },
+    {
+      "sha256": "D4A4F76255CF29F854D041AEB6A8F70F18FFD185E370EF06B75F5D32B77973A3",
+      "path": "docs/backlog/task/active/REQ-354-T3.md"
+    },
+    {
+      "sha256": "466EDF0332D5F1D4B4E9D95A13C5FF557895878A16141AE86F82E39A2899DDF4",
+      "path": "docs/backlog/task/active/REQ-354-T4.md"
+    }
+  ],
+  "audit_exit_code": 0,
+  "unload_exit_code": 0,
+  "ended_at_utc": "2026-10-12T18:24:38.1192386Z",
+  "result": "RAW_FINDINGS_WITH_ARCHITECT_DISPOSITION",
+  "model_verdict": "Major logical contradictions; recommends postponing implementation",
+  "elapsed_seconds": 420.8189307,
+  "input_chars": 26687,
+  "chunks_reported": 2,
+  "synthesis_reported": true,
+  "model_observed": "qwen/qwen3.5-9b, 9.0B, Q6_K",
+  "runtime_observed": null,
+  "reasoning_control_response_evidence": null,
+  "runtime_metadata_note": "Adapter exit0; stdout identifies model/quantization but does not print runtime version or reasoning-control response evidence.",
+  "audit_log": "docs/design/REQ-354-ba-reaudit.log",
+  "unload_log": "docs/design/REQ-354-reaudit-unload.log",
+  "loaded_models_after_unload": [],
+  "unload_evidence": "LM Studio reports no models loaded",
+  "finding_dispositions": [
+    {
+      "decision": "根拠不足",
+      "details": "T4 verificationのlive/snapshot実測はdefault非包含。ユーザー承認どおりdocsを同期する。将来default出力へ変われば4者比較が差異を検出する。抑制コードの追加は不要。",
+      "id": "A-default"
+    },
+    {
+      "decision": "根拠不足",
+      "details": "master4は保存aliasありでDB破損を仮定していない。T1のworkspace manager起動・再起動前後HTTP照合をverificationへ記録済み。一般的な再起動でNULL DBを修復できるとは設計していない。",
+      "id": "B-restart"
+    },
+    {
+      "decision": "不採用",
+      "details": "T1のruntime証拠を引き継ぎT4でschema同期後の整合性を検証する責務分担。T4ローカルpytest/schema照合はrestartの再実行ではない。",
+      "id": "C-evidence"
+    },
+    {
+      "decision": "既存設計で対応",
+      "details": "null/[]保持、primaryとalias全欠落で拒否、未登録alias推測なしは設計/T3/既存resolverとAPI回帰へ記載済み。",
+      "id": "null-empty"
+    },
+    {
+      "decision": "既存設計で対応",
+      "details": "処理中jobがあれば終了/既存停止手順を待つT1 gateあり。再起動前queued/submitting/running/unconfirmed各0と両queue空を確認済み。",
+      "id": "jobs"
+    },
+    {
+      "decision": "不採用",
+      "details": "runtime HTTP/local/snapshot/docsの実property一致とrequired/default非包含を照合。新timestamp/バージョンAPIは不要。",
+      "id": "schema-cache"
+    },
+    {
+      "decision": "不採用",
+      "details": "必要property欠落は比較失敗すべき契約逸脱。空リストのresponse値とschema propertyを混同した指摘。カードにbackend cwdを明示しておりCI用汎用化は範囲外。",
+      "id": "missing-key-path"
+    },
+    {
+      "decision": "誤読",
+      "details": "MappingMaster/variant.masterのデータモデルでdirect master優先。main branchやHEAD/tagではない。設計と各カードに定義済み。",
+      "id": "effective-master"
+    },
+    {
+      "decision": "既存設計で対応",
+      "details": "対象propertyの完全一致とrequired/default非包含を4者で照合。手動docs同期は実測生成schemaに合わせる。全OpenAPI再生成は他PBI変更を破壊し得るため対象外。",
+      "id": "ssot"
+    }
+  ],
+  "disposition_summary": "rawをPASSへ変更しない。実測・既存gate・データモデルと照合し、追加source変更や要件再承認が必要な根拠は認めない。T4の4者schema照合とSSoT同期は引き続き必要。",
+  "post_audit_annotations_reaudited": false,
+  "final_target_hashes": [
+    {
+      "sha256": "ACE83B184CBF0AF4971E3A629512283BFABD8C64BE6C224FE999A4D026BDA319",
+      "path": "docs/design/REQ-354.md"
+    },
+    {
+      "sha256": "E26D2AF4C811A26B71E8555A8DAAFD09A26E4A4A2E930CFAF977E5FCF74A5BF3",
+      "path": "docs/design/REQ-354-test-plan.md"
+    },
+    {
+      "sha256": "2EE8982196C2C8C480861C9E4D47B83514FF383D16FCFF4A180F56F0C3783559",
+      "path": "docs/design/REQ-354-implementation-plan.md"
+    },
+    {
+      "sha256": "9B5EFB22B7F7D0D8BACF19FF6C2F7D41CBF109291AE2A21CCD69891FB32CE58C",
+      "path": "docs/backlog/task/active/REQ-354-T1.md"
+    },
+    {
+      "sha256": "13BE57D55145A00EBAE0DB89DA3490A088D917501638378BA670027CC0B37ACA",
+      "path": "docs/backlog/task/active/REQ-354-T2.md"
+    },
+    {
+      "sha256": "D4A4F76255CF29F854D041AEB6A8F70F18FFD185E370EF06B75F5D32B77973A3",
+      "path": "docs/backlog/task/active/REQ-354-T3.md"
+    },
+    {
+      "sha256": "466EDF0332D5F1D4B4E9D95A13C5FF557895878A16141AE86F82E39A2899DDF4",
+      "path": "docs/backlog/task/active/REQ-354-T4.md"
+    }
+  ]
+}

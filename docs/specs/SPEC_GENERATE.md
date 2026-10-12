@@ -92,6 +92,7 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 - **動的 LoRA スタック UI (`LoraStackEditor.tsx`)**: 最大10スロットの動的追加・削除・詰め直し、説明文照合表示。
 - **固定パラメータ**: Batch Size（枚数入力）、Seed（🎲 Shuffle / 🔒 Fixed）。
 - **専用Seed欄**: `seed` mappingはslotごとに固定値またはランダムを選ぶ。Seed値はrole別に保存し、モードはmaster/variantの安定slot単位で保存する。legacy global Seedとは別のSSoTであり、専用欄の値をglobal Seedへ同期・上書きしない。legacy global Seed欄と専用欄が同じworkflowにあっても、それぞれ独立して扱う。自動移行は行わない。
+- **専用Seedの実入力解決 (REQ-353)**: `GET /api/workflows/{workflow_id}` の `WorkflowRead.mappings` はmappingごとにeffective master metadataを返す。master metadataはworkflow mappingのdirect `master_id`を優先し、未設定の場合は`variant.master`を使う。`param_name`をprimary、nullableな`fallback_param_names`を登録順のaliasとして扱う（省略/null/空配列はaliasなし）。現在のnode inputsに存在する最初のown keyへ値を適用する。専用Seedで未登録の`value`、`noise_seed`等を推測したり、新しい入力keyを作成したりしない。primary/fallbackのいずれも存在しない場合は生成要求全体をComfyUI送信前に説明付きで拒否する。既存keyが配線（graph reference）なら他aliasへ切り替えず拒否する。初期値、バッチ検証、graph注入、生成履歴は同じ解決規則を使い、履歴値は送信graphの解決済みkeyから取得する。`value`入力を使うmappingはprimaryまたはfallbackとして明示登録する。legacy非seed global Seedおよび非seed一般parameterの既存処理は維持する。API schemaの同期・稼働比較とE2E証拠は[REQ-354稼働検証記録](../design/REQ-354-verification.md)を参照する。
 - 固定値は10進整数 `0..4294967295`。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について `Math.floor(Math.random() * 2**32)` で生成する（重複を許す）。
 - 同期対象Seedは同期親の確定実値を子へ共有し、子側で再抽選・再加算しない。モードmetadataの欠落・破損・未知形式、およびgraph参照Seedは専用Seedとして曖昧に解釈せず、投入前に拒否する。snapshot復元は保存済みSeed値とmodeを固定値として扱い、復元時にランダム化しない。
 

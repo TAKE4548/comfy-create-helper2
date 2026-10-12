@@ -1,0 +1,55 @@
+{
+  "pbi_id": "REQ-354",
+  "action": "qa-audit",
+  "target": "docs/design/REQ-354-test-plan.md",
+  "command": "python C:\\Users\\audih\\.gemini\\antigravity\\scripts\\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-354-test-plan.md",
+  "exit_code": 0,
+  "model_id": "qwen/qwen3.5-9b",
+  "model_id_source": "LOCAL_AUDIT_MODEL_KEY (adapter resolved configured model; same exact model is recorded by prior project audits)",
+  "quantization": "Q6_K",
+  "context_length": 32768,
+  "reasoning_effort": "none",
+  "raw_verdict": "FAIL (Critical Ambiguities Detected)",
+  "risk_level": "High",
+  "findings": [
+    {
+      "id": "QA-1",
+      "severity": "Critical",
+      "concern": "The test plan references AC-1 through AC-4 without embedding their definitions; the model judged the criteria non-executable.",
+      "affected_artifact": "docs/design/REQ-354-test-plan.md",
+      "review_context": "The AC definitions are in docs/backlog/pbi/active/REQ-354.md and are mapped in docs/design/REQ-354.md. The audit received the test plan target only. Preserve for coordinator triage; not reclassified here."
+    },
+    {
+      "id": "QA-2",
+      "severity": "High",
+      "concern": "The audit judged deterministic seed assertions, runtime evidence format, and cache/runtime distinction insufficiently explicit.",
+      "affected_artifact": "docs/design/REQ-354-test-plan.md",
+      "review_context": "T3 regression has actual assertions for 11/22/33; T1/T4 verification records actual API results and runtime prompt IDs. Audit finding remains raw FAIL pending coordinator review."
+    },
+    {
+      "id": "QA-3",
+      "severity": "High",
+      "concern": "The audit recommends environment-agnostic paths and explicit command failure behavior, and objects to the dated approval reference.",
+      "affected_artifact": "docs/design/REQ-354-test-plan.md",
+      "review_context": "Workspace instructions specify the Windows root, and approval is recorded as a dated decision. Do not treat this context as overriding the audit verdict."
+    },
+    {
+      "id": "QA-4",
+      "severity": "High",
+      "concern": "The audit says schema baseline and capture minimums are not defined in the test plan.",
+      "affected_artifact": "docs/design/REQ-354-test-plan.md",
+      "review_context": "T4 records the optional nullable contract and compares runtime/local/snapshot/docs schemas. Finding retained for coordinator triage."
+    }
+  ],
+  "model_unload": {
+    "command": "python C:\\Users\\audih\\.gemini\\antigravity\\scripts\\local_model_adapter.py unload",
+    "exit_code": 0,
+    "result": "LM Studio reports no models loaded"
+  },
+  "independent_unload_check": {
+    "command": "lms ps --json",
+    "exit_code": 0,
+    "stdout": "[]",
+    "claim": "No model remained loaded; this does not establish that all GPU memory is free."
+  }
+}
