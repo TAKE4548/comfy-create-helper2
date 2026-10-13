@@ -90,6 +90,7 @@ export function MappingMasterEditModal({
   const [name, setName] = useState('')
   const [paramName, setParamName] = useState('')
   const [inputType, setInputType] = useState('textarea')
+  const [defaultEnabled, setDefaultEnabled] = useState(true)
   const [groupId, setGroupId] = useState<number | null>(null)
   const [classTypes, setClassTypes] = useState<string[]>([])
   const [titlePatterns, setTitlePatterns] = useState<string[]>([])
@@ -107,6 +108,7 @@ export function MappingMasterEditModal({
       setName(master.name || master.display_name || '')
       setParamName(master.param_name || '')
       setInputType(master.input_type || 'textarea')
+      setDefaultEnabled(master.default_enabled ?? true)
       setGroupId(master.group_id ?? null)
       setClassTypes(master.expected_class_types || [])
       setTitlePatterns(master.base_title_patterns || master.title_patterns || [])
@@ -133,6 +135,7 @@ export function MappingMasterEditModal({
       setName('')
       setParamName('')
       setInputType('textarea')
+      setDefaultEnabled(true)
       setGroupId(groups[0]?.id ?? null)
       setClassTypes([])
       setTitlePatterns([])
@@ -273,6 +276,7 @@ export function MappingMasterEditModal({
       display_name: trimmedName,
       param_name: trimmedParamName,
       input_type: inputType,
+      default_enabled: defaultEnabled,
       group_id: groupId,
       expected_class_types: classTypes.length > 0 ? classTypes : null,
       base_title_patterns: titlePatterns.length > 0 ? titlePatterns : null,
@@ -391,6 +395,21 @@ export function MappingMasterEditModal({
               </div>
             </div>
           </div>
+
+          <label className="flex items-start gap-2 text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              checked={defaultEnabled}
+              disabled={isPending}
+              onChange={(e) => setDefaultEnabled(e.target.checked)}
+              aria-label="新規マッピングで基本有効"
+              className="mt-0.5 accent-[#7C6FDD]"
+            />
+            <span>
+              新規マッピングで基本有効
+              <span className="block text-[11px] text-zinc-500">既存のマッピングには影響しません。</span>
+            </span>
+          </label>
 
           {/* Section 2: 期待 Class Types チップ入力 & 代表的候補パレット */}
           <div className="space-y-2">

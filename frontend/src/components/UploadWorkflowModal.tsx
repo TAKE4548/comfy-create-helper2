@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, ScanLine, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi } from '../api/client'
 import type { ScanResult, MappingMaster, MappingMasterV2 } from '../api/types'
 import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
-import { getNodeLabel, resolveNodeMetadata } from '../utils/workflowNodeUtils'
+import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { WorkflowMappingEditor, type EditableSlot } from './WorkflowMappingEditor'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
 
@@ -15,44 +16,68 @@ interface UploadWorkflowModalProps {
   onSaved: (newWorkflowId: number) => void
 }
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'not_found': return '未検出'
-    case 'duplicated': return '複数候補'
-    case 'class_type_mismatch': return 'クラス不一致'
-    case 'unassigned': return '未設定'
-    default: return status
-  }
-}
-
-function statusColor(status: string): string {
-  switch (status) {
-    case 'not_found': return 'text-red-400 bg-red-500/10 border-red-500/20'
-    case 'duplicated': return 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-    case 'class_type_mismatch': return 'text-orange-400 bg-orange-500/10 border-orange-500/20'
-    case 'unassigned': return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20'
-    default: return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20'
-  }
-}
-
 export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSaved }: UploadWorkflowModalProps) {
   const [phase, setPhase] = useState<Phase>('scanning')
   const [workflowName, setWorkflowName] = useState(initialName)
   const [scanError, setScanError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
-  const [customModes, setCustomModes] = useState<Record<number, boolean>>({})
 
   // Mapping masters for dropdowns
-  const { data: masters = [] } = useQuery<(MappingMaster | MappingMasterV2)[]>({
+  const { data: masters = [], isFetched: mastersFetched } = useQuery<(MappingMaster | MappingMasterV2)[]>({
     queryKey: ['mapping-masters'],
     queryFn: () => mappingMastersApi.list() as Promise<(MappingMaster | MappingMasterV2)[]>,
   })
 
-  const { buildRows, updateNodeId, updateSlotNodeId, clearSlot, initFromScan, getMappings } = useMasterMappingRows(masters, scanResult)
+  const { buildRows, updateSlotNodeId, setSlotEnabled, setStageEnabled, initFromScan, getMappings, mappingSlotStates } = useMasterMappingRows(masters, scanResult, { workflowJson })
 
-  const { mainRows, notFoundRows } = buildRows()
+  const { rows } = buildRows()
+  const initializedSession = useRef(false)
+  const saveInFlight = useRef(false)
+  const candidateCache = useMemo(() => {
+    const stages = masters.flatMap(master => 'variants' in master ? master.variants.map(v => v.stage_name) : [])
+    const cache = new Map<string, ReturnType<typeof rankWorkflowNodeCandidates>>()
+    for (const master of masters) {
+      const v2 = 'base_key' in master ? master : undefined
+      const variants = v2?.variants ?? []
+      const definition = {
+        expectedClassTypes: master.expected_class_types ?? [],
+        titlePatterns: [...(v2?.base_title_patterns ?? master.title_patterns ?? []), ...variants.flatMap(v => v.extra_title_patterns ?? [])],
+        paramNames: [master.param_name, ...(v2?.fallback_param_names ?? [])].filter((value): value is string => Boolean(value)),
+      }
+      const activeVariants = variants.filter(v => v.is_enabled !== false)
+      const slots = activeVariants.length ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' })) : [{ key: `m_${master.id}`, stage: 'Main' }]
+      for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, definition, slot.stage, stages))
+    }
+    return cache
+  }, [masters, workflowJson])
 
+  const editableSlots = useMemo<EditableSlot[]>(() => {
+    return rows.flatMap((row) => {
+      const masterV2 = 'base_key' in row.master ? row.master : undefined
+      const variants = masterV2?.variants ?? []
+      const slots = row.stageSlots?.length ? row.stageSlots : [{
+        slotKey: `m_${row.master.id}`, masterId: row.master.id, node_id: row.node_id,
+        variantId: undefined, enabled: row.enabled, reference_missing: row.reference_missing, stageName: 'Main', stageKey: 'main',
+        candidates: [], recommendedNodeIds: [], status: row.status,
+      }]
+      return slots.map((slot) => {
+        const variant = variants.find((item) => item.id === slot.variantId)
+        return {
+          slotKey: slot.slotKey,
+          masterId: row.master.id,
+          ...(slot.variantId !== undefined ? { variantId: slot.variantId } : {}),
+          ...(variant?.stage_id !== undefined ? { stageId: variant.stage_id } : {}),
+          stageName: slot.stageName || 'Main',
+          roleLabel: row.master.display_name || ('name' in row.master ? row.master.name : '') || row.master.role || `Role ${row.master.id}`,
+          nodeId: slot.node_id,
+          enabled: slot.enabled,
+          missingReference: slot.reference_missing,
+          candidates: candidateCache.get(slot.slotKey) ?? [],
+        }
+      })
+    })
+  }, [rows, candidateCache])
 
   // ── Scan on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -60,13 +85,12 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     setPhase('scanning')
     setScanError(null)
 
+    setScanResult(null)
     workflowsApi.scan(workflowJson)
       .then((result) => {
         if (!cancelled) {
           const res = result as ScanResult
           setScanResult(res)
-          initFromScan(res)
-          setPhase('editing')
         }
       })
       .catch((err: Error) => {
@@ -79,14 +103,22 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     return () => { cancelled = true }
   }, [workflowJson])
 
+  useEffect(() => {
+    if (initializedSession.current || !mastersFetched || !scanResult) return
+    initializedSession.current = true
+    initFromScan(scanResult)
+    setPhase('editing')
+  }, [mastersFetched, scanResult, initFromScan])
+
   // ── Save mutation ─────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const mappings = getMappings(mainRows, notFoundRows)
+      const mappings = getMappings(rows, [])
       const data = {
         name: workflowName.trim(),
         json_body: workflowJson,
-        mappings
+        mappings,
+        mapping_slot_states: mappingSlotStates,
       }
       return workflowsApi.create(data) as Promise<{ id: number; name: string }>
     },
@@ -96,6 +128,7 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
       onClose()
     },
     onError: (err: unknown) => {
+      saveInFlight.current = false
       const error = err as Error & { status?: number }
       const isConflict = error.status === 409 || 
                          error.message?.includes('409') || 
@@ -113,7 +146,8 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
   })
 
   const handleConfirm = () => {
-    if (!workflowName.trim()) return
+    if (!workflowName.trim() || saveInFlight.current) return
+    saveInFlight.current = true
     setSaveError(null)
     setPhase('saving')
     saveMutation.mutate()
@@ -123,7 +157,7 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     if (e.target === e.currentTarget && phase !== 'saving') onClose()
   }
 
-  const activeCount = getMappings(mainRows, notFoundRows).length
+  const activeCount = editableSlots.filter(slot => slot.enabled && slot.nodeId.trim() !== '').length
 
   return (
     <div
@@ -201,294 +235,22 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={14} className="text-accent-green" />
-                  <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                    スキャン結果 — マッチ・競合
-                  </h3>
+                  <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">マッピング設定</h3>
                 </div>
 
-                {mainRows.length === 0 && (
+                {editableSlots.length === 0 && (
                   <p className="text-xs text-zinc-650 py-2 pl-1">マッチした役割はありません。</p>
                 )}
 
-                <div className="space-y-2">
-                  {mainRows.map((row) => {
-                    const isMultiStage = Boolean(row.stageSlots && row.stageSlots.length > 0)
-                    return (
-                      <div
-                        key={row.master.id}
-                        className={`p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] ${
-                          isMultiStage ? 'flex flex-col md:flex-row md:items-start gap-3' : 'flex items-center gap-3'
-                        }`}
-                      >
-                        {/* Role info */}
-                        <div className="w-40 flex-shrink-0">
-                          <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
-                          <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
-                        </div>
-
-                        {/* Combobox logic */}
-                        {isMultiStage ? (
-                          <div className="flex-1 min-w-0 flex flex-col gap-2">
-                            {row.stageSlots!.map((slot) => (
-                              <div key={slot.slotKey} className="flex items-center gap-2">
-                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60 min-w-[54px] text-center flex-shrink-0">
-                                  {slot.stageName || slot.stageKey}
-                                </span>
-                                {slot.candidates.length > 0 ? (
-                                  <select
-                                    id={`slot-select-${slot.slotKey}`}
-                                    data-testid={`slot-select-${slot.slotKey}`}
-                                    aria-label={`${slot.stageName || slot.stageKey} スロット`}
-                                    value={slot.node_id}
-                                    onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
-                                    disabled={phase === 'saving'}
-                                    className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[120px] flex-1"
-                                  >
-                                    <option value="">未設定</option>
-                                    {slot.candidates.map((id) => {
-                                      const meta = resolveNodeMetadata(id, workflowJson as Record<string, any>)
-                                      const isRecommended = slot.recommendedNodeIds?.includes(id)
-                                      const title = meta.title || meta.classType
-                                      const label = isRecommended
-                                        ? (title ? `★ [${id}] ${title} [推奨]` : `★ [${id}] [推奨]`)
-                                        : getNodeLabel(id, workflowJson as Record<string, any>)
-                                      return (
-                                        <option key={id} value={id}>
-                                          {label}
-                                        </option>
-                                      )
-                                    })}
-                                    {slot.node_id !== '' && !slot.candidates.includes(slot.node_id) && (
-                                      <option value={slot.node_id}>
-                                        {getNodeLabel(slot.node_id, workflowJson as Record<string, any>)}
-                                      </option>
-                                    )}
-                                  </select>
-                                ) : (
-                                  <input
-                                    id={`slot-input-${slot.slotKey}`}
-                                    data-testid={`slot-input-${slot.slotKey}`}
-                                    aria-label={`${slot.stageName || slot.stageKey} スロット`}
-                                    type="text"
-                                    value={slot.node_id}
-                                    onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
-                                    disabled={phase === 'saving'}
-                                    placeholder="ノードIDを直接入力…"
-                                    className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                                  />
-                                )}
-                                <button
-                                  type="button"
-                                  id={`clear-slot-${slot.slotKey}`}
-                                  data-testid={`clear-slot-${slot.slotKey}`}
-                                  aria-label="未設定にする"
-                                  title="未設定にする"
-                                  onClick={() => clearSlot(slot.slotKey)}
-                                  disabled={phase === 'saving'}
-                                  className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                                >
-                                  <X size={13} />
-                                </button>
-                                {slot.status !== 'ok' && slot.status !== 'unassigned' && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(slot.status)}`}>
-                                    {statusLabel(slot.status)}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex-1 min-w-0 flex gap-2">
-                            {row.candidates.length > 0 ? (
-                              <>
-                                <select
-                                  id={`node-select-${row.master.id}`}
-                                  value={
-                                    customModes[row.master.id]
-                                      ? 'custom'
-                                      : row.node_id === ''
-                                      ? ''
-                                      : row.candidates.includes(row.node_id)
-                                      ? row.node_id
-                                      : 'custom'
-                                  }
-                                  onChange={(e) => {
-                                    const val = e.target.value
-                                    if (val === 'custom') {
-                                      setCustomModes(prev => ({ ...prev, [row.master.id]: true }))
-                                      updateNodeId(row.master.id, '')
-                                    } else {
-                                      setCustomModes(prev => ({ ...prev, [row.master.id]: false }))
-                                      updateNodeId(row.master.id, val)
-                                    }
-                                  }}
-                                  disabled={phase === 'saving'}
-                                  className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[90px]"
-                                >
-                                  {row.candidates.map((id) => (
-                                    <option key={id} value={id}>{getNodeLabel(id, workflowJson as Record<string, any>)}</option>
-                                  ))}
-                                  <option value="">未指定</option>
-                                  <option value="custom">直接入力...</option>
-                                </select>
-                                {(customModes[row.master.id] || (row.node_id !== '' && !row.candidates.includes(row.node_id))) && (
-                                  <input
-                                    id={`node-input-custom-${row.master.id}`}
-                                    type="text"
-                                    value={row.node_id}
-                                    onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                                    disabled={phase === 'saving'}
-                                    placeholder="直接入力…"
-                                    className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                                  />
-                                )}
-                              </>
-                            ) : (
-                              <input
-                                id={`node-select-${row.master.id}`}
-                                type="text"
-                                value={row.node_id}
-                                onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                                disabled={phase === 'saving'}
-                                placeholder="ノードIDを直接入力…"
-                                className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                              />
-                            )}
-                          </div>
-                        )}
-
-                        {!isMultiStage && row.status !== 'ok' && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
-                            {statusLabel(row.status)}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                <WorkflowMappingEditor
+                  rows={editableSlots}
+                  onChangeSlot={updateSlotNodeId}
+                  onToggleSlot={setSlotEnabled}
+                  onToggleStage={setStageEnabled}
+                  saving={phase === 'saving'}
+                />
               </div>
 
-              {/* ── Unresolved Section (Not Found) ────────────── */}
-              {notFoundRows.length > 0 && (
-                <div className="space-y-3 pt-4 border-t border-[rgba(255,255,255,0.04)]">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle size={14} className="text-red-400" />
-                    <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                      未検出の役割
-                    </h3>
-                    <span className="text-[10px] text-zinc-600 ml-auto">{notFoundRows.length} 件</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-650 leading-relaxed">
-                    スキャンで候補が見つからなかった役割です。対応するノードIDを直接入力するか、空欄のまま保存するとこの役割のマッピングは作成されません。
-                  </p>
-
-                  <div className="space-y-2">
-                    {notFoundRows.map((row) => {
-                      const isMultiStage = Boolean(row.stageSlots && row.stageSlots.length > 0)
-                      return (
-                        <div
-                          key={row.master.id}
-                          className={`p-3 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] ${
-                            isMultiStage ? 'flex flex-col md:flex-row md:items-start gap-3' : 'flex items-center gap-3'
-                          }`}
-                        >
-                          {/* Role info */}
-                          <div className="w-40 flex-shrink-0">
-                            <p className="text-xs font-medium text-zinc-300">{row.master.display_name}</p>
-                            <p className="text-[10px] font-mono text-zinc-600">{row.master.role}</p>
-                          </div>
-
-                          {isMultiStage ? (
-                            <div className="flex-1 min-w-0 flex flex-col gap-2">
-                              {row.stageSlots!.map((slot) => (
-                                <div key={slot.slotKey} className="flex items-center gap-2">
-                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60 min-w-[54px] text-center flex-shrink-0">
-                                    {slot.stageName || slot.stageKey}
-                                  </span>
-                                  {slot.candidates.length > 0 ? (
-                                    <select
-                                      id={`slot-select-${slot.slotKey}`}
-                                      data-testid={`slot-select-${slot.slotKey}`}
-                                      aria-label={`${slot.stageName || slot.stageKey} スロット`}
-                                      value={slot.node_id}
-                                      onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
-                                      disabled={phase === 'saving'}
-                                      className="text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-350 focus:outline-none focus:border-accent-green/40 disabled:opacity-50 min-w-[120px] flex-1"
-                                    >
-                                      <option value="">未設定</option>
-                                      {slot.candidates.map((id) => {
-                                        const meta = resolveNodeMetadata(id, workflowJson as Record<string, any>)
-                                        const isRecommended = slot.recommendedNodeIds?.includes(id)
-                                        const title = meta.title || meta.classType
-                                        const label = isRecommended
-                                          ? (title ? `★ [${id}] ${title} [推奨]` : `★ [${id}] [推奨]`)
-                                          : getNodeLabel(id, workflowJson as Record<string, any>)
-                                        return (
-                                          <option key={id} value={id}>
-                                            {label}
-                                          </option>
-                                        )
-                                      })}
-                                      {slot.node_id !== '' && !slot.candidates.includes(slot.node_id) && (
-                                        <option value={slot.node_id}>
-                                          {getNodeLabel(slot.node_id, workflowJson as Record<string, any>)}
-                                        </option>
-                                      )}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      id={`slot-input-${slot.slotKey}`}
-                                      data-testid={`slot-input-${slot.slotKey}`}
-                                      aria-label={`${slot.stageName || slot.stageKey} スロット`}
-                                      type="text"
-                                      value={slot.node_id}
-                                      onChange={(e) => updateSlotNodeId(slot.slotKey, e.target.value)}
-                                      disabled={phase === 'saving'}
-                                      placeholder="ノードIDを直接入力…"
-                                      className="flex-1 text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                                    />
-                                  )}
-                                  <button
-                                    type="button"
-                                    id={`clear-slot-${slot.slotKey}`}
-                                    data-testid={`clear-slot-${slot.slotKey}`}
-                                    aria-label="未設定にする"
-                                    title="未設定にする"
-                                    onClick={() => clearSlot(slot.slotKey)}
-                                    disabled={phase === 'saving'}
-                                    className="p-1.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(slot.status)}`}>
-                                    {statusLabel(slot.status)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="flex-1 min-w-0">
-                                <input
-                                  id={`node-select-${row.master.id}`}
-                                  value={row.node_id}
-                                  onChange={(e) => updateNodeId(row.master.id, e.target.value)}
-                                  disabled={phase === 'saving'}
-                                  placeholder="ノードIDを直接入力…"
-                                  className="w-full text-xs font-mono bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-zinc-300 focus:outline-none focus:border-accent-green/40 disabled:opacity-50"
-                                />
-                              </div>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${statusColor(row.status)}`}>
-                                {statusLabel(row.status)}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

@@ -1,12 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import type { MappingMasterV2, MappingMaster, Workflow } from '../api/types'
-import {
-  ActiveStageInfo,
-  extractWorkflowNodes,
-  ExtractedWorkflowNode,
-} from '../utils/workflowAdaptiveStageDetector'
+import { ActiveStageInfo } from '../utils/workflowAdaptiveStageDetector'
 import StageInputGroup from './StageInputGroup'
 import { buildWiringStageGroups } from '../utils/wiringStageGroups'
+import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { candidateConfidenceLabel } from '../utils/workflowCandidatePresentation'
+import { hydrateSlotStates, mappingSlotKey, type SlotDefinition } from '../utils/workflowMappingState'
 
 export interface WiringMappingItem {
   master_id: number
@@ -18,14 +17,13 @@ export interface AdaptiveWorkflowWiringProps {
   workflow?: Workflow | null
   activeStages: ActiveStageInfo[]
   mappingMasters: (MappingMasterV2 | MappingMaster)[]
-  onSaveMappings?: (mappings: WiringMappingItem[]) => void | Promise<void>
+  onSaveMappings?: (mappings: WiringMappingItem[], states?: Record<string, boolean>) => void | Promise<void>
   currentMappings?: WiringMappingItem[]
   onChangeMappings?: (mappings: WiringMappingItem[]) => void
   isSaving?: boolean
+  currentSlotStates?: Record<string, boolean>
+  onChangeSlotStates?: (states: Record<string, boolean>) => void
 }
-
-const mappingKey = (mapping: WiringMappingItem) =>
-  mapping.variant_id !== undefined ? `v:${mapping.variant_id}` : `m:${mapping.master_id}`
 
 export function AdaptiveWorkflowWiring({
   workflow,
@@ -35,7 +33,14 @@ export function AdaptiveWorkflowWiring({
   currentMappings,
   onChangeMappings,
   isSaving = false,
+  currentSlotStates,
+  onChangeSlotStates,
 }: AdaptiveWorkflowWiringProps) {
+  const definitions = useMemo<SlotDefinition[]>(() => mappingMasters.flatMap((master) => {
+    const variants = 'variants' in master ? master.variants : []
+    return variants.length ? variants.map((variant) => ({ masterId: master.id, variantId: variant.id, stageId: variant.stage_id, role: variant.computed_role, legacyRole: master.role, defaultEnabled: master.default_enabled !== false }))
+      : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+  }), [mappingMasters])
   const [mappingsMap, setMappingsMap] = useState<Map<string, WiringMappingItem>>(() => {
     const map = new Map<string, WiringMappingItem>()
     const initial = currentMappings || workflow?.mappings || []
@@ -43,9 +48,10 @@ export function AdaptiveWorkflowWiring({
       const item: WiringMappingItem = m.variant_id == null
         ? { master_id: m.master_id, node_id: m.node_id }
         : { master_id: m.master_id, node_id: m.node_id, variant_id: m.variant_id }
-      const key = mappingKey(item)
+      const key = mappingSlotKey(m, definitions)
       map.set(key, {
         ...item,
+        ...(key.startsWith('v:') ? { variant_id: Number(key.slice(2)) } : {}),
       })
     }
     return map
@@ -59,23 +65,40 @@ export function AdaptiveWorkflowWiring({
       const item: WiringMappingItem = m.variant_id == null
         ? { master_id: m.master_id, node_id: m.node_id }
         : { master_id: m.master_id, node_id: m.node_id, variant_id: m.variant_id }
-      const key = mappingKey(item)
+      const key = mappingSlotKey(m, definitions)
       nextMap.set(key, {
         ...item,
+        ...(key.startsWith('v:') ? { variant_id: Number(key.slice(2)) } : {}),
       })
     }
     setMappingsMap(nextMap)
-  }, [currentMappings, workflow?.mappings])
+  }, [currentMappings, workflow?.mappings, definitions])
+
+  const resolvedStates = useMemo(() => hydrateSlotStates(currentSlotStates ?? workflow?.mapping_slot_states, Array.from(mappingsMap.values()), definitions), [currentSlotStates, workflow?.mapping_slot_states, mappingsMap, definitions])
 
   // Memoized workflow nodes scan
-  const workflowNodes = useMemo<ExtractedWorkflowNode[]>(() => {
-    return extractWorkflowNodes(workflow?.json_body)
-  }, [workflow?.json_body])
-
   const stageGroups = useMemo(
-    () => buildWiringStageGroups(activeStages, mappingMasters, Array.from(mappingsMap.values())),
-    [activeStages, mappingMasters, mappingsMap]
+    () => buildWiringStageGroups(activeStages, mappingMasters, Array.from(mappingsMap.values()), resolvedStates),
+    [activeStages, mappingMasters, mappingsMap, resolvedStates]
   )
+
+  const workflowNodesByRank = useMemo(() => {
+    const stageNames = mappingMasters.flatMap((master) => 'variants' in master ? master.variants.map((variant) => variant.stage_name) : [])
+    return new Map(stageGroups.flatMap((group) => group.slots.map((slot) => {
+      const master = mappingMasters.find((item) => item.id === slot.masterId)
+      const expectedClassTypes = master?.expected_class_types ?? []
+      const patterns = 'base_title_patterns' in (master ?? {})
+        ? ((master as MappingMasterV2).base_title_patterns ?? [])
+        : ((master as MappingMaster).title_patterns ?? [])
+      const variants = master && 'variants' in master ? master.variants : []
+      const fallbackParams = master && 'fallback_param_names' in master ? master.fallback_param_names ?? [] : []
+      return [slot.slotKey, rankWorkflowNodeCandidates(workflow?.json_body, {
+        expectedClassTypes,
+        titlePatterns: [...patterns, ...variants.flatMap((variant) => variant.extra_title_patterns ?? [])],
+        paramNames: [slot.paramName, ...fallbackParams].filter(Boolean),
+      }, group.info.stage.name, stageNames)] as const
+    })))
+  }, [stageGroups, mappingMasters, workflow?.json_body])
 
   const handleNodeChange = (slot: (typeof stageGroups)[number]['slots'][number], newNodeId: string) => {
     const updatedMap = new Map(mappingsMap)
@@ -95,7 +118,12 @@ export function AdaptiveWorkflowWiring({
 
   const handleSave = () => {
     const list = Array.from(mappingsMap.values())
-    onSaveMappings?.(list)
+    onSaveMappings?.(list, resolvedStates)
+  }
+
+  const handleSlotEnabledChange = (slotKey: string, enabled: boolean) => {
+    const next = { ...resolvedStates, [slotKey]: enabled }
+    onChangeSlotStates?.(next)
   }
 
   if (activeStages.length === 0) {
@@ -115,9 +143,6 @@ export function AdaptiveWorkflowWiring({
         style={{ maxHeight: 'min(60vh, 480px)', overflowY: 'auto' }}
       >
         {stageGroups.map((group) => {
-          const matchedNodeIds = new Set(group.info.matchedNodeIds)
-          const recommendedNodes = workflowNodes.filter((node) => matchedNodeIds.has(node.id))
-          const otherNodes = workflowNodes.filter((node) => !matchedNodeIds.has(node.id))
           return (
             <StageInputGroup
               key={group.info.stage.id}
@@ -132,6 +157,10 @@ export function AdaptiveWorkflowWiring({
                   </p>
                 ) : group.slots.map((slot) => {
                   const currentNodeId = mappingsMap.get(slot.slotKey)?.node_id || ''
+                  const ranked = workflowNodesByRank.get(slot.slotKey) ?? []
+                  const recommendedNodes = ranked.filter((candidate) => candidate.recommended)
+                  const otherNodes = ranked.filter((candidate) => !candidate.recommended)
+                  const selectedCandidate = ranked.find((candidate) => candidate.id === currentNodeId)
                   return (
               <div
                 key={slot.slotKey}
@@ -140,7 +169,11 @@ export function AdaptiveWorkflowWiring({
                 {/* Slot Role & Param Label */}
                 <div className="col-span-5 flex flex-col">
                   <span className="font-medium text-zinc-200">{slot.role}</span>
-                  <span className="text-[11px] text-zinc-400">
+                  <label className="mt-1 flex items-center gap-1 text-[11px] text-zinc-400">
+                    <input aria-label={`${group.info.stage.name} ${slot.role} を有効化`} type="checkbox" checked={slot.enabled} onChange={(event) => handleSlotEnabledChange(slot.slotKey, event.target.checked)} />
+                    {slot.enabled ? '利用許可' : '無効'}
+                  </label>
+                  <span className="text-xs text-zinc-300">
                     {slot.role} → {slot.paramName || '—'}
                   </span>
                 </div>
@@ -148,17 +181,20 @@ export function AdaptiveWorkflowWiring({
                 {/* Node Selection Dropdown */}
                 <div className="col-span-7">
                   <select
+                    title="適合スコア"
                     aria-label={`${group.info.stage.name} ${slot.role} → ${slot.paramName || '—'} のノード`}
                     value={currentNodeId}
+                    disabled={!slot.enabled}
                     onChange={(e) => handleNodeChange(slot, e.target.value)}
                     className="w-full min-h-[44px] rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="">未指定 (未割り当て)</option>
+                    {currentNodeId && !selectedCandidate && <option value={currentNodeId}>参照先なし · ID {currentNodeId}</option>}
                     {recommendedNodes.length > 0 && (
-                      <optgroup label="推奨ノード (ステージ一致)">
+                      <optgroup label="推奨ノード">
                         {recommendedNodes.map((node) => (
                           <option key={node.id} value={node.id} className="text-emerald-400 font-semibold">
-                            ★ [{node.id}] {node.title || node.classType} [推奨]
+                            ★ {node.title || node.classType} · {node.classType} · ID {node.id} · {candidateConfidenceLabel(node)}
                           </option>
                         ))}
                       </optgroup>
@@ -166,13 +202,14 @@ export function AdaptiveWorkflowWiring({
                     {otherNodes.length > 0 && (
                       <optgroup label={recommendedNodes.length > 0 ? 'その他ノード' : 'ノード一覧'}>
                         {otherNodes.map((node) => (
-                          <option key={node.id} value={node.id} className="text-zinc-300">
-                            [{node.id}] {node.title || node.classType}
+                          <option key={node.id} value={node.id} className="text-zinc-200">
+                            {node.title || node.classType} · {node.classType} · ID {node.id} · {candidateConfidenceLabel(node)}
                           </option>
                         ))}
                       </optgroup>
                     )}
                   </select>
+                  {!currentNodeId && <p className="mt-1 text-xs text-zinc-400">未割当</p>}
                 </div>
               </div>
                   )

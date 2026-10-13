@@ -290,34 +290,49 @@ paths:
       - mapping-masters
       summary: List Masters
       operationId: list_masters_api_mapping_masters_get
+      parameters:
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Group Id
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                items:
-                  $ref: '#/components/schemas/MappingMasterRead'
                 type: array
+                items:
+                  $ref: '#/components/schemas/MappingMasterV2Read'
                 title: Response List Masters Api Mapping Masters Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       tags:
       - mapping-masters
       summary: Create Master
       operationId: create_master_api_mapping_masters_post
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MappingMasterCreate'
-        required: true
+              $ref: '#/components/schemas/MappingMasterCreatePayload'
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MappingMasterRead'
+                $ref: '#/components/schemas/MappingMasterV2Read'
         '422':
           description: Validation Error
           content:
@@ -346,6 +361,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/mapping-masters/{master_id}:
+    get:
+      tags:
+      - mapping-masters
+      summary: Get Master
+      operationId: get_master_api_mapping_masters__master_id__get
+      parameters:
+      - name: master_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Master Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingMasterV2Read'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
       tags:
       - mapping-masters
@@ -363,14 +403,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MappingMasterCreate'
+              $ref: '#/components/schemas/MappingMasterUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MappingMasterRead'
+                $ref: '#/components/schemas/MappingMasterV2Read'
         '422':
           description: Validation Error
           content:
@@ -5922,11 +5962,39 @@ components:
       - learning_rate
       - status
       title: LoraTrainingJobResponse
-    MappingMasterCreate:
+    MappingMasterCreatePayload:
       properties:
         role:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Role
+        base_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Base Key
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        param_name:
+          type: string
+          title: Param Name
+        input_type:
+          type: string
+          title: Input Type
+        group_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Group Id
         expected_class_types:
           anyOf:
           - items:
@@ -5934,15 +6002,6 @@ components:
             type: array
           - type: 'null'
           title: Expected Class Types
-        param_name:
-          type: string
-          title: Param Name
-        input_type:
-          type: string
-          title: Input Type
-        display_name:
-          type: string
-          title: Display Name
         title_patterns:
           anyOf:
           - items:
@@ -5950,60 +6009,41 @@ components:
             type: array
           - type: 'null'
           title: Title Patterns
-        sort_order:
-          type: integer
-          title: Sort Order
-          default: 0
-      type: object
-      required:
-      - role
-      - param_name
-      - input_type
-      - display_name
-      title: MappingMasterCreate
-    MappingMasterRead:
-      properties:
-        role:
-          type: string
-          title: Role
-        expected_class_types:
+        base_title_patterns:
           anyOf:
           - items:
               type: string
             type: array
           - type: 'null'
-          title: Expected Class Types
-        param_name:
-          type: string
-          title: Param Name
-        input_type:
-          type: string
-          title: Input Type
-        display_name:
-          type: string
-          title: Display Name
-        title_patterns:
+          title: Base Title Patterns
+        fallback_param_names:
           anyOf:
           - items:
               type: string
             type: array
           - type: 'null'
-          title: Title Patterns
+          title: Fallback Param Names
         sort_order:
-          type: integer
+          anyOf:
+          - type: integer
+          - type: 'null'
           title: Sort Order
-          default: 0
-        id:
-          type: integer
-          title: Id
+        default_enabled:
+          type: boolean
+          title: Default Enabled
+          default: true
+        variants:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/MappingVariantUpdateItem'
+            type: array
+          - type: 'null'
+          title: Variants
       type: object
       required:
-      - role
       - param_name
       - input_type
-      - display_name
-      - id
-      title: MappingMasterRead
+      title: MappingMasterCreatePayload
     MappingMasterReorder:
       properties:
         ordered_ids:
@@ -6015,6 +6055,252 @@ components:
       required:
       - ordered_ids
       title: MappingMasterReorder
+    MappingMasterUpdate:
+      properties:
+        group_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Group Id
+        base_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Base Key
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        param_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Param Name
+        input_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Type
+        expected_class_types:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Expected Class Types
+        base_title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Base Title Patterns
+        fallback_param_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fallback Param Names
+        sort_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sort Order
+        default_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Default Enabled
+        variants:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/MappingVariantUpdateItem'
+            type: array
+          - type: 'null'
+          title: Variants
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+        title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Title Patterns
+      type: object
+      title: MappingMasterUpdate
+    MappingMasterV2Read:
+      properties:
+        id:
+          type: integer
+          title: Id
+        group_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Group Id
+        base_key:
+          type: string
+          title: Base Key
+        name:
+          type: string
+          title: Name
+        param_name:
+          type: string
+          title: Param Name
+        input_type:
+          type: string
+          title: Input Type
+        expected_class_types:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Expected Class Types
+        base_title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Base Title Patterns
+        fallback_param_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fallback Param Names
+        sort_order:
+          type: integer
+          title: Sort Order
+        default_enabled:
+          type: boolean
+          title: Default Enabled
+          default: true
+        variants:
+          items:
+            $ref: '#/components/schemas/MappingVariantRead'
+          type: array
+          title: Variants
+          default: []
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+        title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Title Patterns
+      type: object
+      required:
+      - id
+      - base_key
+      - name
+      - param_name
+      - input_type
+      - sort_order
+      title: MappingMasterV2Read
+    MappingVariantRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        master_id:
+          type: integer
+          title: Master Id
+        stage_id:
+          type: integer
+          title: Stage Id
+        stage_key:
+          type: string
+          title: Stage Key
+        stage_name:
+          type: string
+          title: Stage Name
+        stage_suffix:
+          type: string
+          title: Stage Suffix
+        custom_role_override:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Custom Role Override
+        computed_role:
+          type: string
+          title: Computed Role
+        extra_title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Extra Title Patterns
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          default: true
+      type: object
+      required:
+      - id
+      - master_id
+      - stage_id
+      - stage_key
+      - stage_name
+      - stage_suffix
+      - computed_role
+      title: MappingVariantRead
+    MappingVariantUpdateItem:
+      properties:
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        stage_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stage Id
+        custom_role_override:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Custom Role Override
+        extra_title_patterns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Extra Title Patterns
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+      type: object
+      title: MappingVariantUpdateItem
     NodeView:
       properties:
         id:
@@ -8106,6 +8392,11 @@ components:
           - type: integer
           - type: 'null'
           title: Target Base Model Id
+        mapping_slot_states:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Mapping Slot States
       type: object
       required:
       - name
@@ -8138,6 +8429,11 @@ components:
         node_id:
           type: string
           title: Node Id
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
       type: object
       required:
       - master_id
@@ -8154,6 +8450,11 @@ components:
         node_id:
           type: string
           title: Node Id
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
         role:
           anyOf:
           - type: string
@@ -8380,6 +8681,11 @@ components:
           type: string
           format: date-time
           title: Created At
+        mapping_slot_states:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Mapping Slot States
       type: object
       required:
       - id
@@ -8468,5 +8774,12 @@ components:
           - type: integer
           - type: 'null'
           title: Target Base Model Id
+        mapping_slot_states:
+          anyOf:
+          - additionalProperties:
+              type: boolean
+            type: object
+          - type: 'null'
+          title: Mapping Slot States
       type: object
       title: WorkflowUpdate

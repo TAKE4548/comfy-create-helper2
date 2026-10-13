@@ -1,7 +1,18 @@
-import { useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { MappingMaster, MappingMasterV2, ScanResult } from '../api/types'
+import { hydrateSlotStates, isSlotEnabled, mappingSlotKey, setStageEnabled as updateStageEnabled, slotKey as canonicalSlotKey, type SlotDefinition, type SlotMapping, type WorkflowSlotStates } from '../utils/workflowMappingState'
 
-export interface StageSlotItem {
+type HookOptions = { existingMappings?: readonly SlotMapping[]; mappingSlotStates?: WorkflowSlotStates; workflowJson?: unknown }
+type RowPresentation = { enabled: boolean; unused: boolean; reference_missing: boolean }
+const workflowNodeIds = (value: unknown): Set<string> | undefined => {
+  if (!value || typeof value !== 'object') return undefined
+  const graph = value as Record<string, unknown>
+  if (Array.isArray(graph.nodes)) return new Set(graph.nodes.filter((n): n is { id: unknown } => Boolean(n && typeof n === 'object' && 'id' in n)).map(n => String(n.id)))
+  const nodes = graph.nodes && typeof graph.nodes === 'object' ? graph.nodes as Record<string, unknown> : graph
+  return new Set(Object.keys(nodes))
+}
+
+export interface StageSlotItem extends RowPresentation {
   slotKey: string // `v_${variant_id}` または `m_${master_id}`
   variantId?: number
   masterId: number
@@ -15,7 +26,9 @@ export interface StageSlotItem {
   node_title?: string
 }
 
-export interface MasterMappingRow {
+export interface MasterMappingRow extends RowPresentation {
+  rowKey: `m_${number}`
+  slotKey?: string
   master: MappingMaster | MappingMasterV2
   node_id: string // primary slot node_id (互換性用)
   candidates: string[]
@@ -27,17 +40,50 @@ export interface MasterMappingRow {
 
 export function useMasterMappingRows(
   masters: (MappingMaster | MappingMasterV2)[],
-  scanResult: ScanResult | null
+  scanResult: ScanResult | null,
+  options: HookOptions = {},
 ) {
   const [rowState, setRowState] = useState<Record<string, string>>({})
   const [mismatchState, setMismatchState] = useState<Record<string, boolean>>({})
+  const [mappingSlotStates, setMappingSlotStates] = useState<WorkflowSlotStates>(options.mappingSlotStates ?? {})
+  const initialized = useRef(false)
+  const storedMappings = useRef<readonly SlotMapping[]>(options.existingMappings ?? [])
+  const latestScan = useRef(scanResult)
+  const graph = useRef(options.workflowJson)
+  if (scanResult) latestScan.current = scanResult
+  if (options.workflowJson !== undefined) graph.current = options.workflowJson
 
-  const buildRows = (): { mainRows: MasterMappingRow[]; notFoundRows: MasterMappingRow[] } => {
-    if (!scanResult) return { mainRows: [], notFoundRows: [] }
+  const allDefinitions = useMemo<SlotDefinition[]>(() => masters.flatMap(master => {
+    const variants = 'variants' in master && Array.isArray(master.variants) ? master.variants : []
+    return variants.length ? variants.map(v => ({ masterId: master.id, variantId: v.id, stageId: v.stage_id, role: v.computed_role, legacyRole: master.role, defaultEnabled: master.default_enabled !== false }))
+      : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+  }), [masters])
+  const activeDefinitions = useMemo<SlotDefinition[]>(() => masters.flatMap(master => {
+    const variants = 'variants' in master ? master.variants.filter(v => v.is_enabled !== false) : []
+    return variants.length ? variants.map(v => ({ masterId: master.id, variantId: v.id, stageId: v.stage_id, role: v.computed_role, legacyRole: master.role, defaultEnabled: master.default_enabled !== false }))
+      : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+  }), [masters])
+  const slotDefinitions = (includeInactive = false) => includeInactive ? allDefinitions : activeDefinitions
+  const saved = storedMappings.current
+  const savedByKey = useMemo(() => new Map(saved.map(m => [mappingSlotKey(m, allDefinitions), m])), [saved, allDefinitions])
+  const mappedKeys = useMemo(() => new Set(savedByKey.keys()), [savedByKey])
+  const visibleSlots = useMemo(() => activeDefinitions.filter(s => s.defaultEnabled
+    || mappedKeys.has(canonicalSlotKey(s.masterId, s.variantId))
+    || Object.prototype.hasOwnProperty.call(mappingSlotStates, canonicalSlotKey(s.masterId, s.variantId))), [activeDefinitions, mappedKeys, mappingSlotStates])
+  const visibleDefinitions = () => visibleSlots
+  const hydratedStates = useMemo(() => hydrateSlotStates(mappingSlotStates, saved, visibleSlots), [mappingSlotStates, saved, visibleSlots])
+  const states = () => hydratedStates
+  const enabled = (masterId: number, variantId?: number) => isSlotEnabled(hydratedStates, canonicalSlotKey(masterId, variantId))
 
-    const matchedMap = new Map(scanResult.matched.map(m => [m.master_id, m]))
-    const warningMap = new Map(scanResult.warnings.map(w => [w.master_id, w]))
+  const buildRows = (): { rows: MasterMappingRow[]; mainRows: MasterMappingRow[]; notFoundRows: MasterMappingRow[] } => {
+    const activeScan = latestScan.current
+    if (!activeScan) return { rows: [], mainRows: [], notFoundRows: [] }
 
+    const matchedMap = new Map(activeScan.matched.map(m => [m.master_id, m]))
+    const warningMap = new Map(activeScan.warnings.map(w => [w.master_id, w]))
+    const graphIds = workflowNodeIds(graph.current)
+
+    const rows: MasterMappingRow[] = []
     const mainRows: MasterMappingRow[] = []
     const notFoundRows: MasterMappingRow[] = []
 
@@ -45,6 +91,10 @@ export function useMasterMappingRows(
       const variants = ('variants' in master && Array.isArray((master as MappingMasterV2).variants))
         ? (master as MappingMasterV2).variants.filter(v => v.is_enabled !== false)
         : []
+      const knownKeys = mappedKeys
+      const hasKnownSlot = variants.length ? variants.some(v => knownKeys.has(canonicalSlotKey(master.id, v.id)) || Object.prototype.hasOwnProperty.call(mappingSlotStates, canonicalSlotKey(master.id, v.id)))
+        : knownKeys.has(canonicalSlotKey(master.id)) || Object.prototype.hasOwnProperty.call(mappingSlotStates, canonicalSlotKey(master.id))
+      if (master.default_enabled === false && !hasKnownSlot) continue
 
       if (variants.length > 0) {
         const stageSlots: StageSlotItem[] = []
@@ -52,10 +102,10 @@ export function useMasterMappingRows(
         for (const variant of variants) {
           const slotKey = `v_${variant.id}`
 
-          const slotWarning = scanResult.warnings.find(w => w.variant_id != null && w.variant_id === variant.id)
-            ?? (variants.length === 1 ? scanResult.warnings.find(w => !w.variant_id && w.master_id === master.id) : undefined)
-          const slotMatched = scanResult.matched.find(m => m.variant_id != null && m.variant_id === variant.id)
-            ?? (variants.length === 1 ? scanResult.matched.find(m => !m.variant_id && m.master_id === master.id) : undefined)
+          const slotWarning = activeScan.warnings.find(w => w.variant_id != null && w.variant_id === variant.id)
+            ?? (variants.length === 1 ? activeScan.warnings.find(w => !w.variant_id && w.master_id === master.id) : undefined)
+          const slotMatched = activeScan.matched.find(m => m.variant_id != null && m.variant_id === variant.id)
+            ?? (variants.length === 1 ? activeScan.matched.find(m => !m.variant_id && m.master_id === master.id) : undefined)
 
           let status: 'ok' | 'duplicated' | 'class_type_mismatch' | 'not_found' | 'unassigned' = 'not_found'
           let candidates: string[] = []
@@ -117,6 +167,8 @@ export function useMasterMappingRows(
             candidates,
             recommendedNodeIds,
             status,
+            enabled: enabled(master.id, variant.id), unused: node_id === '',
+            reference_missing: Boolean(node_id && graphIds && !graphIds.has(node_id)),
             node_title,
           })
         }
@@ -136,6 +188,7 @@ export function useMasterMappingRows(
         const isExistingMismatch = mismatchState[String(master.id)] ?? mismatchState[`m_${master.id}`] ?? stageSlots.some(s => mismatchState[s.slotKey]) ?? false
 
         const row: MasterMappingRow = {
+          rowKey: `m_${master.id}`, slotKey: primarySlot?.slotKey,
           master,
           node_id: primarySlot ? primarySlot.node_id : '',
           candidates: primarySlot ? primarySlot.candidates : [],
@@ -143,7 +196,11 @@ export function useMasterMappingRows(
           node_title: primarySlot?.node_title,
           is_existing_mismatch: isExistingMismatch,
           stageSlots,
+          enabled: primarySlot?.enabled ?? true, unused: primarySlot?.unused ?? true,
+          reference_missing: primarySlot?.reference_missing ?? false,
         }
+
+        rows.push(row)
 
         if (allNotFound) {
           notFoundRows.push(row)
@@ -185,13 +242,18 @@ export function useMasterMappingRows(
         const isExistingMismatch = mismatchState[String(master.id)] ?? mismatchState[`m_${master.id}`] ?? false
 
         const row: MasterMappingRow = {
+          rowKey: `m_${master.id}`, slotKey: `m_${master.id}`,
           master,
           node_id,
           candidates,
           status,
           node_title,
           is_existing_mismatch: isExistingMismatch,
+          enabled: enabled(master.id), unused: node_id === '',
+          reference_missing: Boolean(node_id && graphIds && !graphIds.has(node_id)),
         }
+
+        rows.push(row)
 
         if (status === 'not_found') {
           notFoundRows.push(row)
@@ -201,10 +263,12 @@ export function useMasterMappingRows(
       }
     }
 
-    return { mainRows, notFoundRows }
+    return { rows, mainRows, notFoundRows }
   }
 
   const updateSlotNodeId = (slotKey: string, node_id: string) => {
+    const def = visibleDefinitions().find(s => (s.variantId == null ? `m_${s.masterId}` : `v_${s.variantId}`) === slotKey)
+    if (!def || !enabled(def.masterId, def.variantId)) return
     setRowState(prev => {
       const next = { ...prev, [slotKey]: node_id }
       if (slotKey.startsWith('m_')) {
@@ -220,6 +284,8 @@ export function useMasterMappingRows(
   }
 
   const updateNodeId = (master_id: number, node_id: string) => {
+    const slot = visibleDefinitions().find(def => def.masterId === master_id)
+    if (!slot || !enabled(slot.masterId, slot.variantId)) return
     setRowState(prev => {
       const next: Record<string, string> = {
         ...prev,
@@ -237,11 +303,29 @@ export function useMasterMappingRows(
     })
   }
 
-  const initFromScan = (
+  const setSlotEnabled = (key: string, value: boolean) => {
+    const def = visibleDefinitions().find(s => (s.variantId == null ? `m_${s.masterId}` : `v_${s.variantId}`) === key)
+    if (!def) return
+    setMappingSlotStates(prev => ({ ...prev, [canonicalSlotKey(def.masterId, def.variantId)]: value }))
+  }
+  const setStageEnabled = (stageId: number, value: boolean) => {
+    setMappingSlotStates(prev => updateStageEnabled(prev, visibleDefinitions(), stageId, value))
+  }
+
+  const initFromScan = useCallback((
     result: ScanResult,
-    existingMappings?: { master_id: number; node_id: string; variant_id?: number }[],
-    workflowJson?: Record<string, unknown>
+    existingMappings?: readonly SlotMapping[],
+    workflowJson?: unknown
   ) => {
+    latestScan.current = result
+    if (workflowJson !== undefined) graph.current = workflowJson
+    if (initialized.current) return
+    const savedMappings = existingMappings ?? options.existingMappings ?? []
+    storedMappings.current = savedMappings
+    const savedByIdentity = new Map(savedMappings.map(mapping => [mappingSlotKey(mapping, allDefinitions), mapping]))
+    const initialSlots = activeDefinitions.filter(slot => slot.defaultEnabled
+      || savedByIdentity.has(canonicalSlotKey(slot.masterId, slot.variantId))
+      || Object.prototype.hasOwnProperty.call(options.mappingSlotStates ?? {}, canonicalSlotKey(slot.masterId, slot.variantId)))
     const scanDefaults: Record<string, string> = {}
     for (const m of result.matched) {
       if (m.variant_id) {
@@ -269,7 +353,7 @@ export function useMasterMappingRows(
     const initial: Record<string, string> = {}
     const mismatches: Record<string, boolean> = {}
 
-    if (existingMappings && existingMappings.length > 0) {
+    if (savedMappings.length > 0) {
       for (const master of masters) {
         const variants = ('variants' in master && Array.isArray((master as MappingMasterV2).variants))
           ? (master as MappingMasterV2).variants.filter(v => v.is_enabled !== false)
@@ -278,9 +362,7 @@ export function useMasterMappingRows(
         if (variants.length > 0) {
           for (const variant of variants) {
             const slotKey = `v_${variant.id}`
-            const existing = existingMappings.find(
-              e => e.variant_id != null ? e.variant_id === variant.id : (variants.length === 1 && e.master_id === master.id)
-            )
+            const existing = savedByIdentity.get(canonicalSlotKey(master.id, variant.id))
 
             if (existing && existing.node_id !== undefined && existing.node_id.trim() !== '') {
               const existingNodeId = existing.node_id.trim()
@@ -319,7 +401,7 @@ export function useMasterMappingRows(
             initial[String(master.id)] = initial[`m_${master.id}`]
           }
         } else {
-          const existing = existingMappings.find(e => e.master_id === master.id)
+          const existing = savedMappings.find(e => e.master_id === master.id)
           const existingNodeId = existing?.node_id
           if (existingNodeId !== undefined && existingNodeId.trim() !== '') {
             const matched = result.matched.find(m => m.master_id === master.id)
@@ -381,29 +463,49 @@ export function useMasterMappingRows(
       }
     }
 
+    for (const mapping of savedMappings) {
+      const key = mappingSlotKey(mapping, slotDefinitions(true)).replace(':', '_')
+      initial[key] = mapping.node_id
+    }
     setRowState(initial)
+    setMappingSlotStates(hydrateSlotStates(options.mappingSlotStates, savedMappings, initialSlots))
     setMismatchState(mismatches)
-  }
+    initialized.current = true
+  }, [masters, allDefinitions, activeDefinitions, options.existingMappings, options.mappingSlotStates])
 
   const getMappings = (mainRows: MasterMappingRow[], notFoundRows: MasterMappingRow[]) => {
     const results: { master_id: number; node_id: string; variant_id?: number }[] = []
-    for (const r of [...mainRows, ...notFoundRows]) {
+    const inputRows = [...mainRows, ...notFoundRows]
+    const knownKeys = new Set(inputRows.flatMap(r => r.stageSlots?.length
+      ? r.stageSlots.map(s => canonicalSlotKey(s.masterId, s.variantId))
+      : [canonicalSlotKey(r.master.id)]))
+    for (const saved of storedMappings.current) {
+      if (!knownKeys.has(mappingSlotKey(saved, slotDefinitions(true)))) {
+        const { variant_id, ...legacy } = saved
+        results.push(variant_id == null ? legacy : { ...saved, variant_id })
+      }
+    }
+    for (const r of inputRows) {
       if (r.stageSlots && r.stageSlots.length > 0) {
         for (const slot of r.stageSlots) {
           if (slot.node_id && slot.node_id.trim() !== '') {
+            const saved = savedByKey.get(canonicalSlotKey(slot.masterId, slot.variantId))
             results.push({
               master_id: slot.masterId,
-              node_id: slot.node_id.trim(),
+              node_id: saved?.node_id === slot.node_id ? saved.node_id : slot.node_id.trim(),
               ...(slot.variantId !== undefined ? { variant_id: slot.variantId } : {}),
             })
           }
         }
       } else if (r.node_id && r.node_id.trim() !== '') {
-        results.push({ master_id: r.master.id, node_id: r.node_id.trim() })
+        const saved = storedMappings.current.find(m => m.master_id === r.master.id && m.variant_id == null)
+        results.push({ master_id: r.master.id, node_id: saved?.node_id === r.node_id ? saved.node_id : r.node_id.trim() })
       }
     }
     return results
   }
 
-  return { buildRows, updateNodeId, updateSlotNodeId, clearSlot, initFromScan, getMappings }
+  const built = useMemo(buildRows, [masters, scanResult, rowState, mismatchState, hydratedStates, mappedKeys, options.workflowJson])
+  const cachedBuildRows = useCallback(() => built, [built])
+  return { rows: built.rows, buildRows: cachedBuildRows, mappingSlotStates: states(), setSlotEnabled, setStageEnabled, updateNodeId, updateSlotNodeId, clearSlot, initFromScan, getMappings }
 }

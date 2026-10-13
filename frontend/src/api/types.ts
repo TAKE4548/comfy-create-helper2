@@ -16,6 +16,7 @@ export interface MappingMaster {
   display_name: string
   title_patterns: string[] | null
   sort_order: number
+  default_enabled?: boolean
 }
 
 export interface MappingMasterCreate {
@@ -25,6 +26,7 @@ export interface MappingMasterCreate {
   input_type: string
   display_name: string
   title_patterns?: string[]
+  default_enabled?: boolean
 }
 
 export interface MappingMasterUsage {
@@ -125,6 +127,7 @@ export interface MappingMasterV2 {
   role?: string
   display_name?: string
   title_patterns?: string[] | null
+  default_enabled?: boolean
 }
 
 export interface MappingMasterV2Create {
@@ -141,6 +144,7 @@ export interface MappingMasterV2Create {
   fallback_param_names?: string[] | null
   sort_order?: number
   variants?: MappingVariantUpdateItem[]
+  default_enabled?: boolean
 }
 
 export interface MappingMasterV2Update {
@@ -157,6 +161,7 @@ export interface MappingMasterV2Update {
   role?: string
   display_name?: string
   title_patterns?: string[] | null
+  default_enabled?: boolean
 }
 
 export interface CascadePreviewResult {
@@ -213,6 +218,7 @@ export interface Workflow {
   default_applied_assets?: string | null
   target_base_model_id?: number | null
   created_at: string
+  mapping_slot_states?: Record<string, boolean>
 }
 
 export interface WorkflowCreate {
@@ -220,6 +226,7 @@ export interface WorkflowCreate {
   json_body: Record<string, unknown>
   mappings: { master_id: number; node_id: string; variant_id?: number | null }[]
   target_base_model_id?: number | null
+  mapping_slot_states?: Record<string, boolean>
 }
 
 export interface WorkflowUpdate {
@@ -228,6 +235,7 @@ export interface WorkflowUpdate {
   default_applied_assets?: string | null
   mappings?: { master_id: number; node_id: string; variant_id?: number | null }[]
   target_base_model_id?: number | null
+  mapping_slot_states?: Record<string, boolean>
 }
 
 

@@ -89,6 +89,11 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
         </button>
         <span className="font-medium text-zinc-100">{master.name || master.display_name}</span>
         <span className="text-xs text-zinc-400 font-mono">({master.param_name})</span>
+        {master.default_enabled === false && (
+          <span className="px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 text-[10px]">
+            新規マッピングで基本無効
+          </span>
+        )}
         <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px] font-mono">
           {master.input_type}
         </span>

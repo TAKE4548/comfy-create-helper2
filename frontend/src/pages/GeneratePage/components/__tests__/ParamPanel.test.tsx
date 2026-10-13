@@ -72,6 +72,15 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     expect(screen.getByText('CFG Scale')).toBeInTheDocument()
   })
 
+  it('[REQ-358/AC-25] hides the generation Seed control when its Sampler_Seed mapping is inactive', () => {
+    render(<ParamPanel {...defaultProps}
+      paramMappings={[{ id: 2, role: 'cfg', display_name: 'CFG Scale', input_type: 'float' }]}
+      paramValues={{ cfg: '7.5' }} />)
+
+    expect(screen.queryByLabelText('Seed')).not.toBeInTheDocument()
+    expect(document.getElementById('seed-input')).not.toBeInTheDocument()
+  })
+
   it('collapses and expands Parameters section on click and persists to localStorage', () => {
     render(<ParamPanel {...defaultProps} />)
 

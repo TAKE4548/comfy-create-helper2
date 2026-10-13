@@ -1,0 +1,464 @@
+{
+  "target": "F25467F3F0A20028895A05C2A42F8D47",
+  "openWait": {
+    "elapsedMs": 579.1000000238419,
+    "rows": 288
+  },
+  "ready": {
+    "modalWallMs": 580.7000000476837,
+    "href": "http://127.0.0.1:5173/",
+    "readyState": "complete",
+    "title": "Prompt Surgeon",
+    "resources": [
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/tagChipCollisionDetection.ts",
+        "duration": 145.29999995231628
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/useChipHistory.ts",
+        "duration": 149
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/idGenerator.ts",
+        "duration": 148.5
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/TagChip.tsx",
+        "duration": 149.29999995231628
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/tagChipEditor.css",
+        "duration": 152.5
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/TagChipEditor/TagInput.tsx",
+        "duration": 153.5
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/store/usePromptClipboardStore.ts",
+        "duration": 150.60000002384186
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ParamSyncModal.tsx",
+        "duration": 151.79999995231628
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/pages/GeneratePage/components/PromptTranslationModal.tsx",
+        "duration": 151.60000002384186
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/pages/GeneratePage/components/SaveAsTagSetModal.tsx",
+        "duration": 155.69999992847443
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/LazyThumbnail.tsx",
+        "duration": 155.09999990463257
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/utils/formatUtils.ts",
+        "duration": 157.79999995231628
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/utils/mappingStageGroups.ts",
+        "duration": 152
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/StageInputGroup.css",
+        "duration": 151.30000007152557
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/BulkEditConfirmView.tsx",
+        "duration": 152.20000004768372
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/tabs/PromptBulkEditTab/index.tsx",
+        "duration": 154
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/tabs/ParamBulkEditTab/index.tsx",
+        "duration": 154.20000004768372
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/types.ts",
+        "duration": 161.29999995231628
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/useProfileBulkEditState.ts",
+        "duration": 161.19999992847443
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/buildPayload.ts",
+        "duration": 160.89999997615814
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/ProfileBulkEditModal/utils.ts",
+        "duration": 161.60000002384186
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/MappingNodeSelector.tsx?t=1791922373268",
+        "duration": 158.20000004768372
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/GenerationMetadataPanel.tsx",
+        "duration": 147.5
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/SnapshotTagAssociationsPanel.tsx",
+        "duration": 152.69999992847443
+      },
+      {
+        "name": "http://127.0.0.1:5173/src/components/SpeechBubbleEditorModal/index.tsx",
+        "duration": 150.20000004768372
+      }
+    ],
+    "html": "\n    <div id=\"root\"><div class=\"flex h-full bg-background\"><aside class=\"hidden md:flex flex-col bg-surface border-r border-[rgba(255,255,255,0.06)] flex-shrink-0 transition-all duration-300 ease-in-out w-14 lg:w-16\"><div class=\"flex items-center px-2 lg:px-4 py-5 border-b border-[rgba(255,255,255,0.06)] lg:justify-center\"><div class=\"flex items-center gap-3 overflow-hidden lg:hidden\"><div class=\"w-8 h-8 rounded-lg bg-accent-green flex items-center justify-center flex-shrink-0 glow-green\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-zap text-background font-bold\" aria-hidden=\"true\"><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\"></path></svg></div></div><button id=\"sidebar-toggle\" class=\"hidden lg:flex min-h-11 min-w-11 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 focus:outline-none transition-colors\" aria-label=\"Expand sidebar\" title=\"Expand sidebar\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chevron-right\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"></path></svg></button></div><nav aria-label=\"Primary navigation\" class=\"flex-1 p-1 lg:p-2 space-y-1 pt-4\"><a id=\"nav-generate\" aria-label=\"Generate\" aria-current=\"page\" class=\"flex min-h-11 min-w-11 items-center justify-center lg:justify-start gap-3 px-0 lg:px-3 py-2.5 rounded-lg transition-all group\n                bg-accent-green/10 text-accent-green\" href=\"/\" data-discover=\"true\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-zap flex-shrink-0 text-accent-green\" aria-hidden=\"true\"><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\"></path></svg><span class=\"hidden lg:block text-sm font-medium overflow-hidden whitespace-nowrap transition-all duration-300 w-0 opacity-0\">Generate</span></a><a id=\"nav-studio\" aria-label=\"Studio\" class=\"flex min-h-11 min-w-11 items-center justif",
+    "text": "Upscaler\n未割当\n有効\nRole 27\nFaceDetailer\n未割当\n有効\nRole 27\nHandDetailer\n未割当\n有効\nRole 27\nSAM\n未割当\n有効\nRole 27\nRefiner\n未割当\n有効\nRole 27\nHires\n未割当\n有効\nRole 28\nMain\n未割当\n有効\nRole 28\nRough\n未割当\n有効\nRole 28\nDetail\n未割当\n有効\nRole 28\nUpscaler\n未割当\n有効\nRole 28\nFaceDetailer\n未割当\n有効\nRole 28\nHandDetailer\n未割当\n有効\nRole 28\nSAM\n未割当\n有効\nRole 28\nRefiner\n未割当\n有効\nRole 28\nHires\n未割当\n有効\nRole 29\nMain\n未割当\n有効\nRole 29\nRough\n未割当\n有効\nRole 29\nDetail\n未割当\n有効\nRole 29\nUpscaler\n未割当\n有効\nRole 29\nFaceDetailer\n未割当\n有効\nRole 29\nHandDetailer\n未割当\n有効\nRole 29\nSAM\n未割当\n有効\nRole 29\nRefiner\n未割当\n有効\nRole 29\nHires\n未割当\n有効\nRole 30\nMain\n未割当\n有効\nRole 30\nRough\n未割当\n有効\nRole 30\nDetail\n未割当\n有効\nRole 30\nUpscaler\n未割当\n有効\nRole 30\nFaceDetailer\n未割当\n有効\nRole 30\nHandDetailer\n未割当\n有効\nRole 30\nSAM\n未割当\n有効\nRole 30\nRefiner\n未割当\n有効\nRole 30\nHires\n未割当\n有効\nRole 31\nMain\n未割当\n有効\nRole 31\nRough\n未割当\n有効\nRole 31\nDetail\n未割当\n有効\nRole 31\nUpscaler\n未割当\n有効\nRole 31\nFaceDetailer\n未割当\n有効\nRole 31\nHandDetailer\n未割当\n有効\nRole 31\nSAM\n未割当\n有効\nRole 31\nRefiner\n未割当\n有効\nRole 31\nHires\n未割当\n有効\nRole 32\nMain\n未割当\n有効\nRole 32\nRough\n未割当\n有効\nRole 32\nDetail\n未割当\n有効\nRole 32\nUpscaler\n未割当\n有効\nRole 32\nFaceDetailer\n未割当\n有効\nRole 32\nHandDetailer\n未割当\n有効\nRole 32\nSAM\n未割当\n有効\nRole 32\nRefiner\n未割当\n有効\nRole 32\nHires\n未割当\n有効\n\n利用中: 10 件（無効な割り当ても保持）\n\nキャンセル\n適用・保存",
+    "rows": 288,
+    "stages": [
+      "Mainステージ有効",
+      "Roughステージ有効",
+      "Detailステージ有効",
+      "Upscalerステージ有効",
+      "FaceDetailerステージ有効",
+      "HandDetailerステージ有効",
+      "SAMステージ有効",
+      "Refinerステージ有効",
+      "Hiresステージ有効"
+    ]
+  },
+  "stageToggleTiming": {
+    "ms": [
+      45.39999997615814,
+      72.20000004768372,
+      58.5,
+      82.5,
+      59.60000002384186,
+      84.60000002384186,
+      57.799999952316284,
+      121.5,
+      73,
+      75.80000007152557
+    ],
+    "checks": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ],
+    "median": 73,
+    "p95": 121.5
+  },
+  "slotToggleTiming": {
+    "ms": [
+      43,
+      52.10000002384186,
+      43.200000047683716,
+      55.59999990463257,
+      44,
+      67.70000004768372,
+      55.700000047683716,
+      68.19999992847443,
+      39.700000047683716,
+      58.299999952316284
+    ],
+    "checks": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ],
+    "median": 55.59999990463257,
+    "p95": 68.19999992847443
+  },
+  "toggleRequestDelta": 0,
+  "toggleWindowRequests": [],
+  "selectorTest": {
+    "inputCount": 288,
+    "assigned": 10,
+    "afterMetadata": {
+      "open": true,
+      "value": "1",
+      "metadata": "Node 1 · KSampler\n55%",
+      "metadataHasDuplicateId": false
+    },
+    "scoreClickOpened": true,
+    "optionCount": 200,
+    "duplicateUsed": [
+      10,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "uniqueOptionIds": 200,
+    "afterEmpty": {
+      "open": true,
+      "value": ""
+    }
+  },
+  "disabledTest": {
+    "mainStageEnabled": false,
+    "readonly": true,
+    "readonlyOpened": false,
+    "openOnOther": true,
+    "otherValue": "2"
+  },
+  "saveSamples": [
+    {
+      "ms": 4.100000023841858,
+      "disabled": false,
+      "connected": true,
+      "text": "適用・保存"
+    },
+    {
+      "ms": 86.60000002384186,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 145.10000002384186,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 196,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 260.1999999284744,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 318.6999999284744,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 373.7999999523163,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 425.7999999523163,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 487.89999997615814,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 540.7999999523163,
+      "disabled": true,
+      "connected": true,
+      "text": "保存中…"
+    },
+    {
+      "ms": 621.5,
+      "disabled": true,
+      "connected": false,
+      "text": "保存中…"
+    },
+    {
+      "ms": 672.1000000238419,
+      "disabled": true,
+      "connected": false,
+      "text": "保存中…"
+    }
+  ],
+  "putRequests": 1,
+  "totalRequestCount": 29,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles",
+      "at": 1791922806251
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/param-sync-groups",
+      "at": 1791922806252
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles",
+      "at": 1791922806255
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles",
+      "at": 1791922806256
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/param-sync-groups",
+      "at": 1791922806257
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles",
+      "at": 1791922806257
+    },
+    {
+      "method": "GET",
+      "path": "/stage-masters",
+      "at": 1791922806365
+    },
+    {
+      "method": "GET",
+      "path": "/mapping-masters",
+      "at": 1791922806365
+    },
+    {
+      "method": "GET",
+      "path": "/workflows",
+      "at": 1791922806367
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358",
+      "at": 1791922806367
+    },
+    {
+      "method": "GET",
+      "path": "/base-models",
+      "at": 1791922806369
+    },
+    {
+      "method": "GET",
+      "path": "/param-type-masters",
+      "at": 1791922806370
+    },
+    {
+      "method": "GET",
+      "path": "/comfy/object_info",
+      "at": 1791922806370
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets",
+      "at": 1791922806370
+    },
+    {
+      "method": "GET",
+      "path": "/loras",
+      "at": 1791922806370
+    },
+    {
+      "method": "GET",
+      "path": "/tag-sets",
+      "at": 1791922806373
+    },
+    {
+      "method": "GET",
+      "path": "/snapshots",
+      "at": 1791922806375
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state",
+      "at": 1791922806587
+    },
+    {
+      "method": "GET",
+      "path": "/comfy/object_info",
+      "at": 1791922806624
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue",
+      "at": 1791922806642
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue",
+      "at": 1791922807118
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state",
+      "at": 1791922808221
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets",
+      "at": 1791922811415
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358",
+      "at": 1791922812554
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "at": 1791922812556
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "at": 1791922812558
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets",
+      "at": 1791922816425
+    },
+    {
+      "method": "PUT",
+      "path": "/workflows/358",
+      "at": 1791922816811
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358",
+      "at": 1791922816826
+    }
+  ],
+  "errors": [],
+  "websocketRequests": [
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5173"
+  ],
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "PUT",
+      "path": "/workflows/358"
+    }
+  ]
+}

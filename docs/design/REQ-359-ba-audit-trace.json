@@ -1,0 +1,97 @@
+{
+  "pbi_id": "REQ-359",
+  "date": "2026-10-13",
+  "timezone": "Asia/Tokyo",
+  "audit": {
+    "result": "FAIL_WITH_REQUIREMENT_INTERPRETATION_DISPUTE",
+    "pass_obtained": false,
+    "targets": [
+      "docs/design/REQ-359.md",
+      "docs/design/REQ-359-test-plan.md",
+      "docs/backlog/task/active/REQ-359-T1.md"
+    ],
+    "model": {
+      "key": "qwen/qwen3.5-9b",
+      "domain": "fixed-audit-model",
+      "parameters": "9.0B",
+      "quantization": "Q6_K"
+    },
+    "settings": {
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "timeout_seconds": 300,
+      "runtime_versions": "not observed"
+    },
+    "runs": [
+      {
+        "attempt": 1,
+        "result": "FAIL",
+        "status": "completed",
+        "elapsed_seconds": null,
+        "chunking": "not reported",
+        "summary": "Flagged missing useMemo and duplicate Anima store write. These were addressed in subsequent design revisions."
+      },
+      {
+        "attempt": 2,
+        "result": "FAIL",
+        "status": "completed",
+        "elapsed_seconds": null,
+        "chunking": "not reported",
+        "summary": "Flagged effect/store coupling and state comparison issues. These were addressed by making Zustand the single source of truth and adding a guarded stable setter."
+      },
+      {
+        "attempt": 3,
+        "result": "INCONCLUSIVE",
+        "status": "timeout",
+        "elapsed_seconds": null,
+        "error": "LM Studio HTTP request timed out during chunk 1; no findings returned."
+      },
+      {
+        "attempt": 4,
+        "result": "ERROR",
+        "status": "failed",
+        "elapsed_seconds": null,
+        "error": "LM Studio HTTP 400 Bad Request; no audit findings returned."
+      },
+      {
+        "attempt": 5,
+        "result": "FAIL_WITH_REQUIREMENT_INTERPRETATION_DISPUTE",
+        "status": "completed",
+        "elapsed_seconds": null,
+        "chunking": "not reported",
+        "summary": "Flagged that manual mode must persist across workflow changes. The design intentionally re-derives mode after workflow selection changes to satisfy PBI AC-3, which requires correct state after a workflow switch."
+      }
+    ],
+    "assessment": {
+      "addressed": [
+        "Memoize generationWorkflow output by raw workflow reference.",
+        "Use Zustand as the sole Anima mode source and guard same-value writes.",
+        "Exclude mode state from Anima effect dependencies and include selectedWorkflowId.",
+        "Exercise whole-store subscription and fetch-only transport severing in the existing hook test.",
+        "Include the AC-4 filtered verification command in the Task Card and implementation plan."
+      ],
+      "remaining_disagreement": "The final BA finding treats manual mode as a persistent user preference across workflow selection. PBI AC-3 instead requires the selected workflow to determine mode after selection changes. The design prioritizes the PBI; the exact temporary override behavior is stated in the design trade-off section for human review."
+    }
+  },
+  "cleanup": {
+    "explicit_unload_exit_codes": [0, 0, 0, 0, 0],
+    "latest_evidence": "[Local Audit] LM Studio reports no models loaded.",
+    "loaded_models_verified_empty": true,
+    "total_gpu_memory_free": "not proven"
+  },
+  "architect_review": {
+    "result": "PASS",
+    "reviewed_deliverables": [
+      "docs/design/REQ-359.md",
+      "docs/design/REQ-359-test-plan.md",
+      "docs/backlog/task/active/REQ-359-T1.md",
+      "implementation_plan.md"
+    ],
+    "note": "Reviewer noted that the Task Card's code example omitted the whole-store subscription. The example was updated afterward; that small documentation-only update was not separately re-reviewed."
+  },
+  "review_gate": {
+    "human_design_review": "pending",
+    "implementation_started": false,
+    "implementation_tests_run": false
+  }
+}

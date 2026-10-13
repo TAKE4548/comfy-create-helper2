@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from 'vitest'
 import { stageMastersApi } from '../domains/stageMasters'
 import { mappingGroupsApi } from '../domains/mappingGroups'
 import { mappingMastersApi } from '../domains/mappingMasters'
@@ -15,6 +15,11 @@ import type {
   MappingVariant,
   CascadePreviewResult,
   CascadeRenamePayload,
+  MappingMaster,
+  MappingMasterCreate,
+  Workflow,
+  WorkflowCreate,
+  WorkflowUpdate,
 } from '../types'
 
 describe('mappingApi domain clients (REQ-336)', () => {
@@ -443,5 +448,86 @@ describe('mappingApi domain clients (REQ-336)', () => {
         body: JSON.stringify({ ordered_ids: [20, 10] }),
       })
     })
+  })
+})
+
+describe('REQ-358/API_TYPES', () => {
+  it('REQ-358/AC-19 preserves optional master default_enabled types', () => {
+    const legacyMaster: MappingMaster = {
+      id: 1,
+      role: 'prompt',
+      expected_class_types: ['TextEncode'],
+      param_name: 'text',
+      input_type: 'textarea',
+      display_name: 'Prompt',
+      title_patterns: null,
+      sort_order: 0,
+    }
+    const masterCreate: MappingMasterCreate = {
+      role: 'prompt',
+      param_name: 'text',
+      input_type: 'textarea',
+      display_name: 'Prompt',
+      default_enabled: false,
+    }
+
+    expectTypeOf<MappingMaster['default_enabled']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<MappingMasterCreate['default_enabled']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<MappingMasterV2['default_enabled']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<MappingMasterV2Create['default_enabled']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<MappingMasterV2Update['default_enabled']>().toEqualTypeOf<boolean | undefined>()
+    expect(legacyMaster.default_enabled).toBeUndefined()
+    expect(masterCreate.default_enabled).toBe(false)
+    // @ts-expect-error null is outside the optional boolean contract
+    const invalidMaster: MappingMasterCreate = { ...masterCreate, default_enabled: null }
+    void invalidMaster
+  })
+
+  it('REQ-358/AC-26 allows optional mapping_slot_states and false values', () => {
+    const legacyWorkflow: Workflow = {
+      id: 1,
+      name: 'Legacy',
+      json_body: {},
+      mappings: [],
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const legacyCreate: WorkflowCreate = { name: 'Legacy', json_body: {}, mappings: [] }
+    const emptyUpdate: WorkflowUpdate = {}
+    const states: Workflow['mapping_slot_states'] = { 'v:1': false, 'm:2': true }
+    const updatedWorkflow: WorkflowUpdate = { mapping_slot_states: states }
+
+    expectTypeOf<Workflow['mapping_slot_states']>().toEqualTypeOf<Record<string, boolean> | undefined>()
+    expectTypeOf<WorkflowCreate['mapping_slot_states']>().toEqualTypeOf<Record<string, boolean> | undefined>()
+    expectTypeOf<WorkflowUpdate['mapping_slot_states']>().toEqualTypeOf<Record<string, boolean> | undefined>()
+    expect(legacyWorkflow.mapping_slot_states).toBeUndefined()
+    expect(legacyCreate.mapping_slot_states).toBeUndefined()
+    expect(emptyUpdate.mapping_slot_states).toBeUndefined()
+    expect(updatedWorkflow.mapping_slot_states).toEqual({ 'v:1': false, 'm:2': true })
+    // @ts-expect-error slot states accept boolean values only
+    const invalidStates: WorkflowUpdate = { mapping_slot_states: { 'v:1': null } }
+    void invalidStates
+  })
+
+  it('REQ-358/AC-31 supports legacy read defaults without making state required', () => {
+    const master: MappingMaster = {
+      id: 2,
+      role: 'sampler',
+      expected_class_types: null,
+      param_name: 'sampler_name',
+      input_type: 'select_sampler',
+      display_name: 'Sampler',
+      title_patterns: [],
+      sort_order: 1,
+    }
+    const workflow: Workflow = {
+      id: 2,
+      name: 'Old workflow',
+      json_body: {},
+      mappings: [],
+      created_at: '2026-01-01T00:00:00Z',
+    }
+
+    expect(master.default_enabled ?? true).toBe(true)
+    expect(workflow.mapping_slot_states ?? {}).toEqual({})
   })
 })

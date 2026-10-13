@@ -13,6 +13,12 @@ from app.services.workflow_scanner import scan_workflow, scan_workflow_variants
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
+def _decode_mapping_slot_states(value: str | dict[str, bool] | None) -> dict[str, bool]:
+    if not value:
+        return {}
+    return json.loads(value) if isinstance(value, str) else value
+
+
 @router.get("", response_model=list[schemas.WorkflowSummary])
 def list_workflows(db: Session = Depends(get_db)):
     return db.query(models.Workflow).order_by(models.Workflow.created_at.desc()).all()
@@ -30,6 +36,7 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
         name=payload.name,
         json_body=src.json_body,
         default_applied_assets=src.default_applied_assets,
+        mapping_slot_states=src.mapping_slot_states or "{}",
     )
     db.add(new_wf)
     db.flush()
@@ -75,6 +82,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
         created_at=wf.created_at,
         default_applied_assets=wf.default_applied_assets,
         target_base_model_id=wf.target_base_model_id,
+        mapping_slot_states=_decode_mapping_slot_states(wf.mapping_slot_states),
         mappings=[
             schemas.WorkflowMappingRead(
                 id=m.id,
@@ -120,6 +128,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
             workflow_id=workflow_id,
             json_body=wf.json_body,
             mappings=json.dumps(current_mappings),
+            mapping_slot_states=wf.mapping_slot_states or "{}",
         )
         db.add(history)
 
@@ -135,6 +144,9 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
 
     if "default_applied_assets" in payload.model_fields_set:
         wf.default_applied_assets = payload.default_applied_assets
+
+    if "mapping_slot_states" in payload.model_fields_set:
+        wf.mapping_slot_states = json.dumps(payload.mapping_slot_states)
 
     if payload.mappings is not None:
         db.query(models.WorkflowMapping).filter(
@@ -210,6 +222,7 @@ def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
             node_id=m["node_id"],
             variant_id=m.get("variant_id"),
         ))
+    wf.mapping_slot_states = history.mapping_slot_states or "{}"
     db.delete(history)
     db.commit()
     return schemas.WorkflowRollbackResponse(
@@ -237,6 +250,7 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
         name=payload.name,
         json_body=json.dumps(payload.json_body),
         target_base_model_id=target_base_model_id,
+        mapping_slot_states=json.dumps(payload.mapping_slot_states or {}),
     )
     db.add(wf)
     db.flush()

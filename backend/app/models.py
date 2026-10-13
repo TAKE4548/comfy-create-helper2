@@ -77,6 +77,7 @@ class MappingMaster(Base):
     role: Mapped[str] = mapped_column(String, nullable=True, default="")
     display_name: Mapped[str] = mapped_column(String, nullable=True, default="")
     title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
+    default_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
 
     # Relationships
     group: Mapped[Optional["MappingGroupMaster"]] = relationship(back_populates="masters")
@@ -162,6 +163,7 @@ class Workflow(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     default_applied_assets: Mapped[Optional[str]] = mapped_column(Text)
+    mapping_slot_states: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default=text("'{}'"))
     target_base_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("base_models.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
@@ -254,6 +256,7 @@ class WorkflowHistory(Base):
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False)
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     mappings: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array: [{"master_id": 1, "node_id": "6"}]
+    mapping_slot_states: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default=text("'{}'"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="history_entries")

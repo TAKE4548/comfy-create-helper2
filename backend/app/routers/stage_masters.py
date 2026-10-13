@@ -97,11 +97,12 @@ def update_stage_master(
     if payload.sort_order is not None:
         stage.sort_order = payload.sort_order
     if payload.is_active is not None:
+        reactivating = not stage.is_active and payload.is_active
         stage.is_active = payload.is_active
-        if not payload.is_active:
-            # 配下のバリアントも連動して非活性化
+        if not payload.is_active or reactivating:
+            # Stage off/on is a bulk operation; ordinary edits preserve role overrides.
             for variant in stage.variants:
-                variant.is_enabled = False
+                variant.is_enabled = payload.is_active
 
     db.commit()
     db.refresh(stage)

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi, mappingMastersApi, baseModelsApi, paramTypeMastersApi, comfyApi } from '../../../api/client'
-import type { Workflow, MappingMaster, BaseModel, ParamTypeMaster } from '../../../api/types'
+import type { Workflow, MappingMaster, MappingMasterV2, BaseModel, ParamTypeMaster } from '../../../api/types'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import { generationWorkflow, type SlotDefinition } from '../../../utils/workflowMappingState'
 
 export interface UseWorkflowManagementProps {
   selectedWorkflowId: number | null
@@ -16,27 +17,25 @@ export function useWorkflowManagement({
 }: UseWorkflowManagementProps) {
   const qc = useQueryClient()
   const isConnected = useGenerationStore((state) => state.isConnected)
+  const isAnimaMode = useGenerationStore((state) => state.isAnimaMode ?? false)
   const [selectedMasters, setSelectedMasters] = useState<Record<number, number>>({})
   const [workflowManageMode, setWorkflowManageMode] = useState<'rename' | 'copy' | null>(null)
   const [isWorkflowMenuOpen, setIsWorkflowMenuOpen] = useState(false)
   const [activePromptTab, setActivePromptTabState] = useState<string>('')
   const [collapsedRoles, setCollapsedRoles] = useState<Record<string, boolean>>({})
-  const [isAnimaMode, setIsAnimaModeState] = useState(false)
-
-  const setIsAnimaMode = (val: boolean | ((prev: boolean) => boolean)) => {
-    setIsAnimaModeState((prev) => {
-      const next = typeof val === 'function' ? val(prev) : val
-      useGenerationStore.getState().setIsAnimaMode?.(next)
-      return next
-    })
-  }
+  const setIsAnimaMode = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    const store = useGenerationStore.getState()
+    const current = store.isAnimaMode ?? false
+    const next = typeof val === 'function' ? val(current) : val
+    if (next !== current) store.setIsAnimaMode?.(next)
+  }, [])
 
   // ── Queries ──
   const { data: workflows } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsApi.list() as Promise<{ id: number; name: string }[]>,
   })
-  const { data: workflow } = useQuery({
+  const { data: rawWorkflow } = useQuery({
     queryKey: ['workflow', selectedWorkflowId],
     queryFn: () => workflowsApi.get(selectedWorkflowId!) as Promise<Workflow>,
     enabled: !!selectedWorkflowId,
@@ -45,6 +44,17 @@ export function useWorkflowManagement({
     queryKey: ['mapping-masters'],
     queryFn: () => mappingMastersApi.list() as Promise<MappingMaster[]>,
   })
+  const slotDefinitions = useMemo<SlotDefinition[]>(() => (mappingMasters ?? []).flatMap((master) => {
+    const variants = 'variants' in master && Array.isArray(master.variants)
+      ? (master as MappingMaster & Pick<MappingMasterV2, 'variants'>).variants
+      : []
+    return variants.length ? variants.map((variant) => ({ masterId: master.id, variantId: variant.id, stageId: variant.stage_id, role: variant.computed_role, legacyRole: master.role, defaultEnabled: master.default_enabled !== false }))
+      : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+  }), [mappingMasters])
+  const workflow = useMemo(
+    () => rawWorkflow ? generationWorkflow(rawWorkflow, slotDefinitions) : undefined,
+    [rawWorkflow, slotDefinitions],
+  )
   const { data: baseModels } = useQuery({
     queryKey: ['base-models'],
     queryFn: () => baseModelsApi.list() as Promise<BaseModel[]>,
@@ -88,13 +98,10 @@ export function useWorkflowManagement({
 
   // ── Anima Detection ──
   useEffect(() => {
-    if (workflow && baseModels) {
-      const selectedModel = baseModels.find((m) => m.id === workflow.target_base_model_id)
-      const isAnima = !!selectedModel && selectedModel.name === 'Anima'
-      setIsAnimaMode(isAnima)
-      useGenerationStore.getState().setIsAnimaMode?.(isAnima)
-    }
-  }, [workflow, baseModels])
+    if (!workflow || !baseModels) return
+    const selectedModel = baseModels.find((model) => model.id === workflow.target_base_model_id)
+    setIsAnimaMode(!!selectedModel && selectedModel.name === 'Anima')
+  }, [selectedWorkflowId, workflow, baseModels, setIsAnimaMode])
 
   // ── Active Prompt Tab Init ──
   useEffect(() => {
@@ -133,7 +140,7 @@ export function useWorkflowManagement({
     },
   })
   const updateWorkflowMutation = useMutation({
-    mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string }[] }) =>
+    mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string; variant_id?: number | null }[] }) =>
       workflowsApi.update(workflowId, { mappings }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
@@ -151,11 +158,11 @@ export function useWorkflowManagement({
   })
 
   const handleUpdateMapping = async (mappingId: number, newMasterId: number) => {
-    if (!workflow || !selectedWorkflowId) return
-    const updatedMappings = workflow.mappings.map((m) =>
+    if (!rawWorkflow || !selectedWorkflowId) return
+    const updatedMappings = rawWorkflow.mappings.map((m) =>
       m.id === mappingId
-        ? { master_id: newMasterId, node_id: m.node_id }
-        : { master_id: m.master_id, node_id: m.node_id }
+        ? { master_id: newMasterId, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}) }
+        : { master_id: m.master_id, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}) }
     )
     await updateWorkflowMutation.mutateAsync({ workflowId: selectedWorkflowId, mappings: updatedMappings })
   }
@@ -170,6 +177,7 @@ export function useWorkflowManagement({
     qc,
     workflows,
     workflow,
+    rawWorkflow,
     mappingMasters,
     baseModels,
     paramTypeMasters,

@@ -16,7 +16,7 @@ describe('WorkflowMappingPreview', () => {
     vi.clearAllMocks()
   })
 
-  it('renders selector and handles registered workflow selection', async () => {
+  it('REQ-358/PREVIEW REQ-358/AC-7 ranks candidates and keeps non-recommended nodes selectable', async () => {
     vi.mocked(workflowsApi.list).mockResolvedValue([
       { id: 1, name: 'Default Workflow', is_default: true, created_at: '', updated_at: '' },
     ])
@@ -27,11 +27,11 @@ describe('WorkflowMappingPreview', () => {
       created_at: '',
       updated_at: '',
       json_body: {
-        '10': {
-          class_type: 'KSampler',
-          _meta: { title: 'KSampler Latent' },
-          inputs: { noise_seed: 555, steps: 20 },
-        },
+        '10': { class_type: 'KSampler', _meta: { title: 'Latent' }, inputs: { seed: 1 } },
+        '11': { class_type: 'KSampler', _meta: { title: 'latent' }, inputs: { noise_seed: 2 } },
+        '12': { class_type: 'KSampler', _meta: { title: 'Other' }, inputs: { steps: 20 } },
+        '13': { class_type: 'Other', _meta: { title: 'Other' }, inputs: { seed: 2 } },
+        '14': { class_type: 'Other', _meta: { title: 'Unrelated' }, inputs: {} },
       },
     })
 
@@ -53,8 +53,16 @@ describe('WorkflowMappingPreview', () => {
     fireEvent.change(select, { target: { value: '1' } })
 
     await waitFor(() => {
-      expect(screen.getByText('KSampler Latent')).toBeInTheDocument()
-      expect(screen.getByText(/noise_seed/)).toBeInTheDocument()
+      expect(screen.getByText('Latent')).toBeInTheDocument()
+      expect(screen.getAllByLabelText('適合スコア 80%')).toHaveLength(2)
+      expect(screen.getByLabelText('適合スコア 55%')).toBeInTheDocument()
+      expect(screen.getByLabelText('適合スコア 26%')).toBeInTheDocument()
+      expect(screen.getByLabelText('適合スコア 4%')).toBeInTheDocument()
+      expect(screen.getByTestId('candidate-reasons-10')).toHaveTextContent('推奨')
+      expect(screen.getByTestId('candidate-reasons-11')).toHaveTextContent('推奨')
+      expect(screen.getByTestId('candidate-reasons-12')).toHaveTextContent('非推奨')
+      expect(screen.getByTestId('candidate-reasons-13')).toHaveTextContent('非推奨')
+      expect(screen.getByTestId('candidate-reasons-14')).toHaveTextContent('非推奨')
       expect(screen.getByText(/noise_seed/)).toBeInTheDocument()
     })
   })

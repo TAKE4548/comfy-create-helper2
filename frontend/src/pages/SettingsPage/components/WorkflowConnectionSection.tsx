@@ -9,13 +9,14 @@ import { AdaptiveWorkflowWiring } from '../../../components/AdaptiveWorkflowWiri
 import { useConfig } from '../../../hooks/useConfig'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { hydrateSlotStates, slotKey, type SlotDefinition, type WorkflowSlotStates } from '../../../utils/workflowMappingState'
 import { WorkflowManageModal } from '../../../components/WorkflowManageModal'
 import { WorkflowDiffReplaceModal } from '../../../components/WorkflowDiffReplaceModal'
 import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
 import { ServiceConnectionCard } from './ServiceConnectionCard'
 
-export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null }
+export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null; mapping_slot_states?: WorkflowSlotStates }
 interface ConfigDraftSession { epoch: number; workflowId: number | null; hydrated: boolean; acknowledgedRevision: number }
 export const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 export function graphNodeIds(graph: unknown): string[] {
@@ -38,10 +39,19 @@ export function validateConfig(value: unknown, masterIds: number[], modelIds: nu
       ...(m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
     }
   })
+  let mappingSlotStates: WorkflowSlotStates | undefined
+  if (Object.prototype.hasOwnProperty.call(value, 'mapping_slot_states')) {
+    if (!record(value.mapping_slot_states)) throw new Error('対応付け状態が不正です')
+    mappingSlotStates = {}
+    for (const [key, enabled] of Object.entries(value.mapping_slot_states)) {
+      if (!/^(?:m|v):[1-9]\d*$/.test(key) || typeof enabled !== 'boolean') throw new Error('対応付け状態が不正です')
+      mappingSlotStates[key] = enabled
+    }
+  }
   const modelId = value.target_base_model_id
   if (modelId !== null && (!Number.isInteger(modelId) || modelId <= 0 || !modelIds.includes(modelId))) throw new Error('ベースモデルIDが不正です')
   if (value.default_applied_assets !== null && typeof value.default_applied_assets !== 'string') throw new Error('既定アセット形式が不正です')
-  return { name: value.name, json_body: value.json_body, mappings, target_base_model_id: modelId, default_applied_assets: value.default_applied_assets }
+  return { name: value.name, json_body: value.json_body, mappings, target_base_model_id: modelId, default_applied_assets: value.default_applied_assets, ...(mappingSlotStates !== undefined ? { mapping_slot_states: mappingSlotStates } : {}) }
 }
 
 export interface WorkflowConnectionSectionProps {
@@ -98,6 +108,7 @@ export function WorkflowConnectionSection({
   const [pendingDiffWorkflow, setPendingDiffWorkflow] = useState<WorkflowSummary | null>(null)
   const [configWorkflowId, setConfigWorkflowId] = useState<number | null>(null)
   const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string; variant_id?: number }[]>([])
+  const [configSlotStates, setConfigSlotStates] = useState<WorkflowSlotStates>({})
   const [configBaseModelId, setConfigBaseModelId] = useState('')
   const [configText, setConfigText] = useState('')
   const [exportText, setExportText] = useState('')
@@ -152,20 +163,39 @@ export function WorkflowConnectionSection({
     enabled: group !== 'system',
   })
 
+  const slotDefinitions = useMemo<SlotDefinition[]>(() => mappingMasters.flatMap((master: any) => {
+    const variants = Array.isArray(master.variants) ? master.variants : []
+    if (variants.length) return variants.map((variant: any) => ({ masterId: master.id, variantId: variant.id, stageId: variant.stage_id, role: variant.computed_role, legacyRole: master.role, defaultEnabled: Boolean(variant.is_enabled) }))
+    return [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+  }), [mappingMasters])
+
   const activeStages = useMemo(() => {
     const masters = stageMasters.length > 0 ? stageMasters : [
       { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 } as StageMaster,
     ]
-    return detectActiveStages(configWorkflow?.json_body, masters)
-  }, [configWorkflow?.json_body, stageMasters])
+    const detected = detectActiveStages(configWorkflow?.json_body, masters)
+    const requiredStageIds = new Set<number>()
+    for (const slot of slotDefinitions) {
+      const key = slotKey(slot.masterId, slot.variantId)
+      if (slot.stageId !== undefined && (slot.defaultEnabled || configSlotStates[key] !== undefined || configWorkflow?.mappings.some((mapping) => slotKey(mapping.master_id, mapping.variant_id) === key))) requiredStageIds.add(slot.stageId)
+    }
+    for (const key of Object.keys(configSlotStates)) {
+      const slot = slotDefinitions.find((definition) => slotKey(definition.masterId, definition.variantId) === key)
+      if (slot?.stageId !== undefined) requiredStageIds.add(slot.stageId)
+    }
+    const byId = new Map(detected.map((item) => [item.stage.id, item]))
+    for (const stage of masters) if (requiredStageIds.has(stage.id) && !byId.has(stage.id)) byId.set(stage.id, { stage, matchingNodesCount: 0, matchedNodeIds: [], isAlwaysVisible: Boolean(stage.is_builtin || stage.key.toLowerCase() === 'main') })
+    return Array.from(byId.values()).sort((a, b) => a.stage.sort_order - b.stage.sort_order)
+  }, [configWorkflow?.json_body, configWorkflow?.mappings, configSlotStates, stageMasters, slotDefinitions])
 
   useEffect(() => {
     const session = configDraftSession.current
     if (!configWorkflow || isFetchingConfigWorkflow || configWorkflow.id !== configWorkflowId || session.workflowId !== configWorkflowId || session.hydrated) return
     setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
+    setConfigSlotStates(hydrateSlotStates(configWorkflow.mapping_slot_states, configWorkflow.mappings, slotDefinitions))
     setConfigBaseModelId(configWorkflow.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
     configDraftSession.current = { ...session, hydrated: true, acknowledgedRevision: configDraftRevision.current }
-  }, [configWorkflow, configWorkflowId, isFetchingConfigWorkflow])
+  }, [configWorkflow, configWorkflowId, isFetchingConfigWorkflow, slotDefinitions])
 
   const saveWorkflowConfig = async (draft: ConfigDraft) => {
     const session = configDraftSession.current
@@ -173,7 +203,7 @@ export function WorkflowConnectionSection({
     const saveId = configWorkflowId
     const saveEpoch = configDraftSession.current.epoch
     const revision = configDraftRevision.current
-    const snapshot = { ...draft, mappings: draft.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })) }
+    const snapshot = { ...draft, mapping_slot_states: { ...(draft.mapping_slot_states ?? configSlotStates) }, mappings: draft.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })) }
     const sameSession = () => configDraftSession.current.epoch === saveEpoch && configDraftSession.current.workflowId === saveId
     const latestSnapshot = () => sameSession() && configDraftRevision.current === revision
     setConfigSaving(true)
@@ -183,6 +213,7 @@ export function WorkflowConnectionSection({
       await workflowsApi.update(saveId, {
         json_body: snapshot.json_body,
         mappings: snapshot.mappings,
+        mapping_slot_states: snapshot.mapping_slot_states,
         target_base_model_id: snapshot.target_base_model_id,
         default_applied_assets: snapshot.default_applied_assets,
       })
@@ -196,6 +227,7 @@ export function WorkflowConnectionSection({
       }
       if (latestSnapshot()) {
         setConfigMappings(snapshot.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
+        setConfigSlotStates(snapshot.mapping_slot_states)
         setConfigBaseModelId(snapshot.target_base_model_id ? String(snapshot.target_base_model_id) : '')
         setConfigPreview(null)
         setConfirmConfigApply(false)
@@ -212,7 +244,7 @@ export function WorkflowConnectionSection({
     }
   }
 
-  const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number }>) => {
+  const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number }>, updatedSlotStates?: WorkflowSlotStates) => {
     if (!configWorkflow) return
     const mappingsToSave = updatedMappings || configMappings
     const hasVariants = mappingMasters.some((m) => Array.isArray((m as any).variants) && (m as any).variants.length > 0) || configWorkflow.mappings.some((m) => m.variant_id != null)
@@ -224,6 +256,7 @@ export function WorkflowConnectionSection({
         node_id: m.node_id,
         ...(hasVariants && m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
       })),
+      mapping_slot_states: updatedSlotStates ?? configSlotStates,
       target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null,
       default_applied_assets: configWorkflow.default_applied_assets ?? null,
     })
@@ -233,7 +266,8 @@ export function WorkflowConnectionSection({
     configDraftRevision.current += 1
     setSaved(null)
     try {
-      const draft = validateConfig(JSON.parse(configText), mappingMasters.map((m) => m.id), baseModels.map((m) => m.id))
+      const parsedDraft = validateConfig(JSON.parse(configText), mappingMasters.map((m) => m.id), baseModels.map((m) => m.id))
+      const draft = { ...parsedDraft, mapping_slot_states: parsedDraft.mapping_slot_states ?? configSlotStates }
       setConfigPreview(draft)
       setConfirmConfigApply(false)
       setConfigError('')
@@ -651,6 +685,13 @@ export function WorkflowConnectionSection({
                               mappingMasters={mappingMasters}
                               onSaveMappings={handleSaveLinks}
                               currentMappings={configMappings}
+                              currentSlotStates={configSlotStates}
+                              onChangeSlotStates={(states) => {
+                                configDraftRevision.current += 1
+                                setSaved(null)
+                                setConfigError('')
+                                setConfigSlotStates(states)
+                              }}
                               onChangeMappings={(items) => {
                                 configDraftRevision.current += 1
                                 setSaved(null)
@@ -667,7 +708,7 @@ export function WorkflowConnectionSection({
                             {configDraftSession.current.hydrated && configDraftRevision.current !== configDraftSession.current.acknowledgedRevision && <p className="text-xs text-amber-300">変更は未保存です</p>}
                             {saved === 'workflow-config' && <p role="status" className="text-xs text-emerald-300">設定を保存しました</p>}
                             <div className="flex gap-2">
-                              <button type="button" onClick={() => setExportText(JSON.stringify({ format: 'prompt-surgeon-workflow-config', version: 1, name: configWorkflow.name, json_body: configWorkflow.json_body, mappings: configMappings, target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null, default_applied_assets: configWorkflow.default_applied_assets ?? null }, null, 2))} className="rounded border border-zinc-700 px-3 py-2 text-xs">設定JSONをエクスポート</button>
+                              <button type="button" onClick={() => setExportText(JSON.stringify({ format: 'prompt-surgeon-workflow-config', version: 1, name: configWorkflow.name, json_body: configWorkflow.json_body, mappings: configMappings, mapping_slot_states: configSlotStates, target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null, default_applied_assets: configWorkflow.default_applied_assets ?? null }, null, 2))} className="rounded border border-zinc-700 px-3 py-2 text-xs">設定JSONをエクスポート</button>
                               <button type="button" onClick={() => { setConfigPreview(null); setConfigError(''); setConfirmConfigApply(false) }} className="rounded border border-zinc-700 px-3 py-2 text-xs">プレビューを解除</button>
                             </div>
                             {exportText && <textarea aria-label="エクスポートJSON" readOnly value={exportText} className="min-h-28 w-full rounded bg-zinc-900 p-2 font-mono text-xs" />}

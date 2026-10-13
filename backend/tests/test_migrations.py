@@ -7,6 +7,42 @@ from app.migrations import run_migrations, MigrationRunner
 
 
 class TestDatabaseMigrations(unittest.TestCase):
+    def test_req358_db_AC_19_AC_26_AC_31_mapping_slot_state_columns_are_migrated_idempotently(self):
+        """[REQ-358/AC-19][REQ-358/AC-26][REQ-358/AC-31] 新規・旧DBの列と既定値を確認する。"""
+        from app.migrations.steps import ALL_MIGRATION_STEPS, step_030_mapping_slot_states
+
+        fresh_engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=fresh_engine)
+        with fresh_engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            steps = {(step.step_id, step.name) for step in ALL_MIGRATION_STEPS}
+            self.assertIn(("030", "mapping_slot_states"), steps)
+            step_030_mapping_slot_states(conn, inspector)
+            workflow_columns = {column["name"]: column for column in inspector.get_columns("workflows")}
+            history_columns = {column["name"]: column for column in inspector.get_columns("workflow_history")}
+            master_columns = {column["name"]: column for column in inspector.get_columns("mapping_masters")}
+            self.assertIn("mapping_slot_states", workflow_columns)
+            self.assertIn("mapping_slot_states", history_columns)
+            self.assertIn("default_enabled", master_columns)
+            conn.execute(sa.text("INSERT INTO workflows (name, json_body, created_at) VALUES ('fresh', '{}', CURRENT_TIMESTAMP)"))
+            conn.execute(sa.text("INSERT INTO mapping_masters (base_key, name, param_name, input_type, sort_order) VALUES ('seed', 'Seed', 'seed', 'int', 0)"))
+            self.assertEqual(conn.execute(sa.text("SELECT mapping_slot_states FROM workflows WHERE name = 'fresh'")).scalar_one(), "{}")
+            self.assertEqual(conn.execute(sa.text("SELECT default_enabled FROM mapping_masters WHERE param_name = 'seed'")).scalar_one(), 1)
+
+        legacy_engine = create_engine("sqlite:///:memory:")
+        with legacy_engine.begin() as conn:
+            conn.execute(sa.text("CREATE TABLE workflows (id INTEGER PRIMARY KEY, name TEXT NOT NULL, json_body TEXT NOT NULL)"))
+            conn.execute(sa.text("CREATE TABLE workflow_history (id INTEGER PRIMARY KEY, workflow_id INTEGER NOT NULL, json_body TEXT NOT NULL, mappings TEXT NOT NULL)"))
+            conn.execute(sa.text("CREATE TABLE mapping_masters (id INTEGER PRIMARY KEY, param_name TEXT NOT NULL, input_type TEXT NOT NULL)"))
+            conn.execute(sa.text("INSERT INTO workflows VALUES (1, 'legacy', '{}')"))
+            conn.execute(sa.text("INSERT INTO workflow_history VALUES (1, 1, '{}', '[]')"))
+            conn.execute(sa.text("INSERT INTO mapping_masters VALUES (1, 'legacy', 'int')"))
+            step_030_mapping_slot_states(conn, sa.inspect(conn))
+            step_030_mapping_slot_states(conn, sa.inspect(conn))
+            self.assertEqual(conn.execute(sa.text("SELECT mapping_slot_states FROM workflows WHERE id = 1")).scalar_one(), "{}")
+            self.assertEqual(conn.execute(sa.text("SELECT mapping_slot_states FROM workflow_history WHERE id = 1")).scalar_one(), "{}")
+            self.assertEqual(conn.execute(sa.text("SELECT default_enabled FROM mapping_masters WHERE id = 1")).scalar_one(), 1)
+
     def test_run_migrations_on_empty_db_is_idempotent(self):
         """新規作成されたDBに対して run_migrations を複数回実行しても安全かつエラーが発生しないこと（べき等性）"""
         test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})

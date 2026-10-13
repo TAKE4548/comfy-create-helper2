@@ -767,6 +767,28 @@ def step_029_workflow_mapping_v2_normalization(conn: Connection, inspector: Insp
     logger.info("Migrated: Step 029 workflow mapping v2 normalization applied successfully.")
 
 
+def step_030_mapping_slot_states(conn: Connection, inspector: Inspector) -> None:
+    table_names = set(inspector.get_table_names())
+
+    if "workflows" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("workflows")}
+        if "mapping_slot_states" not in columns:
+            conn.execute(sa.text("ALTER TABLE workflows ADD COLUMN mapping_slot_states TEXT NOT NULL DEFAULT '{}'"))
+            logger.info("Migrated: Added 'mapping_slot_states' column to 'workflows' table.")
+
+    if "workflow_history" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("workflow_history")}
+        if "mapping_slot_states" not in columns:
+            conn.execute(sa.text("ALTER TABLE workflow_history ADD COLUMN mapping_slot_states TEXT NOT NULL DEFAULT '{}'"))
+            logger.info("Migrated: Added 'mapping_slot_states' column to 'workflow_history' table.")
+
+    if "mapping_masters" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("mapping_masters")}
+        if "default_enabled" not in columns:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN default_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            logger.info("Migrated: Added 'default_enabled' column to 'mapping_masters' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -785,4 +807,5 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("027", "generation_jobs", step_027_generation_jobs),
     MigrationStep("028", "tag_subsets_thumbnail_path", step_028_tag_subsets_thumbnail_path),
     MigrationStep("029", "workflow_mapping_v2_normalization", step_029_workflow_mapping_v2_normalization),
+    MigrationStep("030", "mapping_slot_states", step_030_mapping_slot_states),
 ]

@@ -115,6 +115,33 @@ class TestWorkflowsCopy(unittest.TestCase):
         snapshots_count = self.db.query(models.Snapshot).filter(models.Snapshot.workflow_id == new_id).count()
         self.assertEqual(snapshots_count, 0)
 
+    def test_req358_workflow_copy_preserves_independent_mapping_slot_states(self):
+        """[REQ-358/AC-23] Copy preserves slot state and later edits remain workflow-local."""
+        original_states = {"m:1": True, "v:2": False}
+        self.wf.mapping_slot_states = json.dumps(original_states)
+        self.db.commit()
+
+        copied = self.client.post(
+            f"/api/workflows/{self.wf.id}/copy",
+            json={"name": "REQ-358 copied state"},
+        )
+        self.assertEqual(copied.status_code, 201, copied.text)
+        copied_id = copied.json()["id"]
+        self.assertEqual(
+            self.client.get(f"/api/workflows/{copied_id}").json()["mapping_slot_states"],
+            original_states,
+        )
+
+        edited = self.client.put(
+            f"/api/workflows/{copied_id}",
+            json={"mapping_slot_states": {"m:1": False}},
+        )
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(
+            self.client.get(f"/api/workflows/{self.wf.id}").json()["mapping_slot_states"],
+            original_states,
+        )
+
     def test_copy_workflow_with_bypass_profiles(self):
         # 1. BypassProfile を持つワークフローを作成
         wf = models.Workflow(name="Source WF", json_body="{}")

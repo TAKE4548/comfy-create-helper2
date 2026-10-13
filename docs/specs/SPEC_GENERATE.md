@@ -96,6 +96,12 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 - 固定値は10進整数 `0..4294967295`。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について `Math.floor(Math.random() * 2**32)` で生成する（重複を許す）。
 - 同期対象Seedは同期親の確定実値を子へ共有し、子側で再抽選・再加算しない。モードmetadataの欠落・破損・未知形式、およびgraph参照Seedは専用Seedとして曖昧に解釈せず、投入前に拒否する。snapshot復元は保存済みSeed値とmodeを固定値として扱い、復元時にランダム化しない。
 
+#### REQ-358 workflow mappingの無効化
+
+workflowのMapping設定で無効にしたstage slotは、生成要求に使うworkflow cloneからだけ除外する。対象state keyはvariant slotの `v:<variant_id>` またはlegacy slotの `m:<master_id>`。`mapping_slot_states` の値が明示 `false` のmappingだけを、生成用 `mappings` 配列から元の順序を保って除外する。state省略、key欠落、trueは有効として保持する。`null`またはvariant未指定は、masterのslotが1つ、または保存role/既知master legacy roleとcomputed_roleが一意に完全一致する場合にそのvariant keyを参照し、なければlegacy keyへfallbackする。identity用定義には非活性variantも含める。複数slotへnode title/stage名から推定しない。これにより保存前の旧mappingにもv:falseが効き、Seedを含む無効slotの生成入力を表示しない。
+
+無効slotのmappingはworkflowの保存データ、履歴、rollback、copy、exportに保持し、画面からの再有効化に備える。生成用cloneのfilterは元workflow、元mapping配列、record、state objectを変更しない。全件有効の場合も生成用workflowと配列は独立したcloneとする。無効mappingの除外はComfyUI graph自体のnodeやexecutionを停止せず、既存のparam/prompt/seed注入経路へ値を渡さないためのworkflow mapping選別である。
+
 ### 2-6. ワークフロープリセット (`PresetManagerPanel.tsx`, `usePresetState.ts`)
 
 - 現在のプロンプト値、パラメータ値、適用アセット、バッチ枚数、シード設定を一括で名前付きプリセットとして保存。

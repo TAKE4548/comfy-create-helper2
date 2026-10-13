@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Sparkles, Upload, FileText, CheckCircle2, AlertCircle, ListPlus } from 'lucide-react'
 import { workflowsApi } from '../api/domains/workflows'
 import type { WorkflowSummary } from '../api/types'
+import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { candidateConfidenceLabel, candidateTierBadgeClass } from '../utils/workflowCandidatePresentation'
 
 export interface WorkflowMappingPreviewProps {
   expectedClassTypes: string[]
@@ -9,15 +11,6 @@ export interface WorkflowMappingPreviewProps {
   primaryParamName: string
   fallbackParams: string[]
   onOpenNodePicker: (workflowJson: Record<string, unknown>) => void
-}
-
-interface MatchCandidate {
-  nodeId: string
-  title: string
-  classType: string
-  matchedParam: string
-  isFallback: boolean
-  matchedBy: string
 }
 
 export const WorkflowMappingPreview: React.FC<WorkflowMappingPreviewProps> = ({
@@ -116,88 +109,33 @@ export const WorkflowMappingPreview: React.FC<WorkflowMappingPreviewProps> = ({
   const evaluation = useMemo(() => {
     if (!workflowJson) return null
 
-    // Extract nodes from ComfyUI API format or UI graph format
-    let nodesObj: Record<string, any> = {}
-    if (workflowJson.nodes && Array.isArray(workflowJson.nodes)) {
-      // ComfyUI Web GUI Graph format
-      for (const n of workflowJson.nodes) {
-        if (n && n.id != null) {
-          nodesObj[String(n.id)] = {
-            class_type: n.type,
-            _meta: { title: n.title },
-            inputs: n.widgets_values != null ? { value: n.widgets_values } : {},
-          }
-        }
+    const ranked = rankWorkflowNodeCandidates(workflowJson, {
+      expectedClassTypes,
+      titlePatterns,
+      paramNames: [primaryParamName, ...fallbackParams].filter(Boolean),
+    }, '', [])
+    return ranked.map((candidate) => {
+      const nodeData = Array.isArray(workflowJson.nodes)
+        ? workflowJson.nodes.find((node: any) => String(node?.id) === candidate.id)
+        : (workflowJson as Record<string, any>)[candidate.id]
+      const inputs = nodeData?.inputs && typeof nodeData.inputs === 'object' ? nodeData.inputs : {}
+      const keys = Object.keys(inputs)
+      const matchedParam = [primaryParamName, ...fallbackParams].find((name) => name && keys.includes(name)) || ''
+      const isFallback = !!matchedParam && matchedParam !== primaryParamName
+      return {
+        nodeId: candidate.id,
+        title: candidate.title || candidate.classType || `Node ${candidate.id}`,
+        classType: candidate.classType,
+        matchedParam: matchedParam || (primaryParamName ? '(引数未合致)' : '(引数未指定)'),
+        isFallback,
+        matchedBy: candidate.reasons[0],
+        tier: candidate.tier,
+        stageRank: candidate.stageRank,
+        score: candidate.score,
+        recommended: candidate.recommended,
+        reasons: candidate.reasons,
       }
-    } else {
-      // ComfyUI API format (standard prompt workflow)
-      nodesObj = workflowJson as Record<string, any>
-    }
-
-    const matchedNodes: MatchCandidate[] = []
-    const cleanExpectedClasses = expectedClassTypes.map((c) => c.trim().toLowerCase()).filter(Boolean)
-    const cleanPatterns = titlePatterns.map((p) => p.trim().toLowerCase()).filter(Boolean)
-    const primaryClean = primaryParamName.trim().toLowerCase()
-    const fallbackCleans = fallbackParams.map((p) => p.trim().toLowerCase()).filter(Boolean)
-
-    for (const [nodeId, nodeData] of Object.entries(nodesObj)) {
-      if (!nodeData || typeof nodeData !== 'object') continue
-      const classType: string = String(nodeData.class_type || nodeData.type || '')
-      const title: string = String(
-        nodeData._meta?.title || nodeData.title || classType || `Node ${nodeId}`
-      )
-      const inputs = (nodeData.inputs && typeof nodeData.inputs === 'object') ? nodeData.inputs : {}
-
-      // 1. Class match
-      let classMatched = false
-      if (cleanExpectedClasses.length === 0) {
-        classMatched = true
-      } else {
-        classMatched = cleanExpectedClasses.includes(classType.toLowerCase().trim())
-      }
-
-      // 2. Title pattern match
-      let titleMatched = false
-      if (cleanPatterns.length === 0) {
-        titleMatched = true
-      } else {
-        titleMatched = cleanPatterns.some(
-          (pat) =>
-            title.toLowerCase().includes(pat) || classType.toLowerCase().includes(pat)
-        )
-      }
-
-      // 3. Parameter match (primary first, then fallback in order)
-      const inputKeys = Object.keys(inputs).map((k) => k.toLowerCase().trim())
-      let matchedParam = ''
-      let isFallback = false
-
-      if (primaryClean && inputKeys.includes(primaryClean)) {
-        matchedParam = primaryParamName.trim()
-        isFallback = false
-      } else if (fallbackCleans.length > 0) {
-        for (let i = 0; i < fallbackCleans.length; i++) {
-          if (inputKeys.includes(fallbackCleans[i])) {
-            matchedParam = fallbackParams[i]
-            isFallback = true
-            break
-          }
-        }
-      }
-
-      if (classMatched && titleMatched) {
-        matchedNodes.push({
-          nodeId,
-          title,
-          classType,
-          matchedParam: matchedParam || (primaryClean ? '(引数未合致)' : '(引数未指定)'),
-          isFallback,
-          matchedBy: titleMatched && classMatched ? 'クラス＆タイトル合致' : 'クラス合致',
-        })
-      }
-    }
-
-    return matchedNodes
+    })
   }, [workflowJson, expectedClassTypes, titlePatterns, primaryParamName, fallbackParams])
 
   return (
@@ -272,12 +210,12 @@ export const WorkflowMappingPreview: React.FC<WorkflowMappingPreviewProps> = ({
       {evaluation && (
         <div className="pt-2 border-t border-zinc-800/60 space-y-2">
           <div className="flex items-center justify-between text-[11px] text-zinc-400">
-            <span>合致ノード数: <strong className="text-white">{evaluation.length} 件</strong></span>
+            <span>候補ノード数: <strong className="text-white">{evaluation.length} 件</strong></span>
           </div>
 
           {evaluation.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2 text-center bg-zinc-900/40 rounded border border-zinc-800/40">
-              このワークフロー内に現在のマッピング条件に一致するノードは見つかりませんでした
+              このワークフロー内にノードは見つかりませんでした
             </div>
           ) : (
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
@@ -287,7 +225,7 @@ export const WorkflowMappingPreview: React.FC<WorkflowMappingPreviewProps> = ({
                   className="flex items-center justify-between p-2 rounded bg-zinc-900/80 border border-zinc-800 text-xs"
                 >
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                    <CheckCircle2 size={14} className={cand.recommended ? 'text-emerald-400 shrink-0' : 'text-zinc-500 shrink-0'} />
                     <div>
                       <div className="flex items-center gap-1.5 font-medium text-zinc-200">
                         <span>#{cand.nodeId}</span>
@@ -296,8 +234,15 @@ export const WorkflowMappingPreview: React.FC<WorkflowMappingPreviewProps> = ({
                       <div className="text-[10px] text-zinc-400 font-mono">
                         Class: {cand.classType}
                       </div>
+                      <div className="text-[10px] text-zinc-300" data-testid={`candidate-reasons-${cand.nodeId}`}>
+                        {cand.recommended ? '推奨' : '非推奨'} · {cand.reasons[0]} · {cand.stageRank === 0 ? '現在のステージに一致' : cand.stageRank === 2 ? '別ステージに一致' : 'ステージ不明'}
+                      </div>
                     </div>
                   </div>
+
+                  <span title="適合スコア" aria-label={`適合スコア ${candidateConfidenceLabel(cand)}`} className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${candidateTierBadgeClass(cand.tier)}`}>
+                    {candidateConfidenceLabel(cand)}
+                  </span>
 
                   <div className="text-right">
                     <div className="flex items-center gap-1 justify-end">

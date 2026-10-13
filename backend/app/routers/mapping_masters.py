@@ -3,7 +3,7 @@
 import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,7 @@ class MappingMasterV2Read(BaseModel):
     base_title_patterns: Optional[list[str]] = None
     fallback_param_names: Optional[list[str]] = None
     sort_order: int
+    default_enabled: bool = True
     variants: list[MappingVariantRead] = []
 
     # Legacy compatibility fields
@@ -66,7 +67,15 @@ class MappingMasterUpdate(BaseModel):
     base_title_patterns: Optional[list[str]] = None
     fallback_param_names: Optional[list[str]] = None
     sort_order: Optional[int] = None
+    default_enabled: StrictBool | None = None
     variants: Optional[list[MappingVariantUpdateItem]] = None
+
+    @field_validator("default_enabled", mode="before")
+    @classmethod
+    def reject_null_default_enabled(cls, value):
+        if value is None:
+            raise ValueError("default_enabled cannot be null")
+        return value
 
     # Legacy fields
     role: Optional[str] = None
@@ -87,6 +96,7 @@ class MappingMasterCreatePayload(BaseModel):
     base_title_patterns: Optional[list[str]] = None
     fallback_param_names: Optional[list[str]] = None
     sort_order: Optional[int] = None
+    default_enabled: StrictBool = True
     variants: Optional[list[MappingVariantUpdateItem]] = None
 
 
@@ -121,6 +131,7 @@ def create_master(payload: MappingMasterCreatePayload, db: Session = Depends(get
         base_title_patterns=json.dumps(base_title_patterns) if base_title_patterns else None,
         fallback_param_names=json.dumps(payload.fallback_param_names) if payload.fallback_param_names else None,
         sort_order=sort_order,
+        default_enabled=payload.default_enabled,
         # Legacy fields
         role=role,
         display_name=display_name,
@@ -218,6 +229,8 @@ def update_master(master_id: int, payload: MappingMasterUpdate, db: Session = De
         mm.fallback_param_names = json.dumps(payload.fallback_param_names) if payload.fallback_param_names else None
     if payload.sort_order is not None:
         mm.sort_order = payload.sort_order
+    if payload.default_enabled is not None:
+        mm.default_enabled = payload.default_enabled
 
     # Legacy fields sync
     mm.role = new_role or new_base_key
@@ -334,6 +347,7 @@ def _to_schema_v2(mm: models.MappingMaster) -> MappingMasterV2Read:
         base_title_patterns=base_title_patterns,
         fallback_param_names=json.loads(mm.fallback_param_names) if mm.fallback_param_names else None,
         sort_order=mm.sort_order,
+        default_enabled=mm.default_enabled,
         variants=variants,
         # backward compatibility
         role=mm.role or effective_base_key,
@@ -353,4 +367,5 @@ def _to_schema(mm: models.MappingMaster) -> schemas.MappingMasterRead:
         title_patterns=json.loads(mm.title_patterns) if mm.title_patterns else None,
         fallback_param_names=json.loads(mm.fallback_param_names) if mm.fallback_param_names else None,
         sort_order=mm.sort_order,
+        default_enabled=mm.default_enabled,
     )

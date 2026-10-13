@@ -65,6 +65,7 @@ export function GeneratePage() {
     rescanOpen, setRescanOpen,
     selectedWorkflowId, setSelectedWorkflowId,
     workflow,
+    rawWorkflow,
     qc,
     uploadModalOpen, setUploadModalOpen, uploadedJson, uploadedFileName,
     isSaveModalOpen, setIsSaveModalOpen,
@@ -101,7 +102,7 @@ export function GeneratePage() {
 
       {/* Modals & Overlays */}
       {rescanOpen && workflow && (
-        <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} existingMappings={workflow.mappings} onClose={() => setRescanOpen(false)}
+        <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} existingMappings={rawWorkflow?.mappings ?? workflow.mappings} onClose={() => setRescanOpen(false)}
           onSaved={() => { qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] }); setRescanOpen(false) }} />
       )}
       {uploadModalOpen && uploadedJson && (

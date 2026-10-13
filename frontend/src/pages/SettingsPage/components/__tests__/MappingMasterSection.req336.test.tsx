@@ -150,6 +150,80 @@ describe('REQ-336-T5: MappingMasterSection & Modals', () => {
   })
 
   describe('MappingMasterEditModal', () => {
+    it('REQ-358/MASTER_UI REQ-358/AC-26 saves the new mapping default-enabled choice', () => {
+      const onSave = vi.fn()
+      renderWithClient(
+        <MappingMasterEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          master={null}
+          groups={mockGroups}
+          stages={mockStages}
+          onSave={onSave}
+        />
+      )
+
+      const defaultEnabled = screen.getByRole('checkbox', { name: '新規マッピングで基本有効' })
+      expect(defaultEnabled).toBeChecked()
+      expect(screen.getByText('既存のマッピングには影響しません。')).toBeInTheDocument()
+      fireEvent.click(defaultEnabled)
+      fireEvent.change(screen.getByPlaceholderText('例: Positive Prompt'), { target: { value: 'Denoise' } })
+      fireEvent.change(screen.getByPlaceholderText('例: text, steps, cfg'), { target: { value: 'denoise' } })
+      fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ default_enabled: false }))
+    })
+
+    it('REQ-358/MASTER_UI REQ-358/AC-27 treats legacy defaults as enabled and locks the control while saving', () => {
+      const onSave = vi.fn()
+      renderWithClient(
+        <MappingMasterEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          master={mockMasters[0]}
+          groups={mockGroups}
+          stages={mockStages}
+          onSave={onSave}
+          isPending={true}
+        />
+      )
+
+      const defaultEnabled = screen.getByRole('checkbox', { name: '新規マッピングで基本有効' })
+      expect(defaultEnabled).toBeChecked()
+      expect(defaultEnabled).toBeDisabled()
+    })
+
+    it('REQ-358/MASTER_UI REQ-358/AC-30 preserves an existing disabled default on save', () => {
+      const onSave = vi.fn()
+      renderWithClient(
+        <MappingMasterEditModal
+          isOpen={true}
+          onClose={vi.fn()}
+          master={{ ...mockMasters[0], default_enabled: false }}
+          groups={mockGroups}
+          stages={mockStages}
+          onSave={onSave}
+        />
+      )
+
+      expect(screen.getByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
+      fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ default_enabled: false }))
+    })
+
+    it('REQ-358/MASTER_UI REQ-358/AC-28 keeps disabled masters visible and editable', async () => {
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([
+        { ...mockMasters[0], default_enabled: false },
+        mockMasters[1],
+      ])
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+
+      expect(await screen.findByText('新規マッピングで基本無効')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Positive Prompt を編集' }))
+      expect(await screen.findByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
+    })
+
     it('supports chip input, candidate palette click, variant toggles, and submit', async () => {
       const onSave = vi.fn()
       const onClose = vi.fn()

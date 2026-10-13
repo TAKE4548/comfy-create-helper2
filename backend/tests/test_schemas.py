@@ -2,6 +2,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 from types import SimpleNamespace
+from app.schemas.workflow import MappingMasterBase, WorkflowCreate, WorkflowRead, WorkflowUpdate
 
 from app.schemas import (
     SnapshotCreate,
@@ -13,6 +14,52 @@ from app.schemas import (
     TagSetCreate,
     TagSetRead,
 )
+
+
+def test_req358_schema_AC_19_slot_state_contract_defaults_and_strict_values():
+    """[REQ-358/AC-19] Workflow slot states default empty and require strict booleans."""
+    create = WorkflowCreate(name="workflow", json_body={})
+    assert create.mapping_slot_states == {}
+    assert WorkflowCreate(name="workflow", json_body={}, mapping_slot_states={"v:1": False}).mapping_slot_states == {"v:1": False}
+    with pytest.raises(ValidationError):
+        WorkflowCreate(name="workflow", json_body={}, mapping_slot_states={"v:1": 1})
+
+
+@pytest.mark.parametrize("key", ["v:0", "m:01", "x:1", "v:-1", "m:abc"])
+def test_req358_schema_AC_19_slot_state_keys_must_be_valid(key):
+    """[REQ-358/AC-19] Slot state keys use positive variant or legacy master IDs."""
+    with pytest.raises(ValidationError):
+        WorkflowCreate(name="workflow", json_body={}, mapping_slot_states={key: True})
+
+
+def test_req358_schema_AC_19_update_distinguishes_omitted_and_empty_slot_states():
+    """[REQ-358/AC-19] Omitted slot states stay unset while an empty object replaces them."""
+    assert "mapping_slot_states" not in WorkflowUpdate().model_fields_set
+    update = WorkflowUpdate(mapping_slot_states={})
+    assert update.mapping_slot_states == {}
+    with pytest.raises(ValidationError):
+        WorkflowUpdate(mapping_slot_states=None)
+
+
+def test_req358_schema_AC_19_read_parses_slot_state_json():
+    """[REQ-358/AC-19] Read schemas normalize persisted slot state JSON objects."""
+    now = datetime.now()
+    read = WorkflowRead.model_validate({
+        "id": 1, "name": "workflow", "json_body": {}, "created_at": now,
+        "mapping_slot_states": '{"v:2": false}',
+    })
+    assert read.mapping_slot_states == {"v:2": False}
+    with pytest.raises(ValidationError):
+        WorkflowRead.model_validate({
+            "id": 1, "name": "workflow", "json_body": {}, "created_at": now,
+            "mapping_slot_states": "[]",
+        })
+
+
+def test_req358_schema_AC_31_mapping_master_default_enabled_defaults_true():
+    """[REQ-358/AC-31] Legacy mapping masters default to enabled."""
+    master = MappingMasterBase(role="main", param_name="seed", input_type="INT", display_name="Seed")
+    assert master.default_enabled is True
 
 # 1. バリデーション成功テスト (Valid Data Verification)
 def test_snapshot_create_validation_success():

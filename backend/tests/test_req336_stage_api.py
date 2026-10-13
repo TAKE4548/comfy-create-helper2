@@ -72,8 +72,8 @@ class TestReq336StageAPI(unittest.TestCase):
         self.assertEqual(res_get.status_code, 200)
         self.assertEqual(res_get.json()["id"], stage_id)
 
-    def test_update_and_deactivate_cascade_to_variants(self):
-        """Test updating stage and verifying that deactivation disables variants."""
+    def test_update_and_deactivate_reactivate_preserves_assignments(self):
+        """REQ-358/B2: stage bulk off/on restores variants without losing workflow links."""
         res_post = self.client.post("/api/stage-masters", json={
             "key": "detail",
             "name": "Detail",
@@ -92,8 +92,26 @@ class TestReq336StageAPI(unittest.TestCase):
         db.flush()
         variant = models.MappingVariant(master_id=master.id, stage_id=stage_id, is_enabled=True)
         db.add(variant)
+        sibling_master = models.MappingMaster(group_id=group.id, base_key="steps", name="Steps",
+                                             param_name="steps", input_type="int")
+        other_stage = models.StageMaster(key="other", name="Other", suffix="_other", is_active=True)
+        db.add_all([sibling_master, other_stage])
+        db.flush()
+        sibling = models.MappingVariant(master_id=sibling_master.id, stage_id=stage_id, is_enabled=False)
+        other_variant = models.MappingVariant(master_id=master.id, stage_id=other_stage.id, is_enabled=False)
+        db.add_all([sibling, other_variant])
         db.commit()
         variant_id = variant.id
+        sibling_id, other_variant_id = sibling.id, other_variant.id
+        workflow = models.Workflow(name="Stage round trip", json_body='{"44":{"class_type":"Sampler"}}',
+                                   mapping_slot_states=json.dumps({f"v:{variant_id}": True}))
+        db.add(workflow)
+        db.flush()
+        mapping = models.WorkflowMapping(workflow_id=workflow.id, master_id=master.id,
+                                         variant_id=variant_id, node_id="44")
+        db.add(mapping)
+        db.commit()
+        workflow_id, mapping_id = workflow.id, mapping.id
         db.close()
 
         # Update stage to inactive
@@ -114,9 +132,34 @@ class TestReq336StageAPI(unittest.TestCase):
 
         # Check include_inactive filter in list
         res_all = self.client.get("/api/stage-masters?include_inactive=true")
-        self.assertEqual(len(res_all.json()), 1)
+        self.assertEqual(len(res_all.json()), 2)
         res_active_only = self.client.get("/api/stage-masters?include_inactive=false")
-        self.assertEqual(len(res_active_only.json()), 0)
+        self.assertEqual([stage["key"] for stage in res_active_only.json()], ["other"])
+
+        # Reactivation is the inverse bulk operation: every role in this stage returns.
+        restored = self.client.put(f"/api/stage-masters/{stage_id}", json={"is_active": True})
+        self.assertEqual(restored.status_code, 200)
+        db = TestingSessionLocal()
+        variant = db.get(models.MappingVariant, variant_id)
+        self.assertTrue(variant.is_enabled)
+        self.assertTrue(db.get(models.MappingVariant, sibling_id).is_enabled)
+        self.assertFalse(db.get(models.MappingVariant, other_variant_id).is_enabled)
+        mapping = db.get(models.WorkflowMapping, mapping_id)
+        self.assertEqual((mapping.workflow_id, mapping.variant_id, mapping.node_id),
+                         (workflow_id, variant_id, "44"))
+        self.assertEqual(json.loads(db.get(models.Workflow, workflow_id).mapping_slot_states),
+                         {f"v:{variant_id}": True})
+
+        # Saving an already-active stage must not overwrite an individual role override.
+        variant.is_enabled = False
+        db.commit()
+        db.close()
+        self.client.put(f"/api/stage-masters/{stage_id}",
+                        json={"is_active": True, "name": "Detail renamed"})
+        db = TestingSessionLocal()
+        self.assertFalse(db.get(models.MappingVariant, variant_id).is_enabled)
+        self.assertEqual(db.get(models.WorkflowMapping, mapping_id).node_id, "44")
+        db.close()
 
     def test_reorder_stages(self):
         """Test reordering stage masters."""

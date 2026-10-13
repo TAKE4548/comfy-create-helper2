@@ -1,9 +1,19 @@
 """Workflow and MappingMaster Pydantic schemas."""
 
 import json
+import re
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+
+
+def _validate_mapping_slot_state_keys(value: Any) -> Any:
+    if isinstance(value, dict) and any(
+        not isinstance(key, str) or re.fullmatch(r"[mv]:[1-9][0-9]*", key) is None
+        for key in value
+    ):
+        raise ValueError("mapping_slot_states keys must match v:<positive ID> or m:<positive ID>")
+    return value
 
 
 # ─── MappingMaster ────────────────────────────────────────────────
@@ -17,6 +27,7 @@ class MappingMasterBase(BaseModel):
     title_patterns: Optional[list[str]] = None
     fallback_param_names: Optional[list[str]] = None
     sort_order: int = 0
+    default_enabled: StrictBool = True
 
 
 class MappingMasterCreate(MappingMasterBase):
@@ -78,6 +89,12 @@ class WorkflowCreate(BaseModel):
     json_body: dict[str, Any]
     mappings: list[WorkflowMappingCreate] = []
     target_base_model_id: Optional[int] = None
+    mapping_slot_states: dict[str, StrictBool] = Field(default_factory=dict)
+
+    @field_validator("mapping_slot_states")
+    @classmethod
+    def validate_mapping_slot_state_keys(cls, value: Any) -> Any:
+        return _validate_mapping_slot_state_keys(value)
 
 
 class WorkflowSummary(BaseModel):
@@ -97,6 +114,17 @@ class WorkflowRead(BaseModel):
     default_applied_assets: Optional[str] = None
     target_base_model_id: Optional[int] = None
     created_at: datetime
+    mapping_slot_states: dict[str, StrictBool] = Field(default_factory=dict)
+
+    @field_validator("mapping_slot_states", mode="before")
+    @classmethod
+    def parse_mapping_slot_states(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("mapping_slot_states must be valid JSON") from exc
+        return _validate_mapping_slot_state_keys(value)
 
 
 class WorkflowUpdate(BaseModel):
@@ -105,6 +133,19 @@ class WorkflowUpdate(BaseModel):
     mappings: Optional[list[WorkflowMappingCreate]] = None
     default_applied_assets: Optional[str] = None
     target_base_model_id: Optional[int] = None
+    mapping_slot_states: dict[str, StrictBool] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_null_mapping_slot_states(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "mapping_slot_states" in value and value["mapping_slot_states"] is None:
+            raise ValueError("mapping_slot_states cannot be null")
+        return value
+
+    @field_validator("mapping_slot_states")
+    @classmethod
+    def validate_mapping_slot_state_keys(cls, value: Any) -> Any:
+        return _validate_mapping_slot_state_keys(value)
 
 
 class WorkflowCopyRequest(BaseModel):

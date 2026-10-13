@@ -1,0 +1,623 @@
+{
+  "initial": {
+    "title": "Prompt Surgeon",
+    "workflow": "358",
+    "text": "Generate\nStudio\nLoRAs\nTags\nHistory\nSettings\n\nv2.0.0\n\nGenerate\nREADY\n新しいワークフローを追加 (Upload New...)\nREQ-358 isolated fixture\nAnima特化\nCPU 53%\nRAM 80%\nGPU 6%\nVRAM 51%\nSet 1\nSet 1\nAdd Set\n管理\nLLM Audit\nPARAMETERS\nMain\nSampler Steps\nFaceDetailer\nFace Detailer Steps\nFace Detailer Seed\n固定\nBatch Size\nPARAM SYNC\nSettings\n\nNo sync groups. Open Settings to add.\n\nBYPASSES\nSettings\n\nNo profiles. Open Settings to add.\n\nNo image yet\n\nReady\n0%\nQueue: 0\nGenerate Batch\nSave Snapshot",
+    "globalSeedVisible": false,
+    "seedLikeInputs": [
+      {
+        "id": "seed-input-3",
+        "value": "222"
+      }
+    ],
+    "storedGlobalSeed": "987654321",
+    "errors": []
+  },
+  "initialModal": {
+    "text": "Generate\nStudio\nLoRAs\nTags\nHistory\nSettings\n\nv2.0.0\n\nGenerate\nREADY\n新しいワークフローを追加 (Upload New...)\nREQ-358 isolated fixture\nAnima特化\nCPU 57%\nRAM 80%\nGPU 6%\nVRAM 51%\nSet 1\nSet 1\nAdd Set\n管理\nLLM Audit\nPARAMETERS\nMain\nSampler Steps\nFaceDetailer\nFace Detailer Steps\nFace Detailer Seed\n固定\nBatch Size\nPARAM SYNC\nSettings\n\nNo sync groups. Open Settings to add.\n\nBYPASSES\nSettings\n\nNo profiles. Open Settings to add.\n\nNo image yet\n\nReady\n0%\nQueue: 0\nGenerate Batch\nSave Snapshot\nマッピング再スキャン\nマッピング設定\n\nチェックは利用を許可する設定です。未割当はノードを選択すると利用され、無効な割り当ては保持されます。\n\nMain\n一部無効\nFaceDetailer\nUpscaler\nSampler Steps\nMain\nMain Sampler · KSampler · ID 1\n74%\n利用許可\nSampler Steps\nFaceDetailer\nFace Detailer · KSampler · ID 2\n100%\n利用許可\nSeed\nFaceDetailer\nFace Detailer · KSampler · ID 2\n100%\n利用許可\nSampler Seed\nMain\n無効\nMain Sampler · KSampler · ID 1\n74%\n無効\nSampler Seed\nUpscaler\n未割当\n利用許可\nUnassigned\nMain\n未割当\n利用許可\n\n利用中: 3 件（無効な割り当ても保持）\n\nキャンセル\n適用・保存",
+    "check": [
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Mainステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "FaceDetailerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Upscalerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Seed有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Unassigned有効"
+      }
+    ],
+    "selectButtons": []
+  },
+  "selectorState": {
+    "rows": [
+      {
+        "index": 0,
+        "value": "1",
+        "readOnly": false,
+        "disabled": false,
+        "field": "Main Sampler · KSampler · ID 1\n74%",
+        "classes": "relative"
+      },
+      {
+        "index": 1,
+        "value": "2",
+        "readOnly": false,
+        "disabled": false,
+        "field": "Face Detailer · KSampler · ID 2\n100%",
+        "classes": "relative"
+      },
+      {
+        "index": 2,
+        "value": "2",
+        "readOnly": false,
+        "disabled": false,
+        "field": "Face Detailer · KSampler · ID 2\n100%",
+        "classes": "relative"
+      },
+      {
+        "index": 3,
+        "value": "1",
+        "readOnly": true,
+        "disabled": false,
+        "field": "Main Sampler · KSampler · ID 1\n74%",
+        "classes": "relative"
+      },
+      {
+        "index": 4,
+        "value": "",
+        "readOnly": false,
+        "disabled": false,
+        "field": "",
+        "classes": "relative"
+      },
+      {
+        "index": 5,
+        "value": "",
+        "readOnly": false,
+        "disabled": false,
+        "field": "",
+        "classes": "relative"
+      }
+    ],
+    "active": "<input aria-label=\"ノードID\" class=\"w-full min-w-0 bg-transparent outline-none \" value=\"2\">",
+    "listbox": "<div role=\"listbox\" aria-label=\"候補ノード\" class=\"absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded border border-zinc-700 bg-zinc-950 shadow-xl\"><button type=\"button\" role=\"option\" aria-selected=\"true\" class=\"flex w-full items-start gap-2 px-2 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800 focus:bg-zinc-800\"><span title=\"適合スコア\" class=\"inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-semibold bg-emerald-950 text-emerald-200 ring-1 ring-emerald-700\">100%</span><span class=\"min-w-0 flex-1\"><span class=\"block truncate\">Face Detailer · KSampler · ID 2</span><span class=\"block text-xs text-zinc-300\">class-and-title-exact · 現在のステージに一致 · 推奨</span></span></button><button type=\"button\" role=\"option\" aria-selected=\"false\" class=\"flex w-full items-start gap-2 px-2 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800 focus:bg-zinc-800\"><span title=\"適合スコア\" class=\"inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-semibold bg-sky-950 text-sky-200 ring-1 ring-sky-700\">62%</span><span class=\"min-w-0 flex-1\"><span class=\"block truncate\">Hand Detailer · KSampler · ID 3</span><span class=\"block text-xs text-zinc-300\">class-match</span></span></butt",
+    "options": [
+      {
+        "text": "100%\nFace Detailer · KSampler · ID 2\nclass-and-title-exact · 現在のステージに一致 · 推奨",
+        "badge": "100%"
+      },
+      {
+        "text": "62%\nHand Detailer · KSampler · ID 3\nclass-match",
+        "badge": "62%"
+      },
+      {
+        "text": "55%\nMain Sampler · KSampler · ID 1\nclass-match",
+        "badge": "55%"
+      }
+    ]
+  },
+  "disabledBeforeSave": {
+    "stage": false,
+    "checkboxes": [
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Mainステージ有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "FaceDetailerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Upscalerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Seed有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Unassigned有効"
+      }
+    ],
+    "labels": [
+      "<label class=\"text-xs text-zinc-400 truncate\">Face Detailer Steps</label>",
+      "<label for=\"seed-input-3\" class=\"text-xs text-zinc-400 truncate\">Face Detailer Seed</label>",
+      "<label class=\"flex items-center gap-2 text-sm font-medium text-zinc-200\"><input type=\"checkbox\" aria-label=\"FaceDetailerステージ有効\" aria-checked=\"false\" checked=\"\">FaceDetailer</label>"
+    ]
+  },
+  "reopened": {
+    "text": "Generate\nStudio\nLoRAs\nTags\nHistory\nSettings\n\nv2.0.0\n\nGenerate\nREADY\n新しいワークフローを追加 (Upload New...)\nREQ-358 isolated fixture\nAnima特化\nCPU 43%\nRAM 81%\nGPU 6%\nVRAM 51%\nSet 1\nSet 1\nAdd Set\n管理\nLLM Audit\nPARAMETERS\nMain\nSampler Steps\nBatch Size\nPARAM SYNC\nSettings\n\nNo sync groups. Open Settings to add.\n\nBYPASSES\nSettings\n\nNo profiles. Open Settings to add.\n\nNo image yet\n\nReady\n0%\nQueue: 0\nGenerate Batch\nSave Snapshot\nマッピング再スキャン\nマッピング設定\n\nチェックは利用を許可する設定です。未割当はノードを選択すると利用され、無効な割り当ては保持されます。\n\nMain\n一部無効\nFaceDetailer\nUpscaler\nSampler Steps\nMain\nMain Sampler · KSampler · ID 1\n74%\n利用許可\nSampler Steps\nFaceDetailer\n無効\nFace Detailer · KSampler · ID 2\n100%\n無効\nSeed\nFaceDetailer\n無効\nFace Detailer · KSampler · ID 2\n100%\n無効\nSampler Seed\nMain\n無効\nMain Sampler · KSampler · ID 1\n74%\n無効\nSampler Seed\nUpscaler\n未割当\n利用許可\nUnassigned\nMain\n未割当\n利用許可\n\n利用中: 1 件（無効な割り当ても保持）\n\nキャンセル\n適用・保存",
+    "stage": false,
+    "checkboxes": [
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": null
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Mainステージ有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "FaceDetailerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Upscalerステージ有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Sampler Steps有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Seed有効"
+      },
+      {
+        "checked": false,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Sampler Seed有効"
+      },
+      {
+        "checked": true,
+        "disabled": false,
+        "aria": "Unassigned有効"
+      }
+    ],
+    "selectors": [
+      "VRAM 51%◀"
+    ]
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/param-sync-groups"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/param-sync-groups"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358/bypass-profiles"
+    },
+    {
+      "method": "GET",
+      "path": "/stage-masters"
+    },
+    {
+      "method": "GET",
+      "path": "/mapping-masters"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358"
+    },
+    {
+      "method": "GET",
+      "path": "/base-models"
+    },
+    {
+      "method": "GET",
+      "path": "/param-type-masters"
+    },
+    {
+      "method": "GET",
+      "path": "/comfy/object_info"
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets"
+    },
+    {
+      "method": "GET",
+      "path": "/loras"
+    },
+    {
+      "method": "GET",
+      "path": "/tag-sets"
+    },
+    {
+      "method": "GET",
+      "path": "/snapshots"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state"
+    },
+    {
+      "method": "GET",
+      "path": "/comfy/object_info"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state"
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358"
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue"
+    },
+    {
+      "method": "GET",
+      "path": "/comfy/history"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/state"
+    },
+    {
+      "method": "GET",
+      "path": "/generation/upstream-queue"
+    },
+    {
+      "method": "PUT",
+      "path": "/workflows/358"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358"
+    },
+    {
+      "method": "GET",
+      "path": "/workflows/358"
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan"
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-presets"
+    }
+  ],
+  "websocketRequests": [
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5173"
+  ],
+  "errors": [],
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "body": {
+        "json_body": {
+          "1": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Main Sampler"
+            },
+            "inputs": {
+              "steps": 20,
+              "seed": 111
+            }
+          },
+          "2": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Face Detailer"
+            },
+            "inputs": {
+              "steps": 15,
+              "seed": 222
+            }
+          },
+          "3": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Hand Detailer"
+            },
+            "inputs": {
+              "steps": 12,
+              "seed": 333
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "body": {
+        "json_body": {
+          "1": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Main Sampler"
+            },
+            "inputs": {
+              "steps": 20,
+              "seed": 111
+            }
+          },
+          "2": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Face Detailer"
+            },
+            "inputs": {
+              "steps": 15,
+              "seed": 222
+            }
+          },
+          "3": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Hand Detailer"
+            },
+            "inputs": {
+              "steps": 12,
+              "seed": 333
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/workflows/358",
+      "body": {
+        "mappings": [
+          {
+            "master_id": 1,
+            "node_id": "1",
+            "variant_id": 101
+          },
+          {
+            "master_id": 1,
+            "node_id": "2",
+            "variant_id": 102
+          },
+          {
+            "master_id": 2,
+            "node_id": "2",
+            "variant_id": 103
+          },
+          {
+            "master_id": 3,
+            "node_id": "1",
+            "variant_id": 104
+          }
+        ],
+        "mapping_slot_states": {
+          "v:101": true,
+          "v:102": false,
+          "v:103": false,
+          "v:104": false,
+          "v:105": true,
+          "v:106": true
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "body": {
+        "json_body": {
+          "1": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Main Sampler"
+            },
+            "inputs": {
+              "steps": 20,
+              "seed": 111
+            }
+          },
+          "2": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Face Detailer"
+            },
+            "inputs": {
+              "steps": 15,
+              "seed": 222
+            }
+          },
+          "3": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Hand Detailer"
+            },
+            "inputs": {
+              "steps": 12,
+              "seed": 333
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/workflows/scan",
+      "body": {
+        "json_body": {
+          "1": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Main Sampler"
+            },
+            "inputs": {
+              "steps": 20,
+              "seed": 111
+            }
+          },
+          "2": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Face Detailer"
+            },
+            "inputs": {
+              "steps": 15,
+              "seed": 222
+            }
+          },
+          "3": {
+            "class_type": "KSampler",
+            "_meta": {
+              "title": "Hand Detailer"
+            },
+            "inputs": {
+              "steps": 12,
+              "seed": 333
+            }
+          }
+        }
+      }
+    }
+  ]
+}

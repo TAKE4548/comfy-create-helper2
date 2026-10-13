@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { validateConfig } from '../WorkflowConnectionSection'
 
-describe('WorkflowConnectionSection - validateConfig', () => {
+describe('WorkflowConnectionSection - validateConfig REQ-358/CONFIG', () => {
   const validBaseWorkflowJson = {
     format: 'prompt-surgeon-workflow-config',
     version: 1,
@@ -100,5 +100,27 @@ describe('WorkflowConnectionSection - validateConfig', () => {
     }
 
     expect(() => validateConfig(config, masterIds, modelIds)).toThrow('対応付けのマスターID・ノードIDが不正です')
+  })
+
+  it('[REQ-358/AC-19] mapping_slot_statesが省略された旧JSONは状態フィールドを追加しない', () => {
+    const result = validateConfig(validBaseWorkflowJson, masterIds, modelIds)
+    expect(result).not.toHaveProperty('mapping_slot_states')
+  })
+
+  it('[REQ-358/AC-19] 明示された空のmapping_slot_statesを置換値として保持する', () => {
+    const result = validateConfig({ ...validBaseWorkflowJson, mapping_slot_states: {} }, masterIds, modelIds)
+    expect(result.mapping_slot_states).toEqual({})
+  })
+
+  it('[REQ-358/AC-19] 有効なslot stateをJSON往復用に保持する', () => {
+    const states = { 'm:1': false, 'v:42': true }
+    const result = validateConfig({ ...validBaseWorkflowJson, mapping_slot_states: states }, masterIds, modelIds)
+    expect(result.mapping_slot_states).toEqual(states)
+  })
+
+  it('[REQ-358/AC-19] null・非boolean・不正keyのslot stateを拒否する', () => {
+    for (const states of [null, { 'm:1': 0 }, { 'x:1': true }, { 'v:0': false }]) {
+      expect(() => validateConfig({ ...validBaseWorkflowJson, mapping_slot_states: states }, masterIds, modelIds)).toThrow('対応付け状態が不正です')
+    }
   })
 })

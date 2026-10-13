@@ -293,3 +293,66 @@ class TestReq336MappingMastersAPI(unittest.TestCase):
         res_g2 = self.client.get(f"/api/mapping-masters?group_id={g2.id}")
         self.assertEqual(len(res_g2.json()), 1)
         self.assertEqual(res_g2.json()[0]["base_key"], "steps")
+
+    def test_req358_master_AC_26_default_enabled_crud(self):
+        """[REQ-358/AC-26] Master default_enabled defaults true and round-trips false."""
+        default_res = self.client.post("/api/mapping-masters", json={
+            "base_key": "default_role",
+            "name": "Default Role",
+            "param_name": "default_value",
+            "input_type": "int",
+        })
+        self.assertEqual(default_res.status_code, 201)
+        self.assertTrue(default_res.json()["default_enabled"])
+
+        disabled_res = self.client.post("/api/mapping-masters", json={
+            "base_key": "disabled_role",
+            "name": "Disabled Role",
+            "param_name": "disabled_value",
+            "input_type": "int",
+            "default_enabled": False,
+        })
+        self.assertEqual(disabled_res.status_code, 201)
+        disabled_id = disabled_res.json()["id"]
+        self.assertFalse(disabled_res.json()["default_enabled"])
+        self.assertFalse(self.client.get(f"/api/mapping-masters/{disabled_id}").json()["default_enabled"])
+        listed = self.client.get("/api/mapping-masters").json()
+        self.assertIn(disabled_id, [row["id"] for row in listed])
+        self.assertFalse(next(row for row in listed if row["id"] == disabled_id)["default_enabled"])
+
+    def test_req358_master_AC_28_default_enabled_update_presence(self):
+        """[REQ-358/AC-28] Omitted update retains value; explicit booleans replace it."""
+        created = self.client.post("/api/mapping-masters", json={
+            "base_key": "role",
+            "name": "Role",
+            "param_name": "value",
+            "input_type": "int",
+            "default_enabled": False,
+        }).json()
+        master_id = created["id"]
+
+        omitted = self.client.put(f"/api/mapping-masters/{master_id}", json={"name": "Renamed"})
+        self.assertEqual(omitted.status_code, 200)
+        self.assertFalse(omitted.json()["default_enabled"])
+
+        enabled = self.client.put(f"/api/mapping-masters/{master_id}", json={"default_enabled": True})
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(enabled.json()["default_enabled"])
+
+    def test_req358_master_AC_30_default_enabled_rejects_null_and_non_boolean(self):
+        """[REQ-358/AC-30] API rejects null and non-boolean default_enabled values."""
+        created = self.client.post("/api/mapping-masters", json={
+            "base_key": "role",
+            "name": "Role",
+            "param_name": "value",
+            "input_type": "int",
+        }).json()
+        master_id = created["id"]
+        self.assertEqual(self.client.put(f"/api/mapping-masters/{master_id}", json={"default_enabled": None}).status_code, 422)
+        self.assertEqual(self.client.put(f"/api/mapping-masters/{master_id}", json={"default_enabled": "false"}).status_code, 422)
+        self.assertEqual(self.client.post("/api/mapping-masters", json={
+            "base_key": "bad_role",
+            "param_name": "value",
+            "input_type": "int",
+            "default_enabled": None,
+        }).status_code, 422)

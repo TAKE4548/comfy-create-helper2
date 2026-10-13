@@ -100,6 +100,7 @@ interface MappingMaster {
   display_name: string;
   title_patterns: string[];
   sort_order: number;
+  default_enabled: boolean; // 新規mapping表示の既定有効状態
 }
 
 interface ParamTypeMaster {
@@ -112,6 +113,28 @@ interface ParamTypeMaster {
   step?: number;
 }
 ```
+
+### 4-1-1. REQ-358 ノード候補とworkflow slot状態
+
+ノード候補は全workflow nodeを表示する。tier 0〜1は同じ推奨グループ、tier 2〜4は選択可能な通常候補とする。候補には0〜100%の適合score badgeと一致根拠を表示する。順位更新は現在の対応付けを変更しない。
+
+| Tier | 判定 | 推奨 |
+|---|---|---|
+| 0 | 登録classと登録titleの生文字完全一致 | はい |
+| 1 | 登録class一致とtitle表記ゆれ一致 | はい |
+| 2 | 登録class一致。title不一致 | いいえ |
+| 3 | class不一致だが登録parameter名を持つ | いいえ |
+| 4 | 上記以外。titleのみ一致も含む | いいえ |
+
+表記ゆれ比較ではASCII英字の大小、ASCII空白、`_`、ASCII `-`だけを正規化する。typo、翻訳、regex、Unicode記号の同一視はしない。推奨グループは75〜100点、class候補50〜74、parameter候補20〜49、その他0〜19とし、各group内はstageとtitleの近似score降順、同点ID文字列順にする。正規化stage全文包含は最大、共有文字bigramのDice近似は部分加点する。FaceDetailerに対するFace DetailerはHand Detailerより高い。登録/リマッピング/Settingsは全variantのtitle登録・fallback parameter・stage集合を共通判定へ渡す。scoreは規則による適合度を表示する。
+
+登録・リマッピング画面では入力slotのDOMと位置を維持する。空欄は未割当としてその場で編集でき、未検出専用の別エリアへ移動しない。有効チェックOFFはrole/node欄を減光し、再有効化まで入力不可。表示・生成へ反映する際は未割当と同じ対象外として扱い、保存ID/文字列は保持する。空欄や入力値の存在でOFFを上書きしない。selectorは欄全体をクリックして候補を開け、IDを先頭に1回だけ表示し、title/class/scoreを同じ欄内へ置く。直接入力・選択後のfocus維持とreadonly操作拒否を保つ。ワークフロー単位の無効化はvariant slot key `v:<variant_id>`、legacy slot key `m:<master_id>`を持つ `mapping_slot_states` に保存する。key欠落またはtrueは有効、falseは明示無効。再スキャンは最新GET完了後に一度だけ状態を初期化し、保存中に編集へ戻さない。旧null variantは単一slotかrole完全一致の一意なslotへ解決し、旧と新の同じmappingを重複保存しない。slot state/候補scoreの重複再計算はcacheで避け、toggleからHTTPは送らず、保存は二重発火を防ぐ。
+
+現状のStage ManagerはActive=falseで配下variantを一括falseへ変更し、false→trueで一括trueへ復帰する。以前の個別OFFまでONになる既知の制約は、利用者指示でREQ-360へ分離して扱う。既にActive=trueのname編集やtrue→true更新では各variantの個別状態を変更しない。workflow mappingやworkflow固有slot stateは保持する。
+
+`MappingMaster.default_enabled` は新規workflowへの初回取込既定で、省略時はtrue。falseのmaster/variantは新規slotとして表示・取込しない。保存stateまたは既存mappingがあるworkflow slotは、masterを後からfalseにしても残す。MappingMaster一覧/APIは基本無効を含む全件を保持する。
+
+workflow JSON version 1では `mapping_slot_states` をoptionalで扱う。importで省略された場合は既存stateを保ち、明示 `{}` は空snapshotとして置換し、`null`や不正形式は拒否する。workflow copy、history、rollbackは対応状態をmappingと一緒に保存・復元する。既存workflow JSONにfieldがない場合は従来slotを有効として扱う。
 
 標準の `input_type: 'seed'` は32bit unsigned Seed専用の入力型であり、`ParamTypeMaster.widget_type` に追加するカスタム型ではない。値は既存のrole別パラメータ保存領域に10進文字列として保存し、固定値またはランダムの選択モードはmaster/variantの安定したslot単位の予約JSONメタデータに保存する。Seed型の割当・編集はMappingMasterの既存操作を使い、手動の型変更を除き、データベースmigrationや自動移行は行わない。既存のmappingとlegacy global Seedの保存・動作は維持する。
 

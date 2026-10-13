@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { detectActiveStages } from '../../../../utils/workflowAdaptiveStageDetector'
 import { AdaptiveWorkflowWiring } from '../../../../components/AdaptiveWorkflowWiring'
 import type { StageMaster, MappingMasterV2, Workflow } from '../../../../api/types'
+import { rankWorkflowNodeCandidates } from '../../../../utils/workflowNodeUtils'
 
 describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
   const stageMasters: StageMaster[] = [
@@ -310,24 +311,96 @@ describe('AdaptiveWorkflowWiring Component', () => {
     expect(screen.getByRole('button', { name: /対応付けを保存/ }).closest('[data-stage-scroll-root]')).toBeNull()
   })
 
-  it('ノード選択ドロップダウンにおいて、ステージキーワードに合致する候補ノードを優先ハイライトする', () => {
+  it('[REQ-358/WIRING] [REQ-358/AC-14] class候補と選択中node metadataを表示する', () => {
     const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
     render(
       <AdaptiveWorkflowWiring
         workflow={mockWorkflow}
         activeStages={activeStages}
         mappingMasters={mappingMasters}
+        currentMappings={[{ master_id: 101, variant_id: 1001, node_id: '10' }]}
       />
     )
 
     const select = screen.getByLabelText(/Rough Stage sampler_name_rough → sampler_name のノード/) as HTMLSelectElement
     expect(select).toBeInTheDocument()
 
-    // Node 20 matched "Rough" keywords, so it should be prioritized / marked
     const options = Array.from(select.options)
     const roughOption = options.find((opt) => opt.value === '20')
     expect(roughOption).toBeDefined()
-    expect(roughOption?.textContent).toMatch(/★|推奨|ステージ合致/)
+    expect(roughOption?.textContent).toMatch(/\d+%/)
+    expect(roughOption?.textContent).not.toMatch(/推奨/)
+    const mainSelect = screen.getByLabelText(/Main Stage sampler_name → sampler_name のノード/) as HTMLSelectElement
+    expect(mainSelect.selectedOptions[0].textContent).toMatch(/Main KSampler.*KSampler.*ID 10.*\d+%/)
+    expect(screen.queryByLabelText('sampler_name 選択中のノード')).not.toBeInTheDocument()
+  })
+
+  it('uses the same full role definition and registered stages as Rescan for option order and scores', () => {
+    const master: MappingMasterV2 = {
+      ...mappingMasters[0],
+      base_title_patterns: ['Main Stage Sampler'],
+      fallback_param_names: ['noise_seed'],
+      variants: mappingMasters[0].variants.map((variant, i) => ({
+        ...variant, extra_title_patterns: i === 0 ? [] : ['Rough Stage Sampler'],
+      })),
+    }
+    const graph = {
+      a: { class_type: 'KSampler', title: 'Rough Stage Sampler' },
+      b: { class_type: 'KSampler', title: 'Main Stage Sampler' },
+      c: { class_type: 'Other', title: 'Fallback', inputs: { noise_seed: 1 } },
+      d: { class_type: 'Other', title: 'Unrelated' },
+    }
+    const workflow = { ...mockWorkflow, json_body: graph, mappings: [] }
+    const activeStages = detectActiveStages(graph, stageMasters).filter((info) => info.stage.key === 'main')
+    render(<AdaptiveWorkflowWiring workflow={workflow} activeStages={activeStages} mappingMasters={[master]} />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    const expected = rankWorkflowNodeCandidates(graph, {
+      expectedClassTypes: master.expected_class_types ?? [],
+      titlePatterns: [...master.base_title_patterns, ...master.variants.flatMap((variant) => variant.extra_title_patterns ?? [])],
+      paramNames: [master.param_name!, ...master.fallback_param_names!],
+    }, 'Main Stage', master.variants.map((variant) => variant.stage_name))
+    expect(Array.from(select.options).filter((option) => option.value).map((option) => [option.value, option.textContent?.match(/\d+%/)?.[0]]))
+      .toEqual(expected.map((candidate) => [candidate.id, `${candidate.score}%`]))
+    expect(expected.find((candidate) => candidate.id === 'a')!.recommended).toBe(true)
+    expect(expected.find((candidate) => candidate.id === 'c')!.tier).toBe(3)
+  })
+
+  it('retains a missing saved node as the selected option inside the field', () => {
+    const onSave = vi.fn()
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={[mappingMasters[1]]}
+      currentMappings={[{ master_id: 102, variant_id: 1003, node_id: '999' }]} onSaveMappings={onSave} />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select).toHaveValue('999')
+    expect(select.selectedOptions[0]).toHaveTextContent('参照先なし · ID 999')
+    fireEvent.click(screen.getByRole('button', { name: /対応付けを保存/ }))
+    expect(onSave).toHaveBeenCalledWith([{ master_id: 102, variant_id: 1003, node_id: '999' }], expect.any(Object))
+  })
+
+  it('[REQ-358/WIRING] slot無効状態を保持し、保存時にstateを渡す', () => {
+    const onSave = vi.fn()
+    const onChangeSlotStates = vi.fn()
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={mappingMasters} currentSlotStates={{ 'v:1001': false }} onChangeSlotStates={onChangeSlotStates} onSaveMappings={onSave} />)
+
+    const mainSelect = screen.getByLabelText(/Main Stage sampler_name → sampler_name のノード/) as HTMLSelectElement
+    expect(mainSelect).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('Main Stage sampler_name を有効化'))
+    expect(onChangeSlotStates).toHaveBeenCalledWith(expect.objectContaining({ 'v:1001': true }))
+    fireEvent.click(screen.getByRole('button', { name: /対応付けを保存/ }))
+    expect(onSave).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ 'v:1001': false }))
+  })
+
+  it('[REQ-358/AC-23][REQ-358/AC-34] keeps a legacy single-variant ID while disabled and saves its canonical permission', () => {
+    const onSave = vi.fn()
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={[mappingMasters[1]]}
+      currentMappings={[{ master_id: 102, node_id: '10' }]} currentSlotStates={{ 'm:102': false, 'v:999': false }} onSaveMappings={onSave} />)
+    const select = screen.getByLabelText(/Main Stage steps → steps のノード/)
+    expect(select).toHaveValue('10')
+    expect(select).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /対応付けを保存/ }))
+    expect(onSave).toHaveBeenCalledWith([{ master_id: 102, variant_id: 1003, node_id: '10' }], expect.objectContaining({ 'v:1003': false, 'v:999': false }))
   })
 
   it('物理配線は数値の variant_id でバインド・保存される', () => {
@@ -356,6 +429,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
         {
           master_id: 101,
           node_id: '10',
+          variant_id: 1001,
         },
         expect.objectContaining({
           variant_id: 1003,

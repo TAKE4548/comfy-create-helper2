@@ -1,0 +1,241 @@
+{
+  "pbi_id": "REQ-358",
+  "date": "2026-10-13",
+  "timezone": "Asia/Tokyo",
+  "upstream_requirement_audit": {
+    "result": "FAIL",
+    "pass_obtained": false,
+    "record": "docs/backlog/ba-audit/REQ-358.md",
+    "human_requirements_approved": true
+  },
+  "design_audit": {
+    "result": "INCONCLUSIVE",
+    "result_obtained": false,
+    "exit_code": 1,
+    "reason": "LM Studio HTTP timeout (300s) in chunk 1; no audit findings returned.",
+    "targets": [
+      "docs/backlog/pbi/active/REQ-358.md",
+      "docs/design/REQ-358.md",
+      "docs/design/REQ-358-test-plan.md",
+      "docs/backlog/task/active/REQ-358-T1.md",
+      "docs/backlog/task/active/REQ-358-T2.md",
+      "docs/backlog/task/active/REQ-358-T3.md",
+      "docs/backlog/task/active/REQ-358-T4.md",
+      "docs/backlog/task/active/REQ-358-T5.md",
+      "docs/backlog/task/active/REQ-358-T6.md",
+      "docs/backlog/task/active/REQ-358-T7.md",
+      "docs/backlog/task/active/REQ-358-T8.md",
+      "docs/backlog/task/active/REQ-358-T9.md",
+      "docs/backlog/task/active/REQ-358-T10.md",
+      "docs/backlog/task/active/REQ-358-T11.md",
+      "docs/backlog/task/active/REQ-358-T12.md",
+      "docs/backlog/task/active/REQ-358-T13.md",
+      "docs/backlog/task/active/REQ-358-T14.md",
+      "docs/backlog/task/active/REQ-358-T15.md",
+      "docs/backlog/task/active/REQ-358-T16.md",
+      "docs/backlog/task/active/REQ-358-T17.md",
+      "docs/backlog/task/active/REQ-358-T18.md",
+      "docs/backlog/task/active/REQ-358-T19.md",
+      "docs/backlog/task/active/REQ-358-T20.md",
+      "docs/backlog/task/active/REQ-358-T21.md",
+      "implementation_plan.md"
+    ],
+    "audit_start_utc": "2026-10-12 21:23:46 UTC",
+    "audit_end_utc": "2026-10-12 21:30:36 UTC",
+    "model_key": "qwen/qwen3.5-9b",
+    "catalog": {
+      "configured_model_found": true,
+      "quantization": "Q6_K",
+      "parameters": "9.0B"
+    },
+    "settings": {
+      "context_length": 32768,
+      "reasoning_effort": "none (adapter default)",
+      "timeout_seconds": 300,
+      "unload_after_requested": true
+    },
+    "runtime": {
+      "lm_studio_version": "not_observed_in_this_run",
+      "llama_cpp_runtime_version": "not_observed_in_this_run",
+      "reasoning_control_evidence": "no structured successful audit trace returned"
+    },
+    "chunking": {
+      "input_chars": 120535,
+      "planned_chunks": 6,
+      "attempted_chunks": 1,
+      "completed_chunks": 0,
+      "remaining_chunks": "not executed"
+    },
+    "logs": {
+      "audit": "docs/design/REQ-358-ba-audit-output.log",
+      "unload": "docs/design/REQ-358-ba-unload-output.log",
+      "exits": "docs/design/REQ-358-audit-exits.json"
+    },
+    "target_hashes_before_audit_metadata": [
+      {
+        "path": "docs/backlog/pbi/active/REQ-358.md",
+        "sha256": "68a7d6ce9c9b70f2493848a648e3ab8ff05e4f6f5c922bc5f436e13d7d14dfd8",
+        "bytes": 15902
+      },
+      {
+        "path": "docs/design/REQ-358.md",
+        "sha256": "172621a98b5fdbf47b165ca94a639a045a257cb6139454018b1bb5379471385e",
+        "bytes": 18275
+      },
+      {
+        "path": "docs/design/REQ-358-test-plan.md",
+        "sha256": "b81d45cb6fb58b477009d7dbe7a4f833c8f6119d1df02749cd1ebeb795412fb9",
+        "bytes": 13517
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T1.md",
+        "sha256": "33984403a70e07c0f69a9a1495e9c35cbf8f4eee64e8a7a8ec0e8b820f9bb714",
+        "bytes": 4614
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T2.md",
+        "sha256": "1481c14c97a96d03ce5f421049fe1b6d3e28732c459cf06645793c4de91fcd8e",
+        "bytes": 3921
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T3.md",
+        "sha256": "c9304ae4be968b22591ed90aec4d3bcbeae396c1e8a12e3c90f9c7f1afdad901",
+        "bytes": 3942
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T4.md",
+        "sha256": "f38f82750eac708b619c905e293d1331d6ec773900293b4488a0ca81c711107e",
+        "bytes": 4428
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T5.md",
+        "sha256": "a05bc39fbac9fbe10c730b97e97fa629768c3f2a21c615fc7100e1cbd33d275e",
+        "bytes": 3695
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T6.md",
+        "sha256": "d50c2852803515a8b2deb1d31942322bad13ebc8ec58e6c38cc3228c65fa6dfb",
+        "bytes": 4819
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T7.md",
+        "sha256": "03ca5ddcd5e17feac545f35017d8d51393179f351f0a859965a2847d1e18868a",
+        "bytes": 4832
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T8.md",
+        "sha256": "be418c54d21b1c2c247716e8b797b2ccfcac085c434cda78f2fdaaaac90b0ab1",
+        "bytes": 5199
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T9.md",
+        "sha256": "e04706f9b8f3c6d75ad9ac45dbd7350a1d64a44c15ac06eea5e66b362650cb65",
+        "bytes": 6268
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T10.md",
+        "sha256": "03b809aa8a1d5dde05b3018bad2cd6a835aa6b0d0edcd8f3198dea73aea16a36",
+        "bytes": 5141
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T11.md",
+        "sha256": "241e168bf7a052a4725b06ebbc91bee76382d6a0828f8bfcd970eec37c69bdc2",
+        "bytes": 5075
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T12.md",
+        "sha256": "6d7b1638fa36c59b299892745bd2da829544f158b53b2ffcf222708e9c7e1286",
+        "bytes": 5812
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T13.md",
+        "sha256": "24fc57018236376410659faf13ac55874af78032318f37d9fb0d05a4ba1555f0",
+        "bytes": 5832
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T14.md",
+        "sha256": "363ca6189466fc392aaebdf72ac23eed517048d09bfbf70655dfc0803aa40c40",
+        "bytes": 5896
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T15.md",
+        "sha256": "a9b045d8ac3cf63d9e19fa3e5ecc21ff76be6d45a48fcd39fdc9d5aa971f8a3d",
+        "bytes": 5342
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T16.md",
+        "sha256": "26096c3bfbc4ff8fc99fecb5a6a37ca5fbb598094cb42bd523a7ce52ad7b4b96",
+        "bytes": 4660
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T17.md",
+        "sha256": "ad9fcb29d325755fd94c2fb5cc3c18b61e24e0b7324fbc28f1947cf7b7ece1b8",
+        "bytes": 5187
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T18.md",
+        "sha256": "a7383c1a3f63127e89ac7e3dc214d6e8f896f668b978db759511c83abe661fdd",
+        "bytes": 5017
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T19.md",
+        "sha256": "b514bfbc32c551e9cff91864116739e14728a2955b8864dfe885200e46c93e37",
+        "bytes": 4123
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T20.md",
+        "sha256": "3692066205b4f1a843bc6bb2d2d567f444a1885d3fa608d09e878fef6e959dca",
+        "bytes": 4033
+      },
+      {
+        "path": "docs/backlog/task/active/REQ-358-T21.md",
+        "sha256": "be5109c14ef20f05148c9f4175fa600d3199e3e876d3c6a6c472a7a9d3e5fa03",
+        "bytes": 4804
+      },
+      {
+        "path": "implementation_plan.md",
+        "sha256": "2cf64bfd44b00b0fe8ac6545ba59359c6e7666ae26892b5ec3b282597f11a637",
+        "bytes": 17633
+      }
+    ],
+    "elapsed_wall_seconds": 410
+  },
+  "cleanup": {
+    "automatic_unload": "adapter shutdown failed (can't create new thread at interpreter shutdown)",
+    "explicit_finally_unload_exit_code": 0,
+    "loaded_models_verified_empty": true,
+    "evidence": "[Local Audit] LM Studio reports no models loaded.",
+    "total_gpu_memory_free": "not_proven"
+  },
+  "manual_design_review": {
+    "atomicity": {
+      "cards": 21,
+      "max_files_per_task": 3,
+      "max_planned_changed_lines": 290,
+      "max_card_lines": 139,
+      "result": "PASS planned"
+    },
+    "dag": {
+      "max_depth": 4,
+      "acyclic": true,
+      "shared_files": "serialized by file ownership locks"
+    },
+    "acceptance": {
+      "pbi_ac_count": 38,
+      "test_plan_ac_count": 38,
+      "all_ids_mapped": true
+    },
+    "post_attempt_clarifications": [
+      "T15 explicitly unions enabled-variant stage and persisted stage with detected stage, preserving disable/restore access for undetected stages.",
+      "T17 explicitly preserves variant_id in raw mapping repair mutation.",
+      "T7 uses a structural Workflow intersection for standalone typecheck before additive API type T5; root task has no hidden dependency."
+    ],
+    "post_attempt_reaudit": "not_performed"
+  },
+  "review_gate": {
+    "requirements": "approved",
+    "design": "pending_human_review",
+    "engineer_dispatch": "not_performed",
+    "implementation_tests": "not_run"
+  }
+}

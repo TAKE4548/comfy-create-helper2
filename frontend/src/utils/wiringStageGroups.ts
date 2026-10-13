@@ -18,6 +18,7 @@ export interface MappingMaster {
   display_name: string
   title_patterns: string[] | null
   sort_order: number
+  default_enabled?: boolean
 }
 
 export interface MappingVariant {
@@ -45,6 +46,7 @@ export interface MappingMasterV2 {
   fallback_param_names?: string[] | null
   sort_order: number
   variants: MappingVariant[]
+  default_enabled?: boolean
   role?: string
   display_name?: string
   title_patterns?: string[] | null
@@ -84,6 +86,7 @@ interface WiringStageSlot {
   displayName: string
   inputType: string
   stageId: number
+  enabled: boolean
 }
 
 interface WiringStageGroup {
@@ -101,6 +104,7 @@ export function buildWiringStageGroups(
   activeStages: readonly ActiveStageInfo[],
   masters: readonly MappingMasterLike[],
   _currentMappings: readonly WiringMappingItem[],
+  states?: Record<string, boolean>,
 ): WiringStageGroup[] {
   const sortedStages = activeStages
     .map((info, index) => ({ info, index }))
@@ -127,6 +131,7 @@ export function buildWiringStageGroups(
             displayName: master.display_name || master.name,
             inputType: master.input_type,
             stageId: stage.id,
+            enabled: states?.[`v:${variant.id}`] ?? (_currentMappings.some((mapping) => mapping.variant_id === variant.id) || master.default_enabled !== false),
           })
         }
       } else if (info === legacyStage) {
@@ -139,6 +144,7 @@ export function buildWiringStageGroups(
           displayName: master.display_name,
           inputType: master.input_type,
           stageId: stage.id,
+          enabled: states?.[`m:${master.id}`] ?? (_currentMappings.some((mapping) => mapping.master_id === master.id && mapping.variant_id == null) || master.default_enabled !== false),
         })
       }
     }
