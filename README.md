@@ -66,6 +66,49 @@ npm run dev
 
 React からポート `8188` に直接アクセス。別途起動しておくこと。
 
+## テスト実行 (3-Gate Architecture)
+
+本プロジェクトは [テストアーキテクチャ設計仕様書](docs/specs/SPEC_TEST_ARCHITECTURE.md) (SPEC-TESTING v2.1) に準拠した 3段階ゲート構成を採用しています。
+
+### Gate 1: 静的検証・高速単体テスト (3〜5秒)
+型整合性と純粋ロジックの即時検出を行います。
+```bash
+# Frontend 型チェック & 単体
+cd frontend
+npm run typecheck
+npx vitest run src/utils src/components/**/__tests__
+
+# Backend 型チェック & 単体 (DB非接続)
+cd backend
+mypy backend
+.venv\Scripts\python -m pytest backend/tests/unit
+```
+
+### Gate 2: 統合テストスイート (~30秒)
+APIルーター、SQLAlchemy (SAVEPOINT インメモリDB自動ロールバック)、Zustand/React Query 結合状態の網羅検証を行います。
+```bash
+# Frontend 統合
+cd frontend
+npm test
+
+# Backend 統合 (並列高速実行)
+cd backend
+.venv\Scripts\python -m pytest -n auto
+```
+
+### Gate 3: ブラウザ E2E テスト (~1.2秒)
+Playwright による実ブラウザでの描画・物理スクロール・sticky追従の検証を行います。
+```bash
+cd frontend
+npx playwright test
+```
+
+### テスト作成規約 (PBI トレーサビリティ)
+- **ファイル名規約**: テストファイル名・ディレクトリ名へのチケット番号（`req\d+`）の含入は禁止です。
+- **ケース命名規約**: 各テストケース名（`it` / `def test_*`）には `[REQ-xxx/AC-n]` プレフィックスを必ず付与してください。
+- **命名検証**: `python scripts/verify_test_naming.py`
+
+
 ## サービスの一括起動・管理 (Server Manager)
 
 WSL2 ComfyUI、FastAPI バックエンド、React フロントエンドを一括起動・管理するためのツールを用意しています。

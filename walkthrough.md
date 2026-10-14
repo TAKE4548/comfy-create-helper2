@@ -1,50 +1,120 @@
-# REQ-343 検証ウォークスルー
+# REQ-356 検証ウォークスルー報告書
 
-## 総合判定: **PASS (既知の flaky 1 件はユーザー承認のうえ REQ-344 へ切り出し)**
+## 総合判定: **FAIL (Gate 2 Test Hygiene & AC-1/AC-15 未達)**
 
-REQ-343 の実装範囲に起因する不具合は検出されていません。Full Suite で `GeneratePage.test.tsx` が実行ごとに不安定に失敗しますが、REQ-343 を含まない `b9433b7` でも同様に再現したため(下記)、既存の flaky と判断し、ユーザー承認のうえ別PBI **REQ-344** に切り出しました。
+> [!CAUTION]
+> **Honest Reporting Principle ([G-01] / [G-02]) に基づく判定**:
+> Backend の再構成（unit/, integration/, governance/、SAVEPOINT インターセプター、
+espx 遮断、	mp_path 隔離）および Frontend の基盤ヘルパー（storeHelpers, queryHelpers, 
+etworkGuard）、Playwright E2E（stickyHeader.spec.ts）は高品質に実装され、テスト自体は全件 PASS（Backend 604件 / Frontend 2182件）しています。
+> しかしながら、**Frontend 内に 44 件の旧チケット名テストファイル（
+eq334*.test.ts, e2e_req*.test.tsx 等）が未移行のまま残存**しており、workflow_validator.py test-hygiene および scripts/verify_test_naming.py --strict が exit code 1 で失敗するため、受入基準 **AC-1**, **AC-3**, **AC-9**, **AC-10**, **AC-15** が未達（FAIL）と判定されます。
 
-## 実行コマンドと結果
+---
 
-| Gate | コマンド | 結果 |
-| :--- | :--- | :--- |
-| 1 Frontend | `cd frontend; npm run typecheck` | PASS (0 errors) |
-| 1 Backend | `mypy backend` | PASS (0 issues) |
-| 2 Backend | `pytest` (全件) | PASS (718 passed) |
-| 2 Backend (REQ-343) | `pytest backend/tests/test_req343_workflow_variant_scan.py` | PASS (3 passed / Red Team 1 追加後) |
-| 2 Frontend (REQ-343) | `vitest run WorkflowModalMultiStage.test.tsx useMasterMappingRows.test.ts` | PASS (16 passed) |
-| 2 Frontend (全件) | `npm test` x3 | 1〜2 件 / 1908 が `GeneratePage.test.tsx` で不安定に失敗 (下記) |
+## 1. Automated Baseline 3-Gate 検証結果
 
-### Gate 2 失敗の切り分け (flaky 判定の根拠)
-- REQ-343 の変更を含まない最新コミット `b9433b7` を別 worktree で `vitest run` x3 実行:
-  - 1回目: 201 ファイル全件 PASS
-  - 2回目: `GeneratePage.test.tsx` が `Test timed out in 5000ms` で失敗
-  - 3回目: 全件 PASS
-- REQ-343 なしでも同一ファイルが同一症状で不安定に失敗するため、REQ-343 起因ではなく既存の flaky と判定。
-- 単独実行では 13/13 PASS。
-- 注: `GeneratePage.tsx` は改修した `RescanModal` / `UploadWorkflowModal` を import しているため依存ゼロではないが、baseline 再現により影響は否定的。恒久対応は REQ-344 で実施。
+### Gate 1: 静的型チェック & 高速単体テスト (Typecheck & Fast Unit Baseline)
+- **結果**: **PASS (0 errors, 0 failures)**
+- **実行ログ要約**:
+  - 
+pm run typecheck (	sc -b --noEmit in rontend): **PASS (0 errors)**
+  - mypy backend: **PASS (Success: no issues found in 173 source files)**
+  - Backend Unit + Governance (pytest backend/tests/unit backend/tests/governance -q): **51 passed, 1 warning in 5.80s**
+  - Frontend Unit (
+px vitest run src/utils src/components/**/__tests__ src/hooks/**/__tests__): **24 test files passed, 318 passed in 13.03s**
 
-## AC 準拠表
+### Gate 2: フルテストスイート Baseline (Full Discovery Suite & Test Hygiene)
+- **結果**: **FAIL (機能テストは全件PASSだが、Test Hygiene / 命名規約チェックがFAIL)**
+- **実行ログ要約**:
+  - Backend Full Suite (pytest backend/tests -q): **604 passed, 12 subtests passed in 77.46s** (並列実行 pytest -n auto では **24.39s**)
+  - Frontend Full Suite (
+pm test): **231 test files passed, 2182 passed in 113.44s**
+  - **Test Hygiene Linter (workflow_validator.py test-hygiene REQ-356)**:
+    - **FAIL (Exit code 1)**: 44件の TEST_ACCRETION_VIOLATION を検出。
+    - 検出例: rontend/src/api/__tests__/req334PreviewApis.test.ts, rontend/src/test/e2e_req207.test.ts 等
+  - **Strict Test Naming Validator (scripts/verify_test_naming.py --strict)**:
+    - **FAIL (Exit code 1)**: 133件の違反（ファイル名規約違反 AC-1: 44件、テストケース命名規約違反 AC-15: 89件）
 
-| AC | 内容 | 検証根拠 | 判定 |
+### Gate 3: シナリオ・E2E＆Red Teaming (PBI Acceptance & Boundary Verification)
+- **結果**: **PASS (シナリオ検証・境界テストは成功)**
+- **実行ログ要約**:
+  - Playwright E2E (
+px playwright test e2e/stickyHeader.spec.ts):
+    - Desktop (1280x800): **PASS**
+    - Mobile (375x667): **PASS**
+    - 実行時間: 1.2s (2 passed)
+  - Red Team 1 (外部通信漏洩検出 / Network Breach Injection): **PASS**
+    - rontend/src/test/utils/networkGuard.test.ts にて、未許可 WebSocket/Fetch が即時例外を送出することを検証済み。
+    - Backend conftest.py の mock_external_services (
+espx) により未許可外部通信が遮断されることを実証。
+  - Red Team 2 (DB 永続化汚染検出 / DB Mutation Bleed): **PASS**
+    - sqlite:///:memory: + SAVEPOINT Commit Interceptor により、コミット操作後もセッション単位で完全ロールバックされ、本番DB汚染ゼロを実証。
+  - Red Team 3 (jsdom 擬似スクロール禁止ガード): **PASS**
+    - rontend/src 配下の全テストコードを静的走査し、ireEvent.scroll の使用が 0 件であることを確認。
+
+---
+
+## 2. 受入基準 (AC) 網羅性検証表 [MUST [G-02]]
+
+| AC ID | 受入基準 (Given-When-Then) | 検証結果・エビデンス | 判定 |
 | :--- | :--- | :--- | :--- |
-| AC-1 | Role×有効ステージの複数ノードマッピング | `useMasterMappingRows.test.ts` / `WorkflowModalMultiStage.test.tsx` PASS (Main/Rough 別スロットで保存)。ブラウザ手動 E2E は未実施 | PASS (ユニット水準) |
-| AC-2 | 不要組み合わせの未設定化・保存時除外 | クリアボタン/「未設定」選択で保存時に除外されることをモーダルテストで確認。ブラウザ手動 E2E は未実施 | PASS (ユニット水準) |
-| AC-3 | 設定画面のバリアント配線保存と重複 master_id 許容 | `WorkflowConnectionSection.config.test.ts` PASS | PASS |
-| AC-4 | `/api/workflows/scan` のバリアント検出 | `test_req343_workflow_variant_scan.py` PASS (`variant_id`/`stage_id`/`stage_key`、CRUD/copy/rollback で保持) | PASS |
+| **AC-1** | テストファイルのパスに 
+eq[0-9]+ / REQ-[0-9]+ を含むものが 0 件 | Backend では 0 件達成 (	est_no_req_naming.py PASS)。しかし Frontend 内に 44 件の旧チケット名テストファイルが依然残存 (scripts/verify_test_naming.py) | **FAIL** |
+| **AC-2** | ackend/tests 直下構成が conftest.py, unit/, integration/, governance/ のみ | 	est_backend_tests_hierarchy_and_no_req_naming PASS。直下にフラットなテストファイルは一切存在しない | **PASS** |
+| **AC-3** | Frontend のテストが Unit / Pages 結合 / E2E Playwright / 共通ヘルパーに正しく配置されている | src/test/utils/ および rontend/e2e/ は新設配備されたが、src/test/ 直下に 15 件の e2e_req*.test.tsx が移行されず残存 | **FAIL** |
+| **AC-4** | Backend 統合テストでコミット後の中断・失敗があっても次テスト開始時に DB が空で本番 DB が不変 | conftest.py の SAVEPOINT Commit Interceptor (
+estart_savepoint) により完全ロールバックを保証 | **PASS** |
+| **AC-5** | 本番 db/snapshots/ 書き込みゼロ、外部通信 (8188/1234) 遮断、未許可宛先は即時エラー | isolated_snapshot_dir (	mp_path) および 
+espx.mock が全テストに自動適用 | **PASS** |
+| **AC-6** | Frontend 統合テストで Zustand, React Query, WebSocket, IndexedDB, Storage 状態が持ち越されない | 
+esetTestStore(), createTestQueryClient(), MockWebSocketController の共通ヘルパー配備・適用 | **PASS** |
+| **AC-7** | Frontend テストで実 fetch / 実 WebSocket 通信ガード有効時に実通信 0 件 | 
+etworkGuard.ts 実装、
+etworkGuard.test.ts でブロック動作を検証完了 | **PASS** |
+| **AC-8** | position: sticky と実スクロールが Playwright (rontend/e2e/) のみで検証され jsdom 擬似スクロール 0 件 | rontend/e2e/stickyHeader.spec.ts で Desktop/Mobile 両検証 PASS。jsdom での ireEvent.scroll 走査 0 件 | **PASS** |
+| **AC-9** | grep -rn "REQ-<番号>" で再構成前の各テストが [REQ-xxx/AC-n] 形式でヒットする | 移行済みテストはヒットするが、未移行の 89 テストケースが (REQ-xxx) やチケット名なしのまま残存 | **FAIL** |
+| **AC-10** | フルテストスイートが失敗 0 件、かつ対応表 (REQ-356-test-mapping.md) に欠落 0 件 | テスト実行自体は全件 PASS（Backend 604件 / Frontend 2182件）。しかし対応表上で 44 ファイルが移行未完了のまま残存 | **FAIL** |
+| **AC-11** | Backend pytest tests/unit と Frontend 単体テストが DB/jsdom 重厚セットアップなしで単独成功 | Backend unit は 5.8s、Frontend unit は 13.03s で単独実行 PASS | **PASS** |
+| **AC-12** | Gate 2 合計実行時間が再構成前（約113秒）より短縮され計測値が記録される | Backend は並列実行で 24.39s（旧77sから大幅短縮）。ただし Frontend 全件実行が 113.44s を要しており、未移行テストの残存により全体短縮が部分未達 | **PARTIAL** |
+| **AC-13** | 重複テスト削除時に削除対象と理由が対応表に記録され、記録のない削除が 0 件 | REQ-356-test-mapping.md に削除および移行記録を明記管理 | **PASS** |
+| **AC-14** | 並列実行設定で共有リソース衝突失敗が 0 件、並列と逐次で成否が完全一致 | pytest -n auto で 604 件全パス（0衝突）。逐次実行結果と完全一致 | **PASS** |
+| **AC-15** | テスト名形式検証スクリプトが成功 (終了コード0) し、PBI 紐づけなしテストが明示される | scripts/verify_test_naming.py --strict 実行時、終了コード 1（133件の違反検出）で FAIL | **FAIL** |
 
-## Red Teaming
+---
 
-| シナリオ | 結果 |
-| :--- | :--- |
-| 異常系1: 全スロット未設定で保存 | UploadWorkflowModal / RescanModal で全スロットをクリアして保存すると `mappings: []` で成功 (既存テストで確認済み)。Backend も `PUT/POST` に空 mappings を送って 200/201 かつ空で永続化されることを `test_workflow_update_with_empty_mappings` で追加検証。PASS |
-| 異常系2: `{}` / 壊れたノード JSON を `/api/workflows/scan` に POST | 4 パターンすべて HTTP 200、`matched: []` + `warnings`。PASS |
-| 異常系3: variant_id 無しのレガシー JSON | `validateConfig` テスト PASS |
+## 3. ローカルモデル QA 監査 (qa-audit) 結果
 
-## ローカルモデル QA 監査 (qa-audit)
-- 指摘はテスト計画文書の定量性(期待値の数値化・HTTP コード明記等)に関するもので、実装の欠陥ではない。受入基準に対して軽微と判断。
-- GPU クリーンアップ: `local_model_adapter.py unload` exit 0、VRAM 解放確認済み。
+- **使用モデル**: qwen/qwen3.5-9b (LM Studio 0.4.25, context-length 32768, 
+easoning_effort=none)
+- **実行コマンド**: python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-356-test-plan.md
+- **監査結果**: ⚠️ **CRITICAL FAILURES DETECTED / UNACCEPTABLE**
+- **主な指摘事項**:
+  1. **変数依存・可搬性欠如**: ${GLOBAL_SCRIPTS} や OS 依存の \Scripts 等の環境依存により、実行失敗の抜け道が存在する。
+  2. **クリーン状態検証の定量的アサーション不足**: DB クリーン状態やロールバックの検証において、インターセプターの信頼に依存せず、実行前後での直接的な SQL 行数カウントアサーションを明記すべきである。
+  3. **事前検証 (Gate 0) の欠如**: ファイル存在確認やツール可用性の Sanity Check が不足している。
+- **GPU リソース解放 (VRAM Cleanup)**:
+  - python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload 実行完了 (Exit code 0)。
+  - lms ps --json の出力が [] であることを確認（※LM Studio 経由のモデルアンロードを確認したものであり、システム全体の全 GPU メモリ解放を主張するものではありません）。
 
-## 残課題
-- REQ-344: `GeneratePage.test.tsx` の全体実行時 flaky 解消 (P3)。
-- ブラウザ E2E (AC-1/AC-2 の目視確認) は未実施。
+---
+
+## 4. 残課題および推奨是正アクション (Remediation Actions)
+
+1. **Frontend レガシーチケット名テストファイル (44件) のリネーム・集約**:
+   - rontend/src/api/__tests__/req334*.test.ts
+   - rontend/src/test/e2e_req*.test.tsx (15ファイル)
+   - *.req334.test.tsx, *.req333.test.tsx, *.req345.test.tsx 等
+   - これらを機能・モジュール別の colocated テスト (__tests__/) へ集約・リネームし、ファイル名から 
+eq\d+ を完全排除する（AC-1, AC-3）。
+2. **テストケース名の [REQ-xxx/AC-n] プレフィックス付与 (89件)**:
+   - useGeneratePageState.test.tsx 等に残存する (REQ-159) 等の記法を [REQ-159/AC-n] フォーマットへ修正する（AC-9, AC-15）。
+3. **erify_test_naming.py --strict の 0 violations 達成**:
+   - 上記対応完了後、厳格モードで終了コード 0 となることを確認して再検証を実施する。
+
+---
+
+## 5. User Disposition & Follow-up PBI Handoff (2026-10-14)
+
+ユーザー承認に基づき、本 PBI（REQ-356）は「テストアーキテクチャ基盤（Backend 100% 移行、SAVEPOINT/respx 多層防護、Frontend 隔離ヘルパー、Playwright E2E、Gate 1/2 高速化、SSoT 同期）の完了」をもって正常クローズとします。
+残存する Frontend 44 件のレガシーテストファイル再配置および 89 件のテスト名フォーマット規約化は、新規後続 PBI（REQ-361）へ正式にハンドオフされ、設計から改めて確実に遂行されます。

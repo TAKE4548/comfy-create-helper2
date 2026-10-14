@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useState } from 'react';
 import { TagChip } from '../TagChip';
 import { TagChipViewer } from '../../TagChipViewer';
@@ -531,7 +531,9 @@ describe('TagChip', () => {
     const copyBtn = screen.getByRole('button', { name: 'タグをコピー' });
     expect(copyBtn).toBeInTheDocument();
 
-    fireEvent.click(copyBtn);
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
     expect(writeTextMock).toHaveBeenCalledWith('masterpiece, 1girl');
   });
 
@@ -607,7 +609,7 @@ describe('TagChip', () => {
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
   });
 
-  it('applies w-[360px] max-w-[calc(100vw-24px)] class to submenu container (AC-2)', () => {
+  it('[REQ-304/AC-2] applies w-[360px] max-w-[calc(100vw-24px)] class to submenu container', () => {
     render(
       <TagChip
         id="1"
@@ -628,7 +630,7 @@ describe('TagChip', () => {
     expect(submenuContainer.className).toContain('max-w-[calc(100vw-24px)]');
   });
 
-  it('renders translation button in submenu header (AC-2)', () => {
+  it('[REQ-304/AC-2] renders translation button in submenu header', () => {
     render(
       <TagChip
         id="1"
@@ -647,7 +649,7 @@ describe('TagChip', () => {
     expect(translateBtn).toHaveTextContent('翻訳');
   });
 
-  it('toggles TagChipTranslationCard when translation button is clicked (AC-3)', () => {
+  it('[REQ-304/AC-3] toggles TagChipTranslationCard when translation button is clicked', () => {
     render(
       <TagChip
         id="1"
@@ -676,7 +678,7 @@ describe('TagChip', () => {
     expect(screen.getByTestId('translation-card')).toBeInTheDocument();
   });
 
-  it('unmounts translation card when parent submenu is closed (AC-8)', () => {
+  it('[REQ-304/AC-8] unmounts translation card when parent submenu is closed', () => {
     render(
       <TagChip
         id="1"
@@ -804,8 +806,8 @@ describe('TagChip', () => {
     expect(screen.queryByText('強度 (Weight)')).not.toBeInTheDocument();
   });
 
-  describe('REQ-338-T6: Hit-Slop and touch feedback', () => {
-    it('applies touch-manipulation, active scale, compact hit-slop, and focus ring to TagChip', () => {
+  describe('Hit-Slop and touch feedback', () => {
+    it('[REQ-338/AC-5] applies touch-manipulation, active scale, compact hit-slop, and focus ring to TagChip', () => {
       const { container } = render(
         <TagChip
           id="1"
@@ -832,7 +834,7 @@ describe('TagChip', () => {
       expect(chipEl?.className).toContain('focus-visible:ring-[#7C6FDD]');
     });
 
-    it('opens submenu when clicking chip body / hit-slop outside text', () => {
+    it('[REQ-338/AC-5] opens submenu when clicking chip body / hit-slop outside text', () => {
       const { container } = render(
         <TagChip
           id="1"
@@ -852,7 +854,7 @@ describe('TagChip', () => {
       expect(chipEl.className).not.toContain('active:scale-[0.97]');
     });
 
-    it('keeps the drag handle, text, and delete button above the hit-slop layer', () => {
+    it('[REQ-357/AC-1] keeps the drag handle, text, and delete button above the hit-slop layer', () => {
       render(
         <TagChip
           id="layered"
@@ -870,7 +872,7 @@ describe('TagChip', () => {
       expect(screen.getByRole('button', { name: 'タグ layered-tag を削除' }).className).toContain('relative z-10');
     });
 
-    it('keeps the submenu open while step buttons and the enabled toggle are used', () => {
+    it('[REQ-357/AC-1] keeps the submenu open while step buttons and the enabled toggle are used', () => {
       const onEdit = vi.fn();
       const InteractiveTagChip = () => {
         const [text, setText] = useState('(interactive:1.0)');
@@ -903,7 +905,7 @@ describe('TagChip', () => {
       expect(screen.getByText('強度 (Weight)')).toBeInTheDocument();
     });
 
-    it('does not toggle menu when clicking drag handle', () => {
+    it('[REQ-357/AC-1] does not toggle menu when clicking drag handle', () => {
       render(
         <TagChip
           id="1"
@@ -921,7 +923,7 @@ describe('TagChip', () => {
       expect(screen.queryByTestId('translation-card')).not.toBeInTheDocument();
     });
 
-    it('disables active scale and hit-slop while in editing mode', () => {
+    it('[REQ-338/AC-5] disables active scale and hit-slop while in editing mode', () => {
       render(
         <TagChip
           id="1"
@@ -940,7 +942,7 @@ describe('TagChip', () => {
       expect(chipEl?.className).not.toContain('active:scale-[0.97]');
     });
 
-    it('TagChipViewer applies compact hit-slop, touch-manipulation, and handles proximity hit snap', () => {
+    it('[REQ-338/AC-5] TagChipViewer applies compact hit-slop, touch-manipulation, and handles proximity hit snap', () => {
       const onTagClick = vi.fn();
       const { container } = render(
         <TagChipViewer tags={['cat', 'dog']} onTagClick={onTagClick} />

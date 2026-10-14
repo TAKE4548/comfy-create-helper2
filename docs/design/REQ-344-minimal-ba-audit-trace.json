@@ -1,0 +1,107 @@
+{
+  "pbi_id": "REQ-344",
+  "revision": "minimal-wait-fix",
+  "action": "ba-audit",
+  "started_at": "2026-10-13T01:11:42.0476028+09:00",
+  "finished_at": "2026-10-13T01:15:00.5288489+09:00",
+  "elapsed_seconds": 198.481,
+  "exit_code": 0,
+  "model": {
+    "key": "qwen/qwen3.5-9b",
+    "parameters": "9.0B",
+    "quantization": "Q6_K"
+  },
+  "settings": {
+    "context_length_requested": 32768,
+    "reasoning_effort_required": "none",
+    "runtime_required": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0",
+    "runtime_observed": null,
+    "reasoning_control_observed": null,
+    "detail": "adapter stdout did not emit runtime/settings/chunk metadata; unobserved values are not asserted"
+  },
+  "targets": [
+    "docs/design/REQ-344.md",
+    "docs/design/REQ-344-test-plan.md",
+    "docs/backlog/task/active/REQ-344-T10.md",
+    "docs/backlog/task/active/REQ-344-T11.md",
+    "docs/backlog/task/active/REQ-344-T12.md"
+  ],
+  "response_chunks_observed": 1,
+  "adapter_chunk_metadata": null,
+  "raw_log": "docs/design/REQ-344-minimal-ba-audit.log",
+  "raw_verdict": "CRITICAL FLAWS DETECTED",
+  "review_status": "FINDINGS_PENDING_COORDINATOR_AND_HUMAN_REVIEW",
+  "findings": [
+    {
+      "id": "BA-1",
+      "severity": "critical (audit)",
+      "summary": "同期修正をAPIの同期化と読み、waitForを矛盾と指摘",
+      "proposed_disposition": "NOT_ADOPT_RECOMMENDATION",
+      "rationale": "対象は非同期完了の待機方法。A/Bでact境界のみ変更した根拠を優先。resolverで解決するmockに実network delayはない。非同期APIを同期化する要求は存在しない。",
+      "documentation_action": "設計とtest planに語義と観測境界を追記",
+      "decision": "pending"
+    },
+    {
+      "id": "BA-2",
+      "severity": "critical (audit)",
+      "summary": "timeout不変更と5回受入の矛盾、延長または即時成功mockを推奨",
+      "proposed_disposition": "NOT_ADOPT_RECOMMENDATION",
+      "rationale": "5回は既存PBIのAC。各状態とDOMのassertionが正しさを確認する。即時成功mockは初期disabledの制御を崩し、timeout延長は失敗を隠す。将来の全実行保証は主張していない。",
+      "documentation_action": "5回を安定性gateと明示。waitFor期限未達はFAIL、親へ返す",
+      "decision": "pending"
+    },
+    {
+      "id": "BA-3",
+      "severity": "critical (audit)",
+      "summary": "過去の診断15/18と将来の13/13 ACが矛盾",
+      "proposed_disposition": "NOT_ADOPT_RECOMMENDATION",
+      "rationale": "診断時18件の追加fixture回帰を撤去しHEAD元13件へ復元する。旧結果を最終受入へ転用しない。",
+      "documentation_action": "診断と復元後の将来ACの時点/件数を明文化",
+      "decision": "pending"
+    },
+    {
+      "id": "BA-4",
+      "severity": "critical (audit)",
+      "summary": "2ケース限定変更と全suite実行のscope矛盾",
+      "proposed_disposition": "NOT_ADOPT_RECOMMENDATION",
+      "rationale": "実装範囲と回帰検証範囲は別契約。全suiteはPBIとdev-verify 3-Gateの要件。",
+      "documentation_action": "実装/検証範囲を明記",
+      "decision": "pending"
+    },
+    {
+      "id": "BA-5",
+      "severity": "risk (audit)",
+      "summary": "waitFor負荷期限とMobile resizeの未更新リスク",
+      "proposed_disposition": "ACCEPT_AS_TEST_BOUNDARY",
+      "rationale": "既定waitFor期限でquery/DOM未達をFAILとして停止。Mobile resize既存actを保持しDOMを個別に待つ。",
+      "documentation_action": "test planの失敗方針を具体化",
+      "decision": "pending"
+    },
+    {
+      "id": "BA-6",
+      "severity": "risk (audit)",
+      "summary": "5回process間mock state leakage",
+      "proposed_disposition": "CLARIFY_ISOLATION",
+      "rationale": "5回は独立process。元beforeEach clearAllMocksを維持し元13件でfile内回帰を確認。実証失敗なら再設計しcleanup変更を混ぜない。",
+      "documentation_action": "独立processとfile内検出方針を明記",
+      "decision": "pending"
+    }
+  ],
+  "post_audit_changes": {
+    "reaudited": false,
+    "changes": [
+      "設計/test planの非同期待機語義・安定性gate・実装/検証範囲の明文化",
+      "waitFor期限・Mobile DOM待機・process隔離の記録",
+      "T12のSPEC_GENERATE原文21行抜粋の表記訂正",
+      "implementation_plan監査結果追記"
+    ],
+    "implementation_change": false
+  },
+  "unload": {
+    "exit_code": 0,
+    "log": "docs/design/REQ-344-minimal-unload.log",
+    "observed": "LM Studio reports no models loaded",
+    "total_gpu_memory_free_claimed": false
+  },
+  "handover": "原因修正案・監査原文・対応案をcoordinator triageと人の設計レビューへ返す。監査結果をCOMPLIANTに読み替えない。"
+}

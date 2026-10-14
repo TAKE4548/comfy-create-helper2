@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
 import { MobileLayout } from '../MobileLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
@@ -54,8 +56,15 @@ function setManagedState(value: GenerationSnapshot | null, extras: Record<string
   useGenerationStore.setState({ generationSnapshot: value, generationSyncIssue: null, generationSyncing: false, filterOwnSession: false, clientId: 'session-a', ...extras } as never)
 }
 
+function renderGroupedDesktop(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  client.setQueryData(['stage-masters'], [])
+  client.setQueryData(['mapping-masters'], [])
+  return render(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
+
 function renderBoth(state: ReturnType<typeof makeState>) {
-  const desktop = render(<DesktopLayout state={state as never} />)
+  const desktop = renderGroupedDesktop(<DesktopLayout state={state as never} />)
   const mobile = render(<MobileLayout state={state as never} />)
   return { desktop, mobile }
 }
@@ -157,7 +166,7 @@ describe('REQ-333 progress bars use managed snapshots on desktop and mobile', ()
     localStorage.clear()
     const originalWidth = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
-    const view = render(<DesktopLayout state={state as never} />)
+    const view = renderGroupedDesktop(<DesktopLayout state={state as never} />)
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
 
     expect(view.container.querySelector('#desktop-action-bar')).toBeInTheDocument()

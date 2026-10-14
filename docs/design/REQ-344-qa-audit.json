@@ -1,0 +1,49 @@
+{
+  "pbi_id": "REQ-344",
+  "audit_command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-344-test-plan.md",
+  "started_at": "2026-10-13T01:28:47.9164507+09:00",
+  "ended_at": "2026-10-13T01:30:33.6780550+09:00",
+  "wall_seconds": 105.7616043,
+  "exit_code": 0,
+  "model_key": "qwen/qwen3.5-9b",
+  "context_length": 32768,
+  "reasoning_effort": "none (dev-verify prescribed setting; adapter output did not separately echo this field)",
+  "audit_verdict": "FAIL",
+  "risk_level": "High",
+  "findings": [
+    {
+      "severity": "critical",
+      "topic": "Acceptance path assertions",
+      "finding": "The auditor judged some acceptance table wording to describe manual observation rather than enforce explicit assertions.",
+      "recommendation": "Express the acceptance path as explicit test assertions."
+    },
+    {
+      "severity": "high",
+      "topic": "Known warning criteria",
+      "finding": "The distinction between known warnings and unexpected warnings was judged insufficiently precise.",
+      "recommendation": "Define the exact permitted warning patterns."
+    },
+    {
+      "severity": "high",
+      "topic": "Run log identity",
+      "finding": "The auditor judged log/run identity and reuse prevention underspecified.",
+      "recommendation": "Specify a unique run identity and timestamp in each run record."
+    },
+    {
+      "severity": "medium",
+      "topic": "600-second stop rule",
+      "finding": "The auditor judged the wall-time measurement boundary ambiguous.",
+      "recommendation": "Clarify how the 600-second limit is measured and enforced."
+    }
+  ],
+  "raw_trace": "REQ-344-qa-audit.log",
+  "unload": {
+    "command": "python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload",
+    "started_at": "2026-10-13T01:30:39.7780951+09:00",
+    "ended_at": "2026-10-13T01:30:42.7578858+09:00",
+    "wall_seconds": 2.9797907,
+    "exit_code": 0,
+    "verification": "LM Studio reports no models loaded",
+    "claim_scope": "No loaded model reported; does not establish that all GPU memory is free."
+  }
+}

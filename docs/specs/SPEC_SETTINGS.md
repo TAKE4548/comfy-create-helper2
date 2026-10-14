@@ -4,9 +4,13 @@ tags:
   - settings
   - REQ-314
   - REQ-334
+  - REQ-347
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
   - docs/backlog/task/archive/REQ-334-T10.md
+  - docs/backlog/pbi/active/REQ-347.md
+  - docs/backlog/task/active/REQ-347-T10.md
+  - docs/design/REQ-347.md
   - frontend/src/pages/SettingsPage
   - frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx
   - frontend/src/pages/SettingsPage/components/SpeechToneSection.tsx
@@ -17,11 +21,11 @@ related_paths:
 
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 2.4
-**最終更新**: 2026-10-10
+**バージョン**: 2.6
+**最終更新**: 2026-10-13
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md)
 
 ---
 
@@ -68,6 +72,10 @@ systemタブは接続状態、VRAM、表示と操作の3論理カードで構成
 
 ### 3-1. 設定ページのレスポンシブ動作
 
+Workflow/Mapping設定では `WorkflowConnectionSection` 内の `AdaptiveWorkflowWiring` を専用スクロール領域にする。対象workflowの有効stageを順に連続groupとして表示し、各stageのenabled variantに対応するwire項目を同じgroupへ配置する。未設定のenabled候補も表示・選択できる。各groupの見出しは専用領域内でstickyとし、次groupが領域上端へ到達したとき表示を切り替える。保存操作は既存のWorkflowConnectionSectionの保存経路を使い、スクロール領域外に置く。
+
+wire slotのrole名およびparameter/select名は既存の契約どおり表示する。簡潔化するのはstage group見出しだけとし、slot名をgroup表示名へ置き換えない。表示整理に伴うDB、API、schemaの変更は行わない。
+
 状態・ログ取得は7秒、サービス操作は120秒の待機予算を使う。操作timeout・504・応答不明は「要求結果未確認」と表示して状態を再取得し、再送しない。running表示だけで再起動成功と断定しない。ログAPIの`lines`は総行数number、本文は`content`であり、FEは表示用配列へ正規化する。Managerのbusyと各サービスの稼働状態は区別する。
 
 画面幅768px未満ではタブバーを横スクロール可能にし、スナップ位置をタブ単位にする。タブを画面幅へ均等縮小せず、選択タブが見える状態を保つ。設定カードは狭い画面で縦積みにし、操作対象は44px以上とする。AppShellのbottom nav（<768px）、tablet rail（768–1023px）、desktop sidebar（>=1024px）は[SPEC_COMMON.md](./SPEC_COMMON.md)の共通境界に従う。
@@ -99,8 +107,8 @@ interface MappingMaster {
   input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean' | 'seed';
   display_name: string;
   title_patterns: string[];
+  default_enabled: boolean;
   sort_order: number;
-  default_enabled: boolean; // 新規mapping表示の既定有効状態
 }
 
 interface ParamTypeMaster {
@@ -113,6 +121,8 @@ interface ParamTypeMaster {
   step?: number;
 }
 ```
+
+Settingsのwire表示は、既存のworkflow stage定義、MappingMaster、および有効variantの対応関係を使う。variantがあるslotはmaster IDとvariant IDの両方で識別し、保存時に元のvariant IDを保持する。legacy slotはvariantを持たない既存identityのまま扱う。group表示・選択解除はslot単位で、保存は既存のworkflow mapping保存契約を使う。未設定のenabled候補も候補として残すため、保存時に既存設定を意図せず削除しない。
 
 ### 4-1-1. REQ-358 ノード候補とworkflow slot状態
 
@@ -234,6 +244,7 @@ pages/SettingsPage/
     BaseModelSection.tsx         — BaseModel & Checkpoint マッピング
     ThumbnailSettingsSection.tsx — サムネイル表示アスペクト比
     WorkflowConnectionSection.tsx— 長押し設定、ワークフロー削除、接続確認
+      AdaptiveWorkflowWiring.tsx — stage別wire group、未設定enabled候補、専用scroll領域
 ```
 
 ---

@@ -1,0 +1,62 @@
+{
+  "pbi_id": "REQ-344",
+  "action": "ba-audit",
+  "model_key": "qwen/qwen3.5-9b",
+  "configured_key_found": true,
+  "targets": [
+    "docs/design/REQ-344.md",
+    "docs/design/REQ-344-test-plan.md",
+    "docs/backlog/task/active/REQ-344-T1.md",
+    "docs/backlog/task/active/REQ-344-T2.md",
+    "docs/backlog/task/active/REQ-344-T3.md",
+    "implementation_plan.md"
+  ],
+  "target_hashes_before_audit_annotation": [
+    {
+      "path": "docs/design/REQ-344.md",
+      "sha256": "A3C15EC96666D4B8C3E36C29554C1888312F9553B90C954BB24C65259E1D0B6B"
+    },
+    {
+      "path": "docs/design/REQ-344-test-plan.md",
+      "sha256": "6B5B4BD6727EF49AEBA8AEF3EA6E096ED54573455F81B9B8052903CBE1FE6D09"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-344-T1.md",
+      "sha256": "346BA655BF524296705469E0674E3AA5011A004FEC8445C2D0123DDFE139668C"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-344-T2.md",
+      "sha256": "4DB96F73510107B6FAF1613CB69B885EAEC699004CA87C035FC59AF49D09AD28"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-344-T3.md",
+      "sha256": "49DCAEFF192CEC8B7CAEDF9F43BFB641ABFE558FF2ABD2A902026AB13E05B51C"
+    },
+    {
+      "path": "implementation_plan.md",
+      "sha256": "8111ECAC53A42E6B68C896ED32C223A2341B3CDF98AADC49C35EFA9DF4A2C904"
+    }
+  ],
+  "context_length": 32768,
+  "reasoning_effort_requested": "none",
+  "reasoning_control_response_evidence": null,
+  "runtime_expected": "LM Studio 0.4.25 / llama.cpp ROCm 2.55.0",
+  "runtime_observed": null,
+  "started_at_utc": "2026-10-12T14:32:44.5903780Z",
+  "ended_at_utc": "2026-10-12T14:36:16.6931451Z",
+  "elapsed_seconds": 212.1,
+  "chunks_total": 2,
+  "chunk_attempted": 1,
+  "chunks_completed": 0,
+  "input_chars": 28659,
+  "chunk_threshold_chars": 24000,
+  "request_timeout_seconds": 180,
+  "result": "INCONCLUSIVE",
+  "audit_exit_code": 1,
+  "error": "LM Studio API request timed out during chunk 1/2; no audit findings received",
+  "unload_exit_code": 0,
+  "loaded_models_after_unload": [],
+  "unload_evidence": "LM Studio reports no models loaded",
+  "audit_log": "docs/design/REQ-344-ba-audit.log",
+  "unload_log": "docs/design/REQ-344-unload.log"
+}

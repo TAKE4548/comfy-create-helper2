@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.4
-**最終更新**: 2026-10-10
+**バージョン**: 2.7
+**最終更新**: 2026-10-13
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md)
 
 ---
 
@@ -29,13 +29,17 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 │  - ツールバー: プリセット名   │  - メインプレビュー              │
 │    Undo/Redo, Add Set, 管理 │  - 履歴サムネイルストリップ      │
 │  - LLM Audit パネル          │  - スナップショット              │
-│  - プロンプト入力（タブ切替）  │  - 生成コントロール              │
+│  - Prompt 入力（stage group）  │  - 生成コントロール              │
 │  - 翻訳 / シーン生成ボタン   │  - 永続ActionBar                 │
 │  - LoRA / TagSet アセット    │                                 │
 │  - パラメータ入力             │  - 生成 / batch / snapshot保存  │
 │  - マッピング確認             │                                 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
+
+デスクトップ入力ペインは Prompt と Parameter を水平仕切りで分け、それぞれ独立したスクロール領域とする。各領域は既存のマッピングのみを対象にし、ワークフローstageの順序でstage groupを連続表示する。各groupの見出しは領域内スクロールに追従し、次groupが上端へ到達すると表示見出しを切り替える。stage groupingはDesktopのPrompt/Parameterで有効にする。ParamPanelの `stageGrouping` は既定値 `false` とし、既存Mobile Prompt tabsの表示・操作を変更しない。
+
+入力ペインの上端には物理paddingを置かず、sticky見出しは高さ36px・不透明背景とする。上端の余白が必要な場合は本文側に設ける。通常時とgroup境界追従時の見出し表示、および入力欄を覆わないことを維持する。工程見出しの可視文字はStageMaster.nameのみとし、stageKeyを重ねて表示しない。nameが空白の場合は既定fallbackを使い、長名・同名の識別情報はARIA、title、data属性で提供する。schemaに独立したstage display_nameはなく、Prompt項目の `WorkflowMapping.display_name` とは別契約である。
 
 ### 2-1. ヘッダー
 
@@ -66,8 +70,9 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 ### 2-3. プロンプト入力パネル
 
-ワークフローの `mappings` から `input_type === "textarea"` のフィールドを動的生成。各フィールドは [TagChipEditor](./SPEC_COMMON.md#3-tagchipeditor-コンポーネント) で表示。
-- タブ切り替えで複数プロンプトフィールドを切り替え。
+ワークフローの既存 `mappings` のうち `input_type === "textarea"` のフィールドだけを動的生成する。各フィールドは [TagChipEditor](./SPEC_COMMON.md#3-tagchipeditor-コンポーネント) で表示する。Desktopでは所属stageごとに連続したgroupへ配置し、各groupのsticky見出しをスクロール境界で切り替える。未マッピングのstage/roleの入力欄は追加しない。Mobileでは従来のPrompt tabsで複数プロンプト欄を切り替える。
+- DesktopのPrompt項目名は、非空の `WorkflowMapping.display_name` を加工せず表示する。未設定時は `param_name`、`role`、`プロンプト` の順にfallbackする。項目名は16px/24px/600の独立したh4行とし、copy/history/translation/assetsおよびmode controlは次のwrap可能なtoolbar行へ置く。独立したmode captionは省略し、Mobile/Studioの既定captionと機能は維持する。
+- Desktopのclipboard menuはstart配置、全幅anchor、最大幅100%で入力root内に収める。他の呼び出し元はdefault end配置を維持する。collapse controlのsr-only descriptionにはstageKeyと元roleを含め、可視設定名を追加しない。
 - 各プロンプトフィールドに「+ LoRA / TagSet を追加」ボタンを配置。
 - 「テキスト入力モード切替」エスケープハッチを完備。
 - **構造化チップ（`promptChips`）の状態管理と保持規則**:
@@ -86,7 +91,7 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 ### 2-5. パラメータ入力パネル (`ParamPanel.tsx`)
 
-`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` のマッピングを動的生成。
+`input_type` が `int` / `float` / `select` / `lora_stack` / `select_sampler` / `select_scheduler` / `boolean` / `seed` の既存マッピングだけを動的生成する。Desktopでは所属stageごとに連続groupへ配置し、Prompt領域とは独立したスクロールとsticky見出しの境界切替を行う。未マッピングのstage/roleの入力欄は追加しない。`stageGrouping` は既定値 `false` とし、Mobileなど既存呼び出し元の表示を変えない。
 
 - **サンプラ・スケジューラ選択 UI**: ComfyUI の `/object_info` から動的取得（オフライン時は定数フォールバック）。
 - **動的 LoRA スタック UI (`LoraStackEditor.tsx`)**: 最大10スロットの動的追加・削除・詰め直し、説明文照合表示。
@@ -95,6 +100,8 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 - **専用Seedの実入力解決 (REQ-353)**: `GET /api/workflows/{workflow_id}` の `WorkflowRead.mappings` はmappingごとにeffective master metadataを返す。master metadataはworkflow mappingのdirect `master_id`を優先し、未設定の場合は`variant.master`を使う。`param_name`をprimary、nullableな`fallback_param_names`を登録順のaliasとして扱う（省略/null/空配列はaliasなし）。現在のnode inputsに存在する最初のown keyへ値を適用する。専用Seedで未登録の`value`、`noise_seed`等を推測したり、新しい入力keyを作成したりしない。primary/fallbackのいずれも存在しない場合は生成要求全体をComfyUI送信前に説明付きで拒否する。既存keyが配線（graph reference）なら他aliasへ切り替えず拒否する。初期値、バッチ検証、graph注入、生成履歴は同じ解決規則を使い、履歴値は送信graphの解決済みkeyから取得する。`value`入力を使うmappingはprimaryまたはfallbackとして明示登録する。legacy非seed global Seedおよび非seed一般parameterの既存処理は維持する。API schemaの同期・稼働比較とE2E証拠は[REQ-354稼働検証記録](../design/REQ-354-verification.md)を参照する。
 - 固定値は10進整数 `0..4294967295`。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について `Math.floor(Math.random() * 2**32)` で生成する（重複を許す）。
 - 同期対象Seedは同期親の確定実値を子へ共有し、子側で再抽選・再加算しない。モードmetadataの欠落・破損・未知形式、およびgraph参照Seedは専用Seedとして曖昧に解釈せず、投入前に拒否する。snapshot復元は保存済みSeed値とmodeを固定値として扱い、復元時にランダム化しない。
+
+stage groupは入力欄の表示だけを整理する。role、`promptChips`、ParamSync、Seed値・modeおよび各入力値の既存保存・同期契約は変更しない。未マッピングのrole/fieldを生成入力欄へ追加する候補範囲の拡張はREQ-348の対象とする。
 
 #### REQ-358 workflow mappingの無効化
 

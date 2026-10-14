@@ -20,7 +20,7 @@ const mapping = (id: number, variant_id: number | null, role: string | null = nu
 })
 
 describe('groupMappingsByStage', () => {
-  it('groups interleaved explicit variants by active stage order and preserves mapping references', () => {
+  it('[REQ-347/AC-1] groups interleaved explicit variants by active stage order and preserves mapping references', () => {
     const rough = mapping(1, 102)
     const main = mapping(2, 101)
     const groups = groupMappingsByStage([rough, main], [master], stages)
@@ -30,7 +30,7 @@ describe('groupMappingsByStage', () => {
     expect(groups[1].mappings[0]).toBe(rough)
   })
 
-  it('uses unique computed-role matches for legacy mappings, while leaving ambiguous matches unresolved', () => {
+  it('[REQ-347/AC-1] uses unique computed-role matches for legacy mappings, while leaving ambiguous matches unresolved', () => {
     const unique = mapping(3, null, 'rough_prompt')
     const ambiguousMaster = { ...master, variants: [...master.variants, { ...master.variants[1], id: 103, stage_key: 'other' }] }
     const ambiguous = mapping(4, null, 'rough_prompt')
@@ -41,7 +41,7 @@ describe('groupMappingsByStage', () => {
     expect(ambiguousGroups.find(group => group.key === 'unknown')?.mappings).toContain(ambiguous)
   })
 
-  it('keeps unresolved explicit variants and inactive or undefined stages after active stages', () => {
+  it('[REQ-347/AC-1] keeps unresolved explicit variants and inactive or undefined stages after active stages', () => {
     const inactiveStage = { ...stages[1], is_active: false }
     const groups = groupMappingsByStage([mapping(1, 999), mapping(2, 102)], [master], [stages[0], inactiveStage])
 
@@ -53,7 +53,7 @@ describe('groupMappingsByStage', () => {
     expect(missing[0].stageName).toBe('Old Rough')
   })
 
-  it('supports empty metadata while retaining every mapping and reprojects metadata without mutation', () => {
+  it('[REQ-347/AC-1] supports empty metadata while retaining every mapping and reprojects metadata without mutation', () => {
     const item = mapping(7, 101)
     const input = [item]
     const fallback = groupMappingsByStage(input, [], [])
@@ -65,7 +65,7 @@ describe('groupMappingsByStage', () => {
     expect(input).toEqual([item])
   })
 
-  it('uses stage definition names/order when variants share a stage, and preserves source order within groups', () => {
+  it('[REQ-347/AC-1] uses stage definition names/order when variants share a stage, and preserves source order within groups', () => {
     const first = mapping(1, 101)
     const second = mapping(2, 101)
     const groups = groupMappingsByStage([first, second], [master], stages)
@@ -75,7 +75,7 @@ describe('groupMappingsByStage', () => {
     expect(groups[0].stageKey).toBe('main')
   })
 
-  it('keeps distinct stage identities separate when their display names match', () => {
+  it('[REQ-347/AC-1] keeps distinct stage identities separate when their display names match', () => {
     const sameNameStages = stages.map(stage => ({ ...stage, name: 'Stage' }))
     const groups = groupMappingsByStage([mapping(1, 102), mapping(2, 101)], [master], sameNameStages)
 

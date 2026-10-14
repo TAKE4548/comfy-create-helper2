@@ -1,11 +1,19 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { LS_KEYS } from '../../../../utils/localStorageKeys'
 
 const mainSplitBounds = vi.hoisted(() => ({ minSize: null as number | null | undefined, maxSize: null as number | null | undefined }))
+
+function renderGroupedDesktop(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  client.setQueryData(['stage-masters'], [])
+  client.setQueryData(['mapping-masters'], [])
+  return render(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 vi.mock('../../../../components/layout/ResizableSplitLayout', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../components/layout/ResizableSplitLayout')>()
@@ -54,7 +62,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
 
   it('clamps the main pane to 330px on tablet resize and restores desktop bounds without unmounting controls', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
-    const { container } = render(<DesktopLayout state={createMockState()} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={createMockState()} />)
     expect(mainSplitBounds).toEqual({ minSize: 380, maxSize: 700 })
     const savedSplit = localStorage.getItem(LS_KEYS.LAYOUT_MAIN_SPLIT)
 
@@ -223,7 +231,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
   // 1. AC-1 & AC-2 / Layout Hierarchy
   it('AC-1 & AC-2: renders Global Header at top level before #desktop-preset-tabs-bar and ResizableSplitLayout', () => {
     const state = createMockState()
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     const root = container.firstElementChild as HTMLElement
     expect(root).toBeInTheDocument()
@@ -256,7 +264,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
   // 2. AC-2 / Multiple Presets
   it('AC-2: renders all open preset tabs inside an overflow-x-auto container within #desktop-preset-tabs-bar', () => {
     const state = createMockState()
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     const tabsBar = container.querySelector('#desktop-preset-tabs-bar')
     expect(tabsBar).toBeInTheDocument()
@@ -274,7 +282,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
   // 3. AC-3 & AC-4 / Left Pane Toolbar Order and Proximity
   it('AC-3 & AC-4: renders #left-pane-toolbar with justify-start in exact order: name badge, undo/redo, add-set, manage', () => {
     const state = createMockState()
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     const leftToolbar = container.querySelector('#left-pane-toolbar') as HTMLElement
     expect(leftToolbar).toBeInTheDocument()
@@ -312,7 +320,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
   // 4. AC-5 / Interactions
   it('AC-5: handles tab selection, checkbox toggle, tab removal, and undo/redo clicks', () => {
     const state = createMockState()
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     // 1) Select tab
     const betaTab = screen.getByText('Preset Beta').closest('div')
@@ -367,7 +375,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
       openPresetIds: [],
     })
 
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     // tabs bar exists but has no tabs
     const tabsBar = container.querySelector('#desktop-preset-tabs-bar')
@@ -388,7 +396,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
       selectedWorkflowId: null,
     })
 
-    const { container } = render(<DesktopLayout state={state} />)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     // Global Header still renders at root
     expect(container.querySelector('#workflow-select')).toBeInTheDocument()
@@ -402,17 +410,18 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
       activeSetId: 'set-1',
     })
 
-    const { rerender } = render(<DesktopLayout state={state} />)
+    const { rerender } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     // 1. Initial render with Anima mode -> Chip mode by default
-    expect(screen.getByText('Chips Mode')).toBeInTheDocument()
+    expect(screen.queryByText('Chips Mode')).not.toBeInTheDocument()
     expect(screen.getByText('テキスト入力モード切替')).toBeInTheDocument()
 
     // 2. User manually switches to Text mode
     fireEvent.click(screen.getByText('テキスト入力モード切替'))
 
     // Text mode is now active
-    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.queryByText('Text Mode (Comma separated)')).not.toBeInTheDocument()
+    expect(document.querySelector('#prompt-Main_Positive_Prompt textarea')).toBeInTheDocument()
     expect(screen.getByText('チップモード切替')).toBeInTheDocument()
     expect(useGenerationStore.getState().roleTextModes?.Main_Positive_Prompt).toBe(true)
 
@@ -420,20 +429,22 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     rerender(<DesktopLayout state={{ ...state, activeSetId: 'set-2' }} />)
 
     // Text mode should be preserved (no regression / ancestor reverting)
-    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.queryByText('Text Mode (Comma separated)')).not.toBeInTheDocument()
+    expect(document.querySelector('#prompt-Main_Positive_Prompt textarea')).toBeInTheDocument()
     expect(screen.getByText('チップモード切替')).toBeInTheDocument()
 
     // 4. Switch back to 'set-1' -> TagChipEditor remounts again
     rerender(<DesktopLayout state={{ ...state, activeSetId: 'set-1' }} />)
 
     // Text mode is still preserved
-    expect(screen.getByText('Text Mode (Comma separated)')).toBeInTheDocument()
+    expect(screen.queryByText('Text Mode (Comma separated)')).not.toBeInTheDocument()
+    expect(document.querySelector('#prompt-Main_Positive_Prompt textarea')).toBeInTheDocument()
     expect(screen.getByText('チップモード切替')).toBeInTheDocument()
   })
 
   it('AC-16–18: keeps prompt and controls in independent scroll panes and preserves prompt draft across preset tabs', () => {
     const state = createMockState()
-    const { container, rerender } = render(<DesktopLayout state={state} />)
+    const { container, rerender } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     const promptPane = container.querySelector('#desktop-prompt-scroll') as HTMLElement
     const controlsPane = container.querySelector('#desktop-controls-scroll') as HTMLElement
@@ -455,7 +466,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     useGenerationStore.setState({ generationStartTime: Date.now() - 20_000 })
     const state = createMockState({ isGeneratingHere: true, progress: { percentage: 50 } })
 
-    render(<DesktopLayout state={state} />)
+    renderGroupedDesktop(<DesktopLayout state={state} />)
 
     expect(screen.getByText('経過時間: 20秒')).toBeInTheDocument()
     expect(screen.getByText('残り約: 20秒')).toBeInTheDocument()

@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useGeneratePageState } from '../useGeneratePageState'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
@@ -128,8 +128,10 @@ const createWrapper = () => {
 
 describe('useGeneratePageState', () => {
   let mockStore: any
+  let originalVisibilityDescriptor: PropertyDescriptor | undefined
 
   beforeEach(() => {
+    originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState')
     mockStore = useGenerationStore()
     vi.clearAllMocks()
 
@@ -170,6 +172,21 @@ describe('useGeneratePageState', () => {
     vi.mocked(workflowPresetsApi.list).mockResolvedValue([
       { id: 10, workflow_id: 1, name: 'Preset 1', param_values: { Sampler_Seed: '999' }, applied_assets: {}, batch_size: 1, seed_mode: 'fixed', seed: 999, sort_order: 1, created_at: '', updated_at: '' }
     ])
+  })
+
+  afterEach(() => {
+    mockStore.batchImages = ['image1.png']
+    mockStore.selectedImg = 'image1.png'
+    mockStore.comfyHistoryImages = ['image1.png', 'image2.png']
+    mockStore.isConnected = true
+    mockStore.fetchQueue = undefined
+    mockStore.fetchHistory = undefined
+    vi.mocked(snapshotsApi.list).mockReset()
+    if (originalVisibilityDescriptor) {
+      Object.defineProperty(document, 'visibilityState', originalVisibilityDescriptor)
+    } else {
+      Reflect.deleteProperty(document, 'visibilityState')
+    }
   })
 
   it('should initialize with default states and fetch active lists', async () => {
@@ -347,9 +364,11 @@ describe('useGeneratePageState', () => {
     expect(result.current.isGeneratingHere).toBe(true)
   })
 
-  it('should sync queue and history on visibilitychange when document becomes visible (REQ-159)', () => {
+  it('should sync queue without refetching history for a restored nonempty baseline on visibilitychange (REQ-159)', () => {
     const fetchQueueMock = vi.fn()
     const fetchHistoryMock = vi.fn()
+    const restoredBatchImages = [...mockStore.batchImages]
+    const restoredHistoryImages = [...mockStore.comfyHistoryImages]
     mockStore.fetchQueue = fetchQueueMock
     mockStore.fetchHistory = fetchHistoryMock
 
@@ -361,7 +380,35 @@ describe('useGeneratePageState', () => {
       writable: true,
       configurable: true,
     })
-    document.dispatchEvent(new Event('visibilitychange'))
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+
+    expect(fetchQueueMock).toHaveBeenCalled()
+    expect(fetchHistoryMock).not.toHaveBeenCalled()
+    expect(mockStore.batchImages).toEqual(restoredBatchImages)
+    expect(mockStore.comfyHistoryImages).toEqual(restoredHistoryImages)
+  })
+
+  it('should sync queue and fetch history on visibilitychange for a cold empty baseline', async () => {
+    const fetchQueueMock = vi.fn()
+    const fetchHistoryMock = vi.fn()
+    mockStore.batchImages = []
+    mockStore.comfyHistoryImages = []
+    mockStore.selectedImg = null
+    mockStore.isConnected = true
+    mockStore.fetchQueue = fetchQueueMock
+    mockStore.fetchHistory = fetchHistoryMock
+    vi.mocked(snapshotsApi.list).mockResolvedValue([])
+
+    const wrapper = createWrapper()
+    const { result } = renderHook(() => useGeneratePageState(), { wrapper })
+
+    await waitFor(() => expect(result.current.residualHistoryStatus).toBe('complete'))
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      writable: true,
+      configurable: true,
+    })
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
 
     expect(fetchQueueMock).toHaveBeenCalled()
     expect(fetchHistoryMock).toHaveBeenCalled()

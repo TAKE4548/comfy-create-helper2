@@ -1,0 +1,93 @@
+{
+  "pbi_id": "REQ-344",
+  "task_id": "REQ-344-T11",
+  "attempt": 2,
+  "baseline": {
+    "head": "d38568142c73e46521bb4d503224562fb133dfac",
+    "source_sha256": "B045788AEE942412486134D5E472B05F5293166BFB50D2883B94B82F8DA64793",
+    "target_diff_insertions": 20,
+    "target_diff_deletions": 16,
+    "test_declarations": 13,
+    "cwd": "C:/Users/audih/ws/comfy-create-helper2/frontend",
+    "node": "v18.16.1",
+    "npm": "9.7.1"
+  },
+  "context": "All attempt-2 test commands use elevated permission context to allow Node native realpath resolution for src/test/setup.ts. No source/runtime/test configuration changes were made.",
+  "command": "npm test",
+  "per_run_wall_limit_seconds": 600,
+  "wall_measurement": "PowerShell wall clock from immediately before npm test invocation until process exit.",
+  "runs": [
+    {
+      "run": 1,
+      "run_id": "88ecbf48-265d-48b0-b18f-c9121e2d0a9f",
+      "started_at": "2026-10-13T01:32:29.5343002+09:00",
+      "ended_at": "2026-10-13T01:33:44.5879375+09:00",
+      "wall_seconds": 75.0536373,
+      "exit_code": 1,
+      "target": {
+        "collected": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "duration_ms": 4197,
+        "result": "PASS"
+      },
+      "full_suite": {
+        "files_passed": 228,
+        "files_failed": 1,
+        "tests_passed": 2078,
+        "tests_failed": 1,
+        "tests_total": 2079,
+        "unrelated_failure": {
+          "file": "src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx",
+          "case": "stops after one retry page when baseline-known B follows a full 20-page cycle",
+          "expected": "partial",
+          "received": "checking"
+        }
+      },
+      "warning_observations": {
+        "lines_starting_with_warning": 139,
+        "lines_matching_no_query_fn": 110,
+        "unhandled_exception_matches": 0,
+        "allowed_warning_catalog": "No new allowlist was created; existing warning policy is unchanged."
+      },
+      "raw_log": "REQ-344-attempt2-run1.log"
+    },
+    {
+      "run": 2,
+      "result": "NOT-RUN",
+      "reason": "Run 1 had a nonzero full-suite result; Task Card stop rule."
+    },
+    {
+      "run": 3,
+      "result": "NOT-RUN",
+      "reason": "Run 1 had a nonzero full-suite result; Task Card stop rule."
+    },
+    {
+      "run": 4,
+      "result": "NOT-RUN",
+      "reason": "Run 1 had a nonzero full-suite result; Task Card stop rule."
+    },
+    {
+      "run": 5,
+      "result": "NOT-RUN",
+      "reason": "Run 1 had a nonzero full-suite result; Task Card stop rule."
+    }
+  ],
+  "gate_results": {
+    "gate_1_typecheck": "PASS (attempt-1 rework; npm run typecheck exit 0)",
+    "gate_2_full_suite": "INCONCLUSIVE for REQ-344: target passed, unrelated suite assertion failed",
+    "gate_3_scenarios": "PASS for target cases in attempt2 run1; five-run evidence incomplete",
+    "ac_1_five_consecutive_target_passes": "INCONCLUSIVE: one completed target pass; runs 2-5 NOT-RUN"
+  },
+  "prior_qa_audit": {
+    "rerun": false,
+    "verdict": "FAIL",
+    "raw_log": "REQ-344-qa-audit.log",
+    "structured_findings": "REQ-344-qa-audit.json",
+    "unload_exit_code": 0,
+    "unload_log": "REQ-344-model-unload.log"
+  },
+  "overall_verdict": "INCONCLUSIVE",
+  "third_attempt": "Not performed; coordinator specified no third attempt."
+}
