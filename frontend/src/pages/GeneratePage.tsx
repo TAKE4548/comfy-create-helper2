@@ -202,11 +202,13 @@ export function GeneratePage() {
       )}
       {isPresetManagerOpen && selectedWorkflowId && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+          data-testid="preset-manager-overlay"
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
           onClick={() => setIsPresetManagerOpen(false)}
         >
           <div 
-            className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl relative animate-scale-up"
+            data-testid="preset-manager-modal"
+            className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-t-2xl md:rounded-xl max-h-[75dvh] flex flex-col p-4 md:p-6 shadow-2xl relative animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
             <button 
@@ -215,7 +217,7 @@ export function GeneratePage() {
             >
               <X size={18} />
             </button>
-            <h3 className="text-base font-semibold text-zinc-100 mb-4">プリセット管理</h3>
+            <h3 className="text-base font-semibold text-zinc-100 mb-3 shrink-0">プリセット管理</h3>
             <PresetManagerPanel
               presets={presets || []}
               onRename={async (id, name) => {

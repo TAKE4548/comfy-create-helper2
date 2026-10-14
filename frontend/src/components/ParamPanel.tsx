@@ -237,11 +237,11 @@ export const ParamPanel = ({
           )
         }
         return (
-          <div key={m.id} className="flex items-center justify-between gap-4">
-            <div className="flex flex-col min-w-0 flex-shrink-0">
-              <label className="text-xs text-zinc-400 truncate">{m.display_name}</label>
+          <div key={m.id} className={`flex items-center justify-between ${mobile ? 'gap-2 py-1' : 'gap-4'}`}>
+            <div className={`flex flex-col min-w-0 ${mobile ? 'flex-1 pr-2' : 'flex-shrink-0'}`}>
+              <label className={`text-xs ${mobile ? 'text-zinc-300 leading-tight break-words' : 'text-zinc-400 truncate'}`}>{m.display_name}</label>
               {isSyncedSlave && (
-                <span className="text-[9px] text-accent-green/80 flex items-center gap-0.5" title={`Synced with ${masterDisplayName}`}>
+                <span className="text-[9px] text-accent-green/80 flex items-center gap-0.5 truncate" title={`Synced with ${masterDisplayName}`}>
                   <Link size={9} /> Synced: {masterDisplayName}
                 </span>
               )}
@@ -250,7 +250,7 @@ export const ParamPanel = ({
               <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
                 disabled={isSyncedSlave}
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
+                className={`${mobile ? 'w-[125px]' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
                 <option value="">Select sampler…</option>
                 {(comfyObjectInfo?.KSampler?.input?.required?.sampler_name?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.sampler_name?.[0] || DEFAULT_SAMPLERS)?.map((name: string) => (
                   <option key={name} value={name}>{name}</option>
@@ -260,7 +260,7 @@ export const ParamPanel = ({
               <select id={`param-${mobile ? 'mobile-' : ''}${m.role!}`} value={paramValues[m.role!] ?? ''}
                 disabled={isSyncedSlave}
                 onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
+                className={`${mobile ? 'w-[125px]' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}>
                 <option value="">Select scheduler…</option>
                 {(comfyObjectInfo?.KSampler?.input?.required?.scheduler?.[0] || comfyObjectInfo?.KSamplerAdvanced?.input?.required?.scheduler?.[0] || DEFAULT_SCHEDULERS)?.map((name: string) => (
                   <option key={name} value={name}>{name}</option>
@@ -272,7 +272,7 @@ export const ParamPanel = ({
                 onChange={(val) => setParamValues({ ...paramValues, [m.role!]: val })}
                 loras={loras}
                 activeBaseModelId={activeBaseModelId}
-                className={`${mobile ? 'w-36' : 'w-48'} ${isSyncedSlave ? 'opacity-40 pointer-events-none' : ''}`}
+                className={`${mobile ? 'w-[125px]' : 'w-48'} ${isSyncedSlave ? 'opacity-40 pointer-events-none' : ''}`}
                 placeholder="Select option…"
               />
             ) : m.input_type === 'boolean' ? (
@@ -303,7 +303,7 @@ export const ParamPanel = ({
                       value={paramValues[m.role!] ?? ''}
                       disabled={isSyncedSlave}
                       onChange={(e) => setParamValues({ ...paramValues, [m.role!]: e.target.value })}
-                      className={`${mobile ? 'w-36' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}
+                      className={`${mobile ? 'w-[125px]' : 'w-48'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 disabled:opacity-40 disabled:cursor-not-allowed`}
                     >
                       <option value="">選択してください…</option>
                       {customType.combo_options.map((opt) => (
@@ -336,7 +336,7 @@ export const ParamPanel = ({
                   )
                 } else {
                   return (
-                    <>
+                    <div className="flex items-center gap-1 shrink-0">
                       <input
                         id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                         type={customType.widget_type === 'textarea' ? 'text' : 'number'}
@@ -349,12 +349,12 @@ export const ParamPanel = ({
                         className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-accent-green/40 text-right disabled:opacity-40 disabled:cursor-not-allowed`}
                       />
                       {customType.widget_type !== 'textarea' && <NumericStepperButtons label={m.display_name || m.role!} disabled={isSyncedSlave} onChange={changeNumericValue} />}
-                    </>
+                    </div>
                   )
                 }
               }
               return (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <input
                     id={`param-${mobile ? 'mobile-' : ''}${m.role!}`}
                     type="number"

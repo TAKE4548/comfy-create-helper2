@@ -66,4 +66,14 @@ describe('AddAssetModal REQ-334 tray and LoRA strength', () => {
     fireEvent.click(screen.getByRole('button', { name: /追加/ }))
     expect(addAppliedAsset).toHaveBeenCalledWith('positive', expect.objectContaining({ loraPromptString: '<lora:fox:2.00>' }))
   })
+  it('[REQ-363/AC-8] applies tightened padding (p-3.5) on mobile viewport', () => {
+    const { container } = render(<AddAssetModal role="positive" loras={[]} onClose={vi.fn()} addAppliedAsset={vi.fn()} setRoleCollapsed={vi.fn()} />)
+    const header = container.querySelector('h2')?.parentElement?.parentElement
+    expect(header?.className).toContain('px-3.5')
+    expect(header?.className).toContain('md:px-6')
+
+    const searchArea = container.querySelector('input[type="text"]')?.parentElement?.parentElement
+    expect(searchArea?.className).toContain('p-3.5')
+    expect(searchArea?.className).toContain('md:p-6')
+  })
 })

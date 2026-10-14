@@ -64,15 +64,6 @@ export function ResourceHoverMonitor(): React.JSX.Element {
       ? `${stats.ram_used_gb.toFixed(1)} / ${stats.ram_total_gb.toFixed(1)} GB`
       : '-- / -- GB'
 
-  const mobileRamText =
-    stats?.ram_used_gb != null
-      ? `${stats.ram_used_gb.toFixed(1)}G`
-      : (stats?.ram_pct != null ? `${Math.round(stats.ram_pct)}%` : '--')
-
-  const mobileVramText =
-    stats?.vram_used_gb != null
-      ? `${stats.vram_used_gb.toFixed(1)}G`
-      : (stats?.vram_pct != null ? `${Math.round(stats.vram_pct)}%` : '--')
 
   return (
     <div
@@ -145,43 +136,78 @@ export function ResourceHoverMonitor(): React.JSX.Element {
 
       {/* Mobile Pill & Overlay */}
       <div className="sm:hidden relative flex items-center" ref={mobileRef}>
-        {!isMobileExpanded ? (
-          <button
-            type="button"
-            data-testid="mobile-vram-pill"
-            onClick={() => setIsMobileExpanded(true)}
-            className="w-[96px] h-7 px-2 rounded-full border border-purple-800/60 bg-purple-500/10 text-purple-300 text-[10px] font-medium flex items-center justify-between shadow-sm active:scale-95 transition-transform"
-            aria-label="リソースモニタ展開"
-          >
-            <span>VRAM {vramPctText}</span>
-            <span className="text-[9px] text-purple-400">◀</span>
-          </button>
-        ) : (
+        <button
+          type="button"
+          data-testid="mobile-vram-pill"
+          onClick={() => setIsMobileExpanded((prev) => !prev)}
+          className="w-[96px] h-7 px-2 rounded-full border border-purple-800/60 bg-purple-500/10 text-purple-300 text-[10px] font-medium flex items-center justify-between shadow-sm active:scale-95 transition-transform"
+          aria-label={isMobileExpanded ? "リソースモニタを閉じる" : "リソースモニタ展開"}
+          aria-expanded={isMobileExpanded}
+        >
+          <span>VRAM {vramPctText}</span>
+          <span className="text-[9px] text-purple-400">{isMobileExpanded ? '▲' : '▼'}</span>
+        </button>
+
+        {isMobileExpanded && (
           <div
             data-testid="mobile-resource-overlay"
-            className="absolute right-0 top-1/2 -translate-y-1/2 w-[330px] max-w-[calc(100vw-1.5rem)] h-8 px-2.5 rounded-full border border-zinc-700 bg-surface-1 shadow-2xl z-[80] flex items-center justify-between text-[10px] text-zinc-300 animate-in fade-in slide-in-from-right-4 duration-150"
+            className="absolute right-0 top-full mt-2 w-[240px] rounded-xl border border-white/10 bg-surface-2 p-3 shadow-2xl z-40 flex flex-col gap-2.5 backdrop-blur-md animate-in fade-in duration-150"
           >
-            <div className="flex items-center gap-1.5 font-mono overflow-x-auto scrollbar-none">
-              <span>CPU {stats?.cpu_pct != null ? `${Math.round(stats.cpu_pct)}%` : '--%'}</span>
-              <span className="text-zinc-600">|</span>
-              <span>RAM {mobileRamText}</span>
-              <span className="text-zinc-600">|</span>
-              <span>GPU {stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
-              <span className="text-zinc-600">|</span>
-              <span className="text-purple-300 font-medium">VRAM {mobileVramText}</span>
+            <div className="flex items-center justify-between pb-1 border-b border-white/10">
+              <span className="text-xs font-semibold text-zinc-200">リソース詳細</span>
+              <button
+                type="button"
+                data-testid="mobile-overlay-close"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsMobileExpanded(false)
+                }}
+                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors"
+                aria-label="閉じる"
+              >
+                ✕
+              </button>
             </div>
-            <button
-              type="button"
-              data-testid="mobile-overlay-close"
-              onClick={(e) => {
-                e.stopPropagation()
-                setIsMobileExpanded(false)
-              }}
-              className="ml-2 w-5 h-5 flex items-center justify-center rounded-full hover:bg-surface-2 text-zinc-400 hover:text-zinc-200"
-              aria-label="閉じる"
-            >
-              ✕
-            </button>
+
+            {/* VRAM Section */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-purple-300 font-medium">VRAM</span>
+                <span className="text-zinc-400 font-mono">{vramGbText} ({vramPctText})</span>
+              </div>
+              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-purple-500 transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.max(0, stats?.vram_pct ?? 0))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* RAM Section */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-blue-300 font-medium">RAM</span>
+                <span className="text-zinc-400 font-mono">{ramGbText} ({ramPctText})</span>
+              </div>
+              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.max(0, stats?.ram_pct ?? 0))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* CPU & GPU */}
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5 text-[10px]">
+              <div>
+                <span className="text-zinc-400">CPU: </span>
+                <span className="text-zinc-200 font-mono">{stats?.cpu_pct != null ? `${Math.round(stats.cpu_pct)}%` : '--%'}</span>
+              </div>
+              <div>
+                <span className="text-zinc-400">GPU: </span>
+                <span className="text-zinc-200 font-mono">{stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, expect, it, beforeEach } from 'vitest'
 import { ResourceHoverMonitor } from '../ResourceHoverMonitor'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
@@ -71,7 +71,7 @@ describe('ResourceHoverMonitor', () => {
 
     const pill = screen.getByTestId('mobile-vram-pill')
     expect(pill.textContent).toContain('VRAM --%')
-    expect(pill.textContent).toContain('◀')
+    expect(pill.textContent).toContain('▼')
 
     fireEvent.mouseEnter(monitor)
     const hoverCard = screen.getByTestId('resource-hover-card')
@@ -84,26 +84,48 @@ describe('ResourceHoverMonitor', () => {
     const pill = screen.getByTestId('mobile-vram-pill')
     expect(pill.className).toContain('w-[96px]')
     expect(pill.textContent).toContain('VRAM 79%')
-    expect(pill.textContent).toContain('◀')
+    expect(pill.textContent).toContain('▼')
   })
 
-  it('expands mobile pill to 330px overlay with z-80 and all resources on click (AC-8)', () => {
+  it('[REQ-363/AC-6] displays dropdown card with proportional VRAM and RAM gauges anchored below pill', () => {
     render(<ResourceHoverMonitor />)
     const pill = screen.getByTestId('mobile-vram-pill')
+    expect(pill).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(pill)
+    expect(pill).toHaveAttribute('aria-expanded', 'true')
 
     const overlay = screen.getByTestId('mobile-resource-overlay')
     expect(overlay).toBeTruthy()
-    expect(overlay.className).toContain('w-[330px]')
-    expect(overlay.className).toContain('z-[80]')
-    expect(overlay.textContent).toContain('CPU 35%')
-    expect(overlay.textContent).toContain('RAM 9.8G')
-    expect(overlay.textContent).toContain('GPU 45%')
-    expect(overlay.textContent).toContain('VRAM 6.3G')
+    expect(overlay.className).toContain('w-[240px]')
+    expect(overlay.className).toContain('top-full')
+    expect(overlay.className).toContain('z-40')
+    expect(overlay.className).toContain('bg-surface-2')
+
+    // Proportional progress bars & dynamic update
+    const vramBar = overlay.querySelector('.bg-purple-500') as HTMLElement
+    const ramBar = overlay.querySelector('.bg-blue-500') as HTMLElement
+    expect(vramBar).toBeTruthy()
+    expect(ramBar).toBeTruthy()
+    expect(vramBar.style.width).toBe('78.5%')
+    expect(ramBar.style.width).toBe('62.1%')
+
+    // Dynamic telemetry update check
+    act(() => {
+      useGenerationStore.setState({ systemStats: { ...mockStats, vram_pct: 95.0 } })
+    })
+    expect(vramBar.style.width).toBe('95%')
+
+    expect(overlay.textContent).toContain('VRAM')
+    expect(overlay.textContent).toContain('6.3 / 8.0 GB')
+    expect(overlay.textContent).toContain('RAM')
+    expect(overlay.textContent).toContain('9.8 / 16.0 GB')
+    expect(overlay.textContent).toContain('CPU: 35%')
+    expect(overlay.textContent).toContain('GPU: 45%')
 
     const closeBtn = screen.getByTestId('mobile-overlay-close')
     fireEvent.click(closeBtn)
     expect(screen.queryByTestId('mobile-resource-overlay')).toBeNull()
     expect(screen.getByTestId('mobile-vram-pill')).toBeTruthy()
+    expect(pill).toHaveAttribute('aria-expanded', 'false')
   })
 })

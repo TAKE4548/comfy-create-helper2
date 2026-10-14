@@ -313,4 +313,31 @@ describe('ParamPanel Component - Section Collapse / Expand', () => {
     expect(screen.getByRole('button', { name: 'Increase CFG' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Decrease CFG' })).toBeDisabled()
   })
+  it('[REQ-363/AC-7] renders parameter steppers and selects in compact 1-row layout on mobile', () => {
+    const { container } = render(
+      <ParamPanel
+        {...defaultProps}
+        mobile={true}
+        paramMappings={[
+          { id: 10, role: 'Sampler_Steps', display_name: 'Steps', input_type: 'int' },
+          { id: 11, role: 'Sampler_Sampler', display_name: 'Sampler Name', input_type: 'select_sampler' },
+        ]}
+      />
+    )
+
+    // Verify row uses gap-2 py-1 on mobile
+    const rows = container.querySelectorAll('.flex.items-center.justify-between')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0].className).toContain('gap-2')
+    expect(rows[0].className).toContain('py-1')
+
+    // Verify select width uses w-[125px] on mobile
+    const select = container.querySelector('#param-mobile-Sampler_Sampler')
+    expect(select).toHaveClass('w-[125px]')
+
+    // Verify stepper row is kept on single row with shrink-0 and compact input
+    const input = container.querySelector('#param-mobile-Sampler_Steps')
+    expect(input).toHaveClass('w-20')
+    expect(input?.parentElement).toHaveClass('shrink-0')
+  })
 })

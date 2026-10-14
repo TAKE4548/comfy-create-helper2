@@ -137,7 +137,12 @@ export const MobileLayout = ({
   const isTextInput = (target: unknown): target is HTMLElement => {
     if (!target || !(target instanceof HTMLElement)) return false
     const tag = target.tagName.toLowerCase()
-    return tag === 'input' || tag === 'textarea' || target.isContentEditable
+    if (tag === 'textarea' || target.isContentEditable) return true
+    if (tag === 'input') {
+      const type = (target as HTMLInputElement).type?.toLowerCase()
+      return !['checkbox', 'radio', 'range', 'button', 'submit', 'reset'].includes(type || '')
+    }
+    return false
   }
 
   useEffect(() => {
@@ -190,6 +195,7 @@ export const MobileLayout = ({
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [mobileSegment, setMobileSegment] = useState<'prompt' | 'parameters' | 'history'>('prompt')
+  const [isCompactPreview, setIsCompactPreview] = useState(true)
 
   const gallery = useGalleryInteraction({
     isMobile: true,
@@ -523,9 +529,45 @@ export const MobileLayout = ({
       </div>
 
       {/* Main Preview */}
-      <div className="bg-grid relative w-full shrink-0 aspect-[2/3] max-h-[42vh] flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2">
+      <div
+        data-testid="mobile-main-preview"
+        role="button"
+        tabIndex={0}
+        aria-expanded={!isCompactPreview}
+        aria-label="プレビュートグル"
+        onClick={() => setIsCompactPreview((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsCompactPreview((prev) => !prev)
+          }
+        }}
+        className={`bg-grid relative w-full shrink-0 flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2 transition-all duration-200 cursor-pointer ${
+          isCompactPreview ? 'h-[105px]' : 'aspect-[2/3] max-h-[42vh]'
+        }`}
+      >
+        <button
+          type="button"
+          data-testid="preview-toggle-btn"
+          aria-label={isCompactPreview ? "プレビューを展開" : "プレビューを縮小"}
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsCompactPreview((prev) => !prev)
+          }}
+          className="absolute top-2 left-2 z-10 text-[10px] px-2 py-0.5 rounded bg-surface/80 hover:bg-surface border border-white/10 text-zinc-300 font-medium transition-colors"
+        >
+          {isCompactPreview ? "展開 (220px)" : "縮小 (105px)"}
+        </button>
         {(previewImage || selectedImg) ? (
-          <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={handleOpenModalPreview}>
+          <div
+            className="relative w-full h-full flex items-center justify-center"
+            onClick={(e) => {
+              if (!isCompactPreview) {
+                e.stopPropagation()
+                handleOpenModalPreview()
+              }
+            }}
+          >
             <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
             {isGeneratingHere && <div className="absolute top-2 right-2 bg-surface-2/80 backdrop-blur p-1.5 rounded-full border border-white/5 shadow-md"><Loader2 size={16} className="animate-spin text-accent-green" /></div>}
             <a href={previewImage || selectedImg!} download="generated.png" id="download-btn-mobile"
@@ -650,7 +692,7 @@ export const MobileLayout = ({
           <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-1 no-scrollbar">
             {textMappings.map((m) => (
               <button key={m.id} type="button" onClick={() => setActivePromptTab(m.role || '')}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
+                className={`text-xs px-3 py-1.5 rounded-full border transition-all shrink-0 whitespace-nowrap ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
                 {m.display_name}
               </button>
             ))}

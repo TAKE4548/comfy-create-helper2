@@ -146,8 +146,8 @@ export function PresetManagerPanel({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden space-y-3">
+      <div className="flex items-center justify-between shrink-0">
         <span className="text-xs font-semibold text-zinc-450 uppercase tracking-wider">
           プリセット一覧
         </span>
@@ -217,7 +217,7 @@ export function PresetManagerPanel({
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={localPresets.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2 min-h-0">
               {localPresets.map((preset) => (
                 <SortablePresetRow
                   key={preset.id}
@@ -256,7 +256,7 @@ export function PresetManagerPanel({
       )}
 
       {/* Bottom Actions */}
-      <div className="border-t border-[rgba(255,255,255,0.06)] pt-3 space-y-3">
+      <div data-testid="preset-manager-dock" className="shrink-0 border-t border-[rgba(255,255,255,0.06)] pt-3 space-y-2.5 bg-surface-2">
         {activeSetId !== undefined && activeSetId !== null && onSaveOverwrite && onSaveAsNew && (
           <div className="space-y-1.5">
             <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">現在の設定</span>

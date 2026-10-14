@@ -445,7 +445,7 @@ describe('REQ-341 E2E Integration: Unified Header & Passive Telemetry', () => {
     fireEvent.click(pill)
     const overlay = screen.getByTestId('mobile-resource-overlay')
     expect(overlay).toBeInTheDocument()
-    expect(overlay).toHaveClass('w-[330px]')
+    expect(overlay).toHaveClass('w-[240px]')
 
     // Content: CPU, RAM, GPU, VRAM and close button
     expect(overlay.textContent).toContain('CPU')

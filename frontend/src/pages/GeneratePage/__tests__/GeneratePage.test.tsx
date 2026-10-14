@@ -448,6 +448,37 @@ describe('GeneratePage Component & State Integration', () => {
       })
     );
   });
+
+  it('[REQ-363/AC-4] renders preset manager as bottom sheet with 75dvh max-height and fixed action dock', async () => {
+    vi.mocked(workflowPresetsApi.list).mockResolvedValue([
+      { id: 101, workflow_id: 1, name: 'Preset Alpha', param_values: {} },
+      { id: 102, workflow_id: 1, name: 'Preset Beta', param_values: {} },
+    ] as any);
+
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector('#manage-presets-btn')).not.toBeNull());
+    const manageBtn = container.querySelector('#manage-presets-btn') as HTMLElement;
+
+    fireEvent.click(manageBtn);
+
+    const overlay = await screen.findByTestId('preset-manager-overlay');
+    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'items-end', 'md:items-center');
+
+    const modal = screen.getByTestId('preset-manager-modal');
+    expect(modal).toHaveClass('max-h-[75dvh]', 'rounded-t-2xl', 'md:rounded-xl', 'flex', 'flex-col');
+
+    // ListChecks / bulk mode button must be preserved
+    const bulkBtn = container.querySelector('button svg.lucide-list-checks')?.closest('button');
+    expect(bulkBtn).not.toBeNull();
+
+    // Fixed bottom dock contains all check/uncheck and save buttons
+    const dock = screen.getByTestId('preset-manager-dock');
+    expect(dock).toHaveClass('shrink-0');
+    expect(dock.querySelector('#preset-check-all-btn')).not.toBeNull();
+    expect(dock.querySelector('#preset-uncheck-all-btn')).not.toBeNull();
+    expect(dock.querySelector('#preset-overwrite-btn')).not.toBeNull();
+    expect(dock.querySelector('#preset-saveas-btn')).not.toBeNull();
+  });
 });
 
 describe('GeneratePage Stage Groups & Visual Integration (REQ-347)', () => {
@@ -574,4 +605,5 @@ describe('GeneratePage Stage Groups & Visual Integration (REQ-347)', () => {
     expect(vi.mocked(stageMastersApi.list)).toHaveBeenLastCalledWith(true);
     expect(vi.mocked(mappingMastersApi.list)).not.toHaveBeenCalled();
   });
+
 });

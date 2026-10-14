@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MobileLayout } from '../MobileLayout'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import { createTrialAvailabilityController } from '../../../../services/trialImageAvailability'
@@ -440,7 +440,10 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     const { container } = render(<MobileLayout state={state} />)
 
     const previewImage = screen.getByAltText('Generated')
-    expect(previewImage.parentElement?.parentElement).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+    const previewContainer = previewImage.parentElement?.parentElement
+    expect(previewContainer).toHaveClass('h-[105px]')
+    fireEvent.click(previewContainer!)
+    expect(previewContainer).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
     expect(container.querySelector('[data-testid="mobile-progress-line"]')).toHaveClass('sticky', 'top-0', 'h-6')
     expect(screen.getByTestId('mobile-action-bar').className).toContain('bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))]')
     expect(container.firstElementChild).toHaveClass('pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
@@ -465,7 +468,10 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     render(<MobileLayout state={state} />)
 
     const preview = screen.getByAltText('Generated')
-    expect(preview.parentElement?.parentElement).toHaveClass('shrink-0', 'aspect-[2/3]', 'max-h-[42vh]')
+    const previewContainer = preview.parentElement?.parentElement
+    expect(previewContainer).toHaveClass('shrink-0', 'h-[105px]')
+    fireEvent.click(previewContainer!)
+    expect(previewContainer).toHaveClass('shrink-0', 'aspect-[2/3]', 'max-h-[42vh]')
     expect(screen.getByRole('button', { name: 'Snapshot保存' })).toHaveClass('min-h-[44px]')
     const queueButton = screen.getByRole('button', { name: 'キュー管理: 3件' })
     expect(queueButton).toHaveClass('min-h-[44px]')
@@ -518,7 +524,7 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(screen.queryByTestId('mobile-tag-suggest-bar')).not.toBeInTheDocument()
 
       // Focus an input field
-      const input = container.querySelector('input') || container.querySelector('textarea')
+      const input = container.querySelector('input:not([type="checkbox"])') as HTMLElement || container.querySelector('textarea')
       expect(input).not.toBeNull()
 
       fireEvent.focus(input!)
@@ -567,7 +573,7 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       const { container } = render(<MobileLayout state={createMockState()} />)
       const actionBar = screen.getByTestId('mobile-action-bar')
 
-      const input = container.querySelector('input')
+      const input = container.querySelector('input:not([type="checkbox"])') as HTMLElement
       if (input) {
         fireEvent.focus(input)
         expect(actionBar).toHaveClass('hidden')
@@ -576,6 +582,116 @@ describe('MobileLayout - TagChipEditor Integration', () => {
         fireEvent(window, new Event('orientationchange'))
         expect(actionBar).toHaveClass('flex')
       }
+    })
+  })
+
+  describe('REQ-363: Mobile Layout Optimization (T1)', () => {
+    it('[REQ-363/AC-1] renders prompt tabs with shrink-0 and whitespace-nowrap preventing overlap', () => {
+      const state = createMockState({
+        textMappings: [
+          { id: 1, role: 'positive', display_name: 'Positive Prompt' },
+          { id: 2, role: 'negative', display_name: 'Negative Prompt' },
+          { id: 3, role: 'style', display_name: 'Style Enhancer' },
+        ],
+        activePromptTab: 'positive',
+      })
+      render(<MobileLayout state={state} />)
+
+      const posBtn = screen.getByRole('button', { name: 'Positive Prompt' })
+      const negBtn = screen.getByRole('button', { name: 'Negative Prompt' })
+      const styleBtn = screen.getByRole('button', { name: 'Style Enhancer' })
+
+      expect(posBtn).toHaveClass('shrink-0', 'whitespace-nowrap')
+      expect(negBtn).toHaveClass('shrink-0', 'whitespace-nowrap')
+      expect(styleBtn).toHaveClass('shrink-0', 'whitespace-nowrap')
+    })
+
+    it('[REQ-363/AC-2] keeps mobile action bar visible when tapping checkboxes or radio buttons', () => {
+      const state = createMockState({
+        selectedWorkflowId: 1,
+        isConnected: true,
+        workflow: { id: 1, name: 'Default Workflow' } as any,
+      })
+      const { container } = render(<MobileLayout state={state} />)
+      const actionBar = screen.getByTestId('mobile-action-bar')
+
+      expect(actionBar).toHaveClass('flex')
+      expect(actionBar).not.toHaveClass('hidden')
+
+      const checkbox = container.querySelector('#anima-mode-toggle-mobile')
+      expect(checkbox).not.toBeNull()
+      if (checkbox) {
+        fireEvent.focus(checkbox)
+        expect(actionBar).toHaveClass('flex')
+        expect(actionBar).not.toHaveClass('hidden')
+
+        fireEvent.focusIn(checkbox)
+        expect(actionBar).toHaveClass('flex')
+        expect(actionBar).not.toHaveClass('hidden')
+      }
+    })
+
+    it('[REQ-363/AC-3] applies bottom padding ensuring last tag chips scroll clear of action bar', () => {
+      const state = createMockState()
+      const { container } = render(<MobileLayout state={state} />)
+
+      const scrollContainer = container.firstElementChild as HTMLElement
+      expect(scrollContainer.className).toContain('pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
+      expect(scrollContainer.className).toContain('scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
+    })
+
+    it('[REQ-363/AC-5] defaults to compact preview (105px) and supports manual toggle without forcing expansion on job start', () => {
+      const state = createMockState({
+        isGenerating: false,
+        previewImage: 'data:image/png;base64,mock',
+      })
+      const { rerender } = render(<MobileLayout state={state} />)
+
+      const preview = screen.getByTestId('mobile-main-preview')
+      expect(preview).toHaveClass('h-[105px]')
+      expect(preview).toHaveAttribute('aria-expanded', 'false')
+
+      // Toggle preview via container click
+      fireEvent.click(preview)
+      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+      expect(preview).toHaveAttribute('aria-expanded', 'true')
+
+      // Toggle back via button
+      const toggleBtn = screen.getByTestId('preview-toggle-btn')
+      fireEvent.click(toggleBtn)
+      expect(preview).toHaveClass('h-[105px]')
+      expect(preview).toHaveAttribute('aria-expanded', 'false')
+
+      // Keydown Enter toggles
+      fireEvent.keyDown(preview, { key: 'Enter' })
+      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+      expect(preview).toHaveAttribute('aria-expanded', 'true')
+
+      // When job starts (isGenerating: true), does NOT force expand or reset state
+      rerender(<MobileLayout state={{ ...state, isGenerating: true }} />)
+      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+    })
+
+    it('[REQ-363/AC-5] enforces 2-tap sequence before opening full modal preview', () => {
+      const handleOpenModalPreview = vi.fn()
+      const state = createMockState({
+        previewImage: 'data:image/png;base64,mock',
+        handleOpenModalPreview,
+      })
+      render(<MobileLayout state={state} />)
+      const preview = screen.getByTestId('mobile-main-preview')
+      expect(preview).toHaveClass('h-[105px]')
+
+      const img = screen.getByAltText('Generated')
+
+      // Tap 1: while compact, clicking image expands preview and does NOT open modal
+      fireEvent.click(img)
+      expect(handleOpenModalPreview).not.toHaveBeenCalled()
+      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+
+      // Tap 2: clicking expanded image now opens modal preview
+      fireEvent.click(img)
+      expect(handleOpenModalPreview).toHaveBeenCalledTimes(1)
     })
   })
 })
