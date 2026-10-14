@@ -105,7 +105,7 @@ describe('BatchSpeechTransformModal', () => {
     vi.mocked(fontsApi.list).mockResolvedValue([])
   })
 
-  it('renders with modal-backdrop class ensuring mobile safe stacking and padding (AC-1/REQ-216)', async () => {
+  it('[REQ-216/AC-1] renders with modal-backdrop class ensuring mobile safe stacking and padding', async () => {
     const { container } = render(
       <QueryClientProvider client={queryClient}>
         <BatchSpeechTransformModal isOpen={true} onClose={vi.fn()} />

@@ -102,7 +102,7 @@ def test_req358_openapi_master_routes_match_runtime_and_both_snapshots_AC_26() -
 
 
 def test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31() -> None:
-    """[REQ-358/AC-28, AC-30, AC-31] Master enabled default and update omission are represented in OpenAPI."""
+    """[REQ-358/AC-28][REQ-358/AC-30][REQ-358/AC-31] Verify mapping master default_enabled OpenAPI contract."""
     runtime = app.openapi()
     backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
     docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))

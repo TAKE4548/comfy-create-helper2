@@ -9,7 +9,7 @@ import type { Workflow } from '../../../../api/types';
 import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../../utils/generationRecord';
 import { SEED_MODES_KEY, readSeedSettings } from '../../../../utils/seedModel';
 
-it('REQ-316 excludes both reserved keys from restored inputs, including unknown records', () => {
+it('[REQ-316/AC-1] excludes both reserved keys from restored inputs, including unknown records', () => {
   const source = { Quality: '', Sampler_Seed: 42, [PROMPT_RECORD_KEY]: '{broken', [ASSOCIATIONS_KEY]: '{"version":99}' };
   const { result } = renderHook(() => useWorkflowParams(undefined, null), { wrapper: createWrapper() });
   act(() => result.current.loadSnapshotParams(source));

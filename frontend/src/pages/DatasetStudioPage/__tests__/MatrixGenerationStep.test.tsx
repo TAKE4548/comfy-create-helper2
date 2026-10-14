@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React from 'react'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MatrixGenerationStep, injectPromptAndSeed } from '../components/MatrixGenerationStep'
@@ -8,6 +8,7 @@ import { datasetApi, workflowsApi, mappingMastersApi } from '../../../api/client
 import type { DatasetItem, DatasetProject, Workflow, MappingMaster } from '../../../api/types'
 import { saveStudioDraft, saveActiveProjectId } from '../utils/studioDraftStorage'
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import { cleanupAllTestState, resetTestStorage } from '../../../test/utils'
 
 vi.mock('../../../api/client', () => ({
   datasetApi: {
@@ -101,6 +102,8 @@ describe('MatrixGenerationStep', () => {
   ]
 
   beforeEach(() => {
+    cleanupAllTestState()
+    resetTestStorage()
     vi.restoreAllMocks()
     vi.clearAllMocks()
     sessionStorage.clear()
@@ -116,6 +119,12 @@ describe('MatrixGenerationStep', () => {
     vi.mocked(datasetApi.createProject).mockResolvedValue(mockProject)
     vi.mocked(datasetApi.updateProject).mockResolvedValue(mockProject)
     vi.mocked(datasetApi.calculateMatrix).mockResolvedValue(mockItems)
+  })
+
+  afterEach(() => {
+    cleanupAllTestState()
+    resetTestStorage()
+    useStudioStore.getState().resetStudio()
   })
 
   it('renders configuration inputs with defaults and triggers sync', async () => {
@@ -269,7 +278,7 @@ describe('MatrixGenerationStep', () => {
     })
   })
 
-  it('REQ-321-T3: remaps and saves mappings when workflow initially has empty mappings, and updates node badges from fresh workflow', async () => {
+  it('[REQ-321/AC-1] remaps and saves mappings when workflow initially has empty mappings, and updates node badges from fresh workflow', async () => {
     const unmappedWorkflow: Workflow = {
       id: 1,
       name: 'Unmapped Workflow',
@@ -347,7 +356,7 @@ describe('MatrixGenerationStep', () => {
     })
   })
 
-  it('REQ-321-T3 (Red Teaming): displays error message and keeps modal open when workflowsApi.update fails', async () => {
+  it('[REQ-321/AC-2] displays error message and keeps modal open when workflowsApi.update fails', async () => {
     vi.mocked(workflowsApi.update).mockRejectedValueOnce(new Error('Database update failed'))
 
     render(<MatrixGenerationStep />)
@@ -465,7 +474,7 @@ describe('MatrixGenerationStep', () => {
     expect(useStudioStore.getState().currentStep).toBe(1)
   })
 
-  it('REQ-330-T1 (Red Teaming): displays an error when batch acceptance fails', async () => {
+  it('[REQ-330/AC-1] displays an error when batch acceptance fails', async () => {
     useStudioStore.getState().setItems(mockItems)
     useStudioStore.getState().setActiveProject(mockProject)
     vi.spyOn(useGenerationStore.getState(), 'submitGenerationBatch').mockRejectedValueOnce(new Error('Generation API unavailable'))
@@ -485,7 +494,7 @@ describe('MatrixGenerationStep', () => {
     expect(screen.getByTestId('submit-batch-button')).not.toBeDisabled()
   })
 
-  it('REQ-330-T1 (Red Teaming): reports server generation rejection without per-item POSTs', async () => {
+  it('[REQ-330/AC-2] reports server generation rejection without per-item POSTs', async () => {
     useStudioStore.getState().setItems(mockItems)
     useStudioStore.getState().setActiveProject(mockProject)
     vi.spyOn(useGenerationStore.getState(), 'submitGenerationBatch').mockRejectedValueOnce(new Error('Invalid workflow node connection'))

@@ -10,59 +10,14 @@
 | Backend テストファイル数 | 74 | `backend/tests/**/*.py` |
 | Frontend テストファイル数 | 232 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
 | 抽出テストケース総数 | 2640 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 297 | `REQ-xxx` 関連 |
-| PBI 紐づけなしテスト数 | 2343 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
-| ファイル名規約違反数 (AC-1) | 44 | `req\d+` をパスに含むファイル |
-| テスト名規約違反数 (AC-15) | 89 | `[REQ-xxx/AC-n]` 未準拠 |
+| PBI 紐づけありテスト数 | 300 | `REQ-xxx` 関連 |
+| PBI 紐づけなしテスト数 | 2340 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
+| ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
+| テスト名規約違反数 (AC-15) | 0 | `[REQ-xxx/AC-n]` 未準拠 |
 
 ## 2. ファイル名規約違反一覧 (移行対象: AC-1)
 
-| No | ファイルパス | 移行計画 (REQ-356 タスク) |
-|---|---|---|
-| 1 | `frontend/src/api/__tests__/req334PreviewApis.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 2 | `frontend/src/api/__tests__/req334QueuedCancel.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 3 | `frontend/src/components/__tests__/ImageCarousel.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 4 | `frontend/src/components/__tests__/JobManagementModal.req333.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 5 | `frontend/src/components/__tests__/LazyThumbnail.req345.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 6 | `frontend/src/components/__tests__/LoraStackEditor.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 7 | `frontend/src/components/layout/__tests__/AppShell.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 8 | `frontend/src/components/layout/__tests__/ResizableSplitLayout.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 9 | `frontend/src/components/LoraModals/__tests__/LoraDetailExamples.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 10 | `frontend/src/components/LoraModals/__tests__/LoraDetailModal.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 11 | `frontend/src/components/LoraModals/__tests__/LoraFormExamples.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 12 | `frontend/src/components/LoraModals/__tests__/LoraRegisterModal.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 13 | `frontend/src/components/TagSetModals/TagSetFormFields.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 14 | `frontend/src/pages/__tests__/AssetCardInteractions.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 15 | `frontend/src/pages/GeneratePage/components/__tests__/AddAssetModal.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 16 | `frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.req333.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 17 | `frontend/src/pages/GeneratePage/components/__tests__/PromptTranslationModal.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 18 | `frontend/src/pages/GeneratePage/components/__tests__/SettingsPopover.req333.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 19 | `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.req345.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 20 | `frontend/src/pages/GeneratePage/hooks/__tests__/useImageNavigation.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 21 | `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req333.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 22 | `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.req345.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 23 | `frontend/src/pages/HistoryPage/components/__tests__/AlbumListView.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 24 | `frontend/src/pages/HistoryPage/hooks/__tests__/useAlbumOperations.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 25 | `frontend/src/pages/HistoryPage/views/__tests__/AlbumDetailView.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 26 | `frontend/src/pages/SettingsPage/components/__tests__/BubbleDetectionSection.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 27 | `frontend/src/pages/SettingsPage/components/__tests__/DictionaryPanel.req334.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 28 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req336.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 29 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req340.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 30 | `frontend/src/test/e2e_req207.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 31 | `frontend/src/test/e2e_req240_multidevice.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 32 | `frontend/src/test/e2e_req260_vram_guard.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 33 | `frontend/src/test/e2e_req264_preview_autofollow.test.ts` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 34 | `frontend/src/test/e2e_req317_storage.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 35 | `frontend/src/test/e2e_req319_lora_studio.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 36 | `frontend/src/test/e2e_req323_autosave_draft.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 37 | `frontend/src/test/e2e_req332_recovery.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 38 | `frontend/src/test/e2e_req332_storage.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 39 | `frontend/src/test/e2e_req336_workflow_mapping.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 40 | `frontend/src/test/e2e_req339_preview_layout.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 41 | `frontend/src/test/e2e_req341_header_unification.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 42 | `frontend/src/test/e2e_req345_residual_history.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 43 | `frontend/src/test/e2e_req345_trial_availability.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
-| 44 | `frontend/src/test/e2e_req350_seed.test.tsx` | ドメイン別機能名へ統合リネーム (T2〜T10) |
+違反なし（全テストファイル名が規約に準拠しています）。
 
 ## 3. PBI別テストケース対応一覧 (トレーサビリティ基準)
 
@@ -95,9 +50,9 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should compute totalQueueCount based purely on ComfyUI queue running and pending (REQ-159) | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should consider isGeneratingHere true when filterOwnSession is true and activeBatch has pending/generating jobs (REQ-159) | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should sync queue without refetching history for a restored nonempty baseline on visibilitychange (REQ-159) | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-159/AC-1] should compute totalQueueCount based purely on ComfyUI queue running and pending | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-159/AC-2] should consider isGeneratingHere true when filterOwnSession is true and activeBatch has pending/generating jobs | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-159/AC-3] should sync queue without refetching history for a restored nonempty baseline on visibilitychange | AC-3 | PASS |
 
 ### REQ-161 (計 2 件)
 
@@ -111,18 +66,18 @@
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
 | `backend/tests/integration/models/test_model_relations.py` | test_workflow_preset_relationships: [REQ-163/AC-1] Workflow and WorkflowPreset foreign key relationship and ordering. | AC-1 | PASS |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should maintain independent prompts when switching presets (REQ-163) | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should handle OCC conflict (409) in updatePresetMutation (REQ-163) | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-163/AC-1] should maintain independent prompts when switching presets | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-163/AC-2] should handle OCC conflict (409) in updatePresetMutation | AC-2 | PASS |
 
 ### REQ-180 (計 5 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
 | `backend/tests/integration/models/test_model_relations.py` | test_speech_preset_relations: [REQ-180/AC-1] SpeechBubblePreset and SpeechTonePreset model persistence and constraints. | AC-1 | PASS |
-| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | renders style-only presets section before with-text presets section in DOM order (REQ-180 AC-1) | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | handles scale flipping and path flipping in manga fx section (REQ-180 AC-1, AC-2, AC-3) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | flips path points correctly for vertical and horizontal orientations (REQ-180 AC-2) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | calculates tail base position and respects fine-tuning parameters (REQ-180 AC-1, AC-2) | - | VIOLATION |
+| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | [REQ-180/AC-1] renders style-only presets section before with-text presets section in DOM order | AC-1 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | [REQ-180/AC-1] handles scale flipping and path flipping in manga fx section | AC-1 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-180/AC-2] flips path points correctly for vertical and horizontal orientations | AC-2 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-180/AC-1] calculates tail base position and respects fine-tuning parameters | AC-1 | PASS |
 
 ### REQ-186 (計 3 件)
 
@@ -136,41 +91,41 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | synchronizes default pathPoints when pathPreset or orientation changes (REQ-188) | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | falls back to default path points before flipping if pathPoints is empty (REQ-188) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | reverses order when flipping center/straight line points (REQ-188) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | maps vertical punctuation using verticalCharMap when drawing vertical path text (REQ-188) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | distributes multiple characters within the same step in stepped preset (REQ-188) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | applies proportional advancement when scale varies (REQ-188) | - | VIOLATION |
+| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | [REQ-188/AC-1] synchronizes default pathPoints when pathPreset or orientation changes | AC-1 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleControls.test.tsx` | [REQ-188/AC-2] falls back to default path points before flipping if pathPoints is empty | AC-2 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-188/AC-1] reverses order when flipping center/straight line points | AC-1 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-188/AC-2] maps vertical punctuation using verticalCharMap when drawing vertical path text | AC-2 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-188/AC-3] distributes multiple characters within the same step in stepped preset | AC-3 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-188/AC-4] applies proportional advancement when scale varies | AC-4 | PASS |
 
 ### REQ-202 (計 1 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should correctly update and remove tags with commonTagOps in handleBulkEditApply (REQ-202) | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-202/AC-1] should correctly update and remove tags with commonTagOps in handleBulkEditApply | AC-1 | PASS |
 
 ### REQ-206 (計 5 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | supports tail fine-tuning mode toggle and contact reset (REQ-206 T2) | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | preserves full tail properties when moving or duplicating bubble (REQ-206 T2) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | clamps tail apex outside bubble boundary (REQ-206 T1) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | calculates 2 contact positions independently and supports legacy options (REQ-206 T1) | - | VIOLATION |
-| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | draws 2 contact handles in fine-tuning mode (REQ-206 T1) | - | VIOLATION |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-206/AC-1] supports tail fine-tuning mode toggle and contact reset | AC-1 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-206/AC-2] preserves full tail properties when moving or duplicating bubble | AC-2 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-206/AC-1] clamps tail apex outside bubble boundary | AC-1 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-206/AC-2] calculates 2 contact positions independently and supports legacy options | AC-2 | PASS |
+| `frontend/src/utils/__tests__/speechBubbleRenderer.test.ts` | [REQ-206/AC-3] draws 2 contact handles in fine-tuning mode | AC-3 | PASS |
 
 ### REQ-216 (計 1 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/components/__tests__/BatchSpeechTransformModal.test.tsx` | renders with modal-backdrop class ensuring mobile safe stacking and padding (AC-1/REQ-216) | - | VIOLATION |
+| `frontend/src/components/__tests__/BatchSpeechTransformModal.test.tsx` | [REQ-216/AC-1] renders with modal-backdrop class ensuring mobile safe stacking and padding | AC-1 | PASS |
 
 ### REQ-218 (計 2 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply (REQ-218) | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | should correctly append suffix with normalized comma delimiter in handleBulkEditApply (REQ-218) | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-218/AC-1] should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-218/AC-2] should correctly append suffix with normalized comma delimiter in handleBulkEditApply | AC-2 | PASS |
 
 ### REQ-260 (計 5 件)
 
@@ -201,21 +156,21 @@
 | `backend/tests/integration/services/test_snapshot_service.py` | test_generic_external_download_files_are_cleaned_when_database_commit_fails: [REQ-267/AC-4] Generic external download cleans up files if commit fails. | AC-4 | PASS |
 | `backend/tests/integration/services/test_snapshot_service.py` | test_create_snapshot_download_failure_raises_502_and_rolls_back: [REQ-267/AC-4] SnapshotService raises 502 HTTPException when image download fails and creates no DB records. | AC-4 | PASS |
 | `backend/tests/integration/services/test_snapshot_service.py` | test_snapshot_service_list_and_filter: [REQ-267/AC-1] SnapshotService.list_snapshots filters by workflow_id, lora_id, tag_set_id. | AC-1 | PASS |
-| `frontend/src/pages/__tests__/HistoryPage.test.tsx` | REQ-267: should render thumbnail with toThumbnailUrl fallback when ComfyUI direct URL is present | - | VIOLATION |
-| `frontend/src/pages/__tests__/HistoryPage.test.tsx` | REQ-267: should preserve normal relative thumbnail path when present | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | REQ-267: should call setErrorToast when snapshotsApi.create fails | - | VIOLATION |
+| `frontend/src/pages/__tests__/HistoryPage.test.tsx` | [REQ-267/AC-1] should render thumbnail with toThumbnailUrl fallback when ComfyUI direct URL is present | AC-1 | PASS |
+| `frontend/src/pages/__tests__/HistoryPage.test.tsx` | [REQ-267/AC-2] should preserve normal relative thumbnail path when present | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | [REQ-267/AC-1] should call setErrorToast when snapshotsApi.create fails | AC-1 | PASS |
 
 ### REQ-277 (計 1 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | REQ-277: ensures handleGenerateSets wires onBeforeGenerate with flushAutoSave | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-277/AC-1] ensures handleGenerateSets wires onBeforeGenerate with flushAutoSave | AC-1 | PASS |
 
 ### REQ-278 (計 1 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | REQ-278: preserves in-memory edited parameters in setSets on preset sync | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-278/AC-1] preserves in-memory edited parameters in setSets on preset sync | AC-1 | PASS |
 
 ### REQ-286 (計 4 件)
 
@@ -242,11 +197,11 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | REQ-294 T16: default stream API receives progress and advances to review | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | REQ-294 T16: default stream rejection reaches the error and retry UI | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | REQ-294 T16: closing progress cancels the stream and discards its late result | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | REQ-294: 生成結果の選択分だけをキャンバスへ反映する | - | VIOLATION |
-| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | REQ-294: 結果を閉じた場合は生成バブルを反映しない | - | VIOLATION |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-1] default stream API receives progress and advances to review | AC-1 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-2] default stream rejection reaches the error and retry UI | AC-2 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-3] closing progress cancels the stream and discards its late result | AC-3 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-4] 生成結果の選択分だけをキャンバスへ反映する | AC-4 | PASS |
+| `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-5] 結果を閉じた場合は生成バブルを反映しない | AC-5 | PASS |
 
 ### REQ-304 (計 4 件)
 
@@ -264,7 +219,7 @@
 | `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-314/AC-1] keeps hash as the selected-tab source and synchronizes tab history and storage | AC-1 | PASS |
 | `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-314/AC-2] starts prompt details closed and keeps an unsaved prompt edit across tab navigation | AC-2 | PASS |
 
-### REQ-316 (計 9 件)
+### REQ-316 (計 13 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -272,11 +227,15 @@
 | `backend/tests/integration/api/test_snapshots.py` | test_snapshot_association_empty_clears_independently: [REQ-316/AC-3] Empty list clears only requested association type independently. | AC-3 | PASS |
 | `backend/tests/integration/api/test_snapshots.py` | test_snapshot_association_only_role_isolation: [REQ-316/AC-4] Association-only role does not alter snapshot lora role or strength. | AC-4 | PASS |
 | `backend/tests/integration/api/test_snapshots.py` | test_snapshot_record_remains_independent_after_prompt_metadata_deletion: [REQ-316/AC-1] Snapshot recorded metadata remains independent after prompt metadata deletion. | AC-1 | PASS |
-| `frontend/src/components/__tests__/HistoryModalPreview.test.tsx` | REQ-316 treats empty saved params as authoritative and offers info even with missing metadata | - | VIOLATION |
-| `frontend/src/components/__tests__/HistoryModalPreview.test.tsx` | REQ-316 locks the image and close/navigation while saving tag associations | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | REQ-316: keeps unrecorded params empty if server API fails | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | REQ-316 saves each image from its own frozen record and initializes known trigger associations | - | VIOLATION |
-| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts` | REQ-316 excludes both reserved keys from restored inputs, including unknown records | - | VIOLATION |
+| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_save_and_get_prompt_metadata: [REQ-316/AC-2] POST /api/prompt-metadata saves metadata and GET /api/prompt-metadata/{prompt_id} retrieves it. | AC-2 | PASS |
+| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_upsert_prompt_metadata: [REQ-316/AC-3] POST /api/prompt-metadata updates existing prompt metadata (upsert). | AC-3 | PASS |
+| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_get_not_found: [REQ-316/AC-4] GET /api/prompt-metadata/{prompt_id} returns 404 when not found. | AC-4 | PASS |
+| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_req316_full_unicode_record_and_json_roundtrip: [REQ-316/AC-1] Full unicode prompt record and JSON roundtrip. | AC-1 | PASS |
+| `frontend/src/components/__tests__/HistoryModalPreview.test.tsx` | [REQ-316/AC-1] treats empty saved params as authoritative and offers info even with missing metadata | AC-1 | PASS |
+| `frontend/src/components/__tests__/HistoryModalPreview.test.tsx` | [REQ-316/AC-2] locks the image and close/navigation while saving tag associations | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | [REQ-316/AC-1] keeps unrecorded params empty if server API fails | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useSnapshotActions.test.ts` | [REQ-316/AC-2] saves each image from its own frozen record and initializes known trigger associations | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts` | [REQ-316/AC-1] excludes both reserved keys from restored inputs, including unknown records | AC-1 | PASS |
 
 ### REQ-319 (計 5 件)
 
@@ -292,8 +251,8 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | REQ-321-T3: remaps and saves mappings when workflow initially has empty mappings, and updates node badges from fresh workflow | - | VIOLATION |
-| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | REQ-321-T3 (Red Teaming): displays error message and keeps modal open when workflowsApi.update fails | - | VIOLATION |
+| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | [REQ-321/AC-1] remaps and saves mappings when workflow initially has empty mappings, and updates node badges from fresh workflow | AC-1 | PASS |
+| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | [REQ-321/AC-2] displays error message and keeps modal open when workflowsApi.update fails | AC-2 | PASS |
 
 ### REQ-323 (計 1 件)
 
@@ -305,32 +264,32 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | REQ-330-T1 (Red Teaming): displays an error when batch acceptance fails | - | VIOLATION |
-| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | REQ-330-T1 (Red Teaming): reports server generation rejection without per-item POSTs | - | VIOLATION |
+| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | [REQ-330/AC-1] displays an error when batch acceptance fails | AC-1 | PASS |
+| `frontend/src/pages/DatasetStudioPage/__tests__/MatrixGenerationStep.test.tsx` | [REQ-330/AC-2] reports server generation rejection without per-item POSTs | AC-2 | PASS |
 
 ### REQ-331 (計 3 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | manages paramValues state (REQ-331) | - | VIOLATION |
-| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | manages bypassedNodeIds state (REQ-331) | - | VIOLATION |
-| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | clears paramValues and bypassedNodeIds on resetStudio (REQ-331) | - | VIOLATION |
+| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | [REQ-331/AC-1] manages paramValues state | AC-1 | PASS |
+| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | [REQ-331/AC-2] manages bypassedNodeIds state | AC-2 | PASS |
+| `frontend/src/pages/DatasetStudioPage/__tests__/useStudioStore.test.ts` | [REQ-331/AC-3] clears paramValues and bypassedNodeIds on resetStudio | AC-3 | PASS |
 
 ### REQ-332 (計 11 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/test/e2e_req332_recovery.test.tsx` | REQ-332-T10 AC3: 31 submissions succeed without a metadata-prune notification | - | VIOLATION |
-| `frontend/src/test/e2e_req332_recovery.test.tsx` | REQ-332-T10 AC4: every one of the newest 30 IDs retains its distinct record fields | - | VIOLATION |
-| `frontend/src/test/e2e_req332_recovery.test.tsx` | REQ-332-T11 AC11 read rejection server fallback | - | VIOLATION |
-| `frontend/src/test/e2e_req332_recovery.test.tsx` | REQ-332-T9 AC16: interrupted first migration leaves no snapshot and retry queues once | - | VIOLATION |
-| `frontend/src/test/e2e_req332_recovery.test.tsx` | REQ-332-T10 AC17: deleting only the IDB database preserves browser storage and allows a server retry | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T10 AC1: removes the legacy value and measures remaining localStorage in the visible gauge | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T10 AC15: excludes a stale preset until the server returns its latest value | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T11 AC18 refreshed list survives restart while next fetch is held | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T12 AC2: updates workflows with an exact 4 MiB UTF-16 byte-equivalent payload | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T9 AC10: desktop generation stays disabled until workflow 7 is fetched | - | VIOLATION |
-| `frontend/src/test/e2e_req332_storage.test.tsx` | REQ-332-T9 AC13: same-tab restart restores every Studio field independently of API cache migration | - | VIOLATION |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-1] removes the legacy value and measures remaining localStorage in the visible gauge | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-15] excludes a stale preset until the server returns its latest value | AC-15 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-18] refreshed list survives restart while next fetch is held | AC-18 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-2] updates workflows with an exact 4 MiB UTF-16 byte-equivalent payload | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-10] desktop generation stays disabled until workflow 7 is fetched | AC-10 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/apiCacheStorage.test.tsx` | [REQ-332/AC-13] same-tab restart restores every Studio field independently of API cache migration | AC-13 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/queryCacheRecovery.test.tsx` | [REQ-332/AC-3] 31 submissions succeed without a metadata-prune notification | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/queryCacheRecovery.test.tsx` | [REQ-332/AC-4] every one of the newest 30 IDs retains its distinct record fields | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/queryCacheRecovery.test.tsx` | [REQ-332/AC-11] read rejection server fallback | AC-11 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/queryCacheRecovery.test.tsx` | [REQ-332/AC-16] interrupted first migration leaves no snapshot and retry queues once | AC-16 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/queryCacheRecovery.test.tsx` | [REQ-332/AC-17] deleting only the IDB database preserves browser storage and allows a server retry | AC-17 | PASS |
 
 ### REQ-334 (計 7 件)
 
@@ -372,7 +331,7 @@
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
-| `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` | TC-COMP-03: renders candidate node options in parameter dropdown using unified format (REQ-342) | - | VIOLATION |
+| `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` | [REQ-342/AC-1] TC-COMP-03: renders candidate node options in parameter dropdown using unified format | AC-1 | PASS |
 
 ### REQ-347 (計 15 件)
 
@@ -459,7 +418,7 @@
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_workflow_mapping_slot_states_matches_runtime_and_snapshot: [REQ-358/AC-19] Workflow slot state schemas stay aligned with the runtime OpenAPI contract. | AC-19 | PASS |
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_workflow_slot_states_defaults_and_update_null_rejection: [REQ-358/AC-31] Read defaults to empty, update omission is distinguishable, and null is rejected. | AC-31 | PASS |
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_routes_match_runtime_and_both_snapshots_AC_26: [REQ-358/AC-26] Mapping master routes expose the runtime V2 request and response schemas. | AC-26 | PASS |
-| `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31 | - | VIOLATION |
+| `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31: [REQ-358/AC-28][REQ-358/AC-30][REQ-358/AC-31] Verify mapping master default_enabled OpenAPI contract. | AC-28 | PASS |
 | `backend/tests/integration/api/test_workflows.py` | test_workflow_state_create_get_and_update_roundtrip: [REQ-358/AC-19] Workflow slot state persists across POST, GET, and omitted PUT. | AC-19 | PASS |
 | `backend/tests/integration/api/test_workflows.py` | test_workflow_state_rollback: [REQ-358/AC-28] Rollback restores prior workflow slot states. | AC-28 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_mapping_slot_state_migration_step_030: [REQ-358/AC-19][REQ-358/AC-26][REQ-358/AC-31] Verify step_030 adds mapping_slot_states and default_enabled idempotently. | AC-19 | PASS |
@@ -469,30 +428,30 @@
 | `backend/tests/unit/test_schemas.py` | test_workflow_update_distinguishes_omitted_and_empty_slot_states: [REQ-358/AC-19] Omitted slot states stay unset while an empty object replaces them. | AC-19 | PASS |
 | `backend/tests/unit/test_schemas.py` | test_workflow_read_parses_slot_state_json: [REQ-358/AC-19] Read schemas normalize persisted slot state JSON objects. | AC-19 | PASS |
 | `backend/tests/unit/test_schemas.py` | test_mapping_master_default_enabled_defaults_true: [REQ-358/AC-31] Legacy mapping masters default to enabled. | AC-31 | PASS |
-| `frontend/src/api/__tests__/mappingApi.test.ts` | REQ-358/AC-19 preserves optional master default_enabled types | - | VIOLATION |
-| `frontend/src/api/__tests__/mappingApi.test.ts` | REQ-358/AC-26 allows optional mapping_slot_states and false values | - | VIOLATION |
-| `frontend/src/api/__tests__/mappingApi.test.ts` | REQ-358/AC-31 supports legacy read defaults without making state required | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowMappingPreview.test.tsx` | REQ-358/PREVIEW REQ-358/AC-7 ranks candidates and keeps non-recommended nodes selectable | - | VIOLATION |
+| `frontend/src/api/__tests__/mappingApi.test.ts` | [REQ-358/AC-19] preserves optional master default_enabled types | AC-19 | PASS |
+| `frontend/src/api/__tests__/mappingApi.test.ts` | [REQ-358/AC-26] allows optional mapping_slot_states and false values | AC-26 | PASS |
+| `frontend/src/api/__tests__/mappingApi.test.ts` | [REQ-358/AC-31] supports legacy read defaults without making state required | AC-31 | PASS |
+| `frontend/src/components/__tests__/WorkflowMappingPreview.test.tsx` | [REQ-358/AC-7] ranks candidates and keeps non-recommended nodes selectable | AC-7 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalEditing.test.tsx` | REQ-358/UPLOAD_CLEAN [REQ-358/AC-16] [REQ-358/AC-17] [REQ-358/AC-18] keeps the same input while typing, clearing and retyping | AC-16 | PASS |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/T35 caches ranks during edits and locks one deferred save | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/T35 upload edits reuse candidates and keep create locked until completion | - | VIOLATION |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-13] caches ranks during edits and locks one deferred save | AC-13 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-13] upload edits reuse candidates and keep create locked until completion | AC-13 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/EDITOR [REQ-358/AC-8] keeps the editable node ID input mounted and shows ranked reasons | AC-8 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/EDITOR [REQ-358/AC-14] displays selected node metadata and stage confidence in distinct text | AC-14 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/EDITOR [REQ-358/AC-13] renders ordered slot rows and keeps empty slots selectable | AC-13 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/EDITOR [REQ-358/AC-22] marks a partly enabled stage as mixed and labels the disabled role | AC-22 | PASS |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/UPLOAD_CLEAN REQ-358/AC-13 renders ordered slots and saves mappings with explicit slot states | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/UPLOAD_CLEAN REQ-358/AC-14 preserves an explicitly empty slot and its enabled state | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/UPLOAD_CLEAN REQ-358/AC-15 saves all slot states when mappings are empty | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/UPLOAD_CLEAN REQ-358/AC-21 keeps disabled slot mappings and persists the opt-out state | - | VIOLATION |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-13] renders ordered slots and saves mappings with explicit slot states | AC-13 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-14] preserves an explicitly empty slot and its enabled state | AC-14 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-15] saves all slot states when mappings are empty | AC-15 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-21] keeps disabled slot mappings and persists the opt-out state | AC-21 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-19][REQ-358/AC-34] waits for refetch before restoring disabled assignments and preserves them across save and reopen | AC-19 | PASS |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-16 shows unresolved roles in the same mapping list | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-17 keeps direct input mounted while typing | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-18 keeps master order across matched and unresolved rows | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-29 keeps mappings for masters absent from current settings | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-33 retains a saved non-default node present in the graph | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-35 preserves a saved mapping whose node is missing from the workflow graph | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-19 saves remapped nodes and persisted slot states | - | VIOLATION |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | REQ-358/RESCAN_CLEAN REQ-358/AC-20 preserves explicit empty slot values and identifiers | - | VIOLATION |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-16] shows unresolved roles in the same mapping list | AC-16 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-17] keeps direct input mounted while typing | AC-17 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-18] keeps master order across matched and unresolved rows | AC-18 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-29] keeps mappings for masters absent from current settings | AC-29 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-33] retains a saved non-default node present in the graph | AC-33 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-35] preserves a saved mapping whose node is missing from the workflow graph | AC-35 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-19] saves remapped nodes and persisted slot states | AC-19 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-20] preserves explicit empty slot values and identifiers | AC-20 | PASS |
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | REQ-358/HOOK [REQ-358/AC-33] preserves a saved ID outside scan candidates and marks its mismatch | AC-33 | PASS |
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-16] keeps row and slot identity stable while editing | AC-16 | PASS |
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-17] keeps a cleared slot unused after scan updates | AC-17 | PASS |
@@ -506,17 +465,17 @@
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-28] keeps a saved mapping when the master default is disabled | AC-28 | PASS |
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-33] keeps a saved noncandidate ID across scan updates | AC-33 | PASS |
 | `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-35] preserves saved IDs and marks missing graph references | AC-35 | PASS |
-| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | REQ-358/T35 memoizes a realistic mapping grid and reports toggle CPU time | - | VIOLATION |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-358/AC-16] memoizes a realistic mapping grid and reports toggle CPU time | AC-16 | PASS |
 | `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-358/AC-25] hides the generation Seed control when its Sampler_Seed mapping is inactive | AC-25 | PASS |
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-358/GENERATION] [REQ-358/AC-25] derives generation mappings from slot state while retaining raw workflow for mutation | AC-25 | PASS |
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-358/AC-25][REQ-359/AC-2] resolves a legacy disabled slot after delayed master loading while preserving raw data and stable references | AC-25 | PASS |
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-358/AC-25] resolves a multistage legacy seed only by exact persisted role, including inactive variants | AC-25 | PASS |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req336.test.tsx` | REQ-358/MASTER_UI REQ-358/AC-26 saves the new mapping default-enabled choice | - | VIOLATION |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req336.test.tsx` | REQ-358/MASTER_UI REQ-358/AC-27 treats legacy defaults as enabled and locks the control while saving | - | VIOLATION |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req336.test.tsx` | REQ-358/MASTER_UI REQ-358/AC-30 preserves an existing disabled default on save | - | VIOLATION |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.req336.test.tsx` | REQ-358/MASTER_UI REQ-358/AC-28 keeps disabled masters visible and editable | - | VIOLATION |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-26] saves the new mapping default-enabled choice | AC-26 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-27] treats legacy defaults as enabled and locks the control while saving | AC-27 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-30] preserves an existing disabled default on save | AC-30 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-28] keeps disabled masters visible and editable | AC-28 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/WIRING] [REQ-358/AC-14] class候補と選択中node metadataを表示する | AC-14 | PASS |
-| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/WIRING] slot無効状態を保持し、保存時にstateを渡す | - | VIOLATION |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23] slot無効状態を保持し、保存時にstateを渡す | AC-23 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23][REQ-358/AC-34] keeps a legacy single-variant ID while disabled and saves its canonical permission | AC-23 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts` | [REQ-358/AC-19] mapping_slot_statesが省略された旧JSONは状態フィールドを追加しない | AC-19 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts` | [REQ-358/AC-19] 明示された空のmapping_slot_statesを置換値として保持する | AC-19 | PASS |
@@ -525,13 +484,13 @@
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-20] hydrates explicit states, saved mappings, then defaults | AC-20 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-21] updates only exact stage slots and preserves unknown keys | AC-21 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-22] enables all displayed slots, including default-disabled slots | AC-22 | PASS |
-| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-21/22] handles an empty stage and adds only displayed missing keys | - | VIOLATION |
-| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23/31] filters only explicit false states without mutating frozen inputs | - | VIOLATION |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-21] handles an empty stage and adds only displayed missing keys | AC-21 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23] filters only explicit false states without mutating frozen inputs | AC-23 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-31] keeps all mappings when state is absent or empty | AC-31 | PASS |
-| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23/31] returns a new empty mapping array when all mappings are disabled | - | VIOLATION |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23] returns a new empty mapping array when all mappings are disabled | AC-23 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-20] uses canonical variant and legacy slot keys | AC-20 | PASS |
-| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-21/22] preserves non-target stage values across generated slot sets | - | VIOLATION |
-| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23/31] preserves source mapping order for generated workflow records | - | VIOLATION |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-21] preserves non-target stage values across generated slot sets | AC-21 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-358/AC-23] preserves source mapping order for generated workflow records | AC-23 | PASS |
 | `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-358/AC-1] keeps all nodes available and sorts by tier, stage rank, then id | AC-1 | PASS |
 | `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-358/AC-2] reads API prompts, node dictionaries, and UI node arrays | AC-2 | PASS |
 | `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-358/AC-3] matches parameter names from object keys or named arrays | AC-3 | PASS |
@@ -557,7 +516,7 @@
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-359/AC-3] detects Anima and non-Anima workflow switches, including same-model reselection | AC-3 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-359/AC-4] keeps raw mappings and slot states unchanged while preserving generated mapping order | AC-4 | PASS |
 
-### PBI紐づけなし (汎用/ガバナンス) (計 2343 件)
+### PBI紐づけなし (汎用/ガバナンス) (計 2340 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -661,11 +620,5 @@
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_chunking_over_max_batch_size | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_non_existent_directory | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_auto_download_success | - | PASS |
-| ... | *(他 2243 件割愛)* | - | - |
-
-### UNKNOWN (計 1 件)
-
-| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
-|---|---|---|---|
-| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_req316_full_unicode_record_and_json_roundtrip | - | VIOLATION |
+| ... | *(他 2240 件割愛)* | - | - |
 

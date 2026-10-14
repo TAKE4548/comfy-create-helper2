@@ -33,14 +33,14 @@ describe('REQ-358/STATE', () => {
       .toEqual({ 'v:12': true, 'v:999': false, 'v:11': true })
   })
 
-  it('[REQ-358/AC-21/22] handles an empty stage and adds only displayed missing keys', () => {
+  it('[REQ-358/AC-21] handles an empty stage and adds only displayed missing keys', () => {
     const states = { 'v:999': false }
     const slots = [{ masterId: 1, variantId: 11, stageId: 10, defaultEnabled: false }, { masterId: 2, variantId: 22, defaultEnabled: true }]
     expect(setStageEnabled(states, slots, 99, true)).toEqual(states)
     expect(setStageEnabled(states, slots, 10, false)).toEqual({ 'v:999': false, 'v:11': false })
   })
 
-  it('[REQ-358/AC-23/31] filters only explicit false states without mutating frozen inputs', () => {
+  it('[REQ-358/AC-23] filters only explicit false states without mutating frozen inputs', () => {
     const records = [
       Object.freeze({ master_id: 1, variant_id: 11, node_id: 'a', metadata: { a: 1 } }),
       Object.freeze({ master_id: 1, variant_id: 12, node_id: 'b' }),
@@ -87,7 +87,7 @@ describe('REQ-358/STATE', () => {
     expect(generationWorkflow({ mappings, mapping_slot_states: { 'v:999': false } }).mappings).toEqual(mappings)
   })
 
-  it('[REQ-358/AC-23/31] returns a new empty mapping array when all mappings are disabled', () => {
+  it('[REQ-358/AC-23] returns a new empty mapping array when all mappings are disabled', () => {
     const mappings = Object.freeze([Object.freeze({ master_id: 1, node_id: 'x' })])
     const raw = Object.freeze({ mappings, mapping_slot_states: Object.freeze({ 'm:1': false }) })
     const output = generationWorkflow(raw)
@@ -104,7 +104,7 @@ describe('REQ-358/STATE', () => {
     expect(isSlotEnabled({ 'v:7': false }, 'v:7')).toBe(false)
   })
 
-  it('[REQ-358/AC-21/22] preserves non-target stage values across generated slot sets', () => {
+  it('[REQ-358/AC-21] preserves non-target stage values across generated slot sets', () => {
     fc.assert(fc.property(
       fc.uniqueArray(fc.integer({ min: 1, max: 1000 }), { maxLength: 30 }),
       fc.integer({ min: 1 }), fc.boolean(),
@@ -120,7 +120,7 @@ describe('REQ-358/STATE', () => {
     ), { numRuns: 100 })
   })
 
-  it('[REQ-358/AC-23/31] preserves source mapping order for generated workflow records', () => {
+  it('[REQ-358/AC-23] preserves source mapping order for generated workflow records', () => {
     fc.assert(fc.property(
       fc.array(fc.record({ master_id: fc.integer({ min: 1 }), variant_id: fc.option(fc.integer({ min: 1 }), { nil: null }), node_id: fc.string() })),
       (mappings) => {

@@ -64,7 +64,7 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     )
   })
 
-  it('REQ-316: keeps unrecorded params empty if server API fails', async () => {
+  it('[REQ-316/AC-1] keeps unrecorded params empty if server API fails', async () => {
     vi.mocked(promptMetadataApi.get).mockRejectedValueOnce(new Error('Network error'))
 
     const { result } = renderHook(() => useSnapshotActions(1), { wrapper })
@@ -84,7 +84,7 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     )
   })
 
-  it('REQ-316 saves each image from its own frozen record and initializes known trigger associations', async () => {
+  it('[REQ-316/AC-2] saves each image from its own frozen record and initializes known trigger associations', async () => {
     const record = (id: number) => JSON.stringify({ version: 1, workflow_id: id, workflow_name: `WF${id}`,
       fields: [], parameters: [], assets: [{ type: 'lora', asset_id: 10, name: 'Captured', role: 'Quality',
         tags: ['captured'], origin: 'lora-trigger', trigger_set_id: 4, trigger_set_name: 'Set' }], queued_at: null, completeness: 'complete' });
@@ -103,7 +103,7 @@ describe('useSnapshotActions - REQ-227 Cross-device Snapshot Metadata Restoratio
     expect(calls[0].params[PROMPT_RECORD_KEY]).toBe(record(7));
   });
 
-  it('REQ-267: should call setErrorToast when snapshotsApi.create fails', async () => {
+  it('[REQ-267/AC-1] should call setErrorToast when snapshotsApi.create fails', async () => {
     vi.mocked(snapshotsApi.create).mockRejectedValueOnce(new Error('Failed to fetch image from ComfyUI'))
 
     const { result } = renderHook(() => useSnapshotActions(1), { wrapper })

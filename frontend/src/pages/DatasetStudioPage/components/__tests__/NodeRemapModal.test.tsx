@@ -129,7 +129,7 @@ describe('NodeRemapModal & isStudioAllowedRole (REQ-331-T3)', () => {
       expect(screen.queryByText('Excluded Generic Prompt')).not.toBeInTheDocument()
     })
 
-    it('TC-COMP-03: renders candidate node options in parameter dropdown using unified format (REQ-342)', () => {
+    it('[REQ-342/AC-1] TC-COMP-03: renders candidate node options in parameter dropdown using unified format', () => {
       render(
         <NodeRemapModal
           workflow={mockWorkflow}

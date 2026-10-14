@@ -620,7 +620,7 @@ describe('useMasterMappingRows', () => {
 
 
 
-it('REQ-358/T35 memoizes a realistic mapping grid and reports toggle CPU time', () => {
+it('[REQ-358/AC-16] memoizes a realistic mapping grid and reports toggle CPU time', () => {
   const masters = Array.from({ length: 32 }, (_, index) => ({
     id: index + 1, role: `role${index}`, display_name: `Role ${index}`, param_name: 'steps', input_type: 'int', expected_class_types: ['KSampler'], sort_order: index,
     variants: Array.from({ length: 9 }, (_, stage) => ({ id: index * 9 + stage + 1, master_id: index + 1, stage_id: stage + 1, stage_name: `Stage ${stage}`, stage_key: `stage${stage}`, computed_role: `role${index}_${stage}`, is_enabled: true })),

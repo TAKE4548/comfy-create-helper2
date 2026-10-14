@@ -16,7 +16,7 @@ describe('WorkflowMappingPreview', () => {
     vi.clearAllMocks()
   })
 
-  it('REQ-358/PREVIEW REQ-358/AC-7 ranks candidates and keeps non-recommended nodes selectable', async () => {
+  it('[REQ-358/AC-7] ranks candidates and keeps non-recommended nodes selectable', async () => {
     vi.mocked(workflowsApi.list).mockResolvedValue([
       { id: 1, name: 'Default Workflow', is_default: true, created_at: '', updated_at: '' },
     ])

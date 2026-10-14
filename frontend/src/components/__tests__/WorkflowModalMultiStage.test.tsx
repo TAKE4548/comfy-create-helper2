@@ -118,7 +118,7 @@ describe('WorkflowModalMultiStage', () => {
     })
   })
 
-  it('REQ-358/T35 caches ranks during edits and locks one deferred save', async () => {
+  it('[REQ-358/AC-13] caches ranks during edits and locks one deferred save', async () => {
     const rank = vi.spyOn(nodeUtils, 'rankWorkflowNodeCandidates')
     const actual = await vi.importActual<typeof import('../../api/domains/workflows')>('../../api/domains/workflows')
     let finish!: (value: Response) => void
@@ -151,7 +151,7 @@ describe('WorkflowModalMultiStage', () => {
     rank.mockRestore()
   })
 
-  it('REQ-358/T35 upload edits reuse candidates and keep create locked until completion', async () => {
+  it('[REQ-358/AC-13] upload edits reuse candidates and keep create locked until completion', async () => {
     const rank = vi.spyOn(nodeUtils, 'rankWorkflowNodeCandidates')
     let finish!: (value: any) => void
     vi.mocked(workflowsApi.create).mockImplementation(() => new Promise(resolve => { finish = resolve }))
@@ -239,7 +239,7 @@ describe('WorkflowModalMultiStage', () => {
   })
 
   describe('UploadWorkflowModal multi-stage slots', () => {
-    it('REQ-358/UPLOAD_CLEAN REQ-358/AC-13 renders ordered slots and saves mappings with explicit slot states', async () => {
+    it('[REQ-358/AC-13] renders ordered slots and saves mappings with explicit slot states', async () => {
       vi.mocked(workflowsApi.create).mockResolvedValue({ id: 99, name: 'New MultiStage Workflow' })
       const onSaved = vi.fn()
       const onClose = vi.fn()
@@ -282,7 +282,7 @@ describe('WorkflowModalMultiStage', () => {
       })
     })
 
-    it('REQ-358/UPLOAD_CLEAN REQ-358/AC-14 preserves an explicitly empty slot and its enabled state', async () => {
+    it('[REQ-358/AC-14] preserves an explicitly empty slot and its enabled state', async () => {
       vi.mocked(workflowsApi.create).mockResolvedValue({ id: 100, name: 'Single Stage Mapped' })
       const onSaved = vi.fn()
       const onClose = vi.fn()
@@ -322,7 +322,7 @@ describe('WorkflowModalMultiStage', () => {
       })
     })
 
-    it('REQ-358/UPLOAD_CLEAN REQ-358/AC-15 saves all slot states when mappings are empty', async () => {
+    it('[REQ-358/AC-15] saves all slot states when mappings are empty', async () => {
       vi.mocked(workflowsApi.create).mockResolvedValue({ id: 101, name: 'Empty Mappings' })
       const onSaved = vi.fn()
       const onClose = vi.fn()
@@ -358,7 +358,7 @@ describe('WorkflowModalMultiStage', () => {
       })
     })
 
-    it('REQ-358/UPLOAD_CLEAN REQ-358/AC-21 keeps disabled slot mappings and persists the opt-out state', async () => {
+    it('[REQ-358/AC-21] keeps disabled slot mappings and persists the opt-out state', async () => {
       vi.mocked(workflowsApi.create).mockResolvedValue({ id: 102, name: 'Disabled Rough' })
       renderWithClient(
         <UploadWorkflowModal
@@ -424,7 +424,7 @@ describe('WorkflowModalMultiStage', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Mainステージ有効' }))
       expect(screen.getAllByRole('textbox', { name: 'ノードID' })[0]).toHaveValue('10')
     })
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-16 shows unresolved roles in the same mapping list', async () => {
+    it('[REQ-358/AC-16] shows unresolved roles in the same mapping list', async () => {
       vi.mocked(workflowsApi.scan).mockResolvedValue({ matched: [], warnings: [] })
 
       renderWithClient(
@@ -442,7 +442,7 @@ describe('WorkflowModalMultiStage', () => {
       expect(screen.getAllByRole('textbox', { name: 'ノードID' })).toHaveLength(2)
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-17 keeps direct input mounted while typing', async () => {
+    it('[REQ-358/AC-17] keeps direct input mounted while typing', async () => {
       vi.mocked(workflowsApi.scan).mockResolvedValue({ matched: [], warnings: [] })
 
       renderWithClient(
@@ -464,7 +464,7 @@ describe('WorkflowModalMultiStage', () => {
       expect(screen.queryByText('未検出の役割')).not.toBeInTheDocument()
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-18 keeps master order across matched and unresolved rows', async () => {
+    it('[REQ-358/AC-18] keeps master order across matched and unresolved rows', async () => {
       const otherMaster: MappingMasterV2 = {
         ...mockMultiStageMasters[0],
         id: 2,
@@ -497,7 +497,7 @@ describe('WorkflowModalMultiStage', () => {
       expect(otherRole.compareDocumentPosition(stepsRole) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-29 keeps mappings for masters absent from current settings', async () => {
+    it('[REQ-358/AC-29] keeps mappings for masters absent from current settings', async () => {
       vi.mocked(workflowsApi.get).mockResolvedValue({
         id: 1, name: 'Workflow', json_body: mockWorkflowJson,
         mappings: [{ master_id: 999, node_id: 'legacy-node' }], mapping_slot_states: {}, created_at: '',
@@ -511,7 +511,7 @@ describe('WorkflowModalMultiStage', () => {
       })))
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-33 retains a saved non-default node present in the graph', async () => {
+    it('[REQ-358/AC-33] retains a saved non-default node present in the graph', async () => {
       vi.mocked(workflowsApi.get).mockResolvedValue({
         id: 1, name: 'Workflow', json_body: mockWorkflowJson,
         mappings: [{ master_id: 1, variant_id: 101, node_id: '30' }], mapping_slot_states: {}, created_at: '',
@@ -524,7 +524,7 @@ describe('WorkflowModalMultiStage', () => {
       expect((inputs[0] as HTMLInputElement).value).toBe('30')
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-35 preserves a saved mapping whose node is missing from the workflow graph', async () => {
+    it('[REQ-358/AC-35] preserves a saved mapping whose node is missing from the workflow graph', async () => {
       vi.mocked(workflowsApi.get).mockResolvedValue({
         id: 1, name: 'Workflow', json_body: mockWorkflowJson,
         mappings: [{ master_id: 1, variant_id: 101, node_id: '99' }], mapping_slot_states: {}, created_at: '',
@@ -556,7 +556,7 @@ describe('WorkflowModalMultiStage', () => {
       })))
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-19 saves remapped nodes and persisted slot states', async () => {
+    it('[REQ-358/AC-19] saves remapped nodes and persisted slot states', async () => {
       vi.mocked(workflowsApi.update).mockResolvedValue({ id: 1 } as any)
       vi.mocked(workflowsApi.get).mockResolvedValue({
         id: 1, name: 'Workflow', json_body: mockWorkflowJson,
@@ -602,7 +602,7 @@ describe('WorkflowModalMultiStage', () => {
       })
     })
 
-    it('REQ-358/RESCAN_CLEAN REQ-358/AC-20 preserves explicit empty slot values and identifiers', async () => {
+    it('[REQ-358/AC-20] preserves explicit empty slot values and identifiers', async () => {
       vi.mocked(workflowsApi.update).mockResolvedValue({ id: 1 } as any)
       const onSaved = vi.fn()
       const onClose = vi.fn()

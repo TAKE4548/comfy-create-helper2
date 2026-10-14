@@ -377,7 +377,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
     expect(onSave).toHaveBeenCalledWith([{ master_id: 102, variant_id: 1003, node_id: '999' }], expect.any(Object))
   })
 
-  it('[REQ-358/WIRING] slot無効状態を保持し、保存時にstateを渡す', () => {
+  it('[REQ-358/AC-23] slot無効状態を保持し、保存時にstateを渡す', () => {
     const onSave = vi.fn()
     const onChangeSlotStates = vi.fn()
     const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)

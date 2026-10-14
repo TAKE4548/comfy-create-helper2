@@ -614,7 +614,7 @@ describe('SpeechBubbleControls', () => {
     expect(screen.getByText('テキスト付きB (縦)')).toBeDefined()
   })
 
-  it('renders style-only presets section before with-text presets section in DOM order (REQ-180 AC-1)', async () => {
+  it('[REQ-180/AC-1] renders style-only presets section before with-text presets section in DOM order', async () => {
     const mixedPresets: SpeechBubblePreset[] = [
       {
         id: 1,
@@ -1532,7 +1532,7 @@ describe('SpeechBubbleControls', () => {
     expect(defaultProps.onUpdate).toHaveBeenCalledWith({ h: 125 })
   })
 
-  it('handles scale flipping and path flipping in manga fx section (REQ-180 AC-1, AC-2, AC-3)', () => {
+  it('[REQ-180/AC-1] handles scale flipping and path flipping in manga fx section', () => {
     const onUpdateMock = vi.fn()
     renderWithQuery(
       <SpeechBubbleControls
@@ -1586,7 +1586,7 @@ describe('SpeechBubbleControls', () => {
     })
   })
 
-  it('synchronizes default pathPoints when pathPreset or orientation changes (REQ-188)', () => {
+  it('[REQ-188/AC-1] synchronizes default pathPoints when pathPreset or orientation changes', () => {
     const onUpdateMock = vi.fn()
     const { rerender } = renderWithQuery(
       <SpeechBubbleControls
@@ -1662,7 +1662,7 @@ describe('SpeechBubbleControls', () => {
     )
   })
 
-  it('falls back to default path points before flipping if pathPoints is empty (REQ-188)', () => {
+  it('[REQ-188/AC-2] falls back to default path points before flipping if pathPoints is empty', () => {
     const onUpdateMock = vi.fn()
     renderWithQuery(
       <SpeechBubbleControls

@@ -1,9 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { cleanupAllTestState, resetTestStorage } from '../../../test/utils'
 import { useStudioStore } from '../useStudioStore'
 import type { DatasetProject, DatasetItem, OutfitMasterPreset } from '../../../api/types'
 
 describe('useStudioStore', () => {
   beforeEach(() => {
+    cleanupAllTestState()
+    resetTestStorage()
+    useStudioStore.getState().resetStudio()
+  })
+
+  afterEach(() => {
+    cleanupAllTestState()
+    resetTestStorage()
     useStudioStore.getState().resetStudio()
   })
 
@@ -172,7 +181,7 @@ describe('useStudioStore', () => {
     expect(state.lossHistory).toEqual([])
     expect(state.telemetryLogs).toEqual([])
   })
-  it('manages paramValues state (REQ-331)', () => {
+  it('[REQ-331/AC-1] manages paramValues state', () => {
     expect(useStudioStore.getState().paramValues).toEqual({})
 
     useStudioStore.getState().setParamValue('steps', '25')
@@ -185,7 +194,7 @@ describe('useStudioStore', () => {
     expect(useStudioStore.getState().paramValues).toEqual({ sampler: 'euler', steps: '30' })
   })
 
-  it('manages bypassedNodeIds state (REQ-331)', () => {
+  it('[REQ-331/AC-2] manages bypassedNodeIds state', () => {
     expect(useStudioStore.getState().bypassedNodeIds).toEqual([])
 
     useStudioStore.getState().setBypassedNodeIds(['node-1', 'node-2'])
@@ -198,7 +207,7 @@ describe('useStudioStore', () => {
     expect(useStudioStore.getState().bypassedNodeIds).toEqual(['node-1', 'node-3'])
   })
 
-  it('clears paramValues and bypassedNodeIds on resetStudio (REQ-331)', () => {
+  it('[REQ-331/AC-3] clears paramValues and bypassedNodeIds on resetStudio', () => {
     useStudioStore.getState().setParamValues({ steps: '20' })
     useStudioStore.getState().setBypassedNodeIds(['node-1'])
 

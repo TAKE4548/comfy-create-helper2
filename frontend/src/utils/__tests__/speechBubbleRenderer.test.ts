@@ -472,7 +472,7 @@ describe('speechBubbleRenderer', () => {
       expect(speechBubbleRenderer.calculateFitBubbleDimensions).toBeDefined()
     })
 
-    it('flips path points correctly for vertical and horizontal orientations (REQ-180 AC-2)', () => {
+    it('[REQ-180/AC-2] flips path points correctly for vertical and horizontal orientations', () => {
       const vertArcPts = getDefaultPathPoints('arc', 'vertical')
       // [{ x: 0.7, y: 0.1 }, { x: 0.3, y: 0.5 }, { x: 0.7, y: 0.9 }]
       const flippedVert = flipPathPoints(vertArcPts, 'vertical')
@@ -492,7 +492,7 @@ describe('speechBubbleRenderer', () => {
       ])
     })
 
-    it('calculates tail base position and respects fine-tuning parameters (REQ-180 AC-1, AC-2)', () => {
+    it('[REQ-180/AC-1] calculates tail base position and respects fine-tuning parameters', () => {
       const ovalBubble: SpeechBubble = {
         ...baseBubble,
         shape: 'oval',
@@ -585,7 +585,7 @@ describe('speechBubbleRenderer', () => {
       expect(horizDim.h).toBeGreaterThan(50)
     })
 
-    it('reverses order when flipping center/straight line points (REQ-188)', () => {
+    it('[REQ-188/AC-1] reverses order when flipping center/straight line points', () => {
       const vertLinePts = getDefaultPathPoints('line', 'vertical')
       const flippedVert = flipPathPoints(vertLinePts, 'vertical')
       expect(flippedVert).toEqual([
@@ -601,7 +601,7 @@ describe('speechBubbleRenderer', () => {
       ])
     })
 
-    it('maps vertical punctuation using verticalCharMap when drawing vertical path text (REQ-188)', () => {
+    it('[REQ-188/AC-2] maps vertical punctuation using verticalCharMap when drawing vertical path text', () => {
       mockCtx.fillText.mockClear()
       const vertPathBubble: SpeechBubble = {
         ...baseBubble,
@@ -618,7 +618,7 @@ describe('speechBubbleRenderer', () => {
       expect(renderedChars).toContain('﹂') // '」' converted
     })
 
-    it('distributes multiple characters within the same step in stepped preset (REQ-188)', () => {
+    it('[REQ-188/AC-3] distributes multiple characters within the same step in stepped preset', () => {
       const vertSteppedBubble: SpeechBubble = {
         ...baseBubble,
         orientation: 'vertical',
@@ -637,7 +637,7 @@ describe('speechBubbleRenderer', () => {
       expect(t0.pathPos?.y).not.toBe(t1.pathPos?.y)
     })
 
-    it('applies proportional advancement when scale varies (REQ-188)', () => {
+    it('[REQ-188/AC-4] applies proportional advancement when scale varies', () => {
       mockCtx.translate.mockClear()
       const scalingBubble: SpeechBubble = {
         ...baseBubble,
@@ -654,7 +654,7 @@ describe('speechBubbleRenderer', () => {
       expect(mockCtx.translate).toHaveBeenCalled()
     })
 
-    it('clamps tail apex outside bubble boundary (REQ-206 T1)', () => {
+    it('[REQ-206/AC-1] clamps tail apex outside bubble boundary', () => {
       const bubble: SpeechBubble = {
         ...baseBubble,
         x: 100,
@@ -679,7 +679,7 @@ describe('speechBubbleRenderer', () => {
       expect(clampedRect.y).toBeGreaterThanOrEqual(150 + 50 * 1.05)
     })
 
-    it('calculates 2 contact positions independently and supports legacy options (REQ-206 T1)', () => {
+    it('[REQ-206/AC-2] calculates 2 contact positions independently and supports legacy options', () => {
       const ovalBubble: SpeechBubble = {
         ...baseBubble,
         shape: 'oval',
@@ -725,7 +725,7 @@ describe('speechBubbleRenderer', () => {
       expect(getTailContactPositions({ ...baseBubble, tail: undefined })).toBeNull()
     })
 
-    it('draws 2 contact handles in fine-tuning mode (REQ-206 T1)', () => {
+    it('[REQ-206/AC-3] draws 2 contact handles in fine-tuning mode', () => {
       const fineTuningBubble: SpeechBubble = {
         ...baseBubble,
         shape: 'oval',

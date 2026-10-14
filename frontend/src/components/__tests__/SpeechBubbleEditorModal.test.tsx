@@ -889,7 +889,7 @@ describe('SpeechBubbleEditorModal', () => {
     }
   })
 
-  it('supports tail fine-tuning mode toggle and contact reset (REQ-206 T2)', async () => {
+  it('[REQ-206/AC-1] supports tail fine-tuning mode toggle and contact reset', async () => {
     const OriginalImage = window.Image
     class MockLoadedImage {
       src = ''
@@ -943,7 +943,7 @@ describe('SpeechBubbleEditorModal', () => {
     }
   })
 
-  it('preserves full tail properties when moving or duplicating bubble (REQ-206 T2)', async () => {
+  it('[REQ-206/AC-2] preserves full tail properties when moving or duplicating bubble', async () => {
     vi.mocked(snapshotsApi.get).mockResolvedValueOnce({
       id: 1,
       workflow_id: 1,
@@ -1307,7 +1307,7 @@ describe('SpeechBubbleEditorModal', () => {
     })
   }) // end describe('Scene Batch Generate')
 
-  it('REQ-294 T16: default stream API receives progress and advances to review', async () => {
+  it('[REQ-294/AC-1] default stream API receives progress and advances to review', async () => {
     let onProgress: ((event: { type: 'progress'; step: 'reference' | 'vlm' | 'style' | 'vram'; status: 'active' | 'done' | 'error' }) => void) | undefined
     let resolveStream!: (value: any) => void
     vi.mocked(sceneSpeechApi.generateStream).mockImplementation((_payload, options) => {
@@ -1337,7 +1337,7 @@ describe('SpeechBubbleEditorModal', () => {
     await waitFor(() => expect(screen.getAllByText('生成結果を確認').length).toBeGreaterThan(0))
   })
 
-  it('REQ-294 T16: default stream rejection reaches the error and retry UI', async () => {
+  it('[REQ-294/AC-2] default stream rejection reaches the error and retry UI', async () => {
     vi.mocked(sceneSpeechApi.generateStream).mockRejectedValueOnce(new Error('stream failed'))
     renderWithQuery(<SpeechBubbleEditorModal snapshot={mockSnapshot} primaryTagSetId={null} onClose={mockOnClose} onSaved={mockOnSaved} />)
     fireEvent.click(screen.getByTestId('scene-batch-generate-btn'))
@@ -1345,7 +1345,7 @@ describe('SpeechBubbleEditorModal', () => {
     expect(screen.getAllByRole('button', { name: '再試行' }).length).toBeGreaterThan(0)
   })
 
-  it('REQ-294 T16: closing progress cancels the stream and discards its late result', async () => {
+  it('[REQ-294/AC-3] closing progress cancels the stream and discards its late result', async () => {
     let streamOptions: any
     let resolveStream!: (value: any) => void
     vi.mocked(sceneSpeechApi.generateStream).mockImplementation((_payload, options) => {
@@ -1361,7 +1361,7 @@ describe('SpeechBubbleEditorModal', () => {
     expect(screen.queryByTestId('scene-speech-modal')).toBeNull()
   })
 
-  it('REQ-294: 生成結果の選択分だけをキャンバスへ反映する', async () => {
+  it('[REQ-294/AC-4] 生成結果の選択分だけをキャンバスへ反映する', async () => {
     const generated = {
       scene_interpretation: 'テストシーン', vram_unloaded: true,
       tone_samples: [], candidate_similar_scenes: [],
@@ -1386,7 +1386,7 @@ describe('SpeechBubbleEditorModal', () => {
     expect(screen.queryByTestId('scene-speech-modal')).toBeNull()
   })
 
-  it('REQ-294: 結果を閉じた場合は生成バブルを反映しない', async () => {
+  it('[REQ-294/AC-5] 結果を閉じた場合は生成バブルを反映しない', async () => {
     const applyPresetToBubbles = vi.fn((bubbles) => bubbles)
     renderWithQuery(
       <SpeechBubbleEditorModal snapshot={mockSnapshot} onClose={mockOnClose} onSaved={mockOnSaved}

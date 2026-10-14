@@ -51,7 +51,7 @@ describe('HistoryModalPreview', () => {
     })
   })
 
-  it('REQ-316 treats empty saved params as authoritative and offers info even with missing metadata', async () => {
+  it('[REQ-316/AC-1] treats empty saved params as authoritative and offers info even with missing metadata', async () => {
     vi.mocked(snapshotsApi.get).mockResolvedValueOnce({ id: 1, workflow_id: 1, params: {}, image_path: '', created_at: 'saved', loras: [], tag_sets: [] })
     localStorage.setItem('prompt-surgeon-meta-test-prompt-id-123', JSON.stringify({ paramValues: { Quality: 'must not appear' } }))
     renderComponent({ snapshotIds: [1] })
@@ -62,7 +62,7 @@ describe('HistoryModalPreview', () => {
     expect(promptMetadataApi.get).not.toHaveBeenCalled()
   })
 
-  it('REQ-316 locks the image and close/navigation while saving tag associations', async () => {
+  it('[REQ-316/AC-2] locks the image and close/navigation while saving tag associations', async () => {
     const saved = { id: 1, workflow_id: 1, params: {}, image_path: '', created_at: 'saved', loras: [], tag_sets: [] }
     vi.mocked(snapshotsApi.get).mockResolvedValue(saved)
     let finish!: (snapshot: typeof saved) => void

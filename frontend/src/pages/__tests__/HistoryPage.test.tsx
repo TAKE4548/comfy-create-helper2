@@ -676,7 +676,7 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     expect(screen.queryByTestId('batch-speech-transform-modal')).not.toBeInTheDocument()
   })
 
-  it('REQ-267: should render thumbnail with toThumbnailUrl fallback when ComfyUI direct URL is present', async () => {
+  it('[REQ-267/AC-1] should render thumbnail with toThumbnailUrl fallback when ComfyUI direct URL is present', async () => {
     vi.mocked(snapshotsApi.list).mockResolvedValueOnce([
       {
         id: 999,
@@ -701,7 +701,7 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     )
   })
 
-  it('REQ-267: should preserve normal relative thumbnail path when present', async () => {
+  it('[REQ-267/AC-2] should preserve normal relative thumbnail path when present', async () => {
     vi.mocked(snapshotsApi.list).mockResolvedValueOnce([
       {
         id: 998,

@@ -31,6 +31,7 @@ describe('mappingApi domain clients (REQ-336)', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
@@ -452,7 +453,7 @@ describe('mappingApi domain clients (REQ-336)', () => {
 })
 
 describe('REQ-358/API_TYPES', () => {
-  it('REQ-358/AC-19 preserves optional master default_enabled types', () => {
+  it('[REQ-358/AC-19] preserves optional master default_enabled types', () => {
     const legacyMaster: MappingMaster = {
       id: 1,
       role: 'prompt',
@@ -483,7 +484,7 @@ describe('REQ-358/API_TYPES', () => {
     void invalidMaster
   })
 
-  it('REQ-358/AC-26 allows optional mapping_slot_states and false values', () => {
+  it('[REQ-358/AC-26] allows optional mapping_slot_states and false values', () => {
     const legacyWorkflow: Workflow = {
       id: 1,
       name: 'Legacy',
@@ -508,7 +509,7 @@ describe('REQ-358/API_TYPES', () => {
     void invalidStates
   })
 
-  it('REQ-358/AC-31 supports legacy read defaults without making state required', () => {
+  it('[REQ-358/AC-31] supports legacy read defaults without making state required', () => {
     const master: MappingMaster = {
       id: 2,
       role: 'sampler',

@@ -333,7 +333,7 @@ describe('useGeneratePageState', () => {
     expect(localStorage.getItem('prompt-surgeon-collapsed-positive')).toBe('false')
   })
 
-  it('should compute totalQueueCount based purely on ComfyUI queue running and pending (REQ-159)', () => {
+  it('[REQ-159/AC-1] should compute totalQueueCount based purely on ComfyUI queue running and pending', () => {
     mockStore.queueRunning = [['0', 'run-1', {}, { client_id: 'test-client-id' }]]
     mockStore.queuePending = [['1', 'pend-1', {}, { client_id: 'test-client-id' }]]
     mockStore.activeBatch = [
@@ -349,7 +349,7 @@ describe('useGeneratePageState', () => {
     expect(result.current.totalQueueCount).toBe(2)
   })
 
-  it('should consider isGeneratingHere true when filterOwnSession is true and activeBatch has pending/generating jobs (REQ-159)', () => {
+  it('[REQ-159/AC-2] should consider isGeneratingHere true when filterOwnSession is true and activeBatch has pending/generating jobs', () => {
     mockStore.isGenerating = true
     mockStore.filterOwnSession = true
     mockStore.activeClientId = 'other-client-id'
@@ -364,7 +364,7 @@ describe('useGeneratePageState', () => {
     expect(result.current.isGeneratingHere).toBe(true)
   })
 
-  it('should sync queue without refetching history for a restored nonempty baseline on visibilitychange (REQ-159)', () => {
+  it('[REQ-159/AC-3] should sync queue without refetching history for a restored nonempty baseline on visibilitychange', () => {
     const fetchQueueMock = vi.fn()
     const fetchHistoryMock = vi.fn()
     const restoredBatchImages = [...mockStore.batchImages]
@@ -414,7 +414,7 @@ describe('useGeneratePageState', () => {
     expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
-  it('should maintain independent prompts when switching presets (REQ-163)', async () => {
+  it('[REQ-163/AC-1] should maintain independent prompts when switching presets', async () => {
     vi.mocked(workflowsApi.get).mockResolvedValue({
       id: 1,
       name: 'Workflow 1',
@@ -478,7 +478,7 @@ describe('useGeneratePageState', () => {
     expect(mockStore.loadPresetData).toHaveBeenCalledWith(preset1, expect.anything(), ['positive_prompt'])
   })
 
-  it('should handle OCC conflict (409) in updatePresetMutation (REQ-163)', async () => {
+  it('[REQ-163/AC-2] should handle OCC conflict (409) in updatePresetMutation', async () => {
     const error409 = new Error('API error 409: Preset was updated by another session')
     vi.mocked(workflowPresetsApi.update).mockRejectedValueOnce(error409)
 
@@ -666,7 +666,7 @@ describe('useGeneratePageState', () => {
       }))
     })
 
-    it('should correctly update and remove tags with commonTagOps in handleBulkEditApply (REQ-202)', async () => {
+    it('[REQ-202/AC-1] should correctly update and remove tags with commonTagOps in handleBulkEditApply', async () => {
       const mockPreset = {
         id: 10,
         workflow_id: 1,
@@ -720,7 +720,7 @@ describe('useGeneratePageState', () => {
       }))
     })
 
-    it('should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply (REQ-218)', async () => {
+    it('[REQ-218/AC-1] should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply', async () => {
       const mockPreset = {
         id: 10,
         workflow_id: 1,
@@ -768,7 +768,7 @@ describe('useGeneratePageState', () => {
       }))
     })
 
-    it('should correctly append suffix with normalized comma delimiter in handleBulkEditApply (REQ-218)', async () => {
+    it('[REQ-218/AC-2] should correctly append suffix with normalized comma delimiter in handleBulkEditApply', async () => {
       const mockPreset = {
         id: 10,
         workflow_id: 1,
@@ -909,7 +909,7 @@ describe('useGeneratePageState', () => {
       )
     })
 
-    it('REQ-277: ensures handleGenerateSets wires onBeforeGenerate with flushAutoSave', async () => {
+    it('[REQ-277/AC-1] ensures handleGenerateSets wires onBeforeGenerate with flushAutoSave', async () => {
       const wrapper = createWrapper()
       const { result } = renderHook(() => useGeneratePageState(), { wrapper })
 
@@ -918,7 +918,7 @@ describe('useGeneratePageState', () => {
       expect(typeof result.current.flushAutoSave).toBe('function')
     })
 
-    it('REQ-278: preserves in-memory edited parameters in setSets on preset sync', async () => {
+    it('[REQ-278/AC-1] preserves in-memory edited parameters in setSets on preset sync', async () => {
       const preset: WorkflowPreset = {
         id: 10,
         workflow_id: 1,
