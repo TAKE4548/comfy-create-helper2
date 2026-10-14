@@ -121,4 +121,60 @@ describe('GenerateParallelPreview', () => {
     setPreviewSize(container, 1430, 600)
     expect(root.querySelectorAll('img')).toHaveLength(3)
   })
+it('renders progressive thumbnail placeholder first and transitions to full-size WebP [REQ-362/AC-7]', () => {
+    const viewUrl = '/api/comfy/view?filename=prompt_123.png&subfolder=&type=output'
+    const { container } = render(
+      <GenerateParallelPreview
+        images={[viewUrl]}
+        selectedImage={viewUrl}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+
+    // 1. Initial render: thumbnail placeholder is visible, full image is opacity-0
+    const thumbImg = root.querySelector('[data-testid="preview-thumbnail"]') as HTMLImageElement
+    const fullImg = root.querySelector('[data-testid="preview-full"]') as HTMLImageElement
+
+    expect(thumbImg).toBeTruthy()
+    expect(thumbImg.getAttribute('src')).toContain('/api/comfy/thumbnail?filename=prompt_123.png')
+    expect(fullImg).toBeTruthy()
+    expect(fullImg.getAttribute('src')).toBe(viewUrl)
+    expect(fullImg.className).toContain('opacity-0')
+
+    // 2. Full image loads: opacity transitions to opacity-100, thumbnail is unmounted
+    act(() => {
+      fireEvent.load(fullImg)
+    })
+    expect(fullImg.className).toContain('opacity-100')
+    expect(root.querySelector('[data-testid="preview-thumbnail"]')).toBeNull()
+  })
+
+  it('maintains thumbnail fallback if full-size WebP fails to load [REQ-362/AC-7]', () => {
+    const viewUrl = '/api/comfy/view?filename=prompt_failed.png&subfolder=&type=output'
+    const { container } = render(
+      <GenerateParallelPreview
+        images={[viewUrl]}
+        selectedImage={viewUrl}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+
+    const fullImg = root.querySelector('[data-testid="preview-full"]') as HTMLImageElement
+    expect(fullImg).toBeTruthy()
+
+    // Full image fails
+    act(() => {
+      fireEvent.error(fullImg)
+    })
+
+    // Full image is unmounted, thumbnail remains as fallback
+    expect(root.querySelector('[data-testid="preview-full"]')).toBeNull()
+    const thumbImg = root.querySelector('[data-testid="preview-thumbnail"]') as HTMLImageElement
+    expect(thumbImg).toBeTruthy()
+    expect(thumbImg.getAttribute('src')).toContain('/api/comfy/thumbnail?filename=prompt_failed.png')
+  })
 })

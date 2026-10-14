@@ -61,7 +61,9 @@ def test_missing_original_does_not_immediately_delete_orphan_thumbnail(tmp_path,
         comfy_router._thumbnail_cache[key] = b'cached-webp'
     respx.head(f"{settings.comfy_url}/view").respond(404)
     response = TestClient(app).get('/api/comfy/thumbnail?filename=orphan.png')
-    assert response.status_code == 404
+    # Under REQ-362 zero-probe architecture, cached thumbnails return 200 without upstream HEAD probe
+    assert response.status_code == 200
+    assert response.content == b'cached-webp'
     assert path.read_bytes() == b'cached-webp'
     if layer == 'memory':
         assert comfy_router._thumbnail_cache[key] == b'cached-webp'

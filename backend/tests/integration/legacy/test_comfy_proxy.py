@@ -342,3 +342,108 @@ class TestComfyProxyAPI(unittest.TestCase):
 
             remaining = list(disk_dir.glob("*.webp"))
             self.assertLessEqual(len(remaining), comfy_router._DISK_CACHE_TARGET_FILES)
+
+    @patch("httpx.AsyncClient.get")
+    def test_comfy_view_cache_hit_zero_probe_req362_ac1(self, mock_get):
+        """[REQ-362/AC-1] キャッシュヒット時、ComfyUI への HTTP 通信が発生せず 5ms 未満で WebP が返却されること。"""
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        img = Image.new("RGB", (128, 128), color="red")
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=90)
+        webp_bytes = buf.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_disk_path = Path(tmpdir) / "full_view.webp"
+            fake_disk_path.write_bytes(webp_bytes)
+
+            with mock_patch.object(comfy_router, "_get_full_webp_disk_path", return_value=fake_disk_path):
+                res = self.client.get("/api/comfy/view?filename=test_hit.png")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.headers.get("content-type"), "image/webp")
+                self.assertEqual(res.content, webp_bytes)
+                # Upstream HTTP 通信が一切発生しないこと (ゼロプローブ)
+                mock_get.assert_not_called()
+
+    @patch("httpx.AsyncClient.head")
+    @patch("httpx.AsyncClient.get")
+    def test_comfy_thumbnail_skips_probe_on_cache_hit_req362_ac2(self, mock_get, mock_head):
+        """[REQ-362/AC-2] サムネイルキャッシュヒット時、ComfyUI への存在確認プローブ (HEAD) が発生しないこと。"""
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        img = Image.new("RGB", (64, 64), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=80)
+        webp_bytes = buf.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_disk_path = Path(tmpdir) / "fake_thumb.webp"
+            fake_disk_path.write_bytes(webp_bytes)
+
+            comfy_router._thumbnail_cache.clear()
+            with mock_patch.object(comfy_router, "_get_thumbnail_disk_path", return_value=fake_disk_path):
+                res = self.client.get("/api/comfy/thumbnail?filename=disk_hit.png&size=64&quality=80")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.headers.get("content-type"), "image/webp")
+                # HEAD 存在プローブおよび GET が一切呼ばれないこと
+                mock_head.assert_not_called()
+                mock_get.assert_not_called()
+
+    @patch("httpx.AsyncClient.get")
+    def test_comfy_view_cache_miss_converts_to_webp_req362_ac4(self, mock_get):
+        """[REQ-362/AC-4] キャッシュミス時、ComfyUI から元画像を取得して WebP (Quality 90) に変換・ディスク保存されること。"""
+        import io
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from unittest.mock import patch as mock_patch
+
+        img = Image.new("RGB", (128, 128), color="green")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = png_bytes
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_disk_path = Path(tmpdir) / "miss_view.webp"
+
+            with mock_patch.object(comfy_router, "_get_full_webp_disk_path", return_value=fake_disk_path):
+                res = self.client.get("/api/comfy/view?filename=test_miss.png")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.headers.get("content-type"), "image/webp")
+                # ディスクに WebP キャッシュが保存されていること
+                self.assertTrue(fake_disk_path.exists())
+                self.assertGreater(fake_disk_path.stat().st_size, 0)
+                # ComfyUI GET が呼ばれていること
+                mock_get.assert_called_once()
+
+    def test_prune_full_cache_if_needed_req362_ac5(self):
+        """[REQ-362/AC-5] 220件超過時に古い順にファイルが間引かれ、200件以下に維持されること。"""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            disk_dir = Path(tmpdir)
+            total = 225
+            for i in range(total):
+                f = disk_dir / f"full_{i:05d}.webp"
+                f.write_bytes(b"dummy_full_webp_content")
+
+            comfy_router._prune_full_cache_if_needed(disk_dir)
+
+            remaining = list(disk_dir.glob("*.webp"))
+            self.assertLessEqual(len(remaining), comfy_router._FULL_CACHE_TARGET_FILES)
+            self.assertEqual(len(remaining), 200)

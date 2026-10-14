@@ -25,6 +25,11 @@ _client: Optional[httpx.AsyncClient] = None
 _DISK_CACHE_MAX_FILES = 4000
 _DISK_CACHE_TARGET_FILES = 3600
 
+# フルサイズ WebP ディスクキャッシュ上限
+_FULL_CACHE_MAX_FILES = 220
+_FULL_CACHE_TARGET_FILES = 200
+_full_cache_lock = asyncio.Lock()
+
 
 def get_comfy_client() -> httpx.AsyncClient:
     """ComfyUI通信用 httpx.AsyncClient シングルトン（コネクションプール）を取得する。"""
@@ -58,6 +63,64 @@ def _get_thumbnail_disk_path(cache_key: str) -> Path:
     disk_dir.mkdir(parents=True, exist_ok=True)
     filename = hashlib.sha256(cache_key.encode("utf-8")).hexdigest() + ".webp"
     return disk_dir / filename
+
+
+def _convert_to_full_webp(image_bytes: bytes, quality: int = 90) -> bytes:
+    """CPU-bound Pillow conversion to full-size WebP executed in worker thread."""
+    opened_image = Image.open(io.BytesIO(image_bytes))
+    image = opened_image.convert("RGBA") if opened_image.mode not in ("RGB", "RGBA") else opened_image
+    buf = io.BytesIO()
+    image.save(buf, format="WEBP", quality=quality)
+    return buf.getvalue()
+
+
+def _get_full_webp_disk_path(cache_key: str) -> Path:
+    """../db/full_cache ディレクトリ内の SHA-256 キャッシュパスを返却する。"""
+    disk_dir = Path(settings.snapshot_path).parent / "full_cache"
+    disk_dir.mkdir(parents=True, exist_ok=True)
+    filename = hashlib.sha256(cache_key.encode("utf-8")).hexdigest() + ".webp"
+    return disk_dir / filename
+
+
+async def eager_cache_full_webp(filename: str, subfolder: str = "", image_type: str = "output") -> None:
+    """Pre-warm full-size WebP cache when an image generation completes."""
+    try:
+        cache_key = f"{image_type}:{subfolder}:{filename}"
+        disk_path = _get_full_webp_disk_path(cache_key)
+        if disk_path.is_file() and disk_path.stat().st_size > 0:
+            return
+        upstream = await get_comfy_client().get(
+            f"{settings.comfy_url}/view",
+            params={"filename": filename, "subfolder": subfolder, "type": image_type},
+            timeout=15.0,
+        )
+        if upstream.status_code == 200:
+            webp_bytes = await asyncio.to_thread(_convert_to_full_webp, upstream.content, 90)
+            tmp_name = f".tmp_eager_{hashlib.sha256(webp_bytes[:32]).hexdigest()[:8]}.webp"
+            tmp_path = disk_path.parent / tmp_name
+            await asyncio.to_thread(tmp_path.write_bytes, webp_bytes)
+            await asyncio.to_thread(tmp_path.replace, disk_path)
+            await asyncio.to_thread(_prune_full_cache_if_needed, disk_path.parent)
+    except Exception as e:
+        logger.warning(f"Failed to eagerly cache full webp for {filename}: {e}")
+
+
+def _prune_full_cache_if_needed(disk_dir: Path) -> None:
+    """220件超過時に古い順に削除して200件まで間引く。"""
+    try:
+        files = list(disk_dir.glob("*.webp"))
+        if len(files) <= _FULL_CACHE_MAX_FILES:
+            return
+        files.sort(key=lambda f: f.stat().st_mtime)
+        delete_count = len(files) - _FULL_CACHE_TARGET_FILES
+        for f in files[:delete_count]:
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        logger.info(f"Pruned {delete_count} old full webp disk cache files.")
+    except Exception as e:
+        logger.warning(f"Error pruning full webp disk cache: {e}")
 
 
 def _prune_disk_cache_if_needed(disk_dir: Path) -> None:
@@ -308,7 +371,27 @@ async def get_comfy_view(
     filename: str = Query(...), subfolder: str = Query(""), type: str = Query("output"),
     t: str | None = Query(None),
 ) -> Response:
-    """Serve original bytes from the configured upstream; t is metadata-only."""
+    """Serve full-size WebP cached image (0ms on cache hit) or fetch from upstream and cache."""
+    cache_key = f"{type}:{subfolder}:{filename}"
+    disk_path = _get_full_webp_disk_path(cache_key)
+
+    # 1. ローカルディスクキャッシュ確認 (プローブなし・0ms)
+    if disk_path.is_file():
+        try:
+            if disk_path.stat().st_size > 0:
+                webp_bytes = await asyncio.to_thread(disk_path.read_bytes)
+                return Response(
+                    content=webp_bytes,
+                    media_type="image/webp",
+                    headers={"Cache-Control": "public, max-age=604800, immutable"},
+                )
+            else:
+                disk_path.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to read full cache {disk_path}: {e}")
+            disk_path.unlink(missing_ok=True)
+
+    # 2. キャッシュミス時のみ ComfyUI (WSL) から取得
     try:
         upstream = await get_comfy_client().get(
             f"{settings.comfy_url}/view",
@@ -317,11 +400,32 @@ async def get_comfy_view(
         if upstream.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
         upstream.raise_for_status()
+    except HTTPException:
+        raise
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail="ComfyUI view unavailable") from error
-    return Response(content=upstream.content, headers={
-        "Content-Type": upstream.headers.get("content-type", "application/octet-stream"),
-    })
+
+    # 3. ワーカースレッドでフルサイズ WebP (Quality 90) へ非同期変換 & アトミック保存
+    try:
+        webp_bytes = await asyncio.to_thread(_convert_to_full_webp, upstream.content, 90)
+        tmp_name = f".tmp_{hashlib.sha256(webp_bytes[:32]).hexdigest()[:8]}.webp"
+        tmp_path = disk_path.parent / tmp_name
+        await asyncio.to_thread(tmp_path.write_bytes, webp_bytes)
+        await asyncio.to_thread(tmp_path.replace, disk_path)
+        await asyncio.to_thread(_prune_full_cache_if_needed, disk_path.parent)
+        return Response(
+            content=webp_bytes,
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to convert or save full webp {filename}: {e}")
+        return Response(
+            content=upstream.content,
+            headers={
+                "Content-Type": upstream.headers.get("content-type", "application/octet-stream"),
+            },
+        )
 
 
 @router.get("/thumbnail")
@@ -343,8 +447,6 @@ async def get_comfy_thumbnail(
 
     # L1: メモリキャッシュ確認
     if cache_key in _thumbnail_cache:
-        if not await _check_comfy_exists():
-            raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
         _thumbnail_cache.move_to_end(cache_key)
         return Response(
             content=_thumbnail_cache[cache_key],
@@ -357,8 +459,6 @@ async def get_comfy_thumbnail(
     if disk_path.is_file():
         try:
             if disk_path.stat().st_size > 0:
-                if not await _check_comfy_exists():
-                    raise HTTPException(status_code=404, detail=f"Image not found in ComfyUI: {filename}")
                 webp_bytes = await asyncio.to_thread(disk_path.read_bytes)
                 _thumbnail_cache[cache_key] = webp_bytes
                 if len(_thumbnail_cache) > _THUMBNAIL_CACHE_MAX_SIZE:

@@ -1,3 +1,4 @@
+import httpx
 import json
 import pytest
 from fastapi.testclient import TestClient
@@ -8,11 +9,17 @@ from app.main import app
 
 
 @pytest.fixture
-def client(db_session: Session):
+def client(db_session: Session, mock_external_services):
     def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    mock_external_services.get("http://localhost:8188/queue").mock(
+        return_value=httpx.Response(200, json={"queue_running": [], "queue_pending": []})
+    )
+    mock_external_services.get("http://127.0.0.1:8188/queue").mock(
+        return_value=httpx.Response(200, json={"queue_running": [], "queue_pending": []})
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -109,3 +116,50 @@ def test_req316_full_unicode_record_and_json_roundtrip(client: TestClient) -> No
     assert saved["applied_assets"] == assets
     assert saved["param_values"]["__prompt_surgeon_metadata_v1"] == raw
     assert json.loads(saved["param_values"]["__prompt_surgeon_metadata_v1"]) == record
+
+
+def test_prompt_metadata_200_limit_pruning_req362_ac6(client: TestClient, db_session: Session, mock_external_services) -> None:
+    """[REQ-362/AC-6] prompt_metadata が 200件を超過した際、アクティブジョブを除外した古いレコードからパージされること。"""
+    from app import models
+
+    mock_external_services.get("http://localhost:8188/queue").respond(200, json={"queue_running": [], "queue_pending": []})
+    mock_external_services.get("http://127.0.0.1:8188/queue").respond(200, json={"queue_running": [], "queue_pending": []})
+
+    # 既存のレコードをクリア
+    db_session.query(models.PromptMetadata).delete()
+    db_session.commit()
+
+    # 1件アクティブジョブ (running) を作成 (prompt_id="p-active-001")
+    job = models.GenerationJob(
+        job_id="job-active-1",
+        request_id="req-1",
+        item_index=0,
+        payload_hash="hash",
+        session_id="session-1",
+        scope="normal",
+        batch_id="batch-1",
+        prompt_id="p-active-001",
+        status="running",
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    # 205 件のメタデータを登録
+    for i in range(205):
+        pid = "p-active-001" if i == 0 else f"p-{i:04d}"
+        res = client.post("/api/prompt-metadata", json={
+            "prompt_id": pid,
+            "workflow_id": 1,
+            "param_values": {"step": i},
+        })
+        assert res.status_code == 200
+
+    # 登録後の総件数を確認: 200件以下であること
+    total_count = db_session.query(models.PromptMetadata).count()
+    assert total_count == 200
+
+    # アクティブジョブの prompt_metadata (p-active-001) が保護されて残っていること
+    active_meta = db_session.query(models.PromptMetadata).filter(
+        models.PromptMetadata.prompt_id == "p-active-001"
+    ).first()
+    assert active_meta is not None

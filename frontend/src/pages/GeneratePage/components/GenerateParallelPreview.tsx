@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { toThumbnailUrl } from '../../../utils/thumbnailUrl'
 
 export interface GenerateParallelPreviewProps {
   images: string[]
@@ -10,6 +11,88 @@ export interface GenerateParallelPreviewProps {
 }
 
 const GAP = 12
+
+interface ProgressivePreviewImageProps {
+  image: string
+  alt: string
+  onAspectRatioLoaded: (ar: number) => void
+}
+
+function ProgressivePreviewImage({ image, alt, onAspectRatioLoaded }: ProgressivePreviewImageProps) {
+  const thumbnailUrl = toThumbnailUrl(image)
+  const isProgressive = thumbnailUrl !== image
+
+  const [isFullLoaded, setIsFullLoaded] = useState(false)
+  const [thumbError, setThumbError] = useState(false)
+  const [fullError, setFullError] = useState(false)
+
+  useEffect(() => {
+    setIsFullLoaded(false)
+    setThumbError(false)
+    setFullError(false)
+  }, [image])
+
+  if (!isProgressive) {
+    return (
+      <img
+        src={image}
+        alt={alt}
+        className="h-full w-full object-contain"
+        onLoad={(e) => {
+          const { naturalWidth, naturalHeight } = e.currentTarget
+          if (naturalWidth && naturalHeight) {
+            onAspectRatioLoaded(naturalWidth / naturalHeight)
+          }
+        }}
+      />
+    )
+  }
+
+  return (
+    <div className="relative flex h-full w-full items-center justify-center">
+      {/* 先行プレースホルダー: サムネイル */}
+      {(!isFullLoaded || fullError) && !thumbError && (
+        <img
+          src={thumbnailUrl}
+          alt={`${alt} (サムネイル)`}
+          data-testid="preview-thumbnail"
+          onError={() => setThumbError(true)}
+          onLoad={(e) => {
+            const { naturalWidth, naturalHeight } = e.currentTarget
+            if (naturalWidth && naturalHeight) {
+              onAspectRatioLoaded(naturalWidth / naturalHeight)
+            }
+          }}
+          className="absolute inset-0 h-full w-full object-contain filter blur-sm transition-opacity duration-200"
+        />
+      )}
+      {!isFullLoaded && thumbError && !fullError && (
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
+          Loading preview...
+        </div>
+      )}
+      {/* メインプレビュー: フルサイズWebP */}
+      {!fullError && (
+        <img
+          src={image}
+          alt={alt}
+          data-testid="preview-full"
+          onLoad={(e) => {
+            setIsFullLoaded(true)
+            const { naturalWidth, naturalHeight } = e.currentTarget
+            if (naturalWidth && naturalHeight) {
+              onAspectRatioLoaded(naturalWidth / naturalHeight)
+            }
+          }}
+          onError={() => setFullError(true)}
+          className={`h-full w-full object-contain transition-opacity duration-200 ${
+            isFullLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
+    </div>
+  )
+}
 
 export function GenerateParallelPreview({
   images,
@@ -153,19 +236,14 @@ export function GenerateParallelPreview({
                 }}
                 className="absolute inset-0 flex h-full w-full items-center justify-center"
               >
-                <img
-                  src={image}
+                <ProgressivePreviewImage
+                  image={image}
                   alt={`生成画像 ${currentPage.start + offset + 1}`}
-                  className="h-full w-full object-contain"
-                  onLoad={(e) => {
-                    const { naturalWidth, naturalHeight } = e.currentTarget
-                    if (naturalWidth && naturalHeight) {
-                      const calculatedAR = naturalWidth / naturalHeight
-                      setLoadedAspectRatios((prev) => {
-                        if (prev[image] === calculatedAR) return prev
-                        return { ...prev, [image]: calculatedAR }
-                      })
-                    }
+                  onAspectRatioLoaded={(calculatedAR) => {
+                    setLoadedAspectRatios((prev) => {
+                      if (prev[image] === calculatedAR) return prev
+                      return { ...prev, [image]: calculatedAR }
+                    })
                   }}
                 />
               </button>

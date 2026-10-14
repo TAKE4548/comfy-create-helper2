@@ -358,6 +358,7 @@ class GenerationService:
                         finished_at=now,
                     )
                     self._frozen_graphs.pop(job.job_id, None)
+                    self._eager_cache_outputs(record.get("outputs"))
                 else:
                     return
             else:
@@ -1110,6 +1111,29 @@ class GenerationService:
         # This includes live HTTP/WS health changes even when no jobs changed.
         final_state = self._snapshot()
         return changed or self._signature(final_state) != self._last_published_signature
+
+    def _eager_cache_outputs(self, raw_outputs: Any) -> None:
+        if not isinstance(raw_outputs, dict):
+            return
+        try:
+            from app.routers.comfy import eager_cache_full_webp
+            for node_output in raw_outputs.values():
+                if not isinstance(node_output, dict):
+                    continue
+                images = node_output.get("images", [])
+                if not isinstance(images, list):
+                    continue
+                for image in images:
+                    if isinstance(image, dict) and isinstance(image.get("filename"), str):
+                        asyncio.create_task(
+                            eager_cache_full_webp(
+                                image["filename"],
+                                str(image.get("subfolder", "")),
+                                str(image.get("type", "output")),
+                            )
+                        )
+        except Exception as e:
+            logger.warning("Failed to schedule eager cache for outputs: %s", e)
 
     @staticmethod
     def _history_outputs(prompt_id: str, raw_outputs: Any) -> list[dict[str, Any]]:

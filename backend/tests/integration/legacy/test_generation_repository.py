@@ -505,7 +505,7 @@ def test_prune_keeps_latest_1000_terminal_and_all_active_and_increments_revision
     assert repository.snapshot()["revision"] == revision_after_prune
 
 
-def test_prompt_metadata_helper_flushes_unicode_without_committing_and_api_keeps_1000_cap(session_factory):
+def test_prompt_metadata_helper_flushes_unicode_without_committing_and_api_keeps_200_cap(session_factory):
     with session_factory() as db:
         payload = PromptMetadataCreate(
             prompt_id="helper-row", workflow_id=3, param_values={"text": "日本語"}, applied_assets={"asset": "衣装"}
@@ -518,14 +518,14 @@ def test_prompt_metadata_helper_flushes_unicode_without_committing_and_api_keeps
         assert db.query(PromptMetadata).count() == 0
         now = datetime.now(timezone.utc)
         db.add_all([
-            PromptMetadata(prompt_id=f"meta-{index}", param_values="{}", created_at=now + timedelta(seconds=index))
-            for index in range(1000)
+            PromptMetadata(prompt_id=f"meta-{index}", param_values="{}", created_at=now - timedelta(seconds=300 - index))
+            for index in range(300)
         ])
         db.commit()
         save_prompt_metadata(
             PromptMetadataCreate(prompt_id="meta-new", param_values={"word": "新規"}), db
         )
-        assert db.query(PromptMetadata).count() == 1000
+        assert db.query(PromptMetadata).count() == 200
         assert db.query(PromptMetadata).filter_by(prompt_id="meta-new").count() == 1
 
 
@@ -543,7 +543,7 @@ def test_prompt_metadata_retention_protects_active_jobs_without_changing_snapsho
             PromptMetadata(
                 prompt_id=f"old-{index}", param_values="{}", created_at=now + timedelta(seconds=index)
             )
-            for index in range(1000)
+            for index in range(300)
         ])
         db.add(GenerationJob(
             job_id="active-job", request_id="active-request", item_index=0, payload_hash="hash",
@@ -556,7 +556,7 @@ def test_prompt_metadata_retention_protects_active_jobs_without_changing_snapsho
         persist_prompt_metadata(db, PromptMetadataCreate(
             prompt_id="new-meta", param_values={"new": True}
         ))
-        assert db.query(PromptMetadata).count() == 1000
+        assert db.query(PromptMetadata).count() == 200
         assert db.query(PromptMetadata).filter_by(prompt_id="active-prompt").count() == 1
         assert db.query(GenerationJob).filter_by(job_id="active-job").count() == 1
         assert db.query(Snapshot).filter_by(image_path="snapshot.png").count() == 1

@@ -56,7 +56,7 @@ def persist_prompt_metadata(db: Session, payload: PromptMetadataCreate) -> None:
     db.flush()
 
     total_count = db.query(models.PromptMetadata).count()
-    if total_count > 1000:
+    if total_count > 200:
         active_prompt_ids = {
             row[0]
             for row in db.query(models.GenerationJob.prompt_id)
@@ -71,7 +71,7 @@ def persist_prompt_metadata(db: Session, payload: PromptMetadataCreate) -> None:
         )
         if active_prompt_ids:
             candidates = candidates.filter(~models.PromptMetadata.prompt_id.in_(active_prompt_ids))
-        oldest_ids = [row[0] for row in candidates.limit(total_count - 1000).all()]
+        oldest_ids = [row[0] for row in candidates.limit(total_count - 200).all()]
         if oldest_ids:
             db.query(models.PromptMetadata).filter(
                 models.PromptMetadata.prompt_id.in_(oldest_ids)

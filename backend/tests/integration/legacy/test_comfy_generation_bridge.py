@@ -442,3 +442,38 @@ async def test_binary_preview_uses_big_endian_and_ignores_truncated_or_unknown_h
     finally:
         await bridge.stop()
         await bridge._http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_eager_full_webp_cache_on_executed_req362_ac3(tmp_path: Path) -> None:
+    """[REQ-362/AC-3] ジョブ完了時 (executed)、フルサイズWebPが先行非同期生成されてディスクキャッシュに保存されること。"""
+    import io
+    from pathlib import Path
+    from PIL import Image
+    from unittest.mock import MagicMock, patch
+    from app.routers import comfy as comfy_router
+
+    # テスト用 PNG 画像データ
+    img = Image.new("RGB", (100, 100), color="purple")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    fake_disk_path = tmp_path / "eager_full.webp"
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = png_bytes
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(comfy_router, "_get_full_webp_disk_path", return_value=fake_disk_path):
+        with patch("httpx.AsyncClient.get", return_value=mock_resp):
+            await comfy_router.eager_cache_full_webp("eager_test.png", "", "output")
+
+            # ディスクに WebP キャッシュが保存されていること
+            assert fake_disk_path.exists()
+            assert fake_disk_path.stat().st_size > 0
+
+            # 保存されたファイルが有効な WebP であること
+            with Image.open(fake_disk_path) as saved_img:
+                assert saved_img.format == "WEBP"

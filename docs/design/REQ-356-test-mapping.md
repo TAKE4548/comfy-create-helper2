@@ -9,8 +9,8 @@
 |---|---|---|
 | Backend テストファイル数 | 74 | `backend/tests/**/*.py` |
 | Frontend テストファイル数 | 232 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 2640 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 300 | `REQ-xxx` 関連 |
+| 抽出テストケース総数 | 2648 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 308 | `REQ-xxx` 関連 |
 | PBI 紐づけなしテスト数 | 2340 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
 | テスト名規約違反数 (AC-15) | 0 | `[REQ-xxx/AC-n]` 未準拠 |
@@ -515,6 +515,19 @@
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-359/AC-2] preserves workflow identity and avoids repeat writes after unrelated store update | AC-2 | PASS |
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-359/AC-3] detects Anima and non-Anima workflow switches, including same-model reselection | AC-3 | PASS |
 | `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-359/AC-4] keeps raw mappings and slot states unchanged while preserving generated mapping order | AC-4 | PASS |
+
+### REQ-362 (計 8 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/legacy/test_comfy_generation_bridge.py` | test_eager_full_webp_cache_on_executed_req362_ac3: [REQ-362/AC-3] ジョブ完了時 (executed)、フルサイズWebPが先行非同期生成されてディスクキャッシュに保存されること。 | AC-3 | PASS |
+| `backend/tests/integration/legacy/test_comfy_proxy.py` | test_comfy_view_cache_hit_zero_probe_req362_ac1: [REQ-362/AC-1] キャッシュヒット時、ComfyUI への HTTP 通信が発生せず 5ms 未満で WebP が返却されること。 | AC-1 | PASS |
+| `backend/tests/integration/legacy/test_comfy_proxy.py` | test_comfy_thumbnail_skips_probe_on_cache_hit_req362_ac2: [REQ-362/AC-2] サムネイルキャッシュヒット時、ComfyUI への存在確認プローブ (HEAD) が発生しないこと。 | AC-2 | PASS |
+| `backend/tests/integration/legacy/test_comfy_proxy.py` | test_comfy_view_cache_miss_converts_to_webp_req362_ac4: [REQ-362/AC-4] キャッシュミス時、ComfyUI から元画像を取得して WebP (Quality 90) に変換・ディスク保存されること。 | AC-4 | PASS |
+| `backend/tests/integration/legacy/test_comfy_proxy.py` | test_prune_full_cache_if_needed_req362_ac5: [REQ-362/AC-5] 220件超過時に古い順にファイルが間引かれ、200件以下に維持されること。 | AC-5 | PASS |
+| `backend/tests/integration/legacy/test_prompt_metadata.py` | test_prompt_metadata_200_limit_pruning_req362_ac6: [REQ-362/AC-6] prompt_metadata が 200件を超過した際、アクティブジョブを除外した古いレコードからパージされること。 | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/GenerateParallelPreview.test.tsx` | renders progressive thumbnail placeholder first and transitions to full-size WebP [REQ-362/AC-7] | AC-7 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/GenerateParallelPreview.test.tsx` | maintains thumbnail fallback if full-size WebP fails to load [REQ-362/AC-7] | AC-7 | PASS |
 
 ### PBI紐づけなし (汎用/ガバナンス) (計 2340 件)
 
