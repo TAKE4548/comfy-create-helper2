@@ -140,6 +140,7 @@ Thumbs.db
 # App databases and snapshots
 db/snapshots/
 db/thumbnails/
+db/full_cache/
 *.bak
 *.db.bak
 *.db-journal
