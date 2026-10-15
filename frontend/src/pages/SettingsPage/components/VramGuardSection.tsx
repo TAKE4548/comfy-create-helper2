@@ -4,14 +4,40 @@ import { ShieldCheck, ChevronDown, ChevronUp, Save, RefreshCw } from 'lucide-rea
 import { settingsApi, type VramSettings } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
+import { LS_KEYS } from '../../../utils/localStorageKeys'
+
 export interface VramGuardSectionProps {
   isExpanded: boolean
   onToggle: () => void
 }
 
+export const VRAM_LIMIT_MIN = 2.0
+export const VRAM_LIMIT_MAX = 14.0
+export const VRAM_LIMIT_DEFAULT = 4.0
+export const VRAM_APPROACH_MARGIN_GB = 1.0
+
+export function readStoredVramLimit(raw: string | null): number {
+  if (raw == null || raw.trim() === '') return VRAM_LIMIT_DEFAULT
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return VRAM_LIMIT_DEFAULT
+  return Math.min(VRAM_LIMIT_MAX, Math.max(VRAM_LIMIT_MIN, n))
+}
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+const clampPct = (v: number): number => (Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0)
+
 export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps) {
   const qc = useQueryClient()
-  const [minFreeGb, setMinFreeGb] = useState<number>(4.0)
+  const [minFreeGb, setMinFreeGb] = useState<number>(() =>
+    readStoredVramLimit(safeGetItem(LS_KEYS.VRAM_GUARD_LIMIT)),
+  )
   const [guardEnabled, setGuardEnabled] = useState<boolean>(true)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -28,6 +54,14 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
     queryKey: ['settings-vram'],
     queryFn: () => settingsApi.getVram(),
   })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEYS.VRAM_GUARD_LIMIT, String(minFreeGb))
+    } catch {
+      // ignore storage failures; UI continues
+    }
+  }, [minFreeGb])
 
   useEffect(() => {
     if (vramSettings && !dirtyRef.current) {
@@ -101,7 +135,14 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
       ? +vramSettings.vram_total_gb.toFixed(2)
       : null
 
-  const isSafe = currentFreeGb != null ? currentFreeGb >= minFreeGb : true
+  const meterState: 'safe' | 'approaching' | 'below' =
+    currentFreeGb == null || currentFreeGb >= minFreeGb + VRAM_APPROACH_MARGIN_GB
+      ? 'safe'
+      : currentFreeGb >= minFreeGb
+      ? 'approaching'
+      : 'below'
+  const barColor =
+    meterState === 'below' ? 'bg-red-500/70' : meterState === 'approaching' ? 'bg-amber-500/70' : 'bg-emerald-500/70'
 
   return (
     <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
@@ -167,10 +208,11 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                 </p>
               )}
 
-              {/* Status & Gauge Comparison */}
-              <div className="p-3.5 rounded-lg bg-surface-2/40 border border-[rgba(255,255,255,0.04)] space-y-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Left pane: Status & Gauge Comparison */}
+              <div className="p-3.5 rounded-lg bg-surface-2/40 border border-[rgba(255,255,255,0.04)] space-y-2.5 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="text-zinc-400 font-medium">現在の空きVRAM:</span>
                     <span className="font-mono text-zinc-200 font-semibold">
                       {currentFreeGb != null ? `${currentFreeGb.toFixed(1)} GB` : '取得中...'}
@@ -181,15 +223,19 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   </div>
                   <div>
                     {currentFreeGb == null ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400">
+                      <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-[11px] bg-zinc-800 text-zinc-400">
                         状態不明
                       </span>
-                    ) : isSafe ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    ) : meterState === 'safe' ? (
+                      <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                         安全域 (OK)
                       </span>
+                    ) : meterState === 'approaching' ? (
+                      <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                        閾値に接近
+                      </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-medium bg-red-500/15 text-red-400 border border-red-500/30">
                         閾値未満 (警戒)
                       </span>
                     )}
@@ -202,36 +248,38 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                     <div className="relative w-full h-3 bg-zinc-800/80 rounded-full overflow-hidden border border-[rgba(255,255,255,0.06)]">
                       {/* Current free VRAM bar */}
                       <div
-                        className={`h-full transition-all duration-300 rounded-full ${
-                          isSafe ? 'bg-emerald-500/70' : 'bg-amber-500/70'
-                        }`}
+                        className={`h-full transition-all duration-300 rounded-full ${barColor}`}
                         style={{
-                          width: `${Math.min(100, Math.max(0, (currentFreeGb / totalGb) * 100))}%`,
+                          width: `${clampPct((currentFreeGb / totalGb) * 100)}%`,
                         }}
                       />
                       {/* Min threshold indicator mark */}
                       <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10"
+                        data-testid="vram-threshold-line"
+                        className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
                         title={`最小安全閾値: ${minFreeGb.toFixed(1)} GB`}
                         style={{
-                          left: `${Math.min(100, Math.max(0, (minFreeGb / totalGb) * 100))}%`,
+                          left: `${clampPct((minFreeGb / totalGb) * 100)}%`,
                         }}
                       />
                     </div>
-                    <div className="flex justify-between text-[10px] text-zinc-500">
-                      <span>0 GB</span>
-                      <span className="inline-flex items-center gap-1 text-red-400/80">
+                    <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-zinc-500">
+                      <span className="shrink-0 whitespace-nowrap">0 GB</span>
+                      <span
+                        data-testid="vram-threshold-tag"
+                        className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-amber-400"
+                      >
                         <ChevronUp size={12} aria-hidden="true" />
                         閾値: {minFreeGb.toFixed(1)} GB
                       </span>
-                      <span>{totalGb.toFixed(1)} GB</span>
+                      <span className="shrink-0 whitespace-nowrap">{totalGb.toFixed(1)} GB</span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Slider & Number Input */}
-              {/* Slider & Number Input */}
+              {/* Right pane: Slider, Number Input & Toggle */}
+              <div className="space-y-3 min-w-0">
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs">
                   <label htmlFor="vram-min-free-input" className="text-zinc-300 font-medium">
@@ -251,7 +299,9 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                           updateDraft({ minFreeGb: val })
                         }
                       }}
-                      className="w-20 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2 py-1 text-right font-mono text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]"
+                      inputMode="decimal"
+                      className="w-20 min-h-11 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2 py-1 text-right font-mono text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]"
+                      style={{ touchAction: 'manipulation' }}
                     />
                     <span className="text-xs text-zinc-400">GB</span>
                   </div>
@@ -264,7 +314,9 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   step={0.5}
                   value={minFreeGb}
                   onChange={(e) => updateDraft({ minFreeGb: parseFloat(e.target.value) })}
-                  className="w-full accent-[#7C6FDD] cursor-pointer"
+                  aria-label="最小必要空き容量スライダー"
+                  className="w-full h-11 bg-transparent accent-[#7C6FDD] cursor-pointer"
+                  style={{ touchAction: 'pan-y' }}
                 />
 
                 <div className="flex justify-between text-[11px] text-zinc-500 font-mono">
@@ -283,15 +335,20 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                     オフにするとVRAM不足時の事前ブロックを行わず生成を実行します
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label
+                  className="relative inline-flex min-h-11 shrink-0 items-center cursor-pointer before:absolute before:-inset-2 before:content-['']"
+                  style={{ touchAction: 'manipulation' }}
+                >
                   <input
                     type="checkbox"
                     checked={guardEnabled}
                       onChange={(e) => updateDraft({ guardEnabled: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3ECF8E]"></div>
+                  <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3ECF8E]"></div>
                 </label>
+              </div>
+              </div>
               </div>
             </div>
           )}

@@ -68,8 +68,14 @@ describe('LlmSettingsSection grouped contracts', () => {
   ] as const)('%s shows only its exact prompt and parameter records', async (group, expectedPrompts, expectedParams) => {
     const { container } = mount(group)
     await ready(container)
-    expect(keysIn(container, '[id^="prompt-expand-"]')).toEqual(expectedPrompts)
-    expect([...container.querySelectorAll('h3')].map((node) => node.textContent)).toEqual(expectedParams.map((key) => ({
+    if (group === 'prompt') {
+      expect(container.querySelectorAll('[id^="prompt-expand-"]')).toHaveLength(0)
+      expect([...container.querySelectorAll<HTMLOptionElement>('#prompt-type-select option')].map((o) => o.value)).toEqual(expectedPrompts)
+    } else {
+      expect(keysIn(container, '[id^="prompt-expand-"]')).toEqual(expectedPrompts)
+    }
+    const shownParams = group === 'prompt' ? expectedParams.slice(1) : expectedParams
+    expect([...container.querySelectorAll('h3')].map((node) => node.textContent)).toEqual(shownParams.map((key) => ({
       llm_params_audit: 'プロンプト診断パラメータ設定', llm_params_scene_generate: 'Scene Generator パラメータ設定',
       llm_params_speech_draft: 'セリフ下書きパラメータ設定', llm_params_translation: '翻訳パラメータ設定',
     }[key])))
@@ -96,8 +102,9 @@ describe('LlmSettingsSection grouped contracts', () => {
     expect(container.querySelectorAll('[id$="-details-toggle"]')).toHaveLength(1)
     expect(container.querySelectorAll('[id$="-details-body"]')).toHaveLength(1)
     expect(expandedToggle.getAttribute('aria-controls')).toBe(expandedBody.id)
-    expect(container.querySelectorAll('[id^="prompt-expand-"]')).toHaveLength(6)
-    expect(container.querySelectorAll('input[type="number"]')).toHaveLength(10)
+    expect(container.querySelectorAll('[id^="prompt-expand-"]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-testid="prompt-unified-editor"]')).toHaveLength(1)
+    expect(container.querySelectorAll('input[type="number"]')).toHaveLength(5)
   })
 
   it('renders prompt and dialogue instances together with independent, unique detail targets', async () => {
@@ -105,7 +112,7 @@ describe('LlmSettingsSection grouped contracts', () => {
     const { container } = render(<QueryClientProvider client={client}>
       <><LlmSettingsSection {...props('prompt')} /><LlmSettingsSection {...props('dialogue')} /></>
     </QueryClientProvider>)
-    await waitFor(() => expect(container.querySelectorAll('h3')).toHaveLength(3))
+    await waitFor(() => expect(container.querySelectorAll('h3')).toHaveLength(2))
     const toggles = [...container.querySelectorAll<HTMLButtonElement>('[id$="-details-toggle"]')]
     const targets = toggles.map((toggle) => toggle.getAttribute('aria-controls'))
     expect(toggles).toHaveLength(2)
@@ -186,7 +193,9 @@ describe('LlmSettingsSection grouped contracts', () => {
       : { ...record })
     client.setQueryData(['llm-prompts'], server)
     await waitFor(() => expect(paramInputs(container, 'プロンプト診断パラメータ設定')[0]).toHaveValue(0.8))
+    fireEvent.change(container.querySelector('#prompt-type-select')!, { target: { value: 'scene_generate' } })
     await waitFor(() => expect(paramInputs(container, 'Scene Generator パラメータ設定')[0]).toHaveValue(1.1))
+    fireEvent.change(container.querySelector('#prompt-type-select')!, { target: { value: 'audit_interference' } })
     const save = [...container.querySelectorAll('h3')].find((node) => node.textContent === 'プロンプト診断パラメータ設定')?.closest('.rounded-xl')?.querySelector('button')
     fireEvent.click(save!)
     await waitFor(() => expect(api.update).toHaveBeenCalledWith('llm_params_audit', {
@@ -250,7 +259,6 @@ describe('LlmSettingsSection grouped contracts', () => {
       : { ...record }))
     const { container } = mount('prompt', undefined, true)
     await ready(container)
-    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
     const presetEditor = container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!
     fireEvent.change(presetEditor, { target: { value: 'Unsaved {{name}}' } })
     fireEvent.change(screen.getByLabelText('Playground input'), { target: { value: 'Describe {{name}}' } })
@@ -297,7 +305,6 @@ describe('LlmSettingsSection grouped contracts', () => {
   it('shows exact save success only after the prompt update resolves', async () => {
     const { container } = mount('prompt', undefined, true)
     await ready(container)
-    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
     fireEvent.change(container.querySelector('#prompt-content-audit_interference')!, { target: { value: 'Saved prompt draft' } })
     expect(screen.queryByText('設定を保存しました')).toBeNull()
     fireEvent.click(container.querySelector('#prompt-save-audit_interference')!)
@@ -310,7 +317,6 @@ describe('LlmSettingsSection grouped contracts', () => {
     api.update.mockRejectedValueOnce(new Error('storage unavailable'))
     const { container } = mount('prompt', undefined, true)
     await ready(container)
-    fireEvent.click(container.querySelector('#prompt-expand-audit_interference')!)
     const editor = container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!
     fireEvent.change(editor, { target: { value: 'Retryable draft' } })
     fireEvent.click(container.querySelector('#prompt-save-audit_interference')!)
@@ -328,5 +334,88 @@ describe('LlmSettingsSection grouped contracts', () => {
     await waitFor(() => expect(editor).toHaveValue('Newer unsaved draft'))
     expect(screen.queryByText('設定を保存しました')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  describe('unified prompt editor', () => {
+    const typeSelect = (container: HTMLElement) => container.querySelector<HTMLSelectElement>('#prompt-type-select')!
+    const pick = (container: HTMLElement, key: string) => fireEvent.change(typeSelect(container), { target: { value: key } })
+    const sceneParams = JSON.stringify({ temperature: 1.3, top_p: 1, max_tokens: 2000, presence_penalty: 0, frequency_penalty: 0 })
+    const withSceneParams = () => api.list.mockImplementation(async () => records.map((record) => (
+      record.key === 'llm_params_scene_generate' ? { ...record, content: sceneParams } : { ...record }
+    )))
+
+    it('[REQ-365/AC-5] switches the prompt body textarea immediately when the type selector changes', async () => {
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      expect(container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!).toHaveValue('value:audit_interference')
+      pick(container, 'scene_generate')
+      expect(container.querySelector('#prompt-content-audit_interference')).toBeNull()
+      expect(container.querySelector<HTMLTextAreaElement>('#prompt-content-scene_generate')!).toHaveValue('value:scene_generate')
+      expect(container.querySelector('#prompt-save-scene_generate')).not.toBeNull()
+    })
+
+    it('[REQ-365/AC-5] links Temperature and Max Tokens to the selected type param group', async () => {
+      withSceneParams()
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      expect(paramInputs(container, 'プロンプト診断パラメータ設定')[0]).toHaveValue(0.2)
+      expect(paramInputs(container, 'プロンプト診断パラメータ設定')[1]).toHaveValue(1000)
+      expect(container.querySelectorAll('h3')).toHaveLength(1)
+      pick(container, 'scene_generate')
+      expect(paramInputs(container, 'Scene Generator パラメータ設定')[0]).toHaveValue(1.3)
+      expect(paramInputs(container, 'Scene Generator パラメータ設定')[1]).toHaveValue(2000)
+      expect(container.querySelectorAll('h3')).toHaveLength(1)
+    })
+
+    it('[REQ-365/AC-5] keeps unsaved body and param drafts when switching types and back', async () => {
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      fireEvent.change(container.querySelector('#prompt-content-audit_interference')!, { target: { value: 'draft body' } })
+      fireEvent.change(paramInputs(container, 'プロンプト診断パラメータ設定')[0], { target: { value: '0.7' } })
+      pick(container, 'scene_generate')
+      pick(container, 'audit_interference')
+      expect(container.querySelector<HTMLTextAreaElement>('#prompt-content-audit_interference')!).toHaveValue('draft body')
+      expect(paramInputs(container, 'プロンプト診断パラメータ設定')[0]).toHaveValue(0.7)
+    })
+
+    it('[REQ-365/AC-5] saves params of the selected group with the exact existing payload', async () => {
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      pick(container, 'scene_generate')
+      const save = [...container.querySelectorAll('h3')].find((n) => n.textContent === 'Scene Generator パラメータ設定')?.closest('.rounded-xl')?.querySelector('button')!
+      fireEvent.click(save)
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('llm_params_scene_generate', {
+        content: JSON.stringify({ temperature: 0.2, top_p: 1, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+      }))
+    })
+
+    it('[REQ-365/AC-5] shows the shared model read-only and does not add a per-type model save', async () => {
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      expect(screen.getByTestId('prompt-unified-params')).toHaveTextContent('使用モデル: model-a（全プロンプト共通。変更は上の「現在のモデル」）')
+      pick(container, 'scene_generate_anima')
+      fireEvent.click(container.querySelector('#prompt-save-scene_generate_anima')!)
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('scene_generate_anima', { content: 'value:scene_generate_anima' }))
+      expect(api.updateCurrentModel).not.toHaveBeenCalled()
+      expect(screen.getByTestId('prompt-unified-params').querySelector('select')).toBeNull()
+    })
+
+    it('[REQ-365/AC-5] still routes the details toggle through onTogglePrompts', async () => {
+      const onTogglePrompts = vi.fn()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const { container } = render(<QueryClientProvider client={client}><LlmSettingsSection {...props('prompt')} onTogglePrompts={onTogglePrompts} /></QueryClientProvider>)
+      await ready(container)
+      fireEvent.click(screen.getByRole('button', { name: 'プロンプト診断・生成の詳細設定' }))
+      expect(onTogglePrompts).toHaveBeenCalledTimes(1)
+    })
+
+    it('[REQ-365/AC-5] disables the textarea when the selected prompt record is not fetched', async () => {
+      api.list.mockImplementation(async () => records.filter((r) => r.key !== 'scene_generate').map((r) => ({ ...r })))
+      const { container } = mount('prompt', undefined, true)
+      await ready(container)
+      pick(container, 'scene_generate')
+      expect(container.querySelector('#prompt-content-scene_generate')).toBeDisabled()
+      expect(container.textContent).toContain('このプロンプトはまだ取得されていません。')
+    })
   })
 })

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { stageMastersApi } from '../api/domains/stageMasters'
 import type { StageMaster, CascadePreviewResult } from '../api/types'
+import { Modal } from './common/Modal'
 
 export interface StageManagerModalProps {
   isOpen: boolean
@@ -173,15 +174,15 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="stage-manager-title"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="lg"
+      ariaLabel="ステージ管理 (Stage Manager)"
+      sheetMaxHeightClass="max-h-[85dvh]"
     >
-      <div className="relative w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-zinc-100">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-zinc-800 shrink-0 text-zinc-100">
           <div className="flex items-center gap-2">
             <Layers className="text-[#7C6FDD]" size={20} />
             <h2 id="stage-manager-title" className="text-base font-semibold">
@@ -192,16 +193,16 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
             type="button"
             onClick={onClose}
             aria-label="閉じる"
-            className="text-zinc-400 hover:text-white p-1 rounded transition-colors"
+            className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] touch-manipulation text-zinc-400 hover:text-white p-1 rounded transition-colors"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-4 flex-1">
+        <div className="p-4 md:p-6 overflow-y-auto overscroll-contain space-y-4 flex-1 min-h-0 text-zinc-100">
           {/* Action Bar */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-zinc-400">
               ワークフローの生成段階（Rough/Detail等）を定義・管理します。
             </span>
@@ -212,7 +213,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                 setEditingStage(null)
                 setDeleteGuardMessage(null)
               }}
-              className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg hover:bg-[#6d62cc] transition-colors"
+              className="flex items-center justify-center gap-1 text-xs min-h-[44px] md:min-h-0 touch-manipulation bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg hover:bg-[#6d62cc] transition-colors"
             >
               <Plus size={14} /> 新規ステージ追加
             </button>
@@ -222,7 +223,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
           {showAddForm && (
             <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg space-y-3">
               <h3 className="text-xs font-semibold text-zinc-300">新規ステージ登録</h3>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] text-zinc-400 mb-1">キー (ID)</label>
                   <input
@@ -230,7 +231,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     placeholder="例: upscale"
                     value={newKey}
                     onChange={(e) => setNewKey(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 min-h-[44px] md:min-h-0 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
                   />
                 </div>
                 <div>
@@ -240,7 +241,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     placeholder="例: 高解像度化"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 min-h-[44px] md:min-h-0 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
                   />
                 </div>
                 <div>
@@ -250,7 +251,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     placeholder="例: _upscale"
                     value={newSuffix}
                     onChange={(e) => setNewSuffix(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 min-h-[44px] md:min-h-0 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
                   />
                 </div>
               </div>
@@ -258,7 +259,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                 <button
                   type="button"
                   onClick={() => setShowAddForm(false)}
-                  className="px-3 py-1 text-xs text-zinc-400 hover:text-white"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-white"
                 >
                   キャンセル
                 </button>
@@ -272,7 +273,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                       suffix: newSuffix.trim(),
                     })
                   }
-                  className="px-3 py-1 text-xs bg-[#7C6FDD] text-white rounded hover:bg-[#6d62cc] disabled:opacity-50"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs bg-[#7C6FDD] text-white rounded hover:bg-[#6d62cc] disabled:opacity-50"
                 >
                   {createMutation.isPending ? '追加中...' : '追加'}
                 </button>
@@ -291,7 +292,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     <button
                       type="button"
                       onClick={() => handleToggleActiveInstead(deletingStage)}
-                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-zinc-200 font-medium transition-colors"
+                      className="px-2.5 py-1 min-h-[44px] md:min-h-0 touch-manipulation bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-zinc-200 font-medium transition-colors"
                     >
                       {deletingStage.is_active ? 'このステージを無効化する' : 'このステージを有効化する'}
                     </button>
@@ -301,7 +302,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                         setDeleteGuardMessage(null)
                         setDeletingStage(null)
                       }}
-                      className="px-2 py-1 text-xs text-zinc-400 hover:text-white"
+                      className="px-2 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-white"
                     >
                       閉じる
                     </button>
@@ -322,14 +323,14 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     type="button"
                     onClick={handleConfirmDelete}
                     disabled={deleteMutation.isPending}
-                    className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium"
+                    className="px-2.5 py-1 min-h-[44px] md:min-h-0 touch-manipulation bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium"
                   >
                     {deleteMutation.isPending ? '削除中...' : '削除を実行'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setDeletingStage(null)}
-                    className="px-2 py-1 text-xs text-zinc-400 hover:text-white"
+                    className="px-2 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-white"
                   >
                     キャンセル
                   </button>
@@ -352,15 +353,15 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
               </p>
               <div className="grid grid-cols-3 gap-2 py-1 text-center">
                 <div className="bg-zinc-900/80 p-2 rounded border border-zinc-800">
-                  <span className="text-[10px] text-zinc-400 block">バリアント</span>
+                  <span className="text-[11px] text-zinc-400 block">バリアント</span>
                   <span className="text-sm font-bold text-zinc-100">{cascadePreview.affected_variants_count} 件</span>
                 </div>
                 <div className="bg-zinc-900/80 p-2 rounded border border-zinc-800">
-                  <span className="text-[10px] text-zinc-400 block">プリセット</span>
+                  <span className="text-[11px] text-zinc-400 block">プリセット</span>
                   <span className="text-sm font-bold text-zinc-100">{cascadePreview.affected_presets_count} 件</span>
                 </div>
                 <div className="bg-zinc-900/80 p-2 rounded border border-zinc-800">
-                  <span className="text-[10px] text-zinc-400 block">スナップショット</span>
+                  <span className="text-[11px] text-zinc-400 block">スナップショット</span>
                   <span className="text-sm font-bold text-zinc-100">{cascadePreview.affected_snapshots_count} 件</span>
                 </div>
               </div>
@@ -385,7 +386,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     setCascadePreview(null)
                     setPendingCascadeSuffix(null)
                   }}
-                  className="px-3 py-1 text-xs text-zinc-400 hover:text-white"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-white"
                 >
                   キャンセル
                 </button>
@@ -393,7 +394,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                   type="button"
                   onClick={handleExecuteCascade}
                   disabled={cascadeRenameMutation.isPending}
-                  className="px-3 py-1 text-xs bg-[#7C6FDD] text-white rounded font-medium hover:bg-[#6d62cc] disabled:opacity-50"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs bg-[#7C6FDD] text-white rounded font-medium hover:bg-[#6d62cc] disabled:opacity-50"
                 >
                   {cascadeRenameMutation.isPending ? '置換実行中...' : '一括置換を実行'}
                 </button>
@@ -407,14 +408,14 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
               <h3 className="text-xs font-semibold text-zinc-300">
                 ステージ編集: {editingStage.name} ({editingStage.key})
               </h3>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] text-zinc-400 mb-1">ステージ名</label>
                   <input
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 min-h-[44px] md:min-h-0 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
                   />
                 </div>
                 <div>
@@ -423,11 +424,11 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                     type="text"
                     value={editSuffix}
                     onChange={(e) => setEditSuffix(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 min-h-[44px] md:min-h-0 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
                   />
                 </div>
                 <div className="flex items-center pt-5">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300 select-none">
+                  <label className="flex items-center gap-2 cursor-pointer min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-300 select-none">
                     <input
                       type="checkbox"
                       checked={editIsActive}
@@ -442,7 +443,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                 <button
                   type="button"
                   onClick={() => setEditingStage(null)}
-                  className="px-3 py-1 text-xs text-zinc-400 hover:text-white"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-white"
                 >
                   キャンセル
                 </button>
@@ -450,7 +451,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                   type="button"
                   onClick={handleSaveEdit}
                   disabled={!editName.trim() || updateMutation.isPending}
-                  className="px-3 py-1 text-xs bg-[#7C6FDD] text-white rounded hover:bg-[#6d62cc] disabled:opacity-50"
+                  className="px-3 py-1 min-h-[44px] md:min-h-0 touch-manipulation text-xs bg-[#7C6FDD] text-white rounded hover:bg-[#6d62cc] disabled:opacity-50"
                 >
                   {updateMutation.isPending ? '保存中...' : '保存'}
                 </button>
@@ -479,12 +480,12 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                       {stage.suffix || '(接尾辞なし)'}
                     </span>
                     {stage.is_builtin && (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-900/30 text-blue-300 border border-blue-800/50">
+                      <span className="px-1.5 py-0.2 rounded text-[11px] bg-blue-900/30 text-blue-300 border border-blue-800/50">
                         Built-in
                       </span>
                     )}
                     {!stage.is_active && (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-zinc-800 text-zinc-400">
+                      <span className="px-1.5 py-0.2 rounded text-[11px] bg-zinc-800 text-zinc-400">
                         無効
                       </span>
                     )}
@@ -494,7 +495,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                       type="button"
                       onClick={() => handleStartEdit(stage)}
                       aria-label={`${stage.name} を編集`}
-                      className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
+                      className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 touch-manipulation p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
                       title="編集"
                     >
                       <Pencil size={14} />
@@ -503,7 +504,7 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
                       type="button"
                       onClick={() => handleDeleteClick(stage)}
                       aria-label={`${stage.name} を削除`}
-                      className={`p-1.5 rounded transition-colors ${
+                      className={`inline-flex items-center justify-center min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 touch-manipulation p-1.5 rounded transition-colors ${
                         stage.is_builtin
                           ? 'text-zinc-600 cursor-not-allowed'
                           : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-800'
@@ -520,16 +521,15 @@ export function StageManagerModal({ isOpen, onClose }: StageManagerModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-zinc-800 bg-zinc-950/50 flex justify-end">
+        <div className="px-4 md:px-6 py-3 border-t border-zinc-800 bg-zinc-950/50 flex justify-end shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors font-medium"
+            className="px-4 py-1.5 min-h-[44px] md:min-h-0 touch-manipulation text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors font-medium"
           >
             閉じる
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

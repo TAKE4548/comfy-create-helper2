@@ -8,12 +8,16 @@ describe('HeaderKebabMenu', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders a 28x28px kebab menu button', () => {
+  it('[REQ-365/AC-2] keeps a 28x28px visual box with a 44px (w-11 h-11) touch target below md', () => {
     render(<HeaderKebabMenu />)
     const button = screen.getByTestId('header-kebab-menu-button')
-    expect(button).toBeTruthy()
-    expect(button.className).toContain('w-[28px]')
-    expect(button.className).toContain('h-[28px]')
+    expect(button.className).toContain('w-11')
+    expect(button.className).toContain('h-11')
+    expect(button.className).toContain('md:w-[28px]')
+    expect(button.className).toContain('md:h-[28px]')
+    const visual = screen.getByTestId('header-kebab-menu-visual')
+    expect(visual.className).toContain('w-[28px]')
+    expect(visual.className).toContain('h-[28px]')
   })
 
   it('opens a 270px dropdown upon clicking the kebab button', () => {

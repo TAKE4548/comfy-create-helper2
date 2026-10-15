@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ManagerActionOutcomeUnknownError, systemManagerApi } from '../../../api/domains/systemManager'
 import type { ManagerServiceName, ManagedServiceName } from '../../../api/domains/systemManager'
 import { useConfig } from '../../../hooks/useConfig'
 import { useManagerStatus } from '../../../hooks/useManagerStatus'
 
-const LOG_SERVICES: ManagerServiceName[] = ['backend', 'frontend', 'comfy', 'manager']
+type LogPanel = { open: boolean; loading: boolean; filename: string; content: string; message: string }
+const emptyPanel: LogPanel = { open: false, loading: false, filename: '', content: '', message: '' }
+const initialPanels = (): Record<ManagerServiceName, LogPanel> => ({ backend: emptyPanel, frontend: emptyPanel, comfy: emptyPanel, manager: emptyPanel })
 
 function serviceLabel(service: string): string {
   const normalized = ({
@@ -21,25 +23,12 @@ export function ServiceConnectionCard(): React.JSX.Element {
   const { status, available, refetch } = useManagerStatus()
   const [actionPending, setActionPending] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState('')
-  const [logService, setLogService] = useState<ManagerServiceName>('backend')
-  const [logContent, setLogContent] = useState('')
-  const [logFilename, setLogFilename] = useState('')
-  const [logMessage, setLogMessage] = useState('')
-  const [loadingLogs, setLoadingLogs] = useState(false)
-  const [logsOpen, setLogsOpen] = useState(false)
+  const [logPanels, setLogPanels] = useState<Record<ManagerServiceName, LogPanel>>(initialPanels)
   const [confirmAction, setConfirmAction] = useState<{ action: 'stop' | 'restart'; service: ManagedServiceName } | null>(null)
   const busyRef = useRef(false)
 
   const managerAvailable = available && status !== null
   const busy = actionPending !== null || status?.action_in_progress != null
-
-  useEffect(() => {
-    if (!managerAvailable) {
-      setLogContent('')
-      setLogFilename('')
-      setLogMessage('ログ表示は利用できません。')
-    }
-  }, [managerAvailable])
 
   const runAction = async (action: 'start' | 'stop' | 'restart', service: ManagedServiceName): Promise<void> => {
     if (!managerAvailable || busyRef.current || busy) return
@@ -67,35 +56,76 @@ export function ServiceConnectionCard(): React.JSX.Element {
     }
   }
 
+  const patchPanel = (service: ManagerServiceName, patch: Partial<LogPanel>): void => {
+    setLogPanels((panels) => ({ ...panels, [service]: { ...panels[service], ...patch } }))
+  }
+
   const loadLogs = async (service: ManagerServiceName): Promise<void> => {
-    setLoadingLogs(true)
-    setLogMessage('ログを取得中…')
+    patchPanel(service, { loading: true, message: 'ログを取得中…' })
     try {
       const logs = await systemManagerApi.logs(service, 200)
-      setLogFilename(logs.filename)
-      setLogContent(logs.content || logs.lines.join('\n'))
-      setLogMessage(logs.exists ? '' : 'ログファイルがありません。')
+      patchPanel(service, {
+        loading: false,
+        filename: logs.filename,
+        content: logs.content || (Array.isArray(logs.lines) ? logs.lines.join('\n') : ''),
+        message: logs.exists ? '' : 'ログファイルがありません。',
+      })
     } catch (error) {
-      setLogFilename('')
-      setLogContent('')
-      setLogMessage(`ログを取得できませんでした: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setLoadingLogs(false)
+      patchPanel(service, {
+        loading: false,
+        filename: '',
+        content: '',
+        message: `ログを取得できませんでした: ${error instanceof Error ? error.message : String(error)}`,
+      })
     }
+  }
+
+  const toggleLog = (service: ManagerServiceName): void => {
+    const opening = !logPanels[service].open
+    patchPanel(service, { open: opening })
+    if (opening) void loadLogs(service)
   }
 
   const emergencyUrl = `http://${window.location.hostname}:8899`
   const processStatus = (running: boolean | undefined, label: string): string => `${label}: ${running === undefined ? '不明' : running ? '稼働中' : '停止中'}`
 
+  const serviceRows: { service: ManagerServiceName; ariaLabel: string; label: string; text: string; running: boolean | undefined }[] = [
+    { service: 'manager', ariaLabel: 'Supervisor', label: 'Supervisor', text: managerAvailable ? '接続中' : '不明', running: managerAvailable ? true : undefined },
+    { service: 'backend', ariaLabel: 'Windows Backend', label: 'Windows Backend', text: processStatus(managerAvailable ? status.be?.running : undefined, 'Backend'), running: managerAvailable ? status.be?.running : undefined },
+    { service: 'comfy', ariaLabel: 'ComfyUI', label: 'ComfyUI', text: processStatus(managerAvailable ? status.comfy?.running : undefined, 'ComfyUI'), running: managerAvailable ? status.comfy?.running : undefined },
+    { service: 'frontend', ariaLabel: 'Frontend', label: 'Frontend', text: processStatus(managerAvailable ? status.fe?.running : undefined, 'Frontend'), running: managerAvailable ? status.fe?.running : undefined },
+  ]
+
   return (
     <section aria-labelledby="service-connections-title" className="space-y-4 rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface p-4 text-zinc-200">
       <h2 id="service-connections-title" className="text-lg font-semibold text-zinc-100">サービス管理</h2>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="サービス状態">
-        <article aria-label="Supervisor" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">Supervisor</h3><p className="mt-1 text-sm">{managerAvailable ? '接続中' : '不明'}</p></article>
-        <article aria-label="Windows Backend" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">Windows Backend</h3><p className="mt-1 text-sm">{processStatus(managerAvailable ? status.be?.running : undefined, 'Backend')}</p></article>
-        <article aria-label="ComfyUI" className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3"><h3 className="text-xs text-zinc-400">ComfyUI</h3><p className="mt-1 text-sm">{processStatus(managerAvailable ? status.comfy?.running : undefined, 'ComfyUI')}</p></article>
-      </div>
-      <p className="text-xs text-zinc-500">Frontend: {processStatus(managerAvailable ? status.fe?.running : undefined, '状態').replace('状態: ', '')}</p>
+      <ul className="space-y-2" aria-label="サービス状態">
+        {serviceRows.map(({ service, ariaLabel, label, text, running }) => {
+          const panel = logPanels[service]
+          const lamp = running === undefined ? 'bg-zinc-500' : running ? 'bg-emerald-400' : 'bg-rose-400'
+          const lampState = running === undefined ? '不明' : running ? '稼働中' : '停止中'
+          return (
+            <li key={service} aria-label={ariaLabel} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3">
+              <div className="flex items-center gap-2">
+                <span role="img" aria-label={`死活: ${lampState}`} className={`h-2.5 w-2.5 shrink-0 rounded-full ${lamp}`} />
+                <span className="min-w-0 flex-1 truncate text-sm" title={ariaLabel}>{ariaLabel}</span>
+                <span className="shrink-0 whitespace-nowrap text-xs text-zinc-300">{text}</span>
+                <button type="button" aria-expanded={panel.open} aria-controls={`service-log-${service}`} disabled={!managerAvailable} onClick={() => toggleLog(service)} className="relative min-h-11 min-w-11 touch-manipulation whitespace-nowrap rounded-md px-2 text-xs text-zinc-200 before:absolute before:-inset-2 before:content-[''] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ログ {panel.open ? '▲' : '▼'}</button>
+              </div>
+              {panel.open && (
+                <div id={`service-log-${service}`} role="region" aria-label={`${label} のログ`} className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {panel.filename && <p className="min-w-0 flex-1 break-all text-xs text-zinc-400">{panel.filename}</p>}
+                    <button type="button" aria-label={`${label} のログを再取得`} onClick={() => void loadLogs(service)} disabled={!managerAvailable || panel.loading} className="relative min-h-11 min-w-11 touch-manipulation rounded-md px-2 text-xs text-zinc-200 before:absolute before:-inset-2 before:content-[''] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">{panel.loading ? '取得中…' : '再取得'}</button>
+                  </div>
+                  {!managerAvailable ? <p role="status" className="break-words text-sm text-zinc-300">ログ表示は利用できません。</p> : panel.message && <p role="status" className="break-words text-sm text-zinc-300">{panel.message}</p>}
+                  <pre aria-label={`${label} のログ内容`} className="max-h-64 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-black/30 p-3 text-xs text-zinc-300">{panel.content || 'ログは未取得です。'}</pre>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
       <div className="space-y-1 text-sm text-zinc-300" aria-live="polite">
         {status?.action_in_progress && <p role="status">{serviceLabel(status.action_in_progress.service)} の {status.action_in_progress.action} を実行中です。</p>}
       </div>
@@ -116,21 +146,6 @@ export function ServiceConnectionCard(): React.JSX.Element {
         <p className="text-sm text-zinc-300">ComfyUI URL（Backend設定）: <code className="break-all">{config?.comfy_url ?? '読み込み中…'}</code></p>
         <p className="text-sm text-zinc-400">ComfyUI接続先はBackend設定で管理されます。この画面からは変更できません。</p>
       </div>
-
-      <details className="border-t border-[rgba(255,255,255,0.06)] pt-4" onToggle={(event) => { const open = event.currentTarget.open; setLogsOpen(open); if (open) void loadLogs(logService) }}>
-        <summary className="min-h-[44px] cursor-pointer py-3 text-sm font-medium text-zinc-200">サービスログ</summary>
-        {logsOpen && <div className="space-y-3 pb-2">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <select id="manager-log-service" value={logService} onChange={(event) => setLogService(event.target.value as ManagerServiceName)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] flex-1 rounded-md border border-[rgba(255,255,255,0.1)] bg-surface-2 px-3 py-2 text-sm disabled:opacity-50">
-              {LOG_SERVICES.map((service) => <option key={service} value={service}>{serviceLabel(service)}</option>)}
-            </select>
-            <button type="button" onClick={() => void loadLogs(logService)} disabled={!managerAvailable || loadingLogs} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">{loadingLogs ? '取得中…' : '最新ログを表示'}</button>
-          </div>
-          {logFilename && <p className="break-all text-xs text-zinc-400">{logFilename}</p>}
-          {logMessage && <p role="status" className="text-sm text-zinc-300">{logMessage}</p>}
-          <pre aria-label="サービスログ内容" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/30 p-3 text-xs text-zinc-300">{logContent || 'ログは未取得です。'}</pre>
-        </div>}
-      </details>
     </section>
   )
 }

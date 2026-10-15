@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Image as ImageIcon, Check } from 'lucide-react'
+import { Image as ImageIcon } from 'lucide-react'
 import { useThumbnailAspectRatio } from '../../../hooks/useThumbnailAspectRatio'
 
 export const ThumbnailSettingsSection: React.FC = () => {
@@ -37,29 +37,19 @@ export const ThumbnailSettingsSection: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Preset Selector */}
-        <div className="md:col-span-2 space-y-3">
-          <label className="text-xs font-medium text-zinc-300 block">アスペクト比の選択</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {presets.map((p) => {
-              const isSelected = presetId === p.id
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handlePresetChange(p.id)}
-                  className={`min-h-[44px] px-3 py-2 rounded-lg text-xs font-medium border flex items-center justify-between transition-all ${
-                    isSelected
-                      ? 'bg-accent-green/15 border-accent-green text-accent-green shadow-sm'
-                      : 'bg-surface-2 border-[rgba(255,255,255,0.08)] text-zinc-300 hover:border-zinc-500 hover:text-white'
-                  }`}
-                  data-testid={`preset-btn-${p.id}`}
-                >
-                  <span>{p.label}</span>
-                  {isSelected && <Check size={14} className="text-accent-green flex-shrink-0" />}
-                </button>
-              )
-            })}
-          </div>
+        <div className="md:col-span-2 space-y-2">
+          <label htmlFor="thumbnail-aspect-preset" className="text-xs font-medium text-zinc-300 block">アスペクト比の選択</label>
+          <select
+            id="thumbnail-aspect-preset"
+            data-testid="thumbnail-aspect-select"
+            value={presetId}
+            onChange={(e) => handlePresetChange(e.target.value)}
+            className="min-h-11 w-full min-w-0 touch-manipulation rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 px-3 text-xs text-zinc-200 focus:outline-none focus:border-accent-green sm:max-w-xs"
+          >
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
 
           {presetId === 'custom' && (
             <div className="pt-2 space-y-1.5 animate-fade-in">

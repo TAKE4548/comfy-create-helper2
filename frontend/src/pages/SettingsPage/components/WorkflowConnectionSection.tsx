@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2, Check } from 'lucide-react'
+import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2, Check, MoreVertical } from 'lucide-react'
 import { workflowsApi, workflowPresetsApi, snapshotsApi, mappingMastersApi, baseModelsApi } from '../../../api/client'
 import { stageMastersApi } from '../../../api/domains/stageMasters'
 import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, BaseModel, StageMaster } from '../../../api/types'
@@ -90,6 +90,36 @@ export function WorkflowConnectionSection({
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null)
   const [expandedPresetWorkflowId, setExpandedPresetWorkflowId] = useState<number | null>(null)
   const [showWorkflowDeleteDialog, setShowWorkflowDeleteDialog] = useState(false)
+  const [menuWorkflowId, setMenuWorkflowId] = useState<number | null>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (menuWorkflowId === null) return
+    const root = () => document.querySelector(`[data-workflow-menu-root="${menuWorkflowId}"]`)
+    const onPointerDown = (e: PointerEvent) => {
+      const el = root()
+      if (el && !el.contains(e.target as Node)) setMenuWorkflowId(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMenuWorkflowId(null)
+      menuTriggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuWorkflowId])
+  const handleWorkflowMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    e.preventDefault()
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    if (!items.length) return
+    const idx = items.indexOf(document.activeElement as HTMLElement)
+    const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx <= 0 ? items.length - 1 : idx - 1)
+    items[next].focus()
+  }
   const [deleteWorkflowDetails, setDeleteWorkflowDetails] = useState({
     mappings: 0,
     presets: 0,
@@ -589,80 +619,63 @@ export function WorkflowConnectionSection({
                     return (
                       <div key={wf.id} className="flex flex-col">
                         <div className="flex items-center justify-between p-4 hover:bg-white/[0.01] transition-colors">
-                          <div className="min-w-0">
-                            <span className="text-xs font-semibold text-zinc-200 block truncate">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-semibold text-zinc-200 block min-w-0 truncate" title={wf.name}>
                               {wf.name}
                             </span>
-                            <span className="text-[10px] text-zinc-500 font-mono mt-0.5 block">
+                            <span className="text-[11px] text-zinc-500 font-mono mt-0.5 block">
                               作成日: {new Date(wf.created_at).toLocaleString('ja-JP')}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="relative shrink-0" data-workflow-menu-root={wf.id}>
                             <button
-                              onClick={() => {
-                                setSelectedWorkflowId(wf.id)
-                                setWorkflowManageMode('rename')
-                              }}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
-                              title="名前を変更"
+                              type="button"
+                              ref={(el) => { if (menuWorkflowId === wf.id) menuTriggerRef.current = el }}
+                              aria-haspopup="menu"
+                              aria-expanded={menuWorkflowId === wf.id}
+                              aria-controls={`workflow-menu-${wf.id}`}
+                              aria-label={`${wf.name} の操作メニュー`}
+                              title={`${wf.name} の操作メニュー`}
+                              onClick={() => setMenuWorkflowId(menuWorkflowId === wf.id ? null : wf.id)}
+                              className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg touch-manipulation text-zinc-400 hover:text-zinc-200 hover:bg-white/5 before:absolute before:-inset-2 before:content-['']"
                             >
-                              <Pencil size={11} />
-                              名前変更
+                              <MoreVertical size={16} />
                             </button>
-                            <button
-                              onClick={() => {
-                                setSelectedWorkflowId(wf.id)
-                                setWorkflowManageMode('copy')
-                              }}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[10px] font-medium transition-all"
-                              title="コピーを作成"
-                            >
-                              <Copy size={11} />
-                              コピー
-                            </button>
-                            <button
-                              onClick={() => handleOpenDiffFilePicker(wf)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/20 text-accent-green text-[10px] font-medium transition-all"
-                              title="新ワークフローJSONとのスマート差分置換"
-                            >
-                              <ArrowLeftRight size={11} />
-                              スマート置換
-                            </button>
-                            {hasRollbackMap[wf.id] && (
-                              <button
-                                onClick={() => handleRollback(wf.id)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-medium transition-all"
-                                title="直前のワークフロー状態へ復元"
+                            {menuWorkflowId === wf.id && (
+                              <div
+                                id={`workflow-menu-${wf.id}`}
+                                role="menu"
+                                onKeyDown={handleWorkflowMenuKeyDown}
+                                className="absolute right-0 z-20 mt-1 w-56 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-3 shadow-xl"
                               >
-                                <Undo2 size={11} />
-                                ロールバック
-                              </button>
+                                <button type="button" role="menuitem" className="min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 text-zinc-300 hover:bg-white/5" onClick={() => { setMenuWorkflowId(null); setSelectedWorkflowId(wf.id); setWorkflowManageMode('rename') }}>
+                                  <Pencil size={12} />
+                                  名前変更
+                                </button>
+                                <button type="button" role="menuitem" className="min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 text-zinc-300 hover:bg-white/5" onClick={() => { setMenuWorkflowId(null); setSelectedWorkflowId(wf.id); setWorkflowManageMode('copy') }}>
+                                  <Copy size={12} />
+                                  コピー
+                                </button>
+                                <button type="button" role="menuitem" className="min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 text-accent-green hover:bg-accent-green/10" onClick={() => { setMenuWorkflowId(null); handleOpenDiffFilePicker(wf) }}>
+                                  <ArrowLeftRight size={12} />
+                                  スマート置換
+                                </button>
+                                {hasRollbackMap[wf.id] && (
+                                  <button type="button" role="menuitem" className="min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 text-amber-400 hover:bg-amber-500/10" onClick={() => { setMenuWorkflowId(null); handleRollback(wf.id) }}>
+                                    <Undo2 size={12} />
+                                    ロールバック
+                                  </button>
+                                )}
+                                <button type="button" role="menuitem" className={`min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 ${isExpanded ? 'text-[#7C6FDD]' : 'text-zinc-300'} hover:bg-white/5`} onClick={() => { setMenuWorkflowId(null); setExpandedPresetWorkflowId(isExpanded ? null : wf.id) }}>
+                                  <Wand2 size={12} />
+                                  プロファイル管理
+                                </button>
+                                <button type="button" role="menuitem" className="min-h-11 w-full touch-manipulation flex items-center gap-2 px-3 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:bg-white/10 text-red-400 hover:bg-red-500/10" onClick={() => { setMenuWorkflowId(null); setSelectedWorkflowId(wf.id); setShowWorkflowDeleteDialog(true) }}>
+                                  <Trash2 size={12} />
+                                  削除
+                                </button>
+                              </div>
                             )}
-                            <button
-                              onClick={() =>
-                                setExpandedPresetWorkflowId(isExpanded ? null : wf.id)
-                              }
-                              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-medium transition-all ${
-                                isExpanded
-                                  ? 'border-[#7C6FDD] bg-[#7C6FDD]/10 text-[#7C6FDD]'
-                                  : 'border-[rgba(255,255,255,0.08)] bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-                              }`}
-                              title="プリセット管理"
-                            >
-                              <Wand2 size={11} />
-                              プロファイル管理
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedWorkflowId(wf.id)
-                                setShowWorkflowDeleteDialog(true)
-                              }}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-650 hover:text-white text-red-400 text-[10px] font-medium transition-all"
-                              title="削除"
-                            >
-                              <Trash2 size={11} />
-                              削除
-                            </button>
                           </div>
                         </div>
 

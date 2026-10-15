@@ -10,11 +10,11 @@ export interface SettingsTabBarProps {
 }
 
 const TABS: ReadonlyArray<{ id: SettingsTabId; label: string; shortLabel: string; icon: LucideIcon }> = [
-  { id: 'workflows', label: 'ワークフロー・モデル', shortLabel: 'モデル', icon: Workflow },
-  { id: 'prompt', label: 'プロンプト支援', shortLabel: '呪文', icon: MessageSquare },
-  { id: 'dialogue', label: 'セリフ支援', shortLabel: 'セリフ', icon: MessageCircle },
-  { id: 'translation', label: '翻訳', shortLabel: '翻訳', icon: Languages },
-  { id: 'system', label: 'システム・一般', shortLabel: 'システム', icon: Settings },
+  { id: 'workflows', label: 'ワークフロー・モデル', shortLabel: '① モデル', icon: Workflow },
+  { id: 'prompt', label: 'プロンプト支援', shortLabel: '② 呪文', icon: MessageSquare },
+  { id: 'dialogue', label: 'セリフ支援', shortLabel: '③ セリフ', icon: MessageCircle },
+  { id: 'translation', label: '翻訳', shortLabel: '④ 翻訳', icon: Languages },
+  { id: 'system', label: 'システム・一般', shortLabel: '⑤ システム', icon: Settings },
 ]
 
 export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): React.JSX.Element {
@@ -58,7 +58,7 @@ export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): Re
               tabIndex={selected ? 0 : -1}
               onClick={() => selectAndFocus(index)}
               onKeyDown={(event) => handleKeyDown(event, index)}
-              className="inline-flex min-h-11 h-11 min-w-max snap-start items-center justify-center gap-1.5 px-3 md:min-w-0"
+              className="inline-flex min-h-11 h-11 min-w-max touch-manipulation snap-start items-center justify-center gap-1.5 px-3 md:min-w-0"
             >
               <tab.icon size={16} aria-hidden="true" />
               <span className="md:hidden">{tab.shortLabel}</span>

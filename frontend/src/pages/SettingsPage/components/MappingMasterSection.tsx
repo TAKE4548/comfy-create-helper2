@@ -42,6 +42,7 @@ import { MappingMasterEditModal } from '../../../components/MappingMasterEditMod
 import { StageManagerModal } from '../../../components/StageManagerModal'
 import { MappingMasterDeleteModal } from '../../../components/SettingsComponents'
 import { ParamTypeMasterModal } from '../../../components/ParamTypeMasterModal'
+import { ParamTypeMasterManagerModal } from '../../../components/ParamTypeMasterManagerModal'
 
 export interface MappingMasterSectionProps {
   isExpanded: boolean
@@ -53,6 +54,9 @@ interface MasterRowProps {
   onEdit: (m: MappingMasterV2) => void
   onDelete: (m: MappingMasterV2) => void
 }
+
+const TOUCH_BUTTON_CLASS =
+  "relative inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded touch-manipulation transition-colors before:absolute before:-inset-2 before:content-['']"
 
 function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
   const {
@@ -70,16 +74,20 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
     opacity: isDragging ? 0.5 : 1,
   }
 
+  const displayName = master.name || master.display_name || ''
+  const classes = master.expected_class_types ?? []
+  const variants = master.variants ?? []
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center justify-between p-3 border-b border-zinc-800 hover:bg-zinc-800/20 transition-colors"
+      className="settings-mobile-card p-3 border-b border-zinc-800 hover:bg-zinc-800/20 transition-colors"
     >
-      <div className="flex items-center gap-3">
+      <div className="settings-mobile-card__title flex min-w-0 items-center gap-3">
         <button
           type="button"
-          className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400 p-1"
+          className={`${TOUCH_BUTTON_CLASS} cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400`}
           {...attributes}
           {...listeners}
           title="並び替え"
@@ -87,26 +95,52 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
         >
           <GripVertical size={14} />
         </button>
-        <span className="font-medium text-zinc-100">{master.name || master.display_name}</span>
-        <span className="text-xs text-zinc-400 font-mono">({master.param_name})</span>
-        {master.default_enabled === false && (
-          <span className="px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 text-[10px]">
-            新規マッピングで基本無効
-          </span>
-        )}
-        <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[10px] font-mono">
-          {master.input_type}
+        <span className="min-w-0 flex-1 truncate font-medium text-zinc-100" title={displayName}>
+          {displayName}
+        </span>
+        <span className="settings-mobile-card__target-node text-xs font-mono text-zinc-400">
+          ({master.param_name})
         </span>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Stage Variants Badges */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {master.variants && master.variants.length > 0 ? (
-            master.variants.map((v) => (
+      <div className="settings-mobile-card__actions flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onEdit(master)}
+          aria-label={`${displayName} のマッピング設定を編集（対象ノード: ${master.param_name}${classes.length ? ' / ' + classes.join(', ') : ''}）`}
+          className={`${TOUCH_BUTTON_CLASS} text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800`}
+          title="編集"
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(master)}
+          aria-label={`${displayName} を削除`}
+          className={`${TOUCH_BUTTON_CLASS} text-zinc-400 hover:text-red-400 hover:bg-zinc-800`}
+          title="削除"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      <div className="settings-mobile-card__badges flex flex-wrap items-center gap-1.5">
+        <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono">
+          {master.input_type}
+        </span>
+        {classes.length > 1 && (
+          <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono">
+            +{classes.length - 1} classes
+          </span>
+        )}
+        {variants.length > 0 ? (
+          <>
+            {variants.map((v, i) => (
               <span
                 key={v.id ?? v.stage_id}
-                className={`px-2 py-0.5 rounded text-xs font-mono border ${
+                className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-xs font-mono border ${
+                  i === 0 ? 'inline-flex' : 'hidden md:inline-flex'
+                } ${
                   v.is_enabled
                     ? 'bg-zinc-800 text-zinc-200 border-zinc-700'
                     : 'bg-zinc-900 text-zinc-500 border-transparent opacity-60'
@@ -114,33 +148,21 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
               >
                 {v.stage_name}
               </span>
-            ))
-          ) : (
-            <span className="text-zinc-600 text-xs">-</span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onEdit(master)}
-            aria-label={`${master.name || master.display_name} を編集`}
-            className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
-            title="編集"
-          >
-            <Pencil size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(master)}
-            aria-label={`${master.name || master.display_name} を削除`}
-            className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded transition-colors"
-            title="削除"
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+            ))}
+            {variants.length > 1 && (
+              <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono md:hidden">
+                +{variants.length - 1} stages
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-zinc-600 text-xs">-</span>
+        )}
+        {master.default_enabled === false && (
+          <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 text-[11px]">
+            新規マッピングで基本無効
+          </span>
+        )}
       </div>
     </div>
   )
@@ -160,6 +182,7 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   // Custom Param Type modal
   const [paramTypeModalMode, setParamTypeModalMode] = useState<'create' | 'edit' | null>(null)
   const [editingParamType, setEditingParamType] = useState<ParamTypeMaster | null>(null)
+  const [showParamTypeManager, setShowParamTypeManager] = useState(false)
 
   // Queries
   const { data: masters, isLoading: isLoadingMasters } = useQuery({
@@ -239,6 +262,7 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
       qc.invalidateQueries({ queryKey: ['param-type-masters'] })
       setParamTypeModalMode(null)
       setEditingParamType(null)
+      setShowParamTypeManager(true)
     },
   })
 
@@ -249,6 +273,7 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
       qc.invalidateQueries({ queryKey: ['param-type-masters'] })
       setParamTypeModalMode(null)
       setEditingParamType(null)
+      setShowParamTypeManager(true)
     },
   })
 
@@ -333,6 +358,14 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
             </button>
             <button
               type="button"
+              aria-haspopup="dialog"
+              onClick={() => setShowParamTypeManager(true)}
+              className="flex items-center gap-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 font-medium transition-colors"
+            >
+              カスタム型マスタ
+            </button>
+            <button
+              type="button"
               onClick={handleOpenCreateModal}
               className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all"
             >
@@ -349,67 +382,6 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
 
         {isExpanded && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
-            {/* Custom Param Types Bar */}
-            <div className="p-3 bg-surface-2/40 rounded-lg border border-[rgba(255,255,255,0.06)] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-zinc-300">
-                  カスタム型マスター ({paramTypeMasters.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingParamType(null)
-                    setParamTypeModalMode('create')
-                  }}
-                  className="flex items-center gap-1 text-xs text-[#7C6FDD] hover:text-[#9185e6] font-medium transition-colors"
-                >
-                  <Plus size={12} /> 新規型を作成
-                </button>
-              </div>
-              {paramTypeMasters.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {paramTypeMasters.map((ptm) => (
-                    <div
-                      key={ptm.id}
-                      className="flex items-center gap-2 px-2.5 py-1 bg-surface border border-[rgba(255,255,255,0.08)] rounded-md text-xs text-zinc-300"
-                    >
-                      <span className="font-semibold text-zinc-200">{ptm.name}</span>
-                      <span className="text-[10px] text-zinc-500 font-mono">
-                        ({ptm.widget_type})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingParamType(ptm)
-                          setParamTypeModalMode('edit')
-                        }}
-                        className="text-zinc-400 hover:text-zinc-200"
-                        title="編集"
-                      >
-                        <Pencil size={11} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`'${ptm.name}' を削除しますか？`)) {
-                            deleteParamTypeMutation.mutate(ptm.id)
-                          }
-                        }}
-                        className="text-zinc-400 hover:text-red-400"
-                        title="削除"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[11px] text-zinc-500">
-                  カスタム型マスターはまだ登録されていません。
-                </p>
-              )}
-            </div>
-
             {/* Mapping Group Tabs Bar */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-zinc-800" role="tablist">
               <button
@@ -529,6 +501,23 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
         />
       )}
 
+      <ParamTypeMasterManagerModal
+        isOpen={showParamTypeManager}
+        items={paramTypeMasters}
+        onClose={() => setShowParamTypeManager(false)}
+        onCreate={() => {
+          setShowParamTypeManager(false)
+          setEditingParamType(null)
+          setParamTypeModalMode('create')
+        }}
+        onEdit={(item) => {
+          setShowParamTypeManager(false)
+          setEditingParamType(item)
+          setParamTypeModalMode('edit')
+        }}
+        onDelete={(item) => deleteParamTypeMutation.mutate(item.id)}
+      />
+
       {/* Param Type Master Modal */}
       {paramTypeModalMode && (
         <ParamTypeMasterModal
@@ -538,6 +527,7 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
           onClose={() => {
             setParamTypeModalMode(null)
             setEditingParamType(null)
+            setShowParamTypeManager(true)
           }}
           onSubmit={async (data) => {
             if (paramTypeModalMode === 'create') {

@@ -98,9 +98,14 @@ export function SettingsPage() {
   const panels: Array<{ id: SettingsTabId; content: React.ReactNode }> = [
     {
       id: 'workflows',
-      content: <>
+      content: <div data-testid="settings-workflows-grid" className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2 xl:grid-rows-[auto_1fr]">
+        <div data-testid="settings-card-workflow" className="order-1 min-w-0 xl:col-start-1 xl:row-start-1">
         <WorkflowConnectionSection group="workflows" isExpandedLongPress={expandedSections.longPress} onToggleLongPress={() => toggleSection('longPress')} isExpandedWorkflows={expandedSections.workflows} onToggleWorkflows={() => toggleSection('workflows')} isExpandedConnections={expandedSections.connections} onToggleConnections={() => toggleSection('connections')} />
+        </div>
+        <div data-testid="settings-card-mapping" className="order-2 min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
         <MappingMasterSection isExpanded={expandedSections.mappingMasters} onToggle={() => toggleSection('mappingMasters')} />
+        </div>
+        <div data-testid="settings-card-basemodel" className="order-3 min-w-0 xl:col-start-1 xl:row-start-2">
         <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
           <button type="button" onClick={() => toggleSection('baseModels')} className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none">
             <div className="flex items-center gap-2"><Layers size={15} className="text-[#7C6FDD]" /><h2 className="text-sm font-semibold text-zinc-300">Base Model Settings</h2><span className="text-xs text-zinc-600">— ベースモデルとチェックポイントの関連付け管理</span></div>
@@ -108,7 +113,8 @@ export function SettingsPage() {
           </button>
           {expandedSections.baseModels && <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30"><BaseModelSection /></div>}
         </section>
-      </>,
+        </div>
+      </div>,
     },
     {
       id: 'prompt',
@@ -146,7 +152,8 @@ export function SettingsPage() {
         icon={Settings}
       />
       <SettingsTabBar activeTab={activeTab} onSelect={selectTab} />
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-5">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-5">
+        <div data-testid="settings-content-container" className="mx-auto w-full max-w-7xl">
         {panels.map(({ id, content }) => {
           const selected = activeTab === id
           return (
@@ -155,6 +162,7 @@ export function SettingsPage() {
             </div>
           )
         })}
+        </div>
       </div>
     </div>
   )

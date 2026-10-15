@@ -106,4 +106,63 @@ describe('MappingMasterSection mobile row and dialogs', () => {
     const workflowHeadingId = within(workflowDialog).getByRole('heading').id
     expect(new Set([createHeadingId, deleteHeadingId, workflowHeadingId]).size).toBe(3)
   })
+
+  const renderMasterDelete = (props: Partial<{ onClose: () => void; isPending: boolean }> = {}) =>
+    render(<MappingMasterDeleteModal master={master} isLoadingUsages={false} isPending={props.isPending ?? false} onClose={props.onClose ?? vi.fn()} onDelete={vi.fn()} />)
+  const renderWorkflowDelete = (props: Partial<{ onClose: () => void; isPending: boolean }> = {}) =>
+    render(<WorkflowDeleteConfirmDialog workflowName="sample" isPending={props.isPending ?? false} onClose={props.onClose ?? vi.fn()} onConfirm={vi.fn()} mappingsCount={1} presetsCount={2} snapshotsCount={3} isLoadingDetails={false} />)
+
+  it('[REQ-365/AC-9] delete dialogs render in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], role stays dialog)', () => {
+    for (const renderDialog of [renderMasterDelete, renderWorkflowDelete]) {
+      const { unmount } = renderDialog()
+      const dialogs = screen.getAllByRole('dialog')
+      expect(dialogs).toHaveLength(1)
+      const dialog = dialogs[0]
+      expect(screen.getAllByTestId('modal-sheet-handle')).toHaveLength(1)
+      expect(dialog).toHaveAttribute('data-radius-exempt')
+      expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('85dvh')
+      expect(dialog.className).toContain('rounded-t-2xl')
+      expect(dialog.getAttribute('role')).toBe('dialog')
+      expect(dialog.getAttribute('aria-label')).toBe(within(dialog).getByRole('heading').textContent)
+      expect(dialog.closest('.fixed.inset-0.z-50')).toBeNull()
+      unmount()
+    }
+  })
+
+  it('[REQ-365/AC-9] MappingMasterDeleteModal: backdrop click does not close; Cancel closes; Delete is not initially focused', () => {
+    const onClose = vi.fn()
+    const { container } = renderMasterDelete({ onClose })
+    fireEvent.click(container.ownerDocument.querySelector('.modal-backdrop') as HTMLElement)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('[REQ-365/AC-9] WorkflowDeleteConfirmDialog: delete stays disabled until acknowledged; backdrop closes unless pending', () => {
+    const onClose = vi.fn()
+    const { unmount } = renderWorkflowDelete({ onClose })
+    expect(screen.getByRole('button', { name: '削除する' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('button', { name: '削除する' })).toBeEnabled()
+    fireEvent.click(document.querySelector('.modal-backdrop') as HTMLElement)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    unmount()
+
+    const pendingClose = vi.fn()
+    renderWorkflowDelete({ onClose: pendingClose, isPending: true })
+    fireEvent.click(document.querySelector('.modal-backdrop') as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }))
+    expect(pendingClose).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-365/AC-9] delete dialogs: close/cancel/confirm controls expose min-h-[44px]', () => {
+    const { unmount } = renderMasterDelete()
+    for (const name of ['Cancel', 'Delete']) expect(screen.getByRole('button', { name })).toHaveClass('min-h-[44px]', 'touch-manipulation')
+    unmount()
+    renderWorkflowDelete()
+    expect(screen.getByRole('button', { name: '閉じる' })).toHaveClass('min-h-[44px]', 'min-w-[44px]', 'touch-manipulation')
+    for (const name of ['キャンセル', '削除する']) expect(screen.getByRole('button', { name })).toHaveClass('min-h-[44px]', 'touch-manipulation')
+    expect(screen.getByRole('checkbox').closest('label')).toHaveClass('min-h-[44px]')
+  })
 })

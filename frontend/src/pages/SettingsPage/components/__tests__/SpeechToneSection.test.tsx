@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpeechToneSection } from '../SpeechToneSection'
 
@@ -135,5 +135,145 @@ describe('SpeechToneSection', () => {
     fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
     expect(await within(modal).findByRole('alert')).toHaveTextContent('service unavailable')
     expect(within(modal).getByDisplayValue('失敗しても残る入力')).toBeInTheDocument()
+  })
+
+  it('[REQ-365/AC-9] preset modal renders in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], no own overlay)', () => {
+    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+
+    fireEvent.click(screen.getByTitle('編集'))
+    const wrapper = screen.getByTestId('speech-tone-preset-modal')
+    const dialog = screen.getByRole('dialog', { name: '口調プリセット編集' })
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getAllByTestId('modal-sheet-handle')).toHaveLength(1)
+    expect(dialog).toHaveAttribute('data-radius-exempt')
+    expect(dialog).toHaveAttribute('aria-label', '口調プリセット編集')
+    expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('85dvh')
+    expect(dialog).toHaveClass('rounded-t-2xl')
+    expect(wrapper.contains(dialog)).toBe(true)
+    expect(dialog.closest('.fixed.inset-0.z-50')).toBeNull()
+
+    fireEvent.click(within(wrapper).getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(screen.getByRole('button', { name: /プリセット追加/ }))
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '新規口調プリセット作成')
+  })
+
+  it('[REQ-365/AC-9] preset modal closes via close button and cancel but not via backdrop click', () => {
+    const { container } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+
+    fireEvent.click(screen.getByTitle('編集'))
+    const backdrop = container.ownerDocument.querySelector('.modal-backdrop') as HTMLElement
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop)
+    expect(screen.getByTestId('speech-tone-preset-modal')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByTestId('speech-tone-preset-modal')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTitle('編集'))
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(screen.queryByTestId('speech-tone-preset-modal')).not.toBeInTheDocument()
+  })
+
+  it('[REQ-365/AC-9] preset modal keeps save behavior inside the sheet', () => {
+    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+
+    fireEvent.click(screen.getByTitle('編集'))
+    const dialog = screen.getByRole('dialog', { name: '口調プリセット編集' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    expect(mocks.update).toHaveBeenCalledWith(17, expect.objectContaining({ name: '丁寧' }))
+  })
+
+  describe('test panel', () => {
+    const selectPreset = () => fireEvent.click(screen.getByRole('button', { name: '丁寧 をテスト対象にする' }))
+    const typeInput = (value: string) => fireEvent.change(screen.getByLabelText('テスト入力'), { target: { value } })
+    const runButton = () => screen.getByRole('button', { name: 'テスト実行' })
+
+    it('[REQ-365/AC-6] runs rewrite with the selected preset prompt and shows the output in the test panel', async () => {
+      mocks.rewrite.mockResolvedValue({ rewritten_text: '変換結果です' })
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      expect(screen.getByText('口調プリセットを選択してテスト入力を行ってください。')).toBeInTheDocument()
+      selectPreset()
+      expect(screen.getByRole('button', { name: '丁寧 をテスト対象にする' })).toHaveAttribute('aria-pressed', 'true')
+      typeInput('こんにちは')
+      fireEvent.click(runButton())
+      expect(await screen.findByLabelText('テスト出力')).toHaveTextContent('変換結果です')
+      expect(mocks.rewrite).toHaveBeenCalledTimes(1)
+      expect(mocks.rewrite).toHaveBeenCalledWith({ text: 'こんにちは', tone_prompt: mocks.presets[0].prompt, preset_id: 17 })
+      expect(within(screen.getByTestId('speech-tone-test-panel')).getByLabelText('テスト出力')).toBeInTheDocument()
+    })
+
+    it('[REQ-365/AC-6] disables テスト実行 until a preset is selected and non-blank input exists', () => {
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      expect(runButton()).toBeDisabled()
+      typeInput('入力')
+      expect(runButton()).toBeDisabled()
+      selectPreset()
+      expect(runButton()).toBeEnabled()
+      typeInput('   ')
+      expect(runButton()).toBeDisabled()
+    })
+
+    it('[REQ-365/AC-6] ignores a stale response after the input or preset changes', async () => {
+      let resolveFirst!: (value: { rewritten_text: string }) => void
+      mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      selectPreset()
+      typeInput('旧入力')
+      fireEvent.click(runButton())
+      typeInput('新入力')
+      await act(async () => { resolveFirst({ rewritten_text: '古い結果' }) })
+      await waitFor(() => expect(runButton()).toBeEnabled())
+      expect(screen.getByLabelText('テスト出力')).not.toHaveTextContent('古い結果')
+      expect(screen.getByLabelText('テスト入力')).toHaveValue('新入力')
+
+      mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      fireEvent.click(runButton())
+      selectPreset()
+      await act(async () => { resolveFirst({ rewritten_text: '選択変更前の結果' }) })
+      await waitFor(() => expect(runButton()).toBeEnabled())
+      expect(screen.getByLabelText('テスト出力')).not.toHaveTextContent('選択変更前の結果')
+    })
+
+    it('[REQ-365/AC-6] shows an alert and keeps input when rewrite rejects', async () => {
+      mocks.rewrite.mockRejectedValue(new Error('service unavailable'))
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      selectPreset()
+      typeInput('残る入力')
+      fireEvent.click(runButton())
+      expect(await screen.findByRole('alert')).toHaveTextContent('service unavailable')
+      expect(screen.getByLabelText('テスト入力')).toHaveValue('残る入力')
+    })
+
+    it('[REQ-365/AC-6] double click does not send two requests while pending', async () => {
+      let resolveFirst!: (value: { rewritten_text: string }) => void
+      mocks.rewrite.mockImplementation(() => new Promise((resolve) => { resolveFirst = resolve }))
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      selectPreset()
+      typeInput('入力')
+      fireEvent.click(runButton())
+      fireEvent.click(runButton())
+      expect(mocks.rewrite).toHaveBeenCalledTimes(1)
+      await act(async () => { resolveFirst({ rewritten_text: '結果' }) })
+      expect(await screen.findByText('結果')).toBeInTheDocument()
+    })
+
+    it('[REQ-365/AC-6] clears selection when the selected preset is deleted', () => {
+      const { rerender } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      selectPreset()
+      typeInput('入力')
+      expect(runButton()).toBeEnabled()
+      mocks.presets.splice(0)
+      rerender(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      expect(runButton()).toBeDisabled()
+      expect(screen.getByText('口調プリセットを選択してテスト入力を行ってください。')).toBeInTheDocument()
+    })
+
+    it('[REQ-365/AC-6] keeps existing CRUD list texts unchanged', () => {
+      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+      const before = [screen.getAllByText('丁寧').length, screen.getAllByText('説明').length]
+      selectPreset()
+      expect([screen.getAllByText('丁寧').length, screen.getAllByText('説明').length]).toEqual(before)
+      expect(before).toEqual([1, 3])
+    })
   })
 })

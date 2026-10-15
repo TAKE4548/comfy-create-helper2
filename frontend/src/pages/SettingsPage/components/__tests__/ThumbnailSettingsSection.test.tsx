@@ -8,17 +8,35 @@ describe('ThumbnailSettingsSection', () => {
     localStorage.clear()
   })
 
-  it('renders section and preset buttons with 3:4 active by default', () => {
+  it('[REQ-365/AC-2] renders a single select with all presets and reflects the persisted selection', () => {
     render(<ThumbnailSettingsSection />)
     expect(screen.getByTestId('thumbnail-settings-section')).toBeInTheDocument()
-    expect(screen.getByTestId('preset-btn-3:4')).toBeInTheDocument()
+    const select = screen.getByTestId('thumbnail-aspect-select') as HTMLSelectElement
+    expect(select.tagName).toBe('SELECT')
+    expect(select.value).toBe('3:4')
+    expect(select.options.length).toBeGreaterThan(1)
+    expect(screen.queryByTestId('preset-btn-3:4')).not.toBeInTheDocument()
     expect(screen.getByTestId('aspect-ratio-preview-box')).toHaveStyle({ aspectRatio: '3 / 4' })
   })
 
-  it('switches preset when a button is clicked', () => {
+  it('[REQ-365/AC-2] select has min-h-11 and touch-manipulation', () => {
     render(<ThumbnailSettingsSection />)
-    const btn11 = screen.getByTestId('preset-btn-1:1')
-    fireEvent.click(btn11)
+    const select = screen.getByTestId('thumbnail-aspect-select')
+    expect(select).toHaveClass('min-h-11')
+    expect(select).toHaveClass('touch-manipulation')
+    expect(screen.getByLabelText('アスペクト比の選択')).toBe(select)
+  })
+
+  it('[REQ-365/AC-2] custom input appears only for custom', () => {
+    render(<ThumbnailSettingsSection />)
+    expect(screen.queryByTestId('custom-aspect-ratio-input')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('thumbnail-aspect-select'), { target: { value: 'custom' } })
+    expect(screen.getByTestId('custom-aspect-ratio-input')).toBeInTheDocument()
+  })
+
+  it('[REQ-365/AC-2] switches preset when the select changes', () => {
+    render(<ThumbnailSettingsSection />)
+    fireEvent.change(screen.getByTestId('thumbnail-aspect-select'), { target: { value: '1:1' } })
 
     expect(localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO)).toBe('1:1')
     expect(screen.getByTestId('aspect-ratio-preview-box')).toHaveStyle({ aspectRatio: '1 / 1' })
@@ -27,8 +45,7 @@ describe('ThumbnailSettingsSection', () => {
 
   it('shows custom ratio input when custom preset is selected and updates ratio', () => {
     render(<ThumbnailSettingsSection />)
-    const btnCustom = screen.getByTestId('preset-btn-custom')
-    fireEvent.click(btnCustom)
+    fireEvent.change(screen.getByTestId('thumbnail-aspect-select'), { target: { value: 'custom' } })
 
     const input = screen.getByTestId('custom-aspect-ratio-input')
     expect(input).toBeInTheDocument()
@@ -38,12 +55,12 @@ describe('ThumbnailSettingsSection', () => {
     expect(screen.getByTestId('aspect-ratio-preview-box')).toHaveStyle({ aspectRatio: '16 / 9' })
   })
 
-  it('keeps the session choice across storage failure and reports that it is unsaved', () => {
+  it('[REQ-365/AC-2] shows persistence error without crashing when localStorage throws; keeps the session choice and reports that it is unsaved', () => {
     localStorage.setItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO, '3:4')
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
     render(<><ThumbnailSettingsSection /><ThumbnailSettingsSection /></>)
 
-    fireEvent.click(screen.getAllByTestId('preset-btn-1:1')[0])
+    fireEvent.change(screen.getAllByTestId('thumbnail-aspect-select')[0], { target: { value: '1:1' } })
 
     expect(localStorage.getItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO)).toBe('3:4')
     expect(screen.getAllByTestId('aspect-ratio-preview-box')).toHaveLength(2)

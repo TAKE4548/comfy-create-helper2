@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { GROUP_PARAMS, GROUP_PROMPTS } from '../llmSettingsGroups'
+import fc from 'fast-check'
+import {
+  GROUP_PARAMS,
+  GROUP_PROMPTS,
+  PROMPT_EDITOR_KEYS,
+  promptParamGroupFor,
+} from '../llmSettingsGroups'
 
 describe('LLM settings group allowlists', () => {
   it('contains exactly the approved prompts and params for each group', () => {
@@ -33,5 +39,46 @@ describe('LLM settings group allowlists', () => {
     expect([...promptKeys, ...paramKeys]).not.toContain('translation_debounce')
     expect([...promptKeys, ...paramKeys]).not.toContain('provider')
     expect([...promptKeys, ...paramKeys]).not.toContain('unknown_setting')
+  })
+})
+
+describe('promptParamGroupFor', () => {
+  it('[REQ-365/AC-5] maps each of the six prompt editor keys to a param group contained in GROUP_PARAMS.prompt', () => {
+    expect(PROMPT_EDITOR_KEYS).toHaveLength(6)
+    for (const key of PROMPT_EDITOR_KEYS) {
+      const group = promptParamGroupFor(key)
+      expect(group).not.toBeNull()
+      expect(GROUP_PARAMS.prompt as readonly string[]).toContain(group)
+    }
+  })
+
+  it('[REQ-365/AC-5] every PROMPT_EDITOR_KEYS entry equals GROUP_PROMPTS.prompt in order', () => {
+    expect([...PROMPT_EDITOR_KEYS]).toEqual([...GROUP_PROMPTS.prompt])
+  })
+
+  it('[REQ-365/AC-5] PBT: returns null for any string outside PROMPT_EDITOR_KEYS and never throws', () => {
+    fc.assert(
+      fc.property(
+        fc.string().filter((s) => !(PROMPT_EDITOR_KEYS as readonly string[]).includes(s)),
+        (s) => promptParamGroupFor(s) === null,
+      ),
+      { numRuns: 300 },
+    )
+  })
+
+  it('[REQ-365/AC-5] PBT: result is total over PROMPT_EDITOR_KEYS (non-null) and idempotent', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...PROMPT_EDITOR_KEYS), (k) => {
+        const a = promptParamGroupFor(k)
+        return a !== null && a === promptParamGroupFor(k)
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('[REQ-365/AC-5] two param groups are both reachable', () => {
+    const images = new Set(PROMPT_EDITOR_KEYS.map((k) => promptParamGroupFor(k)))
+    expect(images.has('llm_params_audit')).toBe(true)
+    expect(images.has('llm_params_scene_generate')).toBe(true)
   })
 })

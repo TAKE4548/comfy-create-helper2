@@ -334,7 +334,17 @@
     border-radius: var(--ux-radius-modal) var(--ux-radius-modal) 0 0;
   }
 
-  .modal-backdrop:not(.flex-col):not(:fullscreen):has(> [role='dialog']) > [role='dialog']::before {
+  /* Common Modal sheet keeps the 16px (rounded-t-2xl) top radius per SPEC_COMMON bottom-sheet. */
+  .modal-backdrop:not(.flex-col):not(:fullscreen) > [role='dialog'][aria-modal='true'][data-radius-exempt] {
+    border-radius: 1rem 1rem 0 0;
+  }
+
+  /* Modal sheetMaxHeightClass (max-h-[...]) is exposed as a custom property; it overrides the default sheet max-height. */
+  .modal-backdrop:not(.flex-col):not(:fullscreen) > [role='dialog'][aria-modal='true'][data-sheet-max-height] {
+    max-height: var(--modal-sheet-max-height);
+  }
+
+  .modal-backdrop:not(.flex-col):not(:fullscreen):has(> [role='dialog']) > [role='dialog']:not([data-radius-exempt])::before {
     content: '';
     display: block;
     width: 36px;

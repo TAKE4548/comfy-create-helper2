@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.4
-**最終更新**: 2026-10-10
+**バージョン**: 2.5
+**最終更新**: 2026-10-15
 **ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md)
 
 ---
 
@@ -35,8 +35,8 @@
 ### 1-3. 共通 UI ルール
 
 - ボーダー: 白10%（カード・入力）、区切り6% / 選択時: 緑枠・チェック
-- 角丸: モーダル外枠12px、ボタン・入力・カード8px、チップ・バッジ6px
-- 共通Modalはモバイルで上端12px・下端0、768px以上で12pxとし、ダイアログrole/name、focus管理、Escape/backdrop制御を共通化する。
+- 角丸: 共通Modalの外枠16px（`Modal.tsx` の `rounded-t-2xl` / `md:rounded-2xl`。従来の12pxから実装に合わせて修正）、ボタン・入力・カード8px、チップ・バッジ6px。Settingsの管理系・編集系モーダルはすべて共通Modal（モバイルでボトムシート、§1-4参照）。`.modal-backdrop` を直接使うレガシーモーダルは12pxのまま（§1-4参照）
+- 共通Modalはモバイルで上端16px・下端0、768px以上（デスクトップ）でも四隅16pxとし、ダイアログrole/name、focus管理、Escape/backdrop制御を共通化する。
 - スクロールバー: `.custom-scrollbar` クラスでカスタムスタイル適用（OS 標準非表示・細いダークスタイル）
 - トランジション: `transition-all` / `transition-colors`（ホバー・アクティブの変化）
 - アニメーション: `animate-pulse`（生成中インジケータ）/ `animate-fade-in`（モーダル等出現時）
@@ -45,6 +45,14 @@
 ### 1-4. 共通モーダルとレスポンシブ境界（REQ-334）
 
 - 通常の共通Modalは幅768px未満で画面下部のsheetとなり、上端ハンドル、safe-area余白、フォーカス復帰を提供する。768px以上は中央配置し、要求サイズに応じて最大580px（sm）、640px（md）、680px（lg）とする。幅768–1023pxはビューポート幅の90%を上限にする。
+- 共通Modalのモバイル最大高さは既定で `calc(100dvh - env(safe-area-inset-top))` とし、利用側は `sheetMaxHeightClass` で上限（例: `max-h-[85dvh]`）を指定できる。
+  - 反映されるのは単一の任意値クラス `max-h-[<値>]`（値内の `_` は空白に変換）のみで、複数クラスや他形式の指定は既定の `calc(100dvh - env(safe-area-inset-top))` のままとなる。85dvhは §1-5 のプリセット（75/90dvh）の中間値であり、Settingsの管理系モーダルが採用する。
+  - 上端ハンドルは実要素1つで、`data-testid="modal-sheet-handle"` を持つ（テスト契約）。`index.css` の疑似要素ハンドル（幅767px以下）は `.modal-backdrop` 直下のレガシーパネルにのみ適用され、対象は次の2系統である。(a) `.modal-backdrop` 直下の `[role='dialog']:not([data-radius-exempt])::before`。(b) `.modal-backdrop` 直下で `role="dialog"` を持たず、`max-w-md`〜`max-w-7xl` のいずれかのクラスを持つパネルの `::before`（36x4px）。共通Modal（`data-radius-exempt`）にはどちらも適用せず、`.modal-backdrop` を使わない独自overlayにも疑似ハンドルは適用されない。共通Modalが表示するハンドルは実要素（`data-testid="modal-sheet-handle"`）の1つだけとする。
+  - 上端角丸は16px（`rounded-t-2xl`）で §1-3 と一致する。角丸16pxは共通Modalに限る。共通Modalのダイアログは `data-radius-exempt` を持ち、`index.css` の一律角丸補正（モーダル12px／`rounded-*` 8px）から除外される。`.modal-backdrop` を使うレガシーモーダルは `--ux-radius-modal`（12px）のまま下部シート化される。
+- Settingsから到達するモーダルはすべて共通Modal（実ハンドル、上端16px、`max-h-[85dvh]`）で実装する（grep確認 2026-10-15、`frontend/src/pages/SettingsPage` ほか Settings 関連コンポーネント）: ParamTypeMasterManagerModal、ParamTypeMasterModal、BaseModelSectionの各モーダル、MappingMasterEditModal、StageManagerModal、SpeechTonePresetModal、MappingMasterDeleteModal、WorkflowDeleteConfirmDialog、WorkflowManageModal、WorkflowNodePicker、WorkflowDiffReplaceModal（最後の1件は高さ指定なしで既定高さ）。WorkflowManageModal は GeneratePage からも使われる共有コンポーネントで、同画面でも同じボトムシートとなる。MappingMasterDeleteModal / WorkflowDeleteConfirmDialog の role は `dialog` のまま（共通Modalは `alertdialog` 非対応）。
+  - Settingsに独自overlay（`fixed inset-0` + `role="dialog"`）として残るものはない。`SettingsComponents.tsx` の `MappingMasterModal`（`fixed inset-0`）は本番コードから未参照（テストのみ）で、Settingsから到達しない。`ServiceConnectionCard` / `SpeechToneSection` の `role="alertdialog"` は行内の確認ブロックでオーバーレイではない。
+  - `.modal-backdrop` を直接使うレガシーdialog（非テスト、2026-10-15 grep）: BulkEditModal、BypassSettingsModal、CategoryManagerModal、HistoryModalPreview、LoraDetailModal、LoraRegisterModal、ParamSyncModal、ProfileBulkEditModal（本体と BulkEditConfirmView）、RescanModal、SceneGeneratorModal、SpeechBubbleEditorModal、TagSetCreateModal / TagSetDetailModal / TagSetEditModal、UploadWorkflowModal、DatasetStudioPage の OutfitMasterModal / CreateProjectModal、GeneratePage の AddAssetModal。これらにはレガシーsheet規則（下部寄せ・疑似要素ハンドル・角丸12px）が適用され、Settingsからは到達しない（UploadWorkflowModal は GeneratePage から使用）。共通Modal自身も `.modal-backdrop` 要素を用いるが、`data-radius-exempt` により疑似ハンドル・12px補正の対象外である。
+- モーダルは相互に排他とし、ネスト表示しない（list→form は一覧を閉じてからフォームを開く）。唯一の例外は MappingMasterEditModal 内の WorkflowNodePicker で、共通Modalの中に共通Modalをネストして開く。このとき外側は `closeOnEsc={!isNodePickerOpen}` により Esc を無視し、Esc は内側（WorkflowNodePicker）のみを閉じる。
 - 画像閲覧を目的とする全画面プレビューだけは通常モーダル幅の上限を使わず、画像表示用の全画面契約を維持する。
 
 ### 1-5. UI/UX アンチパターンカタログ & 4大コンポーネントプリセット
@@ -61,7 +69,7 @@
    - 防御策: モバイルは原則ボトムシート（上限 `max-h-[75dvh]` / `max-h-[90dvh]`）に倒し、最下部に固定操作ドックを常駐させる。
 4. **Double Padding (二重パディングの蓄積)**
    - 現象・リスク: 親（AppShell）が `pb-[54px+env(safe-area)]` を持っているのに、子画面が `h-[100dvh]` や `pb-24` を重ね、下部に巨大な虚無空間が生じる。
-   - 防御策: 最外層コンテナがSafe Areaとバー高さを一元管理。子画面内部での全画面高さ指定（`h-[100dvh]`）や過剰な `pb` 重複を禁止。
+   - 防御策: 最外層コンテナがSafe Areaとバー高さを一元管理。子画面内部での全画面高さ指定（`h-[100dvh]`）や過剰な `pb` 重複を禁止（既知の例外: Settingsの `pb-[calc(6rem+env(safe-area-inset-bottom))]`、§2-4参照）。
 5. **Hit Target Distortion (タッチ領域の密集・誤肥大化)**
    - 現象・リスク: 44px判定を満たすためにボタン外形を `h-11`（44px）にして画面を埋めるか、逆に小さすぎる判定（28px）が密集して誤タップする。
    - 防御策: 外形サイズと判定領域を分離（Hit-Slop拡張）。外形は `h-6 text-[11px]` のまま、`relative before:absolute before:-inset-2 before:content-['']` で透明判定のみを44pxに拡張。
@@ -169,6 +177,7 @@
 - 画面幅768px未満では画面下部に高さ54pxのナビゲーションを固定し、safe-area insetを加味する。
 - アイコン ＋ ラベルテキスト（Generate / Studio / LoRAs / Tags / History / Settings）を表示
 - 全ページで同一のルーティング（`/`, `/studio`, `/loras`, `/tags`, `/history`, `/settings`）を共有
+- ボトムナビは幅768px未満のみ表示する。ページ最下部の操作要素が隠れないよう下部余白を確保する。固定ボトムナビは高さ `54px + env(safe-area-inset-bottom)`、AppShellの`main`は同値の`pb-[calc(54px+env(safe-area-inset-bottom))]`（`md:pb-0`）を持つ。CSS変数 `--bottom-nav-height` は定義しない。Settingsは `pb-[calc(6rem+env(safe-area-inset-bottom))]`（768px以上で `md:pb-5`）を追加する。これは §1-5 の Double Padding 防止の既知の例外で、スクロール領域最終の操作要素をナビ上に確保するためSettingsに限り許容する。タブレットrail（768–1023px）とデスクトップsidebar（1024px以上）ではこの下部余白を適用しない。
 
 設定ページ固有のタブ、responsive、localStorage契約は [SPEC_SETTINGS.md](./SPEC_SETTINGS.md) を参照する。ここでは共通AppShellのナビゲーション境界を定義し、設定内のタブ状態や詳細開閉状態は定義しない。
 

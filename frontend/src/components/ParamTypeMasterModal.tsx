@@ -3,6 +3,7 @@ import { X, ChevronDown, ChevronRight, Loader2, Wand2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { ParamTypeMaster, ParamTypeMasterCreate, Workflow, ComfyObjectInfo } from '../api/types'
 import { comfyApi, workflowsApi } from '../api/client'
+import { Modal } from './common/Modal'
 
 const inputCls =
   'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
@@ -253,16 +254,23 @@ export function ParamTypeMasterModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-surface-1 border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl overflow-hidden my-8">
+    <Modal
+      isOpen
+      onClose={onClose}
+      size="md"
+      ariaLabel={mode === 'create' ? 'カスタム型マスター作成' : 'カスタム型マスター編集'}
+      sheetMaxHeightClass="max-h-[85dvh]"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
           <h2 className="text-sm font-semibold text-zinc-100">
             {mode === 'create' ? 'カスタム型マスター作成' : 'カスタム型マスター編集'}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-surface-2 transition-colors"
+            aria-label="閉じる"
+            className="inline-flex items-center justify-center min-h-11 min-w-11 touch-manipulation p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-surface-2 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -462,21 +470,20 @@ export function ParamTypeMasterModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:bg-surface-2 transition-colors text-xs"
+              className="min-h-11 touch-manipulation px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-300 hover:bg-surface-2 transition-colors text-xs"
             >
               キャンセル
             </button>
             <button
               type="submit"
               disabled={isPending}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#7C6FDD] hover:bg-[#6b5ed2] text-white font-medium disabled:opacity-50 transition-colors text-xs"
+              className="flex items-center justify-center gap-1.5 min-h-11 touch-manipulation px-4 py-1.5 rounded-lg bg-[#7C6FDD] hover:bg-[#6b5ed2] text-white font-medium disabled:opacity-50 transition-colors text-xs"
             >
               {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>保存</span>
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

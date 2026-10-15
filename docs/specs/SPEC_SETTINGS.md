@@ -5,12 +5,23 @@ tags:
   - REQ-314
   - REQ-334
   - REQ-347
+  - REQ-365
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
   - docs/backlog/task/archive/REQ-334-T10.md
   - docs/backlog/pbi/active/REQ-347.md
   - docs/backlog/task/active/REQ-347-T10.md
   - docs/design/REQ-347.md
+  - docs/backlog/pbi/active/REQ-365.md
+  - docs/design/REQ-365.md
+  - frontend/src/pages/SettingsPage/components/VramGuardSection.tsx
+  - frontend/src/components/ParamTypeMasterManagerModal.tsx
+  - frontend/src/components/MappingMasterEditModal.tsx
+  - frontend/src/components/StageManagerModal.tsx
+  - frontend/src/components/SettingsComponents.tsx
+  - frontend/src/components/WorkflowManageModal.tsx
+  - frontend/src/components/WorkflowNodePicker.tsx
+  - frontend/src/pages/SettingsPage/SettingsResponsive.css
   - frontend/src/pages/SettingsPage
   - frontend/src/pages/SettingsPage/components/WorkflowConnectionSection.tsx
   - frontend/src/pages/SettingsPage/components/SpeechToneSection.tsx
@@ -21,11 +32,11 @@ related_paths:
 
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 2.6
-**最終更新**: 2026-10-13
+**バージョン**: 3.0
+**最終更新**: 2026-10-15
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md)
 
 ---
 
@@ -39,20 +50,20 @@ related_paths:
 
 | セクション | 説明 |
 |---|---|
-| **LLM 設定** | 使用する LLM モデル（ローカル/外部）の選択、システムプロンプト編集、詳細パラメータ（Temperature、Top-P、MaxTokens 等）の調整 |
+| **LLM 設定** | 使用する LLM モデル（ローカル/外部）の選択、システムプロンプト編集（`prompt` タブは種別セレクタ付きの統合型プロンプトエディタ、§3-3）、詳細パラメータ（Temperature、Top-P、MaxTokens 等）の調整 |
 | **翻訳設定** | プロンプト翻訳機能のプロバイダー設定（FuguMT [推奨・CPU常駐・初回自動配置・APIキー不要] / Google Cloud / DeepL / LLM）、APIキー、デバウンス時間、キャッシュクリア、翻訳統計確認 |
 | **フキダシ検出設定** | 画像内のフキダシ自動検出パラメータ（最小面積 `min_area`、輝度閾値 `min_brightness`）の調整 |
 | **セリフ口調プリセット** | キャラクター性に応じた口調変換プリセット（ツンデレ、お嬢様、敬語等）の CRUD とリアルタイム書き換えテスト |
-| **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D、`PUT /reorder`）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理 |
+| **ノードマッピングマスタ** | MappingMaster の一覧・登録・編集・削除・並び替え（D&D、`PUT /reorder`）・一括編集、カスタムパラメータ型マスタ（`ParamTypeMaster`）の管理（「カスタム型マスタ」ボタンから開く `ParamTypeMasterManagerModal`、§3-2） |
 | **サムネイル表示設定** | アプリケーション全体でのサムネイル表示アスペクト比（1:1 正方形, 3:4 縦長, 4:3 横長, 16:9 ワイド等）の切り替え |
 | **Base Model 設定** | ベースモデル（SD1.5, SDXL, Pony, Illustrious, Flux 等）の定義と、ComfyUI チェックポイントファイル（.safetensors）との自動マッピング管理 |
-| **操作・ワークフロー・接続** | 複数選択モード起動の長押し時間設定、ワークフロー一覧・削除、FastAPI / ComfyUI のリアルタイム接続ステータス確認 |
+| **操作・ワークフロー・接続** | 複数選択モード起動の長押し時間設定、ワークフロー一覧・削除、FastAPI / ComfyUI のリアルタイム接続ステータス確認、サービス別の死活ランプ・インラインログ（`ServiceConnectionCard.tsx`）、VRAMガード設定（`VramGuardSection.tsx`） |
 
 ---
 
 ## 3. レイアウトと状態（5タブ）
 
-設定ページは目的別の5タブで構成する。タブIDは `workflows`（ワークフロー）、`prompt`（プロンプト）、`dialogue`（セリフ）、`translation`（翻訳）、`system`（システム）。タブは長い表示名とコンパクト表示名を持ち、狭い画面ではコンパクト表示名を使用する。各タブ内は目的別カードに分け、従来の13個の縦積みアコーディオンは使用しない。
+設定ページは目的別の5タブで構成する。タブIDは `workflows`（ワークフロー）、`prompt`（プロンプト）、`dialogue`（セリフ）、`translation`（翻訳）、`system`（システム）。タブは長い表示名とコンパクト表示名を持ち、狭い画面ではコンパクト表示名を使用する。コンパクト表示名は `① モデル` / `② 呪文` / `③ セリフ` / `④ 翻訳` / `⑤ システム` とする。各タブ内は目的別カードに分け、従来の13個の縦積みアコーディオンは使用しない。
 
 | タブID | 長い表示名 / コンパクト表示名 | 主なカード |
 |---|---|---|
@@ -62,13 +73,23 @@ related_paths:
 | `translation` | ④ 翻訳 / ④ 翻訳 | プロバイダー、認証、デバウンス、プレビュー。LLMプロバイダー時のみ2種類の翻訳プロンプトと1種類のLLMパラメータ |
 | `system` | ⑤ システム・一般 / ⑤ システム | 接続、VRAM、表示と操作 |
 
-タブは `tablist` / `tab` のARIAナビゲーションとして実装し、タブ名をARIAラベルとして提供する。初期選択は有効なURL hash、次に有効な `prompt-surgeon-settings-active-tab`、最後に `workflows` の順で決める。hashが無効または欠落している場合は選択結果をURL hashへ `replace` で正規化する。以後はURL履歴を優先し、ユーザーのタブ選択を履歴へ `push` することで戻る/進む操作を復元する。
+タブは `tablist` / `tab` のARIAナビゲーションとして実装し、タブ名をARIAラベルとして提供する。`aria-label` には長い表示名を用い、丸数字（①〜⑤）は含めない。初期選択は有効なURL hash、次に有効な `prompt-surgeon-settings-active-tab`、最後に `workflows` の順で決める。hashが無効または欠落している場合は選択結果をURL hashへ `replace` で正規化する。以後はURL履歴を優先し、ユーザーのタブ選択を履歴へ `push` することで戻る/進む操作を復元する。
 
 詳細表示の開閉状態は `prompt-surgeon-settings-details-expanded-v2` にJSONオブジェクト `{ "prompt": boolean, "dialogue": boolean }` として保存する。既定値は両方閉 (`false`) で、欠落・不正JSON・不正な値は該当項目を閉状態として扱う。旧キー `prompt-surgeon-settings-sections-expanded` は読み書きせず、削除もしないため既存データはそのまま残る。
+
+設定ページが使うLocalStorageキーの契約は次のとおり。
+
+| キー | 値 | 備考 |
+|---|---|---|
+| `prompt-surgeon-settings-active-tab` | 有効なtab ID | 初期選択の解決順は上記のとおり |
+| `prompt-surgeon-vram-guard-limit` | 数値文字列（読込時 `readStoredVramLimit` で2.0〜14.0にclamp） | サーバ値が正で、本キーはwrite-throughミラー |
+| `prompt-surgeon-settings-details-expanded-v2` | `{ "prompt": boolean, "dialogue": boolean }` | **スキーマ不変**。§3-2の一時的UI（モーダル等）の開閉は含めない |
 
 編集中のドラフトは再取得や非同期応答で上書きせず、保存・適用時に最新の入力値を送る。既存6種類のプロンプト制約は `prompt` タブにのみ適用する。接続設定ではFastAPI/ComfyUIの既存契約を使い、Backend URLおよびLM Studio URLの編集機能は追加しない。
 
 systemタブは接続状態、VRAM、表示と操作の3論理カードで構成する。日常的なサービス管理はこのsystem欄から行い、管理リクエストは閲覧中ページと同じホスト名のポート `8899` にあるWeb Managerへ送る（例: `http://<現在のホスト名>:8899/api/status`、`/api/action`、`/api/logs`）。ポート `8899` は設定ページを配信する `8000` と別オリジンである。Web Manager API固有のブラウザーOrigin許可範囲は[運用ガイド](server_manager_guide.md)に定め、バックエンドAPI一般のCORS規則には拡張しない。`8000` が停止して設定ページを開けない場合は、PCのブラウザーから既存のWeb Manager画面 `http://<PCホスト名>:8899` を直接開いて管理する。接続状態は読み取り専用のバックエンド設定 `COMFY_URL` を反映し、フロントエンドからComfyUI URLを変更する項目は追加しない。既存API、store、環境設定の境界は維持し、これら以外の新しいAPIや設定保存契約を導入しない。
+
+systemタブのサービス管理は、Supervisor / Backend / ComfyUI（および存在する場合はFrontend）の行ごとに死活ランプと「ログ ▼」を持ち、ログは該当行の直下にインライン展開する（既存の「ログ本文は初期状態で折り畳む」規定と整合し、状態・ログ取得7秒／サービス操作120秒の待機予算は維持する）。VRAMガードは1024px（lg）以上で左=メーター（黄色の閾値縦線と閾値タグ）、右=閾値スライダーの2ペイン、未満は縦積みとし、スライダー操作はクライアントStateで即時に線とタグへ反映する（HTTP/WS負荷なし）。メーターの色は、空き容量が閾値未満で赤、閾値+1.0GB未満で黄とする。サムネイル比率は1行のドロップダウンで選択する。
 
 ### 3-1. 設定ページのレスポンシブ動作
 
@@ -88,7 +109,27 @@ Translationの辞書照合は大文字小文字を区別するリテラル一致
 
 Workflow/Mapping設定のJSON import/exportはversion 1形式を使う。importはschema、workflow graph、対象Master IDを適用前に検証し、ファイル内のtarget名と件数をpreviewに表示する。preview表示だけではDBを変更せず、利用者の明示確認後に既存workflow update APIを一度だけ呼ぶ。`default_applied_assets`を省略したimportは既存値を保ち、明示`null`は関連付けを解除する。無効な入力ではpreviewの適用操作を許可しない。
 
-systemタブの接続/VRAM/表示・操作カードには、Supervisor、Windows Backend、ComfyUIの3つのコンパクトなservice cardsを配置する。停止/再起動の前に対象サービス名を明示したinline確認を行い、操作要求は二重送信しない。状態・ログ取得timeoutは7秒、サービス操作は120秒。結果が未確認のときは状態を再取得するだけで再送せず、ログ本文は初期状態で折り畳む。ログ取得は同一ホストの8899番Manager APIを使い、メインAPI（8000番）と混同しない。
+systemタブの接続/VRAM/表示・操作カードには、Supervisor、Windows Backend、ComfyUIのサービス行（死活ランプと「ログ ▼」）を含むコンパクトなservice cardを配置する。停止/再起動の前に対象サービス名を明示したinline確認を行い、操作要求は二重送信しない。状態・ログ取得timeoutは7秒、サービス操作は120秒。結果が未確認のときは状態を再取得するだけで再送せず、ログ本文は初期状態で折り畳む。ログ取得は同一ホストの8899番Manager APIを使い、メインAPI（8000番）と混同しない。
+
+### 3-1-1. 画面レイアウト（REQ-365）
+
+workflowsタブは `xl`（>=1280px）で2カラムとし、左=ワークフロー（上）・BaseModel（下）、右=MappingMasterを配置する。左カラムはRow-Span余白を作らない。<1280pxはワークフロー→MappingMaster→BaseModelの順に縦積みする。この並べ替えはCSS `order` のみで行い、データ順序およびAPIに影響しない。
+
+モバイル（<768px）ではタブバーを横スワイプ（snap）にし、操作対象は44×44px以上とする。ページ下部余白は `pb-[calc(6rem+env(safe-area-inset-bottom))]` とし、768px以上では解除する。
+
+MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジ（`+N classes` / `+N stages`）とする。Target Node情報は画面表示せず、編集ボタンの `aria-label`「<名称> のマッピング設定を編集（対象ノード: …）」に保持する。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal、WorkflowNodePicker）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
+
+### 3-2. オンデマンド管理
+
+カスタム型マスタ（`ParamTypeMaster`）は常時展開せず、「カスタム型マスタ」ボタンから一覧モーダル（`ParamTypeMasterManagerModal`）を開き、作成/編集フォームモーダルへ**排他遷移**する（list→form→list、モーダルをネストしない）。ただし MappingMasterEditModal 内の WorkflowNodePicker は共通Modalのネスト例外で、Esc は内側のみを閉じる。BaseModelマスタ定義は「モデルマスタ管理」モーダルで行う。ワークフロー行のアクションは右端の「︙」メニューに集約する。これらの一時的UIの開閉状態は `prompt-surgeon-settings-details-expanded-v2` に含めない。API・DB契約は変更しない。
+
+### 3-3. 統合型プロンプトエディタ
+
+`prompt` タブは、種別セレクタ（6キー: `audit_interference` / `audit_interference_anima` / `audit_vocabulary` / `audit_physical` / `scene_generate` / `scene_generate_anima`）と、左=本文、右=共通モデル（読み取り専用）・Temperature・Max Tokens の2ペインで構成する。右ペインの値は、選択した種別が属するLLMパラメータ群（`audit_*` の4種は `llm_params_audit`、`scene_generate*` の2種は `llm_params_scene_generate`）に連動する。種別を切り替えても未保存draftは保持する。既存6種類のプロンプト制約とAPI/DB契約は変更しない。
+
+### 3-4. 口調テスト実行
+
+セリフタブでは、口調プリセットを選択してテスト入力を入力し、「テスト実行」で既存の `POST /speech-tone-presets/rewrite` を呼ぶ。最新の要求結果だけを表示し、古い応答は破棄する。新しいAPIは追加しない。
 
 ---
 
@@ -242,9 +283,14 @@ pages/SettingsPage/
     SpeechToneSection.tsx        — 口調プリセット管理 & 書き換えテスト
     MappingMasterSection.tsx     — マッピングマスタ & パラメータ型マスタ
     BaseModelSection.tsx         — BaseModel & Checkpoint マッピング
+    VramGuardSection.tsx         — VRAMガード（メーター＋閾値スライダー）
+    ServiceConnectionCard.tsx    — サービス行の死活ランプ・インラインログ
     ThumbnailSettingsSection.tsx — サムネイル表示アスペクト比
     WorkflowConnectionSection.tsx— 長押し設定、ワークフロー削除、接続確認
       AdaptiveWorkflowWiring.tsx — stage別wire group、未設定enabled候補、専用scroll領域
+
+components/
+  ParamTypeMasterManagerModal.tsx — カスタム型マスタ一覧モーダル（作成/編集フォームへ排他遷移）
 ```
 
 ---

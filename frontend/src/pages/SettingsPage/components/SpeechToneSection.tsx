@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown, X } from 'lucide-react'
+import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown, X, FlaskConical } from 'lucide-react'
 import { speechTonePresetsApi } from '../../../api/client'
 import type { SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
+import { Modal } from '../../../components/common/Modal'
 
 export interface SpeechTonePresetModalProps {
   mode: 'create' | 'edit'
@@ -68,20 +69,20 @@ export function SpeechTonePresetModal({
     })
   }
 
+  const title = mode === 'create' ? '新規口調プリセット作成' : '口調プリセット編集'
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
-      data-testid="speech-tone-preset-modal"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        className="bg-[#18181C] border border-[rgba(255,255,255,0.12)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4"
+    <div data-testid="speech-tone-preset-modal">
+      <Modal
+        isOpen
+        onClose={onClose}
+        size="lg"
+        ariaLabel={title}
+        closeOnBackdropClick={false}
+        sheetMaxHeightClass="max-h-[85dvh]"
       >
-        <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-3">
+        <div className="shrink-0 flex items-center justify-between px-4 md:px-5 py-3 border-b border-[rgba(255,255,255,0.06)]">
           <h3 id={headingId} className="text-sm font-semibold text-zinc-100">
-            {mode === 'create' ? '新規口調プリセット作成' : '口調プリセット編集'}
+            {title}
           </h3>
           <button
             type="button"
@@ -93,65 +94,67 @@ export function SpeechTonePresetModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              プリセット名 <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例: ツンデレ風, お嬢様風"
-              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-            />
+        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3.5 px-4 md:px-5 py-4">
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                プリセット名 <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例: ツンデレ風, お嬢様風"
+                className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                口調指示プロンプト <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={prompt}
+                onChange={(e) => { invalidatePreview(); setPrompt(e.target.value) }}
+                placeholder="例: ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回しに変換してください。"
+                className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#1F1F25] p-3">
+              <label className="block text-xs font-medium text-zinc-300" htmlFor="speech-tone-preview-input">プレビュー用セリフ</label>
+              <textarea id="speech-tone-preview-input" aria-label="プレビュー用セリフ" rows={2} value={previewText} onChange={(e) => { invalidatePreview(); setPreviewText(e.target.value) }} className="min-h-11 w-full rounded-lg bg-[#18181C] px-3 py-2 text-xs text-zinc-100" />
+              <button type="button" onClick={() => void handlePreview()} disabled={isPreviewing || !prompt.trim() || !previewText.trim()} className="min-h-11 rounded-lg bg-purple-600 px-4 text-xs text-white disabled:opacity-50">{isPreviewing ? 'プレビュー中...' : 'プレビュー実行'}</button>
+              {previewError && <p role="alert" className="text-xs text-red-400">プレビューに失敗しました: {previewError}</p>}
+              {previewResult !== null && <div aria-live="polite" className="rounded bg-zinc-900 p-3 text-sm text-zinc-100"><p className="mb-1 text-[11px] text-zinc-500">生成プレビュー</p><p>{previewResult}</p></div>}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">説明（任意）</label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="例: キャラクターAの標準的な口調"
+                className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">表示順 (sort_order)</label>
+              <input
+                type="number"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)}
+                className="min-h-11 w-28 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">
-              口調指示プロンプト <span className="text-red-400">*</span>
-            </label>
-            <textarea
-              required
-              rows={3}
-              value={prompt}
-              onChange={(e) => { invalidatePreview(); setPrompt(e.target.value) }}
-              placeholder="例: ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回しに変換してください。"
-              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div className="space-y-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#1F1F25] p-3">
-            <label className="block text-xs font-medium text-zinc-300" htmlFor="speech-tone-preview-input">プレビュー用セリフ</label>
-            <textarea id="speech-tone-preview-input" aria-label="プレビュー用セリフ" rows={2} value={previewText} onChange={(e) => { invalidatePreview(); setPreviewText(e.target.value) }} className="min-h-11 w-full rounded-lg bg-[#18181C] px-3 py-2 text-xs text-zinc-100" />
-            <button type="button" onClick={() => void handlePreview()} disabled={isPreviewing || !prompt.trim() || !previewText.trim()} className="min-h-11 rounded-lg bg-purple-600 px-4 text-xs text-white disabled:opacity-50">{isPreviewing ? 'プレビュー中...' : 'プレビュー実行'}</button>
-            {previewError && <p role="alert" className="text-xs text-red-400">プレビューに失敗しました: {previewError}</p>}
-            {previewResult !== null && <div aria-live="polite" className="rounded bg-zinc-900 p-3 text-sm text-zinc-100"><p className="mb-1 text-[10px] text-zinc-500">生成プレビュー</p><p>{previewResult}</p></div>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">説明（任意）</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="例: キャラクターAの標準的な口調"
-              className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">表示順 (sort_order)</label>
-            <input
-              type="number"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)}
-              className="min-h-11 w-28 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+          <div className="shrink-0 flex justify-end gap-2 px-4 md:px-5 py-3 border-t border-[rgba(255,255,255,0.06)]">
             <button
               type="button"
               onClick={onClose}
@@ -168,7 +171,7 @@ export function SpeechTonePresetModal({
             </button>
           </div>
         </form>
-      </div>
+      </Modal>
     </div>
   )
 }
@@ -183,6 +186,21 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
   const [tonePresetModalMode, setTonePresetModalMode] = useState<'create' | 'edit' | null>(null)
   const [editingTonePreset, setEditingTonePreset] = useState<SpeechTonePreset | null>(null)
   const [pendingDeleteToneId, setPendingDeleteToneId] = useState<number | null>(null)
+  const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null)
+  const [testText, setTestText] = useState('')
+  const [testResult, setTestResult] = useState<string | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
+  const [isTesting, setIsTesting] = useState(false)
+  const testRevision = useRef(0)
+  const testPending = useRef(false)
+
+  useEffect(() => () => { testRevision.current += 1 }, [])
+
+  const invalidateTest = () => {
+    testRevision.current += 1
+    setTestResult(null)
+    setTestError(null)
+  }
 
   const { data: tonePresets = [], isLoading: isLoadingTonePresets } = useQuery<SpeechTonePreset[]>({
     queryKey: ['speech-tone-presets'],
@@ -215,6 +233,35 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
       qc.invalidateQueries({ queryKey: ['speech-tone-presets'] })
     },
   })
+
+  useEffect(() => {
+    if (selectedPresetId !== null && !tonePresets.some((tp) => tp.id === selectedPresetId)) {
+      testRevision.current += 1
+      setSelectedPresetId(null)
+      setTestResult(null)
+      setTestError(null)
+    }
+  }, [tonePresets, selectedPresetId])
+
+  const selectedPreset = tonePresets.find((tp) => tp.id === selectedPresetId) ?? null
+
+  const handleTest = async () => {
+    const preset = tonePresets.find((tp) => tp.id === selectedPresetId)
+    if (testPending.current || !preset || !testText.trim()) return
+    testPending.current = true
+    const requestRevision = ++testRevision.current
+    setIsTesting(true)
+    setTestError(null)
+    try {
+      const result = await speechTonePresetsApi.rewrite({ text: testText, tone_prompt: preset.prompt, preset_id: preset.id })
+      if (testRevision.current === requestRevision) setTestResult(result.rewritten_text)
+    } catch (error) {
+      if (testRevision.current === requestRevision) setTestError(error instanceof Error ? error.message : String(error))
+    } finally {
+      testPending.current = false
+      setIsTesting(false)
+    }
+  }
 
   return (
     <section
@@ -251,7 +298,8 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
         </div>
       </div>
       {isExpanded && (
-        <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
+        <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="min-w-0">
           {isLoadingTonePresets ? (
             <div className="flex items-center gap-2 text-zinc-600 text-sm py-8">
               <RefreshCw size={14} className="animate-spin" />Loading tone presets…
@@ -301,6 +349,15 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
                           </button>
                           <button
                             type="button"
+                            aria-pressed={selectedPresetId === tp.id}
+                            aria-label={`${tp.name} をテスト対象にする`}
+                            onClick={() => { setSelectedPresetId(tp.id); invalidateTest() }}
+                            className={`relative min-h-11 min-w-11 inline-flex items-center justify-center rounded touch-manipulation before:absolute before:-inset-2 before:content-[''] transition-colors ${selectedPresetId === tp.id ? 'bg-purple-600/30 text-purple-300' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'}`}
+                          >
+                            <FlaskConical size={13} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setPendingDeleteToneId(tp.id)}
                             className="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                             title="削除"
@@ -327,6 +384,34 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
               </table>
             </div>
           )}
+          </div>
+          <div className="min-w-0 space-y-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-3" data-testid="speech-tone-test-panel">
+            {selectedPreset ? (
+              <p className="text-[11px] text-zinc-500" title={selectedPreset.name}>テスト対象のプリセットを選択中です。</p>
+            ) : (
+              <p className="text-xs text-zinc-500">口調プリセットを選択してテスト入力を行ってください。</p>
+            )}
+            <label htmlFor="speech-tone-test-input" className="block text-xs font-medium text-zinc-300">テスト入力</label>
+            <textarea
+              id="speech-tone-test-input"
+              rows={3}
+              value={testText}
+              onChange={(e) => { invalidateTest(); setTestText(e.target.value) }}
+              className="min-h-11 w-full touch-manipulation rounded-lg bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
+            />
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={isTesting || selectedPreset === null || !testText.trim()}
+              className="min-h-11 min-w-11 touch-manipulation rounded-lg bg-purple-600 px-4 text-xs text-white disabled:opacity-50"
+            >
+              テスト実行
+            </button>
+            {testError && <p role="alert" className="break-words text-xs text-red-400">テストに失敗しました: {testError}</p>}
+            <div aria-live="polite" aria-label="テスト出力" className="break-words whitespace-pre-wrap text-sm text-zinc-100">
+              {testResult !== null && testResult}
+            </div>
+          </div>
         </div>
       )}
 

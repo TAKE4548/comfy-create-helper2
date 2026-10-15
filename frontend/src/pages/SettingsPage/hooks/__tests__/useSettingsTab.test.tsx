@@ -82,6 +82,20 @@ describe('useSettingsTab', () => {
     await waitFor(() => expect(window.location.hash).toBe('#translation'))
   })
 
+  it('[REQ-365/AC-10] persists the active tab to prompt-surgeon-settings-active-tab on every selection', async () => {
+    expect(LS_KEYS.SETTINGS_ACTIVE_TAB).toBe('prompt-surgeon-settings-active-tab')
+    mountAt('#workflows')
+    await waitFor(() => expect(screen.getByTestId('active').textContent).toBe('workflows'))
+    for (const tab of ['prompt', 'dialogue', 'translation', 'system'] as const) {
+      fireEvent.click(screen.getByRole('button', { name: tab }))
+      await waitFor(() => expect(screen.getByTestId('active').textContent).toBe(tab))
+      expect(window.localStorage.getItem('prompt-surgeon-settings-active-tab')).toBe(tab)
+    }
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    fireEvent.click(screen.getByRole('button', { name: 'prompt' }))
+    await waitFor(() => expect(screen.getByTestId('active').textContent).toBe('prompt'))
+  })
+
   it('replaces an empty hash after initial navigation with workflows', async () => {
     mountAt('#system')
     await waitFor(() => expect(screen.getByTestId('active').textContent).toBe('system'))

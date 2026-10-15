@@ -7,6 +7,7 @@ import { StageManagerModal } from '../../../../components/StageManagerModal'
 import { mappingMastersApi } from '../../../../api/domains/mappingMasters'
 import { mappingGroupsApi } from '../../../../api/domains/mappingGroups'
 import { stageMastersApi } from '../../../../api/domains/stageMasters'
+import { paramTypeMastersApi } from '../../../../api/domains/workflows'
 import type { MappingMasterV2, MappingGroupMaster, StageMaster } from '../../../../api/types'
 
 // Mock APIs
@@ -38,6 +39,19 @@ vi.mock('../../../../api/domains/stageMasters', () => ({
     cascadeRename: vi.fn(),
   },
 }))
+
+vi.mock('../../../../api/domains/workflows', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../api/domains/workflows')>()
+  return {
+    ...actual,
+    paramTypeMastersApi: {
+      list: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  }
+})
 
 const mockGroups: MappingGroupMaster[] = [
   { id: 1, key: 'prompt', name: 'プロンプト系', sort_order: 1, is_builtin: true, is_active: true },
@@ -98,6 +112,9 @@ describe('MappingMasterSection & Modals', () => {
     vi.mocked(mappingGroupsApi.list).mockResolvedValue(mockGroups)
     vi.mocked(stageMastersApi.list).mockResolvedValue(mockStages)
     vi.mocked(mappingMastersApi.list).mockResolvedValue(mockMasters)
+    vi.mocked(paramTypeMastersApi.list).mockResolvedValue([
+      { id: 1, name: 'SamplerType', widget_type: 'select' },
+    ] as never)
   })
 
   describe('MappingMasterSection UI', () => {
@@ -146,6 +163,104 @@ describe('MappingMasterSection & Modals', () => {
       fireEvent.click(addBtn)
 
       expect(await screen.findByRole('dialog', { name: /新規マッピングマスター作成/ })).toBeInTheDocument()
+    })
+
+    it('[REQ-365/AC-3] renders each master as a settings-mobile-card with pinned actions, hidden target node and contextual aria-label', async () => {
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('Positive Prompt')
+
+      const card = screen.getByText('Positive Prompt').closest('.settings-mobile-card') as HTMLElement
+      expect(card).not.toBeNull()
+      expect(card.querySelector('.settings-mobile-card__actions')).not.toBeNull()
+      expect(card.querySelector('.settings-mobile-card__badges')).not.toBeNull()
+      expect(card.querySelector('.settings-mobile-card__target-node')).toHaveTextContent('(text)')
+      expect(screen.getByText('Positive Prompt')).toHaveAttribute('title', 'Positive Prompt')
+
+      const edit = screen.getByRole('button', {
+        name: 'Positive Prompt のマッピング設定を編集（対象ノード: text / CLIPTextEncode）',
+      })
+      expect(edit).toHaveClass('min-h-11', 'min-w-11', 'touch-manipulation')
+      expect(screen.getByRole('button', { name: 'Positive Prompt を削除' })).toHaveClass('min-h-11', 'min-w-11')
+    })
+
+    it('[REQ-365/AC-3] shows +N classes and +N stages compact badges without duplicating variant names', async () => {
+      const mk = (id: number, classes: string[] | null, nVariants: number): MappingMasterV2 => ({
+        ...mockMasters[1],
+        id,
+        name: `M${id}`,
+        expected_class_types: classes,
+        variants: Array.from({ length: nVariants }, (_, i) => ({
+          ...mockMasters[0].variants[0],
+          id: id * 100 + i,
+          stage_id: id * 100 + i,
+          stage_name: `S${id}_${i}`,
+        })),
+      })
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([
+        mk(1, null, 0),
+        mk(2, ['A'], 1),
+        mk(3, Array.from({ length: 10 }, (_, i) => `C${i}`), 20),
+      ])
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('M3')
+
+      expect(screen.getAllByText(/^\+\d+ classes$/)).toHaveLength(1)
+      expect(screen.getByText('+9 classes')).toBeInTheDocument()
+      expect(screen.getAllByText(/^\+\d+ stages$/)).toHaveLength(1)
+      expect(screen.getByText('+19 stages')).toBeInTheDocument()
+      expect(screen.getAllByText('S3_0')).toHaveLength(1)
+      expect(screen.getAllByText('S3_19')).toHaveLength(1)
+      expect(screen.getByText('S3_19')).toHaveClass('hidden', 'md:inline-flex')
+      expect(screen.getByText('S3_0')).not.toHaveClass('hidden')
+      expect(screen.getAllByText('S2_0')).toHaveLength(1)
+    })
+
+    it('[REQ-365/AC-4] opens ParamTypeMaster manager as a dialog from the カスタム型マスタ button and no longer renders the always-on bar', async () => {
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('Positive Prompt')
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.queryByText(/カスタム型マスター \(/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /新規型を作成/ })).not.toBeInTheDocument()
+
+      const trigger = screen.getByRole('button', { name: 'カスタム型マスタ' })
+      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+      fireEvent.click(trigger)
+
+      expect(await screen.findByRole('dialog', { name: 'カスタム型マスタ管理' })).toBeInTheDocument()
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    })
+
+    it('[REQ-365/AC-4] transitions list -> create form -> back to list with exactly one dialog at a time', async () => {
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('Positive Prompt')
+
+      fireEvent.click(screen.getByRole('button', { name: 'カスタム型マスタ' }))
+      await screen.findByRole('dialog', { name: 'カスタム型マスタ管理' })
+
+      fireEvent.click(screen.getByRole('button', { name: /新規型を作成/ }))
+      expect(await screen.findByRole('dialog', { name: 'カスタム型マスター作成' })).toBeInTheDocument()
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+      expect(screen.queryByRole('dialog', { name: 'カスタム型マスタ管理' })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: '閉じる' }))
+      expect(await screen.findByRole('dialog', { name: 'カスタム型マスタ管理' })).toBeInTheDocument()
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    })
+
+    it('[REQ-365/AC-9] param type dialogs use the bottom-sheet Modal', async () => {
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('Positive Prompt')
+
+      fireEvent.click(screen.getByRole('button', { name: 'カスタム型マスタ' }))
+      const manager = await screen.findByRole('dialog', { name: 'カスタム型マスタ管理' })
+      expect(manager).toHaveAttribute('aria-modal', 'true')
+      expect(manager.className).toMatch(/max-h-\[85dvh\]/)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'SamplerType を編集' }))
+      const form = await screen.findByRole('dialog', { name: 'カスタム型マスター編集' })
+      expect(form).toHaveAttribute('aria-modal', 'true')
+      expect(form.className).toMatch(/max-h-\[85dvh\]/)
     })
   })
 
@@ -212,7 +327,7 @@ describe('MappingMasterSection & Modals', () => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ default_enabled: false }))
     })
 
-    it('[REQ-358/AC-28] keeps disabled masters visible and editable', async () => {
+    it('[REQ-358/AC-28][REQ-365/AC-3] keeps disabled masters visible and editable', async () => {
       vi.mocked(mappingMastersApi.list).mockResolvedValue([
         { ...mockMasters[0], default_enabled: false },
         mockMasters[1],
@@ -220,7 +335,7 @@ describe('MappingMasterSection & Modals', () => {
       renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
 
       expect(await screen.findByText('新規マッピングで基本無効')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Positive Prompt を編集' }))
+      fireEvent.click(screen.getByRole('button', { name: /^Positive Prompt のマッピング設定を編集/ }))
       expect(await screen.findByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
     })
 

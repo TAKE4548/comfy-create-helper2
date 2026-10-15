@@ -34,6 +34,24 @@ describe('SettingsTabBar', () => {
     })
   })
 
+  it('[REQ-365/AC-2] shows numbered compact labels below md while keeping unnumbered aria-labels', () => {
+    render(<SettingsTabBar activeTab="workflows" onSelect={vi.fn()} />)
+    const compact = ['① モデル', '② 呪文', '③ セリフ', '④ 翻訳', '⑤ システム']
+    const tablist = screen.getByRole('tablist', { name: '設定カテゴリー' })
+    expect(tablist.className).toContain('overflow-x-auto')
+    expect(tablist.className).toContain('snap-x')
+    expect(tablist.className).toContain('snap-mandatory')
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(5)
+    tabs.forEach((tab, index) => {
+      expect(tab.querySelector('span.md\\:hidden')?.textContent).toBe(compact[index])
+      expect(tab.getAttribute('aria-label')).toBe(labels[index][1])
+      expect(tab.getAttribute('aria-label')).not.toMatch(/[①②③④⑤]/)
+      expect(tab.className).toContain('min-h-11')
+      expect(tab.className).toContain('touch-manipulation')
+    })
+  })
+
   it('reflects an externally restored active tab without invoking selection', () => {
     const onSelect = vi.fn()
     const { rerender } = render(<SettingsTabBar activeTab="workflows" onSelect={onSelect} />)

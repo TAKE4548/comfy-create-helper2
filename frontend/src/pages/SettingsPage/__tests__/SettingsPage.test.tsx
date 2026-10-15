@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, MemoryRouter } from 'react-router-dom'
 import { SettingsPage } from '../../SettingsPage'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { VramGuardSection } from '../components/VramGuardSection'
 import { WorkflowConnectionSection } from '../components/WorkflowConnectionSection'
 import { useGenerationStore } from '../../../store/useGenerationStore'
@@ -359,6 +361,56 @@ describe('SettingsPage Integration', () => {
     })
   })
 
+  describe('Adaptive Dual-Pane & Mobile CSS Contract (REQ-365)', () => {
+    it('[REQ-365/AC-1] renders workflows tab as a dual-pane grid with WF/Base left and Mapping right at xl', () => {
+      window.location.hash = '#workflows'
+      renderComponent()
+      const grid = screen.getByTestId('settings-workflows-grid')
+      expect(grid).toHaveClass('xl:grid-cols-2', 'xl:grid-rows-[auto_1fr]', 'items-start')
+      expect(screen.getByTestId('settings-card-workflow')).toHaveClass('xl:col-start-1', 'xl:row-start-1')
+      expect(screen.getByTestId('settings-card-basemodel')).toHaveClass('xl:col-start-1', 'xl:row-start-2')
+      expect(screen.getByTestId('settings-card-mapping')).toHaveClass('xl:col-start-2', 'xl:row-span-2')
+    })
+
+    it('[REQ-365/AC-1] orders cards workflow, mapping, base model below xl', () => {
+      window.location.hash = '#workflows'
+      renderComponent()
+      expect(screen.getByTestId('settings-card-workflow')).toHaveClass('order-1')
+      expect(screen.getByTestId('settings-card-mapping')).toHaveClass('order-2')
+      expect(screen.getByTestId('settings-card-basemodel')).toHaveClass('order-3')
+    })
+
+    it('[REQ-365/AC-2] keeps bottom-nav safe padding below md and releases it from md', () => {
+      renderComponent()
+      const container = screen.getByTestId('settings-content-container')
+      const scroller = container.parentElement as HTMLElement
+      expect(scroller).toHaveClass('pb-[calc(6rem+env(safe-area-inset-bottom))]', 'md:pb-5')
+      expect(scroller).not.toHaveClass('lg:pb-5')
+      expect(container).toHaveClass('max-w-7xl')
+    })
+
+    it('[REQ-365/AC-3] ships the mobile card and table CSS contract', () => {
+      const css = readFileSync(resolve(process.cwd(), 'src/pages/SettingsPage/SettingsResponsive.css'), 'utf-8')
+      for (const token of [
+        '.settings-mobile-card',
+        '__target-node',
+        "td[data-cell='target-node']",
+        '@media (max-width: 767px)',
+        'grid-template-areas',
+      ]) {
+        expect(css).toContain(token)
+      }
+      expect(css).not.toContain(`100${'vh'}`)
+      expect(css.match(/!important/g) ?? []).toHaveLength(1)
+    })
+
+    it('[REQ-365/AC-9] SettingsResponsive.css no longer shrinks role=dialog elements', () => {
+      const css = readFileSync(resolve(process.cwd(), 'src/pages/SettingsPage/SettingsResponsive.css'), 'utf-8')
+      expect(css).not.toContain('85dvh')
+      expect(css).not.toMatch(/\[role='dialog'\]\s*\{[^}]*max-height/)
+    })
+  })
+
   describe('Speech Tone Presets (REQ-286)', () => {
     it('[REQ-286/AC-1] shows speech tone presets by default and allows collapsing the section', async () => {
     renderComponent()
@@ -520,8 +572,7 @@ describe('SettingsPage Integration', () => {
       expect(details).toHaveAttribute('aria-expanded', 'false')
       fireEvent.click(details)
 
-      const promptButton = await screen.findByRole('button', { name: /干渉タグ診断/ })
-      fireEvent.click(promptButton)
+      expect(await screen.findByTestId('prompt-unified-editor')).toBeInTheDocument()
       const editor = await screen.findByDisplayValue('Original prompt')
       fireEvent.change(editor, { target: { value: 'Unsaved page draft' } })
 

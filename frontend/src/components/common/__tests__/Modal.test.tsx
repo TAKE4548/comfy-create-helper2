@@ -257,4 +257,82 @@ describe('Common Modal component', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog.className).toContain('overscroll-contain')
   })
+
+  it('[REQ-365/AC-9] renders the sheet handle with testid and applies sheetMaxHeightClass', () => {
+    const { unmount } = render(
+      <Modal isOpen={true} onClose={vi.fn()} sheetMaxHeightClass="max-h-[85dvh]">
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.className).toContain('max-h-[85dvh]')
+    expect(dialog.className).not.toContain('calc(100dvh-env(safe-area-inset-top))')
+    const handle = screen.getByTestId('modal-sheet-handle')
+    expect(handle.className).toContain('md:hidden')
+    expect(handle.getAttribute('aria-hidden')).toBe('true')
+    unmount()
+
+    render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog').className).toContain('max-h-[calc(100dvh-env(safe-area-inset-top))]')
+  })
+
+  it('[REQ-365/AC-9] falls back to the default max-height class when sheetMaxHeightClass is empty', () => {
+    render(
+      <Modal isOpen={true} onClose={vi.fn()} sheetMaxHeightClass="">
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog').className).toContain('max-h-[calc(100dvh-env(safe-area-inset-top))]')
+  })
+
+  it('[REQ-365/AC-9] keeps rounded-t-2xl and items-end bottom-sheet classes on mobile', () => {
+    const { container } = render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop?.className).toContain('items-end')
+    expect(backdrop?.className).toContain('md:items-center')
+    expect(screen.getByRole('dialog').className).toContain('rounded-t-2xl')
+  })
+
+  it('[REQ-365/AC-9] exempts the sheet from the global radius override and keeps responsive radius classes', () => {
+    render(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.hasAttribute('data-radius-exempt')).toBe(true)
+    expect(dialog.className).toContain('rounded-t-2xl')
+    expect(dialog.className).toContain('rounded-b-none')
+    expect(dialog.className).toContain('md:rounded-2xl')
+  })
+
+  it('[REQ-365/AC-9] exposes sheetMaxHeightClass max-h-[...] value to the mobile sheet CSS only when provided', () => {
+    const { rerender } = render(
+      <Modal isOpen={true} onClose={vi.fn()} sheetMaxHeightClass="max-h-[85dvh]">
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    let dialog = screen.getByRole('dialog')
+    expect(dialog.hasAttribute('data-sheet-max-height')).toBe(true)
+    expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('85dvh')
+    expect(dialog.className).toContain('max-h-[85dvh]')
+
+    rerender(
+      <Modal isOpen={true} onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    dialog = screen.getByRole('dialog')
+    expect(dialog.hasAttribute('data-sheet-max-height')).toBe(false)
+    expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('')
+    expect(dialog.className).toContain('max-h-[calc(100dvh-env(safe-area-inset-top))]')
+  })
 })

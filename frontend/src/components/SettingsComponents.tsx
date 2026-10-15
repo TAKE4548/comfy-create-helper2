@@ -10,6 +10,7 @@ import { X, RefreshCw, AlertTriangle, GripVertical, Edit2, Trash2, Copy } from '
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { MappingMaster, MappingMasterCreate, ParamTypeMaster } from '../api/types'
+import { Modal } from './common/Modal'
 
 const inputCls = 'w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40'
 
@@ -179,8 +180,9 @@ export function MappingMasterDeleteModal({
   onDelete: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div role="dialog" aria-modal="true" aria-labelledby="mapping-master-delete-title" className="w-full max-w-md bg-surface border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 shadow-2xl space-y-4">
+    <Modal isOpen onClose={onClose} size="md" sheetMaxHeightClass="max-h-[85dvh]"
+      ariaLabel="Delete Mapping Master?" closeOnBackdropClick={false} closeOnEsc={!isPending}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-4 p-4 md:p-6">
         <div className="flex items-center gap-2.5 text-red-400">
           <AlertTriangle size={18} /><h3 id="mapping-master-delete-title" className="text-sm font-semibold">Delete Mapping Master?</h3>
         </div>
@@ -191,7 +193,7 @@ export function MappingMasterDeleteModal({
           <div className="flex items-center gap-2 text-zinc-600 text-xs py-2"><RefreshCw size={12} className="animate-spin" />Checking usage in workflows…</div>
         ) : usages && usages.length > 0 ? (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 space-y-2">
-            <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Warning: Currently used in {usages.length} workflow mapping(s):</p>
+            <p className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">Warning: Currently used in {usages.length} workflow mapping(s):</p>
             <div className="max-h-28 overflow-y-auto custom-scrollbar space-y-1.5">
               {usages.map((u, idx) => (
                 <div key={idx} className="text-[11px] text-zinc-300 flex justify-between font-mono bg-white/[0.02] px-2 py-1 rounded">
@@ -204,13 +206,13 @@ export function MappingMasterDeleteModal({
         ) : (
           <p className="text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/20 px-3 py-1.5 rounded-lg">Not currently used in any workflow mappings. Safe to delete.</p>
         )}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-2">Cancel</button>
-          <button type="button" onClick={onDelete} disabled={isPending}
-            className="bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 text-xs px-4 py-2 rounded-lg font-medium transition-all">Delete</button>
-        </div>
       </div>
-    </div>
+      <div className="shrink-0 flex items-center justify-end gap-3 px-4 md:px-6 pb-4 md:pb-6 pt-2">
+        <button type="button" onClick={onClose} className="min-h-[44px] md:min-h-0 touch-manipulation text-xs text-zinc-400 hover:text-zinc-200 px-3 py-2">Cancel</button>
+        <button type="button" onClick={onDelete} disabled={isPending}
+          className="min-h-[44px] md:min-h-0 touch-manipulation bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 text-xs px-4 py-2 rounded-lg font-medium transition-all">Delete</button>
+      </div>
+    </Modal>
   )
 }
 
@@ -379,18 +381,21 @@ export function WorkflowDeleteConfirmDialog({
   const [understood, setUnderstood] = useState(false);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="workflow-delete-title" className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-xl p-6 shadow-2xl space-y-4 relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} disabled={isPending} className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300">
-          <X size={16} />
-        </button>
+    <Modal isOpen onClose={onClose} size="md" sheetMaxHeightClass="max-h-[85dvh]"
+      ariaLabel={`ワークフロー「${workflowName}」を削除しますか？`}
+      closeOnBackdropClick={!isPending} closeOnEsc={!isPending}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-4 p-4 md:p-6">
         <div className="flex items-center gap-2 text-red-400">
-          <AlertTriangle size={18} />
-          <h3 id="workflow-delete-title" className="text-sm font-semibold text-zinc-200">
+          <AlertTriangle size={18} className="shrink-0" />
+          <h3 id="workflow-delete-title" className="flex-1 text-sm font-semibold text-zinc-200">
             ワークフロー「{workflowName}」を削除しますか？
           </h3>
+          <button type="button" onClick={onClose} disabled={isPending} aria-label="閉じる"
+            className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] touch-manipulation shrink-0 text-zinc-500 hover:text-zinc-300">
+            <X size={16} />
+          </button>
         </div>
-        
+
         {isLoadingDetails ? (
           <div className="flex items-center gap-2 text-zinc-500 text-xs py-4">
             <RefreshCw size={12} className="animate-spin" />
@@ -410,7 +415,7 @@ export function WorkflowDeleteConfirmDialog({
         )}
 
         <div className="pt-2">
-          <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-400 select-none">
+          <label className="flex items-center gap-2 min-h-[44px] cursor-pointer text-xs text-zinc-400 select-none">
             <input
               type="checkbox"
               checked={understood}
@@ -421,27 +426,26 @@ export function WorkflowDeleteConfirmDialog({
             <span>上記の内容を理解しました</span>
           </label>
         </div>
-
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button 
-            type="button" 
-            onClick={onClose} 
-            disabled={isPending} 
-            className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
-          >
-            キャンセル
-          </button>
-          <button 
-            type="button" 
-            onClick={onConfirm} 
-            disabled={isPending || isLoadingDetails || !understood}
-            className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all shadow-md"
-          >
-            {isPending && <RefreshCw size={12} className="animate-spin" />}
-            削除する
-          </button>
-        </div>
       </div>
-    </div>
+      <div className="shrink-0 flex items-center justify-end gap-3 px-4 md:px-6 pb-4 md:pb-6 pt-2">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isPending}
+          className="min-h-[44px] md:min-h-0 touch-manipulation px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+        >
+          キャンセル
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isPending || isLoadingDetails || !understood}
+          className="min-h-[44px] md:min-h-0 touch-manipulation flex items-center gap-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs px-4 py-2 rounded-lg font-semibold text-white transition-all shadow-md"
+        >
+          {isPending && <RefreshCw size={12} className="animate-spin" />}
+          削除する
+        </button>
+      </div>
+    </Modal>
   );
 }

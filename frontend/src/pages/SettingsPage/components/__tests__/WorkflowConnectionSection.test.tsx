@@ -35,6 +35,14 @@ vi.mock('../../../../components/SettingsComponents', () => ({
 }))
 
 const workflow = { id: 1, name: 'Example workflow', created_at: '2026-01-01T00:00:00Z' }
+const workflow2 = { id: 2, name: 'Second workflow', created_at: '2026-01-02T00:00:00Z' }
+
+function openRowMenu(name = 'Example workflow') {
+  fireEvent.click(screen.getByLabelText(`${name} の操作メニュー`))
+}
+function clickMenuItem(label: string) {
+  fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(label) }))
+}
 
 function renderSection(props: Partial<React.ComponentProps<typeof WorkflowConnectionSection>> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -110,11 +118,13 @@ describe('WorkflowConnectionSection groups', () => {
     expect(screen.queryByText('Service Connection Card')).toBeNull()
     expect(screen.getByText('ワークフロー管理')).toBeTruthy()
 
-    fireEvent.click(screen.getByTitle('名前を変更'))
+    openRowMenu()
+    clickMenuItem('名前変更')
     fireEvent.click(await screen.findByText('rename-submit'))
     await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledWith(1, { name: 'Renamed' }))
 
-    fireEvent.click(screen.getByTitle('コピーを作成'))
+    openRowMenu()
+    clickMenuItem('コピー')
     fireEvent.click(await screen.findByText('copy-submit'))
     await waitFor(() => expect(api.workflowsApi.copy).toHaveBeenCalledWith(1, 'Renamed'))
   })
@@ -124,7 +134,8 @@ describe('WorkflowConnectionSection groups', () => {
     const { container } = renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
     await screen.findByText('Example workflow')
 
-    fireEvent.click(screen.getByTitle('新ワークフローJSONとのスマート差分置換'))
+    openRowMenu()
+    clickMenuItem('スマート置換')
     const file = new File(['{"nodes":{}}'], 'workflow.json', { type: 'application/json' })
     Object.defineProperty(file, 'text', { value: async () => '{"nodes":{}}' })
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } })
@@ -134,7 +145,8 @@ describe('WorkflowConnectionSection groups', () => {
       json_body: { nodes: {} }, mappings: [{ master_id: 1, node_id: '2' }],
     }))
 
-    fireEvent.click(await screen.findByTitle('直前のワークフロー状態へ復元'))
+    openRowMenu()
+    clickMenuItem('ロールバック')
     await waitFor(() => expect(api.workflowsApi.rollback).toHaveBeenCalledWith(1))
     confirm.mockRestore()
   })
@@ -252,5 +264,76 @@ describe('WorkflowConnectionSection groups', () => {
     fireEvent.click(screen.getByRole('button', { name: 'この内容を適用する' }))
     await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledTimes(1))
     expect(api.workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({ json_body: valid.json_body, mappings: valid.mappings, target_base_model_id: 2, default_applied_assets: null }))
+  })
+  it('[REQ-365/AC-2] collapses row actions into one ︙ trigger with aria-haspopup=menu and 44px target class', async () => {
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    expect(screen.queryByTitle('名前を変更')).toBeNull()
+    expect(screen.queryByTitle('削除')).toBeNull()
+    const trigger = screen.getByLabelText('Example workflow の操作メニュー')
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(trigger.className).toContain('min-h-11')
+    expect(trigger.className).toContain('min-w-11')
+    expect(trigger.className).toContain('touch-manipulation')
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('menu').id).toBe(trigger.getAttribute('aria-controls'))
+  })
+
+  it('[REQ-365/AC-2] menu items: rename/copy/smart-replace/profile/delete present; rollback only when available', async () => {
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    await waitFor(() => expect(api.workflowsApi.getHistoryStatus).toHaveBeenCalled())
+    openRowMenu()
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: /ロールバック/ })).not.toBeNull())
+    for (const label of ['名前変更', 'コピー', 'スマート置換', 'ロールバック', 'プロファイル管理', '削除']) {
+      expect(screen.getByRole('menuitem', { name: new RegExp(label) })).toBeTruthy()
+    }
+    cleanup()
+    api.workflowsApi.getHistoryStatus.mockResolvedValue({ has_rollback: false })
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    await waitFor(() => expect(api.workflowsApi.getHistoryStatus).toHaveBeenCalledTimes(2))
+    openRowMenu()
+    expect(screen.queryByRole('menuitem', { name: /ロールバック/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /削除/ })).toBeTruthy()
+  })
+
+  it('[REQ-365/AC-2] Escape and outside click close the menu and restore focus to the trigger', async () => {
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    const trigger = screen.getByLabelText('Example workflow の操作メニュー')
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('[REQ-365/AC-2] opening a second row menu closes the first (single open menu)', async () => {
+    api.workflowsApi.list.mockResolvedValue([workflow, workflow2])
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Second workflow')
+    openRowMenu('Example workflow')
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    fireEvent.pointerDown(screen.getByLabelText('Second workflow の操作メニュー'))
+    openRowMenu('Second workflow')
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    expect(screen.getByLabelText('Example workflow の操作メニュー').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByLabelText('Second workflow の操作メニュー').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('[REQ-365/AC-2] selecting 削除 opens the existing delete confirmation and closes the menu', async () => {
+    renderSection({ group: 'workflows', isExpandedLongPress: false, isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    openRowMenu()
+    clickMenuItem('削除')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(await screen.findByText('Delete workflow dialog')).toBeTruthy()
   })
 })

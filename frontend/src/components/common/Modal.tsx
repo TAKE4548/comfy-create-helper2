@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '4xl' | '5xl' | '7xl' | 'full'
 
@@ -12,7 +12,11 @@ export interface ModalProps {
   closeOnBackdropClick?: boolean
   closeOnEsc?: boolean
   ariaLabel?: string
+  /** Mobile bottom-sheet max-height utility class. Empty/undefined falls back to the default. */
+  sheetMaxHeightClass?: string
 }
+
+const DEFAULT_SHEET_MAX_HEIGHT_CLASS = 'max-h-[calc(100dvh-env(safe-area-inset-top))]'
 
 const sizeClasses: Record<ModalSize, string> = {
   sm: 'max-w-full md:max-w-[min(90vw,36.25rem)] lg:max-w-[36.25rem]',
@@ -56,6 +60,7 @@ export function Modal({
   closeOnBackdropClick = true,
   closeOnEsc = true,
   ariaLabel = 'Dialog',
+  sheetMaxHeightClass,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
@@ -118,6 +123,8 @@ export function Modal({
   if (!isOpen) return null
 
   const sizeClass = sizeClasses[size] || sizeClasses['5xl']
+  const maxHeightClass = sheetMaxHeightClass || DEFAULT_SHEET_MAX_HEIGHT_CLASS
+  const sheetMaxHeightValue = parseSheetMaxHeightValue(sheetMaxHeightClass)
 
   return (
     <div
@@ -133,6 +140,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
+        data-radius-exempt
+        data-sheet-max-height={sheetMaxHeightValue ? '' : undefined}
+        style={sheetMaxHeightValue ? ({ '--modal-sheet-max-height': sheetMaxHeightValue } as CSSProperties) : undefined}
         tabIndex={-1}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === 'Escape' && closeOnEsc && !event.defaultPrevented) {
@@ -140,14 +150,24 @@ export function Modal({
             event.stopPropagation()
           }
         }}
-        className={`bg-surface-3 border border-[rgba(255,255,255,0.1)] rounded-t-2xl rounded-b-none md:rounded-2xl w-full ${sizeClass} max-h-[calc(100dvh-env(safe-area-inset-top))] md:max-h-[90dvh] lg:max-h-full flex flex-col shadow-2xl overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:pb-0 ${dialogClassName}`}
+        className={`bg-surface-3 border border-[rgba(255,255,255,0.1)] rounded-t-2xl rounded-b-none md:rounded-2xl w-full ${sizeClass} ${maxHeightClass} md:max-h-[90dvh] lg:max-h-full flex flex-col shadow-2xl overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:pb-0 ${dialogClassName}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div aria-hidden="true" className="mx-auto mt-2 mb-1 h-1 w-10 flex-shrink-0 rounded-full bg-white/30 md:hidden" />
+        <div aria-hidden="true" data-testid="modal-sheet-handle" className="mx-auto mt-2 mb-1 h-1 w-10 flex-shrink-0 rounded-full bg-white/30 md:hidden" />
         {children}
       </div>
     </div>
   )
+}
+
+/**
+ * Extracts the value of an arbitrary-value `max-h-[...]` utility so the mobile sheet CSS can
+ * apply it (the unlayered sheet rule in index.css otherwise beats the Tailwind utility).
+ * Other class strings are not parsed and keep the default sheet max-height on mobile.
+ */
+function parseSheetMaxHeightValue(sheetMaxHeightClass?: string): string | null {
+  const match = /^\s*max-h-\[([^\]\s]+)\]\s*$/.exec(sheetMaxHeightClass ?? '')
+  return match ? match[1].replace(/_/g, ' ') : null
 }
 
 function getFocusableElements(dialog: HTMLDivElement | null): HTMLElement[] {

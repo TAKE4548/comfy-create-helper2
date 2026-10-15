@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ServiceConnectionCard } from '../ServiceConnectionCard'
 import { configApi } from '../../../../api/client'
@@ -44,9 +44,9 @@ afterEach(() => {
 describe('ServiceConnectionCard', () => {
   it('shows current Manager service state and the backend-owned Comfy URL read-only', async () => {
     setup()
-    expect(screen.getByRole('article', { name: 'Supervisor' })).toHaveTextContent('接続中')
-    expect(screen.getByRole('article', { name: 'Windows Backend' })).toHaveTextContent('稼働中')
-    expect(screen.getByRole('article', { name: 'ComfyUI' })).toHaveTextContent('停止中')
+    expect(screen.getByRole('listitem', { name: 'Supervisor' })).toHaveTextContent('接続中')
+    expect(screen.getByRole('listitem', { name: 'Windows Backend' })).toHaveTextContent('稼働中')
+    expect(screen.getByRole('listitem', { name: 'ComfyUI' })).toHaveTextContent('停止中')
     expect(screen.getByText('Frontend: 稼働中')).toBeInTheDocument()
     expect(screen.getByText('Backend: 稼働中')).toBeInTheDocument()
     expect(screen.getByText('ComfyUI: 停止中')).toBeInTheDocument()
@@ -104,27 +104,76 @@ describe('ServiceConnectionCard', () => {
     expect(screen.getByRole('button', { name: 'ComfyUIを再起動' })).toBeEnabled()
   })
 
-  it('loads the selected service log and displays the returned latest content', async () => {
+  it('[REQ-365/AC-7] expands the log accordion directly under the clicked service row and fetches that service', async () => {
     setup()
-    mockedLogs.mockResolvedValue({ service: 'backend', filename: 'backend.log', exists: true, lines: ['line 1', 'latest line'], content: 'line 1\nlatest line' })
     expect(mockedLogs).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByText('サービスログ'))
-    await waitFor(() => expect(mockedLogs).toHaveBeenCalledWith('backend', 200))
-    mockedLogs.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: '最新ログを表示' }))
-    await waitFor(() => expect(mockedLogs).toHaveBeenCalledWith('backend', 200))
-    expect(await screen.findByText('backend.log')).toBeInTheDocument()
-    expect(screen.getByLabelText('サービスログ内容')).toHaveTextContent('latest line')
+    for (const [name, service] of [['Supervisor', 'manager'], ['Windows Backend', 'backend'], ['ComfyUI', 'comfy']] as const) {
+      mockedLogs.mockResolvedValue({ service, filename: `${service}.log`, exists: true, lines: ['line 1', 'latest line'], content: 'line 1\nlatest line' })
+      const row = screen.getByRole('listitem', { name })
+      fireEvent.click(within(row).getByRole('button', { name: /^ログ/ }))
+      await waitFor(() => expect(mockedLogs).toHaveBeenCalledWith(service, 200))
+      expect(await within(row).findByText(`${service}.log`)).toBeInTheDocument()
+      expect(within(row).getByLabelText(`${name} のログ内容`)).toHaveTextContent('latest line')
+      expect(within(row).getByRole('button', { name: /^ログ/ })).toHaveAttribute('aria-expanded', 'true')
+    }
+    expect(screen.getAllByRole('region', { name: / のログ$/ })).toHaveLength(3)
   })
 
-  it('disables all Manager actions and log retrieval when Manager is unavailable', () => {
+  it('[REQ-365/AC-7] toggles closed on second click without refetching', async () => {
+    setup()
+    mockedLogs.mockResolvedValue({ service: 'backend', filename: 'backend.log', exists: true, lines: [], content: 'x' })
+    const row = screen.getByRole('listitem', { name: 'Windows Backend' })
+    fireEvent.click(within(row).getByRole('button', { name: /^ログ/ }))
+    await within(row).findByText('backend.log')
+    fireEvent.click(within(row).getByRole('button', { name: /^ログ/ }))
+    expect(within(row).queryByRole('region')).toBeNull()
+    expect(mockedLogs).toHaveBeenCalledTimes(1)
+  })
+
+  it('[REQ-365/AC-7] keeps logs collapsed initially and disables log buttons when the manager is unavailable', () => {
     setup(null, false)
     expect(screen.getByText(/8899が復旧すると操作とログを利用できます/)).toBeInTheDocument()
     for (const name of ['ComfyUIを起動', 'ComfyUIを停止', 'ComfyUIを再起動', 'Backendを再起動']) {
       expect(screen.getByRole('button', { name })).toBeDisabled()
     }
-    expect(screen.getByText('サービスログ')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '最新ログを表示' })).toBeNull()
+    const buttons = screen.getAllByRole('button', { name: /^ログ/ })
+    expect(buttons).toHaveLength(4)
+    for (const button of buttons) {
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(screen.queryAllByRole('region', { name: / のログ$/ })).toHaveLength(0)
+    expect(mockedLogs).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-365/AC-7] shows the failure reason (RT-7: 504/timeout) and allows retry', async () => {
+    setup()
+    mockedLogs.mockRejectedValueOnce(new Error('504 Gateway Timeout'))
+    const row = screen.getByRole('listitem', { name: 'ComfyUI' })
+    fireEvent.click(within(row).getByRole('button', { name: /^ログ/ }))
+    expect(await within(row).findByText(/ログを取得できませんでした: 504 Gateway Timeout/)).toBeInTheDocument()
+    mockedLogs.mockResolvedValueOnce({ service: 'comfy', filename: 'comfy.log', exists: true, lines: [], content: 'recovered' })
+    fireEvent.click(within(row).getByRole('button', { name: 'ComfyUI のログを再取得' }))
+    expect(await within(row).findByText('comfy.log')).toBeInTheDocument()
+    expect(within(row).getByLabelText('ComfyUI のログ内容')).toHaveTextContent('recovered')
+    expect(mockedLogs).toHaveBeenCalledTimes(2)
+  })
+
+  it('[REQ-365/AC-7] renders a very large log inside a bounded scroll region', async () => {
+    setup()
+    mockedLogs.mockResolvedValue({ service: 'backend', filename: 'backend.log', exists: true, lines: [], content: 'a'.repeat(100000) })
+    const row = screen.getByRole('listitem', { name: 'Windows Backend' })
+    fireEvent.click(within(row).getByRole('button', { name: /^ログ/ }))
+    const pre = await within(row).findByLabelText('Windows Backend のログ内容')
+    await waitFor(() => expect(pre.textContent).toHaveLength(100000))
+    expect(pre).toHaveClass('max-h-64', 'overflow-auto', 'overscroll-contain')
+  })
+
+  it('[REQ-365/AC-7] service status lamps expose accessible state text', () => {
+    setup()
+    expect(within(screen.getByRole('listitem', { name: 'Windows Backend' })).getByRole('img', { name: '死活: 稼働中' })).toBeInTheDocument()
+    expect(within(screen.getByRole('listitem', { name: 'ComfyUI' })).getByRole('img', { name: '死活: 停止中' })).toBeInTheDocument()
+    expect(within(screen.getByRole('listitem', { name: 'Frontend' })).getByRole('img', { name: '死活: 稼働中' })).toBeInTheDocument()
   })
 
   it('keeps controls disabled while Manager reports an action in progress', () => {
@@ -147,8 +196,8 @@ describe('ServiceConnectionCard', () => {
 
   it('keeps missing service fields unknown instead of showing stopped', () => {
     setup({ fe: readyStatus.fe, be: undefined, comfy: readyStatus.comfy } as unknown as ManagerStatus)
-    expect(screen.getByRole('article', { name: 'Windows Backend' })).toHaveTextContent('不明')
-    expect(screen.getByRole('article', { name: 'Windows Backend' })).not.toHaveTextContent('停止中')
+    expect(screen.getByRole('listitem', { name: 'Windows Backend' })).toHaveTextContent('不明')
+    expect(screen.getByRole('listitem', { name: 'Windows Backend' })).not.toHaveTextContent('停止中')
   })
 
   it('cancels stop confirmation without sending an action and starts logs only when expanded', () => {

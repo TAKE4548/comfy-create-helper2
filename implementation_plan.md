@@ -1,133 +1,106 @@
-# Implementation Plan: REQ-366 デザインルールの定義にアンチパターンの定義を追加（UI/UX ガバナンス・3層パイプライン整備）
+# Implementation Plan: REQ-365 Settings画面再設計：2ペイン適応・情報密度最適化およびモバイルエルゴノミクス対応
 
-UI/UX改修における「一括文字底上げ（11px Floor）」や「二重パディング」などの対症療法による二次災害・レイアウト崩壊を撲滅するため、「SSoTカタログ」「共通6大ハード不変条件」「Task Cardサージカル注入」「Gate 1機械的即死」からなる3層パイプラインを確立し、エージェント駆動開発のコンテキスト汚染をゼロにしつつ機械的な品質統制を実現します。
+大画面（>=1280px）では2ペイン（Adaptive Dual-Pane）、モバイル（<768px）ではスワイプタブ・超スリムカード・ボトムシート・44pxタップ領域へ適応させ、Settings画面のUI構造のみを外科的に刷新します。**API・DB保存契約・`prompt-surgeon-settings-details-expanded-v2` のスキーマ（`{prompt, dialogue}`）は一切変更しません。** バックエンドは対象外です。
+
+- 設計書: `docs/design/REQ-365.md`（SSoT影響分析・Seam Map・トレードオフ・所有ファイル表）
+- テスト計画: `docs/design/REQ-365-test-plan.md`（AC-1〜AC-10 トレーサビリティ、境界値 767/768/1279/1280px、Red Team）
+- Task Card: `docs/backlog/task/active/REQ-365-T1.md` 〜 `REQ-365-T17.md`
 
 ## Proposed Changes
 
-### Documentation & SSoT Subsystem
+### Frontend: Shell / Layout
+#### [MODIFY] SettingsPage.tsx / SettingsResponsive.css / SettingsPage.test.tsx (T3)
+- workflowsタブを `xl:grid-cols-2` `xl:grid-rows-[auto_1fr]` の単一Gridへ（左=ワークフロー+BaseModel、右=MappingMaster `row-span-2`）。`<xl` は `order` で ワークフロー → MappingMaster → BaseModel。
+- 下部余白を `md:pb-5` へ（bottom navは768px未満のみ）、`max-w-7xl mx-auto` でUltra-Wide上限。
+- モバイルCSS契約（`.settings-mobile-card*`、`.settings-mobile-table` の2行カード化、`[role=dialog]` 85dvh）を一元所有。
 
-#### [LOCAL MODIFY] [SPEC_COMMON.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md)
-- **1-5. UI/UX アンチパターンカタログ & 4大コンポーネントプリセット新設 (AC-1)**:
-  - モバイル10選（Global Font Floor、Flex truncate不発、中央モーダル、二重パディング、タッチ判定密集/誤肥大、IME衝突、input判定雑駁、英単語突き抜け、ジェスチャー競合、過剰ブラー）を体系化し、Bad/Goodコード例を明記。
-  - PC8選（超ワイド崩壊、OS拡大率崩れ、ペイン幅固定、ホバー依存、ショートカット欠落、一括操作欠落、多重スクロールバー、多重モーダル）を体系化。
-  - **4大コンポーネントプリセット (Tailwind構文付き)**:
-    1. `Modals & Overlays`: モバイル下部ボトムシート (`fixed inset-x-0 bottom-0 max-h-[90dvh]`), スクロール保護 (`overscroll-contain`), 半透明/軽量ブラー (`backdrop-blur-sm` <=8px), PC中央配置。
-    2. `Tabs / Chips / Grids`: 横スクロールチップ (`shrink-0 whitespace-nowrap`), Flex文字省略保護 (`min-w-0 flex-1 truncate`), 改行保護 (`break-words`), レスポンシブグリッド。
-    3. `Forms & Controls`: Hit-Slop透明判定拡張 (`relative before:absolute before:-inset-2 before:content-['']`), ジェスチャー保護 (`touch-action: pan-y / manipulation`), label判定適正化, IME遮蔽保護。
-    4. `Shell & Page Layout`: 生の `100vh` 禁止 (`100dvh`), Ultra-Wide上限 (`max-w-7xl mx-auto`), DPI拡大率 (125%/150%) 耐性 (`max-h-[...] overflow-y-auto`), スクロール一元化。
-  - 重要情報の非省略ルール（エラーメッセージ、ID、ステータス表示への安易なtruncate禁止と折り返し/展開導線）を明記。
+#### [MODIFY] SettingsTabBar.tsx + tests (T1)
+- 短縮ラベルを「① モデル」「② 呪文」「③ セリフ」「④ 翻訳」「⑤ システム」へ。`aria-label` は丸数字なしを維持。タブ保存（`prompt-surgeon-settings-active-tab`）の回帰テスト追加。
 
----
+### Frontend: Modals（ボトムシート統一）
+#### [MODIFY] components/common/Modal.tsx (T2)
+- `sheetMaxHeightClass`（opt-in、既定は現行）とハンドル `data-testid="modal-sheet-handle"`。
+#### [NEW] ParamTypeMasterManagerModal.tsx (T4) / [MODIFY] ParamTypeMasterModal.tsx (T5)
+- カスタム型マスタを一覧モーダル（新規）＋既存フォームモーダル（共通Modal化）へ。list→form は排他遷移（ネスト禁止）。
 
-### Governance & Context Subsystem
+### Frontend: セクション別
+- **T6 MappingMasterSection**: 行を超スリムカード化（アクション右端ピン留め、Target Node非表示＋`aria-label`保持、`+N classes`/`+N stages`）。常時展開のカスタム型バーを撤去し「カスタム型マスタ」ボタンへ。
+- **T7 BaseModelSection**: モデルマスタ定義を「モデルマスタ管理」モーダルへ分離、チェックポイント表をモバイルカード化、既存モーダルを共通Modalへ。
+- **T8/T9 プロンプト統合型エディタ**: 純粋関数 `promptParamGroupFor`（PBT）＋ `LlmSettingsSection` の `prompt` グループのみ種別連動エディタ化（左=本文、右=共通モデル(読み取り)・Temperature・Max Tokens）。
+- **T10 SpeechToneSection**: プリセット選択→テスト入力→「テスト実行」→右ペイン出力（古い応答は破棄）。
+- **T11 ServiceConnectionCard**: サービス行ごとの死活ランプと「ログ ▼」インライン・アコーディオン。
+- **T12 VramGuardSection**: 2ペイン、黄色の閾値縦線＋閾値タグのリアルタイム連動、接近=黄/未満=赤、`prompt-surgeon-vram-guard-limit` のwrite-through永続化。
+- **T13 ThumbnailSettingsSection**: 比率選択を1行ドロップダウンへ。
+- **T14 WorkflowConnectionSection**: ワークフロー行アクションを「︙」メニューへ集約。
 
-#### [LOCAL MODIFY] [context.md](file:///c:/Users/audih/ws/comfy-create-helper2/.agents/context.md)
-- **UI 6大ハード不変条件のコンテキスト配置 & プリセット参照 (AC-2)**:
-  - 全エージェントが初動で読み込む `.agents/context.md` に、構文レベルで判定可能な「UI 6大ハード不変条件」（No Global Font Floor, Viewport Units [Shell], Mobile Modals [Modals], Strict Input Guard [Forms], Flex Truncate [Tabs/Chips], Desktop Container [Shell]）をコンパクト（約300〜500トークン）に追記。
-  - 詳細仕様・4大プリセット・コード例は `SPEC_COMMON.md#1-5` への参照ポインタとする。
-- **Gate 1 検証コマンドの更新 (AC-4)**:
-  - Gate 1 コマンド一覧に `backend\.venv\Scripts\python scripts/verify_ui_invariants.py` を追加。
+### Verification
+- **T15** `frontend/e2e/settingsResponsive.spec.ts`（新規）: 375/767/768/1279/1280px の実測（2カラム・44px・ボトムシート）。dev server(5173)が前提で、起動不可なら INCONCLUSIVE。
 
-#### [LOCAL MODIFY] [governance.md](file:///c:/Users/audih/ws/comfy-create-helper2/.agents/rules/governance.md)
-- **Architect アーキタイプ分類 & 4プリセット サージカル自動注入プロトコルの策定 (AC-3, AC-5)**:
-  - Architect がフロントエンド改修タスクを4大アーキタイプ（Modals & Overlays, Tabs/Chips/Grids, Forms & Controls, Shell & Page Layout）に分類する設計手順を規定。
-  - 分類されたアーキタイプに対応するプリセット制約および推奨 Tailwind クラス（Hit-Slop `before:absolute before:-inset-2`、ジェスチャー `touch-action: pan-y / manipulation`、チップ `shrink-0 whitespace-nowrap`、`overscroll-contain`、`min-w-0 flex-1 truncate` 等）のみを Task Card の `<constraints>` にサージカルに自動挿入する規約を明文化。
-  - `subsystem: backend` のタスクには UI 制約を一切含めず、コンテキスト汚染とトークン浪費を完全に防止する規約を明文化。
+### Documents（document-kind、doc-editor route）
+- **T16** `docs/specs/SPEC_SETTINGS.md` v2.6 → v3.0
+- **T17** `docs/specs/SPEC_COMMON.md` 共通Modalシート契約・ボトムナビ下部余白境界
 
----
-
-### Tooling & Gate 1 Subsystem
-
-#### [LOCAL NEW] [verify_ui_invariants.py](file:///c:/Users/audih/ws/comfy-create-helper2/scripts/verify_ui_invariants.py)
-- **Gate 1 即死静的チェックスクリプト実装 (AC-4)**:
-  - `frontend/src` 配下の CSS, TSX, TS, JSX ファイルを走査し、禁止構文を即時検出（<1秒で実行完了）。
-  - 判定ルール:
-    - `rule-no-global-font-floor`: html/body/汎用セレクタでの font-size: 11px 底上げ
-    - `rule-no-raw-100vh`: コンテナ高さでの生 100vh 単位
-    - `rule-no-indiscriminate-important`: CSS内の !important 乱用
-  - 例外機構:
-    - インラインコメント `/* ui-invariant-ignore: <rule-id> reason: <理由> */` または `// ui-invariant-ignore: ...` による明示例外のサポート。
-    - 移行期用のレガシー除外設定（allowlist）。
-  - 違反時は Exit Code 1、クリーン時は Exit Code 0 を返却。
-
-#### [LOCAL NEW] [test_ui_invariants.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/governance/test_ui_invariants.py)
-- **ガバナンステスト実装 (AC-4)**:
-  - チケット名を含まないテストファイルとして新設。
-  - 各禁止ルールの検出、例外コメントの動作、CLI Exit Code を検証するテストケース（`[REQ-366/AC-4]` タグ付与）。
-
-#### [LOCAL MODIFY] [index.css](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/index.css)
-- **レガシー例外注釈付与 (AC-4)**:
-  - 既存の `frontend/src/index.css` のレガシー記述（!important や font-size 底上げ箇所）に対して、正当な理由付きの `/* ui-invariant-ignore: ... reason: legacy baseline ... */` を付与し、既存機能を壊さずに静的検査を通過させる。
-
----
-
-## Task Dependency & Parallel Execution Plan [MUST [G-4-4]]
+## Task DAG
 
 ```mermaid
 graph TD
-  subgraph Parallelizable Track 1 [Docs & Governance]
-    T1["REQ-366-T1: SSoT アンチパターンカタログ策定 (SPEC_COMMON.md)"]
-    T2["REQ-366-T2: UI 6大不変条件のコンテキスト配置 (.agents/context.md)"]
-    T3["REQ-366-T3: dev-design タスクカード自動注入プロトコル策定"]
-    T1 --> T2
-    T2 --> T3
-  end
-
-  subgraph Parallelizable Track 2 [Tooling & Tests]
-    T4["REQ-366-T4: 静的検査スクリプト verify_ui_invariants.py & テスト実装"]
-  end
-
-  subgraph Integration Gate [Baseline Convergence]
-    T5["REQ-366-T5: Gate 1 統合・既存コード検証 & ベースライン確認"]
-  end
-
+  T1["T1 TabBar 短縮ラベル/タブ永続化テスト"]
+  T2["T2 Modal sheetMaxHeightClass/handle testid"]
+  T3["T3 Dual-Pane + CSS契約 (SettingsPage.tsx)"]
+  T4["T4 ParamTypeMasterManagerModal (新規)"]
+  T5["T5 ParamTypeMasterModal 共通Modal化"]
+  T6["T6 MappingMasterSection カード化/オンデマンド"]
+  T7["T7 BaseModelSection モーダル化/カード化"]
+  T8["T8 promptParamGroupFor (PBT)"]
+  T9["T9 LlmSettingsSection 統合エディタ"]
+  T10["T10 SpeechTone テスト実行"]
+  T11["T11 サービスログ アコーディオン"]
+  T12["T12 VRAM 2ペイン/LS永続化"]
+  T13["T13 サムネイル ドロップダウン"]
+  T14["T14 ワークフロー ︙メニュー"]
+  T15["T15 Playwright E2E"]
+  T16["T16 doc: SPEC_SETTINGS v3.0"]
+  T17["T17 doc: SPEC_COMMON"]
+  T2 --> T4
   T2 --> T5
-  T4 --> T5
+  T2 --> T7
+  T3 --> T6
+  T3 --> T7
+  T4 --> T6
+  T5 --> T6
+  T8 --> T9
+  T1 --> T15
+  T3 --> T15
+  T6 --> T15
+  T12 --> T15
 ```
 
-| Task ID | Title | Impacted Files | Parallelizable | Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| **REQ-366-T1** | SSoT UI/UX アンチパターンカタログの正式策定 | `docs/specs/SPEC_COMMON.md` | YES (Track 1 Root) | なし |
-| **REQ-366-T2** | 共通UI 6大ハード不変条件のコンテキスト配置 | `.agents/context.md` | NO | `REQ-366-T1` |
-| **REQ-366-T3** | dev-design タスクカード自動注入プロトコルの策定 | `.agents/rules/governance.md`, `docs/design/REQ-366.md` | NO | `REQ-366-T2` |
-| **REQ-366-T4** | 静的検査スクリプト scripts/verify_ui_invariants.py とテスト | `scripts/verify_ui_invariants.py`, `backend/tests/governance/test_ui_invariants.py` | YES (Track 2 Root) | なし |
-| **REQ-366-T5** | Gate 1 統合・既存コード検証 & ベースライン確認 | `.agents/context.md`, `frontend/src/index.css` | NO | `REQ-366-T2`, `REQ-366-T4` |
+- 最大深さ4（T2→T4→T6→T15）。独立ルール: T1, T2, T3, T8, T10, T11, T12, T13, T14, T16, T17 は並列ディスパッチ可能。
+- 同一ファイルの重複所有なし（所有表は設計書§9）。`SettingsPage.tsx`/`SettingsResponsive.css`/`SettingsPage.test.tsx` は T3 のみ。T10/T11/T12/T13/T14 は `SettingsPage.test.tsx` を**編集せず緑のまま**維持（不可能ならescalate）。
+- 推奨ディスパッチ順: 第1波 {T1,T2,T3,T8,T10,T11,T12,T13,T14,T16,T17} → 第2波 {T4,T5,T7,T9} → 第3波 {T6} → 第4波 {T15}。
 
----
+## Trade-off Disclosure（技術的トレードオフ・制約・代替案）
 
-## Verification Plan
+| 論点 | 採用 | 代替案と却下理由 |
+|---|---|---|
+| モバイルシート | 既存共通 `Modal` のCSS駆動シートに opt-in 拡張し各モーダルを移行 | 未使用の `BottomSheet`(JS駆動)採用: viewport判定のJS分岐が増え、focus trap/body-lock を再実装する必要がある |
+| 2ペイン | 単一Grid（`order` + `row-span`）+ `grid-rows-[auto_1fr]` | 2つのflex列: <1280pxでの WF→Mapping→Base の並べ替えがCSSだけでは不可能 |
+| 統合エディタの「種別専用モデル」 | 共通モデルは読み取り表示、Temp/MaxTokensは種別が属するパラメータ群に連動（API/DB不変） | 種別ごとのモデル保存: 新規設定キー/契約が必要で「契約100%維持」に反する |
+| VRAM永続化 | サーバ値が正、LSは初期表示用のwrite-throughミラー | LSを正にする: 実ガードと乖離し安全性を損なう |
+| ParamTypeMaster管理 | 一覧モーダル＋既存フォームの排他遷移 | 1モーダル統合: 482行の既存モーダルが肥大化し原子性を損なう |
+| サービスログ | 行ごと独立アコーディオン | 既存 `<details>` 維持: AC-7（各行直下に展開）を満たさない |
+| ファイル所有 | `SettingsPage.tsx` は T3 のみ。他カードは公開propsを変えない | 各カードで編集: 同時所有・マージ競合 |
 
-### Automated 3-Gate Baseline
+### リスクと未解決事項（人間レビューで確認してください）
+1. **PBIの6プロンプト種別名（最適化/タグ提案/品質評価/翻訳/スタイル/ネガティブ）は現行DBの `prompt` グループ6キーと一致しません。** 本計画は実在6キー＋既存ラベルを採用します（キー追加は別PBI）。
+2. **種別ごとのTemp/MaxTokensは2つのパラメータ群（診断系4キー共有・Scene Generator系2キー共有）に限られます。** 同群内の種別切替では本文のみが切り替わります。AC-5の検証は群をまたぐ切替で行います。
+3. 「Target Node列」は `MappingMasterV2` に存在しないため、`param_name`/`expected_class_types` を該当情報と解釈します。
+4. VRAM「上限閾値」は既存 `vram_min_free_gb`（最小必要空き容量）と同一概念として扱い、ラベルは既存テスト維持のため変更しません。
+5. Playwrightは `webServer` 未設定のため、E2E(T15)は開発サーバ起動が前提です（不可なら INCONCLUSIVE）。
+6. 既存テストの意図的更新: MappingMaster編集ボタンの `aria-label`（T6）、BaseModel表（T7）、プロンプトのアコーディオン前提（T9）、サービスログ `<details>`（T11）、サムネイルのボタン群（T13）、ワークフロー行ボタン（T14）。
 
-1. **Gate 1: Static Typecheck & UI Invariant Check**
-```bash
-backend\.venv\Scripts\python scripts/verify_ui_invariants.py
-backend\.venv\Scripts\mypy backend
-cd frontend && npm run typecheck
-```
-
-2. **Gate 2: Unit & Governance Test Suites**
-```bash
-backend\.venv\Scripts\python -m pytest backend/tests/governance/test_ui_invariants.py -k "REQ-366 and AC-4"
-backend\.venv\Scripts\python scripts/verify_test_naming.py --strict
-```
-
-3. **Gate 3: Acceptance Criteria & Red Team Scenarios**
-- **AC-1**: SPEC_COMMON.md にモバイル10選・PC8選・4大コンポーネントプリセット（Tailwind構文 `before:absolute before:-inset-2` や `touch-action: pan-y / manipulation` 含む）・重要情報の非省略ルールが存在することを確認。
-- **AC-2**: .agents/context.md に6大不変条件が約300〜500トークン以内で簡潔に定義され、4大プリセットへの参照マップとSSoTへのリンクがあることを確認。
-- **AC-3 & AC-5**: dev-design規約において、Architectによる4大アーキタイプ分類、FEタスクへのサージカル注入、およびBEタスクの完全除外が規定されていることを確認。
-- **AC-4**: 禁止CSSコードが Exit Code 1 で即死遮断され、`/* ui-invariant-ignore: ... */` があれば許可されることを確認。
-
----
-
-## Trade-off Disclosure [MUST [G-03]]
-1. **静的検査（正規表現/字句解析） vs 完全な AST/PostCSS パーサー**:
-   - トレードオフ: PostCSS / Stylelint の完全導入は Node.js 依存と設定ファイルの増大（Gate 1 の実行遅延）を招く。
-   - 決定: Python 標準ライブラリベースの軽量静的チェックスクリプト（`scripts/verify_ui_invariants.py`）を採用し、Gate 1 の実行速度（<0.5秒）と環境依存ゼロを優先する。
-2. **既存レガシー CSS (`index.css`) の扱い**:
-   - トレードオフ: 既存の `index.css` に存在する `!important` や font-size 底上げ記述を今すぐ全削除すると、本番画面の既存レイアウト（REQ-334等）が崩壊するリスクがある。
-   - 決定: `/* ui-invariant-ignore: ... */` による正当な理由付き明示例外を許容し、新規追加・修正箇所に対して厳格な即死判定を適用する。
-3. **コンテキスト記述量 vs 情報網羅性**:
-   - トレードオフ: `.agents/context.md` に全アンチパターンの事例を書くとコンテキストトークンが肥大化する。
-   - 決定: context.md には「6大不変条件」のみを約300〜500トークンで記載し、詳細は SSoT（`SPEC_COMMON.md`）への参照リンクとする。
-
+## Verification Plan（3-Gate）
+- Gate 1: `backend\.venv\Scripts\python scripts/verify_ui_invariants.py` / `cd frontend; npm run typecheck` / `scripts/verify_test_naming.py --strict`
+- Gate 2: `cd frontend; npm test`（全件）／局所 `npx vitest run src/pages/SettingsPage`
+- Gate 3: `cd frontend; npx playwright test e2e/settingsResponsive.spec.ts`（dev server前提）
+- 契約不変: 差分に `frontend/src/api/**`・`backend/**`・`docs/system/openapi.yaml` が含まれないこと。

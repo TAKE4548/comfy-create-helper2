@@ -43,9 +43,14 @@ export function HeaderKebabMenu({ onResyncCache }: HeaderKebabMenuProps = {}): R
         onClick={() => setIsOpen((prev) => !prev)}
         aria-label="ヘッダーメニュー"
         aria-expanded={isOpen}
-        className="w-[28px] h-[28px] flex items-center justify-center rounded-md border border-zinc-800 bg-surface-2/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+        className="group relative inline-flex items-center justify-center w-11 h-11 -m-2 md:w-[28px] md:h-[28px] md:m-0 touch-manipulation"
       >
-        <MoreVertical className="w-4 h-4" />
+        <span
+          data-testid="header-kebab-menu-visual"
+          className="w-[28px] h-[28px] flex items-center justify-center rounded-md border border-zinc-800 bg-surface-2/60 text-zinc-400 group-hover:text-zinc-200 group-hover:border-zinc-700 transition-colors"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </span>
       </button>
 
       {isOpen && (

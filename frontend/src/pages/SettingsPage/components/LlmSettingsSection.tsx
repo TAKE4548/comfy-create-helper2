@@ -4,7 +4,13 @@ import { Wand2, Sliders, ChevronDown, Save, RefreshCw, Check } from 'lucide-reac
 import { llmPromptsApi } from '../../../api/client'
 import type { LlmPrompt } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
-import { GROUP_PARAMS, GROUP_PROMPTS, type LlmSettingsGroup } from './llmSettingsGroups'
+import {
+  GROUP_PARAMS,
+  GROUP_PROMPTS,
+  PROMPT_EDITOR_KEYS,
+  promptParamGroupFor,
+  type LlmSettingsGroup,
+} from './llmSettingsGroups'
 export type { LlmSettingsGroup } from './llmSettingsGroups'
 
 export interface LlmParams {
@@ -78,6 +84,7 @@ export function LlmSettingsSection({
   const hasGroupedDetails = group === 'prompt' || group === 'dialogue'
   const detailsExpanded = isExpandedPrompts
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [selectedPromptKey, setSelectedPromptKey] = useState<string>(PROMPT_EDITOR_KEYS[0])
   const [edits, setEdits] = useState<Record<string, string>>({})
   const editsRef = useRef(edits)
   const [saved, setSaved] = useState<string | null>(null)
@@ -533,7 +540,7 @@ export function LlmSettingsSection({
               </div>
             ) : (
               <div className="space-y-3">
-                {visiblePrompts?.map((p) => (
+                {group !== 'prompt' && visiblePrompts?.map((p) => (
                   <div
                     key={p.key}
                     id={`prompt-section-${p.key}`}
@@ -618,6 +625,137 @@ export function LlmSettingsSection({
                     )}
                   </div>
                 ))}
+                {group === 'prompt' && (() => {
+                  const selected = prompts?.find((p) => p.key === selectedPromptKey)
+                  const pg = promptParamGroupFor(selectedPromptKey)
+                  const pgParams = pg ? (llmParamsEdits[pg] || DEFAULT_PARAMS) : DEFAULT_PARAMS
+                  const pgSaved = pg !== null && saved === pg
+                  const primaryFields = PARAM_FIELDS.filter((f) => f.key === 'temperature' || f.key === 'max_tokens')
+                  const extraFields = PARAM_FIELDS.filter((f) => f.key !== 'temperature' && f.key !== 'max_tokens')
+                  const renderField = (field: (typeof PARAM_FIELDS)[number]) => (
+                    <div key={field.key} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="min-w-0 text-zinc-400">{field.label}</span>
+                        <input
+                          type="number"
+                          min={field.min}
+                          max={field.max}
+                          step={field.step}
+                          value={pgParams[field.key] ?? DEFAULT_PARAMS[field.key]}
+                          onChange={(e) => pg && handleParamChange(pg, field.key, parseFloat(e.target.value) || 0)}
+                          className="min-h-11 w-24 touch-manipulation bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-0.5 text-right text-xs font-mono text-zinc-200 focus:outline-none"
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        value={pgParams[field.key] ?? DEFAULT_PARAMS[field.key]}
+                        onChange={(e) => pg && handleParamChange(pg, field.key, parseFloat(e.target.value))}
+                        className="min-h-11 w-full touch-manipulation accent-[#7C6FDD]"
+                      />
+                    </div>
+                  )
+                  return (
+                    <div data-testid="prompt-unified-editor" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div className="min-w-0 space-y-3">
+                        <label htmlFor="prompt-type-select" className="block text-xs text-zinc-400">プロンプト種別</label>
+                        <select
+                          id="prompt-type-select"
+                          value={selectedPromptKey}
+                          onChange={(e) => setSelectedPromptKey(e.target.value)}
+                          className="min-h-11 w-full rounded-lg bg-surface-2 border border-[rgba(255,255,255,0.06)] px-3 text-xs text-zinc-200 touch-manipulation"
+                        >
+                          {PROMPT_EDITOR_KEYS.map((k, i) => (
+                            <option key={k} value={k}>{`${'①②③④⑤⑥'[i]} ${PROMPT_LABELS[k] ?? k}`}</option>
+                          ))}
+                        </select>
+                        {!selected && <p className="text-xs text-zinc-500">このプロンプトはまだ取得されていません。</p>}
+                        <textarea
+                          id={`prompt-content-${selectedPromptKey}`}
+                          value={selected ? getContent(selected) : ''}
+                          disabled={!selected}
+                          onChange={(e) => {
+                            invalidatePlayground()
+                            clearSaveFeedback()
+                            const nextEdits = { ...editsRef.current, [selectedPromptKey]: e.target.value }
+                            editsRef.current = nextEdits
+                            setEdits(nextEdits)
+                          }}
+                          rows={16}
+                          className="w-full min-h-[16rem] bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y touch-manipulation focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar"
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            id={`prompt-reset-${selectedPromptKey}`}
+                            type="button"
+                            onClick={() => {
+                              invalidatePlayground()
+                              clearSaveFeedback()
+                              const nextEdits = { ...editsRef.current }
+                              delete nextEdits[selectedPromptKey]
+                              editsRef.current = nextEdits
+                              setEdits(nextEdits)
+                            }}
+                            disabled={!edits[selectedPromptKey]}
+                            className="min-h-11 touch-manipulation text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+                          >
+                            Reset changes
+                          </button>
+                          <button
+                            id={`prompt-save-${selectedPromptKey}`}
+                            type="button"
+                            onClick={() => selected && updatePrompt.mutate({ key: selected.key, content: getContent(selected) })}
+                            disabled={updatePrompt.isPending || !selected}
+                            className={`flex min-h-11 touch-manipulation items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                              saved === selectedPromptKey
+                                ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
+                                : 'bg-[#7C6FDD] text-white hover:bg-[#6d62cc]'
+                            }`}
+                          >
+                            <Save size={12} />
+                            {saved === selectedPromptKey ? '設定を保存しました' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="min-w-0 space-y-3 font-sans" data-testid="prompt-unified-params">
+                        <p className="text-xs text-zinc-400">
+                          使用モデル: {currentModelData?.content ?? '未設定'}（全プロンプト共通。変更は上の「現在のモデル」）
+                        </p>
+                        {pg && (
+                          <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-surface p-4 space-y-4">
+                            <div className="flex items-center justify-between gap-2 border-b border-[rgba(255,255,255,0.04)] pb-2 mb-2">
+                              <h3 className="text-xs font-semibold text-zinc-300">{PARAM_LABELS[pg]}</h3>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveParams(pg)}
+                                disabled={updatePrompt.isPending}
+                                className={`flex min-h-11 touch-manipulation items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                                  pgSaved
+                                    ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
+                                    : 'bg-[#7C6FDD] text-white hover:bg-[#6d62cc]'
+                                }`}
+                              >
+                                <Save size={12} />
+                                {pgSaved ? '設定を保存しました' : '保存'}
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {primaryFields.map(renderField)}
+                            </div>
+                            <details>
+                              <summary className="min-h-11 cursor-pointer touch-manipulation text-xs text-zinc-400">その他のパラメータ</summary>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                {extraFields.map(renderField)}
+                              </div>
+                            </details>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
                 {group === 'prompt' && (
                   <section aria-label="Prompt Playground" className="rounded-xl border border-[rgba(255,255,255,0.08)] bg-surface p-4 space-y-3">
                     <h2 className="text-sm font-semibold text-zinc-200">Prompt Playground</h2>
@@ -716,7 +854,7 @@ export function LlmSettingsSection({
             }`}
           />
         </button>}
-        {(group === 'translation' || (hasGroupedDetails ? true : isExpandedParams)) && (
+        {group !== 'prompt' && (group === 'translation' || (hasGroupedDetails ? true : isExpandedParams)) && (
           <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4">
             {isLoadingPrompts ? (
               <div className="flex items-center gap-2 text-zinc-600 text-sm py-8 font-sans">
