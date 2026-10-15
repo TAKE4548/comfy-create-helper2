@@ -143,6 +143,7 @@ export const GenerateModalsOverlay = memo(function GenerateModalsOverlay({
       {errorToast && (
         <div
           role="alert"
+          /* ui-invariant-ignore: rule-no-raw-100vh reason: legacy baseline toast max-height */
           className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900 border border-red-800 text-red-100 px-4 py-2 rounded-lg shadow-lg flex items-start gap-3 animate-fade-in w-[calc(100vw-2rem)] max-w-xl max-h-[calc(100vh-2rem)] overflow-y-auto"
         >
           <span className="text-sm font-medium whitespace-pre-wrap break-words min-w-0 flex-1">{errorToast.message}</span>

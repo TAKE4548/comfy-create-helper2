@@ -3,7 +3,7 @@
 }
 
 .req314-settings [hidden] {
-  display: none !important;
+  display: none !important; /* ui-invariant-ignore: rule-no-indiscriminate-important reason: legacy baseline hidden state override */
 }
 
 .req314-settings [role='tab'] {

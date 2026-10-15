@@ -1,72 +1,63 @@
-# Implementation Plan: REQ-363 モバイルレイアウト破綻解消およびUI操作性最適化
+# Implementation Plan: REQ-366 デザインルールの定義にアンチパターンの定義を追加（UI/UX ガバナンス・3層パイプライン整備）
 
-スマートフォン実機環境（幅360px〜390px等）において、プロンプトタブの重なり・見切れ、チェックボックスタップによるアクションバー消失、プレビュー常時占有による操作性低下、プリセットモーダルのアドレスバー突き抜け、リソースモニタのヘッダー被り、およびパラメータ行の冗長な2行化を解消し、モバイルでの快適な生成ワークフローを実現します。
+UI/UX改修における「一括文字底上げ（11px Floor）」や「二重パディング」などの対症療法による二次災害・レイアウト崩壊を撲滅するため、「SSoTカタログ」「共通6大ハード不変条件」「Task Cardサージカル注入」「Gate 1機械的即死」からなる3層パイプラインを確立し、エージェント駆動開発のコンテキスト汚染をゼロにしつつ機械的な品質統制を実現します。
 
 ## Proposed Changes
 
-### Frontend Subsystem
+### Documentation & SSoT Subsystem
 
-#### [LOCAL MODIFY] [MobileLayout.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileLayout.tsx)
-- **プロンプトタブ横スクロール化 (AC-1)**:
-  - 各タブボタンに shrink-0 whitespace-nowrap を厳格適用し、幅狭端末での折り返し・文字重なりを根絶。
-- **isTextInput 判定厳密化 (AC-2)**:
-  - isTextInput において target.type !== 'checkbox' && target.type !== 'radio' && target.type !== 'range' && target.type !== 'button' を明示し、チェックボックスタップ時にアクションバーが誤って隠れる（消失する）バグを修正。
-- **スクロール終端パディング (AC-3)**:
-  - スクロールコンテナの pb に固定下部バーおよびセーフエリアを考慮したパディング (pb-[calc(54px+env(safe-area-inset-bottom)+56px+16px)] 等) を確保し、最下部タグチップがボタンの影に隠れないようにする。
-- **コンパクトプレビュー＆手動トグル (AC-5)**:
-  - isCompactPreview 状態（初期値 true）を導入。
-  - 初期表示時は約105pxのコンパクト表示とし、プレビュー領域タップで [コンパクト: 105px] ⇔ [展開プレビュー: 220px/42vh] を手動トグル可能にする。
-  - 生成開始時（isGenerating 変化時）に自動で拡大展開させず直前のトグル状態を維持し、プロンプト編集・キュー投入をスムーズに継続可能にする。
-  - 展開状態で再度タップまたは拡大ボタン押下により、全画面モーダルへ展開。
-
-#### [LOCAL MODIFY] [GeneratePage.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage.tsx)
-- **ボトムシートコンテナ化 (AC-4)**:
-  - プリセット管理モーダルの外側コンテナを、モバイル時に画面下部配置（items-end md:items-center）かつ高さ上限キャップ（max-h-[75dvh]）のボトムシート形式へ変更。
-  - iOS Safari 等のアドレスバー突き抜け・タイトル見切れを根絶。
-
-#### [LOCAL MODIFY] [PresetManagerPanel.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/PresetManagerPanel.tsx)
-- **固定操作ドック配置 (AC-4)**:
-  - プリセット管理下部に固定ドック領域（shrink-0 bg-surface-2 border-t border-white/10 pt-3）を配置。
-  - 既存の「全選択」「全解除」ボタン（セットチェック状態切り替え用）、および「💾 上書き保存」「➕ 別名で保存」、Scene Generator 連携ボタンを固定配置し、長大なプリセットリストでもスクロールなしで即時操作可能にする。
-  - 一括操作モード切替（ListChecks）や複数選択ツールバー、並び替えハンドルなどの既存機能は 100% 維持。
-
-#### [LOCAL MODIFY] [ResourceHoverMonitor.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/header/ResourceHoverMonitor.tsx)
-- **ドロップダウンカード化 (AC-6)**:
-  - ヘッダー全体を覆う330px横長カプセルを廃止し、VRAMピル直下に展開するフローティングカード（w-[240px] absolute right-0 top-full mt-2）へ改修。
-  - VRAM（パープル #7C6FDD）および RAM（ブルー #3B82F6）のプロポーショナルバーゲージとパーセンテージ表示を配置。
-  - 44px 以上のタップターゲットおよび外側タップ閉止を確保し、ヘッダーの「Generate」タイトルやステータスバッジを破壊・被覆しない。
-
-#### [LOCAL MODIFY] [ParamPanel.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/ParamPanel.tsx)
-- **スマート適応型1行レイアウト (AC-7)**:
-  - 無条件の2行化による余白の浪費を撤廃。
-  - 数値ステッパー（Steps, CFG, Denoise 等）やトグルはコンパクト（約105px）なため、ラベル領域（`flex-1 pr-2`）と合わせて確実に1行を維持。
-  - セレクトボックス（Sampler, Scheduler 等）は w-36 固定を撤廃し、モバイル時に w-[125px]（または適応幅）とし、1行レイアウトを基本とする。
-
-#### [LOCAL MODIFY] [AddAssetModal.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/AddAssetModal.tsx)
-- **モーダルパディングの引き締め (AC-8)**:
-  - パディングを p-3.5（14px）に最適化し、一覧表示領域を拡大。
+#### [LOCAL MODIFY] [SPEC_COMMON.md](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md)
+- **1-5. UI/UX アンチパターンカタログ & 4大コンポーネントプリセット新設 (AC-1)**:
+  - モバイル10選（Global Font Floor、Flex truncate不発、中央モーダル、二重パディング、タッチ判定密集/誤肥大、IME衝突、input判定雑駁、英単語突き抜け、ジェスチャー競合、過剰ブラー）を体系化し、Bad/Goodコード例を明記。
+  - PC8選（超ワイド崩壊、OS拡大率崩れ、ペイン幅固定、ホバー依存、ショートカット欠落、一括操作欠落、多重スクロールバー、多重モーダル）を体系化。
+  - **4大コンポーネントプリセット (Tailwind構文付き)**:
+    1. `Modals & Overlays`: モバイル下部ボトムシート (`fixed inset-x-0 bottom-0 max-h-[90dvh]`), スクロール保護 (`overscroll-contain`), 半透明/軽量ブラー (`backdrop-blur-sm` <=8px), PC中央配置。
+    2. `Tabs / Chips / Grids`: 横スクロールチップ (`shrink-0 whitespace-nowrap`), Flex文字省略保護 (`min-w-0 flex-1 truncate`), 改行保護 (`break-words`), レスポンシブグリッド。
+    3. `Forms & Controls`: Hit-Slop透明判定拡張 (`relative before:absolute before:-inset-2 before:content-['']`), ジェスチャー保護 (`touch-action: pan-y / manipulation`), label判定適正化, IME遮蔽保護。
+    4. `Shell & Page Layout`: 生の `100vh` 禁止 (`100dvh`), Ultra-Wide上限 (`max-w-7xl mx-auto`), DPI拡大率 (125%/150%) 耐性 (`max-h-[...] overflow-y-auto`), スクロール一元化。
+  - 重要情報の非省略ルール（エラーメッセージ、ID、ステータス表示への安易なtruncate禁止と折り返し/展開導線）を明記。
 
 ---
 
-### Test Suites (No Ticket-Named Files [SPEC-TESTING / REQ-356])
+### Governance & Context Subsystem
 
-#### [LOCAL MODIFY] [MobileLayout.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx)
-- [REQ-363/AC-1]: プロンプトタブの shrink-0 と whitespace-nowrap による折り返し防止の検証。
-- [REQ-363/AC-2]: チェックボックス・ラジオボタン操作時にアクションバーが非表示にならないことの検証。
-- [REQ-363/AC-3]: スクロール終端パディングにより最下部タグチップが隠れないことの検証。
-- [REQ-363/AC-5]: 初期コンパクト表示（105px）、タップ手動トグル、および生成ジョブ開始時の状態維持の検証。
+#### [LOCAL MODIFY] [context.md](file:///c:/Users/audih/ws/comfy-create-helper2/.agents/context.md)
+- **UI 6大ハード不変条件のコンテキスト配置 & プリセット参照 (AC-2)**:
+  - 全エージェントが初動で読み込む `.agents/context.md` に、構文レベルで判定可能な「UI 6大ハード不変条件」（No Global Font Floor, Viewport Units [Shell], Mobile Modals [Modals], Strict Input Guard [Forms], Flex Truncate [Tabs/Chips], Desktop Container [Shell]）をコンパクト（約300〜500トークン）に追記。
+  - 詳細仕様・4大プリセット・コード例は `SPEC_COMMON.md#1-5` への参照ポインタとする。
+- **Gate 1 検証コマンドの更新 (AC-4)**:
+  - Gate 1 コマンド一覧に `backend\.venv\Scripts\python scripts/verify_ui_invariants.py` を追加。
 
-#### [LOCAL MODIFY] [GeneratePage.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/__tests__/GeneratePage.test.tsx)
-- [REQ-363/AC-4]: プリセット管理ボトムシートの max-h-[75dvh]、固定操作ドック、全選択/全解除ボタン・保存ボタンの常時アクセスの検証。
+#### [LOCAL MODIFY] [governance.md](file:///c:/Users/audih/ws/comfy-create-helper2/.agents/rules/governance.md)
+- **Architect アーキタイプ分類 & 4プリセット サージカル自動注入プロトコルの策定 (AC-3, AC-5)**:
+  - Architect がフロントエンド改修タスクを4大アーキタイプ（Modals & Overlays, Tabs/Chips/Grids, Forms & Controls, Shell & Page Layout）に分類する設計手順を規定。
+  - 分類されたアーキタイプに対応するプリセット制約および推奨 Tailwind クラス（Hit-Slop `before:absolute before:-inset-2`、ジェスチャー `touch-action: pan-y / manipulation`、チップ `shrink-0 whitespace-nowrap`、`overscroll-contain`、`min-w-0 flex-1 truncate` 等）のみを Task Card の `<constraints>` にサージカルに自動挿入する規約を明文化。
+  - `subsystem: backend` のタスクには UI 制約を一切含めず、コンテキスト汚染とトークン浪費を完全に防止する規約を明文化。
 
-#### [LOCAL MODIFY] [ResourceHoverMonitor.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx)
-- [REQ-363/AC-6]: VRAMピル押下時のドロップダウンカード展開、プロポーショナルバーゲージ描画、ヘッダー非破壊の検証。
+---
 
-#### [LOCAL MODIFY] [ParamPanel.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx)
-- [REQ-363/AC-7]: モバイルでのステッパー・セレクトの1行配置とラベル非折れ・幅最適化の検証。
+### Tooling & Gate 1 Subsystem
 
-#### [LOCAL MODIFY] [AddAssetModal.test.tsx](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/AddAssetModal.test.tsx)
-- [REQ-363/AC-8]: モバイル表示時の p-3.5 パディング最適化の検証。
+#### [LOCAL NEW] [verify_ui_invariants.py](file:///c:/Users/audih/ws/comfy-create-helper2/scripts/verify_ui_invariants.py)
+- **Gate 1 即死静的チェックスクリプト実装 (AC-4)**:
+  - `frontend/src` 配下の CSS, TSX, TS, JSX ファイルを走査し、禁止構文を即時検出（<1秒で実行完了）。
+  - 判定ルール:
+    - `rule-no-global-font-floor`: html/body/汎用セレクタでの font-size: 11px 底上げ
+    - `rule-no-raw-100vh`: コンテナ高さでの生 100vh 単位
+    - `rule-no-indiscriminate-important`: CSS内の !important 乱用
+  - 例外機構:
+    - インラインコメント `/* ui-invariant-ignore: <rule-id> reason: <理由> */` または `// ui-invariant-ignore: ...` による明示例外のサポート。
+    - 移行期用のレガシー除外設定（allowlist）。
+  - 違反時は Exit Code 1、クリーン時は Exit Code 0 を返却。
+
+#### [LOCAL NEW] [test_ui_invariants.py](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/governance/test_ui_invariants.py)
+- **ガバナンステスト実装 (AC-4)**:
+  - チケット名を含まないテストファイルとして新設。
+  - 各禁止ルールの検出、例外コメントの動作、CLI Exit Code を検証するテストケース（`[REQ-366/AC-4]` タグ付与）。
+
+#### [LOCAL MODIFY] [index.css](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/index.css)
+- **レガシー例外注釈付与 (AC-4)**:
+  - 既存の `frontend/src/index.css` のレガシー記述（!important や font-size 底上げ箇所）に対して、正当な理由付きの `/* ui-invariant-ignore: ... reason: legacy baseline ... */` を付与し、既存機能を壊さずに静的検査を通過させる。
 
 ---
 
@@ -74,26 +65,33 @@
 
 ```mermaid
 graph TD
-  subgraph Parallelizable Root Tasks
-    T1[REQ-363-T1: Tabs, Scroll Padding & Action Bar Fix]
-    T3[REQ-363-T3: Preset Manager Bottom Sheet & Dock]
-    T4[REQ-363-T4: Resource Monitor Dropdown & Gauges]
-    T5[REQ-363-T5: Param 1-Row & Modal Padding]
-  end
-  subgraph Dependent Tasks
-    T2[REQ-363-T2: Compact Preview & Tap Toggle]
+  subgraph Parallelizable Track 1 [Docs & Governance]
+    T1["REQ-366-T1: SSoT アンチパターンカタログ策定 (SPEC_COMMON.md)"]
+    T2["REQ-366-T2: UI 6大不変条件のコンテキスト配置 (.agents/context.md)"]
+    T3["REQ-366-T3: dev-design タスクカード自動注入プロトコル策定"]
+    T1 --> T2
+    T2 --> T3
   end
 
-  T1 --> T2
+  subgraph Parallelizable Track 2 [Tooling & Tests]
+    T4["REQ-366-T4: 静的検査スクリプト verify_ui_invariants.py & テスト実装"]
+  end
+
+  subgraph Integration Gate [Baseline Convergence]
+    T5["REQ-366-T5: Gate 1 統合・既存コード検証 & ベースライン確認"]
+  end
+
+  T2 --> T5
+  T4 --> T5
 ```
 
 | Task ID | Title | Impacted Files | Parallelizable | Dependencies |
 | :--- | :--- | :--- | :--- | :--- |
-| **REQ-363-T1** | プロンプトタブ横スクロール・余白・isTextInput修正 | `MobileLayout.tsx`, `MobileLayout.test.tsx` | YES (Root) | なし |
-| **REQ-363-T2** | コンパクトプレビュー初期化＆手動トグル | `MobileLayout.tsx`, `MobileLayout.test.tsx` | NO | `REQ-363-T1` (同一ファイル競合防止) |
-| **REQ-363-T3** | プリセット管理ボトムシート＆固定操作ドック | `GeneratePage.tsx`, `PresetManagerPanel.tsx`, `GeneratePage.test.tsx` | YES (Root) | なし |
-| **REQ-363-T4** | リソースモニタドロップダウンカード化 | `ResourceHoverMonitor.tsx`, `ResourceHoverMonitor.test.tsx` | YES (Root) | なし |
-| **REQ-363-T5** | パラメータ行スマート1行化＆モーダル余白 | `ParamPanel.tsx`, `AddAssetModal.tsx`, `ParamPanel.test.tsx`, `AddAssetModal.test.tsx` | YES (Root) | なし |
+| **REQ-366-T1** | SSoT UI/UX アンチパターンカタログの正式策定 | `docs/specs/SPEC_COMMON.md` | YES (Track 1 Root) | なし |
+| **REQ-366-T2** | 共通UI 6大ハード不変条件のコンテキスト配置 | `.agents/context.md` | NO | `REQ-366-T1` |
+| **REQ-366-T3** | dev-design タスクカード自動注入プロトコルの策定 | `.agents/rules/governance.md`, `docs/design/REQ-366.md` | NO | `REQ-366-T2` |
+| **REQ-366-T4** | 静的検査スクリプト scripts/verify_ui_invariants.py とテスト | `scripts/verify_ui_invariants.py`, `backend/tests/governance/test_ui_invariants.py` | YES (Track 2 Root) | なし |
+| **REQ-366-T5** | Gate 1 統合・既存コード検証 & ベースライン確認 | `.agents/context.md`, `frontend/src/index.css` | NO | `REQ-366-T2`, `REQ-366-T4` |
 
 ---
 
@@ -101,29 +99,35 @@ graph TD
 
 ### Automated 3-Gate Baseline
 
-1. **Gate 1: Static Typecheck**
+1. **Gate 1: Static Typecheck & UI Invariant Check**
 ```bash
-cd frontend; npm run typecheck
+backend\.venv\Scripts\python scripts/verify_ui_invariants.py
+backend\.venv\Scripts\mypy backend
+cd frontend && npm run typecheck
 ```
 
-2. **Gate 2: Unit & Component Tests**
+2. **Gate 2: Unit & Governance Test Suites**
 ```bash
-cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx -t 'REQ-363'
-cd frontend; npx vitest run src/pages/GeneratePage/__tests__/GeneratePage.test.tsx -t 'REQ-363'
-cd frontend; npx vitest run src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx -t 'REQ-363'
-cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx -t 'REQ-363'
-cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/AddAssetModal.test.tsx -t 'REQ-363'
-cd frontend; npm test
+backend\.venv\Scripts\python -m pytest backend/tests/governance/test_ui_invariants.py -k "REQ-366 and AC-4"
+backend\.venv\Scripts\python scripts/verify_test_naming.py --strict
 ```
 
-3. **Gate 3: E2E & Red Team Scenarios**
-- フォーカス競合 (AC-2): チェックボックスとテキスト入力を高速交互タップしてもアクションバーの表示/非表示が正しく追従すること。
-- プレビュートグル連打 (AC-5): プレビュー領域を連続タップしても状態破綻せず生成進行プログレスと連動すること。
-- プリセット大量登録 (AC-4): 30件以上のプリセットがある場合も下部ドックが固定され、リスト内のみスクロール可能であること。
+3. **Gate 3: Acceptance Criteria & Red Team Scenarios**
+- **AC-1**: SPEC_COMMON.md にモバイル10選・PC8選・4大コンポーネントプリセット（Tailwind構文 `before:absolute before:-inset-2` や `touch-action: pan-y / manipulation` 含む）・重要情報の非省略ルールが存在することを確認。
+- **AC-2**: .agents/context.md に6大不変条件が約300〜500トークン以内で簡潔に定義され、4大プリセットへの参照マップとSSoTへのリンクがあることを確認。
+- **AC-3 & AC-5**: dev-design規約において、Architectによる4大アーキタイプ分類、FEタスクへのサージカル注入、およびBEタスクの完全除外が規定されていることを確認。
+- **AC-4**: 禁止CSSコードが Exit Code 1 で即死遮断され、`/* ui-invariant-ignore: ... */` があれば許可されることを確認。
 
 ---
 
 ## Trade-off Disclosure [MUST [G-03]]
-1. **全画面モーダルプレビューへの遷移が2段階タップ**: コンパクトプレビュー（105px）から全画面拡大モーダルへ遷移するには、1度タップして標準プレビュー（220px/42vh）に展開してから再度タップ（または拡大ボタン押下）する必要があります。これは、画像閲覧よりも高頻度に行われるプロンプト編集・連続キュー投入の快適性を最優先するための意図的なトレードオフです。
-2. **ボトムシートの上限高さ制限（75dvh）**: 画面高の75%を上限とすることで、iOS Safari等のブラウザアドレスバーによる上部突き抜け・タイトル切断を確実に防止しますが、一度に視認可能なプリセット件数は4〜5件程度となります（内部スクロールで全件アクセス可能）。
-3. **セレクトボックスの幅コンパクト化（125px）**: 幅360pxの極小画面でラベルとセレクトを1行に収めるため、選択肢の閉じた状態では長大なスケジューラー名等が末尾省略される場合があります（ドロップダウンを開けば全文字確認可能）。
+1. **静的検査（正規表現/字句解析） vs 完全な AST/PostCSS パーサー**:
+   - トレードオフ: PostCSS / Stylelint の完全導入は Node.js 依存と設定ファイルの増大（Gate 1 の実行遅延）を招く。
+   - 決定: Python 標準ライブラリベースの軽量静的チェックスクリプト（`scripts/verify_ui_invariants.py`）を採用し、Gate 1 の実行速度（<0.5秒）と環境依存ゼロを優先する。
+2. **既存レガシー CSS (`index.css`) の扱い**:
+   - トレードオフ: 既存の `index.css` に存在する `!important` や font-size 底上げ記述を今すぐ全削除すると、本番画面の既存レイアウト（REQ-334等）が崩壊するリスクがある。
+   - 決定: `/* ui-invariant-ignore: ... */` による正当な理由付き明示例外を許容し、新規追加・修正箇所に対して厳格な即死判定を適用する。
+3. **コンテキスト記述量 vs 情報網羅性**:
+   - トレードオフ: `.agents/context.md` に全アンチパターンの事例を書くとコンテキストトークンが肥大化する。
+   - 決定: context.md には「6大不変条件」のみを約300〜500トークンで記載し、詳細は SSoT（`SPEC_COMMON.md`）への参照リンクとする。
+

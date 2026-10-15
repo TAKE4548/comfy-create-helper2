@@ -47,6 +47,92 @@
 - 通常の共通Modalは幅768px未満で画面下部のsheetとなり、上端ハンドル、safe-area余白、フォーカス復帰を提供する。768px以上は中央配置し、要求サイズに応じて最大580px（sm）、640px（md）、680px（lg）とする。幅768–1023pxはビューポート幅の90%を上限にする。
 - 画像閲覧を目的とする全画面プレビューだけは通常モーダル幅の上限を使わず、画像表示用の全画面契約を維持する。
 
+### 1-5. UI/UX アンチパターンカタログ & 4大コンポーネントプリセット
+
+#### 1-5-1. モバイル特有のアンチパターン 10 選 & 防御策 (Mobile 10)
+1. **Global Font Floor (CSS一括フォント底上げ)**
+   - 現象・リスク: CSSで `html, body` やセレクタに対して `font-size: max(11px, ...)` 等を一括強制。小さなバッジやボタン枠を文字が突き破り、テキスト衝突や予期せぬ改行を招く。
+   - 防御策: CSS一括上書きを全面禁止。コンポーネント側で `text-[11px]` または `text-xs` を最小トークンとして設計する。
+2. **Missing min-w-0 (Flex内 truncate 不発)**
+   - 現象・リスク: Flexbox内で `truncate` を付与しても、CSS Flex初期値 `min-width: auto` により子要素が縮まず、画面横幅を突き破って横スクロールが発生する。
+   - 防御策: `min-w-0 flex-1 truncate` のように、Flexコンテナおよびtruncateを持つ要素自身に `min-w-0` を付与する。
+3. **Centered Modal Trap (中央配置モーダルの流用)**
+   - 現象・リスク: PC向けの中央ダイアログを流用。上部がアドレスバーに潜り込み、下部は仮想キーボードで潰され操作不能になる。
+   - 防御策: モバイルは原則ボトムシート（上限 `max-h-[75dvh]` / `max-h-[90dvh]`）に倒し、最下部に固定操作ドックを常駐させる。
+4. **Double Padding (二重パディングの蓄積)**
+   - 現象・リスク: 親（AppShell）が `pb-[54px+env(safe-area)]` を持っているのに、子画面が `h-[100dvh]` や `pb-24` を重ね、下部に巨大な虚無空間が生じる。
+   - 防御策: 最外層コンテナがSafe Areaとバー高さを一元管理。子画面内部での全画面高さ指定（`h-[100dvh]`）や過剰な `pb` 重複を禁止。
+5. **Hit Target Distortion (タッチ領域の密集・誤肥大化)**
+   - 現象・リスク: 44px判定を満たすためにボタン外形を `h-11`（44px）にして画面を埋めるか、逆に小さすぎる判定（28px）が密集して誤タップする。
+   - 防御策: 外形サイズと判定領域を分離（Hit-Slop拡張）。外形は `h-6 text-[11px]` のまま、`relative before:absolute before:-inset-2 before:content-['']` で透明判定のみを44pxに拡張。
+6. **Virtual Keyboard Collision (キーボード起動時のfixed浮上・遮蔽)**
+   - 現象・リスク: キーボード起動時、下部固定バーが画面中央に跳ね上がったり、入力中のTextareaやカーソルを覆い隠す。
+   - 防御策: metaに `interactive-widget=resizes-content` 指定。入力フォーカス時に固定バーを退避（`hidden`）し、`scrollIntoView()` を発火。
+7. **Input Type Misjudgment (input属性の判定雑駁)**
+   - 現象・リスク: `tag === 'input'` だけでテキスト入力中と判定し、チェックボックスやラジオボタンをタップしただけでアクションバーが誤消失する。
+   - 防御策: `target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(target.type))` を厳格適用。
+8. **Unbroken Long String (長大英単語・ファイル名の突き抜け)**
+   - 現象・リスク: LoRAファイル名やハッシュ値が1単語として扱われ、画面幅を突き抜けてページ全体を左右にガタつかせる。
+   - 防御策: 長い文字列を表示する要素には、必ず `break-words` または `break-all` と `min-w-0` を付与する。
+9. **Gesture Hijacking (ブラウザ標準ジェスチャー競合)**
+   - 現象・リスク: スライダー操作やプレビュースワイプ時に、画面上の「引っ張って更新（Pull-to-refresh）」が誤発火して作業中のプロンプトが消える。
+   - 防御策: スクロールコンテナに `overscroll-behavior-y: contain`、タップ・ドラッグ要素に `touch-action: pan-y / manipulation` を指定。
+10. **Backdrop Blur Choke (過剰なブラーによるGPU酷使)**
+    - 現象・リスク: デスクトップ用の `backdrop-blur-md/xl` を多用し、スマホGPUの描画負荷でスクロールが60fpsを切って激しくカクつく。
+    - 防御策: モバイル時は `backdrop-blur-sm` に抑えるか、透明度付き単色背景（`bg-zinc-950/95`）で代用。
+
+#### 1-5-2. デスクトップ特有のアンチパターン 8 選 & 防御策 (Desktop 8)
+1. **Ultra-Wide Sprawl (超ワイド画面での視認性崩壊)**
+   - 現象・リスク: 2560pxや4Kモニターでフォームやテキストが横一面に伸び、視線移動で著しい疲労を生む。
+   - 防御策: メインコンテンツやフォームには必ず `max-w-7xl mx-auto` 等の上限コンテナ幅を設ける。
+2. **DPI Blindspot (OSスケーリング崩れ)**
+   - 現象・リスク: WindowsノートPCの125%/150%拡大時に、固定pxで組まれたモーダルが画面外へ見切れ、保存ボタンが押せなくなる。
+   - 防御策: 固定高さを廃止し、`max-h-[85vh] overflow-y-auto` で内部スクロールさせる。
+3. **Inflexible Splitter (ペイン分割幅の固定化)**
+   - 現象・リスク: プレビュー画像やプロンプト欄の幅が固定され、画像を大きく見たい時やプロンプトを広く書きたい時に調整できない。
+   - 防御策: Resizable Splitter（ドラッグ伸縮境界線）または折りたたみ（Collapse）ボタンを導入。
+4. **Hover-Only Mystery Meat (マウスホバー依存UI)**
+   - 現象・リスク: ホバーしないと「削除」「設定」ボタンが表示されず、タッチ対応PC等で操作不能になる。
+   - 防御策: 重要アクションは常時薄く露出。ホバーはあくまで「色の強調」にとどめる。
+5. **Keyboard Inaccessible (ショートカット・Esc欠落)**
+   - 現象・リスク: 頻繁に生成を繰り返すクリエイター向けツールなのに `Ctrl+Enter`（生成）や `Esc`（閉じる）が効かない。
+   - 防御策: グローバルショートカット（`Ctrl/Cmd + Enter`, `Esc`）と `focus-visible:ring-2` を担保。
+6. **Missing Bulk Patterns (一括操作の欠落)**
+   - 現象・リスク: 多数のアイテムがあるのに範囲選択や全選択ができず、1個ずつクリックを強要される。
+   - 防御策: 一覧管理UIではネイティブな `Shift` 範囲選択と全選択ショートカットをサポート。
+7. **Nested Scroll Chaining (多重スクロールバーの競合)**
+   - 現象・リスク: ウィンドウ全体のスクロールとペイン内部スクロールが混在し、ホイール操作が引っかかる。
+   - 防御策: `body` は `overflow-hidden` で固定し、スクロールが必要な各ペイン内部のみに `overflow-y-auto` を適用。
+8. **Modal upon Modal Hell (モーダルの多重ネスト)**
+   - 現象・リスク: 設定ダイアログの上でプリセット編集を開き、さらに削除確認が重なる。Escを押すと背面ごと全部閉じる。
+   - 防御策: モーダルの重ね表示を禁止。確認はインライン展開にするかドロワーで階層分離。
+
+#### 1-5-3. 4大コンポーネントプリセット (4 Component Presets with Tailwind)
+1. **🪟 Preset 1: Modals & Overlays (モーダル・オーバーレイ)**
+   - モバイル: 原則ボトムシート化 (`fixed inset-x-0 bottom-0 rounded-t-2xl max-h-[75dvh] overflow-y-auto`)。最下部固定アクションバー必須。中央配置は禁止。
+   - スクロール制御: `overscroll-behavior-y: contain` (`overscroll-contain`) で親ブラウザ競合を遮断。
+   - GPU負荷抑制: `backdrop-blur-sm` (<=8px) または `bg-black/60` (半透明ベタ塗り)。
+   - デスクトップ: 中央配置 (`sm:max-w-lg sm:mx-auto sm:my-auto sm:rounded-xl`)、多重モーダル禁止・スタック一元化。
+2. **📑 Preset 2: Tabs, Chips & Grids (タブ・チップ・グリッド)**
+   - 横スクロールチップ/タブ: 折り返し防止と幅維持 (`flex overflow-x-auto shrink-0 whitespace-nowrap gap-2 no-scrollbar`)。
+   - Flex テキスト省略防御: `min-w-0 flex-1 truncate` を必須化。
+   - 英単語・ID突き抜け防御: `break-words` / `overflow-wrap: anywhere`。
+   - レスポンシブグリッド: 固定幅を排除し、DPI拡大率に対応 (`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4`)。
+3. **🎛️ Preset 3: Forms & Controls (フォーム・コントロール)**
+   - Hit-Slop タッチ判定拡張: 見た目はコンパクトのまま透明判定を44x44pxに拡張 (`relative before:absolute before:-inset-2 before:content-['']`)。
+   - ジェスチャー保護: `touch-action: pan-y / manipulation` を指定しピンチ/ダブルタップ誤動作を抑止。
+   - 入力ガード: テキスト入力検知でバーを隠す際、`checkbox / radio / button` を厳格除外。
+   - キーボード操作: `Ctrl+Enter`（生成）および `Esc`（閉じる）を実装。ホバーのみで押せる隠しボタンを排除。
+4. **📐 Preset 4: Shell & Page Layout (シェル・ページレイアウト)**
+   - ビューポート単位規約: 生の `100vh` を禁止し、`100dvh` または `min-h-[100dvh]` を使用。
+   - Safe Area: 固定バーに `pb-[env(safe-area-inset-bottom)]` を組み込み、子画面の二重 `pb` を排除。
+   - デスクトップ最大幅上限: `max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8`。
+   - 多重スクロールバー抑止: スクロールコンテナを一元化し、親要素に `overflow-hidden` を適用。
+
+#### 1-5-4. 重要情報の非省略ルール (Critical Information Non-Truncation Rule)
+- エラーメッセージ、ID（Prompt ID, Job ID）、ステータス表示（`<code>`, `<span class="status">`, `data-id` 等）に対して安易な `truncate` を適用することを禁止する。
+- 代替策: 折り返し（`break-all` / `break-words`）、複数行表示、またはクリック展開/コピー導線。
+
 ---
 
 ## 2. App Shell（共通レイアウト）

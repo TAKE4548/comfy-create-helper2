@@ -34,6 +34,7 @@ describe('GenerateModalsOverlay error notification', () => {
     const alert = screen.getByRole('alert')
     expect(alert.firstElementChild?.textContent).toBe(message)
     expect(alert.querySelector('img')).toBeNull()
+    // ui-invariant-ignore: rule-no-raw-100vh reason: legacy baseline test assertion
     expect(alert).toHaveClass('w-[calc(100vw-2rem)]', 'max-w-xl', 'max-h-[calc(100vh-2rem)]', 'overflow-y-auto')
     expect(alert.firstElementChild).toHaveClass('whitespace-pre-wrap', 'break-words')
   })

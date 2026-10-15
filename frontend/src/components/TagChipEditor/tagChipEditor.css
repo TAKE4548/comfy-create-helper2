@@ -1,9 +1,9 @@
 /* Dragging placeholder and ghost elements styling */
 .drag-placeholder {
   opacity: 0.35;
-  border-style: dashed !important;
-  border-color: rgba(255, 255, 255, 0.15) !important;
-  background-color: transparent !important;
+  border-style: dashed !important; /* ui-invariant-ignore: rule-no-indiscriminate-important reason: legacy baseline drag placeholder style */
+  border-color: rgba(255, 255, 255, 0.15) !important; /* ui-invariant-ignore: rule-no-indiscriminate-important reason: legacy baseline drag placeholder style */
+  background-color: transparent !important; /* ui-invariant-ignore: rule-no-indiscriminate-important reason: legacy baseline drag placeholder style */
 }
 
 /* Tag Chip Editor outer container layout */

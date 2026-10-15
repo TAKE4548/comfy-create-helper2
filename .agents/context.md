@@ -12,6 +12,7 @@ This file defines repository-specific variables used by the AntiGravity agent sy
 
 ## Subsystems & Verification Commands (3-Gate Architecture)
 ### Gate 1: Static Typecheck & Unit Logic (高速即時検出 / 3〜5秒)
+- UI Invariant Check: `backend\.venv\Scripts\python scripts/verify_ui_invariants.py`
 - Frontend Typecheck: `cd frontend; npm run typecheck`
 - Backend Typecheck: `mypy backend`
 - Backend Unit Tests: `backend\.venv\Scripts\python -m pytest backend/tests/unit`
@@ -32,3 +33,12 @@ This file defines repository-specific variables used by the AntiGravity agent sy
   - Backend: `backend/tests/` 直下は `conftest.py`、`unit/`、`integration/`、`governance/` のみ。
 - **命名規則**: テストケース名（`it` / `def test_*`）には必ず `[REQ-xxx/AC-n]` プレフィックスを付与してPBIトレーサビリティを確保する（MUST [REQ-356/AC-9], [REQ-356/AC-15]）。
 - **規約検証**: `backend\.venv\Scripts\python scripts/verify_test_naming.py` (CI/コミット前は `--strict`)
+
+## UI 6大ハード不変条件 (UI 6 Invariants / REQ-366)
+※詳細根拠・コード例・4大コンポーネントプリセットは SSoT: docs/specs/SPEC_COMMON.md#1-5 を参照
+1. **No Global Font Floor**: グローバルセレクタ（`html`, `body`, `*`, `[class~='text-[...']`）で文字サイズを一括底上げ（`font-size: 11px` 等）してはならない。コンポーネント個別のユーティリティ（`text-[11px]`, `text-xs`）で定義すること。
+2. **Viewport Units**: モバイルでのアドレスバー変動による突き破りを防ぐため、コンテナ高さに生の `100vh` を使用してはならない。`100dvh` または `calc(100dvh - env(...))` を使用すること。[Shell Preset]
+3. **Mobile Modals**: 画面幅 768px 未満での画面中央モーダルを禁止する。下部ボトムシート（`modal-backdrop` + sheet, `overscroll-contain`）に統一し、Escape/backdrop/キーボード退避を担保すること。[Modals Preset]
+4. **Strict Input Guard**: タップ判定は Hit-Slop (`before:absolute before:-inset-2`) を活用して 44x44px を確保しつつ、label による不要な広域クリック判定を避ける。`touch-action: pan-y / manipulation` を適用。[Forms Preset]
+5. **Flex Truncate**: flex コンテナ内のテキスト省略には必ず `min-w-0` を併用する (`min-w-0 flex-1 truncate`)。横並びチップには `shrink-0 whitespace-nowrap` を指定。エラーメッセージ、ID、ステータス等の重要情報を安易に `truncate` してはならない。[Tabs/Chips Preset]
+6. **Desktop Container**: Ultra-Wide画面で全幅引き伸ばしを放置せず、`max-w-7xl` 等の上限を設ける。Windows 125%/150% 拡大表示に備え、固定 px ではなく `max-h` とスクロール領域を確保すること。[Shell Preset]

@@ -1,58 +1,62 @@
-# REQ-361 検証ウォークスルー報告書
+# REQ-366 検証ウォークスルー報告書
 
 ## 総合判定: **PASS (Automated Baseline 3-Gate & 100% AC Compliance)**
 
 > [!NOTE]
 > **検証概要**:
-> REQ-356 から引き継がれた Frontend レガシーテストファイル 44 件のリネーム・ドメイン再配置（コロケーション化）および 89 件の未規約テストケース名の修正について、Automated Baseline 3-Gate 検証（Gate 1: 静的型検査、Gate 2: フルディスカバリーテストスイート、Gate 3: シナリオ＆Red Teaming）、ならびにローカルモデル（\qwen/qwen3.5-9b\）による第三者 QA 監査を実施しました。
-> 全 7 件の受入基準（AC-1 〜 AC-7）を 100% 達成し、全テスト（Frontend 231 ファイル / 2,182 テスト、Backend 636 テスト）が欠落なく PASS することを確認しました。
+> REQ-366「デザインルールの定義にアンチパターンの定義を追加（UI/UX ガバナンス・3層パイプライン整備）」において、Automated Baseline 3-Gate 検証（Gate 1: 静的型検査・UI不変条件検査、Gate 2: フルディスカバリーテストスイート、Gate 3: シナリオ＆Red Teaming）、ならびにローカルモデル（qwen/qwen3.5-9b）による第三者 QA 監査を実施しました。
+> 全 5 件の受入基準（AC-1 〜 AC-5）を 100% 達成し、UI 6大ハード不変条件の即死検証スクリプト、SSoT カタログ、4大コンポーネントプリセット、アーキタイプ別サージカル注入規約、およびバックエンドコンテキスト汚染防止の完全な遵守を確認しました。
 
 ---
 
 ## 1. Automated Baseline 3-Gate 検証結果
 
-### Gate 1: 静的型チェック Baseline (Static Verification)
+### Gate 1: 静的型チェック & 構文監査 Baseline (Static Verification)
 - **判定**: **PASS (0 errors, Exit code 0)**
 - **実行結果**:
-  - **Frontend Typecheck (pm run typecheck\ / \	sc -b --noEmit\)**:
-    - エラー 0 件 (Exit code 0)。テストファイル移動・リネームに伴う相対パスインポート等の型不整合は一切なし。
-  - **Backend Typecheck (\mypy backend\)**:
-    - 173 ソースファイル検査完了、型エラー 0 件 (Success: no issues found in 173 source files)。
+  - **UI Invariant Check (python scripts/verify_ui_invariants.py)**:
+    - SUCCESS: UI invariant check passed (0 violations across 524 files). (Exit code 0)
+  - **Backend Typecheck (mypy backend)**:
+    - 174 ソースファイル全件検査完了、型エラー 0 件 (Success: no issues found in 174 source files, Exit code 0)。
+  - **Frontend Typecheck (
+pm run typecheck / 	sc -b --noEmit)**:
+    - 型エラー 0 件 (Exit code 0)。
 
 ### Gate 2: フルテストスイート Baseline (Full Discovery Suite & Test Hygiene)
 - **判定**: **PASS (0 failures, 100% PASS)**
 - **実行結果**:
-  - **Frontend Full Suite (pm test\ / \itest run\)**:
-    - **231 test files passed (231), 2,182 tests passed (2,182)**
-    - テスト欠落ゼロ（実行時間: 88.67s）。
-  - **Backend Full Suite (\pytest -n auto\)**:
-    - **636 passed, 13 warnings in 31.42s** (10 workers 並列実行、0 failures)。
-  - **Strict Test Naming Validator (\python scripts/verify_test_naming.py --strict\)**:
-    - **SUCCESS: 0 violations** (ファイルパス違反 0 件、テスト名規約違反 0 件、PBI 紐づけテスト 300 件)。
-  - **Test Hygiene Linter (\python \/workflow_validator.py test-hygiene REQ-361\)**:
+  - **Backend Governance Test (pytest backend/tests/governance/test_ui_invariants.py)**:
+    - **7 passed in 0.29s** (Exit code 0)。
+  - **Backend Governance & Unit Tests (pytest backend/tests/governance backend/tests/unit -q)**:
+    - **58 passed in 6.12s** (Exit code 0)。
+  - **Frontend Full Suite (
+pm test / itest run)**:
+    - **231 test files passed (231), 2,192 tests passed (2,192)** (Exit code 0)。
+  - **Strict Test Naming Validator (python scripts/verify_test_naming.py --strict)**:
+    - **SUCCESS: 0 violations** (ファイルパス違反 0 件、テスト名規約違反 0 件、PBI 紐づけテスト 324 件)。
+  - **Test Hygiene Linter (python /workflow_validator.py test-hygiene REQ-366)**:
     - **[PASS] No ticket-named test files found. Validation successful.** (Exit code 0)。
 
-### Gate 3: シナリオ・E2E＆Red Teaming (PBI Acceptance & Boundary Verification)
+### Gate 3: シナリオ＆Red Teaming (PBI Acceptance & Boundary Verification)
 - **判定**: **PASS (100% AC Verified & Boundary Failure Scenarios Confirmed)**
-- **主要シナリオ検証**:
-  - **シナリオ 1 (AC-1 / ファイル名チケット番号全廃)**: \rontend/src\ 配下の走査で eq\d+\ テストファイルが 0 件であることを確認。
-  - **シナリオ 2 (AC-2 / 旧 e2e 15 件の再配置)**: \rontend/src/test/e2e_req*\ が 0 件となり、各ページ・コンポーネント配下の \__tests__/\ に移設されたことを確認。
-  - **シナリオ 3 (AC-3 / モーダル・パーツテスト配置)**: コンポーネント直下の \__tests__/\ に機能名ベースで配置完了。
-  - **シナリオ 4 (AC-4 / 厳格命名検証)**: \erify_test_naming.py --strict\ で 0 violations 合格。
-  - **シナリオ 5 (AC-5 / 全テスト PASS)**: 全 2,182 テスト 100% PASS。
-  - **シナリオ 6 (AC-6 / Backend Fixture & SAVEPOINT Rollback)**: \	est_prompt_metadata.py\ を純粋 pytest + \db_session\ (SAVEPOINT rollback) + \erify_db_pool_clean\ で実行し、4 テスト全 PASS。
-  - **シナリオ 7 (AC-7 / Frontend 5 層ステート隔離)**: 再配置テスト群（\storageUsageIntegration\, \queryCacheRecovery\, \piCacheStorage\, \ramGuardIntegration\）の連続実行で 25 テスト全 PASS。ステート漏洩ゼロ。
+- **主要シナリオ検証 (AC-1 〜 AC-5)**:
+  - **シナリオ 1 (AC-1 / SSoT 仕様書 & 4大プリセット検証)**: docs/specs/SPEC_COMMON.md にモバイル10選・PC8選・4大コンポーネントプリセット（Tailwind具体構文 efore:absolute before:-inset-2 や 	ouch-action: pan-y / manipulation 含む）・重要情報の非省略ルールが存在することを確認（PASS）。
+  - **シナリオ 2 (AC-2 / コンテキスト不変条件 & プリセット参照検証)**: .agents/context.md に6大ハード不変条件が簡潔に定義され、4大プリセットへのマッピング及びSSoTポインタが存在することを確認（PASS）。
+  - **シナリオ 3 (AC-3 / アーキタイプ分類 & サージカル自動挿入規約)**: docs/design/REQ-366.md および .agents/rules/governance.md に Architect による4大アーキタイプ分類および該当プリセットのみをフロントエンド Task Card にサージカル注入する規約が明文化されていることを確認（PASS）。
+  - **シナリオ 4 (AC-4 / Gate 1 即死検証スクリプト & 例外機構)**: ackend/tests/governance/test_ui_invariants.py の全 7 テストが PASS し、即死検出および例外コメントが正常に動作することを確認（PASS）。
+  - **シナリオ 5 (AC-5 / バックエンドタスク汚染防止検証)**: .agents/rules/governance.md に subsystem: backend のタスクカードに対するコンテキスト汚染ゼロ規約が確立されていることを確認（PASS）。
 - **Red Teaming (境界・異常系検証)**:
-  - **Red Team 1 (ファイル名規約違反の動的検知)**:
-    - \rontend/src/test_req999_dummy.test.ts\ を一時作成して \erify_test_naming.py --strict\ を実行。
-    - 結果: \File path violations: 1 (AC-1: req\d+ in filename)\ で **Exit code 1** として確実に検知・拒絶（検証後即座に削除）。
-  - **Red Team 2 (テスト名規約違反の動的検知)**:
-    - プレフィックスのない \it('does something (REQ-999)', ...)\ を一時追加して \erify_test_naming.py --strict\ を実行。
-    - 結果: \Test naming violations: 1 (AC-15: [REQ-xxx/AC-n] missing)\ で **Exit code 1** として確実に検知・拒絶（検証後即座に削除）。
-  - **Red Team 3 (相対インポート破損の検出)**:
-    - 全再配置ファイルのインポート整合性を \	sc -b --noEmit\ で検証し、未解決参照が 0 件であることを保証。
-  - **Red Team 4 (ステート漏洩・コネクションリーク検知)**:
-    - Backend の \erify_db_pool_clean\ および Frontend の \cleanupAllTestState\ により、セッション間の副作用・物理 DB 書き込み漏洩が 0 件であることを保証。
+  - **RT-1 (グローバル文字底上げの即死検出)**:
+    - 一時ファイルに ody { font-size: 11px; } を記述して erify_ui_invariants.py を実行。
+    - 結果: 
+ule-no-global-font-floor 違反を検出し **Exit code 1** で即死ブロック。
+  - **RT-2 (生 100vh 単位の即死検出)**:
+    - 一時ファイルに .modal { height: 100vh; } を記述して erify_ui_invariants.py を実行。
+    - 結果: 
+ule-no-raw-100vh 違反を検出し **Exit code 1** で即死ブロック。
+  - **RT-3 (!important 乱用の即死検出と正当なコメント除外の通過)**:
+    - 一時ファイルに .btn { color: red !important; } を記述して実行 → **Exit code 1** で即死ブロック。
+    - 同一ファイルに /* ui-invariant-ignore: rule-no-indiscriminate-important reason: legacy third-party override */ を付与して再実行 → **Exit code 0** で正当な例外として通過。
 
 ---
 
@@ -60,25 +64,26 @@
 
 | AC ID | 受入基準 (Given-When-Then) | 検証結果・エビデンス | 判定 |
 | :--- | :--- | :--- | :--- |
-| **AC-1** | Given 再構成完了後のリポジトリ, When frontend/src 配下の全テストファイルを走査する, Then ファイル名（パスを含む）に req[0-9]+ / REQ-[0-9]+ を含むテストファイルが 0 件であること。 | \erify_test_naming.py --strict\ および \workflow_validator.py test-hygiene\ を実行し、ファイルパス違反 0 件を確認。 | **PASS** |
-| **AC-2** | Given 旧 frontend/src/test/e2e_req*.test.tsx の 15 ファイル, When 移行先を確認する, Then それぞれ対応するページ（GeneratePage, HistoryPage, SettingsPage, DatasetStudioPage）またはコンポーネントの __tests__/ に再配置されていること。 | \rontend/src/test/\ 直下に \e2e_req*\ が 0 件となり、各ページ/コンポーネントの \__tests__/\（例: \piCacheStorage.test.tsx\, \generationQueueSync.test.ts\ 等）へ再配置完了。 | **PASS** |
-| **AC-3** | Given 旧モーダル・コンポーネントテスト（LoraDetail*.req334.test.tsx, AppShell.req334.test.tsx, JobManagementModal.req333.test.tsx 等）, When 移行先を確認する, Then 各コンポーネント直下の __tests__/ にチケット番号抜きの名前で配置されていること。 | \LoraDetailModal.test.tsx\, \AppShell.test.tsx\, \JobManagementModal.test.tsx\, \TagSetFormFields.test.tsx\ 等、全ファイルがチケット番号抜きの機能名でコロケーション配置完了。 | **PASS** |
-| **AC-4** | Given 再構成後の全テストケース, When python scripts/verify_test_naming.py --strict を実行する, Then ファイルパス違反 0 件、テスト名規約違反 0 件で終了コード 0 となること。 | \File path violations: 0\, \Test naming violations: 0\ で終了コード 0 (SUCCESS)。PBI 紐づけテスト 300 件。 | **PASS** |
-| **AC-5** | Given 再構成前後, When cd frontend && npm test を実行する, Then テスト欠落ゼロで全 2,182 件以上のテストが PASS すること。 | \itest run\ にて 231 test files / 2,182 tests が 100% PASS (欠落ゼロ、失敗ゼロ)。 | **PASS** |
-| **AC-6** | Given Backend レガシーテスト test_prompt_metadata.py, When テストを実行する, Then unittest.TestCase および手動インメモリDB初期化が全廃され、conftest.py の db_session (SAVEPOINT rollback) + client フィクスチャを用いた pytest 形式で動作し、DB コネクションリーク 0 件 (verify_db_pool_clean) であること。 | \pytest backend/tests/integration/legacy/test_prompt_metadata.py\ 実行で 4 passed in 1.59s。SAVEPOINT rollback と \erify_db_pool_clean\ が正常動作。 | **PASS** |
-| **AC-7** | Given 再配置・リネームされた Frontend テスト（旧 e2e_req317_storage, e2e_req332_storage, e2e_req332_recovery, e2e_req260_vram_guard 等）, When テストを実行する, Then frontend/src/test/utils/ の共通ヘルパー (cleanupAllTestState(), resetTestStore(), resetTestIndexedDB(), createTestQueryClient()) が beforeEach/afterEach で適用され、テスト間の副作用・ステート漏洩が 0 件であること。 | \storageUsageIntegration\, \queryCacheRecovery\, \piCacheStorage\, \ramGuardIntegration\ の 4 ファイル 25 テストが決定論的に全件 PASS。ステート漏洩 0 件。 | **PASS** |
+| **AC-1** | Given プロジェクトのSSoT仕様（docs/specs/SPEC_COMMON.md）, When 仕様書を参照した際, モバイル10選およびPC8選のUI/UXアンチパターンと正当な防御策（コード例・4大コンポーネントプリセット・重要情報の非省略ルール含む）が体系的に記載されていること。 | SPEC_COMMON.md に「1-5. UI/UX アンチパターンカタログ」、モバイル10選、PC8選、4大コンポーネントプリセット（Modals, Tabs/Chips, Forms, Shell）、efore:absolute before:-inset-2、	ouch-action: pan-y / manipulation、重要情報の非省略ルールが存在することを確認。 | **PASS** |
+| **AC-2** | Given エージェント設定ファイル（.agents/context.md）, When コンテキストファイルを検証した際, 「UI 6大ハード不変条件（No Global Font Floor, Viewport Units, Mobile Modals, Strict Input Guard, Flex Truncate, Desktop Container）」が約300〜500トークン以内で簡潔に定義され、SSoTへの参照ポインタが含まれていること。 | .agents/context.md に「UI 6大ハード不変条件」が約400トークンで定義され、各条件ごとのプリセット参照（[Modals Preset], [Forms Preset] 等）および docs/specs/SPEC_COMMON.md#1-5 への参照ポインタが配置されていることを確認。 | **PASS** |
+| **AC-3** | Given dev-designスキル仕様およびタスクカード生成規則, When フロントエンド対象のTask Cardが生成される際, 該当するアンチパターン防止制約が <constraints> タグ内にサージカル（局所的）に自動挿入される規約が明文化されていること。 | docs/design/REQ-366.md および .agents/rules/governance.md に「アーキタイプ分類（Modals & Overlays, Tabs & Chips, Forms & Controls, Responsive Shell）」および <constraints> へのサージカル注入規約が明文化されていることを確認。 | **PASS** |
+| **AC-4** | Given 静的検証コマンド（Gate 1）, When グローバルCSSでのフォント底上げや禁止構文（!important, h 等）が含まれるコードを検証した際, Linterまたは検査スクリプトが Exit Code 1 で即座に検出しコミット・検証通過をブロックすること。例外が必要な場合は明示的な許可機構（Allowlist/コメント）を介して制御できること。 | scripts/verify_ui_invariants.py が新規作成され、ackend/tests/governance/test_ui_invariants.py (7 tests) が全 PASS。禁止構文注入時の Exit code 1 即死、および ui-invariant-ignore コメント / allowlist による例外パスを確認。 | **PASS** |
+| **AC-5** | Given バックエンドのみを変更するTask Card, When エージェントが実装を実行する際, UIアンチパターンによるコンテキスト汚染が生じず、Task Card内に余計なUI規約が含まれないこと。 | .agents/rules/governance.md に「subsystem: backend のタスクには UI 規約を含めない（コンテキスト汚染ゼロ）」ルールが規定されていることを確認。 | **PASS** |
 
 ---
 
 ## 3. ローカルモデル QA 監査 (qa-audit) 結果
 
-- **使用モデル**: \qwen/qwen3.5-9b\ (LM Studio 0.4.25, \context-length 32768\, easoning_effort=none\)
-- **実行コマンド**: \python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-361-test-plan.md- **トレースメタデータ**:
-  \<!-- [LLM Audit Trace: Action=qa-audit | Model=qwen/qwen3.5-9b | Domain=fixed-audit-model | Params=9.0B | Quant=Q6_K] -->- **監査結果**: **承認 (Approved with Minor Refinement / 評価: S [Excellent])**
-  - **監査コメント要約**:
-    - 「コマンドが明示され Exit code 0 / 1 に厳密依存しており、主観的な脳内テストで逃げる余地を物理的に排除した優れた機械的実行計画である」
-    - 「Red Team によるツールの自己検証（ダミーファイル・違反テストの一時注入）が含まれている点が QA エンジニアの判定基準として極めて優れている」
-    - 指摘事項である再配置先ファイルの存在確認および環境変数前提についても、実機テストにて完全に充足していることを確認。
+- **使用モデル**: qwen/qwen3.5-9b (LM Studio 0.4.25, --context-length 32768, 
+easoning_effort=none)
+- **実行コマンド**: python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-366-test-plan.md
+- **トレースメタデータ**:
+  <!-- [LLM Audit Trace: Action=qa-audit | Model=qwen/qwen3.5-9b | Domain=fixed-audit-model | Params=9.0B | Quant=Q6_K] -->
+- **監査結果**: **承認 (Conditional Pass / 総合評価: S級・AI逃避防止度高)**
+  - **監査所見要約**:
+    - 「Exit Code 強制（0 で終われ）および文字列ハッシュチェック（ssert '...' in content）により、AI エージェントが主観や脳内テストで逃げる余地を物理的に封じる設計が極めて優秀（S級）」
+    - 「Red Teaming による境界値・禁止構文注入（RT-1 〜 RT-3）が Exit Code 1 / 0 で厳密に検証可能」
+    - 実行環境依存（パス区切り文字や環境変数）の指摘については、Windows PowerShell 環境および Python 仮想環境パスにより全コマンドが機械的に Exit code 0 でパスすることを確認。
 - **GPU リソース解放 (VRAM Cleanup)**:
-  - \python C:\Users\audih\.gemini\antigravity\scripts\local_model_adapter.py unload\ 実行完了 (Exit code 0)。
-  - \lms ps --json\ の出力が \[]\ であることを確認（※LM Studio 経由のモデルアンロードを確認したものであり、システム全体の全 GPU メモリ解放を主張するものではありません）。
+  - python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload 実行完了 (Exit code 0)。
+  - lms ps --json の出力が [] であることを確認（※LM Studio 経由のモデルアンロードを確認したものであり、システム全体の全 GPU メモリ解放を主張するものではありません）。
