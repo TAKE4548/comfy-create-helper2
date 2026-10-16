@@ -1,4 +1,4 @@
-import { fixtureWorkflow, fixtureMasters, fixtureSnapshot } from './fixtureData'
+import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets } from './fixtureData'
 /**
  * Preview-only transport sandbox. Loaded before the real App via dynamic import.
  * All HTTP writes and all WebSocket connections are blocked; no production API is contacted.
@@ -7,11 +7,6 @@ import { fixtureWorkflow, fixtureMasters, fixtureSnapshot } from './fixtureData'
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'Content-Type': 'application/json' },
 })
-const snapshot = {
-  version: 1, epoch: 'prototype-offline', revision: 1, normal_group_id: null,
-  jobs: [], batches: [],
-  upstream: { http_ready: false, ws_connected: false, failure_since: null },
-}
 const fixtures: Record<string, unknown> = {
   '/api/workflows': [{ id: fixtureWorkflow.id, name: fixtureWorkflow.name, created_at: fixtureWorkflow.created_at }],
   '/api/workflows/91001': fixtureWorkflow,
@@ -22,13 +17,16 @@ const fixtures: Record<string, unknown> = {
   '/api/tag-sets': [],
   '/api/albums': [],
   '/api/snapshots': [],
-  '/api/workflow-presets': [],
+  '/api/workflow-presets': fixturePresets,
   '/api/config': { comfy_url: 'http://offline-prototype.invalid:8188' },
   '/api/generation/snapshot': fixtureSnapshot,
   '/api/generation/queue': { running: [], pending: [] },
 }
 export function installOfflineTransport() {
-  localStorage.setItem('prompt-surgeon-workflow-id', String(fixtureWorkflow.id))
+  // Only initialize sample selection if this isolated origin has none.
+  if (!localStorage.getItem('prompt-surgeon-workflow-id')) {
+    localStorage.setItem('prompt-surgeon-workflow-id', String(fixtureWorkflow.id))
+  }
   const originalFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : null
@@ -38,6 +36,11 @@ export function installOfflineTransport() {
       return json({ detail: 'Read-only UI prototype: write actions are disabled.' }, 403)
     }
     if (path in fixtures) return json(fixtures[path])
+    if (path === '/api/generation/snapshot' || path === '/api/generation/state') return json(fixtureSnapshot)
+    if (path.startsWith('/api/')) {
+      const url = new URL(request?.url ?? String(input), window.location.href)
+      if (url.pathname === '/api/workflow-presets') return json(fixturePresets.filter(p => !url.searchParams.has('workflow_id') || Number(url.searchParams.get('workflow_id')) === p.workflow_id))
+    }
     if (path.startsWith('/api/')) {
       // Unsupported fixture: explicit failure prevents misleading fake success.
       return json({ detail: 'No offline fixture for ' + path }, 404)
