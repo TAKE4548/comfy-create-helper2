@@ -24,3 +24,26 @@ export const fixtureSnapshot = {
   version: 1, epoch: 'prototype-offline', revision: 1, normal_group_id: null,
   jobs: [], batches: [], upstream: { http_ready: false, ws_connected: false, failure_since: null },
 }
+
+export const fixturePresets = [
+  {
+    id: 91011, workflow_id: fixtureWorkflow.id, name: 'Portrait / soft light',
+    param_values: {
+      Main_Positive_Prompt: 'portrait, detailed face, soft studio lighting, shallow depth of field',
+      Negative_Prompt: 'blurry, distorted hands, low quality',
+      Sampler_Steps: '28', Sampler_cfg: '7',
+    },
+    applied_assets: {}, batch_size: 1, seed_mode: 'fixed', seed: 42,
+    sort_order: 0, created_at, updated_at: created_at,
+  },
+  {
+    id: 91012, workflow_id: fixtureWorkflow.id, name: 'Landscape / evening',
+    param_values: {
+      Main_Positive_Prompt: 'mountain landscape, golden hour, cinematic composition',
+      Negative_Prompt: 'blurry, overexposed, artifacts',
+      Sampler_Steps: '32', Sampler_cfg: '6.5',
+    },
+    applied_assets: {}, batch_size: 1, seed_mode: 'random', seed: 42,
+    sort_order: 1, created_at, updated_at: created_at,
+  },
+]
