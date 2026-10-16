@@ -497,17 +497,51 @@ describe('WorkflowModalMultiStage', () => {
       expect(otherRole.compareDocumentPosition(stepsRole) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('[REQ-358/AC-29] keeps mappings for masters absent from current settings', async () => {
+    it('[REQ-358/AC-29][REQ-369/AC-1] drops orphaned mappings for deleted masters while keeping valid disabled variants', async () => {
       vi.mocked(workflowsApi.get).mockResolvedValue({
         id: 1, name: 'Workflow', json_body: mockWorkflowJson,
-        mappings: [{ master_id: 999, node_id: 'legacy-node' }], mapping_slot_states: {}, created_at: '',
+        mappings: [
+          { master_id: 1, variant_id: 101, node_id: '10' },
+          { master_id: 999, node_id: 'legacy-orphan' },
+        ],
+        mapping_slot_states: {}, created_at: '',
       })
       vi.mocked(workflowsApi.update).mockResolvedValue({ id: 1 } as any)
       renderWithClient(<RescanModal workflowId={1} workflowJson={mockWorkflowJson} onClose={vi.fn()} onSaved={vi.fn()} />)
       await screen.findAllByRole('textbox', { name: 'ノードID' })
       fireEvent.click(screen.getByRole('button', { name: /適用・保存/i }))
       await waitFor(() => expect(workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
-        mappings: expect.arrayContaining([{ master_id: 999, node_id: 'legacy-node' }]),
+        mappings: [{ master_id: 1, variant_id: 101, node_id: '10' }],
+      })))
+      const updateCall = vi.mocked(workflowsApi.update).mock.calls[0]
+      const savedMappings = updateCall[1].mappings ?? []
+      expect(savedMappings.some((m: any) => m.master_id === 999)).toBe(false)
+    })
+
+    it('[REQ-369/AC-2] does not auto-populate unassigned stage slots when rescanning existing workflow', async () => {
+      vi.mocked(workflowsApi.get).mockResolvedValue({
+        id: 1, name: 'Workflow', json_body: mockWorkflowJson,
+        mappings: [
+          { master_id: 1, variant_id: 101, node_id: '10' },
+        ],
+        mapping_slot_states: {}, created_at: '',
+      })
+      vi.mocked(workflowsApi.scan).mockResolvedValue({
+        matched: [
+          { master_id: 1, variant_id: 101, stage_id: 1, stage_key: 'main', node_id: '10', node_title: 'KSampler Main' },
+          { master_id: 1, variant_id: 102, stage_id: 2, stage_key: 'rough', node_id: '20', node_title: 'KSampler Rough' },
+        ],
+        warnings: [],
+      })
+      vi.mocked(workflowsApi.update).mockResolvedValue({ id: 1 } as any)
+      renderWithClient(<RescanModal workflowId={1} workflowJson={mockWorkflowJson} onClose={vi.fn()} onSaved={vi.fn()} />)
+      const inputs = await screen.findAllByRole('textbox', { name: 'ノードID' })
+      expect((inputs[0] as HTMLInputElement).value).toBe('10')
+      // Second variant slot (102) was unassigned in existingMappings, so it remains empty string
+      expect((inputs[1] as HTMLInputElement).value).toBe('')
+      fireEvent.click(screen.getByRole('button', { name: /適用・保存/i }))
+      await waitFor(() => expect(workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+        mappings: [{ master_id: 1, variant_id: 101, node_id: '10' }],
       })))
     })
 

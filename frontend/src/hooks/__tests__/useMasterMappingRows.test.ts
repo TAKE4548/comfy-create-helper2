@@ -527,10 +527,73 @@ describe('useMasterMappingRows', () => {
       }))
       act(() => result.current.initFromScan(scan))
       expect(result.current.rows[0].stageSlots?.[0]).toMatchObject({ node_id: 'main', enabled: false })
-      expect(result.current.rows[0].stageSlots?.[1]).toMatchObject({ node_id: 'rough', enabled: true })
+      expect(result.current.rows[0].stageSlots?.[1]).toMatchObject({ node_id: '', enabled: true })
       expect(result.current.getMappings(result.current.rows, [])).toEqual([
         { master_id: 10, variant_id: 101, node_id: 'main' },
-        { master_id: 10, variant_id: 102, node_id: 'rough' },
+      ])
+    })
+
+    it('[REQ-369/AC-1] drops orphaned mappings for nonexistent masters and variants while keeping valid disabled variants', () => {
+      const masters = mockMultiStageMasters
+      const scan: ScanResult = { matched: [], warnings: [] }
+      const { result } = renderHook(() => useMasterMappingRows(masters, scan, {
+        existingMappings: [
+          { master_id: 10, variant_id: 101, node_id: 'node-main' },
+          { master_id: 999, variant_id: null, node_id: 'orphan-master' },
+          { master_id: 10, variant_id: 8888, node_id: 'orphan-variant' },
+        ],
+        mappingSlotStates: { 'v:101': false, 'v:102': false },
+      }))
+      act(() => result.current.initFromScan(scan))
+      const mappings = result.current.getMappings(result.current.rows, [])
+      expect(mappings).toEqual([
+        { master_id: 10, variant_id: 101, node_id: 'node-main' },
+      ])
+      expect(mappings.some(m => m.master_id === 999)).toBe(false)
+      expect(mappings.some(m => m.variant_id === 8888)).toBe(false)
+    })
+
+    it('[REQ-369/AC-2] keeps unassigned stage slots empty during rescan of existing workflow without auto-assigning', () => {
+      const masters = mockMultiStageMasters
+      const scan: ScanResult = {
+        matched: [
+          { master_id: 10, variant_id: 101, node_id: 'node-101', status: 'ok' },
+          { master_id: 10, variant_id: 102, node_id: 'node-102', status: 'ok' },
+        ],
+        warnings: [],
+      }
+      const { result } = renderHook(() => useMasterMappingRows(masters, scan, {
+        existingMappings: [
+          { master_id: 10, variant_id: 101, node_id: 'saved-main' },
+        ],
+      }))
+      act(() => result.current.initFromScan(scan))
+      expect(result.current.rows[0].stageSlots?.[0]).toMatchObject({ node_id: 'saved-main' })
+      expect(result.current.rows[0].stageSlots?.[1]).toMatchObject({ node_id: '', status: 'unassigned' })
+      expect(result.current.rows[0].stageSlots?.[1].candidates).toContain('node-102')
+      expect(result.current.getMappings(result.current.rows, [])).toEqual([
+        { master_id: 10, variant_id: 101, node_id: 'saved-main' },
+      ])
+    })
+
+    it('[REQ-369/AC-3] auto-populates scan defaults on new workflow without existing mappings', () => {
+      const masters = mockMultiStageMasters
+      const scan: ScanResult = {
+        matched: [
+          { master_id: 10, variant_id: 101, node_id: 'node-101', status: 'ok' },
+          { master_id: 10, variant_id: 102, node_id: 'node-102', status: 'ok' },
+        ],
+        warnings: [],
+      }
+      const { result } = renderHook(() => useMasterMappingRows(masters, scan, {
+        existingMappings: [],
+      }))
+      act(() => result.current.initFromScan(scan))
+      expect(result.current.rows[0].stageSlots?.[0]).toMatchObject({ node_id: 'node-101' })
+      expect(result.current.rows[0].stageSlots?.[1]).toMatchObject({ node_id: 'node-102' })
+      expect(result.current.getMappings(result.current.rows, [])).toEqual([
+        { master_id: 10, variant_id: 101, node_id: 'node-101' },
+        { master_id: 10, variant_id: 102, node_id: 'node-102' },
       ])
     })
 

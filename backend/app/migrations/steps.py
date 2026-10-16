@@ -789,6 +789,32 @@ def step_030_mapping_slot_states(conn: Connection, inspector: Inspector) -> None
             logger.info("Migrated: Added 'default_enabled' column to 'mapping_masters' table.")
 
 
+def step_031_cleanup_orphaned_workflow_mappings(conn: Connection, inspector: Inspector) -> None:
+    table_names = set(inspector.get_table_names())
+
+    if "workflow_mappings" in table_names and "mapping_masters" in table_names:
+        res1 = conn.execute(sa.text("""
+            DELETE FROM workflow_mappings
+            WHERE master_id NOT IN (SELECT id FROM mapping_masters)
+        """))
+        deleted_count = res1.rowcount if hasattr(res1, "rowcount") and res1.rowcount is not None else 0
+
+        if "mapping_variants" in table_names:
+            res2 = conn.execute(sa.text("""
+                DELETE FROM workflow_mappings
+                WHERE variant_id IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM mapping_variants mv
+                      WHERE mv.id = workflow_mappings.variant_id
+                        AND mv.master_id = workflow_mappings.master_id
+                  )
+            """))
+            if hasattr(res2, "rowcount") and res2.rowcount is not None and res2.rowcount > 0:
+                deleted_count += res2.rowcount
+
+        logger.info(f"Migrated: Step 031 cleaned up {deleted_count} orphaned workflow mappings.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -808,4 +834,5 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("028", "tag_subsets_thumbnail_path", step_028_tag_subsets_thumbnail_path),
     MigrationStep("029", "workflow_mapping_v2_normalization", step_029_workflow_mapping_v2_normalization),
     MigrationStep("030", "mapping_slot_states", step_030_mapping_slot_states),
+    MigrationStep("031", "cleanup_orphaned_workflow_mappings", step_031_cleanup_orphaned_workflow_mappings),
 ]

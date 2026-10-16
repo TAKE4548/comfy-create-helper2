@@ -1,106 +1,71 @@
-# Implementation Plan: REQ-365 Settings画面再設計：2ペイン適応・情報密度最適化およびモバイルエルゴノミクス対応
+# Implementation Plan: REQ-369 ノードリマッピング（RescanModal）実行時に削除済み旧マスタの孤立マッピングおよび未割当ステージが自動保存されマッピングエラーが多発する不具合の修正
 
-大画面（>=1280px）では2ペイン（Adaptive Dual-Pane）、モバイル（<768px）ではスワイプタブ・超スリムカード・ボトムシート・44pxタップ領域へ適応させ、Settings画面のUI構造のみを外科的に刷新します。**API・DB保存契約・`prompt-surgeon-settings-details-expanded-v2` のスキーマ（`{prompt, dialogue}`）は一切変更しません。** バックエンドは対象外です。
+V2 マッピングマスタ移行（`REQ-336`）後に削除された旧ステージ別マスタ（`master_id: 33〜62`）の孤立マッピングがリマッピング保存時に再送信される問題、および既存ワークフローの再スキャン時に未割当のステージスロット（`Rough` / `Detail` / `FaceDetailer` 等）へスキャン結果が自動入力・保存される問題を、フロントエンド・バックエンド・DBマイグレーションの3層で解決します。
 
-- 設計書: `docs/design/REQ-365.md`（SSoT影響分析・Seam Map・トレードオフ・所有ファイル表）
-- テスト計画: `docs/design/REQ-365-test-plan.md`（AC-1〜AC-10 トレーサビリティ、境界値 767/768/1279/1280px、Red Team）
-- Task Card: `docs/backlog/task/active/REQ-365-T1.md` 〜 `REQ-365-T17.md`
+- インシデントレポート: [`docs/incident_report.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/incident_report.md)
+- PBI: [`docs/backlog/pbi/active/REQ-369.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/pbi/active/REQ-369.md)
+- 設計書: [`docs/design/REQ-369.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-369.md)
+- テスト計画: [`docs/design/REQ-369-test-plan.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-369-test-plan.md)
+- Task Cards:
+  - [`docs/backlog/task/active/REQ-369-T1.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T1.md)
+  - [`docs/backlog/task/active/REQ-369-T2.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T2.md)
+  - [`docs/backlog/task/active/REQ-369-T3.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T3.md)
 
 ## Proposed Changes
 
-### Frontend: Shell / Layout
-#### [MODIFY] SettingsPage.tsx / SettingsResponsive.css / SettingsPage.test.tsx (T3)
-- workflowsタブを `xl:grid-cols-2` `xl:grid-rows-[auto_1fr]` の単一Gridへ（左=ワークフロー+BaseModel、右=MappingMaster `row-span-2`）。`<xl` は `order` で ワークフロー → MappingMaster → BaseModel。
-- 下部余白を `md:pb-5` へ（bottom navは768px未満のみ）、`max-w-7xl mx-auto` でUltra-Wide上限。
-- モバイルCSS契約（`.settings-mobile-card*`、`.settings-mobile-table` の2行カード化、`[role=dialog]` 85dvh）を一元所有。
+### Backend: DBマイグレーション & 保存時サニタイズ (`REQ-369-T1`)
+#### [MODIFY] [`backend/app/migrations/steps.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/migrations/steps.py)
+- `step_031_cleanup_orphaned_workflow_mappings` を追加し、`ALL_MIGRATION_STEPS` に `MigrationStep("031", "cleanup_orphaned_workflow_mappings", ...)` を登録。
+- `workflow_mappings` のうち、`master_id NOT IN (SELECT id FROM mapping_masters)` または `variant_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mapping_variants mv WHERE mv.id = workflow_mappings.variant_id AND mv.master_id = workflow_mappings.master_id)` に該当する孤立レコード（本番DBで984件）を冪等に削除（`AC-5`）。
 
-#### [MODIFY] SettingsTabBar.tsx + tests (T1)
-- 短縮ラベルを「① モデル」「② 呪文」「③ セリフ」「④ 翻訳」「⑤ システム」へ。`aria-label` は丸数字なしを維持。タブ保存（`prompt-surgeon-settings-active-tab`）の回帰テスト追加。
+#### [MODIFY] [`backend/app/routers/workflows.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/workflows.py)
+- `_load_valid_mapping_refs(db)` および `_is_valid_mapping_ref(...)` を追加し、`create_workflow` / `update_workflow` / `copy_workflow` / `rollback_workflow` の全書込経路で実在しない `master_id` または不整合 `variant_id` を保存対象から除外（`AC-4`）。
 
-### Frontend: Modals（ボトムシート統一）
-#### [MODIFY] components/common/Modal.tsx (T2)
-- `sheetMaxHeightClass`（opt-in、既定は現行）とハンドル `data-testid="modal-sheet-handle"`。
-#### [NEW] ParamTypeMasterManagerModal.tsx (T4) / [MODIFY] ParamTypeMasterModal.tsx (T5)
-- カスタム型マスタを一覧モーダル（新規）＋既存フォームモーダル（共通Modal化）へ。list→form は排他遷移（ネスト禁止）。
+#### [MODIFY] [`backend/tests/integration/api/test_workflows.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/integration/api/test_workflows.py)
+- `[REQ-369/AC-4]` 保存・更新・コピー・ロールバック時の孤立マッピング除外テストを追加。
+- `[REQ-369/AC-5]` `step_031_cleanup_orphaned_workflow_mappings` の孤立レコード削除・冪等性テストを追加。
 
-### Frontend: セクション別
-- **T6 MappingMasterSection**: 行を超スリムカード化（アクション右端ピン留め、Target Node非表示＋`aria-label`保持、`+N classes`/`+N stages`）。常時展開のカスタム型バーを撤去し「カスタム型マスタ」ボタンへ。
-- **T7 BaseModelSection**: モデルマスタ定義を「モデルマスタ管理」モーダルへ分離、チェックポイント表をモバイルカード化、既存モーダルを共通Modalへ。
-- **T8/T9 プロンプト統合型エディタ**: 純粋関数 `promptParamGroupFor`（PBT）＋ `LlmSettingsSection` の `prompt` グループのみ種別連動エディタ化（左=本文、右=共通モデル(読み取り)・Temperature・Max Tokens）。
-- **T10 SpeechToneSection**: プリセット選択→テスト入力→「テスト実行」→右ペイン出力（古い応答は破棄）。
-- **T11 ServiceConnectionCard**: サービス行ごとの死活ランプと「ログ ▼」インライン・アコーディオン。
-- **T12 VramGuardSection**: 2ペイン、黄色の閾値縦線＋閾値タグのリアルタイム連動、接近=黄/未満=赤、`prompt-surgeon-vram-guard-limit` のwrite-through永続化。
-- **T13 ThumbnailSettingsSection**: 比率選択を1行ドロップダウンへ。
-- **T14 WorkflowConnectionSection**: ワークフロー行アクションを「︙」メニューへ集約。
+### Frontend: リマッピングフック修正 & テスト (`REQ-369-T2`)
+#### [MODIFY] [`frontend/src/hooks/useMasterMappingRows.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/useMasterMappingRows.ts)
+- `isValidSavedMapping(mapping, allDefinitions)` を導入し、`allDefinitions`（有効・無効すべての実在マスタ/バリアント定義）に存在するマッピングのみを `storedMappings.current`・`savedMappings`・`getMappings` 保持ループの対象とすることで、削除済みマスタ（`master_id: 33〜62`, `999`）や存在しない `variant_id` の孤立マッピングを除外しつつ、実在する無効バリアント/無効マスタのマッピングは保持（`AC-1`）。
+- `initFromScan` において `savedMappings.length > 0`（既存ワークフローのリマッピング）の場合は、未割当スロットに `scanDefaults` を自動セットせず `''`（未割当）のまま維持し、ドロップダウン候補（`candidates` / `recommendedNodeIds`）のみを提供する（`AC-2`）。
+- `savedMappings.length === 0`（新規ワークフロー登録 `UploadWorkflowModal` 等）の場合は従来通り `scanDefaults` で初期値を自動セットする（`AC-3`）。
 
-### Verification
-- **T15** `frontend/e2e/settingsResponsive.spec.ts`（新規）: 375/767/768/1279/1280px の実測（2カラム・44px・ボトムシート）。dev server(5173)が前提で、起動不可なら INCONCLUSIVE。
+#### [MODIFY] [`frontend/src/hooks/__tests__/useMasterMappingRows.test.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/__tests__/useMasterMappingRows.test.ts) & [`frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx)
+- `[REQ-369/AC-1]`, `[REQ-369/AC-2]`, `[REQ-369/AC-3]` のユニットテスト・モーダル統合テストを追加し、旧前提のテストケース2件を新契約に合わせて更新。
 
-### Documents（document-kind、doc-editor route）
-- **T16** `docs/specs/SPEC_SETTINGS.md` v2.6 → v3.0
-- **T17** `docs/specs/SPEC_COMMON.md` 共通Modalシート契約・ボトムナビ下部余白境界
+### Documents: SSoT 仕様書同期 (`REQ-369-T3`)
+#### [MODIFY] [`docs/specs/SPEC_SETTINGS.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_SETTINGS.md) & [`docs/specs/SPEC_GENERATE.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_GENERATE.md)
+- §4-1-1（`SPEC_SETTINGS.md`）および §2-5（`SPEC_GENERATE.md`）に孤立マッピング除外・既存ワークフロー未割当スロット保持・Step 031 浄化の契約を追記。
 
 ## Task DAG
 
 ```mermaid
 graph TD
-  T1["T1 TabBar 短縮ラベル/タブ永続化テスト"]
-  T2["T2 Modal sheetMaxHeightClass/handle testid"]
-  T3["T3 Dual-Pane + CSS契約 (SettingsPage.tsx)"]
-  T4["T4 ParamTypeMasterManagerModal (新規)"]
-  T5["T5 ParamTypeMasterModal 共通Modal化"]
-  T6["T6 MappingMasterSection カード化/オンデマンド"]
-  T7["T7 BaseModelSection モーダル化/カード化"]
-  T8["T8 promptParamGroupFor (PBT)"]
-  T9["T9 LlmSettingsSection 統合エディタ"]
-  T10["T10 SpeechTone テスト実行"]
-  T11["T11 サービスログ アコーディオン"]
-  T12["T12 VRAM 2ペイン/LS永続化"]
-  T13["T13 サムネイル ドロップダウン"]
-  T14["T14 ワークフロー ︙メニュー"]
-  T15["T15 Playwright E2E"]
-  T16["T16 doc: SPEC_SETTINGS v3.0"]
-  T17["T17 doc: SPEC_COMMON"]
-  T2 --> T4
-  T2 --> T5
-  T2 --> T7
-  T3 --> T6
-  T3 --> T7
-  T4 --> T6
-  T5 --> T6
-  T8 --> T9
-  T1 --> T15
-  T3 --> T15
-  T6 --> T15
-  T12 --> T15
+  T1["REQ-369-T1 (code/backend): Step 031マイグレーション & workflows.py 孤立マッピング除外フィルタ"]
+  T2["REQ-369-T2 (code/frontend): useMasterMappingRows 孤立マッピング除外 & 未割当スロット保持"]
+  T3["REQ-369-T3 (docs-only/system): SPEC_SETTINGS.md / SPEC_GENERATE.md SSoT同期"]
+  T1 --> T3
+  T2 --> T3
 ```
 
-- 最大深さ4（T2→T4→T6→T15）。独立ルール: T1, T2, T3, T8, T10, T11, T12, T13, T14, T16, T17 は並列ディスパッチ可能。
-- 同一ファイルの重複所有なし（所有表は設計書§9）。`SettingsPage.tsx`/`SettingsResponsive.css`/`SettingsPage.test.tsx` は T3 のみ。T10/T11/T12/T13/T14 は `SettingsPage.test.tsx` を**編集せず緑のまま**維持（不可能ならescalate）。
-- 推奨ディスパッチ順: 第1波 {T1,T2,T3,T8,T10,T11,T12,T13,T14,T16,T17} → 第2波 {T4,T5,T7,T9} → 第3波 {T6} → 第4波 {T15}。
+- `REQ-369-T1` と `REQ-369-T2` は所有ファイルが完全に分離されており並列実行可能。その後 `REQ-369-T3` で SSoT ドキュメントを同期する。
 
 ## Trade-off Disclosure（技術的トレードオフ・制約・代替案）
 
-| 論点 | 採用 | 代替案と却下理由 |
+| 論点 | 採用方針 | 代替案と却下理由 |
 |---|---|---|
-| モバイルシート | 既存共通 `Modal` のCSS駆動シートに opt-in 拡張し各モーダルを移行 | 未使用の `BottomSheet`(JS駆動)採用: viewport判定のJS分岐が増え、focus trap/body-lock を再実装する必要がある |
-| 2ペイン | 単一Grid（`order` + `row-span`）+ `grid-rows-[auto_1fr]` | 2つのflex列: <1280pxでの WF→Mapping→Base の並べ替えがCSSだけでは不可能 |
-| 統合エディタの「種別専用モデル」 | 共通モデルは読み取り表示、Temp/MaxTokensは種別が属するパラメータ群に連動（API/DB不変） | 種別ごとのモデル保存: 新規設定キー/契約が必要で「契約100%維持」に反する |
-| VRAM永続化 | サーバ値が正、LSは初期表示用のwrite-throughミラー | LSを正にする: 実ガードと乖離し安全性を損なう |
-| ParamTypeMaster管理 | 一覧モーダル＋既存フォームの排他遷移 | 1モーダル統合: 482行の既存モーダルが肥大化し原子性を損なう |
-| サービスログ | 行ごと独立アコーディオン | 既存 `<details>` 維持: AC-7（各行直下に展開）を満たさない |
-| ファイル所有 | `SettingsPage.tsx` は T3 のみ。他カードは公開propsを変えない | 各カードで編集: 同時所有・マージ競合 |
-
-### リスクと未解決事項（人間レビューで確認してください）
-1. **PBIの6プロンプト種別名（最適化/タグ提案/品質評価/翻訳/スタイル/ネガティブ）は現行DBの `prompt` グループ6キーと一致しません。** 本計画は実在6キー＋既存ラベルを採用します（キー追加は別PBI）。
-2. **種別ごとのTemp/MaxTokensは2つのパラメータ群（診断系4キー共有・Scene Generator系2キー共有）に限られます。** 同群内の種別切替では本文のみが切り替わります。AC-5の検証は群をまたぐ切替で行います。
-3. 「Target Node列」は `MappingMasterV2` に存在しないため、`param_name`/`expected_class_types` を該当情報と解釈します。
-4. VRAM「上限閾値」は既存 `vram_min_free_gb`（最小必要空き容量）と同一概念として扱い、ラベルは既存テスト維持のため変更しません。
-5. Playwrightは `webServer` 未設定のため、E2E(T15)は開発サーバ起動が前提です（不可なら INCONCLUSIVE）。
-6. 既存テストの意図的更新: MappingMaster編集ボタンの `aria-label`（T6）、BaseModel表（T7）、プロンプトのアコーディオン前提（T9）、サービスログ `<details>`（T11）、サムネイルのボタン群（T13）、ワークフロー行ボタン（T14）。
+| バックエンド API での孤立 `master_id` / `variant_id` の扱い | **サイレント・フィルタ（サニタイズ除外）**: 有効なマッピングのみを永続化し、孤立行を除外して `200 OK` / `201 Created` を返す | **422 Unprocessable Entity で拒否**: Generate 画面の `MappingErrorPanel.handleUpdateMapping` は `workflow.mappings` 配列をコピーして 1 件ずつ修正・`PUT` するため、複数エラーがある状態で 1 件目を直した際に他の孤立行が原因で 422 失敗し、UI から修復不能になる。また OpenAPI スナップショットの不変性も維持できるためサニタイズ除外を採用。 |
+| 既存ワークフローのリマッピング時の未割当スロット初期値 | `savedMappings.length > 0` の場合は未割当スロットを `''`（未割当）にし、候補リスト（`recommendedNodeIds` / `candidates`）のみ提供する | スキャン一致ノードを自動入力する: マルチステージ定義（Rough/Detail/FaceDetailer 等）がある環境では、ユーザーが意図しないノードが全ステージへ一括自動割当・保存され、ワークフロー設定を破壊するため却下。 |
 
 ## Verification Plan（3-Gate）
-- Gate 1: `backend\.venv\Scripts\python scripts/verify_ui_invariants.py` / `cd frontend; npm run typecheck` / `scripts/verify_test_naming.py --strict`
-- Gate 2: `cd frontend; npm test`（全件）／局所 `npx vitest run src/pages/SettingsPage`
-- Gate 3: `cd frontend; npx playwright test e2e/settingsResponsive.spec.ts`（dev server前提）
-- 契約不変: 差分に `frontend/src/api/**`・`backend/**`・`docs/system/openapi.yaml` が含まれないこと。
+- **Gate 1 (Static / Typecheck)**:
+  - `backend\.venv\Scripts\python -m ruff check backend`
+  - `npm --prefix frontend run typecheck`
+- **Gate 2 (Full Test Suite)**:
+  - `backend\.venv\Scripts\python -m pytest`
+  - `npx --prefix frontend vitest run`
+- **Gate 3 (Targeted Scenarios & QA Audit)**:
+  - `backend\.venv\Scripts\python -m pytest backend/tests/integration/api/test_workflows.py -k "REQ_369 or orphan or step_031"`
+  - `npx --prefix frontend vitest run src/hooks/__tests__/useMasterMappingRows.test.ts src/components/__tests__/WorkflowModalMultiStage.test.tsx -t "REQ-369"`
+

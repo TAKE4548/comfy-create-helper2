@@ -181,6 +181,8 @@ Settingsのwire表示は、既存のworkflow stage定義、MappingMaster、お�
 
 登録・リマッピング画面では入力slotのDOMと位置を維持する。空欄は未割当としてその場で編集でき、未検出専用の別エリアへ移動しない。有効チェックOFFはrole/node欄を減光し、再有効化まで入力不可。表示・生成へ反映する際は未割当と同じ対象外として扱い、保存ID/文字列は保持する。空欄や入力値の存在でOFFを上書きしない。selectorは欄全体をクリックして候補を開け、IDを先頭に1回だけ表示し、title/class/scoreを同じ欄内へ置く。直接入力・選択後のfocus維持とreadonly操作拒否を保つ。ワークフロー単位の無効化はvariant slot key `v:<variant_id>`、legacy slot key `m:<master_id>`を持つ `mapping_slot_states` に保存する。key欠落またはtrueは有効、falseは明示無効。再スキャンは最新GET完了後に一度だけ状態を初期化し、保存中に編集へ戻さない。旧null variantは単一slotかrole完全一致の一意なslotへ解決し、旧と新の同じmappingを重複保存しない。slot state/候補scoreの重複再計算はcacheで避け、toggleからHTTPは送らず、保存は二重発火を防ぐ。
 
+既存マッピングが存在するワークフローのリマッピング（`RescanModal` 等）では、保存済みマッピングが存在しない未割当スロットにスキャン結果を自動入力せず空欄（未割当）のまま維持し、候補リスト（推奨・通常候補）のみを提示する。新規ワークフロー登録（`UploadWorkflowModal` 等）ではスキャン一致候補を自動初期化する。また、保存・リマッピング時に保持する非表示マッピングは、現行の `mapping_masters` / `mapping_variants`（非活性バリアントや `default_enabled=false` を含む実在定義）に属するものに限る。削除済み `master_id` や存在しない `variant_id` を参照する孤立マッピング（Orphaned Mappings）はフロントエンドの保存ペイロードおよびバックエンドのワークフロー作成・更新・コピー・ロールバック時に除外し、マイグレーション `Step 031` で既存 DB から浄化する（REQ-369）。
+
 現状のStage ManagerはActive=falseで配下variantを一括falseへ変更し、false→trueで一括trueへ復帰する。以前の個別OFFまでONになる既知の制約は、利用者指示でREQ-360へ分離して扱う。既にActive=trueのname編集やtrue→true更新では各variantの個別状態を変更しない。workflow mappingやworkflow固有slot stateは保持する。
 
 `MappingMaster.default_enabled` は新規workflowへの初回取込既定で、省略時はtrue。falseのmaster/variantは新規slotとして表示・取込しない。保存stateまたは既存mappingがあるworkflow slotは、masterを後からfalseにしても残す。MappingMaster一覧/APIは基本無効を含む全件を保持する。

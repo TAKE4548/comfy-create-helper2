@@ -108,7 +108,7 @@ stage groupは入力欄の表示だけを整理する。role、`promptChips`、P
 
 workflowのMapping設定で無効にしたstage slotは、生成要求に使うworkflow cloneからだけ除外する。対象state keyはvariant slotの `v:<variant_id>` またはlegacy slotの `m:<master_id>`。`mapping_slot_states` の値が明示 `false` のmappingだけを、生成用 `mappings` 配列から元の順序を保って除外する。state省略、key欠落、trueは有効として保持する。`null`またはvariant未指定は、masterのslotが1つ、または保存role/既知master legacy roleとcomputed_roleが一意に完全一致する場合にそのvariant keyを参照し、なければlegacy keyへfallbackする。identity用定義には非活性variantも含める。複数slotへnode title/stage名から推定しない。これにより保存前の旧mappingにもv:falseが効き、Seedを含む無効slotの生成入力を表示しない。
 
-無効slotのmappingはworkflowの保存データ、履歴、rollback、copy、exportに保持し、画面からの再有効化に備える。生成用cloneのfilterは元workflow、元mapping配列、record、state objectを変更しない。全件有効の場合も生成用workflowと配列は独立したcloneとする。無効mappingの除外はComfyUI graph自体のnodeやexecutionを停止せず、既存のparam/prompt/seed注入経路へ値を渡さないためのworkflow mapping選別である。
+無効slotのmappingはworkflowの保存データ、履歴、rollback、copy、exportに保持し、画面からの再有効化に備える。保持対象は実在する `mapping_masters` / `mapping_variants` に紐づく無効スロットであり、削除済み旧マスタや存在しないバリアントを参照する孤立マッピング（Orphaned Mappings）は保存時およびマイグレーション `Step 031` で除外・浄化される（REQ-369）。生成用cloneのfilterは元workflow、元mapping配列、record、state objectを変更しない。全件有効の場合も生成用workflowと配列は独立したcloneとする。無効mappingの除外はComfyUI graph自体のnodeやexecutionを停止せず、既存のparam/prompt/seed注入経路へ値を渡さないためのworkflow mapping選別である。
 
 ### 2-6. ワークフロープリセット (`PresetManagerPanel.tsx`, `usePresetState.ts`)
 

@@ -257,3 +257,132 @@ def test_workflow_copy_duplicates_workflow(client: TestClient, db_session: Sessi
     copy_res = client.post(f"/api/workflows/{wf_id}/copy", json={"name": "Copied"})
     assert copy_res.status_code == 201
     assert copy_res.json()["name"] == "Copied"
+
+
+def test_workflow_save_filters_orphaned_master_and_variant_mappings(client: TestClient, db_session: Session) -> None:
+    """[REQ-369/AC-4] Workflow save/update/copy/rollback filters out orphaned master and variant mappings."""
+    # 1. Create a valid master and variant
+    master = models.MappingMaster(
+        role="test_role",
+        display_name="Test Master",
+        input_type="int",
+        param_name="steps",
+        expected_class_types='["KSampler"]',
+        sort_order=1,
+    )
+    db_session.add(master)
+    db_session.flush()
+
+    variant = models.MappingVariant(
+        master_id=master.id,
+        stage_id=1,
+        is_enabled=True,
+        sort_order=0,
+    )
+    db_session.add(variant)
+    db_session.flush()
+
+    # 2. POST /api/workflows with 1 valid mapping, 1 orphan master (9999), 1 mismatched variant (8888)
+    res = client.post(
+        "/api/workflows",
+        json={
+            "name": "REQ-369 Sanitized WF",
+            "json_body": {"nodes": []},
+            "mappings": [
+                {"master_id": master.id, "node_id": "10", "variant_id": variant.id},
+                {"master_id": 9999, "node_id": "99", "variant_id": None},
+                {"master_id": master.id, "node_id": "20", "variant_id": 8888},
+            ],
+        },
+    )
+    assert res.status_code == 201, res.text
+    wf_id = res.json()["id"]
+
+    fetched = client.get(f"/api/workflows/{wf_id}")
+    assert fetched.status_code == 200
+    mappings = fetched.json()["mappings"]
+    assert len(mappings) == 1
+    assert mappings[0]["master_id"] == master.id
+    assert mappings[0]["variant_id"] == variant.id
+    assert mappings[0]["role"] is not None
+
+    # 3. PUT /api/workflows/{id} also sanitizes mappings
+    put_res = client.put(
+        f"/api/workflows/{wf_id}",
+        json={
+            "mappings": [
+                {"master_id": master.id, "node_id": "15", "variant_id": variant.id},
+                {"master_id": 8888, "node_id": "99"},
+            ],
+        },
+    )
+    assert put_res.status_code == 200, put_res.text
+    fetched_after_put = client.get(f"/api/workflows/{wf_id}").json()["mappings"]
+    assert len(fetched_after_put) == 1
+    assert fetched_after_put[0]["node_id"] == "15"
+
+    # 4. Copy workflow sanitizes mappings
+    copy_res = client.post(f"/api/workflows/{wf_id}/copy", json={"name": "REQ-369 Copied WF"})
+    assert copy_res.status_code == 201
+    copied_wf_id = copy_res.json()["id"]
+    copied_mappings = client.get(f"/api/workflows/{copied_wf_id}").json()["mappings"]
+    assert len(copied_mappings) == 1
+    assert copied_mappings[0]["master_id"] == master.id
+
+
+def test_step_031_cleanup_orphaned_workflow_mappings(db_session: Session) -> None:
+    """[REQ-369/AC-5] Migration step 031 idempotently removes orphaned workflow_mappings rows."""
+    from sqlalchemy import inspect
+    from app.migrations.steps import step_031_cleanup_orphaned_workflow_mappings
+
+    # Setup 1 valid workflow, 1 valid master, 1 valid variant
+    master = models.MappingMaster(
+        role="valid_master",
+        display_name="Valid Master",
+        input_type="int",
+        param_name="steps",
+        expected_class_types='["KSampler"]',
+        sort_order=1,
+    )
+    db_session.add(master)
+    db_session.flush()
+
+    variant = models.MappingVariant(
+        master_id=master.id,
+        stage_id=1,
+        is_enabled=True,
+        sort_order=0,
+    )
+    db_session.add(variant)
+
+    wf = models.Workflow(name="WF for Migration Test", json_body="{}")
+    db_session.add(wf)
+    db_session.flush()
+
+    # Valid mapping
+    db_session.add(models.WorkflowMapping(workflow_id=wf.id, master_id=master.id, variant_id=variant.id, node_id="1"))
+    # Orphan mapping: master does not exist
+    db_session.add(models.WorkflowMapping(workflow_id=wf.id, master_id=9999, variant_id=None, node_id="2"))
+    # Orphan mapping: variant does not exist
+    db_session.add(models.WorkflowMapping(workflow_id=wf.id, master_id=master.id, variant_id=8888, node_id="3"))
+    db_session.commit()
+
+    conn = db_session.connection()
+    inspector = inspect(conn)
+
+    # First run cleans up the 2 orphaned rows
+    step_031_cleanup_orphaned_workflow_mappings(conn, inspector)
+    db_session.commit()
+
+    remaining = db_session.query(models.WorkflowMapping).filter(models.WorkflowMapping.workflow_id == wf.id).all()
+    assert len(remaining) == 1
+    assert remaining[0].master_id == master.id
+    assert remaining[0].variant_id == variant.id
+
+    # Second run is idempotent (0 errors, remaining unchanged)
+    step_031_cleanup_orphaned_workflow_mappings(conn, inspector)
+    db_session.commit()
+
+    remaining_idempotent = db_session.query(models.WorkflowMapping).filter(models.WorkflowMapping.workflow_id == wf.id).all()
+    assert len(remaining_idempotent) == 1
+

@@ -19,6 +19,28 @@ def _decode_mapping_slot_states(value: str | dict[str, bool] | None) -> dict[str
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _load_valid_mapping_refs(db: Session) -> tuple[set[int], set[tuple[int, int]]]:
+    valid_masters = {row[0] for row in db.query(models.MappingMaster.id).all()}
+    valid_variants = {
+        (row[0], row[1])
+        for row in db.query(models.MappingVariant.master_id, models.MappingVariant.id).all()
+    }
+    return valid_masters, valid_variants
+
+
+def _is_valid_mapping_ref(
+    master_id: int,
+    variant_id: int | None,
+    valid_masters: set[int],
+    valid_variants: set[tuple[int, int]],
+) -> bool:
+    if master_id not in valid_masters:
+        return False
+    if variant_id is not None and (master_id, variant_id) not in valid_variants:
+        return False
+    return True
+
+
 @router.get("", response_model=list[schemas.WorkflowSummary])
 def list_workflows(db: Session = Depends(get_db)):
     return db.query(models.Workflow).order_by(models.Workflow.created_at.desc()).all()
@@ -40,8 +62,10 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
     )
     db.add(new_wf)
     db.flush()
+    valid_masters, valid_variants = _load_valid_mapping_refs(db)
     for m in src.mappings:
-        db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id, variant_id=m.variant_id))
+        if _is_valid_mapping_ref(m.master_id, m.variant_id, valid_masters, valid_variants):
+            db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id, variant_id=m.variant_id))
     for p in src.presets:
         db.add(models.WorkflowPreset(
             workflow_id=new_wf.id, name=p.name,
@@ -152,13 +176,15 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
         db.query(models.WorkflowMapping).filter(
             models.WorkflowMapping.workflow_id == workflow_id
         ).delete()
+        valid_masters, valid_variants = _load_valid_mapping_refs(db)
         for m in payload.mappings:
-            db.add(models.WorkflowMapping(
-                workflow_id=workflow_id,
-                master_id=m.master_id,
-                node_id=m.node_id,
-                variant_id=m.variant_id,
-            ))
+            if _is_valid_mapping_ref(m.master_id, m.variant_id, valid_masters, valid_variants):
+                db.add(models.WorkflowMapping(
+                    workflow_id=workflow_id,
+                    master_id=m.master_id,
+                    node_id=m.node_id,
+                    variant_id=m.variant_id,
+                ))
 
     db.commit()
     db.refresh(wf)
@@ -215,13 +241,17 @@ def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
         models.WorkflowMapping.workflow_id == workflow_id
     ).delete()
     saved_mappings = json.loads(history.mappings)
+    valid_masters, valid_variants = _load_valid_mapping_refs(db)
     for m in saved_mappings:
-        db.add(models.WorkflowMapping(
-            workflow_id=workflow_id,
-            master_id=m["master_id"],
-            node_id=m["node_id"],
-            variant_id=m.get("variant_id"),
-        ))
+        m_id = m["master_id"]
+        v_id = m.get("variant_id")
+        if _is_valid_mapping_ref(m_id, v_id, valid_masters, valid_variants):
+            db.add(models.WorkflowMapping(
+                workflow_id=workflow_id,
+                master_id=m_id,
+                node_id=m["node_id"],
+                variant_id=v_id,
+            ))
     wf.mapping_slot_states = history.mapping_slot_states or "{}"
     db.delete(history)
     db.commit()
@@ -254,13 +284,15 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
     )
     db.add(wf)
     db.flush()
+    valid_masters, valid_variants = _load_valid_mapping_refs(db)
     for m in payload.mappings:
-        db.add(models.WorkflowMapping(
-            workflow_id=wf.id,
-            master_id=m.master_id,
-            node_id=m.node_id,
-            variant_id=m.variant_id,
-        ))
+        if _is_valid_mapping_ref(m.master_id, m.variant_id, valid_masters, valid_variants):
+            db.add(models.WorkflowMapping(
+                workflow_id=wf.id,
+                master_id=m.master_id,
+                node_id=m.node_id,
+                variant_id=m.variant_id,
+            ))
     db.commit()
     db.refresh(wf)
     return wf

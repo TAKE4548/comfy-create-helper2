@@ -12,6 +12,13 @@ const workflowNodeIds = (value: unknown): Set<string> | undefined => {
   return new Set(Object.keys(nodes))
 }
 
+export const isValidSavedMapping = (mapping: SlotMapping, definitions: readonly SlotDefinition[]): boolean => {
+  if (mapping.variant_id != null) {
+    return definitions.some(d => d.masterId === mapping.master_id && d.variantId === mapping.variant_id)
+  }
+  return definitions.some(d => d.masterId === mapping.master_id)
+}
+
 export interface StageSlotItem extends RowPresentation {
   slotKey: string // `v_${variant_id}` または `m_${master_id}`
   variantId?: number
@@ -64,7 +71,10 @@ export function useMasterMappingRows(
       : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
   }), [masters])
   const slotDefinitions = (includeInactive = false) => includeInactive ? allDefinitions : activeDefinitions
-  const saved = storedMappings.current
+  const saved = useMemo(
+    () => storedMappings.current.filter(m => isValidSavedMapping(m, allDefinitions)),
+    [allDefinitions]
+  )
   const savedByKey = useMemo(() => new Map(saved.map(m => [mappingSlotKey(m, allDefinitions), m])), [saved, allDefinitions])
   const mappedKeys = useMemo(() => new Set(savedByKey.keys()), [savedByKey])
   const visibleSlots = useMemo(() => activeDefinitions.filter(s => s.defaultEnabled
@@ -320,7 +330,8 @@ export function useMasterMappingRows(
     latestScan.current = result
     if (workflowJson !== undefined) graph.current = workflowJson
     if (initialized.current) return
-    const savedMappings = existingMappings ?? options.existingMappings ?? []
+    const rawSavedMappings = existingMappings ?? options.existingMappings ?? []
+    const savedMappings = rawSavedMappings.filter(m => isValidSavedMapping(m, allDefinitions))
     storedMappings.current = savedMappings
     const savedByIdentity = new Map(savedMappings.map(mapping => [mappingSlotKey(mapping, allDefinitions), mapping]))
     const initialSlots = activeDefinitions.filter(slot => slot.defaultEnabled
@@ -391,7 +402,7 @@ export function useMasterMappingRows(
                 mismatches[slotKey] = true
               }
             } else {
-              initial[slotKey] = scanDefaults[slotKey] ?? ''
+              initial[slotKey] = ''
             }
           }
 
@@ -427,8 +438,8 @@ export function useMasterMappingRows(
               mismatches[String(master.id)] = true
             }
           } else {
-            initial[`m_${master.id}`] = scanDefaults[`m_${master.id}`] ?? ''
-            initial[String(master.id)] = initial[`m_${master.id}`]
+            initial[`m_${master.id}`] = ''
+            initial[String(master.id)] = ''
           }
         }
       }
@@ -480,7 +491,7 @@ export function useMasterMappingRows(
       ? r.stageSlots.map(s => canonicalSlotKey(s.masterId, s.variantId))
       : [canonicalSlotKey(r.master.id)]))
     for (const saved of storedMappings.current) {
-      if (!knownKeys.has(mappingSlotKey(saved, slotDefinitions(true)))) {
+      if (isValidSavedMapping(saved, allDefinitions) && !knownKeys.has(mappingSlotKey(saved, slotDefinitions(true)))) {
         const { variant_id, ...legacy } = saved
         results.push(variant_id == null ? legacy : { ...saved, variant_id })
       }

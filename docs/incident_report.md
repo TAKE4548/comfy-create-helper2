@@ -1,7 +1,7 @@
-# Incident Triage Report: タグチップ押下フィードバック追加後の並び替え・削除・強度操作不能
+# Incident Triage Report: ノードリマッピング実施後の孤立マッピング引き継ぎおよびスキャン自動確定による大量マッピングエラー
 
 <incident_metadata>
-- Created_At: 2026-10-13 04:41:46
+- Created_At: 2026-10-16 22:44:18
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
 - Classification: Type A: Implementation Defect
 </incident_metadata>
@@ -11,23 +11,23 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: 利用者報告: タグチップがクリックで沈むようになってからドラッグ移動と削除アイコンが機能しない。サブメニューは開くが強度設定などのボタンも反応しない。テキストモードでは編集可能。
-- Reproducibility: 利用者の実画面で発生。調査は読み取り専用のソース追跡。隔離HTMLによるheadless Edge/Chromeの再現を試みたがDOM出力を取得できず、実ブラウザのヒットテスト・イベントトレースによる再現確認は未完了。
-- Impact_Scope: 共通TagChipEditor利用画面（Generate、Tags編集、LoRAトリガーワード編集等）のチップモード。テキストモードは利用者報告により回避可能。TagChipViewerには同種の疑似要素クラスがあるが、編集アイコンを持たず本件の直接対象ではない。
+- Observed_Symptom: V2マッピングマスタ構造移行後のワークフローでノードリマッピング（RescanModal）を実行・保存すると、手動設定したスロットは正常表示される一方、未割り当て・設定した覚えのないノードについて「マッピングエラー検出（紐付け先マスタが無効）」が生成画面に大量表示される。
+- Reproducibility: ローカル実DB（prompt_surgeon.db）およびソース静的・動的トレースにて確定。DB内に過去のStage別マスタ統合時に取り残された孤立レコード（master_id 33〜62、全984件）が存在し、RescanModal保存時にuseMasterMappingRows.getMappings()が未知キーとしてこれらを無条件に引き継ぎ再保存すること、および未割り当てスロットへのスキャン候補自動入力が確認された。
+- Impact_Scope: フロントエンド（RescanModal, useMasterMappingRows, GeneratePage, MappingErrorPanel）およびバックエンド（PUT /api/workflows/{id}, ワークフローDB永続化層）。孤立マッピング（master_id不在・role=null）を保持する全ワークフロー（DB上30ワークフロー以上、計984レコード）。
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
 - Defect_Classification: Type A: Implementation Defect
-- Root_Cause_Mechanism: Type A判定根拠: docs/specs/SPEC_COMMON.md:158-160は強度更新・×削除・ドラッグ並び替えを要求し、SPEC_TAGS.md:36とSPEC_LORAS.md:86も削除/並び替えを要求する。TagChip.tsx:243はREQ-338設計:94-100由来のactive:scale-[0.97]とbefore:absolute before:-inset-0.5をチップ外枠へ適用する。疑似要素はcontentを持ち、位置指定され、チップ内全面を覆うがpointer-eventsの除外または内側操作要素を上へ配置する指定がない。ドラッグハンドル(:253-264)と削除ボタン(:288-300)は位置指定/z-indexを持たない通常フロー要素であり、位置指定疑似要素が内側のポインタ標的をチップ本体へ奪うCSS構造となっている。その場合、ドラッグハンドルのdnd-kit listenersも削除button onClickも起動せず、外枠onClick(:240)のメニュー表示(:115-121)へ流れる。削除/編集の親ハンドラ(index.tsx:312-324)は存在する。サブメニュー強度ボタン(:388-391)からhandleStepWeight(:142-148)への接続も存在する。強度ボタン不応答の直接原因は未隔離: 親のactive変形が子メニューやfixed和訳カードの座標/stackingに影響する可能性があり、実画面確認が必要。全症状を疑似要素だけで説明したとは扱わない。既存TagChip.test.tsx:805-880はクラス文字列とfireEvent.click(child)を直接検証し、実際のCSSヒット判定を検証しない。
-- Failure_Location: `frontend/src/components/TagChipEditor/TagChip.tsx:243; :253-264（ドラッグハンドル）; :288-300（削除）; :302-315（メニュー）; :388-391（強度ボタン）; docs/specs/SPEC_COMMON.md:158-160`
+- Root_Cause_Mechanism: 1. [フロントエンド引き継ぎ欠陥] useMasterMappingRows.tsのgetMappings()(482-486行)において、認識済みスロット(knownKeys)に含まれないstoredMappings.currentのレコードを無条件に保持して保存ペイロードに含めるが、master_idが現在のmapping_mastersに存在しない孤立レコード(旧マスタ33-62等)まで無差別に引き継ぐため、バックエンド側でrole解決不能(role=None)のレコードとして再保存される。 2. [スキャン候補の無断確定保存] initFromScan()(393-395行)およびbuildRows()において未割り当てスロットにscanDefaultsが自動代入され、getMappings()(491行)がnode_id非空を条件に保存対象とするため、ユーザーが明示的に採用していない候補が大量に新規保存される。 3. [バックエンド整合性バリデーション欠如] workflows.pyのupdate_workflow(151-161行)が受け取ったmappingsのmaster_id実在性およびvariant_id整合性を検証せずに全件DELETE&INSERTしている。 4. [DB孤立レコード残存] REQ-336/step_029移行時にSQLiteのPRAGMA foreign_keys無効状態とUPDATE対象限定により、旧マスタ統合・削除時のcascade未発火レコード(984件)が残存していた。
+- Failure_Location: `frontend/src/hooks/useMasterMappingRows.ts:393-395, 482-486, 491-498; backend/app/routers/workflows.py:92, 151-161; backend/app/migrations/steps.py:759-766`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: 既存SSoTに従い、ヒット領域拡張と押下フィードバックを維持しながら内側のドラッグ・削除操作にポインタイベントが到達するよう設計する。実ブラウザのelementFromPointとpointerdown/mousedown/click標的、active時のメニュー/和訳カード座標・重なりを確認し、サブメニューボタン不応答の原因を隔離してから修正範囲を確定する。実ブラウザでドラッグ、×削除、強度段階調整/数値入力、有効切替を検証する。SSoT変更は不要。本報告の承認前にPBI作成や実装は行わない。
+- Proposed_Action: 1. [フロントエンド] useMasterMappingRows.tsのgetMappings()において、有効なmapping_mastersおよびmapping_variantsに実在しない孤立レコードを除外(サニタイズ)し、保存ペイロードに含めない。また未割り当てスロットへのスキャン候補は推奨表示にとどめ、ユーザーの明示操作なしにnode_idとして自動確定・保存しない。 2. [バックエンド] PUT /api/workflows/{workflow_id}において、送信されたmappingsのmaster_idおよびvariant_idが有効なマスタ/バリアントに実在するか検証し、不正な孤立レコードを拒否または自動除外する。 3. [DBマイグレーション/クリーンアップ] 移行ステップまたは修復スクリプトを追加し、mapping_mastersに存在しない無効なmaster_idを持つworkflow_mappingsの残存レコード(984件)をクリーンアップする。
 - SSoT_Update_Required: No (Pure implementation bug fix)
 - Recommended_Route: engineer (/dev-impl)
 </remediation_strategy>
@@ -35,5 +35,5 @@
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: UNREGISTERED
+- PBI_ID: REQ-369
 </linked_artifacts>
