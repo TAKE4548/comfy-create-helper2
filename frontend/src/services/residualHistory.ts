@@ -80,7 +80,7 @@ function insertAfterPrior<T>(base: T[], added: T[], priorKeys: ReadonlySet<strin
       foundPrior = true;
     }
   }
-  base.splice(foundPrior ? insertAt + 1 : base.length, 0, ...added);
+  base.splice(foundPrior ? insertAt + 1 : 0, 0, ...added);
   return base;
 }
 
@@ -100,22 +100,20 @@ export function mergeResidualHistory(
   }
 
   const priorKeys = new Set(priorAddedIdentities);
-  const existingAllCount = history.all.length;
-  const allSlots = Math.max(0, 200 - existingAllCount);
-  const allAdded = candidates.slice(0, allSlots);
-  const all = insertAfterPrior([...history.all], allAdded.map(item => item.view_url), priorKeys, raw => {
+  const allAdded = candidates;
+  const allMerged = insertAfterPrior([...history.all], allAdded.map(item => item.view_url), priorKeys, raw => {
     const identity = identityFromUrl(raw, window.location.origin);
     return identity ? identityKey(identity) : '';
   });
+  const all = allMerged.slice(0, 200);
 
   const ownBase = [...history.own];
   const ownCandidates = allAdded.filter(item => item.session_id === history.clientId);
-  const ownSlots = Math.max(0, 200 - ownBase.length);
-  const ownAdded = ownCandidates.slice(0, ownSlots);
-  const own = insertAfterPrior(ownBase, ownAdded.map(item => item.view_url), priorKeys, raw => {
+  const ownMerged = insertAfterPrior(ownBase, ownCandidates.map(item => item.view_url), priorKeys, raw => {
     const identity = identityFromUrl(raw, window.location.origin);
     return identity ? identityKey(identity) : '';
   });
+  const own = ownMerged.slice(0, 200);
 
   return { all, own, added: allAdded };
 }

@@ -41,11 +41,11 @@ describe('collectDisplayedIdentities', () => {
 });
 
 describe('mergeResidualHistory', () => {
-  it('preserves existing URLs and adds new BE view URLs in receive order, own only for this session', () => {
+  it('preserves existing URLs and adds new BE view URLs at the front for initial residual, own only for this session', () => {
     const old = url('old.png', '', 'output', '&t=old');
     const result = mergeResidualHistory(history([old], [old]), [item('a.png'), item('foreign.png', 'other'), item('unknown.png', null)], []);
-    expect(result.all).toEqual([old, item('a.png').view_url, item('foreign.png').view_url, item('unknown.png').view_url]);
-    expect(result.own).toEqual([old, item('a.png').view_url]);
+    expect(result.all).toEqual([item('a.png').view_url, item('foreign.png').view_url, item('unknown.png').view_url, old]);
+    expect(result.own).toEqual([item('a.png').view_url, old]);
     expect(result.added.map(x => x.identity.filename)).toEqual(['a.png', 'foreign.png', 'unknown.png']);
   });
 
@@ -64,7 +64,7 @@ describe('mergeResidualHistory', () => {
   it('recompares latest history so an item that arrived during the request is not duplicated', () => {
     const live = url('live.png');
     const result = mergeResidualHistory(history([live]), [item('live.png'), item('other.png')], []);
-    expect(result.all).toEqual([live, item('other.png').view_url]);
+    expect(result.all).toEqual([item('other.png').view_url, live]);
   });
 
   it('inserts a later page after the prior residual block without reordering intervening live rows', () => {
@@ -75,24 +75,25 @@ describe('mergeResidualHistory', () => {
     expect(result.all).toEqual([first.view_url, second.view_url, live]);
   });
 
-  it('preserves a caller-provided ascending or reversed display order', () => {
+  it('[REQ-370/AC-3] places initial residual batch at the front of existing history', () => {
     const newestFirst = [url('newest.png'), url('older.png')];
-    expect(mergeResidualHistory(history(newestFirst), [item('residual.png')], []).all).toEqual([...newestFirst, item('residual.png').view_url]);
+    expect(mergeResidualHistory(history(newestFirst), [item('residual.png')], []).all).toEqual([item('residual.png').view_url, ...newestFirst]);
   });
 
-  it('adds only available capacity and never deletes existing rows at or above 200', () => {
-    const existing = Array.from({ length: 199 }, (_, i) => url(`old-${i}.png`));
+  it('[REQ-370/AC-2] accepts new candidates via FIFO up to 200 items even when already holding 200 items', () => {
+    const existing = Array.from({ length: 200 }, (_, i) => url(`old-${i}.png`));
     const result = mergeResidualHistory(history(existing), [item('a.png'), item('b.png')], []);
     expect(result.all).toHaveLength(200);
-    expect(result.all.slice(0, 199)).toEqual(existing);
-    const full = Array.from({ length: 201 }, (_, i) => url(`keep-${i}.png`));
-    expect(mergeResidualHistory(history(full), [item('extra.png')], []).all).toEqual(full);
+    expect(result.added).toHaveLength(2);
+    expect(result.all.slice(0, 2)).toEqual([item('a.png').view_url, item('b.png').view_url]);
+    expect(result.all).not.toContain(existing[198]);
+    expect(result.all).not.toContain(existing[199]);
   });
 
   it('does not add missing identities and returns empty arrays for empty input', () => {
     expect(mergeResidualHistory(history(), [], [])).toEqual({ all: [], own: [], added: [] });
     const missing = url('gone.png');
     const result = mergeResidualHistory(history([missing], [], new Set([missing])), [item('gone.png')], []);
-    expect(result.all).toEqual([missing, item('gone.png').view_url]);
+    expect(result.all).toEqual([item('gone.png').view_url, missing]);
   });
 });

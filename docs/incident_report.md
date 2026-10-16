@@ -1,7 +1,7 @@
-# Incident Triage Report: ノードリマッピング実施後の孤立マッピング引き継ぎおよびスキャン自動確定による大量マッピングエラー
+# Incident Triage Report: 複数端末における生成履歴同期抜け（スナップショット遷移判定・差分スロット上限・挿入位置時系列不整合）
 
 <incident_metadata>
-- Created_At: 2026-10-16 22:44:18
+- Created_At: 2026-10-17 01:42:33
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
 - Classification: Type A: Implementation Defect
 </incident_metadata>
@@ -11,23 +11,23 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: V2マッピングマスタ構造移行後のワークフローでノードリマッピング（RescanModal）を実行・保存すると、手動設定したスロットは正常表示される一方、未割り当て・設定した覚えのないノードについて「マッピングエラー検出（紐付け先マスタが無効）」が生成画面に大量表示される。
-- Reproducibility: ローカル実DB（prompt_surgeon.db）およびソース静的・動的トレースにて確定。DB内に過去のStage別マスタ統合時に取り残された孤立レコード（master_id 33〜62、全984件）が存在し、RescanModal保存時にuseMasterMappingRows.getMappings()が未知キーとしてこれらを無条件に引き継ぎ再保存すること、および未割り当てスロットへのスキャン候補自動入力が確認された。
-- Impact_Scope: フロントエンド（RescanModal, useMasterMappingRows, GeneratePage, MappingErrorPanel）およびバックエンド（PUT /api/workflows/{id}, ワークフローDB永続化層）。孤立マッピング（master_id不在・role=null）を保持する全ワークフロー（DB上30ワークフロー以上、計984レコード）。
+- Observed_Symptom: 複数端末でPrompt Surgeonを開いて画像生成を行った際、filterOwnSessionを無効（全セッション表示）にしているにもかかわらず、他端末で生成されたバッチが閲覧端末側の履歴に同期されず抜け落ちる。再読み込みを行っても反映されないか、履歴の最末尾に追いやられる。
+- Reproducibility: 実コード静的検証および通信シーケンス検証により確定。1. HTTP再同期(loadSnapshot)時にprevious?.epoch !== snapshot.epochまたは既完了ジョブがcompletedJobsに含まれずマージスキップ。2. 画面アクティブ中のポーリング完全停止。3. IndexedDB等で200件保持時にallSlots=0となり差分切り捨て。4. insertAfterPriorで初回priorAddedIdentities空時に末尾挿入。
+- Impact_Scope: フロントエンド(frontend/src/store/slices/connectionSlice.ts, frontend/src/services/residualHistory.ts, frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts)。複数端末またはバックグラウンドタブで生成履歴を閲覧・共有する全ユーザーシナリオ。
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
 - Defect_Classification: Type A: Implementation Defect
-- Root_Cause_Mechanism: 1. [フロントエンド引き継ぎ欠陥] useMasterMappingRows.tsのgetMappings()(482-486行)において、認識済みスロット(knownKeys)に含まれないstoredMappings.currentのレコードを無条件に保持して保存ペイロードに含めるが、master_idが現在のmapping_mastersに存在しない孤立レコード(旧マスタ33-62等)まで無差別に引き継ぐため、バックエンド側でrole解決不能(role=None)のレコードとして再保存される。 2. [スキャン候補の無断確定保存] initFromScan()(393-395行)およびbuildRows()において未割り当てスロットにscanDefaultsが自動代入され、getMappings()(491行)がnode_id非空を条件に保存対象とするため、ユーザーが明示的に採用していない候補が大量に新規保存される。 3. [バックエンド整合性バリデーション欠如] workflows.pyのupdate_workflow(151-161行)が受け取ったmappingsのmaster_id実在性およびvariant_id整合性を検証せずに全件DELETE&INSERTしている。 4. [DB孤立レコード残存] REQ-336/step_029移行時にSQLiteのPRAGMA foreign_keys無効状態とUPDATE対象限定により、旧マスタ統合・削除時のcascade未発火レコード(984件)が残存していた。
-- Failure_Location: `frontend/src/hooks/useMasterMappingRows.ts:393-395, 482-486, 491-498; backend/app/routers/workflows.py:92, 151-161; backend/app/migrations/steps.py:759-766`
+- Root_Cause_Mechanism: 1. [スナップショット遷移判定漏れ] connectionSlice.tsのapplyGenerationSnapshotにおいて、completedJobsが直前スナップショットからの状態変化（succeededへの遷移）のみを抽出するため、初回ロード時やHTTP再同期(loadSnapshot)で最初からsucceededのジョブがmergeManagedHistoryに渡されず破棄される。 2. [能動的再同期要求の不在] バックグラウンド復帰時や画面表示中にスナップショットや履歴を能動的に問い合わせる仕組みが抑止されている。 3. [残存差分スロット計算欠陥] residualHistory.tsのmergeResidualHistoryにおいて、allSlotsがMath.max(0, 200 - existingAllCount)で計算されるため、既存履歴が200件あると受け入れ枠が0となり全候補が切り捨てられる。 4. [差分挿入位置の時系列逆転] residualHistory.tsのinsertAfterPriorにおいて、初回priorAddedIdentitiesが空の場合にfoundPriorがfalseとなり、配列最末尾（最古画像の後ろ）に追記される。
+- Failure_Location: `frontend/src/store/slices/connectionSlice.ts:176-179, 255; frontend/src/services/residualHistory.ts:73-85, 103-109, 113-118; frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts:380-413`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: 1. [フロントエンド] useMasterMappingRows.tsのgetMappings()において、有効なmapping_mastersおよびmapping_variantsに実在しない孤立レコードを除外(サニタイズ)し、保存ペイロードに含めない。また未割り当てスロットへのスキャン候補は推奨表示にとどめ、ユーザーの明示操作なしにnode_idとして自動確定・保存しない。 2. [バックエンド] PUT /api/workflows/{workflow_id}において、送信されたmappingsのmaster_idおよびvariant_idが有効なマスタ/バリアントに実在するか検証し、不正な孤立レコードを拒否または自動除外する。 3. [DBマイグレーション/クリーンアップ] 移行ステップまたは修復スクリプトを追加し、mapping_mastersに存在しない無効なmaster_idを持つworkflow_mappingsの残存レコード(984件)をクリーンアップする。
+- Proposed_Action: 1. connectionSlice.tsのapplyGenerationSnapshotにおいて、遷移ジョブだけでなくスナップショット内の全成功ジョブ(succeededかつoutputs保有)を対象にmergeManagedHistoryを実行し、未反映の完了画像を網羅マージする。 2. residualHistory.tsのスロット計算を空き容量上限からFIFO方式（新規候補を受け入れてから最大200件に切り詰め）に是正する。 3. insertAfterPriorの挿入順序を時系列に整合する位置（最新側/先頭ブロック等）へ補正する。 4. タブ復帰時(visibilitychange)にgenerationApi.getState()を明示的に呼び出してスナップショット整合性を再検証する。
 - SSoT_Update_Required: No (Pure implementation bug fix)
 - Recommended_Route: engineer (/dev-impl)
 </remediation_strategy>
@@ -35,5 +35,5 @@
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: REQ-369
+- PBI_ID: REQ-370
 </linked_artifacts>

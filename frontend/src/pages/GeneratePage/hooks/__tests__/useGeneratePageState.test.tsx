@@ -62,6 +62,7 @@ vi.mock('../../../../store/useGenerationStore', () => {
     setAllPromptChips: vi.fn(),
     getEffectiveParamValues: vi.fn(),
     fetchParamSyncGroups: vi.fn(),
+    loadSnapshot: vi.fn().mockResolvedValue(undefined),
   }
   const listeners = new Set<(state: typeof store, previousState: typeof store) => void>()
   const useGenerationStore = (selector?: (state: typeof store) => unknown) =>

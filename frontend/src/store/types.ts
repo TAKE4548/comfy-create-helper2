@@ -128,6 +128,7 @@ export interface ConnectionActions {
   clearPreview: () => void;
   setSubmissionAbortController: (controller: AbortController | null) => void;
   abortSubmission: () => void;
+  loadSnapshot: (automaticEpoch?: string) => Promise<void>;
   applyGenerationSnapshot: (snapshot: GenerationSnapshot, upstream?: UpstreamQueueView) => boolean;
 }
 

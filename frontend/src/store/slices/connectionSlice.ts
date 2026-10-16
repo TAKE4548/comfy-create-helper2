@@ -173,10 +173,9 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     if (previous && previous.epoch !== snapshot.epoch) lastObservedPreview = null
     snapshotApplySequence++
     const autoFollowImage = notifyTransitions(previous, snapshot)
-    const completedJobs = previous?.epoch === snapshot.epoch
-      ? snapshot.jobs.filter((job) => job.status === 'succeeded' &&
-        previous.jobs.find((prior) => prior.job_id === job.job_id)?.status !== 'succeeded')
-      : []
+    const succeededJobs = snapshot.jobs.filter(
+      (job) => job.status === 'succeeded' && job.outputs && job.outputs.length > 0
+    )
 
     const ownActive = snapshot.jobs.filter((job) => job.session_id === clientId &&
       ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
@@ -252,7 +251,9 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     if (autoFollowImage) {
       try { localStorage.setItem(LS_KEYS.SELECTED_IMG, autoFollowImage.image) } catch { /* selection persistence is optional */ }
     }
-    if (completedJobs.length > 0) mergeManagedHistory({ ...snapshot, jobs: completedJobs })
+    if (succeededJobs.length > 0) {
+      mergeManagedHistory({ ...snapshot, jobs: succeededJobs })
+    }
     try {
       if (currentPromptId) localStorage.setItem(LS_KEYS.CURRENT_PROMPT_ID, currentPromptId)
       else localStorage.removeItem(LS_KEYS.CURRENT_PROMPT_ID)
@@ -376,5 +377,6 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
       )
     },
     applyGenerationSnapshot,
+    loadSnapshot,
   }
 }

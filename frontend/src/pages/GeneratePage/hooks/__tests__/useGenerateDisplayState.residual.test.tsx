@@ -49,8 +49,8 @@ describe('useGenerateDisplayState residual history sync', () => {
 
     expect(generationApi.residualHistory).toHaveBeenCalledTimes(1)
     expect(vi.mocked(generationApi.residualHistory).mock.calls[0][0]).toEqual({ known: [identity('shown.png')], examined: [] })
-    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([baseline, image('own') , image('foreign'), image('unknown')])
-    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: true }])).toEqual([baseline, image('own')])
+    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([image('own'), image('foreign'), image('unknown'), baseline])
+    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: true }])).toEqual([image('own'), baseline])
     expect(useGenerationStore.getState().selectedImg).toBe(baseline)
   })
 
@@ -118,10 +118,10 @@ describe('useGenerateDisplayState residual history sync', () => {
     await waitFor(() => expect(result.current.residualHistoryStatus).toBe('complete'))
     expect(calls).toBe(2)
     expect(vi.mocked(generationApi.residualHistory).mock.calls[1][0].known).toEqual([
-      identity('race.png'), identity('shown.png'), identity('page-a.png'),
+      identity('page-a.png'), identity('race.png'), identity('shown.png'),
     ])
     expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([
-      image('race'), image('shown'), image('page-a'), image('page-b'),
+      image('page-a'), image('race'), image('page-b'), image('shown'),
     ])
     expect(useGenerationStore.getState().comfyHistoryImages.filter((url) => url === image('race'))).toHaveLength(1)
   })
@@ -164,7 +164,7 @@ describe('useGenerateDisplayState residual history sync', () => {
 
     act(() => result.current.retryResidualHistory())
     await waitFor(() => expect(generationApi.residualHistory).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([baseline, image('unknown')]))
+    await waitFor(() => expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([image('unknown'), baseline]))
     expect(result.current.trialAvailability.getStatus(image('unknown'))).toBe('present')
   })
 
@@ -184,7 +184,7 @@ describe('useGenerateDisplayState residual history sync', () => {
     await waitFor(() => expect(result.current.residualHistoryStatus).toBe('partial'))
     expect(generationApi.residualHistory).toHaveBeenCalledTimes(2)
     expect(vi.mocked(generationApi.residualHistory).mock.calls[1][0].examined).toEqual([identity('B.png')])
-    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([image('shown'), oldViewUrl])
+    expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([oldViewUrl, image('shown')])
   })
 
   it('stops after one retry page when baseline-known B follows a full 20-page cycle', async () => {
@@ -211,4 +211,37 @@ describe('useGenerateDisplayState residual history sync', () => {
     expect(calls).toBe(21)
     expect(client.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toContain(baselineB)
   })
+
+  it('[REQ-370/AC-4] calls store.loadSnapshot on visibilitychange and updates query cache with newly completed images', async () => {
+    const client = new QueryClient()
+    const baseline = image('shown')
+    client.setQueryData(['generateDisplayImages', { filterOwnSession: false }], [baseline])
+    client.setQueryData(['generateDisplayImages', { filterOwnSession: true }], [baseline])
+    const store = useGenerationStore.getState()
+    const loadSnapshotSpy = vi.spyOn(store, 'loadSnapshot').mockImplementation(async () => {
+      useGenerationStore.setState({
+        comfyHistoryImages: [image('completed-on-other-device'), baseline],
+      })
+    })
+    const fetchQueueSpy = vi.spyOn(store, 'fetchQueue').mockImplementation(vi.fn())
+
+    renderHook(() => useGenerateDisplayState({ selectedWorkflowId: null }), {
+      wrapper: makeWrapper(client),
+    })
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(loadSnapshotSpy).toHaveBeenCalled()
+    await waitFor(() => {
+      const data = client.getQueryData<string[]>(['generateDisplayImages', { filterOwnSession: false }])
+      expect(data).toContain(image('completed-on-other-device'))
+    })
+
+    loadSnapshotSpy.mockRestore()
+    fetchQueueSpy.mockRestore()
+  })
 })
+

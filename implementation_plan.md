@@ -1,71 +1,101 @@
-# Implementation Plan: REQ-369 ノードリマッピング（RescanModal）実行時に削除済み旧マスタの孤立マッピングおよび未割当ステージが自動保存されマッピングエラーが多発する不具合の修正
-
-V2 マッピングマスタ移行（`REQ-336`）後に削除された旧ステージ別マスタ（`master_id: 33〜62`）の孤立マッピングがリマッピング保存時に再送信される問題、および既存ワークフローの再スキャン時に未割当のステージスロット（`Rough` / `Detail` / `FaceDetailer` 等）へスキャン結果が自動入力・保存される問題を、フロントエンド・バックエンド・DBマイグレーションの3層で解決します。
-
-- インシデントレポート: [`docs/incident_report.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/incident_report.md)
-- PBI: [`docs/backlog/pbi/active/REQ-369.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/pbi/active/REQ-369.md)
-- 設計書: [`docs/design/REQ-369.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-369.md)
-- テスト計画: [`docs/design/REQ-369-test-plan.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/design/REQ-369-test-plan.md)
-- Task Cards:
-  - [`docs/backlog/task/active/REQ-369-T1.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T1.md)
-  - [`docs/backlog/task/active/REQ-369-T2.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T2.md)
-  - [`docs/backlog/task/active/REQ-369-T3.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/backlog/task/active/REQ-369-T3.md)
+# Implementation Plan - REQ-370: 複数端末における生成履歴同期抜けの修正
 
 ## Proposed Changes
 
-### Backend: DBマイグレーション & 保存時サニタイズ (`REQ-369-T1`)
-#### [MODIFY] [`backend/app/migrations/steps.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/migrations/steps.py)
-- `step_031_cleanup_orphaned_workflow_mappings` を追加し、`ALL_MIGRATION_STEPS` に `MigrationStep("031", "cleanup_orphaned_workflow_mappings", ...)` を登録。
-- `workflow_mappings` のうち、`master_id NOT IN (SELECT id FROM mapping_masters)` または `variant_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM mapping_variants mv WHERE mv.id = workflow_mappings.variant_id AND mv.master_id = workflow_mappings.master_id)` に該当する孤立レコード（本番DBで984件）を冪等に削除（`AC-5`）。
+複数端末および複数セッションでの画像生成において、他端末で生成された画像の履歴同期抜け、リロード時の残存履歴切り捨て、および挿入位置逆転を解消するため、フロントエンドの 3 つのコンポーネント（`connectionSlice.ts`, `residualHistory.ts`, `useGenerateDisplayState.ts`）を改修します。
 
-#### [MODIFY] [`backend/app/routers/workflows.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/app/routers/workflows.py)
-- `_load_valid_mapping_refs(db)` および `_is_valid_mapping_ref(...)` を追加し、`create_workflow` / `update_workflow` / `copy_workflow` / `rollback_workflow` の全書込経路で実在しない `master_id` または不整合 `variant_id` を保存対象から除外（`AC-4`）。
+---
 
-#### [MODIFY] [`backend/tests/integration/api/test_workflows.py`](file:///c:/Users/audih/ws/comfy-create-helper2/backend/tests/integration/api/test_workflows.py)
-- `[REQ-369/AC-4]` 保存・更新・コピー・ロールバック時の孤立マッピング除外テストを追加。
-- `[REQ-369/AC-5]` `step_031_cleanup_orphaned_workflow_mappings` の孤立レコード削除・冪等性テストを追加。
+### Task 1: `REQ-370-T1` - connectionSlice スナップショット全成功ジョブの包括マージと loadSnapshot 公開
+- **Subsystem**: `frontend`
+- **Impacted Files**:
+  - `frontend/src/store/slices/connectionSlice.ts`
+  - `frontend/src/store/types.ts`
+  - `frontend/src/store/__tests__/slices/connectionSlice.test.ts`
+- **Description**:
+  1. `applyGenerationSnapshot` において、`completedJobs` の抽出条件を「直前状態からの遷移」から「スナップショット内に存在する全 `status === 'succeeded'` かつ `outputs` を持つジョブ（`succeededJobs`）」へ変更し、`mergeManagedHistory` に渡してマージします（`AC-1`）。
+  2. `ConnectionActions` および `createConnectionSlice` の戻り値に `loadSnapshot: (automaticEpoch?: string) => Promise<void>` を追加し、外部から明示的にスナップショット再同期を行えるようにします。
+  3. `connectionSlice.test.ts` の旧仕様テスト（初期スナップショットのマージを行わないアサーション）を、全成功ジョブがマージされる新仕様テスト（`[REQ-370/AC-1]`）へ更新します。
+- **Verification Command**:
+  ```bash
+  npm --prefix frontend test -- connectionSlice.test.ts -t "REQ-370/AC-1"
+  npm --prefix frontend run typecheck
+  ```
 
-### Frontend: リマッピングフック修正 & テスト (`REQ-369-T2`)
-#### [MODIFY] [`frontend/src/hooks/useMasterMappingRows.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/useMasterMappingRows.ts)
-- `isValidSavedMapping(mapping, allDefinitions)` を導入し、`allDefinitions`（有効・無効すべての実在マスタ/バリアント定義）に存在するマッピングのみを `storedMappings.current`・`savedMappings`・`getMappings` 保持ループの対象とすることで、削除済みマスタ（`master_id: 33〜62`, `999`）や存在しない `variant_id` の孤立マッピングを除外しつつ、実在する無効バリアント/無効マスタのマッピングは保持（`AC-1`）。
-- `initFromScan` において `savedMappings.length > 0`（既存ワークフローのリマッピング）の場合は、未割当スロットに `scanDefaults` を自動セットせず `''`（未割当）のまま維持し、ドロップダウン候補（`candidates` / `recommendedNodeIds`）のみを提供する（`AC-2`）。
-- `savedMappings.length === 0`（新規ワークフロー登録 `UploadWorkflowModal` 等）の場合は従来通り `scanDefaults` で初期値を自動セットする（`AC-3`）。
+---
 
-#### [MODIFY] [`frontend/src/hooks/__tests__/useMasterMappingRows.test.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/hooks/__tests__/useMasterMappingRows.test.ts) & [`frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx)
-- `[REQ-369/AC-1]`, `[REQ-369/AC-2]`, `[REQ-369/AC-3]` のユニットテスト・モーダル統合テストを追加し、旧前提のテストケース2件を新契約に合わせて更新。
+### Task 2: `REQ-370-T2` - residualHistory FIFO スロット上限計算と差分画像の先頭側挿入位置補正
+- **Subsystem**: `frontend`
+- **Impacted Files**:
+  - `frontend/src/services/residualHistory.ts`
+  - `frontend/src/services/__tests__/residualHistory.test.ts`
+- **Description**:
+  1. `mergeResidualHistory` において、既存件数（`existingAllCount`）に基づく事前スロット切り捨て（`200 - existingAllCount`）を撤廃し、差分候補をすべて受容した上でマージ後配列全体を `slice(0, 200)` する最新優先・最古追い出し（FIFO Eviction）方式へ改修します（`AC-2`）。
+  2. `insertAfterPrior` において、先行差分キーが見つからない場合（初回ページ）の挿入位置を配列末尾（`base.length`）から配列先頭（`0`）へ変更し、時系列整合性を確保します（`AC-3`）。
+  3. `residualHistory.test.ts` に `[REQ-370/AC-2]`（200件保持時の新規差分受容・FIFO維持）および `[REQ-370/AC-3]`（先頭挿入）のテストケースを追加・更新します。
+- **Verification Command**:
+  ```bash
+  npm --prefix frontend test -- residualHistory.test.ts -t "REQ-370/AC-2"
+  npm --prefix frontend test -- residualHistory.test.ts -t "REQ-370/AC-3"
+  npm --prefix frontend run typecheck
+  ```
 
-### Documents: SSoT 仕様書同期 (`REQ-369-T3`)
-#### [MODIFY] [`docs/specs/SPEC_SETTINGS.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_SETTINGS.md) & [`docs/specs/SPEC_GENERATE.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_GENERATE.md)
-- §4-1-1（`SPEC_SETTINGS.md`）および §2-5（`SPEC_GENERATE.md`）に孤立マッピング除外・既存ワークフロー未割当スロット保持・Step 031 浄化の契約を追記。
+---
 
-## Task DAG
+### Task 3: `REQ-370-T3` - useGenerateDisplayState タブ復帰時スナップショット再同期とクエリキャッシュ整合化
+- **Subsystem**: `frontend`
+- **Impacted Files**:
+  - `frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts`
+  - `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx`
+- **Description**:
+  1. `useGenerateDisplayState.ts` の `handleVisibility`（`document.visibilityState === 'visible'`）において、`void store.loadSnapshot()` を実行し、バックグラウンド復帰時のスナップショット整合性を再検証します（`AC-4`）。
+  2. Zustand ストアと TanStack Query キャッシュの同期エフェクト（L445-455）において、ストアにマージされた新規画像が `currentQueryData` に即座に取り込まれるようマージ処理を補正します。
+  3. `useGenerateDisplayState.residual.test.tsx` に `[REQ-370/AC-4]`（タブ復帰時のスナップショット再同期およびクエリキャッシュ反映）のテストケースを追加します。
+- **Verification Command**:
+  ```bash
+  npm --prefix frontend test -- useGenerateDisplayState.residual.test.tsx -t "REQ-370/AC-4"
+  npm --prefix frontend run typecheck
+  ```
+
+---
+
+## Dependency Graph & Execution Order
 
 ```mermaid
 graph TD
-  T1["REQ-369-T1 (code/backend): Step 031マイグレーション & workflows.py 孤立マッピング除外フィルタ"]
-  T2["REQ-369-T2 (code/frontend): useMasterMappingRows 孤立マッピング除外 & 未割当スロット保持"]
-  T3["REQ-369-T3 (docs-only/system): SPEC_SETTINGS.md / SPEC_GENERATE.md SSoT同期"]
-  T1 --> T3
-  T2 --> T3
+  REQ-370-T1["REQ-370-T1: connectionSlice スナップショット全成功ジョブマージ & loadSnapshot公開"] --> REQ-370-T3["REQ-370-T3: useGenerateDisplayState visibilitychange再同期 & クエリキャッシュ整合化"]
+  REQ-370-T2["REQ-370-T2: residualHistory FIFOスロット計算 & 先頭側挿入位置補正"]
 ```
 
-- `REQ-369-T1` と `REQ-369-T2` は所有ファイルが完全に分離されており並列実行可能。その後 `REQ-369-T3` で SSoT ドキュメントを同期する。
+- **並行実行性**: `REQ-370-T1` と `REQ-370-T2` はファイルおよび責務が直交しており並行実行可能です。`REQ-370-T3` は `REQ-370-T1` で公開される `loadSnapshot` を呼び出すため、`REQ-370-T1` 完了後に実行します。
 
-## Trade-off Disclosure（技術的トレードオフ・制約・代替案）
+---
 
-| 論点 | 採用方針 | 代替案と却下理由 |
+## Technical Trade-offs & Risks
+
+| 設計論点 | 採用方針 | 検討された代替案と却下理由 |
 |---|---|---|
-| バックエンド API での孤立 `master_id` / `variant_id` の扱い | **サイレント・フィルタ（サニタイズ除外）**: 有効なマッピングのみを永続化し、孤立行を除外して `200 OK` / `201 Created` を返す | **422 Unprocessable Entity で拒否**: Generate 画面の `MappingErrorPanel.handleUpdateMapping` は `workflow.mappings` 配列をコピーして 1 件ずつ修正・`PUT` するため、複数エラーがある状態で 1 件目を直した際に他の孤立行が原因で 422 失敗し、UI から修復不能になる。また OpenAPI スナップショットの不変性も維持できるためサニタイズ除外を採用。 |
-| 既存ワークフローのリマッピング時の未割当スロット初期値 | `savedMappings.length > 0` の場合は未割当スロットを `''`（未割当）にし、候補リスト（`recommendedNodeIds` / `candidates`）のみ提供する | スキャン一致ノードを自動入力する: マルチステージ定義（Rough/Detail/FaceDetailer 等）がある環境では、ユーザーが意図しないノードが全ステージへ一括自動割当・保存され、ワークフロー設定を破壊するため却下。 |
+| スナップショット適用時のジョブマージ範囲 | スナップショット内の全 `succeeded` ジョブ（`outputs.length > 0`）をマージ対象とする | **直前スナップショットからの状態変化のみを対象とする（現行）**: 初回接続時や HTTP 再同期時に既完了ジョブが脱落する根本原因であったため却下。<br>**WebSocket イベントでのみ履歴追加する**: タブ非表示時や接続断時のイベントロストに対応できないため却下。 |
+| 残存差分マージ時の上限管理 | **最新優先・最古追い出し（FIFO Eviction: 新規候補を受け入れて先頭側に挿入し、末尾の最古要素を 200 件上限で切り詰め）** | **事前空き枠計算（現行 `200 - count`）**: 既存履歴が 200 件に達すると新しい画像が一切追加されなくなるため却下。 |
+| 残存差分の挿入位置 | **配列先頭（インデックス 0）への挿入** | **配列末尾（現行）**: 新規画像が最古画像の後ろに追記され、時系列認知が逆転するため却下。 |
+| タブ復帰時の同期契機 | **`loadSnapshot()` による軽量スナップショット照会** | **`fetchHistory()` による ComfyUI 全履歴取得**: タブ切り替えごとの ComfyUI `/history` API は重く、サーバー負荷が高いため却下。 |
+| WebSocket Push と HTTP Pull の競合 | **`applyGenerationSnapshot` 内の revision チェックとシグネチャによる冪等性保証** | **排他ロック導入**: 非同期リクエストのシーケンス番号（`httpRequestSequence`, `snapshotApplySequence`）による世代管理が既存実装されており、ロック待ちによるデッドロックリスクを避けるため既存世代管理を活用。 |
 
-## Verification Plan（3-Gate）
-- **Gate 1 (Static / Typecheck)**:
-  - `backend\.venv\Scripts\python -m ruff check backend`
-  - `npm --prefix frontend run typecheck`
-- **Gate 2 (Full Test Suite)**:
-  - `backend\.venv\Scripts\python -m pytest`
-  - `npx --prefix frontend vitest run`
-- **Gate 3 (Targeted Scenarios & QA Audit)**:
-  - `backend\.venv\Scripts\python -m pytest backend/tests/integration/api/test_workflows.py -k "REQ_369 or orphan or step_031"`
-  - `npx --prefix frontend vitest run src/hooks/__tests__/useMasterMappingRows.test.ts src/components/__tests__/WorkflowModalMultiStage.test.tsx -t "REQ-369"`
+---
 
+## Verification Plan
+
+### Automated Baseline 3-Gate Verification
+1. **Gate 1 (Typecheck Baseline)**:
+   ```bash
+   npm --prefix frontend run typecheck
+   ```
+2. **Gate 2 (Focused Test Suite Baseline)**:
+   ```bash
+   npm --prefix frontend test -- connectionSlice.test.ts residualHistory.test.ts useGenerateDisplayState.residual.test.tsx
+   ```
+3. **Gate 3 (Tag Filter Acceptance & Red Team)**:
+   - `npm --prefix frontend test -- connectionSlice.test.ts -t "REQ-370/AC-1"`
+   - `npm --prefix frontend test -- residualHistory.test.ts -t "REQ-370/AC-2"`
+   - `npm --prefix frontend test -- residualHistory.test.ts -t "REQ-370/AC-3"`
+   - `npm --prefix frontend test -- useGenerateDisplayState.residual.test.tsx -t "REQ-370/AC-4"`

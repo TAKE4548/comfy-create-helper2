@@ -451,12 +451,16 @@ export function useGenerateDisplayState({
       else useGenerationStore.setState({ comfyHistoryImages: unavailableRaw })
     }
 
-    queryClient.setQueryData<string[]>(
-      ['generateDisplayImages', { filterOwnSession: !!filterOwnSession }],
-      (old) => {
-        return uniqueImages(filterKnownForeign([...rawImages, ...(old || [])]), unavailableImages)
+    const queryKey = ['generateDisplayImages', { filterOwnSession }]
+    const currentQueryData = queryClient.getQueryData<string[]>(queryKey)
+    if (!currentQueryData || currentQueryData.length === 0) {
+      queryClient.setQueryData(queryKey, unavailableRaw)
+    } else {
+      const merged = uniqueImages(filterKnownForeign([...unavailableRaw, ...currentQueryData]), unavailableImages)
+      if (merged.length !== currentQueryData.length || !merged.every((v, i) => v === currentQueryData[i])) {
+        queryClient.setQueryData(queryKey, merged)
       }
-    )
+    }
     for (const own of [false, true]) {
       queryClient.setQueryData<string[]>(['generateDisplayImages', { filterOwnSession: own }], (old) => {
         if (!old) return old
@@ -642,6 +646,7 @@ export function useGenerateDisplayState({
           store.initialize({ force: true })
         }
         store.fetchQueue()
+        void store.loadSnapshot?.()
         if (!residualRecord.hasDisplayedBaseline && residualRecord.status !== 'waiting' && residualRecord.status !== 'checking') {
           store.fetchHistory()
         }
