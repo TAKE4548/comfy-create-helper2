@@ -1,3 +1,4 @@
+import { fixtureWorkflow, fixtureMasters, fixtureSnapshot } from './fixtureData'
 /**
  * Preview-only transport sandbox. Loaded before the real App via dynamic import.
  * All HTTP writes and all WebSocket connections are blocked; no production API is contacted.
@@ -12,8 +13,9 @@ const snapshot = {
   upstream: { http_ready: false, ws_connected: false, failure_since: null },
 }
 const fixtures: Record<string, unknown> = {
-  '/api/workflows': [],
-  '/api/mapping-masters': [],
+  '/api/workflows': [{ id: fixtureWorkflow.id, name: fixtureWorkflow.name, created_at: fixtureWorkflow.created_at }],
+  '/api/workflows/91001': fixtureWorkflow,
+  '/api/mapping-masters': fixtureMasters,
   '/api/base-models': [],
   '/api/param-type-masters': [],
   '/api/loras': [],
@@ -22,10 +24,11 @@ const fixtures: Record<string, unknown> = {
   '/api/snapshots': [],
   '/api/workflow-presets': [],
   '/api/config': { comfy_url: 'http://offline-prototype.invalid:8188' },
-  '/api/generation/snapshot': snapshot,
+  '/api/generation/snapshot': fixtureSnapshot,
   '/api/generation/queue': { running: [], pending: [] },
 }
 export function installOfflineTransport() {
+  localStorage.setItem('prompt-surgeon-workflow-id', String(fixtureWorkflow.id))
   const originalFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : null
