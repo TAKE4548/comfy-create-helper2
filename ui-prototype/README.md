@@ -1,13 +1,8 @@
-# Prompt Surgeon — UI Review Prototype
+# Prompt Surgeon — isolated Generate UI prototype
 
-## Scope
+This branch adds an independent Vite entry point that mounts the actual production React components and CSS. **The baseline remains unchanged.** All new files live under `ui-prototype/`.
 
-This is an **isolated Vite entry point** on the `prototype/ui-review` branch.
-It mounts the real `frontend/src/App.tsx` and `frontend/src/index.css` rather than approximating their appearance in custom HTML.
-
-**Phase 1: baseline bootstrapping.** It is an integration-backed baseline, not yet a backend-independent data-mocked prototype. No proposal UI changes are applied. No files in `frontend/` or `backend/` were edited by this setup.
-
-## Start
+## Running
 
 From the repository root:
 
@@ -17,22 +12,22 @@ cd ../ui-prototype && npm install
 npm run dev
 ```
 
-Open `http://localhost:5174/`. The default backend is `http://127.0.0.1:8000`.
-To point the prototype at a different backend, set `PROTOTYPE_BACKEND_URL` (for example in `ui-prototype/.env.local`).
+Open http://localhost:5174/ .
 
-**Safety:** The current baseline runs the *real application behavior*. Calls to a connected backend may mutate real records and submit ComfyUI jobs. For visual inspection, use a disposable/test backend and avoid generation, deletion, save, or other write actions. The prototype currently has no read-only enforcement.
+## Safety and fidelity
 
-## Design fidelity
+- Browser `fetch` is sandboxed **before** the production App module is imported.
+- HTTP writes are rejected (403), unknown API reads fail explicitly (404), WebSockets do not connect, and XHR calls are disabled. No API proxy is configured.
+- Some unsupported API endpoints will display error/empty states. **This is an initial offline, read-only baseline and not yet a populated, fully interactive Generate page.**
+- Static module imports and stylesheet font imports can still request external resources (such as Google Fonts); the protection applies to application network transports, not all browser resource requests.
+- The React markup and CSS come from current `frontend/src`, avoiding a hand-built HTML approximation.
+- Do not use for backend behavior verification. Backend calls, image generation and saving are intentionally disabled.
 
-- AppShell, desktop/mobile layout, typography, icons, and Tailwind CSS come from the same source files as the production application.
-- Data, API connections, browser state, and image content affect what renders.
-- Compare baseline and proposals only after fixing viewport, data, state, and browser zoom.
+## Remaining milestones
 
-## Next phase (not implemented yet)
+1. Provide contract-correct fixtures for a selected workflow, mappings, parameters, presets and image history.
+2. Model deterministic idle / generating / error states (current snapshot is disconnected and empty).
+3. Add a baseline/proposal switch, keeping all proposal code within `ui-prototype/`.
+4. Run a real-browser visual comparison at 375, 768, 1024 and 1440px and document deviations.
 
-1. Add isolated API / WebSocket fixtures and deterministic store initialization.
-2. Provide read-only baseline states for idle, generating, error, history, and populated prompt fields.
-3. Add proposal variants without editing production components.
-4. Browser-check responsive sizes (375, 768, 1024, 1440) and interaction states.
-
-The files here are an executable harness, **not** a claim that all application interactions have been reproduced or visually verified.
+**No claim of build or browser verification has been made.**
