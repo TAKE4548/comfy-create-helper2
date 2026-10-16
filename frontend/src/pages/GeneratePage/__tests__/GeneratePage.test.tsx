@@ -213,17 +213,17 @@ describe('GeneratePage Component & State Integration', () => {
   });
 
   it('[REQ-112/AC-2] toggles workflow actions menu when workflow actions button is clicked', async () => {
-    const { container } = renderPage();
+    renderPage();
     const actionsBtn = await screen.findByTitle('ワークフロー設定');
     expect(actionsBtn).toBeInTheDocument();
-    expect(container.querySelector('[role="menu"]')).not.toBeInTheDocument();
+    expect(document.body.querySelector('[role="menu"]')).not.toBeInTheDocument();
 
     fireEvent.click(actionsBtn);
-    expect(container.querySelector('[role="menu"]')).toBeInTheDocument();
+    expect(document.body.querySelector('[role="menu"]')).toBeInTheDocument();
     expect(screen.getByText('ワークフロー個別設定')).toBeInTheDocument();
 
     fireEvent.click(actionsBtn);
-    expect(container.querySelector('[role="menu"]')).not.toBeInTheDocument();
+    expect(document.body.querySelector('[role="menu"]')).not.toBeInTheDocument();
   });
 
   it('[REQ-112/AC-3] supports switching to mobile mode based on innerWidth', async () => {
@@ -260,13 +260,13 @@ describe('GeneratePage Component & State Integration', () => {
   });
 
   it('[REQ-112/AC-6] workflow actions menu contains workflow management items', async () => {
-    const { container } = renderPage();
+    renderPage();
     const actionsBtn = await screen.findByTitle('ワークフロー設定');
     fireEvent.click(actionsBtn);
     await waitFor(() => {
-      expect(container.querySelector('#workflow-actions-rename')).toBeInTheDocument();
-      expect(container.querySelector('#workflow-actions-duplicate')).toBeInTheDocument();
-      expect(container.querySelector('#workflow-actions-rescan')).toBeInTheDocument();
+      expect(document.body.querySelector('#workflow-actions-rename')).toBeInTheDocument();
+      expect(document.body.querySelector('#workflow-actions-duplicate')).toBeInTheDocument();
+      expect(document.body.querySelector('#workflow-actions-rescan')).toBeInTheDocument();
     });
   });
 

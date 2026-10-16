@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.7
-**最終更新**: 2026-10-13
+**バージョン**: 2.8
+**最終更新**: 2026-10-16
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md)
 
 ---
 
@@ -47,6 +47,7 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 |---|---|---|
 | 接続インジケーター | — | 8000番のメインAPI/イベント接続状態を表示する。ComfyUI上流WebSocketの状態はバックエンドが管理する。 |
 | ワークフロー選択 | `#workflow-select` | セレクトボックス。「+ 新しいワークフローを追加」が先頭オプション |
+| ワークフロー設定メニュー | `#workflow-actions-btn` | ベースモデル紐付け・デフォルト保存／リセット・名前変更・複製・ノード再スキャンを含む展開メニュー。ヘッダー下へ重ねて展開し、ヘッダー高さで切り詰めずメニュー内スクロールで末尾へ到達できる（[SPEC_COMMON §4-4-1](./SPEC_COMMON.md#4-4-1-共通ヘッダー展開アクション契約req-346) 参照） |
 | ワークフロー管理 | `#workflow-manage-btn` | 名称変更・複製（`POST /copy`）モーダルを開く |
 | Presets ボタン | `#presets-toggle-btn` | プリセット管理パネル（`PresetManagerPanel`）の開閉 |
 | Bypass ボタン | `#bypass-toggle-btn` | ノードバイパス設定モーダル（`BypassSettingsModal`）の開閉 |
@@ -254,7 +255,7 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 チェックボックス、ラジオ、レンジスライダー、各種ボタン等の非テキスト入力操作時にもGenerate Batchアクションバーを維持して操作可能とし、下部スクロールコンテナにはpb-[calc(54px+env(safe-area-inset-bottom)+72px)]のパディングを確保してアクションドックとの重なりを防止する。
 プリセットマネージャーはmax-h-[75dvh]のボトムシートとして動作し、Safari下部アドレスバーによる被りを抑止するとともに、全選択/解除・保存・Scene Generator等のアクションバーを最下部にピン留め固定する。
 パラメータパネル（ParamPanel.tsx）はラベル幅とセレクト/ステッパーを1行に収めるスマートレイアウトを採用し、アセット追加モーダル（AddAssetModal.tsx）はパディングを14px（p-3.5）に引き締めてモバイル表示を最適化する。
-リソースホバーモニター（ResourceHoverMonitor.tsx）は幅240pxのドロップダウンカード（z-40）とし、ヘッダータイトルの隠蔽やモーダル（z-50）との衝突を防止する。ActionBarは高さ54pxの共通bottom navigationとsafe-area上部に常時配置する。操作対象は44px以上とする。
+リソースホバーモニター（ResourceHoverMonitor.tsx）は、640px以上で資源チップへのホバー時に幅250pxのリソース詳細カード（hover型、`HeaderDropdown` の `hoverBridge` 付き）を、640px未満でVRAMピル（幅96px）のタップ時に幅240pxのリソース詳細オーバーレイ（click型）を表示する。いずれのパネルも `HeaderDropdown`（§4-4-1）でbodyへportalし、fixedでヘッダー下端＋6pxに配置する。重なり順は `--z-header-menu`（60）により、ボトムナビ（50）より前面・共通Modal（100）より背面とし、ヘッダータイトルの隠蔽やモーダルとの衝突を防止する。ActionBarは高さ54pxの共通bottom navigationとsafe-area上部に常時配置する。操作対象は44px以上とする。
 
 ### 3-1. 提供機能
 

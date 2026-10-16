@@ -1,11 +1,13 @@
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { Zap, Layers, Sparkles, Tags, Clock, Settings, Search, Plus, RotateCw } from 'lucide-react'
 import { PageHeader } from '../PageHeader'
 import { ResourceHoverMonitor } from '../header/ResourceHoverMonitor'
 import { HeaderKebabMenu } from '../header/HeaderKebabMenu'
+import { HeaderDropdown } from '../header/HeaderDropdown'
+import { HeaderDropdown } from '../header/HeaderDropdown'
 import { SystemStatusBadge } from '../SystemStatusBadge'
 import { WorkflowActionsMenu } from '../../../pages/GeneratePage/components/WorkflowActionsMenu'
 import { useGenerationStore } from '../../../store/useGenerationStore'
@@ -528,3 +530,493 @@ describe('REQ-341 E2E Integration: Unified Header & Passive Telemetry', () => {
   })
 })
 
+
+// ── REQ-346: header expand action overlay contract (jsdom Tier2; geometry via environment API stubs only) ──
+const REQ346_ANCHOR = { top: 11, bottom: 39, left: 300, right: 330, x: 300, y: 11, width: 30, height: 28, toJSON() {} }
+const REQ346_ORIGINAL_OFFSET_WIDTH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+const REQ346_ORIGINAL_INNER_WIDTH = window.innerWidth
+const REQ346_ORIGINAL_INNER_HEIGHT = window.innerHeight
+
+function stubGeometry({ vw, vh, panelWidth = 240 }: { vw: number; vh: number; panelWidth?: number }) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: vw })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: vh })
+  // Placement reads only the anchor rect, so every element may return the same anchor rect.
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(REQ346_ANCHOR as DOMRect)
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => panelWidth })
+}
+
+function restoreGeometry() {
+  if (REQ346_ORIGINAL_OFFSET_WIDTH) {
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', REQ346_ORIGINAL_OFFSET_WIDTH)
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, 'offsetWidth')
+  }
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: REQ346_ORIGINAL_INNER_WIDTH })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: REQ346_ORIGINAL_INNER_HEIGHT })
+}
+
+type ExpandKind = 'A1' | 'A2' | 'A3'
+interface ExpandSpec {
+  kind: ExpandKind
+  label: string
+  trigger: string
+  panel: string
+}
+
+const EXPAND_ACTIONS: ExpandSpec[] = [
+  { kind: 'A1', label: 'A1 workflow actions', trigger: '#workflow-actions-btn', panel: '[data-header-menu-panel][role="menu"]' },
+  { kind: 'A2', label: 'A2 header kebab', trigger: '[data-testid="header-kebab-menu-button"]', panel: '[data-testid="header-kebab-dropdown"]' },
+  { kind: 'A3', label: 'A3 mobile VRAM overlay', trigger: '[data-testid="mobile-vram-pill"]', panel: '[data-testid="mobile-resource-overlay"]' },
+]
+
+const triggerOf = (spec: ExpandSpec) => document.querySelector<HTMLElement>(spec.trigger)!
+const panelOf = (spec: ExpandSpec) => document.querySelector<HTMLElement>(spec.panel)
+const openExpand = (spec: ExpandSpec) => {
+  fireEvent.click(triggerOf(spec))
+  return panelOf(spec)!
+}
+const headerSnapshot = (root: HTMLElement) => ({
+  cls: root.className,
+  count: root.querySelectorAll('*').length,
+})
+
+function renderHeaderWithAction(kind: ExpandKind) {
+  const onRenameWorkflow = vi.fn()
+  const utils = render(
+    <MemoryRouter>
+      <PageHeader
+        title="Contract"
+        icon={Zap}
+        actions={
+          kind === 'A1' ? (
+            <WorkflowActionsMenu
+              workflowId={10}
+              workflow={{ id: 10, name: 'Anime SDXL', json_body: {}, mappings: [], target_base_model_id: 1 }}
+              onSaveDefaults={vi.fn()}
+              onResetDefaults={vi.fn()}
+              onUpdateBaseModel={vi.fn()}
+              onRenameWorkflow={onRenameWorkflow}
+              onDuplicateWorkflow={vi.fn()}
+              onRescanNodes={vi.fn()}
+            />
+          ) : undefined
+        }
+      />
+    </MemoryRouter>,
+  )
+  return { ...utils, root: utils.container.firstElementChild as HTMLElement, onRenameWorkflow }
+}
+
+function renderMonitorHeader() {
+  const utils = render(
+    <MemoryRouter>
+      <PageHeader title="Monitor" icon={Zap} />
+    </MemoryRouter>,
+  )
+  return { ...utils, root: utils.container.firstElementChild as HTMLElement, monitor: screen.getByTestId('resource-hover-monitor') }
+}
+
+function FutureTallAction() {
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <button type="button" data-testid="future-action-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>Future</button>
+      <HeaderDropdown open={open} onClose={() => setOpen(false)} anchorRef={ref} align="start" data-testid="future-action-panel" className="w-[240px] p-2">
+        {Array.from({ length: 40 }, (_, i) => <button key={i} type="button" data-testid={`future-item-${i}`}>項目 {i}</button>)}
+      </HeaderDropdown>
+    </div>
+  )
+}
+
+describe('REQ-346 header expand action overlay contract', () => {
+  beforeEach(() => {
+    cleanupAllTestState()
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    cleanupAllTestState()
+    vi.restoreAllMocks()
+    restoreGeometry()
+  })
+
+  // A. click-type actions (A1–A3)
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-1] $label panel is a body-level fixed layer positioned below the trigger and outside the header', (spec) => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    const { root } = renderHeaderWithAction(spec.kind)
+    const panel = openExpand(spec)
+    expect(root.contains(panel)).toBe(false)
+    expect(panel.style.position).toBe('fixed')
+    expect(panel.hasAttribute('data-header-menu-panel')).toBe(true)
+    expect(parseFloat(panel.style.top)).toBeGreaterThanOrEqual(REQ346_ANCHOR.bottom + 6)
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-1] $label header height is not pushed: header class and element count unchanged', (spec) => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    const { root } = renderHeaderWithAction(spec.kind)
+    const before = headerSnapshot(root)
+    openExpand(spec)
+    expect(headerSnapshot(root)).toEqual(before)
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-2] $label item below the header executes its handler', (spec) => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    const { onRenameWorkflow } = renderHeaderWithAction(spec.kind)
+    const onCacheResync = vi.fn()
+    window.addEventListener('cache-resync', onCacheResync)
+    openExpand(spec)
+    if (spec.kind === 'A1') {
+      fireEvent.click(document.getElementById('workflow-actions-rename')!)
+      expect(onRenameWorkflow).toHaveBeenCalledTimes(1)
+    } else if (spec.kind === 'A2') {
+      fireEvent.click(screen.getByTestId('resync-cache-button'))
+      expect(onCacheResync).toHaveBeenCalledTimes(1)
+    } else {
+      fireEvent.click(screen.getByTestId('mobile-overlay-close'))
+      expect(panelOf(spec)).toBeNull()
+    }
+    window.removeEventListener('cache-resync', onCacheResync)
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-3] $label panel height is capped by the viewport (360px) and keeps in-panel scroll', (spec) => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    renderHeaderWithAction(spec.kind)
+    const panel = openExpand(spec)
+    expect(panel.style.maxHeight).toBe('307px')
+    expect(panel.classList.contains('overflow-y-auto')).toBe(true)
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-4] $label closes when the trigger is pressed again', (spec) => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    renderHeaderWithAction(spec.kind)
+    openExpand(spec)
+    expect(panelOf(spec)).not.toBeNull()
+    fireEvent.click(triggerOf(spec))
+    expect(panelOf(spec)).toBeNull()
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-5] $label stays inside 375/768/1280 wide viewports', (spec) => {
+    const widths = spec.kind === 'A3' ? [375] : [375, 768, 1280]
+    for (const vw of widths) {
+      stubGeometry({ vw, vh: 360 })
+      const { unmount } = renderHeaderWithAction(spec.kind)
+      const left = parseFloat(openExpand(spec).style.left)
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left).toBeLessThanOrEqual(vw - 240 - 8)
+      unmount()
+      restoreGeometry()
+    }
+  })
+
+  it.each(EXPAND_ACTIONS)('[REQ-346/AC-6] $label recomputes maxHeight on resize while open', (spec) => {
+    // A3 closes on resize at >=640px by design (ResourceHoverMonitor closeAtSm), so resize it at 375px.
+    const vw = spec.kind === 'A3' ? 375 : 1280
+    stubGeometry({ vw, vh: 360 })
+    renderHeaderWithAction(spec.kind)
+    expect(openExpand(spec).style.maxHeight).toBe('307px')
+    stubGeometry({ vw, vh: 500 })
+    fireEvent(window, new Event('resize'))
+    expect(panelOf(spec)!.style.maxHeight).toBe('447px')
+  })
+
+  // A'. hover-type A4 (ResourceHoverMonitor card; no click toggle)
+  it('[REQ-346/AC-1] A4 hover card is a body-level fixed layer below the monitor and outside the header container', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { root, monitor } = renderMonitorHeader()
+    const before = headerSnapshot(root)
+    fireEvent.mouseEnter(monitor)
+    const card = screen.getByTestId('resource-hover-card')
+    expect(root.contains(card)).toBe(false)
+    expect(card.style.position).toBe('fixed')
+    expect(card.hasAttribute('data-header-menu-panel')).toBe(true)
+    expect(parseFloat(card.style.top)).toBeGreaterThanOrEqual(REQ346_ANCHOR.bottom + 6)
+    expect(headerSnapshot(root)).toEqual(before)
+  })
+
+  it('[REQ-346/AC-2] A4 hover continuity: moving from the monitor or bridge into the card keeps it open', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    const card = screen.getByTestId('resource-hover-card')
+    fireEvent.mouseOut(monitor, { relatedTarget: card })
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+    fireEvent.mouseOut(screen.getByTestId('resource-hover-card-bridge'), { relatedTarget: card })
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+  })
+
+  it('[REQ-346/AC-3] A4 hover card height is capped by the viewport (360px) and keeps in-panel scroll', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    const card = screen.getByTestId('resource-hover-card')
+    expect(card.style.maxHeight).toBe('307px')
+    expect(card.classList.contains('overflow-y-auto')).toBe(true)
+  })
+
+  it('[REQ-346/AC-4] A4 closes on leave and on outside pointerdown; it has no click toggle', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    fireEvent.click(monitor)
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+    fireEvent.mouseOut(screen.getByTestId('resource-hover-card'), { relatedTarget: document.body })
+    expect(screen.queryByTestId('resource-hover-card')).toBeNull()
+    fireEvent.mouseEnter(monitor)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByTestId('resource-hover-card')).toBeNull()
+  })
+
+  it('[REQ-346/AC-5] A4 stays inside 640/768/1280 wide viewports', () => {
+    for (const vw of [640, 768, 1280]) {
+      stubGeometry({ vw, vh: 360, panelWidth: 250 })
+      const { monitor, unmount } = renderMonitorHeader()
+      fireEvent.mouseEnter(monitor)
+      const left = parseFloat(screen.getByTestId('resource-hover-card').style.left)
+      expect(left).toBeGreaterThanOrEqual(8)
+      expect(left).toBeLessThanOrEqual(vw - 250 - 8)
+      unmount()
+      restoreGeometry()
+    }
+  })
+
+  it('[REQ-346/AC-6] A4 recomputes maxHeight on resize while hovered', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    expect(screen.getByTestId('resource-hover-card').style.maxHeight).toBe('307px')
+    stubGeometry({ vw: 1280, vh: 500, panelWidth: 250 })
+    fireEvent(window, new Event('resize'))
+    expect(screen.getByTestId('resource-hover-card').style.maxHeight).toBe('447px')
+  })
+
+  it('[REQ-346/AC-4] pressing another header trigger while the A4 card is open leaves only one body-level panel', () => {
+    stubGeometry({ vw: 1280, vh: 360, panelWidth: 250 })
+    const { monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    const kebab = screen.getByTestId('header-kebab-menu-button')
+    fireEvent.pointerDown(kebab)
+    fireEvent.click(kebab)
+    expect(screen.queryByTestId('resource-hover-card')).toBeNull()
+    expect(screen.getByTestId('header-kebab-dropdown')).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-header-menu-panel]')).toHaveLength(1)
+  })
+
+  // B. future action verification example (AC-8)
+  it('[REQ-346/AC-8] a new header action with content taller than the header renders in a body-level layer outside the overflow-x-auto actions wrapper', () => {
+    stubGeometry({ vw: 375, vh: 360 })
+    const { container } = render(
+      <MemoryRouter>
+        <PageHeader title="Future" actions={<FutureTallAction />} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByTestId('future-action-btn'))
+    const panel = screen.getByTestId('future-action-panel')
+    expect(container.contains(panel)).toBe(false)
+    expect(panel.closest('.overflow-x-auto')).toBeNull()
+    expect(panel.style.maxHeight).toBe('307px')
+    expect(panel.querySelector('[data-testid="future-item-39"]')).not.toBeNull()
+    fireEvent.click(screen.getByTestId('future-action-btn'))
+    expect(screen.queryByTestId('future-action-panel')).toBeNull()
+  })
+
+  it.each([375, 1280])('[REQ-346/AC-8] the future action follows the same 8px edge margin at %dpx', (vw) => {
+    stubGeometry({ vw, vh: 360 })
+    const { unmount } = render(
+      <MemoryRouter>
+        <PageHeader title="Future" actions={<FutureTallAction />} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByTestId('future-action-btn'))
+    const left = parseFloat(screen.getByTestId('future-action-panel').style.left)
+    expect(left).toBeGreaterThanOrEqual(8)
+    expect(left).toBeLessThanOrEqual(vw - 240 - 8)
+    unmount()
+  })
+
+  it('[REQ-346/AC-4] rapid open/close/open of two different header menus does not leave two panels open', () => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    renderHeaderWithAction('A1')
+    const a1 = EXPAND_ACTIONS[0]
+    const a2 = EXPAND_ACTIONS[1]
+    openExpand(a1)
+    const kebab = triggerOf(a2)
+    fireEvent.pointerDown(kebab)
+    fireEvent.click(kebab)
+    expect(panelOf(a1)).toBeNull()
+    expect(panelOf(a2)).not.toBeNull()
+    expect(document.querySelectorAll('[data-header-menu-panel]')).toHaveLength(1)
+  })
+
+  it('[REQ-346/AC-6] unmount while open leaves no body-level panel or listener', () => {
+    stubGeometry({ vw: 1280, vh: 360 })
+    const { unmount } = renderHeaderWithAction('A2')
+    openExpand(EXPAND_ACTIONS[1])
+    expect(panelOf(EXPAND_ACTIONS[1])).not.toBeNull()
+    unmount()
+    expect(document.body.querySelector('[data-header-menu-panel]')).toBeNull()
+    expect(() => fireEvent.pointerDown(document.body)).not.toThrow()
+  })
+})
+
+// ── REQ-346: header-bottom anchored overlay (geometry via environment API stubs only) ──
+type PanelKind = ExpandKind | 'A4'
+const PANEL_KINDS: PanelKind[] = ['A1', 'A2', 'A3', 'A4']
+const rectOf = (top: number, bottom: number, left: number, right: number) =>
+  ({ top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top, toJSON() {} }) as DOMRect
+
+function stubGeometryWithHeader({
+  vw,
+  vh,
+  headerBottom,
+  panelWidth = 240,
+  overrides = {},
+}: {
+  vw: number
+  vh: number
+  headerBottom: number
+  panelWidth?: number
+  overrides?: Record<string, DOMRect>
+}) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: vw })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: vh })
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.matches('[data-page-header-root]')) return rectOf(0, headerBottom, 0, vw)
+    const testId = this.getAttribute('data-testid')
+    if (testId && overrides[testId]) return overrides[testId]
+    return REQ346_ANCHOR as DOMRect
+  })
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => panelWidth })
+}
+
+function renderFor(kind: PanelKind) {
+  if (kind === 'A4') {
+    const { root, monitor, unmount } = renderMonitorHeader()
+    return {
+      root,
+      unmount,
+      open: () => {
+        fireEvent.mouseEnter(monitor)
+        return screen.getByTestId('resource-hover-card')
+      },
+    }
+  }
+  const { root, unmount } = renderHeaderWithAction(kind)
+  return { root, unmount, open: () => openExpand(EXPAND_ACTIONS.find((s) => s.kind === kind)!) }
+}
+
+describe('REQ-346 header-bottom anchored overlay', () => {
+  beforeEach(() => {
+    cleanupAllTestState()
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    cleanupAllTestState()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    restoreGeometry()
+  })
+
+  it.each(PANEL_KINDS)('[REQ-346/AC-1] %s PageHeader exposes data-page-header-root and the panel top is header bottom + 6 (118 -> 124px; 50 -> 56px)', (kind) => {
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 118 })
+    const first = renderFor(kind)
+    expect(first.root.hasAttribute('data-page-header-root')).toBe(true)
+    const panel = first.open()
+    expect(first.root.contains(panel)).toBe(false)
+    expect(panel.style.top).toBe('124px')
+    first.unmount()
+    vi.restoreAllMocks()
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 50 })
+    const second = renderFor(kind)
+    expect(second.open().style.top).toBe('56px')
+    second.unmount()
+  })
+
+  it.each(PANEL_KINDS)('[REQ-346/AC-1] %s panel never overlaps the header: top >= header bottom + 6 for header bottoms 50/118/200', (kind) => {
+    for (const headerBottom of [50, 118, 200]) {
+      vi.restoreAllMocks()
+      stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom })
+      const { open, unmount } = renderFor(kind)
+      expect(parseFloat(open().style.top)).toBeGreaterThanOrEqual(headerBottom + 6)
+      unmount()
+    }
+  })
+
+  it('[REQ-346/AC-1] kebab hit-slop: the 44px button below the 28px wrapper keeps the panel below the button', () => {
+    stubGeometryWithHeader({
+      vw: 1280,
+      vh: 800,
+      headerBottom: 40,
+      overrides: { 'header-kebab-menu-button': rectOf(0, 44, 300, 330) },
+    })
+    renderHeaderWithAction('A2')
+    expect(openExpand(EXPAND_ACTIONS[1]).style.top).toBe('50px')
+  })
+
+  it.each(PANEL_KINDS)('[REQ-346/AC-3] %s maxHeight is computed from the header-based top (vh 360, header 118 -> 228px)', (kind) => {
+    stubGeometryWithHeader({ vw: 1280, vh: 360, headerBottom: 118 })
+    const { open } = renderFor(kind)
+    expect(open().style.maxHeight).toBe('228px')
+  })
+
+  it('[REQ-346/AC-2] A4 bridge spans the monitor bottom to the card top, lives outside the header, and keeps hover across the portal', () => {
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 118, panelWidth: 250 })
+    const { root, monitor } = renderMonitorHeader()
+    fireEvent.mouseEnter(monitor)
+    const card = screen.getByTestId('resource-hover-card')
+    const bridge = screen.getByTestId('resource-hover-card-bridge')
+    expect(bridge.style.top).toBe('39px')
+    expect(bridge.style.height).toBe('86px')
+    expect(root.contains(bridge)).toBe(false)
+
+    fireEvent.mouseOut(monitor, { relatedTarget: bridge })
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+    fireEvent.mouseOut(bridge, { relatedTarget: card })
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+
+    fireEvent.mouseOut(card, { relatedTarget: document.body })
+    expect(screen.queryByTestId('resource-hover-card')).toBeNull()
+    expect(screen.queryByTestId('resource-hover-card-bridge')).toBeNull()
+  })
+
+  it('[REQ-346/AC-6] header height change while open re-anchors the panel (ResizeObserver)', () => {
+    const callbacks: Array<() => void> = []
+    class FakeResizeObserver {
+      constructor(cb: () => void) {
+        callbacks.push(cb)
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 118 })
+    const { root, unmount } = renderHeaderWithAction('A1')
+    const panel = openExpand(EXPAND_ACTIONS[0])
+    expect(panel.style.top).toBe('124px')
+
+    vi.restoreAllMocks()
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 150 })
+    act(() => {
+      callbacks.forEach((cb) => cb())
+    })
+    expect(panelOf(EXPAND_ACTIONS[0])!.style.top).toBe('156px')
+    expect(root.contains(panelOf(EXPAND_ACTIONS[0])!)).toBe(false)
+    unmount()
+  })
+
+  it('[REQ-346/AC-8] a future action placed in PageHeader actions is anchored to the header bottom without extra props', () => {
+    stubGeometryWithHeader({ vw: 1280, vh: 800, headerBottom: 118 })
+    const { container } = render(
+      <MemoryRouter>
+        <PageHeader title="Future" actions={<FutureTallAction />} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByTestId('future-action-btn'))
+    const panel = screen.getByTestId('future-action-panel')
+    expect(container.contains(panel)).toBe(false)
+    expect(panel.closest('.overflow-x-auto')).toBeNull()
+    expect(panel.style.top).toBe('124px')
+  })
+})

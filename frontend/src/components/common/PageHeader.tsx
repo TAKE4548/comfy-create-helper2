@@ -46,7 +46,7 @@ export function PageHeader({
   }, [])
 
   return (
-    <div className={`w-full border-b border-[rgba(255,255,255,0.06)] bg-surface ${className}`}>
+    <div data-page-header-root="" className={`w-full border-b border-[rgba(255,255,255,0.06)] bg-surface ${className}`}>
       <div className="flex flex-wrap md:flex-nowrap items-center min-h-[50px] px-4 md:px-5">
         {/* Left Cluster */}
         <div className="flex items-center gap-2.5 min-w-0">

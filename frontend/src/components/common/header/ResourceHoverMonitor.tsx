@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
+import { HeaderDropdown } from './HeaderDropdown'
 
 function chipColor(pct: number | null, isVram = false): string {
   if (pct === null) return 'text-zinc-500 border-zinc-800'
@@ -38,18 +39,16 @@ export function ResourceHoverMonitor(): React.JSX.Element {
   const [isHovered, setIsHovered] = useState(false)
   const [isMobileExpanded, setIsMobileExpanded] = useState(false)
   const mobileRef = useRef<HTMLDivElement>(null)
+  const monitorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isMobileExpanded) return
-    const handleOutside = (e: MouseEvent | TouchEvent) => {
-      if (mobileRef.current && !mobileRef.current.contains(e.target as Node)) {
-        setIsMobileExpanded(false)
-      }
+    // Outside clicks are handled by HeaderDropdown. Close at sm+ because the trigger is hidden there.
+    const closeAtSm = () => {
+      if (window.innerWidth >= 640) setIsMobileExpanded(false)
     }
-    document.addEventListener('pointerdown', handleOutside)
-    return () => {
-      document.removeEventListener('pointerdown', handleOutside)
-    }
+    window.addEventListener('resize', closeAtSm)
+    return () => window.removeEventListener('resize', closeAtSm)
   }, [isMobileExpanded])
 
   const vramPctText = stats?.vram_pct != null ? `${Math.round(stats.vram_pct)}%` : '--%'
@@ -67,6 +66,7 @@ export function ResourceHoverMonitor(): React.JSX.Element {
 
   return (
     <div
+      ref={monitorRef}
       data-testid="resource-hover-monitor"
       className="relative flex items-center"
       onMouseEnter={() => setIsHovered(true)}
@@ -81,12 +81,16 @@ export function ResourceHoverMonitor(): React.JSX.Element {
       </div>
 
       {/* Desktop Hover Card (Width 250px) */}
-      {isHovered && (
-        <div
-          data-testid="resource-hover-card"
-          role="tooltip"
-          className="hidden sm:block absolute right-0 top-full mt-1.5 w-[250px] p-3 rounded-lg border border-zinc-800 bg-surface-1/95 backdrop-blur-md shadow-2xl z-50 text-xs text-zinc-300 pointer-events-auto"
-        >
+      <HeaderDropdown
+        open={isHovered}
+        onClose={() => setIsHovered(false)}
+        anchorRef={monitorRef}
+        align="end"
+        role="tooltip"
+        hoverBridge
+        data-testid="resource-hover-card"
+        className="hidden sm:block w-[250px] p-3 rounded-lg border border-zinc-800 bg-surface-1/95 backdrop-blur-md shadow-2xl text-xs text-zinc-300 pointer-events-auto"
+      >
           <div className="font-semibold text-zinc-200 mb-2 pb-1 border-b border-zinc-800 flex justify-between items-center">
             <span>リソース詳細</span>
             <span className="text-[10px] text-zinc-500 font-normal">Real-time</span>
@@ -131,8 +135,7 @@ export function ResourceHoverMonitor(): React.JSX.Element {
               <span className="text-zinc-200 font-mono">{stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
             </div>
           </div>
-        </div>
-      )}
+      </HeaderDropdown>
 
       {/* Mobile Pill & Overlay */}
       <div className="sm:hidden relative flex items-center" ref={mobileRef}>
@@ -148,11 +151,14 @@ export function ResourceHoverMonitor(): React.JSX.Element {
           <span className="text-[9px] text-purple-400">{isMobileExpanded ? '▲' : '▼'}</span>
         </button>
 
-        {isMobileExpanded && (
-          <div
-            data-testid="mobile-resource-overlay"
-            className="absolute right-0 top-full mt-2 w-[240px] rounded-xl border border-white/10 bg-surface-2 p-3 shadow-2xl z-40 flex flex-col gap-2.5 backdrop-blur-md animate-in fade-in duration-150"
-          >
+        <HeaderDropdown
+          open={isMobileExpanded}
+          onClose={() => setIsMobileExpanded(false)}
+          anchorRef={mobileRef}
+          align="end"
+          data-testid="mobile-resource-overlay"
+          className="w-[240px] rounded-xl border border-white/10 bg-surface-2 p-3 shadow-2xl flex flex-col gap-2.5 backdrop-blur-md animate-in fade-in duration-150"
+        >
             <div className="flex items-center justify-between pb-1 border-b border-white/10">
               <span className="text-xs font-semibold text-zinc-200">リソース詳細</span>
               <button
@@ -208,8 +214,7 @@ export function ResourceHoverMonitor(): React.JSX.Element {
                 <span className="text-zinc-200 font-mono">{stats?.gpu_pct != null ? `${Math.round(stats.gpu_pct)}%` : '--%'}</span>
               </div>
             </div>
-          </div>
-        )}
+        </HeaderDropdown>
       </div>
     </div>
   )

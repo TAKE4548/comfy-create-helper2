@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { MoreVertical, RefreshCw, Settings, Database } from 'lucide-react'
 import { useBrowserStorageUsage } from '../../../hooks/useBrowserStorageUsage'
 import { formatStorageUsage } from '../../../utils/browserStorageUsage'
+import { HeaderDropdown } from './HeaderDropdown'
 
 export interface HeaderKebabMenuProps {
   onResyncCache?: () => void
@@ -11,19 +12,6 @@ export function HeaderKebabMenu({ onResyncCache }: HeaderKebabMenuProps = {}): R
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const storage = useBrowserStorageUsage()
-
-  useEffect(() => {
-    if (!isOpen) return
-    const handleOutside = (e: MouseEvent | TouchEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', handleOutside)
-    return () => {
-      document.removeEventListener('pointerdown', handleOutside)
-    }
-  }, [isOpen])
 
   const handleResync = () => {
     if (onResyncCache) {
@@ -35,7 +23,7 @@ export function HeaderKebabMenu({ onResyncCache }: HeaderKebabMenuProps = {}): R
   }
 
   return (
-    <div className="relative inline-flex items-center" ref={menuRef} style={{ zIndex: 10 }}>
+    <div className="relative inline-flex items-center" ref={menuRef}>
       <button
         type="button"
         id="header-kebab-btn"
@@ -53,11 +41,14 @@ export function HeaderKebabMenu({ onResyncCache }: HeaderKebabMenuProps = {}): R
         </span>
       </button>
 
-      {isOpen && (
-        <div
-          data-testid="header-kebab-dropdown"
-          className="absolute right-0 top-full mt-1.5 w-[270px] p-3 rounded-lg border border-zinc-800 bg-surface-1/95 backdrop-blur-md shadow-2xl z-20 text-xs text-zinc-300"
-        >
+      <HeaderDropdown
+        open={isOpen}
+        onClose={() => setIsOpen(false)}
+        anchorRef={menuRef}
+        align="end"
+        data-testid="header-kebab-dropdown"
+        className="w-[270px] p-3 rounded-lg border border-zinc-800 bg-surface-1/95 backdrop-blur-md shadow-2xl text-xs text-zinc-300"
+      >
           {/* Storage usage estimation section */}
           <div className="pb-2.5 mb-2.5 border-b border-zinc-800">
             <div className="flex items-center gap-1.5 text-zinc-400 mb-1.5 font-medium">
@@ -99,8 +90,7 @@ export function HeaderKebabMenu({ onResyncCache }: HeaderKebabMenuProps = {}): R
               <span>設定</span>
             </a>
           </div>
-        </div>
-      )}
+      </HeaderDropdown>
     </div>
   )
 }

@@ -106,4 +106,79 @@ describe('HeaderKebabMenu', () => {
     fireEvent.pointerDown(screen.getByTestId('outside-area'))
     expect(screen.queryByTestId('header-kebab-dropdown')).toBeNull()
   })
+
+  it('[REQ-346/AC-1] renders the dropdown in a body-level fixed layer below the trigger (portal)', () => {
+    const { container } = render(<HeaderKebabMenu />)
+    const trigger = screen.getByTestId('header-kebab-menu-button')
+    const wrapper = trigger.parentElement as HTMLElement
+    vi.spyOn(wrapper, 'getBoundingClientRect').mockReturnValue({
+      top: 10, bottom: 38, left: 1000, right: 1028, width: 28, height: 28, x: 1000, y: 10, toJSON: () => ({}),
+    } as DOMRect)
+
+    fireEvent.click(trigger)
+
+    const dropdown = screen.getByTestId('header-kebab-dropdown')
+    expect(container.contains(dropdown)).toBe(false)
+    expect(document.body.contains(dropdown)).toBe(true)
+    expect(dropdown.style.position).toBe('fixed')
+    expect(parseFloat(dropdown.style.top)).toBeGreaterThanOrEqual(38 + 6)
+  })
+
+  it('[REQ-346/AC-3] limits the dropdown height to the viewport (maxHeight) so the last item stays reachable by in-menu scroll', () => {
+    Object.defineProperty(window, 'innerHeight', { value: 360, configurable: true, writable: true })
+    render(<HeaderKebabMenu />)
+    fireEvent.click(screen.getByTestId('header-kebab-menu-button'))
+
+    const dropdown = screen.getByTestId('header-kebab-dropdown')
+    expect(dropdown.style.maxHeight).not.toBe('')
+    expect(parseFloat(dropdown.style.maxHeight)).toBeLessThanOrEqual(360)
+    expect(dropdown.className).toContain('overflow-y-auto')
+    expect(dropdown.contains(screen.getByTestId('header-settings-link'))).toBe(true)
+  })
+
+  it('[REQ-346/AC-4] toggles closed when the trigger is pressed again', () => {
+    render(<HeaderKebabMenu />)
+    const trigger = screen.getByTestId('header-kebab-menu-button')
+    fireEvent.click(trigger)
+    expect(screen.getByTestId('header-kebab-dropdown')).toBeTruthy()
+    fireEvent.click(trigger)
+    expect(screen.queryByTestId('header-kebab-dropdown')).toBeNull()
+  })
+
+  it('[REQ-346/AC-5] keeps the 270px panel inside 375px and 1280px wide viewports (align end)', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(270)
+    for (const width of [375, 1280]) {
+      Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
+      const { unmount } = render(<HeaderKebabMenu />)
+      const trigger = screen.getByTestId('header-kebab-menu-button')
+      const wrapper = trigger.parentElement as HTMLElement
+      const right = width - 8
+      vi.spyOn(wrapper, 'getBoundingClientRect').mockReturnValue({
+        top: 10, bottom: 38, left: right - 28, right, width: 28, height: 28, x: right - 28, y: 10, toJSON: () => ({}),
+      } as DOMRect)
+
+      fireEvent.click(trigger)
+
+      const dropdown = screen.getByTestId('header-kebab-dropdown')
+      const left = parseFloat(dropdown.style.left)
+      expect(left).toBeGreaterThanOrEqual(0)
+      expect(left + 270).toBeLessThanOrEqual(width)
+      unmount()
+    }
+  })
+
+  it('[REQ-346/AC-6] recomputes the maxHeight on window resize while open', () => {
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true, writable: true })
+    render(<HeaderKebabMenu />)
+    fireEvent.click(screen.getByTestId('header-kebab-menu-button'))
+    const dropdown = screen.getByTestId('header-kebab-dropdown')
+    const before = parseFloat(dropdown.style.maxHeight)
+
+    Object.defineProperty(window, 'innerHeight', { value: 360, configurable: true, writable: true })
+    fireEvent(window, new Event('resize'))
+
+    const after = parseFloat(dropdown.style.maxHeight)
+    expect(after).toBeLessThan(before)
+    expect(after).toBeLessThanOrEqual(360)
+  })
 })

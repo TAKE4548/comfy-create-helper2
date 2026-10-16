@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import type { Workflow, BaseModel } from '../../../api/types'
+import { HeaderDropdown } from '../../../components/common/header/HeaderDropdown'
 
 export interface WorkflowActionsMenuProps {
   workflowId: number | null
@@ -30,17 +31,6 @@ export function WorkflowActionsMenu({
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
-
   if (!workflowId || !workflow) {
     return null
   }
@@ -63,10 +53,13 @@ export function WorkflowActionsMenu({
         <MoreHorizontal size={14} />
       </button>
 
-      {isOpen && (
-        <div
+      <HeaderDropdown
+          open={isOpen}
+          onClose={() => setIsOpen(false)}
+          anchorRef={menuRef}
+          align="start"
           role="menu"
-          className="absolute left-0 top-full mt-1.5 w-[240px] bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-3 z-50 space-y-3 animate-fade-in"
+          className="w-[240px] bg-surface-2 border border-[rgba(255,255,255,0.1)] rounded-xl shadow-2xl p-3 space-y-3 animate-fade-in"
         >
           <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-1.5">
             <span className="text-[11px] font-semibold text-zinc-300">ワークフロー個別設定</span>
@@ -161,8 +154,7 @@ export function WorkflowActionsMenu({
               ノード再スキャン
             </button>
           </div>
-        </div>
-      )}
+      </HeaderDropdown>
     </div>
   )
 }

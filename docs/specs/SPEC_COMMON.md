@@ -1,10 +1,10 @@
 # Prompt Surgeon — 共通仕様書 (SPEC_COMMON)
 
-**バージョン**: 2.5
-**最終更新**: 2026-10-15
+**バージョン**: 2.6
+**最終更新**: 2026-10-16
 **ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md)
 
 ---
 
@@ -343,6 +343,34 @@ interface TagChipEventDetail {
 
 ### 4-4. PageHeader (`components/common/PageHeader.tsx`)
 - アイコン・ページタイトル・アクションボタンを一貫して配置する共通ヘッダーコンポーネント。
+- ヘッダーの展開アクション（トリガーを押して開くメニュー／ポップオーバー）は §4-4-1 の契約に従う。
+
+### 4-4-1. 共通ヘッダー展開アクション契約（REQ-346）
+
+共通ヘッダー（`PageHeader` の `actions` スロットと右クラスタ）に置く展開アクションは、ヘッダー内の高さ制限で切り詰められず、ページ内容に重ねてヘッダー下へ展開する。実装の共通プリミティブは `components/common/header/HeaderDropdown.tsx`（配置計算は `headerMenuPlacement.ts`）。
+
+| 項目 | 契約 |
+|---|---|
+| 重なり展開 | パネルは `document.body` へのポータルで `position: fixed` 描画し、ヘッダー高さ・ページ高さ・スクロール高さを押し広げない。`actions` スロットの `overflow-x-auto` に切り詰められない |
+| 配置 | 上端は**ヘッダー下端＋6px**（ヘッダー＝`PageHeader` のルート要素。モバイルで 2 行目へ折り返した `actions` 行・`subtitle`・`children` を含む全体の下端）。トリガーがヘッダー内のどの行にあっても同じで、パネルはヘッダーに重ならない（トリガー下端がヘッダー下端より下に出る場合のみトリガー下端＋6px）。ヘッダーの外で使う場合（`PageHeader` の祖先がない場合）はトリガー下端＋6px へ縮退する。左右はトリガー基準（`align` は start／end）で 8px の余白を保ってビューポート内へクランプ。最大幅は `calc(100vw - 16px)` |
+| ヘッダー基準 | `PageHeader` のルート要素に `data-page-header-root` 属性を付け、`HeaderDropdown` がトリガーの最寄り祖先のこの要素の下端を計測のたびに読み直す（sticky・モバイルでヘッダーがページとともにスクロールする構成でも追従）。トリガー下端は、アンカーラッパーと直接子要素（`-m-2` 等のヒットスロップ）の下端の最大で計測する |
+| 高さの切り詰め禁止と末尾到達性 | ヘッダー高さで切り詰めない。最大高さは `visualViewport.height`（なければ `innerHeight`）−上端（ヘッダー下端＋6px）−8px で、超過分はパネル内スクロール（`overflow-y: auto`、`overscroll-behavior: contain`）により最後の項目へ画面内で到達・押下できる。内容が最大高さに収まるときはスクロール不要。ヘッダーが高い（モバイルの折り返し）ほど最大高さは小さくなる |
+| 重なり順 | `--z-header-menu: 60`（ボトムナビ 50 より前面、共通Modal 100 より背面）。背景内容・固定ボトムナビに隠れない |
+| 開閉（click 型） | トリガー再押下で閉じる。外側 `pointerdown`/`mousedown` で閉じる。開閉状態は呼出側が持つ（`HeaderDropdown` は制御型でトリガー種別に依存しない）。ウィンドウ resize／向き変更／スクロール中は再計測する。ヘッダー自身の高さ変化（折り返し行数の変化など）にも追従する（`ResizeObserver`。未対応環境では resize／スクロールのみ）。トリガーが画面外または残り高さが 96px 未満なら閉じる。ページがレイアウトを切り替える幅（Generate は 768px の Desktop／Mobile）を跨いで resize した場合は、ページ側がヘッダーごとトリガーを再マウントするためメニューが閉じる（正常）。新しいサイズで開き直せば最後の項目に到達・押下できる。同一レイアウト内の resize では開いたまま追従する |
+| 開閉（hover 型） | ポインター進入で開き、ポインターがトリガー・ブリッジ・カードのいずれの上にも無くなると閉じる（遅延なし）。外側 `pointerdown`/`mousedown` でも閉じる。トリガーとカードの間の隙間は、`HeaderDropdown` の `hoverBridge` が描画する透明ブリッジ（`position: fixed`、`aria-hidden`。トリガー下端からカード上端までを埋める。上端がヘッダー下端基準のため隙間は可変で、1 行ヘッダーで約20px、折り返しヘッダー（640〜767px の Generate Mobile 等）で約80〜90px。カード非表示（640px 未満）では描画しない）で埋め、ポインターをカード内へ移動してもカードが閉じない（カード内スクロールのため）。クリックによるトグルは持たず、「再押下で閉じる」は「ポインター離脱／外側押下で閉じる」に読み替える。配置・高さ上限・スクロール・重なり順・追従は click 型と同一。640px 未満では表示しない |
+| 将来の展開アクション | 共通ヘッダーへ追加する展開アクション（click 型・hover 型いずれも）は `HeaderDropdown` を使うか同等にこの契約を満たし、E2E の検証一覧（`frontend/e2e/` 配下の header 重なり検証スペック）へ追加する。ヘッダーより高い内容でも下端まで表示され末尾項目へ到達できること。hover 型は `HeaderDropdown` の `hoverBridge` を指定する |
+| 非目標 | Escape キー、フォーカストラップ／復帰、ブラウザズーム対応、hover 型の開閉遅延やクリック開閉の追加、内容項目・保存動作の変更は本契約に含めない |
+
+対象アクション（2026-10-16 時点。`HeaderDropdown` 適用）:
+
+| 区分 | アクション | 実装 |
+|---|---|---|
+| 適用 | ワークフロー設定（`#workflow-actions-btn`、Generate Desktop／Mobile） | `pages/GeneratePage/components/WorkflowActionsMenu.tsx` |
+| 適用 | ヘッダーメニュー（キャッシュ／ストレージ、`#header-kebab-btn`、全ページ） | `components/common/header/HeaderKebabMenu.tsx` |
+| 適用 | モバイル VRAM ピル展開（640px 未満。640px 以上へ拡大すると閉じる） | `components/common/header/ResourceHoverMonitor.tsx` |
+| 適用（hover 型） | デスクトップ資源ホバーカード（640px 以上、`role=tooltip`、`data-testid="resource-hover-card"`） | 同上（A3 と同一ファイル。ブリッジ `resource-hover-card-bridge`（`HeaderDropdown` が描画）を含む） |
+
+検証幅（既存サポート範囲）: mobile 375／639／767、tablet 768／1023、desktop 1024／1280。短い高さ 360 でメニュー内スクロールを確認する。hover 型（640px 以上のみ表示）は 640／768／1024／1280 で確認する。全アクションで、開いたパネルの上端がヘッダー下端＋6px であることを確認する。開いたままの resize は同一レイアウト内（Desktop 内・Mobile 内）で確認し、レイアウト境界を跨ぐ場合は「閉じる→開き直して最後の項目に到達・押下できる」ことを確認する。
 
 ### 4-5. useThumbnailAspectRatio (`hooks/useThumbnailAspectRatio.ts`)
 - アプリケーション全体（History、LoRAs、Tags）のサムネイル表示アスペクト比（1:1, 3:4, 4:3, 16:9 等）を localStorage で一元管理し、CSS クラス・スタイルを提供するフック。
