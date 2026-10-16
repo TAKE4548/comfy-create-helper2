@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
   server: {
     host: '0.0.0.0',
+    port: 5391,
+    strictPort: true,
     fs: { allow: [path.resolve(__dirname, '..')] },
     // No backend proxy: the baseline prototype must not contact production services.
   },
