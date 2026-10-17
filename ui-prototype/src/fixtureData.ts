@@ -75,3 +75,41 @@ export const fixtureHistoryImages = [
   scene('Violet dusk', '#8f79b4', '#5a477c', 420),
   scene('Amber glow', '#cb7d61', '#855b58', 350),
 ]
+
+/** Collection samples for LoRA / Tag Sets. The arrays are deliberately long enough
+ * to inspect multi-row vertical scrolling and category grouping at mobile widths. */
+export const fixtureCollectionCategories = [
+  { id: 9401, name: '人物・キャラクター', sort_order: 0 },
+  { id: 9402, name: '背景・風景', sort_order: 1 },
+  { id: 9403, name: '画風・質感', sort_order: 2 },
+]
+export const fixtureCollectionModels = [
+  { id: 9501, name: 'Sample SDXL', model_type: 'sdxl' },
+  { id: 9502, name: 'Sample Flux', model_type: 'flux' },
+]
+const sampleTitles = ['Soft Portrait', 'Evening Valley', 'Ink Detail', 'Studio Light',
+  'Forest Walk', 'Pencil Sketch', 'Character Style', 'Golden Hour', 'Fine Texture',
+  'City Morning', 'Comic Shading', 'Snow Ridge', 'Face Detail', 'Blue Landscape',
+  'Watercolor', 'Warm Studio', 'Cloudy Horizon', 'Graphic Line']
+export const fixtureLoras = sampleTitles.map((title, i) => ({
+  id: 9601 + i, model_name: title + ' / Demo LoRA',
+  description: i % 4 === 0 ? 'デザインレビュー用の長めの説明文。カード内での折り返しと縦スクロールを確認するための架空データです。' : 'UI review sample model',
+  category_id: i % 7 === 0 ? null : fixtureCollectionCategories[i % 3].id,
+  file_path: '/offline/sample_' + (i+1) + '.safetensors',
+  thumbnail_path: fixtureHistoryImages[i % fixtureHistoryImages.length],
+  example_paths: [],
+  target_base_model_ids: [fixtureCollectionModels[i % 2].id],
+  recommended_strength_min: 0.6, recommended_strength_max: 0.9,
+  trigger_word_sets: [{ id: 9701+i, name: 'Sample Trigger', words: ['demo style', 'detail', 'light'] }],
+  sort_order: i, created_at: '2026-10-17T00:00:00',
+}))
+export const fixtureTagSets = sampleTitles.map((title, i) => ({
+  id: 9801 + i, name: title + ' / Tag Set',
+  description: 'UI review sample tag set',
+  category_id: i % 7 === 0 ? null : fixtureCollectionCategories[i % 3].id,
+  tags: ['masterpiece', 'detailed illustration', 'soft light', 'sample tag ' + (i+1)],
+  subsets: i % 3 === 0 ? [{ id: 9901 + i, name: 'Variant A', tags: ['warm colors', 'portrait'], thumbnail_path: null }] : [],
+  target_base_model_ids: [fixtureCollectionModels[i % 2].id],
+  thumbnail_path: fixtureHistoryImages[i % fixtureHistoryImages.length],
+  sort_order: i, created_at: '2026-10-17T00:00:00',
+}))
