@@ -415,7 +415,7 @@
     max-height:92dvh;
     overscroll-behavior:contain;
   }
-  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-md:has(#save-tagset-btn) .max-h-\\[160px\\].overflow-y-auto {
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-md:has(#save-tagset-btn) [class~="max-h-[160px]"].overflow-y-auto {
     max-height:none;
     overflow-y:visible;
     overflow-x:visible;
