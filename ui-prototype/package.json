@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5391 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 4391 --strictPort"
+    "preview": "vite preview --host 0.0.0.0 --port 4391 --strictPort",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.3",
@@ -14,5 +15,8 @@
     "typescript": "~5.6.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
   }
 }
