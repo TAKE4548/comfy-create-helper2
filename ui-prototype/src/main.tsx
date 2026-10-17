@@ -13,6 +13,25 @@ import { installOfflineTransport } from './offlineTransport'
 installOfflineTransport()
 mountMobileProposal()
 
+
+// Mock SVG images have no ComfyUI /view identity; the production availability
+// controller correctly returns undefined. Enable only these offline thumbnails.
+function enableFixtureThumbnails() {
+  const update = () => {
+    document.querySelectorAll<HTMLButtonElement>('button[id^="thumb-mobile-"],button[id^="thumb-"]').forEach(button => {
+      const src = button.querySelector('img')?.getAttribute('src') ?? ''
+      if (!src.startsWith('data:image/svg+xml')) return
+      if (button.disabled) button.disabled = false
+      button.querySelectorAll<HTMLElement>('[role="status"]').forEach(el => {
+        if (el.textContent?.includes('原画を確認中')) el.style.display = 'none'
+      })
+    })
+  }
+  const observer = new MutationObserver(update)
+  observer.observe(document.body, { subtree: true, childList: true })
+  update()
+}
+
 void Promise.all([import('../../frontend/src/App'), import('../../frontend/src/store/useGenerationStore')]).then(([{ default: App }, { useGenerationStore }]) => {
   // Seed offline history before the real Generate view mounts; identical for A/B.
   useGenerationStore.setState({ comfyHistoryImages: fixtureHistoryImages, batchImages: fixtureHistoryImages })
@@ -22,6 +41,7 @@ void Promise.all([import('../../frontend/src/App'), import('../../frontend/src/s
     gpu_pct: 37, vram_used_gb: 9.2, vram_total_gb: 24, vram_pct: 38,
     vram_free_gb: 14.8, ts: Date.now(),
   })
+  enableFixtureThumbnails()
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode><App /></React.StrictMode>
   )
