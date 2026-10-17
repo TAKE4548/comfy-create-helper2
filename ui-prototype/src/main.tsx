@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '../../frontend/src/index.css'
 import './comparison.css'
 import { mountMobileProposal } from './mobileProposal'
+import { fixtureHistoryImages } from './fixtureData'
 
 // Explicit query switch allows identical fixture, viewport and app for A/B captures.
 document.documentElement.dataset.prototypeVariant = new URLSearchParams(location.search).get('ui') === 'proposal' ? 'proposal' : 'baseline'
@@ -13,6 +14,8 @@ installOfflineTransport()
 mountMobileProposal()
 
 void Promise.all([import('../../frontend/src/App'), import('../../frontend/src/store/useGenerationStore')]).then(([{ default: App }, { useGenerationStore }]) => {
+  // Seed offline history before the real Generate view mounts; identical for A/B.
+  useGenerationStore.setState({ comfyHistoryImages: fixtureHistoryImages, batchImages: fixtureHistoryImages })
   // Static sample metrics, not real hardware readings. Preserve the production monitor UI.
   useGenerationStore.getState().setSystemStats({
     cpu_pct: 23, ram_used_gb: 18.4, ram_total_gb: 64, ram_pct: 29,
