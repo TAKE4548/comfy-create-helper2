@@ -135,9 +135,21 @@ export function mountHistoryProposal() {
       bar.append(sort)
     }
   }
+  function syncSelection() {
+    // Scope to History; the toolbar itself is shared with other pages.
+    const historyPage=document.querySelector<HTMLElement>('[data-page-header-root]:has(#view-snapshots)')?.parentElement
+    const albumPage=document.querySelector<HTMLElement>('#toggle-bulk-mode')?.closest<HTMLElement>('.flex.flex-col.h-full')
+    for(const root of [historyPage,albumPage]){
+      if(!root) continue
+      const toolbar=Array.from(root.querySelectorAll<HTMLElement>('div')).find(el=>
+        el.className.includes('animate-slide-down') && el.textContent?.includes('複数選択モード'))
+      if(toolbar && toolbar.dataset.historySelectionToolbar!=='true') toolbar.dataset.historySelectionToolbar='true'
+    }
+  }
   function sync() {
     if(!mobile()){closeMenu();return}
     syncFilters()
+    syncSelection()
     document.querySelectorAll<HTMLElement>('[id^="snap-card-"]').forEach(c=>syncCard(c,false))
     document.querySelectorAll<HTMLElement>('[id^="album-item-card-"]').forEach(c=>syncCard(c,true))
   }
