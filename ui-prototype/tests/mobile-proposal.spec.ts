@@ -35,3 +35,12 @@ test('offline SVG fixture thumbnails are clickable without original check', asyn
   await thumb.click()
   await expect(page.getByRole('dialog', { name: '画像プレビュー' })).toBeVisible()
 })
+
+test('history thumbnails allow native horizontal panning in proposal', async ({ page }, info) => {
+  test.skip(!info.project.name.includes('mobile'))
+  await page.goto('/?ui=proposal')
+  await page.locator('button[aria-controls="mobile-history-panel"]').click()
+  const rail = page.locator('#mobile-history-panel .overflow-x-auto').first()
+  await expect(rail).toBeVisible()
+  await expect(rail).toHaveCSS('touch-action', 'auto')
+})
