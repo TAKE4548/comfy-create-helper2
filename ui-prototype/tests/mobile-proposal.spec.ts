@@ -66,10 +66,10 @@ test('proposal mobile scroller fits available AppShell content height', async ({
     const main = el.parentElement!
     return {
       rootHeight: el.getBoundingClientRect().height,
-      mainHeight: main.getBoundingClientRect().height,
+      mainContentHeight: main.getBoundingClientRect().height - parseFloat(getComputedStyle(main).paddingTop) - parseFloat(getComputedStyle(main).paddingBottom),
       bottomPad: getComputedStyle(el).paddingBottom,
     }
   })
-  expect(Math.abs(metrics.rootHeight - metrics.mainHeight)).toBeLessThanOrEqual(2)
+  expect(Math.abs(metrics.rootHeight - metrics.mainContentHeight)).toBeLessThanOrEqual(2)
   expect(metrics.bottomPad).toBe('72px')
 })
