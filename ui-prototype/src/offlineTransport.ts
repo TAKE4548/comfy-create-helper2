@@ -17,7 +17,7 @@ const fixtures: Record<string, unknown> = {
   '/api/tag-sets': [],
   '/api/albums': [],
   '/api/snapshots': [],
-  '/api/workflow-presets': fixturePresets,
+
   '/api/config': { comfy_url: 'http://offline-prototype.invalid:8188' },
   '/api/generation/snapshot': fixtureSnapshot,
   '/api/generation/queue': { running: [], pending: [] },
@@ -27,13 +27,54 @@ export function installOfflineTransport() {
   if (!localStorage.getItem('prompt-surgeon-workflow-id')) {
     localStorage.setItem('prompt-surgeon-workflow-id', String(fixtureWorkflow.id))
   }
+  const localPresets: Array<Record<string, any>> = fixturePresets.map(p => ({ ...p }))
+  let nextPresetId = 92000
   const originalFetch = window.fetch.bind(window)
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : null
     const path = new URL(request?.url ?? String(input), window.location.href).pathname
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
+    const url = new URL(request?.url ?? String(input), window.location.href)
+    // In-memory CRUD: resets on reload, never contacts backend or persists user data.
+    if (path === '/api/workflow-presets' && method === 'GET') {
+      return json(localPresets.filter(p => !url.searchParams.has('workflow_id') ||
+        Number(url.searchParams.get('workflow_id')) === p.workflow_id))
+    }
+    if (path === '/api/workflow-presets' && method === 'POST') {
+      const payload = JSON.parse(String(init?.body ?? '{}'))
+      const now = new Date().toISOString()
+      const preset = { ...payload, id: nextPresetId++, created_at: now, updated_at: now,
+        sort_order: localPresets.length }
+      localPresets.push(preset)
+      return json(preset, 201)
+    }
+    const presetMatch = path.match(/^\\/api\\/workflow-presets\\/(\\d+)$/)
+    if (presetMatch && (method === 'PUT' || method === 'DELETE')) {
+      const index = localPresets.findIndex(p => p.id === Number(presetMatch[1]))
+      if (index < 0) return json({ detail: 'Preset not found' }, 404)
+      if (method === 'DELETE') { localPresets.splice(index, 1); return json(null) }
+      const payload = JSON.parse(String(init?.body ?? '{}'))
+      localPresets[index] = { ...localPresets[index], ...payload, updated_at: new Date().toISOString() }
+      return json(localPresets[index])
+    }
+    if (path === '/api/workflow-presets/reorder' && method === 'PUT') {
+      const payload = JSON.parse(String(init?.body ?? '{}'))
+      for (const [index, id] of (payload.ordered_ids ?? []).entries()) {
+        const preset = localPresets.find(p => p.id === id)
+        if (preset) preset.sort_order = index
+      }
+      return json(null)
+    }
+    if (path === '/api/workflow-presets/bulk' && method === 'DELETE') {
+      const payload = JSON.parse(String(init?.body ?? '{}'))
+      for (const id of payload.ids ?? []) {
+        const index = localPresets.findIndex(p => p.id === id)
+        if (index >= 0) localPresets.splice(index, 1)
+      }
+      return json(null)
+    }
     if (method !== 'GET' && method !== 'HEAD') {
-      return json({ detail: 'Read-only UI prototype: write actions are disabled.' }, 403)
+      return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
     }
     if (path in fixtures) return json(fixtures[path])
     if (path === '/api/generation/snapshot' || path === '/api/generation/state') return json(fixtureSnapshot)
