@@ -19,6 +19,7 @@ export interface HeaderDropdownProps {
   className?: string
   /** hover 型用。トリガー下端〜パネル上端を埋める透明ブリッジを描画する */
   hoverBridge?: boolean
+  closeOnEsc?: boolean
   'data-testid'?: string
   children: ReactNode
 }
@@ -66,6 +67,7 @@ export function HeaderDropdown({
   role,
   className = '',
   hoverBridge = false,
+  closeOnEsc = true,
   'data-testid': testId,
   children,
 }: HeaderDropdownProps) {
@@ -141,13 +143,24 @@ export function HeaderDropdown({
         return
       onCloseRef.current()
     }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (closeOnEsc && e.key === 'Escape') {
+        onCloseRef.current()
+      }
+    }
     document.addEventListener('pointerdown', onOutside)
     document.addEventListener('mousedown', onOutside)
+    if (closeOnEsc) {
+      document.addEventListener('keydown', onKeyDown)
+    }
     return () => {
       document.removeEventListener('pointerdown', onOutside)
       document.removeEventListener('mousedown', onOutside)
+      if (closeOnEsc) {
+        document.removeEventListener('keydown', onKeyDown)
+      }
     }
-  }, [open, anchorRef])
+  }, [open, anchorRef, closeOnEsc])
 
   if (!open) return null
   return createPortal(

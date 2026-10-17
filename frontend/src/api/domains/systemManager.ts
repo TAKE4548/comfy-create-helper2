@@ -1,5 +1,5 @@
 export type ManagerServiceName = 'backend' | 'frontend' | 'comfy' | 'manager'
-export type ManagedServiceName = 'backend' | 'comfy'
+export type ManagedServiceName = 'backend' | 'comfy' | 'frontend' | 'fe'
 export type ManagerActionName = 'start' | 'stop' | 'restart'
 
 export interface ManagerProcessStatus {

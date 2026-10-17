@@ -12,6 +12,7 @@ function Harness({
   onClose,
   align = 'start',
   role,
+  closeOnEsc,
   children,
   anchorRefOut,
 }: {
@@ -19,6 +20,7 @@ function Harness({
   onClose: () => void
   align?: HeaderMenuAlign
   role?: 'tooltip' | 'menu'
+  closeOnEsc?: boolean
   children?: ReactNode
   anchorRefOut?: (ref: RefObject<HTMLElement | null>) => void
 }) {
@@ -29,7 +31,7 @@ function Harness({
       <div ref={anchorRef} data-testid="anchor">
         anchor
       </div>
-      <HeaderDropdown open={open} onClose={onClose} anchorRef={anchorRef} align={align} role={role} data-testid="panel" className="w-[240px] animate-fade-in">
+      <HeaderDropdown open={open} onClose={onClose} anchorRef={anchorRef} align={align} role={role} closeOnEsc={closeOnEsc} data-testid="panel" className="w-[240px] animate-fade-in">
         {children ?? <span>content</span>}
       </HeaderDropdown>
     </div>
@@ -498,5 +500,19 @@ describe('HeaderDropdown header-bottom anchoring', () => {
     const disconnected = created.reduce((n, ro) => n + ro.disconnect.mock.calls.length, 0)
     expect(observed).toBeGreaterThan(0)
     expect(disconnected).toBeGreaterThanOrEqual(observed)
+  })
+
+  it('[REQ-364/AC-3] closes the dropdown when Escape key is pressed', () => {
+    const onClose = vi.fn()
+    render(<Harness open onClose={onClose} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('[REQ-364/AC-3] does not close on Escape if closeOnEsc is false', () => {
+    const onClose = vi.fn()
+    render(<Harness open onClose={onClose} closeOnEsc={false} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

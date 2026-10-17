@@ -7,7 +7,6 @@ import { PageHeader } from '../PageHeader'
 import { ResourceHoverMonitor } from '../header/ResourceHoverMonitor'
 import { HeaderKebabMenu } from '../header/HeaderKebabMenu'
 import { HeaderDropdown } from '../header/HeaderDropdown'
-import { HeaderDropdown } from '../header/HeaderDropdown'
 import { SystemStatusBadge } from '../SystemStatusBadge'
 import { WorkflowActionsMenu } from '../../../pages/GeneratePage/components/WorkflowActionsMenu'
 import { useGenerationStore } from '../../../store/useGenerationStore'
@@ -22,7 +21,7 @@ const managerFixture = {
   action_in_progress: null,
 }
 
-// Mock manager status hook to return deterministic values
+// Mock manager status hooks to return deterministic values
 vi.mock('../../../hooks/useComfyManagerStatus', () => ({
   useComfyManagerStatus: () => ({
     status: {
@@ -33,6 +32,19 @@ vi.mock('../../../hooks/useComfyManagerStatus', () => ({
     },
     available: true,
     isLoading: false,
+    refetch: vi.fn().mockResolvedValue(undefined),
+  }),
+}))
+
+vi.mock('../../../hooks/useManagerStatus', () => ({
+  useManagerStatus: () => ({
+    status: {
+      fe: { running: true, status: 'running' },
+      be: { running: true, status: 'running' },
+      comfy: { running: true, status: 'running' },
+      action_in_progress: null,
+    },
+    available: true,
     refetch: vi.fn().mockResolvedValue(undefined),
   }),
 }))
@@ -1020,3 +1032,167 @@ describe('REQ-346 header-bottom anchored overlay', () => {
     expect(panel.style.top).toBe('124px')
   })
 })
+
+describe('REQ-364: Unified Header Integration with SystemStatusBadge & Dynamic Port', () => {
+  const originalLocation = window.location
+
+  beforeEach(() => {
+    cleanupAllTestState()
+    vi.restoreAllMocks()
+    useGenerationStore.setState({
+      systemStats: {
+        cpu_pct: 20.0,
+        ram_pct: 50.0,
+        gpu_pct: 70.0,
+        vram_pct: 65.0,
+        ram_used_gb: 16.0,
+        ram_total_gb: 32.0,
+        vram_used_gb: 10.0,
+        vram_total_gb: 16.0,
+      },
+      isConnected: true,
+      generationSyncing: false,
+      generationSnapshot: {
+        upstream: { http_ready: true, ws_connected: true, failure_since: null },
+      } as any,
+    })
+  })
+
+  afterEach(() => {
+    cleanupAllTestState()
+    useGenerationStore.setState({ systemStats: null, generationSnapshot: null })
+    try {
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+        configurable: true,
+      })
+    } catch {
+      // ignore
+    }
+  })
+
+  it('[REQ-364/AC-1] desktop header rendering: PageHeader in desktop mode shows SystemStatusBadge (slim) with dynamic DEV :${port} tag', () => {
+    Object.defineProperty(window, 'location', {
+      value: new URL('http://localhost:5173'),
+      writable: true,
+      configurable: true,
+    })
+
+    const { container, rerender } = render(
+      <MemoryRouter>
+        <PageHeader title="Generate" />
+      </MemoryRouter>,
+    )
+
+    // Verify desktop container visibility classes
+    const desktopContainer = container.querySelector('.hidden.md\\:inline-flex')
+    expect(desktopContainer).toBeInTheDocument()
+
+    // Slim badge rendered inside desktop container
+    const slimBadge = desktopContainer!.querySelector('[data-testid="system-status-badge"]')
+    expect(slimBadge).toBeInTheDocument()
+    expect(slimBadge).toHaveTextContent('READY')
+    expect(slimBadge).toHaveClass('rounded-full', 'px-2')
+
+    // Dynamic DEV :${port} tag badge rendered in DEV environment
+    const devBadge = desktopContainer!.querySelector('[data-testid="dev-port-badge"]')
+    expect(devBadge).toBeInTheDocument()
+    expect(devBadge).toHaveTextContent('DEV :5173')
+
+    // Dynamic port tracking: updates when port changes to 5174
+    Object.defineProperty(window, 'location', {
+      value: new URL('http://localhost:5174'),
+      writable: true,
+      configurable: true,
+    })
+
+    rerender(
+      <MemoryRouter>
+        <PageHeader title="Generate" />
+      </MemoryRouter>,
+    )
+
+    const updatedDevBadge = desktopContainer!.querySelector('[data-testid="dev-port-badge"]')
+    expect(updatedDevBadge).toHaveTextContent('DEV :5174')
+  })
+
+  it('[REQ-364/AC-2] mobile header rendering: PageHeader in mobile mode shows SystemStatusBadge (dot) and suppresses DEV :port badge', () => {
+    Object.defineProperty(window, 'location', {
+      value: new URL('http://localhost:5173'),
+      writable: true,
+      configurable: true,
+    })
+
+    const { container } = render(
+      <MemoryRouter>
+        <PageHeader title="Generate" />
+      </MemoryRouter>,
+    )
+
+    // Verify mobile container visibility classes
+    const mobileContainer = container.querySelector('.inline-block.md\\:hidden')
+    expect(mobileContainer).toBeInTheDocument()
+
+    // Dot badge rendered inside mobile container
+    const dotBadge = mobileContainer!.querySelector('[data-testid="system-status-badge"]')
+    expect(dotBadge).toBeInTheDocument()
+    expect(dotBadge).toHaveClass('w-[7px]', 'h-[7px]', 'rounded-full')
+    // Dot variant does not show text label
+    expect(dotBadge?.textContent?.trim()).toBe('')
+
+    // DEV :port tag badge is suppressed in dot variant / mobile
+    const devBadge = mobileContainer!.querySelector('[data-testid="dev-port-badge"]')
+    expect(devBadge).toBeNull()
+    expect(mobileContainer!.textContent).not.toContain('DEV :')
+  })
+
+  it('[REQ-364/AC-3] popover interaction: clicking status badge opens system monitor popover without breaking adjacent header elements', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <PageHeader title="Generate" />
+      </MemoryRouter>,
+    )
+
+    const desktopContainer = container.querySelector('.hidden.md\\:inline-flex')
+    const slimBadge = desktopContainer!.querySelector('[data-testid="system-status-badge"]')!
+    const monitor = screen.getByTestId('resource-hover-monitor')
+    const kebabBtn = screen.getByTestId('header-kebab-menu-button')
+
+    // Both adjacent elements exist initially
+    expect(monitor).toBeInTheDocument()
+    expect(kebabBtn).toBeInTheDocument()
+    expect(screen.queryByTestId('system-status-dropdown')).toBeNull()
+
+    // 1. Click status badge to open system monitor popover
+    fireEvent.click(slimBadge)
+    const dropdown = screen.getByTestId('system-status-dropdown')
+    expect(dropdown).toBeInTheDocument()
+    expect(screen.getByText('システム稼働モニタ')).toBeInTheDocument()
+    expect(screen.getByText('Frontend')).toBeInTheDocument()
+    expect(screen.getByText('FastAPI (BE)')).toBeInTheDocument()
+    expect(screen.getByText('ComfyUI')).toBeInTheDocument()
+    expect(screen.getByText('Manager')).toBeInTheDocument()
+
+    // 2. Adjacent ResourceHoverMonitor remains fully functional
+    fireEvent.mouseEnter(monitor)
+    expect(screen.getByTestId('resource-hover-card')).toBeInTheDocument()
+    fireEvent.mouseLeave(monitor)
+
+    // 3. Adjacent HeaderKebabMenu remains fully functional
+    fireEvent.click(kebabBtn)
+    expect(screen.getByTestId('header-kebab-dropdown')).toBeInTheDocument()
+
+    // 4. Toggle popover closed
+    fireEvent.click(slimBadge)
+    expect(screen.queryByTestId('system-status-dropdown')).toBeNull()
+
+    // 5. Verify mobile dot badge also opens system monitor popover without breakage
+    const mobileContainer = container.querySelector('.inline-block.md\\:hidden')
+    const dotBadge = mobileContainer!.querySelector('[data-testid="system-status-badge"]')!
+    fireEvent.click(dotBadge)
+    expect(screen.getByTestId('system-status-dropdown')).toBeInTheDocument()
+    expect(screen.getByText('システム稼働モニタ')).toBeInTheDocument()
+  })
+})
+
