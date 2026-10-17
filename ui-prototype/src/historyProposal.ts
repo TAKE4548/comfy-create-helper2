@@ -84,6 +84,20 @@ export function mountHistoryProposal() {
       bar.dataset.historyFilterOwner='snapshots'
     }
     if(bar.nextElementSibling!==filter) filter.before(bar)
+    // Mirror the existing React-owned bulk speech action in the compact row.
+    // Original stays mounted so React event handlers and status remain authoritative.
+    const speechSource=document.querySelector<HTMLButtonElement>('#open-batch-speech-modal-btn')
+    let speechAction=bar.querySelector<HTMLButtonElement>('[data-history-bulk-speech]')
+    if(speechSource && !speechAction){
+      speechAction=document.createElement('button')
+      speechAction.type='button'
+      speechAction.dataset.historyBulkSpeech='true'
+      speechAction.textContent='セリフ一括変換'
+      speechAction.addEventListener('click',()=>speechSource.click())
+      bar.append(speechAction)
+    }
+    if(speechSource) speechSource.dataset.historySpeechMoved='true'
+
     if (filter.dataset.historyFilterEnhanced !== 'true') filter.dataset.historyFilterEnhanced='true'
     let toggle=bar.querySelector<HTMLButtonElement>('[data-history-filter-toggle]')
     if(!toggle){
