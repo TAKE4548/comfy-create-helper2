@@ -572,3 +572,25 @@
  html[data-prototype-variant="proposal"] #view-snapshots,
  html[data-prototype-variant="proposal"] #view-albums {min-height:40px;}
 }
+
+/* History page header only; prevent squeezed scroll-strip on mobile. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) > div {
+   align-items:flex-start;row-gap:2px;padding-top:8px;padding-bottom:7px;
+ }
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) #view-snapshots,
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) #view-albums {white-space:nowrap;}
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) > div > div:has(#view-snapshots){
+   overflow-x:auto;max-width:100%;padding:7px 0 2px;border-top:0;
+ }
+ /* Preview is full-screen: grant the image viewer a definite flex height. */
+ html[data-prototype-variant="proposal"] .modal-backdrop.flex.flex-col:has(img[alt^="Preview "]) {
+   height:100dvh;max-height:100dvh;min-height:0;overflow:hidden;
+ }
+ html[data-prototype-variant="proposal"] .modal-backdrop.flex.flex-col:has(img[alt^="Preview "]) > .flex-1 {
+   flex:1 1 0%;min-height:0;overflow:hidden;
+ }
+ html[data-prototype-variant="proposal"] .modal-backdrop.flex.flex-col img[alt^="Preview "]{
+   display:block;max-width:100%;max-height:calc(100dvh - 90px);object-fit:contain;
+ }
+}
