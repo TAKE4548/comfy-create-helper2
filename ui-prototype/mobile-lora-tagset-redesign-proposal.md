@@ -1,5 +1,8 @@
 # モバイル LoRA・タグセット画面 改修案仕様（レビュー版）
 
+**上位共通仕様**：[モバイル共通 UI/UX 改修案仕様](./mobile-common-ui-redesign-proposal.md)。本書はLoRA・Tag Setのカード／詳細・編集／Subsets等の画面固有ルールを定義する。共通スクロール原則、固定操作、画像シート、共通コンポーネント変更手順は上位文書を参照し、ここでは両ページへの適用条件を記す。
+
+
 - **状態**：改修案／採用未確定。本番実装の指示ではない。
 - **対象**：LoRAs（`/loras`）・Tag Sets（`/tags`）のモバイル画面。Proposal CSS の主な適用範囲は幅 767px 以下。
 - **比較環境**：`prototype/ui-review` の `ui-prototype/`。Baseline と Proposal で同じ架空データを使用。
