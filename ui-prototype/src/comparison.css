@@ -557,3 +557,18 @@
     pointer-events:none;
   }
 }
+
+/* History: icon sorting outside expandable search filters; single toolbar. */
+@media(max-width:767px) {
+ html[data-prototype-variant="proposal"] [data-history-filter-bar] {justify-content:space-between;gap:7px;}
+ html[data-prototype-variant="proposal"] [data-history-filter-count] {margin-right:auto;}
+ html[data-prototype-variant="proposal"] [data-history-sort-controls] {display:flex;gap:3px;flex-shrink:0;}
+ html[data-prototype-variant="proposal"] [data-history-sort-controls] button {
+   width:40px;min-width:40px;padding:0;text-align:center;font-size:18px;
+ }
+ html[data-prototype-variant="proposal"] [data-history-filter-enhanced="true"] > div.flex.rounded-lg.overflow-hidden {display:none!important;}
+ /* Prevent History header action buttons from forcing a cramped single row. */
+ html[data-prototype-variant="proposal"] :has(> #view-snapshots) {flex-shrink:0;}
+ html[data-prototype-variant="proposal"] #view-snapshots,
+ html[data-prototype-variant="proposal"] #view-albums {min-height:40px;}
+}
