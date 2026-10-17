@@ -47,3 +47,23 @@ export const fixturePresets = [
     sort_order: 1, created_at, updated_at: created_at,
   },
 ]
+
+/** Self-contained fake gallery images; no backend requests, deterministic in A/B. */
+const scene = (title: string, sky: string, hill: string, sunX: number) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 1024">
+  <defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="#24253b"/></linearGradient></defs>
+  <rect width="768" height="1024" fill="url(#g)"/>
+  <circle cx="${sunX}" cy="250" r="115" fill="#ffd7a0" opacity=".85"/>
+  <path d="M0 700 L185 400 L350 650 L500 360 L768 720 L768 1024 L0 1024Z" fill="${hill}"/>
+  <path d="M0 850 L220 660 L390 820 L590 620 L768 790 L768 1024 L0 1024Z" fill="#101a2b" opacity=".85"/>
+  <text x="38" y="90" font-family="sans-serif" font-size="32" fill="#ffffff">UI PROTOTYPE / SAMPLE</text>
+  <text x="38" y="950" font-family="sans-serif" font-size="44" fill="#ffffff">${title}</text>
+  </svg>`
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
+export const fixtureHistoryImages = [
+  scene('Evening light', '#7f6ab4', '#505079', 570),
+  scene('Blue hour', '#2c7294', '#275f77', 180),
+  scene('Warm sunset', '#dc8468', '#84505a', 390),
+  scene('Twilight', '#716eaf', '#4c5279', 610),
+]
