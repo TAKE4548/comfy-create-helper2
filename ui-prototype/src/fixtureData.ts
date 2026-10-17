@@ -115,3 +115,26 @@ export const fixtureTagSets = sampleTitles.map((title, i) => ({
   snapshot_paths: i % 4 === 0 ? [] : [fixtureHistoryImages[(i+1) % fixtureHistoryImages.length], fixtureHistoryImages[(i+2) % fixtureHistoryImages.length], ...(i % 3 === 0 ? [fixtureHistoryImages[(i+3) % fixtureHistoryImages.length]] : [])],
   sort_order: i, created_at: '2026-10-17T00:00:00',
 }))
+
+/** History review fixtures: shared by baseline and proposal, completely offline. */
+export const fixtureHistorySnapshots = Array.from({length:48},(_,i)=>({
+  id: 96001+i,
+  workflow_id:fixtureWorkflow.id,
+  image_path:fixtureHistoryImages[i%fixtureHistoryImages.length],
+  thumbnail_path:fixtureHistoryImages[i%fixtureHistoryImages.length],
+  created_at:new Date(Date.UTC(2026,9,17,12,0)-i*3600*1000).toISOString(),
+}))
+export const fixtureHistoryAlbums = [
+  {id:97001,name:'Portrait studies',description:'Portrait variations',sort_order:0,count:16},
+  {id:97002,name:'Landscape collection',description:'Lighting and backgrounds',sort_order:1,count:12},
+  {id:97003,name:'Reference & experiments',description:'Style tests',sort_order:2,count:24},
+  {id:97004,name:'Small selection',description:'A few favorites',sort_order:3,count:3},
+  {id:97005,name:'Empty album',description:'Empty state test',sort_order:4,count:0},
+].map((album)=>({
+ id:album.id,name:album.name,description:album.description,sort_order:album.sort_order,
+ created_at:'2026-10-17T12:00:00Z',
+ items:Array.from({length:album.count},(_,i)=>{
+   const snap=fixtureHistorySnapshots[(i+(album.id-97001)*7)%fixtureHistorySnapshots.length]
+   return {snapshot_id:snap.id,sequence_order:i,image_path:snap.image_path,thumbnail_path:snap.thumbnail_path,created_at:snap.created_at}
+ })
+}))
