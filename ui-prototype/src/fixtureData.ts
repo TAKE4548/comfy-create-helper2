@@ -66,4 +66,12 @@ export const fixtureHistoryImages = [
   scene('Blue hour', '#2c7294', '#275f77', 180),
   scene('Warm sunset', '#dc8468', '#84505a', 390),
   scene('Twilight', '#716eaf', '#4c5279', 610),
+  scene('Misty dawn', '#7588a3', '#4b6972', 300),
+  scene('Rose sky', '#d78fa7', '#774e76', 530),
+  scene('Cloud break', '#739bc0', '#3e627f', 210),
+  scene('Golden ridge', '#c89a5b', '#80684e', 470),
+  scene('Northern night', '#364b83', '#293854', 610),
+  scene('Silver lake', '#8caebc', '#526c83', 140),
+  scene('Violet dusk', '#8f79b4', '#5a477c', 420),
+  scene('Amber glow', '#cb7d61', '#855b58', 350),
 ]
