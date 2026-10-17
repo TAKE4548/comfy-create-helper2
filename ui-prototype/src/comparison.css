@@ -208,3 +208,82 @@
     border-radius: 5px;
   }
 }
+
+/* LoRA and Tag Sets mobile collection proposal — preserves Baseline and desktop. */
+@media (max-width: 767px) {
+  html[data-prototype-variant="proposal"] #lora-search,
+  html[data-prototype-variant="proposal"] #tag-search { min-width:0; }
+
+  /* A single scroll surface: nested card information must not capture swipes. */
+  html[data-prototype-variant="proposal"] [id^="lora-card-"] > div.overflow-y-auto,
+  html[data-prototype-variant="proposal"] [id^="tagset-card-"] > div.overflow-y-auto {
+    overflow-y: hidden; overflow-x: hidden;
+  }
+  html[data-prototype-variant="proposal"] [id^="lora-card-"],
+  html[data-prototype-variant="proposal"] [id^="tagset-card-"] { isolation:isolate; }
+
+  /* Increase distinction and separation between top-right edit and delete actions. */
+  html[data-prototype-variant="proposal"] [id^="lora-edit-"],
+  html[data-prototype-variant="proposal"] [id^="tagset-edit-"] {
+    right: 47px; top:8px; min-width:32px; min-height:32px;
+    display:flex; align-items:center; justify-content:center; z-index:25;
+  }
+  html[data-prototype-variant="proposal"] [id^="lora-delete-"],
+  html[data-prototype-variant="proposal"] [id^="tagset-delete-"] {
+    right:8px; top:8px; min-width:32px; min-height:32px;
+    display:flex; align-items:center; justify-content:center; z-index:25;
+  }
+  html[data-prototype-variant="proposal"] [id^="lora-card-"] .relative.w-full:has(img),
+  html[data-prototype-variant="proposal"] [id^="tagset-card-"] .relative.w-full:has(img) {
+    width:100%; margin-inline:auto;
+  }
+
+  /* Sticky group header should anchor directly to the scrolling area's top edge. */
+  html[data-prototype-variant="proposal"] .flex-1.overflow-y-auto.custom-scrollbar:has([id^="category-section-"]) {
+    padding-top:0;
+  }
+  html[data-prototype-variant="proposal"] [id^="category-section-header-"] {
+    top:0; min-height:40px;
+  }
+  /* Bottom sheet instead of centered dialog for mobile collection details. */
+  html[data-prototype-variant="proposal"] .modal-backdrop:has([data-testid="lora-detail-sheet"]),
+  html[data-prototype-variant="proposal"] .modal-backdrop:has(.max-w-4xl > .flex.items-center.justify-between) {
+    align-items:flex-end; padding:0;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"],
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl:has(> .flex.items-center.justify-between) {
+    margin-top:auto; margin-bottom:0;
+    width:100%; max-width:100%;
+    height:min(92dvh, 900px); max-height:92dvh; min-height:0;
+    border-radius:18px 18px 0 0;
+    display:flex; flex-direction:column;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid {
+    display:flex; flex-direction:column; overflow-y:auto;
+    overscroll-behavior:contain; min-height:0; padding-bottom:88px;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:first-child,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:first-child {
+    height:auto; min-height:0; flex:0 0 auto;
+    padding:10px 16px; display:flex; flex-direction:row;
+    align-items:center; gap:12px; overflow:visible;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:first-child > span,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:first-child > span {
+    display:none;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:first-child > .bg-zinc-950,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:first-child > .bg-zinc-950 {
+    width:74px!important; height:74px!important; flex:0 0 74px;
+    aspect-ratio:1/1!important; max-height:74px;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:first-child > .overflow-y-auto,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:first-child > .overflow-y-auto {
+    max-height:68px; margin:0; flex:1;
+  }
+  html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:last-child,
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:last-child {
+    overflow:visible; height:auto; flex:0 0 auto; padding:12px 16px;
+  }
+}
