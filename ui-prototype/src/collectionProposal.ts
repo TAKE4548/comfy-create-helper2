@@ -149,6 +149,28 @@ export function mountCollectionProposal() {
           }
         }
       }
+      // A fixed-height summary card should not contain secondary actions or scrolling.
+      // Preserve React-owned controls in the DOM; hide them only in this proposal card.
+      container.dataset.collectionCompactBody = 'true'
+      const isLora = group.prefix === 'lora-card-'
+      const heading = isLora
+        ? container.querySelector<HTMLElement>('p[title]')
+        : container.querySelector<HTMLElement>('p[title]')
+      if (heading) heading.dataset.collectionCardTitle = 'true'
+      const paragraphs = Array.from(container.querySelectorAll<HTMLElement>('p'))
+      const description = isLora
+        ? paragraphs.find(p => p !== heading && p.textContent?.trim() === (item.description ?? '').trim())
+        : paragraphs.find(p => p !== heading && p.textContent?.trim() === (item.description ?? '').trim())
+      if (description && description !== heading) description.dataset.collectionCardDescription = 'true'
+      if (!description || description === heading) {
+        let fallback = container.querySelector<HTMLElement>('[data-collection-card-description]')
+        if (!fallback) {
+          fallback = document.createElement('p')
+          fallback.dataset.collectionCardDescription = 'true'
+          fallback.textContent = item.description || '説明なし'
+          container.prepend(fallback)
+        }
+      }
       const ids = item.target_base_model_ids ?? []
       const names = ids.map((modelId:number) => fixtureCollectionModels.find(model=>model.id===modelId)?.name).filter(Boolean)
       let meta = container.querySelector<HTMLElement>('[data-collection-models]')
