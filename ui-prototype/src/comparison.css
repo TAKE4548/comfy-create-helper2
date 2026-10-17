@@ -422,3 +422,25 @@
     padding-right:0;
   }
 }
+
+/* Collection proposal: category is already provided by the section header.
+   Prioritize target base model and a readable text-only Tag Set preview. */
+@media(max-width:767px) {
+  html[data-prototype-variant="proposal"] [id^="lora-card-"] span.bg-accent-green\\/10,
+  html[data-prototype-variant="proposal"] [id^="tagset-card-"] span.bg-white\\/\\[0\\.04\\] {
+    display:none;
+  }
+  html[data-prototype-variant="proposal"] [data-collection-models] {
+    order:0; font-size:11px; font-weight:600; color:#a5b4fc;
+    line-height:1.45; padding:2px 0 5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  html[data-prototype-variant="proposal"] [id^="tagset-card-"] > div:last-child > .flex.flex-nowrap.overflow-x-auto {
+    display:none!important;
+  }
+  html[data-prototype-variant="proposal"] [data-collection-tag-summary] {
+    order:1; color:#d4d4d8; font-size:11px; line-height:1.5;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; overflow-wrap:anywhere; margin:3px 0 5px;
+  }
+}
