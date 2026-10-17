@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import '../../frontend/src/index.css'
 import './comparison.css'
+import { mountMobileProposal } from './mobileProposal'
 
 // Explicit query switch allows identical fixture, viewport and app for A/B captures.
 document.documentElement.dataset.prototypeVariant = new URLSearchParams(location.search).get('ui') === 'proposal' ? 'proposal' : 'baseline'
@@ -9,6 +10,7 @@ import { installOfflineTransport } from './offlineTransport'
 
 // Install the network sandbox BEFORE evaluating App and its imported modules.
 installOfflineTransport()
+mountMobileProposal()
 
 void Promise.all([import('../../frontend/src/App'), import('../../frontend/src/store/useGenerationStore')]).then(([{ default: App }, { useGenerationStore }]) => {
   // Static sample metrics, not real hardware readings. Preserve the production monitor UI.
