@@ -6,7 +6,7 @@
 > 比較: [History Baseline](https://take4548.github.io/comfy-create-helper2/history?ui=baseline) / [History Proposal](https://take4548.github.io/comfy-create-helper2/history?ui=proposal) / [Generate Baseline](https://take4548.github.io/comfy-create-helper2/?ui=baseline) / [Generate Proposal](https://take4548.github.io/comfy-create-helper2/?ui=proposal)
 
 
-> **仕様の配置整理:** 複数選択の状態遷移、上部「×＋件数」、下部ドック、共通ACは [モバイル複数選択・共通UI設計ドラフト](./mobile-multiselect-common-design-draft.md) が主文書。本書の第4章・複数選択関連ACは画面別適用例・検討経緯として参照する。矛盾時は共通UIドラフトを優先し、アクションの種類・意味は本書の画面別定義を優先する。
+> **仕様の配置整理:** 複数選択の状態遷移、上部「×＋件数」、下部ドック、共通ACは [既存モバイル共通UI改修案仕様（第8章）](./mobile-common-ui-redesign-proposal.md) が主文書。本書の第4章・複数選択関連ACは画面別適用例・検討経緯として参照する。矛盾時は共通UIドラフトを優先し、アクションの種類・意味は本書の画面別定義を優先する。
 
 ## 1. 背景・解決する問題
 
