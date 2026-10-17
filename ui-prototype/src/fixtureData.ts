@@ -97,6 +97,7 @@ export const fixtureLoras = sampleTitles.map((title, i) => ({
   category_id: i % 7 === 0 ? null : fixtureCollectionCategories[i % 3].id,
   file_path: '/offline/sample_' + (i+1) + '.safetensors',
   thumbnail_path: fixtureHistoryImages[i % fixtureHistoryImages.length],
+  snapshot_paths: i % 4 === 0 ? [] : [fixtureHistoryImages[(i+1) % fixtureHistoryImages.length], fixtureHistoryImages[(i+2) % fixtureHistoryImages.length], ...(i % 3 === 0 ? [fixtureHistoryImages[(i+3) % fixtureHistoryImages.length]] : [])],
   example_paths: [],
   target_base_model_ids: [fixtureCollectionModels[i % 2].id],
   recommended_strength_min: 0.6, recommended_strength_max: 0.9,
@@ -111,5 +112,6 @@ export const fixtureTagSets = sampleTitles.map((title, i) => ({
   subsets: i % 3 === 0 ? [{ id: 9901 + i, name: 'Variant A', tags: ['warm colors', 'portrait'], thumbnail_path: null }] : [],
   target_base_model_ids: [fixtureCollectionModels[i % 2].id],
   thumbnail_path: fixtureHistoryImages[i % fixtureHistoryImages.length],
+  snapshot_paths: i % 4 === 0 ? [] : [fixtureHistoryImages[(i+1) % fixtureHistoryImages.length], fixtureHistoryImages[(i+2) % fixtureHistoryImages.length], ...(i % 3 === 0 ? [fixtureHistoryImages[(i+3) % fixtureHistoryImages.length]] : [])],
   sort_order: i, created_at: '2026-10-17T00:00:00',
 }))
