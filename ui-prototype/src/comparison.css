@@ -301,3 +301,43 @@
    background:#18181c; border-top:1px solid rgba(255,255,255,.08);
  }
 }
+
+/* Collection iteration 2: correct the actual ImageCarousel frame, not its wrapper. */
+@media (max-width:767px) {
+ html[data-prototype-variant="proposal"] [id^="lora-card-"] [data-testid="image-carousel"],
+ html[data-prototype-variant="proposal"] [id^="tagset-card-"] [data-testid="image-carousel"] {
+   display:flex; justify-content:center; align-items:center;
+ }
+ html[data-prototype-variant="proposal"] [id^="lora-card-"] [data-testid="image-carousel-frame"],
+ html[data-prototype-variant="proposal"] [id^="tagset-card-"] [data-testid="image-carousel-frame"] {
+   margin-inline:auto; flex-shrink:0;
+ }
+ /* Sticky category heading belongs to the padded list, with a flush opaque backdrop. */
+ html[data-prototype-variant="proposal"] [id^="category-section-header-"] {
+   margin-top:0; padding:6px 0; min-height:44px;
+   background:var(--color-surface, #18181c); background-clip:padding-box;
+ }
+ /* The actual fixed footer is injected outside the scroll content by the mock layer. */
+ html[data-prototype-variant="proposal"] [data-collection-sheet="true"] {
+   position:relative; display:flex; flex-direction:column;
+ }
+ html[data-prototype-variant="proposal"] [data-collection-sheet="true"] > .grid {
+   flex:1; min-height:0; overflow-y:auto; padding-bottom:16px;
+ }
+ html[data-prototype-variant="proposal"] [data-collection-sheet="true"] [data-collection-original-actions="true"] { display:none!important; }
+ html[data-prototype-variant="proposal"] [data-collection-sheet-footer="true"] {
+   position:relative; z-index:30; flex:0 0 auto;
+   padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+   background:#18181c; border-top:1px solid rgba(255,255,255,.1);
+   display:flex; gap:8px;
+ }
+ html[data-prototype-variant="proposal"] [data-collection-sheet-footer="true"] > button {
+   flex:1; min-height:44px; border-radius:10px;
+   border:1px solid rgba(255,255,255,.14);
+   color:#e4e4e7; font-size:13px; font-weight:600;
+ }
+ html[data-prototype-variant="proposal"] [data-collection-sheet-footer="true"] > button:last-child {
+   color:#18181c; background:#3ecf8e; border-color:#3ecf8e;
+ }
+ html[data-prototype-variant="proposal"] [data-collection-sheet-footer="true"] > button:disabled {opacity:.4;}
+}
