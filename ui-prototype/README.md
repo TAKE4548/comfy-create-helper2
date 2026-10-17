@@ -45,3 +45,11 @@ A branch-scoped GitHub Actions workflow in `.github/workflows/ui-prototype-check
 Run locally using `cd ui-prototype && npx playwright install chromium && npm run test:e2e` after installing both frontend and prototype dependencies. The checks are intentionally assertions, not proof of pixel-level parity with a real deployment.
 
 **CI status has not been verified through an Actions run yet.** Inspect the Actions tab and the uploaded `ui-prototype-playwright-results` artifact; fix any reported setup or fixture issues before using screenshots for design decisions.
+
+## Locate the latest CI artifacts without copying a run URL
+
+After each run (including failed runs), the workflow publishes a commit status named `ui-prototype/artifact`. Its description includes `run=<id> artifact=<id>`, and its target URL opens the run artifact (or run page if no artifact was uploaded). The run's job summary also lists these IDs.
+
+For ChatGPT/GitHub connector use: find the newest commit on `prototype/ui-review`, then read its combined commit statuses and locate `ui-prototype/artifact`. Use the artifact ID to request the archive directly. The status is created after upload, so it describes the completed run. Older commit statuses remain accessible for comparison. GitHub Actions artifact retention remains 14 days.
+
+This is **on-demand discovery**, not a background watcher. If the workflow fails before publishing the status (e.g. permission error), use the GitHub Actions run UI instead. Status publishing requires the workflow's `statuses: write` and `actions: read` permissions.
