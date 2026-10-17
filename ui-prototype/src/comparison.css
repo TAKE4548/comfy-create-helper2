@@ -27,3 +27,24 @@
     white-space: nowrap;
   }
 }
+
+/* Mobile proposal A/C/D: baseline and production stay unchanged. */
+@media (max-width: 767px) {
+  html[data-prototype-variant="proposal"] [data-testid="mobile-main-preview"] { display: none !important; }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel button[id^="add-set-btn-mobile"] { min-height: 44px; min-width: 44px; }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel .max-w-\\[70px\\] { max-width: 104px; }
+  html[data-prototype-variant="proposal"] [id^="thumb-mobile-"] { width: 60px; height: 60px; }
+  html[data-prototype-variant="proposal"] #mobile-history-panel { touch-action: pan-y; }
+}
+.proposal-sheet-backdrop { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,.65); display:flex; flex-direction:column; justify-content:flex-end; }
+.proposal-sheet { background:#18181c; color:#e4e4e7; border:1px solid rgba(255,255,255,.12); border-radius:18px 18px 0 0; padding: 8px 14px calc(18px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; max-height: 88dvh; box-shadow:0 -12px 48px rgba(0,0,0,.45); }
+.proposal-sheet-handle { height:4px; width:42px; margin:2px auto 14px; border-radius:9px; background:#61616b; }
+.proposal-sheet-header { display:flex; justify-content:space-between; align-items:center; font-size:14px; padding:0 4px 12px; }
+.proposal-sheet-header button { font-size:18px; padding:8px 12px; color:#a1a1aa; }
+.proposal-sheet-image { display:flex; align-items:center; justify-content:center; min-height:0; flex:1; background:#09090b; border-radius:9px; overflow:hidden; }
+.proposal-sheet-image img { display:block; max-height:65dvh; max-width:100%; object-fit:contain; }
+.proposal-sheet footer { font-size:11px; text-align:center; padding-top:12px; color:#a1a1aa; }
+.proposal-sheet-full .proposal-sheet { height:100dvh; max-height:100dvh; border-radius:0; padding-top:env(safe-area-inset-top); }
+.proposal-sheet-full .proposal-sheet-image img { max-height:80dvh; }
+@media (min-width:768px) { #mobile-proposal-layer { display:none; } }
