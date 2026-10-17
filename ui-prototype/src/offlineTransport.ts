@@ -78,7 +78,7 @@ export function installOfflineTransport() {
     if (method !== 'GET' && method !== 'HEAD') {
       return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
     }
-    const snapshotDetail = /^\\/api\\/snapshots\\/(\\d+)$/.exec(path)
+    const snapshotDetail = new RegExp('^/api/snapshots/([0-9]+)$').exec(path)
     if (snapshotDetail) {
       const snap = fixtureHistorySnapshots.find(x=>x.id===Number(snapshotDetail[1]))
       return snap ? json({...snap,params:{seed:42,steps:28,cfg:7},loras:[],tag_sets:[]}) : json({detail:'Snapshot not found'},404)
@@ -87,7 +87,7 @@ export function installOfflineTransport() {
       const workflowId = url.searchParams.get('workflow_id')
       return json(workflowId ? fixtureHistorySnapshots.filter(x=>x.workflow_id===Number(workflowId)) : fixtureHistorySnapshots)
     }
-    const albumDetail = /^\\/api\\/albums\\/(\\d+)$/.exec(path)
+    const albumDetail = new RegExp('^/api/albums/([0-9]+)$').exec(path)
     if (albumDetail) {
       const album = fixtureHistoryAlbums.find(x=>x.id===Number(albumDetail[1]))
       return album ? json(album) : json({detail:'Album not found'},404)
