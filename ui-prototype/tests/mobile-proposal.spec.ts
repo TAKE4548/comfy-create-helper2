@@ -44,3 +44,15 @@ test('history thumbnails allow native horizontal panning in proposal', async ({ 
   await expect(rail).toBeVisible()
   await expect(rail).toHaveCSS('touch-action', 'auto')
 })
+
+test('proposal mobile history uses three-column grid while baseline stays horizontal', async ({ page }, info) => {
+  test.skip(!info.project.name.includes('mobile'))
+  await page.goto('/?ui=proposal')
+  await page.locator('button[aria-controls="mobile-history-panel"]').click()
+  const gallery = page.locator('#mobile-history-panel .overflow-x-auto.custom-scrollbar').first()
+  await expect(gallery).toHaveCSS('display', 'grid')
+  await expect(gallery).toHaveCSS('grid-template-columns', /.+ .+ .+/)
+  await page.goto('/?ui=baseline')
+  await page.locator('button[aria-controls="mobile-history-panel"]').click()
+  await expect(page.locator('#mobile-history-panel .overflow-x-auto.custom-scrollbar').first()).toHaveCSS('display', 'flex')
+})
