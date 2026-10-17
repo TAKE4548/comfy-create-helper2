@@ -594,3 +594,28 @@
    display:block;max-width:100%;max-height:calc(100dvh - 90px);object-fit:contain;
  }
 }
+
+/* History-specific mobile header and viewer corrections. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) #open-batch-speech-modal-btn {display:none!important;}
+ html[data-prototype-variant="proposal"] [data-history-filter-bar] {flex-wrap:wrap;justify-content:flex-start;}
+ html[data-prototype-variant="proposal"] [data-history-filter-toggle] {order:0;}
+ html[data-prototype-variant="proposal"] [data-history-filter-count] {order:1;flex:1;}
+ html[data-prototype-variant="proposal"] [data-history-sort-controls] {order:2;}
+ html[data-prototype-variant="proposal"] [data-history-bulk-speech] {
+   order:3;flex:1 1 auto;min-height:40px;padding:0 10px;
+   font-size:11px;color:#ad9dec;border-color:rgba(124,111,221,.3);
+ }
+ html[data-prototype-variant="proposal"] [data-page-header-root]:has(#view-snapshots) > div > div:has(#view-snapshots) {
+   width:auto;min-width:0;flex:1 1 auto;overflow:visible;
+ }
+ /* Preview overlay: base backdrop centers children and reserves navigation
+    padding, but the immersive image viewer needs a stretched full viewport. */
+ html[data-prototype-variant="proposal"] .modal-backdrop.flex.flex-col:has(img[alt^="Preview "]) {
+   align-items:stretch!important;justify-content:flex-start!important;
+   box-sizing:border-box;padding:0!important;width:100vw;height:100dvh;
+ }
+ html[data-prototype-variant="proposal"] .modal-backdrop.flex.flex-col:has(img[alt^="Preview "]) > .flex-1 {
+   width:100%;height:calc(100dvh - 48px);flex:1 1 auto;
+ }
+}
