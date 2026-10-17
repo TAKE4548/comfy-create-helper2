@@ -35,7 +35,7 @@
   html[data-prototype-variant="proposal"] #mobile-prompt-panel input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
   html[data-prototype-variant="proposal"] #mobile-prompt-panel .max-w-\\[70px\\] { max-width: 104px; }
   html[data-prototype-variant="proposal"] [id^="thumb-mobile-"] { width: 60px; height: 60px; }
-  html[data-prototype-variant="proposal"] #mobile-history-panel { touch-action: pan-y; }
+  html[data-prototype-variant="proposal"] #mobile-history-panel { touch-action: auto; }
 }
 .proposal-sheet-backdrop { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,.65); display:flex; flex-direction:column; justify-content:flex-end; }
 .proposal-sheet { background:#18181c; color:#e4e4e7; border:1px solid rgba(255,255,255,.12); border-radius:18px 18px 0 0; padding: 8px 14px calc(18px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; max-height: 88dvh; box-shadow:0 -12px 48px rgba(0,0,0,.45); }
