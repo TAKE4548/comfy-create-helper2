@@ -160,7 +160,7 @@ export function mountHistoryProposal() {
       if(!actions) continue
       const sourceButtons=Array.from(actions.querySelectorAll<HTMLButtonElement>('button[id]'))
       for(const button of sourceButtons){
-        const label=button.id==='bulk-download-btn'?'ダウンロード':button.id==='save-album-btn'?'アルバム':'削除'
+        const label=button.id==='bulk-download-btn'?'ダウンロード':button.id==='save-album-btn'?'アルバムへ追加':'削除'
         let proxy=dock.querySelector<HTMLButtonElement>('[data-history-proxy-for="'+button.id+'"]')
         if(!proxy){
           proxy=document.createElement('button')
@@ -184,7 +184,7 @@ export function mountHistoryProposal() {
           exit.type='button'
           exit.dataset.historySelectionExit='true'
           exit.setAttribute('aria-label','選択モード終了')
-          exit.textContent='終了'
+          exit.textContent='×'
           exit.addEventListener('click',()=>exitSource.click())
           toolbar.querySelector(':scope > div:first-child')?.append(exit)
         }
@@ -193,10 +193,34 @@ export function mountHistoryProposal() {
       if(count && count.dataset.historySelectionCount!=='true')count.dataset.historySelectionCount='true'
     }
   }
+  function syncGenerateSelection() {
+    const panel=document.querySelector<HTMLElement>('#mobile-history-panel')
+    if(!panel) return
+    const original=panel.querySelector<HTMLButtonElement>('button[aria-label="選択モード終了"]')
+    if(!original) return
+    const bar=original.closest<HTMLElement>('div.bg-purple-500\\/10')
+    if(!bar) return
+    if(bar.dataset.generateSelectionCompact!=='true')bar.dataset.generateSelectionCompact='true'
+    const firstRow=bar.firstElementChild as HTMLElement|null
+    if(!firstRow)return
+    let close=firstRow.querySelector<HTMLButtonElement>('[data-generate-selection-close]')
+    if(!close){
+      close=document.createElement('button')
+      close.type='button'
+      close.dataset.generateSelectionClose='true'
+      close.setAttribute('aria-label','選択モード終了')
+      close.textContent='×'
+      close.addEventListener('click',e=>{e.stopPropagation();original.click()})
+      firstRow.append(close)
+    }
+    const count=firstRow.firstElementChild as HTMLElement|null
+    if(count&&count.dataset.generateSelectionCount!=='true')count.dataset.generateSelectionCount='true'
+  }
   function sync() {
     if(!mobile()){closeMenu();return}
     syncFilters()
     syncSelection()
+    syncGenerateSelection()
     document.querySelectorAll<HTMLElement>('[id^="snap-card-"]').forEach(c=>syncCard(c,false))
     document.querySelectorAll<HTMLElement>('[id^="album-item-card-"]').forEach(c=>syncCard(c,true))
   }
