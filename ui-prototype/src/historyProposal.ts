@@ -198,7 +198,7 @@ export function mountHistoryProposal() {
     if(!panel) return
     const original=panel.querySelector<HTMLButtonElement>('button[aria-label="選択モード終了"]')
     if(!original){document.querySelector('[data-generate-selection-dock]')?.remove();return}
-    const bar=original.closest<HTMLElement>('div.bg-purple-500\\/10')
+    const bar=original.closest<HTMLElement>('div.flex.flex-col.gap-2')
     if(!bar) return
     if(bar.dataset.generateSelectionCompact!=='true')bar.dataset.generateSelectionCompact='true'
     const firstRow=bar.firstElementChild as HTMLElement|null
