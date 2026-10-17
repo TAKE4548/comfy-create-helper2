@@ -20,7 +20,15 @@ test('mobile fixed actions and scroll-end reachability audit', async ({ page }, 
     const scrollAtEnd = scroll ? Math.abs(scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop) <= 2 : false
     const allFocusable = scroll ? [...scroll.querySelectorAll<HTMLElement>('button, input, textarea, [tabindex="0"]')]
       .filter(el => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().height > 0) : []
-    const finalFocusable = allFocusable.at(-1) ?? null
+    const inFixedLayer = (el: HTMLElement) => {
+      let current: HTMLElement | null = el
+      while (current && current !== scroll) {
+        if (getComputedStyle(current).position === 'fixed') return true
+        current = current.parentElement
+      }
+      return false
+    }
+    const finalFocusable = allFocusable.filter(el => !inFixedLayer(el)).at(-1) ?? null
     const finalRect = finalFocusable?.getBoundingClientRect() ?? null
     const actionBar = action?.closest<HTMLElement>('.fixed') ?? null
     const actionRect = actionBar?.getBoundingClientRect() ?? null
