@@ -37,3 +37,11 @@ Open http://localhost:5391/ .
 The sample workflow contains Positive / Negative text mappings and Steps / CFG parameters. Two sample preset records are returned for `/api/workflow-presets` (including workflow-filtered queries). These fixtures are representative inspection data, not copies of any real user content.
 
 No real-browser rendering or production-equivalent interaction verification has yet been completed. Avoid interpreting empty galleries and disconnected connection indicators as UI regressions: these are known fixture limitations.
+
+## Automated browser verification
+
+A branch-scoped GitHub Actions workflow in `.github/workflows/ui-prototype-check.yml` builds the prototype, runs Chromium Playwright checks at 1440px, 768px and 375px, and uploads screenshot/test artifacts (retained 14 days). CI triggers on updates to `prototype/ui-review` affecting the prototype, frontend, or workflow, and can be manually dispatched if GitHub exposes it.
+
+Run locally using `cd ui-prototype && npx playwright install chromium && npm run test:e2e` after installing both frontend and prototype dependencies. The checks are intentionally assertions, not proof of pixel-level parity with a real deployment.
+
+**CI status has not been verified through an Actions run yet.** Inspect the Actions tab and the uploaded `ui-prototype-playwright-results` artifact; fix any reported setup or fixture issues before using screenshots for design decisions.
