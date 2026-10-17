@@ -160,7 +160,7 @@ export function mountHistoryProposal() {
       if(!actions) continue
       const sourceButtons=Array.from(actions.querySelectorAll<HTMLButtonElement>('button[id]'))
       for(const button of sourceButtons){
-        const label=button.id==='bulk-download-btn'?'保存':button.id==='save-album-btn'?'アルバム':'削除'
+        const label=button.id==='bulk-download-btn'?'ダウンロード':button.id==='save-album-btn'?'アルバム':'削除'
         let proxy=dock.querySelector<HTMLButtonElement>('[data-history-proxy-for="'+button.id+'"]')
         if(!proxy){
           proxy=document.createElement('button')
@@ -175,6 +175,19 @@ export function mountHistoryProposal() {
       }
       for(const proxy of Array.from(dock.querySelectorAll<HTMLButtonElement>('[data-history-proxy-for]'))){
         if(!sourceButtons.some(button=>button.id===proxy.dataset.historyProxyFor))proxy.remove()
+      }
+      const exitSource=toolbar.querySelector<HTMLButtonElement>('button[title="選択モード終了"]')
+      if(exitSource){
+        let exit=toolbar.querySelector<HTMLButtonElement>('[data-history-selection-exit]')
+        if(!exit){
+          exit=document.createElement('button')
+          exit.type='button'
+          exit.dataset.historySelectionExit='true'
+          exit.setAttribute('aria-label','選択モード終了')
+          exit.textContent='終了'
+          exit.addEventListener('click',()=>exitSource.click())
+          toolbar.querySelector(':scope > div:first-child')?.append(exit)
+        }
       }
       const count=toolbar.querySelector<HTMLElement>('span.text-gray-300')
       if(count && count.dataset.historySelectionCount!=='true')count.dataset.historySelectionCount='true'
