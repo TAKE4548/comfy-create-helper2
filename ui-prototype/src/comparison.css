@@ -91,3 +91,59 @@
     scroll-padding-bottom: 72px;
   }
 }
+
+/* Mobile Generate density review: presentation only, baseline untouched.
+   Preserve 44px interactive targets for destructive and fixed actions. */
+@media (max-width: 767px) {
+  html[data-prototype-variant="proposal"] [role="group"][aria-label="表示セクション"] {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+  html[data-prototype-variant="proposal"] [role="group"][aria-label="表示セクション"] > button {
+    min-height: 38px;
+    padding-inline: 5px;
+    border-radius: 6px;
+  }
+  /* Profiles: reduce repeated row spacing, not undo/redo/remove tap targets. */
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    row-gap: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div .overflow-x-auto {
+    padding-top: 0;
+    padding-bottom: 0;
+    gap: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div .overflow-x-auto > div {
+    padding: 3px 8px;
+    gap: 4px;
+  }
+  /* Prompt mapping tabs: remove second padding layer on scrolling row. */
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div:has(> div.no-scrollbar) {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div > div.no-scrollbar {
+    padding-top: 0;
+    padding-bottom: 0;
+    gap: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div > div.no-scrollbar > button {
+    padding: 5px 10px;
+  }
+  /* Chip editor: reduce nested gaps but keep its menu affordance intact. */
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel .tag-chip-editor-container {
+    padding: 6px;
+    gap: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel [data-ux-tag-chip="true"] {
+    padding: 3px 8px;
+    gap: 5px;
+  }
+  /* Secondary prompt controls get slightly tighter section spacing. */
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.px-3.py-2\\.5 {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+}
