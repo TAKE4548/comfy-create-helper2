@@ -53,3 +53,25 @@ test('layout utility classes from frontend are generated', async ({ page }) => {
   })
   expect(result).toEqual({ display: 'flex', padding: '16px' })
 })
+
+test('offline preset CRUD works without network writes', async ({ page }) => {
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const route = '/api/workflow-presets'
+    const create = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'UI test preset', workflow_id: 91001, param_values: {} }) })
+    const item = await create.json()
+    const list = await (await fetch(route + '?workflow_id=91001')).json()
+    const update = await fetch(route + '/' + item.id, { method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Renamed' }) })
+    const renamed = await update.json()
+    const deleted = await fetch(route + '/' + item.id, { method: 'DELETE' })
+    const remaining = await (await fetch(route)).json()
+    const forbidden = await fetch('/api/workflows', { method: 'POST', body: '{}' })
+    return { created: create.status, listed: list.some((p: { id: number }) => p.id === item.id),
+      name: renamed.name, deleted: deleted.status, removed: !remaining.some((p: { id: number }) => p.id === item.id),
+      forbidden: forbidden.status }
+  })
+  expect(result).toEqual({ created: 201, listed: true, name: 'Renamed',
+    deleted: 200, removed: true, forbidden: 403 })
+})
