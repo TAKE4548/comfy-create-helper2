@@ -1,4 +1,4 @@
-import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets, fixtureCollectionCategories, fixtureCollectionModels, fixtureLoras, fixtureTagSets } from './fixtureData'
+import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets, fixtureCollectionCategories, fixtureCollectionModels, fixtureLoras, fixtureTagSets, fixtureHistorySnapshots, fixtureHistoryAlbums } from './fixtureData'
 /**
  * Preview-only transport sandbox. Loaded before the real App via dynamic import.
  * All HTTP writes and all WebSocket connections are blocked; no production API is contacted.
@@ -17,8 +17,8 @@ const fixtures: Record<string, unknown> = {
   '/api/param-type-masters': [],
   '/api/loras': fixtureLoras,
   '/api/tag-sets': fixtureTagSets,
-  '/api/albums': [],
-  '/api/snapshots': [],
+  '/api/albums': fixtureHistoryAlbums,
+  '/api/snapshots': fixtureHistorySnapshots,
 
   '/api/config': { comfy_url: 'http://offline-prototype.invalid:8188' },
   '/api/generation/snapshot': fixtureSnapshot,
@@ -77,6 +77,15 @@ export function installOfflineTransport() {
     }
     if (method !== 'GET' && method !== 'HEAD') {
       return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
+    }
+    if (path === '/api/snapshots') {
+      const workflowId = url.searchParams.get('workflow_id')
+      return json(workflowId ? fixtureHistorySnapshots.filter(x=>x.workflow_id===Number(workflowId)) : fixtureHistorySnapshots)
+    }
+    const albumDetail = /^\\/api\\/albums\\/(\\d+)$/.exec(path)
+    if (albumDetail) {
+      const album = fixtureHistoryAlbums.find(x=>x.id===Number(albumDetail[1]))
+      return album ? json(album) : json({detail:'Album not found'},404)
     }
     if (path in fixtures) return json(fixtures[path])
     if (path === '/api/generation/snapshot' || path === '/api/generation/state') return json(fixtureSnapshot)
