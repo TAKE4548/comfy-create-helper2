@@ -136,11 +136,9 @@ export function mountHistoryProposal() {
     }
   }
   function syncSelection() {
-    const page = document.querySelector<HTMLElement>('[data-page-header-root]:has(#view-snapshots)')?.parentElement
-    const albumRoot = document.querySelector<HTMLElement>('#toggle-bulk-mode')?.closest<HTMLElement>('.flex.flex-col.h-full')
-    const roots = [page, albumRoot].filter(Boolean) as HTMLElement[]
-    const toolbars = roots.flatMap(root=>Array.from(root.querySelectorAll<HTMLElement>('div.animate-slide-down')))
-      .filter(el=>el.textContent?.includes('複数選択モード'))
+    const isHistory = location.pathname.endsWith('/history') || location.pathname.endsWith('/history/')
+    const toolbars = isHistory ? Array.from(document.querySelectorAll<HTMLElement>('div.animate-slide-down'))
+      .filter(el=>el.textContent?.includes('複数選択モード')) : []
     // Remove detached bottom bars when React exits selection mode or changes views.
     document.querySelectorAll<HTMLElement>('[data-history-selection-dock]').forEach(dock=>{
       if(!toolbars.some(toolbar=>toolbar.dataset.historySelectionId===dock.dataset.historySelectionId)){
@@ -149,7 +147,7 @@ export function mountHistoryProposal() {
     })
     for(const toolbar of toolbars){
       if(toolbar.dataset.historySelectionToolbar!=='true') toolbar.dataset.historySelectionToolbar='true'
-      if(!toolbar.dataset.historySelectionId) toolbar.dataset.historySelectionId='history-selection-'+(toolbar.closest('[data-page-header-root]')?'root':toolbar.querySelector('#save-album-btn')?'snapshots':'album')
+      if(!toolbar.dataset.historySelectionId) toolbar.dataset.historySelectionId='history-selection-'+(toolbar.querySelector('#save-album-btn')?'snapshots':'album')
       const id=toolbar.dataset.historySelectionId
       let dock=document.querySelector<HTMLElement>('[data-history-selection-dock][data-history-selection-id="'+id+'"]')
       if(!dock){
