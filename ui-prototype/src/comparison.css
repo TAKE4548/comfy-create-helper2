@@ -679,3 +679,51 @@
    outline:2px solid #3ecf8e;outline-offset:-3px;
  }
 }
+
+/* History mobile selection v2: quiet status at top, fixed action dock at bottom.
+   Explicitly overrides v1 toolbar styling without touching other pages. */
+@media (max-width:767px) {
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] {
+   background:#202126!important;border-bottom:1px solid rgba(255,255,255,.09)!important;
+   padding:9px 12px!important;gap:0!important;box-shadow:none!important;
+   flex-direction:row!important;align-items:center!important;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child {
+   width:100%;justify-content:space-between;align-items:center;gap:8px;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child > div:first-child {
+   gap:5px;flex-wrap:nowrap;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child > div:first-child > span:nth-child(2) {
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] [data-history-selection-count="true"] {
+   margin:0!important;font-size:14px!important;font-weight:650!important;color:#e4e4e7!important;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child > div:last-child button {
+   border:0!important;background:transparent!important;min-height:40px;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:last-child {
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] {
+   position:fixed;bottom:calc(var(--mobile-nav-height, 0px) + env(safe-area-inset-bottom));
+   left:0;right:0;z-index:85;display:flex;gap:8px;
+   padding:10px 12px;background:#23242a;
+   border-top:1px solid rgba(255,255,255,.11);
+   box-shadow:0 -8px 24px rgba(0,0,0,.26);
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] button {
+   flex:1;min-width:0;min-height:44px;
+   display:flex;align-items:center;justify-content:center;
+   border:1px solid rgba(255,255,255,.16);border-radius:9px;
+   padding:8px 6px;font-size:12px;font-weight:600;color:#e4e4e7;
+   background:rgba(255,255,255,.045);
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] button[data-destructive="true"] {
+   color:#fda4af;border-color:rgba(248,113,113,.25);background:rgba(248,113,113,.045);
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] button:disabled {
+   opacity:.4;cursor:not-allowed;
+ }
+}
