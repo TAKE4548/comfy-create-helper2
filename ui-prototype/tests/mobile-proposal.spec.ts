@@ -56,3 +56,20 @@ test('proposal mobile history uses three-column grid while baseline stays horizo
   await page.locator('button[aria-controls="mobile-history-panel"]').click()
   await expect(page.locator('#mobile-history-panel .overflow-x-auto.custom-scrollbar').first()).toHaveCSS('display', 'flex')
 })
+
+test('proposal mobile scroller fits available AppShell content height', async ({ page }, info) => {
+  test.skip(!info.project.name.includes('mobile'))
+  await page.goto('/?ui=proposal')
+  const scroller = page.locator('main > div:has(> [data-testid="mobile-progress-line"])')
+  await expect(scroller).toBeVisible()
+  const metrics = await scroller.evaluate(el => {
+    const main = el.parentElement!
+    return {
+      rootHeight: el.getBoundingClientRect().height,
+      mainHeight: main.getBoundingClientRect().height,
+      bottomPad: getComputedStyle(el).paddingBottom,
+    }
+  })
+  expect(Math.abs(metrics.rootHeight - metrics.mainHeight)).toBeLessThanOrEqual(2)
+  expect(metrics.bottomPad).toBe('72px')
+})
