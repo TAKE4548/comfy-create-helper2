@@ -78,6 +78,11 @@ export function installOfflineTransport() {
     if (method !== 'GET' && method !== 'HEAD') {
       return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
     }
+    const snapshotDetail = /^\\/api\\/snapshots\\/(\\d+)$/.exec(path)
+    if (snapshotDetail) {
+      const snap = fixtureHistorySnapshots.find(x=>x.id===Number(snapshotDetail[1]))
+      return snap ? json({...snap,params:{seed:42,steps:28,cfg:7},loras:[],tag_sets:[]}) : json({detail:'Snapshot not found'},404)
+    }
     if (path === '/api/snapshots') {
       const workflowId = url.searchParams.get('workflow_id')
       return json(workflowId ? fixtureHistorySnapshots.filter(x=>x.workflow_id===Number(workflowId)) : fixtureHistorySnapshots)
