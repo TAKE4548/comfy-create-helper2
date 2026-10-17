@@ -1,4 +1,4 @@
-import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets } from './fixtureData'
+import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets, fixtureCollectionCategories, fixtureCollectionModels, fixtureLoras, fixtureTagSets } from './fixtureData'
 /**
  * Preview-only transport sandbox. Loaded before the real App via dynamic import.
  * All HTTP writes and all WebSocket connections are blocked; no production API is contacted.
@@ -11,10 +11,12 @@ const fixtures: Record<string, unknown> = {
   '/api/workflows': [{ id: fixtureWorkflow.id, name: fixtureWorkflow.name, created_at: fixtureWorkflow.created_at }],
   '/api/workflows/91001': fixtureWorkflow,
   '/api/mapping-masters': fixtureMasters,
-  '/api/base-models': [],
+  '/api/base-models': fixtureCollectionModels,
+  '/api/lora-categories': fixtureCollectionCategories,
+  '/api/tagset-categories': fixtureCollectionCategories,
   '/api/param-type-masters': [],
-  '/api/loras': [],
-  '/api/tag-sets': [],
+  '/api/loras': fixtureLoras,
+  '/api/tag-sets': fixtureTagSets,
   '/api/albums': [],
   '/api/snapshots': [],
 
