@@ -39,3 +39,17 @@ test('frontend Tailwind theme is applied', async ({ page }) => {
   expect(appearance.background).toBe('rgb(9, 9, 11)')
   expect(appearance.color).toBe('rgb(212, 212, 216)')
 })
+
+test('layout utility classes from frontend are generated', async ({ page }) => {
+  await page.goto('/')
+  const result = await page.evaluate(() => {
+    const element = document.createElement('div')
+    element.className = 'flex p-4'
+    document.body.appendChild(element)
+    const style = getComputedStyle(element)
+    const value = { display: style.display, padding: style.paddingTop }
+    element.remove()
+    return value
+  })
+  expect(result).toEqual({ display: 'flex', padding: '16px' })
+})
