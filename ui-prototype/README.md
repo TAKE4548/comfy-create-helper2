@@ -60,3 +60,17 @@ This is **on-demand discovery**, not a background watcher. If the workflow fails
 - **Prototype-only**: deterministic sample workflow and presets, with in-memory create / update / reorder / delete for presets; mutations are reset by a reload.
 - **Not simulated**: actual image generation, websocket progress, backend persistence, LoRA asset actions, most management mutations and populated history. They remain deliberately unavailable rather than pretending to succeed.
 - **Verification**: desktop/tablet/mobile screenshots and preset transport CRUD tests in CI. Actual interaction visuals still need review using the downloaded artifacts.
+
+## Hosted interactive comparison (GitHub Pages)
+
+The dedicated workflow `.github/workflows/ui-prototype-pages.yml` builds the offline mock on branch `prototype/ui-review` and attempts a GitHub Pages deployment.
+
+Expected URL: https://take4548.github.io/comfy-create-helper2/
+- Baseline: https://take4548.github.io/comfy-create-helper2/?ui=baseline
+- Tablet proposal: https://take4548.github.io/comfy-create-helper2/?ui=proposal
+
+Only the proposal variant modifies the 768–1023px header layout. The repository's actual `frontend/src/App.tsx` is not edited: the prototype Vite build injects a BrowserRouter basename **only** when `PROTOTYPE_PAGES=1`. The regular local build and CI screenshots retain their previous routing behavior.
+
+**Setup required:** Repository Settings → Pages → Build and deployment → Source: GitHub Actions. A Pages deployment may require repository-owner setup/approval. Do not assume the URL is live until the deployment workflow succeeds.
+
+**Security/limits:** GitHub Pages may be publicly accessible even for a private repository, depending on plan/settings. Publish only synthetic fixtures, never actual workflow secrets or user content. This is a browser-only demo: generation/WebSockets are disabled, unmodeled API writes fail, and mock preset mutations reset on reload. Do not use it as an operational service.
