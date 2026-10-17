@@ -407,3 +407,18 @@
     min-height: 0;
   }
 }
+
+/* New Tag Set uses the same TagSetFormFields as editing.
+   Let the creation dialog own vertical scrolling, not its Subsets list. */
+@media (max-width:767px) {
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-md:has(#save-tagset-btn) {
+    max-height:92dvh;
+    overscroll-behavior:contain;
+  }
+  html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-md:has(#save-tagset-btn) .max-h-\\[160px\\].overflow-y-auto {
+    max-height:none;
+    overflow-y:visible;
+    overflow-x:visible;
+    padding-right:0;
+  }
+}
