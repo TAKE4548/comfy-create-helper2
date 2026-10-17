@@ -75,3 +75,17 @@ test('offline preset CRUD works without network writes', async ({ page }) => {
   expect(result).toEqual({ created: 201, listed: true, name: 'Renamed',
     deleted: 200, removed: true, forbidden: 403 })
 })
+
+test('resource monitor displays deterministic offline hardware metrics on desktop', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop chip layout only')
+  await page.goto('/')
+  const monitor = page.getByTestId('resource-hover-monitor')
+  await expect(monitor).toBeVisible()
+  await expect(monitor).toContainText('CPU 23%')
+  await expect(monitor).toContainText('RAM 29%')
+  await expect(monitor).toContainText('GPU 37%')
+  await expect(monitor).toContainText('VRAM 38%')
+  await monitor.hover()
+  await expect(page.getByTestId('resource-hover-card')).toBeVisible()
+  await expect(page.getByTestId('resource-hover-card')).toContainText('9.2 / 24.0 GB')
+})
