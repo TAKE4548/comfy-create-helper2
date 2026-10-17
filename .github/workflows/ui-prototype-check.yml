@@ -1,0 +1,48 @@
+name: UI Prototype Check
+
+on:
+  push:
+    branches: [prototype/ui-review]
+    paths:
+      - 'ui-prototype/**'
+      - 'frontend/**'
+      - '.github/workflows/ui-prototype-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install production frontend dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: frontend
+      - name: Install prototype dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: ui-prototype
+      - name: Build prototype
+        run: npm run build
+        working-directory: ui-prototype
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui-prototype
+      - name: Browser verification
+        run: npm run test:e2e
+        working-directory: ui-prototype
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-prototype-playwright-results
+          path: |
+            ui-prototype/test-results/
+            ui-prototype/playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
