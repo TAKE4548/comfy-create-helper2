@@ -287,3 +287,17 @@
     overflow:visible; height:auto; flex:0 0 auto; padding:12px 16px;
   }
 }
+
+/* Keep edit/save actions reachable inside the scrolling mobile sheet. */
+@media (max-width:767px) {
+ html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:last-child > div,
+ html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:last-child > div {
+   min-height:100%; height:auto;
+ }
+ html[data-prototype-variant="proposal"] [data-testid="lora-detail-sheet"] > .grid > div:last-child > div > div:last-child,
+ html[data-prototype-variant="proposal"] .modal-backdrop > .max-w-4xl > .grid > div:last-child > div > div:last-child {
+   position:sticky; bottom:-12px; z-index:10;
+   padding:12px 0 calc(12px + env(safe-area-inset-bottom));
+   background:#18181c; border-top:1px solid rgba(255,255,255,.08);
+ }
+}
