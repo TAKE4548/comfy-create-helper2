@@ -136,14 +136,50 @@ export function mountHistoryProposal() {
     }
   }
   function syncSelection() {
-    // Scope to History; the toolbar itself is shared with other pages.
-    const historyPage=document.querySelector<HTMLElement>('[data-page-header-root]:has(#view-snapshots)')?.parentElement
-    const albumPage=document.querySelector<HTMLElement>('#toggle-bulk-mode')?.closest<HTMLElement>('.flex.flex-col.h-full')
-    for(const root of [historyPage,albumPage]){
-      if(!root) continue
-      const toolbar=Array.from(root.querySelectorAll<HTMLElement>('div')).find(el=>
-        el.className.includes('animate-slide-down') && el.textContent?.includes('複数選択モード'))
-      if(toolbar && toolbar.dataset.historySelectionToolbar!=='true') toolbar.dataset.historySelectionToolbar='true'
+    const page = document.querySelector<HTMLElement>('[data-page-header-root]:has(#view-snapshots)')?.parentElement
+    const albumRoot = document.querySelector<HTMLElement>('#toggle-bulk-mode')?.closest<HTMLElement>('.flex.flex-col.h-full')
+    const roots = [page, albumRoot].filter(Boolean) as HTMLElement[]
+    const toolbars = roots.flatMap(root=>Array.from(root.querySelectorAll<HTMLElement>('div.animate-slide-down')))
+      .filter(el=>el.textContent?.includes('複数選択モード'))
+    // Remove detached bottom bars when React exits selection mode or changes views.
+    document.querySelectorAll<HTMLElement>('[data-history-selection-dock]').forEach(dock=>{
+      if(!toolbars.some(toolbar=>toolbar.dataset.historySelectionId===dock.dataset.historySelectionId)){
+        dock.remove()
+      }
+    })
+    for(const toolbar of toolbars){
+      if(toolbar.dataset.historySelectionToolbar!=='true') toolbar.dataset.historySelectionToolbar='true'
+      if(!toolbar.dataset.historySelectionId) toolbar.dataset.historySelectionId='history-selection-'+(toolbar.closest('[data-page-header-root]')?'root':toolbar.querySelector('#save-album-btn')?'snapshots':'album')
+      const id=toolbar.dataset.historySelectionId
+      let dock=document.querySelector<HTMLElement>('[data-history-selection-dock][data-history-selection-id="'+id+'"]')
+      if(!dock){
+        dock=document.createElement('div')
+        dock.dataset.historySelectionDock='true'
+        dock.dataset.historySelectionId=id
+        document.body.append(dock)
+      }
+      const actions=toolbar.querySelector<HTMLElement>('#bulk-download-btn')?.parentElement
+      if(!actions) continue
+      const sourceButtons=Array.from(actions.querySelectorAll<HTMLButtonElement>('button[id]'))
+      for(const button of sourceButtons){
+        const label=button.id==='bulk-download-btn'?'保存':button.id==='save-album-btn'?'アルバム':'削除'
+        let proxy=dock.querySelector<HTMLButtonElement>('[data-history-proxy-for="'+button.id+'"]')
+        if(!proxy){
+          proxy=document.createElement('button')
+          proxy.type='button'
+          proxy.dataset.historyProxyFor=button.id
+          proxy.addEventListener('click',()=>button.click())
+          dock.append(proxy)
+        }
+        if(proxy.textContent!==label)proxy.textContent=label
+        if(proxy.disabled!==button.disabled)proxy.disabled=button.disabled
+        proxy.dataset.destructive=button.id.includes('delete')?'true':'false'
+      }
+      for(const proxy of Array.from(dock.querySelectorAll<HTMLButtonElement>('[data-history-proxy-for]'))){
+        if(!sourceButtons.some(button=>button.id===proxy.dataset.historyProxyFor))proxy.remove()
+      }
+      const count=toolbar.querySelector<HTMLElement>('span.text-gray-300')
+      if(count && count.dataset.historySelectionCount!=='true')count.dataset.historySelectionCount='true'
     }
   }
   function sync() {
