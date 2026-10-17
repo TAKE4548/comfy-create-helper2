@@ -171,6 +171,28 @@ export function mountCollectionProposal() {
           container.prepend(fallback)
         }
       }
+      // One visual summary per card. Original React content remains intact beneath it,
+      // but is not rendered in the mobile proposal list.
+      let compact = container.querySelector<HTMLElement>('[data-collection-card-summary]')
+      if (!compact) {
+        compact = document.createElement('div')
+        compact.dataset.collectionCardSummary = 'true'
+        const title = document.createElement('p')
+        title.dataset.collectionSummaryTitle = 'true'
+        const description = document.createElement('p')
+        description.dataset.collectionSummaryDescription = 'true'
+        const models = document.createElement('p')
+        models.dataset.collectionSummaryModels = 'true'
+        compact.append(title,description,models)
+        container.append(compact)
+      }
+      const titleText = group.prefix === 'lora-card-' ? item.model_name : item.name
+      const descText = item.description || '説明なし'
+      const titleEl = compact.querySelector<HTMLElement>('[data-collection-summary-title]')
+      const descEl = compact.querySelector<HTMLElement>('[data-collection-summary-description]')
+      const modelEl = compact.querySelector<HTMLElement>('[data-collection-summary-models]')
+      if (titleEl && titleEl.textContent !== titleText) titleEl.textContent = titleText
+      if (descEl && descEl.textContent !== descText) descEl.textContent = descText
       const ids = item.target_base_model_ids ?? []
       const names = ids.map((modelId:number) => fixtureCollectionModels.find(model=>model.id===modelId)?.name).filter(Boolean)
       let meta = container.querySelector<HTMLElement>('[data-collection-models]')
@@ -181,6 +203,7 @@ export function mountCollectionProposal() {
       }
       const caption = names.length ? names.join(' · ') : '対象モデル未設定'
       if (meta.textContent !== caption) meta.textContent = caption
+      if (modelEl && modelEl.textContent !== caption) modelEl.textContent = caption
       if (group.prefix === 'tagset-card-') {
         let summary = container.querySelector<HTMLElement>('[data-collection-tag-summary]')
         if (!summary) {
