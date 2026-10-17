@@ -1,6 +1,10 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import '../../frontend/src/index.css'
+import './comparison.css'
+
+// Explicit query switch allows identical fixture, viewport and app for A/B captures.
+document.documentElement.dataset.prototypeVariant = new URLSearchParams(location.search).get('ui') === 'proposal' ? 'proposal' : 'baseline'
 import { installOfflineTransport } from './offlineTransport'
 
 // Install the network sandbox BEFORE evaluating App and its imported modules.
