@@ -24,3 +24,14 @@ test('mobile proposal history thumbnail opens sheet and full image', async ({ pa
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
+
+test('offline SVG fixture thumbnails are clickable without original check', async ({ page }, info) => {
+  test.skip(!info.project.name.includes('mobile'))
+  await page.goto('/?ui=proposal')
+  await page.locator('button[aria-controls="mobile-history-panel"]').click()
+  const thumb = page.locator('button[id^="thumb-mobile-"]').first()
+  await expect(thumb).toBeVisible()
+  await expect(thumb).toBeEnabled()
+  await thumb.click()
+  await expect(page.getByRole('dialog', { name: '画像プレビュー' })).toBeVisible()
+})
