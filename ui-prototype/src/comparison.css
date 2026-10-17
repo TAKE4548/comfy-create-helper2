@@ -746,3 +746,42 @@ html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:no
  /* Album uses existing long-press selection, same as snapshots. */
  html[data-prototype-variant="proposal"] #toggle-bulk-mode {display:none!important;}
 }
+
+/* Proposal selection pattern: compact X plus count, shared visual language.
+   History and Generate retain their own React-owned selection actions. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-history-selection-exit] {
+   order:-1;min-width:44px;width:44px;min-height:44px;padding:0;
+   background:transparent;border:0;font-size:25px;line-height:1;font-weight:400;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child {
+   justify-content:flex-start!important;gap:10px;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-toolbar="true"] > div:first-child > div:last-child {
+   margin-left:auto;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] button[data-history-proxy-for="save-album-btn"] {
+   flex:1.45;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-compact="true"] {
+   background:#202126!important;border:1px solid rgba(255,255,255,.09)!important;
+   color:#e4e4e7!important;border-radius:9px;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-compact="true"] > div:first-child {
+   display:flex;gap:10px;justify-content:flex-start;align-items:center;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-count="true"] {
+   font-size:13px;font-weight:650;color:#e4e4e7;white-space:nowrap;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-close] {
+   order:-1;display:flex;align-items:center;justify-content:center;
+   height:40px;width:40px;flex-shrink:0;font-size:24px;line-height:1;
+   color:#e4e4e7;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-compact="true"] > div:first-child > div:nth-child(2) {
+   margin-left:auto;
+ }
+ html[data-prototype-variant="proposal"] [data-generate-selection-compact="true"] > div:last-child button[aria-label="選択モード終了"] {
+   display:none!important;
+ }
+}
