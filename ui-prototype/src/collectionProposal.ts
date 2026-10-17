@@ -152,6 +152,7 @@ export function mountCollectionProposal() {
       const primary = (el: HTMLButtonElement) => /^(Edit|Save Changes|Saving)/.test(el.textContent?.trim() ?? '') ? 1 : 0
       return primary(a)-primary(b)
     })
+    const isReadOnly = ordered.length === 1 && /^Edit$/.test(ordered[0].textContent?.trim() ?? '')
     footer.replaceChildren(...ordered.map(source => {
       const button = document.createElement('button')
       button.type = 'button'
@@ -160,6 +161,16 @@ export function mountCollectionProposal() {
       button.addEventListener('click', () => source.click())
       return button
     }))
+    if (isReadOnly) {
+      const close = document.createElement('button')
+      close.type = 'button'
+      close.textContent = 'Close'
+      close.addEventListener('click', () => {
+        const headerClose = dialog.querySelector<HTMLButtonElement>(':scope > div:first-child button')
+        headerClose?.click()
+      })
+      footer.prepend(close)
+    }
   }
   const observer = new MutationObserver(sync)
   observer.observe(document.body, { subtree:true, childList:true, attributes:true, attributeFilter:['disabled'] })
