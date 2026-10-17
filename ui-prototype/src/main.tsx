@@ -4,6 +4,7 @@ import '../../frontend/src/index.css'
 import './comparison.css'
 import { mountMobileProposal } from './mobileProposal'
 import { mountCollectionProposal } from './collectionProposal'
+import { mountHistoryProposal } from './historyProposal'
 import { fixtureHistoryImages } from './fixtureData'
 
 // Explicit query switch allows identical fixture, viewport and app for A/B captures.
@@ -14,6 +15,7 @@ import { installOfflineTransport } from './offlineTransport'
 installOfflineTransport()
 mountMobileProposal()
 mountCollectionProposal()
+mountHistoryProposal()
 
 
 // Mock SVG images have no ComfyUI /view identity; the production availability
