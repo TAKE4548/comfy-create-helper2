@@ -73,3 +73,16 @@ test('proposal mobile scroller fits available AppShell content height', async ({
   expect(Math.abs(metrics.rootHeight - metrics.mainContentHeight)).toBeLessThanOrEqual(2)
   expect(metrics.bottomPad).toBe('72px')
 })
+
+test('proposal section navigation uses understated underline and retains touch size', async ({ page }, info) => {
+  test.skip(!info.project.name.includes('mobile'))
+  await page.goto('/?ui=proposal')
+  const nav = page.getByRole('group', { name: '表示セクション' })
+  const active = nav.getByRole('button', { name: 'プロンプト' })
+  await expect(active).toHaveAttribute('aria-pressed', 'true')
+  await expect(active).toHaveCSS('border-top-width', '0px')
+  const box = await active.boundingBox()
+  expect(box?.height).toBeGreaterThanOrEqual(40)
+  await nav.getByRole('button', { name: '履歴' }).click()
+  await expect(nav.getByRole('button', { name: '履歴' })).toHaveAttribute('aria-pressed', 'true')
+})
