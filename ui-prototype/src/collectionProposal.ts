@@ -130,6 +130,25 @@ export function mountCollectionProposal() {
       if (!item) continue
       const container = card.querySelector<HTMLElement>(':scope > div:last-child')
       if (!container) continue
+      // Hide only the category badge inside the card; leave section headers intact.
+      // Identify by the exact category label and known badge classes, rather than
+      // brittle Tailwind-escaped CSS selectors.
+      const category = item.category_id
+      const categoryLabel = category === null ? null : (
+        category === 9401 ? '人物・キャラクター' :
+        category === 9402 ? '背景・風景' :
+        category === 9403 ? '画風・質感' : null
+      )
+      if (categoryLabel) {
+        for (const badge of container.querySelectorAll<HTMLElement>('span')) {
+          if (badge.textContent?.trim() === categoryLabel &&
+              (badge.className.includes('rounded-full') || badge.className.includes('rounded'))) {
+            badge.hidden = true
+            badge.style.setProperty('display', 'none', 'important')
+            badge.dataset.collectionHiddenCategory = 'true'
+          }
+        }
+      }
       const ids = item.target_base_model_ids ?? []
       const names = ids.map((modelId:number) => fixtureCollectionModels.find(model=>model.id===modelId)?.name).filter(Boolean)
       let meta = container.querySelector<HTMLElement>('[data-collection-models]')
