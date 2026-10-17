@@ -23,13 +23,24 @@ function offlineFixtureGalleryInteraction(): Plugin {
     name: 'prototype-offline-gallery-interaction',
     enforce: 'pre',
     transform(source, id) {
-      if (!id.replaceAll('\\', '/').endsWith('/frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx')) return
+      const normalized = id.replaceAll('\\', '/')
+      if (normalized.endsWith('/frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts')) {
+        const first = ['    getLongPressHandlers,','    isSelected,','    exitMultiSelectMode,'].join('\n')
+        const second = ['    handleItemClick,','    getLongPressHandlers,','    isSelected,','    exitMultiSelectMode,','    selectAll,','    clearSelection,','    snapshotIdsForDisplay,'].join('\n')
+        if (!source.includes(first) || !source.includes(second)) throw new Error('Selection hook structure changed')
+        return source.replace(first, first.replace('    isSelected,', '    enterMultiSelectMode,\n    isSelected,'))
+          .replace(second, second.replace('    isSelected,', '    enterMultiSelectMode,\n    isSelected,'))
+      }
+      if (!normalized.endsWith('/frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx')) return
       const expectedProps = '{...(canInteract ? itemProps : {})}'
       const expectedDisabled = 'disabled={!canInteract}'
       if (!source.includes(expectedProps) || !source.includes(expectedDisabled)) {
         throw new Error('Expected Generate gallery interaction guards not found')
       }
       return source
+        .replace('  const [thumbnailErrors,', '  const offlinePressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)\n  const offlinePressOrigin = useRef<[number,number] | null>(null)\n  const [thumbnailErrors,')
+        .replace('    selectedIds,\n    selectAll,', '    selectedIds,\n    enterMultiSelectMode,\n    selectAll,')
+        .replace('                  style={{ WebkitTouchCallout:', "                  onTouchStartCapture={isMobile && img.startsWith('data:image/svg+xml') && document.documentElement.dataset.prototypeVariant === 'proposal' ? (event) => {\n                    const point=event.touches[0]\n                    offlinePressOrigin.current=[point.clientX,point.clientY]\n                    if(offlinePressTimer.current)clearTimeout(offlinePressTimer.current)\n                    offlinePressTimer.current=setTimeout(()=>{offlinePressTimer.current=null;enterMultiSelectMode(img)},650)\n                  } : undefined}\n                  onTouchMoveCapture={isMobile && img.startsWith('data:image/svg+xml') ? (event) => {\n                    const point=event.touches[0],origin=offlinePressOrigin.current\n                    if(origin && Math.hypot(point.clientX-origin[0],point.clientY-origin[1])>12){\n                      if(offlinePressTimer.current)clearTimeout(offlinePressTimer.current)\n                      offlinePressTimer.current=null;offlinePressOrigin.current=null\n                    }\n                  } : undefined}\n                  onTouchEndCapture={() => {\n                    if(offlinePressTimer.current)clearTimeout(offlinePressTimer.current)\n                    offlinePressTimer.current=null;offlinePressOrigin.current=null\n                  }}\n                  style={{ WebkitTouchCallout:")
         .replace(expectedProps, "{...(canInteract || img.startsWith('data:image/svg+xml') ? itemProps : {})}")
         .replace(expectedDisabled, "disabled={!canInteract && !img.startsWith('data:image/svg+xml')}")
     },
