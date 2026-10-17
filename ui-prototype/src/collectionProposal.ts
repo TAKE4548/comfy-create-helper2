@@ -1,3 +1,4 @@
+import { fixtureLoras, fixtureTagSets, fixtureCollectionModels } from './fixtureData'
 /** Isolated mobile collection overlay. Baseline and production are untouched. */
 export function mountCollectionProposal() {
   if (document.documentElement.dataset.prototypeVariant !== 'proposal') return
@@ -117,7 +118,44 @@ export function mountCollectionProposal() {
     dialog.appendChild(overlay)
   }
 
+
+  function syncCollectionCards() {
+    const sets = [
+      { prefix:'lora-card-', items:fixtureLoras, label:(item:any)=>item.model_name },
+      { prefix:'tagset-card-', items:fixtureTagSets, label:(item:any)=>item.name },
+    ]
+    for (const group of sets) for (const card of document.querySelectorAll<HTMLElement>('[id^="'+group.prefix+'"]')) {
+      const id = Number(card.id.slice(group.prefix.length))
+      const item = group.items.find(entry => entry.id === id)
+      if (!item) continue
+      const container = card.querySelector<HTMLElement>(':scope > div:last-child')
+      if (!container) continue
+      const ids = item.target_base_model_ids ?? []
+      const names = ids.map((modelId:number) => fixtureCollectionModels.find(model=>model.id===modelId)?.name).filter(Boolean)
+      let meta = container.querySelector<HTMLElement>('[data-collection-models]')
+      if (!meta) {
+        meta = document.createElement('div')
+        meta.dataset.collectionModels = 'true'
+        container.prepend(meta)
+      }
+      const caption = names.length ? names.join(' · ') : '対象モデル未設定'
+      if (meta.textContent !== caption) meta.textContent = caption
+      if (group.prefix === 'tagset-card-') {
+        let summary = container.querySelector<HTMLElement>('[data-collection-tag-summary]')
+        if (!summary) {
+          summary = document.createElement('div')
+          summary.dataset.collectionTagSummary = 'true'
+          container.append(summary)
+        }
+        const tags = item.tags ?? []
+        const desc = tags.slice(0, 2).join(' / ') + (tags.length > 2 ? '  +' + (tags.length-2) : '')
+        if (summary.textContent !== desc) summary.textContent = desc
+      }
+    }
+  }
+
   function sync() {
+    syncCollectionCards()
     if (!mobile()) return
     const dialog = document.querySelector<HTMLElement>('.modal-backdrop > .max-w-4xl, [data-testid="lora-detail-sheet"]')
     if (!dialog) return
