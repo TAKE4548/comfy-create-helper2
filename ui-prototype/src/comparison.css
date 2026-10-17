@@ -392,3 +392,18 @@
  html[data-prototype-variant="proposal"] .collection-gallery-selected img {width:64px;height:64px;object-fit:cover;border-radius:8px;}
  html[data-prototype-variant="proposal"] .collection-gallery-selected button {min-height:44px;padding:0 12px;border-radius:8px;background:#3ecf8e;color:#18181c;}
 }
+
+/* Mobile Tag Set editing: use the sheet's single vertical scroll surface.
+   The shared TagSetFormFields component is unchanged outside this proposal. */
+@media (max-width: 767px) {
+  html[data-prototype-variant="proposal"] [data-collection-sheet="true"] .max-h-\[160px\].overflow-y-auto {
+    max-height: none;
+    overflow-y: visible;
+    overflow-x: visible;
+    padding-right: 0;
+  }
+  html[data-prototype-variant="proposal"] [data-collection-sheet="true"] > .grid > div:last-child,
+  html[data-prototype-variant="proposal"] [data-collection-sheet="true"] > .grid > div:last-child > div {
+    min-height: 0;
+  }
+}
