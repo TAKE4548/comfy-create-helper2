@@ -727,3 +727,6 @@
    opacity:.4;cursor:not-allowed;
  }
 }
+
+html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:none;}
+@media(max-width:767px){html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:flex;}}
