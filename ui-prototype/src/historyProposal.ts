@@ -197,7 +197,7 @@ export function mountHistoryProposal() {
     const panel=document.querySelector<HTMLElement>('#mobile-history-panel')
     if(!panel) return
     const original=panel.querySelector<HTMLButtonElement>('button[aria-label="選択モード終了"]')
-    if(!original) return
+    if(!original){document.querySelector('[data-generate-selection-dock]')?.remove();return}
     const bar=original.closest<HTMLElement>('div.bg-purple-500\\/10')
     if(!bar) return
     if(bar.dataset.generateSelectionCompact!=='true')bar.dataset.generateSelectionCompact='true'
@@ -215,6 +215,24 @@ export function mountHistoryProposal() {
     }
     const count=firstRow.firstElementChild as HTMLElement|null
     if(count&&count.dataset.generateSelectionCount!=='true')count.dataset.generateSelectionCount='true'
+    let dock=document.querySelector<HTMLElement>('[data-generate-selection-dock]')
+    if(!dock){
+      dock=document.createElement('div')
+      dock.dataset.generateSelectionDock='true'
+      document.body.append(dock)
+    }
+    let save=dock.querySelector<HTMLButtonElement>('button')
+    if(!save){
+      save=document.createElement('button')
+      save.type='button'
+      save.textContent='スナップショットに保存'
+      dock.append(save)
+    }
+    const sourceSave=bar.querySelector<HTMLButtonElement>(':scope > div:last-child button:not([aria-label="選択モード終了"])')
+    if(sourceSave){
+      save.onclick=()=>sourceSave.click()
+      if(save.disabled!==sourceSave.disabled)save.disabled=sourceSave.disabled
+    }
   }
   function sync() {
     if(!mobile()){closeMenu();return}
