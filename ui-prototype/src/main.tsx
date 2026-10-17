@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '../../frontend/src/index.css'
 import './comparison.css'
 import { mountMobileProposal } from './mobileProposal'
+import { mountCollectionProposal } from './collectionProposal'
 import { fixtureHistoryImages } from './fixtureData'
 
 // Explicit query switch allows identical fixture, viewport and app for A/B captures.
@@ -12,6 +13,7 @@ import { installOfflineTransport } from './offlineTransport'
 // Install the network sandbox BEFORE evaluating App and its imported modules.
 installOfflineTransport()
 mountMobileProposal()
+mountCollectionProposal()
 
 
 // Mock SVG images have no ComfyUI /view identity; the production availability
