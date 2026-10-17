@@ -68,7 +68,7 @@ export function mountHistoryProposal() {
   }
 
   function syncFilters() {
-    const filter=document.querySelector<HTMLElement>('#history-workflow-filter')?.parentElement
+    const filter=document.querySelector<HTMLElement>('#history-workflow-filter')?.closest<HTMLElement>('.flex.flex-wrap.items-center')
     if (!filter || filter.dataset.historyFilterEnhanced==='true') return
     filter.dataset.historyFilterEnhanced='true'
     const summary=document.createElement('div')
