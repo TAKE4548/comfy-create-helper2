@@ -69,31 +69,54 @@ export function mountHistoryProposal() {
 
   function syncFilters() {
     const filter=document.querySelector<HTMLElement>('#history-workflow-filter')?.closest<HTMLElement>('.flex.flex-wrap.items-center')
-    if (!filter || filter.dataset.historyFilterEnhanced==='true') return
-    filter.dataset.historyFilterEnhanced='true'
-    const summary=document.createElement('div')
-    summary.dataset.historyFilterBar='true'
-    const toggle=document.createElement('button')
-    toggle.type='button'
-    toggle.textContent='フィルター'
-    toggle.setAttribute('aria-expanded','false')
-    const count=document.createElement('span')
-    count.dataset.historyFilterCount='true'
-    const update=()=>{
-      const ids=['history-workflow-filter','history-lora-filter','history-tagset-filter']
-      const n=ids.filter(id=>!!(document.getElementById(id) as HTMLSelectElement|null)?.value).length
-      count.textContent=n?'適用中 '+n+'件':''
+    const bars=Array.from(document.querySelectorAll<HTMLElement>('[data-history-filter-bar]'))
+    if (!filter || !mobile()) {
+      bars.forEach(bar=>bar.remove())
+      return
     }
-    toggle.addEventListener('click',()=>{
-      const expanded=filter.dataset.historyExpanded!=='true'
-      filter.dataset.historyExpanded=String(expanded)
-      toggle.setAttribute('aria-expanded',String(expanded))
-      toggle.textContent=expanded?'フィルターを閉じる':'フィルター'
-    })
-    filter.addEventListener('change',update)
-    summary.append(toggle,count)
-    filter.parentElement?.insertBefore(summary,filter)
-    update()
+    // React can replace the filter node on view changes. Never leave an orphan
+    // and never create multiple toolbar instances for one filter.
+    let bar=bars.find(el=>el.dataset.historyFilterOwner==='snapshots')
+    for(const other of bars) if(other!==bar) other.remove()
+    if(!bar) {
+      bar=document.createElement('div')
+      bar.dataset.historyFilterBar='true'
+      bar.dataset.historyFilterOwner='snapshots'
+    }
+    if(bar.nextElementSibling!==filter) filter.before(bar)
+    filter.dataset.historyFilterEnhanced='true'
+    let toggle=bar.querySelector<HTMLButtonElement>('[data-history-filter-toggle]')
+    if(!toggle){
+      toggle=document.createElement('button')
+      toggle.type='button';toggle.dataset.historyFilterToggle='true'
+      toggle.addEventListener('click',()=>{
+        filter.dataset.historyExpanded=String(filter.dataset.historyExpanded!=='true')
+        toggle!.setAttribute('aria-expanded',String(filter.dataset.historyExpanded==='true'))
+        toggle!.textContent=filter.dataset.historyExpanded==='true'?'フィルターを閉じる':'フィルター'
+      })
+      bar.append(toggle)
+    }
+    toggle.textContent=filter.dataset.historyExpanded==='true'?'フィルターを閉じる':'フィルター'
+    toggle.setAttribute('aria-expanded',String(filter.dataset.historyExpanded==='true'))
+    let count=bar.querySelector<HTMLElement>('[data-history-filter-count]')
+    if(!count){count=document.createElement('span');count.dataset.historyFilterCount='true';bar.append(count)}
+    const n=['history-workflow-filter','history-lora-filter','history-tagset-filter'].filter(id=>!!(document.getElementById(id) as HTMLSelectElement|null)?.value).length
+    count.textContent=n?'適用中 '+n+'件':''
+    let sort=bar.querySelector<HTMLElement>('[data-history-sort-controls]')
+    if(!sort){
+      sort=document.createElement('div');sort.dataset.historySortControls='true'
+      for(const [order,label,icon] of [['desc','新しい順','↓'],['asc','古い順','↑']]){
+        const button=document.createElement('button')
+        button.type='button';button.textContent=icon;button.title=label;button.setAttribute('aria-label',label)
+        button.dataset.historySortOrder=order
+        button.addEventListener('click',()=>{
+          const buttons=Array.from(filter.querySelectorAll<HTMLButtonElement>('button'))
+          buttons.find(b=>b.textContent?.trim()===label)?.click()
+        })
+        sort.append(button)
+      }
+      bar.append(sort)
+    }
   }
   function sync() {
     if(!mobile()){closeMenu();return}
