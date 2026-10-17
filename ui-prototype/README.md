@@ -18,7 +18,7 @@ Open http://localhost:5391/ .
 
 - Browser `fetch` is sandboxed **before** the production App module is imported.
 - HTTP writes are rejected (403), unknown API reads fail explicitly (404), WebSockets do not connect, and XHR calls are disabled. No API proxy is configured.
-- A sample workflow, four mappings, and two prompt presets are provided; unsupported API endpoints will display error/empty states. **This is an initial offline, read-only baseline and not yet a populated, fully interactive Generate page.**
+- A sample workflow, four mappings, and two prompt presets are provided; unsupported API endpoints will display error/empty states. **This is an offline baseline, not a full backend simulator. Preset CRUD is simulated in memory and resets on reload.**
 - Static module imports and stylesheet font imports can still request external resources (such as Google Fonts); the protection applies to application network transports, not all browser resource requests.
 - The React markup and CSS come from current `frontend/src`, avoiding a hand-built HTML approximation.
 - Do not use for backend behavior verification. Backend calls, image generation and saving are intentionally disabled.
@@ -30,7 +30,7 @@ Open http://localhost:5391/ .
 3. Add a baseline/proposal switch, keeping all proposal code within `ui-prototype/`.
 4. Run a real-browser visual comparison at 375, 768, 1024 and 1440px and document deviations.
 
-**No claim of build or browser verification has been made.**
+GitHub Actions runs the browser checks; consult the latest CI result before relying on a screenshot.
 
 ## Latest fixture coverage
 
@@ -44,7 +44,7 @@ A branch-scoped GitHub Actions workflow in `.github/workflows/ui-prototype-check
 
 Run locally using `cd ui-prototype && npx playwright install chromium && npm run test:e2e` after installing both frontend and prototype dependencies. The checks are intentionally assertions, not proof of pixel-level parity with a real deployment.
 
-**CI status has not been verified through an Actions run yet.** Inspect the Actions tab and the uploaded `ui-prototype-playwright-results` artifact; fix any reported setup or fixture issues before using screenshots for design decisions.
+CI has previously passed for the baseline; new changes still require a fresh successful run. The screenshot tests do not establish pixel parity with production.
 
 ## Locate the latest CI artifacts without copying a run URL
 
@@ -53,3 +53,10 @@ After each run (including failed runs), the workflow publishes a commit status n
 For ChatGPT/GitHub connector use: find the newest commit on `prototype/ui-review`, then read its combined commit statuses and locate `ui-prototype/artifact`. Use the artifact ID to request the archive directly. The status is created after upload, so it describes the completed run. Older commit statuses remain accessible for comparison. GitHub Actions artifact retention remains 14 days.
 
 This is **on-demand discovery**, not a background watcher. If the workflow fails before publishing the status (e.g. permission error), use the GitHub Actions run UI instead. Status publishing requires the workflow's `statuses: write` and `actions: read` permissions.
+
+## Current fidelity / limitations
+
+- **Preserved**: actual frontend React routes, components, Tailwind theme and responsive layouts.
+- **Prototype-only**: deterministic sample workflow and presets, with in-memory create / update / reorder / delete for presets; mutations are reset by a reload.
+- **Not simulated**: actual image generation, websocket progress, backend persistence, LoRA asset actions, most management mutations and populated history. They remain deliberately unavailable rather than pretending to succeed.
+- **Verification**: desktop/tablet/mobile screenshots and preset transport CRUD tests in CI. Actual interaction visuals still need review using the downloaded artifacts.
