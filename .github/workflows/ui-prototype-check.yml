@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  statuses: write
 
 jobs:
   verify:
@@ -46,3 +48,33 @@ jobs:
             ui-prototype/playwright-report/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish discoverable artifact pointer
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const runId = context.runId
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: runId, per_page: 100
+            })
+            const artifact = data.artifacts.find(a => a.name === 'ui-prototype-playwright-results')
+            const artifactUrl = artifact
+              ? `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts/${artifact.id}`
+              : `https://github.com/${owner}/${repo}/actions/runs/${runId}`
+            const report = [
+              '## UI Prototype CI artifact',
+              `- Run: [${runId}](https://github.com/${owner}/${repo}/actions/runs/${runId})`,
+              artifact ? `- Artifact: [${artifact.id}](${artifactUrl})` : '- Artifact: not available',
+              `- Commit: \`${context.sha}\``,
+              `- Outcome: ${context.job === 'verify' ? 'see run result' : context.job}`,
+            ].join('\\n')
+            await core.summary.addRaw(report).write()
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: context.sha,
+              state: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              context: 'ui-prototype/artifact',
+              description: artifact ? `run=${runId} artifact=${artifact.id}` : `run=${runId} artifact=none`,
+              target_url: artifactUrl
+            })
