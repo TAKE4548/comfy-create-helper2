@@ -730,3 +730,19 @@
 
 html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:none;}
 @media(max-width:767px){html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:flex;}}
+
+/* History selection refinements after review. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-history-selection-dock] {
+   /* Adjacent to the existing 4rem mobile navigation; avoid doubling safe-area inset. */
+   bottom:var(--mobile-nav-height,4rem)!important;
+ }
+ html[data-prototype-variant="proposal"] [data-history-selection-exit] {
+   flex:0 0 auto;min-height:40px;min-width:52px;
+   padding:6px 10px;border:1px solid rgba(255,255,255,.18);
+   border-radius:8px;color:#e4e4e7;background:rgba(255,255,255,.06);
+   font-size:12px;font-weight:600;
+ }
+ /* Album uses existing long-press selection, same as snapshots. */
+ html[data-prototype-variant="proposal"] #toggle-bulk-mode {display:none!important;}
+}
