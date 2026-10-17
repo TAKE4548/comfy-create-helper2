@@ -1,0 +1,29 @@
+/* Proposal-only layout adjustment; original production code and baseline remain untouched. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  html[data-prototype-variant="proposal"] [data-page-header-root] > div:first-child {
+    flex-wrap: wrap;
+    align-content: center;
+    row-gap: 2px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  html[data-prototype-variant="proposal"] [data-page-header-root] > div:first-child > div:nth-child(2) {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    border-top: 1px solid rgb(255 255 255 / 0.06);
+    padding-top: 6px;
+    padding-bottom: 3px;
+    overflow-x: auto;
+  }
+  html[data-prototype-variant="proposal"] [data-page-header-root] > div:first-child > div:nth-child(3) {
+    order: 2;
+    margin-left: auto;
+  }
+  html[data-prototype-variant="proposal"] [data-page-header-root] > div:first-child > div:nth-child(2) > div {
+    flex-shrink: 0;
+  }
+  html[data-prototype-variant="proposal"] [data-page-header-root] > div:first-child > div:nth-child(2) label {
+    white-space: nowrap;
+  }
+}
