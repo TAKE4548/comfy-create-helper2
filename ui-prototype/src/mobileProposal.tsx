@@ -6,20 +6,32 @@ function ProposalSheet() {
   const [image, setImage] = useState<string | null>(null)
   const [full, setFull] = useState(false)
   useEffect(() => {
-    let start: { x: number; y: number; target: EventTarget | null } | null = null
+    let start: { x: number; y: number; target: EventTarget | null; scroller: HTMLElement | null; scrollLeft: number } | null = null
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return
-      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, target: e.target }
+      const el = e.target instanceof Element ? e.target : null
+      const scroller = el?.closest<HTMLElement>('.overflow-x-auto,.custom-scrollbar') ?? null
+      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, target: e.target, scroller, scrollLeft: scroller?.scrollLeft ?? 0 }
     }
     const onTouchEnd = (e: TouchEvent) => {
       if (!start || e.changedTouches.length !== 1 || image) { start = null; return }
       const dx = e.changedTouches[0].clientX - start.x
       const dy = e.changedTouches[0].clientY - start.y
       const target = start.target instanceof Element ? start.target : null
+      const scrollContainer = start.scroller
+      const startingScroll = start.scrollLeft
       start = null
       if (Math.abs(dx) < 65 || Math.abs(dx) < Math.abs(dy) * 1.35) return
       // Do not steal text input, sliders, horizontal scrolling or thumbnail gestures.
-      if (!target || target.closest('input,textarea,select,[contenteditable="true"],button,[role="slider"],.overflow-x-auto,.custom-scrollbar')) return
+      if (!target || target.closest('input,textarea,select,[contenteditable="true"],[role="slider"]')) return
+      // In horizontal rails, native scrolling wins. Switch sections only on an outward
+      // swipe from the edge; do not change sections while the rail itself moved.
+      if (scrollContainer) {
+        if (Math.abs(scrollContainer.scrollLeft - startingScroll) > 4) return
+        const atLeft = startingScroll <= 2
+        const atRight = startingScroll + scrollContainer.clientWidth >= scrollContainer.scrollWidth - 2
+        if (!((dx > 0 && atLeft) || (dx < 0 && atRight))) return
+      }
       const panel = target.closest('#mobile-history-panel,#mobile-prompt-panel,#mobile-parameters-panel')
       if (!panel) return
       const order = ['prompt', 'parameters', 'history']
@@ -56,15 +68,16 @@ function ProposalSheet() {
   if (!image) return null
   return <div className={'proposal-sheet-backdrop ' + (full ? 'proposal-sheet-full' : '')} role="presentation" onClick={() => { setImage(null); setFull(false) }}>
     <section role="dialog" aria-modal="true" aria-label={full ? '画像全画面表示' : '画像プレビュー'} className="proposal-sheet" onClick={e => e.stopPropagation()}>
-      <div className="proposal-sheet-handle" />
-      <header className="proposal-sheet-header">
+      {!full && <div className="proposal-sheet-handle" />}
+      {!full && <header className="proposal-sheet-header">
         <strong>{full ? '画像全画面表示' : '生成画像プレビュー'}</strong>
         <button type="button" onClick={() => {setImage(null);setFull(false)}} aria-label="プレビューを閉じる">✕</button>
-      </header>
+      </header>}
+      {full && <button className="proposal-full-close" type="button" aria-label="全画面を閉じてボトムシートに戻る" onClick={() => setFull(false)}>✕</button>}
       <button type="button" className="proposal-sheet-image" aria-label={full ? 'ボトムシートに戻る' : '画像を全画面表示'} onClick={() => setFull(v => !v)}>
         <img src={image} alt="選択した生成画像" />
       </button>
-      <footer>{full ? '画像をタップして戻る' : '画像をタップして全画面で確認'}</footer>
+      {!full && <footer>画像をタップして全画面で確認</footer>}
     </section>
   </div>
 }
