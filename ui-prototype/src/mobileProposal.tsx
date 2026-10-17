@@ -26,7 +26,7 @@ function ProposalSheet() {
       if (!target || target.closest('input,textarea,select,[contenteditable="true"],[role="slider"]')) return
       // In horizontal rails, native scrolling wins. Switch sections only on an outward
       // swipe from the edge; do not change sections while the rail itself moved.
-      if (scrollContainer) {
+      if (scrollContainer && scrollContainer.scrollWidth > scrollContainer.clientWidth + 2) {
         if (Math.abs(scrollContainer.scrollLeft - startingScroll) > 4) return
         const atLeft = startingScroll <= 2
         const atRight = startingScroll + scrollContainer.clientWidth >= scrollContainer.scrollWidth - 2
