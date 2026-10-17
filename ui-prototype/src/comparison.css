@@ -444,3 +444,14 @@
     overflow:hidden; overflow-wrap:anywhere; margin:3px 0 5px;
   }
 }
+
+/* Explicitly target category badges by their actual list-card hierarchy.
+   This does not touch category section headers, model badges, or detail sheets. */
+@media (max-width:767px) {
+ html[data-prototype-variant="proposal"] [id^="lora-card-"] > div:last-child > div:first-child > div:nth-child(2) > span:first-child[class*="bg-accent-green"] {
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] [id^="tagset-card-"] > div:last-child > div:first-child > div:first-child > span[class*="bg-white"] {
+   display:none!important;
+ }
+}
