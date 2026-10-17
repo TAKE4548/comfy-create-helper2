@@ -147,3 +147,64 @@
     padding-bottom: 6px;
   }
 }
+
+/* Iteration: swipe-first navigation and less visually dominant Profiles.
+   Touch targets and all existing handlers remain unchanged. */
+@media (max-width: 767px) {
+  html[data-prototype-variant="proposal"] [role="group"][aria-label="表示セクション"] {
+    gap: 0;
+    padding: 0 12px;
+    background: transparent;
+  }
+  html[data-prototype-variant="proposal"] [role="group"][aria-label="表示セクション"] > button {
+    min-height: 42px;
+    padding: 7px 2px 5px;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: #a1a1aa;
+  }
+  html[data-prototype-variant="proposal"] [role="group"][aria-label="表示セクション"] > button[aria-pressed="true"] {
+    border-bottom-color: var(--color-accent-green, #4cae81);
+    background: transparent;
+    color: #d4d4d8;
+    font-weight: 600;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col {
+    background: transparent;
+    row-gap: 4px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div:first-child > span {
+    letter-spacing: 0;
+    font-size: 9px;
+    font-weight: 600;
+    opacity: .8;
+  }
+  /* Remove the boxed toolbar-within-toolbar look without shrinking controls. */
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel #undo-btn-mobile,
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel #redo-btn-mobile {
+    background: transparent;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div:first-child > div > div {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel #manage-presets-btn-mobile {
+    border-color: transparent;
+    background: transparent;
+    padding-inline: 6px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div:last-child {
+    gap: 4px;
+  }
+  html[data-prototype-variant="proposal"] #mobile-prompt-panel > div.flex.flex-col > div:last-child .overflow-x-auto > div {
+    background: transparent;
+    border-radius: 5px;
+  }
+}
