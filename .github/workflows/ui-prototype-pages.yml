@@ -1,0 +1,50 @@
+name: UI Prototype Pages
+
+on:
+  push:
+    branches: [prototype/ui-review]
+    paths:
+      - 'ui-prototype/**'
+      - 'frontend/**'
+      - '.github/workflows/ui-prototype-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ui-prototype-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: frontend
+      - name: Install prototype dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: ui-prototype
+      - name: Build static offline prototype
+        run: npm run build
+        working-directory: ui-prototype
+        env:
+          PROTOTYPE_PAGES: '1'
+      - name: Provide SPA fallback for route refresh
+        run: cp ui-prototype/dist/index.html ui-prototype/dist/404.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui-prototype/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
