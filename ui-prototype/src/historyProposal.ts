@@ -22,10 +22,10 @@ export function mountHistoryProposal() {
       ? card.querySelector<HTMLElement>('div.absolute.top-2.right-2')
       : card.querySelector<HTMLElement>('[data-testid^="snapshot-overlay-"]')
     if (!overlay) return
-    overlay.dataset.historyActionHost = 'true'
+    if (overlay.dataset.historyActionHost !== 'true') overlay.dataset.historyActionHost = 'true'
     const actions = Array.from(overlay.querySelectorAll<HTMLElement>('button[id],a[id]'))
     if (!actions.length) return
-    for (const action of actions) action.dataset.historyOriginalAction = 'true'
+    for (const action of actions) if (action.dataset.historyOriginalAction !== 'true') action.dataset.historyOriginalAction = 'true'
     let trigger = card.querySelector<HTMLButtonElement>('[data-history-menu-trigger]')
     if (!trigger) {
       trigger = document.createElement('button')
@@ -63,7 +63,7 @@ export function mountHistoryProposal() {
     }
     if (!album) {
       const date=overlay.querySelector<HTMLElement>('p')
-      if (date) date.dataset.historyDate='true'
+      if (date && date.dataset.historyDate !== 'true') date.dataset.historyDate='true'
     }
   }
 
@@ -84,7 +84,7 @@ export function mountHistoryProposal() {
       bar.dataset.historyFilterOwner='snapshots'
     }
     if(bar.nextElementSibling!==filter) filter.before(bar)
-    filter.dataset.historyFilterEnhanced='true'
+    if (filter.dataset.historyFilterEnhanced !== 'true') filter.dataset.historyFilterEnhanced='true'
     let toggle=bar.querySelector<HTMLButtonElement>('[data-history-filter-toggle]')
     if(!toggle){
       toggle=document.createElement('button')
@@ -96,12 +96,15 @@ export function mountHistoryProposal() {
       })
       bar.append(toggle)
     }
-    toggle.textContent=filter.dataset.historyExpanded==='true'?'フィルターを閉じる':'フィルター'
-    toggle.setAttribute('aria-expanded',String(filter.dataset.historyExpanded==='true'))
+    const toggleLabel=filter.dataset.historyExpanded==='true'?'フィルターを閉じる':'フィルター'
+    if(toggle.textContent!==toggleLabel) toggle.textContent=toggleLabel
+    const expanded=String(filter.dataset.historyExpanded==='true')
+    if(toggle.getAttribute('aria-expanded')!==expanded) toggle.setAttribute('aria-expanded',expanded)
     let count=bar.querySelector<HTMLElement>('[data-history-filter-count]')
     if(!count){count=document.createElement('span');count.dataset.historyFilterCount='true';bar.append(count)}
     const n=['history-workflow-filter','history-lora-filter','history-tagset-filter'].filter(id=>!!(document.getElementById(id) as HTMLSelectElement|null)?.value).length
-    count.textContent=n?'適用中 '+n+'件':''
+    const countLabel=n?'適用中 '+n+'件':''
+    if(count.textContent!==countLabel) count.textContent=countLabel
     let sort=bar.querySelector<HTMLElement>('[data-history-sort-controls]')
     if(!sort){
       sort=document.createElement('div');sort.dataset.historySortControls='true'
