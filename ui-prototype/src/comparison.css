@@ -785,3 +785,11 @@ html[data-prototype-variant="proposal"] [data-history-selection-dock]{display:no
    display:none!important;
  }
 }
+
+/* Match the actual AppShell mobile navigation (54px + safe area), not
+   the unrelated legacy --mobile-nav-height of 4rem. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-history-selection-dock]{
+   bottom:calc(54px + env(safe-area-inset-bottom))!important;
+ }
+}
