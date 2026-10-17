@@ -14,7 +14,8 @@ test('Generate baseline renders and saves a screenshot', async ({ page }, testIn
 test('offline prototype never reaches live API services', async ({ page }) => {
   const requests: string[] = []
   page.on('request', req => {
-    if (/\/api\/|\/health/.test(new URL(req.url()).pathname)) requests.push(req.url())
+    const pathname = new URL(req.url()).pathname
+    if (pathname === '/api' || pathname.startsWith('/api/') || pathname === '/health') requests.push(req.url())
   })
   await page.goto('/')
   await expect(page.getByText('Generate').first()).toBeVisible({ timeout: 20000 })
