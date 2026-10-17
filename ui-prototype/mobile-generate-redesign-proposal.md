@@ -1,5 +1,8 @@
 # モバイル Generate 画面 改修案仕様（レビュー版）
 
+**上位共通仕様**：[モバイル共通 UI/UX 改修案仕様](./mobile-common-ui-redesign-proposal.md)。本書はGenerate固有の画面構成・操作・受け入れ条件を定義する。共有タグチップ、スクロール、表示階層、アクセシビリティに関する判断原則・共通部品の承認手順は上位文書を優先し、下記の既存記述はGenerateへの具体的適用・調査記録として扱う。
+
+
 - **状態**：改修案／採用未確定。本番実装指示ではない。
 - **対象**：`TAKE4548/comfy-create-helper2` の Generate 画面、モバイル幅（モックでは主に 767px 以下）
 - **比較対象**：`prototype/ui-review` の `ui-prototype/`
