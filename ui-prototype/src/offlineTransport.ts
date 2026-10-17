@@ -48,7 +48,7 @@ export function installOfflineTransport() {
       localPresets.push(preset)
       return json(preset, 201)
     }
-    const presetMatch = path.match(/^\\/api\\/workflow-presets\\/(\\d+)$/)
+    const presetMatch = /^\/api\/workflow-presets\/(\d+)$/.exec(path)
     if (presetMatch && (method === 'PUT' || method === 'DELETE')) {
       const index = localPresets.findIndex(p => p.id === Number(presetMatch[1]))
       if (index < 0) return json({ detail: 'Preset not found' }, 404)
