@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 
 test('mobile fixed actions and scroll-end reachability audit', async ({ page }, testInfo) => {
@@ -32,7 +33,9 @@ test('mobile fixed actions and scroll-end reachability audit', async ({ page }, 
       barOverlapsNav: !!actionRect && !!navRect && actionRect.bottom > navRect.top,
     }
   })
-  await testInfo.attach('mobile-reachability.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  const mobileJson = testInfo.outputPath('mobile-reachability.json')
+  await writeFile(mobileJson, JSON.stringify(result, null, 2))
+  await testInfo.attach('mobile-reachability.json', { path: mobileJson, contentType: 'application/json' })
   await page.screenshot({ path: testInfo.outputPath('mobile-scroll-end.png'), fullPage: false })
   expect(result.scrollPresent).toBe(true)
   expect(result.scrollAtEnd).toBe(true)
@@ -56,7 +59,9 @@ test('tablet header width and wrapping audit', async ({ page }, testInfo) => {
     return { header: { left: rootRect.left, right: rootRect.right, width: rootRect.width,
       scrollWidth: root.scrollWidth, clientWidth: root.clientWidth }, elements }
   })
-  await testInfo.attach('tablet-header.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' })
+  const tabletJson = testInfo.outputPath('tablet-header.json')
+  await writeFile(tabletJson, JSON.stringify(result, null, 2))
+  await testInfo.attach('tablet-header.json', { path: tabletJson, contentType: 'application/json' })
   await page.screenshot({ path: testInfo.outputPath('tablet-header.png'), fullPage: false })
   expect(result).not.toBeNull()
 })
