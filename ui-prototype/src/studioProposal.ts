@@ -16,7 +16,7 @@ export function mountStudioProposal(){
   if(!actions)return
   actions.dataset.studioActions='true'
   nav.dataset.studioTabs='true'
-  const header=nav.closest<HTMLElement>('header')??nav.parentElement?.parentElement
+  const header=nav.closest<HTMLElement>('[data-page-header-root]')
   if(header)header.dataset.studioHeader='true'
   if(mounted)return
   mounted=true
