@@ -172,7 +172,7 @@ export function mountGenerateReelProposal() {
 
     const toolbar = document.createElement('div')
     toolbar.dataset.generateReelToolbar = 'true'
-    toolbar.append(autoFollowButton, sessionButton, oldestButton, historyButton, latestButton)
+    toolbar.append(latestButton, oldestButton, autoFollowButton, sessionButton, historyButton)
 
     const sourceAutoFollow = galleryRoot.querySelector<HTMLButtonElement>('#preview-autofollow-toggle-desktop')
     const sourceSessionFilter = galleryRoot.querySelector<HTMLInputElement>('#session-filter-toggle')
