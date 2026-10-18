@@ -1432,3 +1432,10 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    padding:12px 0!important;
  }
 }
+
+/* Studio evaluation is a fifth peer tab, not an additional selected tab. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-tabs="true"]:has([data-testid="open-post-training-evaluation"][aria-pressed="true"]) > [data-testid^="studio-step-tab-"].bg-indigo-600{
+   background:transparent!important;color:#a1a1aa!important;box-shadow:none!important;
+ }
+}
