@@ -1481,3 +1481,8 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    font-size:11px;line-height:1.5;
  }
 }
+
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-tabs="true"] > [data-testid="open-post-training-evaluation"] > span{display:none!important}
+ html[data-prototype-variant="proposal"] [data-studio-tabs="true"] > [data-testid="open-post-training-evaluation"]{gap:3px!important}
+}
