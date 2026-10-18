@@ -182,6 +182,10 @@ test('Generate reel fits mixed aspect ratios and opens the existing detail previ
   for (const tile of bounds.tiles) {
     expect(tile.width).toBeLessThanOrEqual(bounds.width + 1)
     expect(tile.height).toBeLessThanOrEqual(bounds.height + 1)
+    if (tile.aspect) {
+      const [rawW, rawH] = tile.aspect.split('x').map(Number)
+      expect(Math.abs(tile.width / tile.height - rawW / rawH)).toBeLessThan(0.02)
+    }
   }
   expect(bounds.tiles.some(tile => tile.aspect === '1536x768')).toBe(true)
   expect(bounds.tiles.some(tile => tile.aspect === '768x1152')).toBe(true)
