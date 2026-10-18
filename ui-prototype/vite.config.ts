@@ -78,6 +78,8 @@ function studioCaptionProposal(): Plugin {
   const step = useStudioStore(s => s.currentStep)
   const image = useStudioStore(s => s.items.find(item => item.id === itemId)?.image_path)
   const [chipMode, setChipMode] = React.useState(true)
+  const [confirmed, setConfirmed] = React.useState(false)
+  const handleCaptionChange = (value: string) => { setConfirmed(false); onChange(value) }
   if (proposal && step === 3) {
     return (
       <div data-studio-caption-card="" className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-2 flex gap-3 min-w-0">
@@ -90,8 +92,9 @@ function studioCaptionProposal(): Plugin {
             <span className="text-xs font-semibold text-zinc-200">キャプション</span>
             <button type="button" data-testid={\`caption-mode-toggle-\${itemId}\`} aria-pressed={chipMode} onClick={() => setChipMode(v=>!v)} className="text-[11px] border border-zinc-700 rounded px-2 py-1 text-indigo-300">{chipMode ? 'テキスト入力へ' : 'チップ入力へ'}</button>
           </div>
-          {chipMode ? <div data-testid={\`caption-chip-editor-\${itemId}\`}><TagChipInput value={caption} onChange={onChange} placeholder="タグを追加…" variant="neutral" /></div> :
-            <textarea data-testid={\`caption-editor-\${itemId}\`} value={caption} onChange={e=>onChange(e.target.value)} className="w-full min-h-[90px] bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 resize-y" placeholder="カンマ区切りのキャプション…" />}
+          {chipMode ? <div data-testid={\`caption-chip-editor-\${itemId}\`}><TagChipInput value={caption} onChange={handleCaptionChange} placeholder="タグを追加…" variant="neutral" /></div> :
+            <textarea data-testid={\`caption-editor-\${itemId}\`} value={caption} onChange={e=>handleCaptionChange(e.target.value)} className="w-full min-h-[90px] bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 resize-y" placeholder="カンマ区切りのキャプション…" />}
+          <button type="button" data-testid={\`caption-confirm-\${itemId}\`} data-confirmed={confirmed} onClick={() => setConfirmed(v => !v)} className={\`self-end px-3 py-1.5 text-xs rounded-md border \${confirmed ? 'text-emerald-300 bg-emerald-950/40 border-emerald-700/60' : 'text-indigo-300 border-indigo-700 bg-indigo-950/30'}\`}>{confirmed ? '確定済み ✓' : 'このキャプションを確定'}</button>
         </div>
       </div>
     )
