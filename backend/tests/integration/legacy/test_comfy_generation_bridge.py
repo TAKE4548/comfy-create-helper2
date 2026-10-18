@@ -4,6 +4,7 @@ import asyncio
 import json
 import socket
 import struct
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -448,7 +449,6 @@ async def test_binary_preview_uses_big_endian_and_ignores_truncated_or_unknown_h
 async def test_eager_full_webp_cache_on_executed_req362_ac3(tmp_path: Path) -> None:
     """[REQ-362/AC-3] ジョブ完了時 (executed)、フルサイズWebPが先行非同期生成されてディスクキャッシュに保存されること。"""
     import io
-    from pathlib import Path
     from PIL import Image
     from unittest.mock import MagicMock, patch
     from app.routers import comfy as comfy_router
