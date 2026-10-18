@@ -72,10 +72,17 @@ export function mountGenerateReelProposal() {
       const firstTile = tiles[0]
       const lastTile = tiles[tiles.length - 1]
       if (firstTile && lastTile) {
+        const style = getComputedStyle(reel)
+        const paddingLeft = parseFloat(style.paddingLeft)
+        const paddingRight = parseFloat(style.paddingRight)
         const firstWidth = firstTile.getBoundingClientRect().width
         const lastWidth = lastTile.getBoundingClientRect().width
-        reel.style.paddingLeft = `${Math.max(18, (viewportWidth - firstWidth) / 2)}px`
-        reel.style.paddingRight = `${Math.max(18, (viewportWidth - lastWidth) / 2)}px`
+
+        // Keep the reel content box stable. Edge breathing room belongs to the
+        // edge tiles, not the scroll container padding; changing container
+        // padding shrinks the flex content box and can collapse tile widths.
+        firstTile.style.marginLeft = `${Math.max(0, viewportWidth / 2 - firstWidth / 2 - paddingLeft)}px`
+        lastTile.style.marginRight = `${Math.max(0, viewportWidth / 2 - lastWidth / 2 - paddingRight)}px`
       }
     }
 
