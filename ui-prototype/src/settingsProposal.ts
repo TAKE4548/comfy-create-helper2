@@ -30,11 +30,41 @@ export function mountSettingsProposal() {
       detail.className='settings-info-detail'
       detail.textContent=content.replace(/^—\s*/,'')
       detail.hidden=true
+      const closeInfo=()=>{
+        detail.hidden=true
+        button.setAttribute('aria-expanded','false')
+      }
       button.addEventListener('click',event=>{
         event.preventDefault();event.stopPropagation()
-        detail.hidden=!detail.hidden
-        button.setAttribute('aria-expanded',String(!detail.hidden))
+        const opening=detail.hidden
+        document.querySelectorAll<HTMLElement>('.settings-info-detail:not([hidden])').forEach(el=>{
+          el.hidden=true
+          el.parentElement?.querySelector('button')?.setAttribute('aria-expanded','false')
+        })
+        if(!opening) return
+        detail.hidden=false
+        button.setAttribute('aria-expanded','true')
+        // Fixed viewport positioning avoids clipping by scroll panels and cards.
+        const rect=button.getBoundingClientRect()
+        const width=Math.min(300,window.innerWidth-24)
+        const left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))
+        detail.style.width=width+'px'
+        detail.style.left=left+'px'
+        detail.style.right='auto'
+        detail.style.top='12px'
+        const height=detail.getBoundingClientRect().height
+        const below=rect.bottom+8
+        const above=rect.top-height-8
+        detail.style.top=(below+height<=window.innerHeight-12?below:above>=12?above:Math.max(12,window.innerHeight-height-12))+'px'
       })
+      document.addEventListener('pointerdown',event=>{
+        if(!wrapper.contains(event.target as Node))closeInfo()
+      })
+      document.addEventListener('keydown',event=>{
+        if(event.key==='Escape')closeInfo()
+      })
+      window.addEventListener('scroll',closeInfo,true)
+      window.addEventListener('resize',closeInfo)
       wrapper.append(button,detail)
       host.insertBefore(wrapper,note.nextSibling)
     })
