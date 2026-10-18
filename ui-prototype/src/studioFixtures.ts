@@ -15,3 +15,18 @@ export const studioItems: DatasetItem[] = Array.from({length:16},(_,i)=>{
  image_path:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg),
  seed:30001+i,status:i<10?'APPROVED':i<13?'REJECTED':'PENDING'}
 })
+
+export const studioBenchmarkCells = (['decoupling','bake_in','pose','angle'] as const).flatMap((axisId,axisIndex) =>
+  ([0.6,0.8,1.0] as const).map((weight,weightIndex)=>({
+    axisId,weight,
+    status: weightIndex===2 ? 'WARN' as const : 'PASS' as const,
+    imageUrl:studioItems[(axisIndex*3+weightIndex)%studioItems.length].image_path ?? undefined,
+    prompt:'Offline review sample: '+axisId+' at '+weight,
+    seed:40200+axisIndex*3+weightIndex,
+  }))
+)
+export const studioBenchmarkSweetSpot = {
+  recommended_weight_min:0.75,recommended_weight_max:0.85,
+  recommended_weight_display:'0.75〜0.85',
+  reason:'UI確認用の架空の評価結果です（学習・測定は行っていません）。',
+}
