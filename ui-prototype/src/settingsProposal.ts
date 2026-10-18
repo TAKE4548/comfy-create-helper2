@@ -92,6 +92,26 @@ export function mountSettingsProposal() {
       wrapper.append(button,detail)
       host.insertBefore(wrapper,note.nextSibling)
     })
+    // Disclose detailed image-filter guidance on demand, preserving labels and errors.
+    document.querySelectorAll<HTMLElement>('#settings-panel-dialogue p.text-\\[10px\\]').forEach(note=>{
+      if(note.dataset.settingsInfoSource==='true' || !note.closest('div.space-y-1'))return
+      const label=note.parentElement?.querySelector('span.text-zinc-400')
+      if(!label || !note.textContent?.trim())return
+      note.dataset.settingsInfoSource='true'
+      const info=document.createElement('button')
+      info.type='button'
+      info.dataset.settingsInlineInfo='true'
+      info.textContent='ⓘ'
+      info.setAttribute('aria-label',label.textContent?.trim()+'の説明')
+      info.setAttribute('aria-expanded','false')
+      note.parentElement?.insertBefore(info,note)
+      info.addEventListener('click',event=>{
+        event.preventDefault();event.stopPropagation()
+        const open=note.dataset.settingsInlineOpen!=='true'
+        note.dataset.settingsInlineOpen=String(open)
+        info.setAttribute('aria-expanded',String(open))
+      })
+    })
     const section = document.querySelector<HTMLElement>('.req314-settings [data-testid="settings-card-mapping"] > section')
     const header = section?.firstElementChild as HTMLElement | null
     if (!header) return
@@ -138,6 +158,30 @@ export function mountSettingsProposal() {
       })
     }
   }
+  // Horizontal gestures on Settings content change tabs; native controls keep priority.
+  let start: {x:number;y:number;tab:string}|null=null
+  document.addEventListener('touchstart',event=>{
+    const target=event.target as HTMLElement
+    if(!matchMedia('(max-width:767px)').matches || !target.closest('.req314-settings [role="tabpanel"]') || target.closest('input,textarea,select,button,a,[role="slider"],[role="tablist"],[role="dialog"],[data-drag-handle],.overflow-x-auto,[contenteditable]'))return
+    const panel=target.closest<HTMLElement>('[role="tabpanel"]')
+    const pt=event.touches[0]
+    if(pt && panel)start={x:pt.clientX,y:pt.clientY,tab:panel.id.replace('settings-panel-','')}
+  },{passive:true})
+  document.addEventListener('touchend',event=>{
+    if(!start)return
+    const origin=start
+    start=null
+    if((event.target as HTMLElement).closest('[role="dialog"]'))return
+    const pt=event.changedTouches[0]
+    if(!pt)return
+    const dx=pt.clientX-origin.x,dy=pt.clientY-origin.y
+    if(Math.abs(dx)<65 || Math.abs(dx)<Math.abs(dy)*1.5)return
+    const ids=['workflows','prompt','dialogue','translation','system']
+    const index=ids.indexOf(origin.tab)
+    const next=index+(dx<0?1:-1)
+    if(index<0 || next<0 || next>=ids.length)return
+    document.querySelector<HTMLButtonElement>('#settings-tab-'+ids[next])?.click()
+  },{passive:true})
   new MutationObserver(sync).observe(document.body,{childList:true,subtree:true})
   sync()
 }
