@@ -154,7 +154,7 @@ export function mountGenerateReelProposal() {
     reel.addEventListener('scroll', updateLatestButton, { passive: true })
 
     const centerTile = (tile: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
-      const target = tile.offsetLeft + tile.offsetWidth / 2 - reel.clientWidth / 2
+      const target = tile === tiles[0] ? 0 : tile.offsetLeft + tile.offsetWidth / 2 - reel.clientWidth / 2
       reel.scrollTo({ left: Math.max(0, target), behavior })
     }
 
