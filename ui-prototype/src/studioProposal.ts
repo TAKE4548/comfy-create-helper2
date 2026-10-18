@@ -1,3 +1,4 @@
+import { useStudioStore } from '../../frontend/src/pages/DatasetStudioPage/useStudioStore'
 /** Studio mobile visual proposal: no production code or real backend writes. */
 export function mountStudioProposal(){
  if(document.documentElement.dataset.prototypeVariant!=='proposal')return
@@ -55,7 +56,7 @@ export function mountStudioProposal(){
       matrixTitle.parentElement?.after(overview)
     }
     // Preview card nodes are limited to eight; use the full in-memory Studio dataset for distribution.
-    const factorItems=(window as any).__studioReviewItems as Array<{factors_json:string}> | undefined
+    const factorItems=useStudioStore.getState().items
     const values=(factorItems?.length?factorItems:cards.map(card=>({factors_json:card.dataset.factorsJson??''}))).map(item=>{
       try{return JSON.parse(item.factors_json) as Record<string,string>}catch{return null}
     }).filter((v):v is Record<string,string>=>!!v)
