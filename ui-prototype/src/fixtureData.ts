@@ -48,32 +48,51 @@ export const fixturePresets = [
   },
 ]
 
-/** Self-contained fake gallery images; no backend requests, deterministic in A/B. */
-const scene = (title: string, sky: string, hill: string, sunX: number) => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 1024">
+/** Self-contained fake gallery images; no backend requests, deterministic in A/B.
+ * Mixed aspect ratios are intentional so the Generate reel can be reviewed with
+ * portrait, square and landscape outputs in the same history. */
+const scene = (
+  title: string,
+  sky: string,
+  hill: string,
+  sunXRatio: number,
+  width = 768,
+  height = 1024,
+) => {
+  const sunX = Math.round(width * sunXRatio)
+  const sunY = Math.round(height * 0.24)
+  const sunR = Math.round(Math.min(width, height) * 0.11)
+  const mid = Math.round(height * 0.70)
+  const low = Math.round(height * 0.84)
+  const titleY = Math.max(48, Math.round(height * 0.085))
+  const footerY = height - Math.max(34, Math.round(height * 0.07))
+  const titleSize = Math.max(22, Math.round(Math.min(width, height) * 0.032))
+  const footerSize = Math.max(28, Math.round(Math.min(width, height) * 0.044))
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="#24253b"/></linearGradient></defs>
-  <rect width="768" height="1024" fill="url(#g)"/>
-  <circle cx="${sunX}" cy="250" r="115" fill="#ffd7a0" opacity=".85"/>
-  <path d="M0 700 L185 400 L350 650 L500 360 L768 720 L768 1024 L0 1024Z" fill="${hill}"/>
-  <path d="M0 850 L220 660 L390 820 L590 620 L768 790 L768 1024 L0 1024Z" fill="#101a2b" opacity=".85"/>
-  <text x="38" y="90" font-family="sans-serif" font-size="32" fill="#ffffff">UI PROTOTYPE / SAMPLE</text>
-  <text x="38" y="950" font-family="sans-serif" font-size="44" fill="#ffffff">${title}</text>
+  <rect width="${width}" height="${height}" fill="url(#g)"/>
+  <circle cx="${sunX}" cy="${sunY}" r="${sunR}" fill="#ffd7a0" opacity=".85"/>
+  <path d="M0 ${mid} L${width*.24} ${height*.39} L${width*.46} ${height*.65} L${width*.66} ${height*.36} L${width} ${height*.72} L${width} ${height} L0 ${height}Z" fill="${hill}"/>
+  <path d="M0 ${low} L${width*.29} ${height*.66} L${width*.51} ${height*.82} L${width*.77} ${height*.62} L${width} ${height*.79} L${width} ${height} L0 ${height}Z" fill="#101a2b" opacity=".85"/>
+  <text x="${Math.round(width*.05)}" y="${titleY}" font-family="sans-serif" font-size="${titleSize}" fill="#ffffff">UI PROTOTYPE / SAMPLE</text>
+  <text x="${Math.round(width*.05)}" y="${footerY}" font-family="sans-serif" font-size="${footerSize}" fill="#ffffff">${title}</text>
+  <text x="${Math.round(width*.95)}" y="${titleY}" text-anchor="end" font-family="monospace" font-size="${Math.max(18,titleSize*.75)}" fill="#ffffff" opacity=".7">${width}×${height}</text>
   </svg>`
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
 }
 export const fixtureHistoryImages = [
-  scene('Evening light', '#7f6ab4', '#505079', 570),
-  scene('Blue hour', '#2c7294', '#275f77', 180),
-  scene('Warm sunset', '#dc8468', '#84505a', 390),
-  scene('Twilight', '#716eaf', '#4c5279', 610),
-  scene('Misty dawn', '#7588a3', '#4b6972', 300),
-  scene('Rose sky', '#d78fa7', '#774e76', 530),
-  scene('Cloud break', '#739bc0', '#3e627f', 210),
-  scene('Golden ridge', '#c89a5b', '#80684e', 470),
-  scene('Northern night', '#364b83', '#293854', 610),
-  scene('Silver lake', '#8caebc', '#526c83', 140),
-  scene('Violet dusk', '#8f79b4', '#5a477c', 420),
-  scene('Amber glow', '#cb7d61', '#855b58', 350),
+  scene('Evening light', '#7f6ab4', '#505079', .74, 768, 1024),   // 3:4 portrait
+  scene('Blue hour', '#2c7294', '#275f77', .24, 1024, 1024),      // square
+  scene('Warm sunset', '#dc8468', '#84505a', .51, 1344, 768),     // 7:4 landscape
+  scene('Twilight', '#716eaf', '#4c5279', .79, 832, 1216),        // tall portrait
+  scene('Misty dawn', '#7588a3', '#4b6972', .39, 1216, 832),      // landscape
+  scene('Rose sky', '#d78fa7', '#774e76', .69, 1024, 1024),       // square
+  scene('Cloud break', '#739bc0', '#3e627f', .27, 1536, 768),     // 2:1 wide
+  scene('Golden ridge', '#c89a5b', '#80684e', .61, 768, 1152),    // 2:3 portrait
+  scene('Northern night', '#364b83', '#293854', .79, 1280, 896),  // landscape
+  scene('Silver lake', '#8caebc', '#526c83', .18, 896, 1280),     // portrait
+  scene('Violet dusk', '#8f79b4', '#5a477c', .55, 1152, 768),     // 3:2 landscape
+  scene('Amber glow', '#cb7d61', '#855b58', .46, 1024, 1024),     // square
 ]
 
 /** Collection samples for LoRA / Tag Sets. The arrays are deliberately long enough
