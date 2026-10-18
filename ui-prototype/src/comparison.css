@@ -1689,3 +1689,16 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
  html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="REROLLING"]::after{content:"生成中"}
  html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="PENDING"]::after{content:"未確定"}
 }
+
+/* Studio Step 3: image+caption single-column rows on mobile. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] section[aria-labelledby="studio-caption-heading"] > .grid{
+   grid-template-columns:minmax(0,1fr)!important;gap:8px!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-card]{
+   align-items:flex-start;overflow:hidden;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-card] .min-w-\[120px\]{
+   min-width:0!important;
+ }
+}
