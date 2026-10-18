@@ -106,8 +106,16 @@ test('Generate proposal uses a continuous latest-first horizontal reel', async (
   expect(initial.width).toBeGreaterThan(initial.client)
 
   await reel.hover()
-  await page.mouse.wheel(0, 700)
-  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(50)
+  await page.mouse.wheel(0, 300)
+  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(400)
+
+  const aspects = await reel.locator('[data-generate-reel-tile="true"]').evaluateAll((tiles) =>
+    tiles.map((tile) => (tile as HTMLElement).dataset.aspect).filter(Boolean),
+  )
+  expect(new Set(aspects).size).toBeGreaterThanOrEqual(6)
+  expect(aspects).toContain('1024x1024')
+  expect(aspects).toContain('1536x768')
+  expect(aspects).toContain('768x1152')
 
   const latest = page.locator('[data-generate-reel-latest="true"]')
   await expect(latest).toBeVisible()
