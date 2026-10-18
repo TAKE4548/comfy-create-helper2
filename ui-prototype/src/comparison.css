@@ -1336,3 +1336,25 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    margin-left:0!important;
  }
 }
+
+/* System header fix: no overlay on title; info is a small inline flex item.
+   Popovers are portaled to document.body and cannot be clipped by the card. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system [data-settings-info-host="true"]{
+   display:flex!important;align-items:center!important;gap:3px!important;
+   min-width:0!important;flex-wrap:nowrap!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system [data-settings-info-host="true"] > [data-settings-info]{
+   position:static!important;transform:none!important;top:auto!important;right:auto!important;
+   margin:0!important;flex:0 0 20px!important;order:1;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system [data-settings-info-host="true"] > h2,
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system [data-settings-info-host="true"] > h3{
+   flex:0 1 auto;min-width:0;max-width:none!important;overflow-wrap:anywhere;
+ }
+ html[data-prototype-variant="proposal"] .settings-info-detail:not([hidden]){
+   display:block;position:fixed!important;right:auto!important;bottom:auto!important;
+   max-height:calc(100dvh - 24px);overflow-y:auto;z-index:2147483000!important;
+   box-sizing:border-box;
+ }
+}
