@@ -134,3 +134,34 @@ test('Generate proposal uses a continuous latest-first horizontal reel', async (
     contentType: 'image/png',
   })
 })
+
+
+test('Generate reel fits mixed aspect ratios and opens the existing detail preview', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop Generate proposal only')
+  await page.setViewportSize({ width: 900, height: 700 })
+  await page.goto('/?ui=proposal')
+  await expect(page.locator('body')).toContainText('UI review / Sample SDXL', { timeout: 20000 })
+
+  const reel = page.locator('[data-generate-reel-proposal="true"]')
+  await expect(reel).toBeVisible()
+
+  const bounds = await reel.evaluate((el) => {
+    const reelRect = el.getBoundingClientRect()
+    const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+      .map(tile => {
+        const rect = tile.getBoundingClientRect()
+        return { width: rect.width, height: rect.height, aspect: tile.dataset.aspect }
+      })
+    return { width: reelRect.width, height: reelRect.height, tiles }
+  })
+
+  for (const tile of bounds.tiles) {
+    expect(tile.width).toBeLessThanOrEqual(bounds.width + 1)
+    expect(tile.height).toBeLessThanOrEqual(bounds.height + 1)
+  }
+  expect(bounds.tiles.some(tile => tile.aspect === '1536x768')).toBe(true)
+  expect(bounds.tiles.some(tile => tile.aspect === '768x1152')).toBe(true)
+
+  await reel.locator('[data-generate-reel-tile="true"]').nth(2).click()
+  await expect(page.locator('.modal-backdrop.flex.flex-col')).toBeVisible()
+})
