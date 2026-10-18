@@ -52,16 +52,13 @@ export function mountGenerateReelProposal() {
         80,
         reel.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
       )
-      const availableWidth = Math.max(
-        120,
-        reel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-      )
+      const viewportWidth = Math.max(120, reel.clientWidth)
       tiles.forEach((tile) => {
         const [rawW, rawH] = (tile.dataset.aspect ?? '').split('x').map(Number)
         if (!rawW || !rawH) return
         const ar = rawW / rawH
         const targetHeight = availableHeight
-        const maxWidth = availableWidth * 0.86
+        const maxWidth = viewportWidth * 0.86
         const widthFromHeight = targetHeight * ar
         const widthConstrained = widthFromHeight > maxWidth
         const width = Math.min(widthFromHeight, maxWidth)
@@ -71,6 +68,15 @@ export function mountGenerateReelProposal() {
         tile.style.height = `${Math.max(80, height)}px`
         tile.style.aspectRatio = 'auto'
       })
+
+      const firstTile = tiles[0]
+      const lastTile = tiles[tiles.length - 1]
+      if (firstTile && lastTile) {
+        const firstWidth = firstTile.getBoundingClientRect().width
+        const lastWidth = lastTile.getBoundingClientRect().width
+        reel.style.paddingLeft = `${Math.max(18, (viewportWidth - firstWidth) / 2)}px`
+        reel.style.paddingRight = `${Math.max(18, (viewportWidth - lastWidth) / 2)}px`
+      }
     }
 
     fixtureHistoryImages.forEach((image, index) => {
@@ -146,6 +152,28 @@ export function mountGenerateReelProposal() {
     }
 
     reel.addEventListener('scroll', updateLatestButton, { passive: true })
+
+    const centerTile = (tile: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
+      const target = tile.offsetLeft + tile.offsetWidth / 2 - reel.clientWidth / 2
+      reel.scrollTo({ left: Math.max(0, target), behavior })
+    }
+
+    const centerNearestTile = () => {
+      if (tiles.length === 0) return
+      const viewportCenter = reel.scrollLeft + reel.clientWidth / 2
+      let nearest = tiles[0]
+      let nearestDistance = Number.POSITIVE_INFINITY
+      tiles.forEach((tile) => {
+        const center = tile.offsetLeft + tile.offsetWidth / 2
+        const distance = Math.abs(center - viewportCenter)
+        if (distance < nearestDistance) {
+          nearest = tile
+          nearestDistance = distance
+        }
+      })
+      centerTile(nearest)
+    }
+
     let velocity = 0
     let inertiaFrame = 0
     const runInertia = () => {
@@ -156,12 +184,13 @@ export function mountGenerateReelProposal() {
       if (after === before && Math.abs(velocity) > 0.1) {
         velocity = 0
       } else {
-        velocity *= 0.86
+        velocity *= 0.89
       }
 
       if (Math.abs(velocity) < 0.35) {
         velocity = 0
         inertiaFrame = 0
+        centerNearestTile()
         return
       }
       inertiaFrame = requestAnimationFrame(runInertia)
@@ -174,8 +203,8 @@ export function mountGenerateReelProposal() {
         : 1
       const horizontalInput = Math.abs(event.deltaX) > Math.abs(event.deltaY)
       const dominantDelta = horizontalInput ? event.deltaX : event.deltaY
-      const impulse = dominantDelta * unit * (horizontalInput ? 0.45 : 0.72)
-      const maxVelocity = Math.max(36, reel.clientWidth * 0.12)
+      const impulse = dominantDelta * unit * (horizontalInput ? 0.28 : 0.38)
+      const maxVelocity = Math.max(28, reel.clientWidth * 0.08)
       velocity = Math.max(-maxVelocity, Math.min(maxVelocity, velocity + impulse))
       if (!inertiaFrame) inertiaFrame = requestAnimationFrame(runInertia)
     }, { passive: false })
@@ -185,11 +214,11 @@ export function mountGenerateReelProposal() {
       if (event.key === 'Home') {
         event.preventDefault()
         stopInertia()
-        reel.scrollTo({ left: 0, behavior: 'smooth' })
+        if (tiles[0]) centerTile(tiles[0])
       } else if (event.key === 'End') {
         stopInertia()
         event.preventDefault()
-        reel.scrollTo({ left: reel.scrollWidth, behavior: 'smooth' })
+        if (tiles.length > 0) centerTile(tiles[tiles.length - 1])
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault()
         stopInertia()
@@ -209,7 +238,7 @@ export function mountGenerateReelProposal() {
 
     latestButton.addEventListener('click', () => {
       stopInertia()
-      reel.scrollTo({ left: 0, behavior: 'smooth' })
+      if (tiles[0]) centerTile(tiles[0])
       reel.focus({ preventScroll: true })
     })
 
@@ -228,6 +257,9 @@ export function mountGenerateReelProposal() {
     const resizeObserver = new ResizeObserver(layoutTiles)
     resizeObserver.observe(reel)
     layoutTiles()
+    requestAnimationFrame(() => {
+      if (tiles[0]) centerTile(tiles[0], 'auto')
+    })
     updateLatestButton()
   }
 
