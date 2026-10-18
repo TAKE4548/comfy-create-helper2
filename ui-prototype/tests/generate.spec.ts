@@ -107,7 +107,11 @@ test('Generate proposal uses a continuous latest-first horizontal reel', async (
 
   await reel.hover()
   await page.mouse.wheel(0, 300)
-  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(400)
+  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(220)
+  const afterImpulse = await reel.evaluate((el) => el.scrollLeft)
+  await page.waitForTimeout(180)
+  const afterInertia = await reel.evaluate((el) => el.scrollLeft)
+  expect(afterInertia).toBeGreaterThan(afterImpulse + 20)
 
   const aspects = await reel.locator('[data-generate-reel-tile="true"]').evaluateAll((tiles) =>
     tiles.map((tile) => (tile as HTMLElement).dataset.aspect).filter(Boolean),
@@ -161,6 +165,11 @@ test('Generate reel fits mixed aspect ratios and opens the existing detail previ
   }
   expect(bounds.tiles.some(tile => tile.aspect === '1536x768')).toBe(true)
   expect(bounds.tiles.some(tile => tile.aspect === '768x1152')).toBe(true)
+
+  const regularHeights = bounds.tiles
+    .filter(tile => tile.aspect !== '1536x768' && tile.aspect !== '1344x768')
+    .map(tile => Math.round(tile.height))
+  expect(Math.max(...regularHeights) - Math.min(...regularHeights)).toBeLessThanOrEqual(2)
 
   await reel.locator('[data-generate-reel-tile="true"]').nth(2).click()
   await expect(page.locator('.modal-backdrop.flex.flex-col')).toBeVisible()
