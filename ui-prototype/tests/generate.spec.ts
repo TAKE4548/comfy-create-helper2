@@ -154,7 +154,12 @@ test('Generate reel fits mixed aspect ratios and opens the existing detail previ
     const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
       .map(tile => {
         const rect = tile.getBoundingClientRect()
-        return { width: rect.width, height: rect.height, aspect: tile.dataset.aspect }
+        return {
+          width: rect.width,
+          height: rect.height,
+          aspect: tile.dataset.aspect,
+          widthConstrained: tile.dataset.widthConstrained === 'true',
+        }
       })
     return { width: reelRect.width, height: reelRect.height, tiles }
   })
@@ -167,7 +172,7 @@ test('Generate reel fits mixed aspect ratios and opens the existing detail previ
   expect(bounds.tiles.some(tile => tile.aspect === '768x1152')).toBe(true)
 
   const regularHeights = bounds.tiles
-    .filter(tile => tile.aspect !== '1536x768' && tile.aspect !== '1344x768')
+    .filter(tile => !tile.widthConstrained)
     .map(tile => Math.round(tile.height))
   expect(Math.max(...regularHeights) - Math.min(...regularHeights)).toBeLessThanOrEqual(2)
 
