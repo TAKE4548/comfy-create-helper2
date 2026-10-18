@@ -35,7 +35,7 @@ export function mountStudioProposal(){
     const dx=p.clientX-origin.x,dy=p.clientY-origin.y
     if(Math.abs(dx)<65||Math.abs(dx)<Math.abs(dy)*1.5)return
     const tabs=Array.from(root.querySelectorAll<HTMLButtonElement>('[data-testid^="studio-step-tab-"],[data-testid="open-post-training-evaluation"]'))
-    const current=tabs.findIndex(t=>t.classList.contains('bg-indigo-600'))
+    const current=tabs[4]?.getAttribute('aria-pressed')==='true' ? 4 : tabs.findIndex(t=>t.classList.contains('bg-indigo-600'))
     if(current<0)return
     const next=current+(dx<0?1:-1)
     if(tabs[next])tabs[next].click()
