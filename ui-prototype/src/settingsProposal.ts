@@ -91,6 +91,7 @@ export function mountSettingsProposal() {
       window.addEventListener('resize',closeInfo)
       wrapper.append(button,detail)
       host.insertBefore(wrapper,note.nextSibling)
+      host.dataset.settingsInfoHost='true'
     })
     // Disclose detailed image-filter guidance on demand, preserving labels and errors.
     document.querySelectorAll<HTMLElement>('#settings-panel-dialogue p.text-\\[10px\\]').forEach(note=>{
@@ -104,7 +105,8 @@ export function mountSettingsProposal() {
       info.textContent='ⓘ'
       info.setAttribute('aria-label',label.textContent?.trim()+'の説明')
       info.setAttribute('aria-expanded','false')
-      note.parentElement?.insertBefore(info,note)
+      // Keep help next to its parameter label, rather than on its own row.
+      label.parentElement?.append(info)
       info.addEventListener('click',event=>{
         event.preventDefault();event.stopPropagation()
         const open=note.dataset.settingsInlineOpen!=='true'
