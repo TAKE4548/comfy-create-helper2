@@ -240,9 +240,9 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 - 表示順: 「新しい順（降順）」「古い順（昇順）」切替。
 - 複数選択一括保存: `Ctrl/Shift/長押し` で複数選択し、一括でスナップショットとしてアルバム保存可能。
 - 履歴画像URLは同一originの `/view` 表現へ正規化し、`filename` / `subfolder` / `type` / `t` を保持する。一覧には既存thumbnailを使い、main/拡大表示には同一originのview URLを使う。旧hostと新hostの同一画像はfilename・subfolder・type identityで重複表示しない。`t` はURL/cache bust用で画像identityには含めない。
-- Gallery rowのthumbnail load/errorを、その画像identityのlazy availability需要として扱い、一覧の全件先行probeはしない。identityはfilename/subfolder/typeで定義し、同一identityの照会は共有する。上流原画の404が確認された場合だけavailabilityを `missing` とし、試行履歴から除外する。サムネイルの404、変換失敗、HEAD非対応、503、通信失敗・timeoutなど原画missingを確定できない結果は `unknown` として履歴・選択・原画プレビューを保持する。明示再試行は同じthumbnail URLで行い、再試行操作は画像行の選択に伝播しない。保存Snapshot branchには適用しない。
-- persisted queryの復元完了後、有効な非空の表示済みhistoryをbaselineとして、document reload epochごとに一度だけBE差分同期を行う。baselineが空なら要求しない。reloadで全件GETやhistory(200)の再取得、表示query全置換を行わず、BEがpresentと確認した未表示候補だけを既存表示へ追加する。既存項目のURL・相対順・選択・metadataは維持する。照合・追加はfilename/subfolder/type identityで行い、同一画像の重複を作らない。
-- 原画missingの確認と再試行は保存Snapshot branchへ適用しない。保存済みSnapshotの本体、params、表示は試行履歴の削除から独立して保持する。missing確定時も付随サムネイルやmetadataを即時削除せず、既存の一時保存上限・cleanupに任せる。サムネイル寸法/aspect比、cache品質・原画cache回復、30件local/1000件server metadata上限、IndexedDBの10分maxAgeを含む既存データライフサイクルは従来仕様を維持する。
+- 試行履歴の表示可否はPrompt Surgeonバックエンドが自立保持するWebPキャッシュ（最新200件フルサイズ・サムネイル）およびSQLiteメタデータを正本（SSoT）とする。Gallery rowのthumbnail描画時を含め、上流ComfyUIへの原画存在確認プローブ（HEAD/GET availability probe）は一切行わない（ゼロプローブ）。上流ComfyUI側の一時ファイル削除や404発生にかかわらず、BEキャッシュが存在する試行画像はギャラリー履歴から除外されることなく安定して表示・再利用される。明示再試行は同じthumbnail URLで行い、再試行操作は画像行の選択に伝播しない。保存Snapshot branchには適用しない。
+- persisted queryの復元完了後、有効な非空の表示済みhistoryをbaselineとして、document reload epochごとに一度だけBE差分同期を行う。baselineが空なら要求しない。reloadで全件GETやhistory(200)の再取得、表示query全置換を行わず、BEが保持する未表示候補だけを既存表示へ追加する。既存項目のURL・相対順・選択・metadataは維持する。照合・追加はfilename/subfolder/type identityで行い、同一画像の重複を作らない。
+- ComfyUI原画の確認プローブは廃止され、試行履歴・保存Snapshot branchの双方においてComfyUIファイル不在を理由とした強制除外は行わない。保存済みSnapshotの本体、params、表示は試行履歴と独立して保持する。サムネイル寸法/aspect比、cache品質・原画cache回復、30件local/1000件server metadata上限、IndexedDBの10分maxAgeを含む既存データライフサイクルは従来仕様を維持する。
 
 ---
 

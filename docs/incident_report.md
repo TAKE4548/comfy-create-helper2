@@ -1,9 +1,9 @@
-# Incident Triage Report: 複数端末における生成履歴同期抜け（スナップショット遷移判定・差分スロット上限・挿入位置時系列不整合）
+# Incident Triage Report: ComfyUIへの原画確認処理の残存状況調査と仕様整合性の分析
 
 <incident_metadata>
-- Created_At: 2026-10-17 01:42:33
+- Created_At: 2026-10-19 00:44:36
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
-- Classification: Type A: Implementation Defect
+- Classification: Type B: Specification Gap
 </incident_metadata>
 
 ---
@@ -11,29 +11,29 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: 複数端末でPrompt Surgeonを開いて画像生成を行った際、filterOwnSessionを無効（全セッション表示）にしているにもかかわらず、他端末で生成されたバッチが閲覧端末側の履歴に同期されず抜け落ちる。再読み込みを行っても反映されないか、履歴の最末尾に追いやられる。
-- Reproducibility: 実コード静的検証および通信シーケンス検証により確定。1. HTTP再同期(loadSnapshot)時にprevious?.epoch !== snapshot.epochまたは既完了ジョブがcompletedJobsに含まれずマージスキップ。2. 画面アクティブ中のポーリング完全停止。3. IndexedDB等で200件保持時にallSlots=0となり差分切り捨て。4. insertAfterPriorで初回priorAddedIdentities空時に末尾挿入。
-- Impact_Scope: フロントエンド(frontend/src/store/slices/connectionSlice.ts, frontend/src/services/residualHistory.ts, frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts)。複数端末またはバックグラウンドタブで生成履歴を閲覧・共有する全ユーザーシナリオ。
+- Observed_Symptom: ユーザーより「REQ-362等でComfyUIへの原画確認はやめたはずだが、まだ確認処理が残っているのは廃止漏れか」との指摘。実際にGallery表示時等にComfyUIへの原画確認通信（GET /api/comfy/image-availability）が発生している。
+- Reproducibility: 100% (Confirmed)
+- Impact_Scope: Under Evaluation
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
-- Defect_Classification: Type A: Implementation Defect
-- Root_Cause_Mechanism: 1. [スナップショット遷移判定漏れ] connectionSlice.tsのapplyGenerationSnapshotにおいて、completedJobsが直前スナップショットからの状態変化（succeededへの遷移）のみを抽出するため、初回ロード時やHTTP再同期(loadSnapshot)で最初からsucceededのジョブがmergeManagedHistoryに渡されず破棄される。 2. [能動的再同期要求の不在] バックグラウンド復帰時や画面表示中にスナップショットや履歴を能動的に問い合わせる仕組みが抑止されている。 3. [残存差分スロット計算欠陥] residualHistory.tsのmergeResidualHistoryにおいて、allSlotsがMath.max(0, 200 - existingAllCount)で計算されるため、既存履歴が200件あると受け入れ枠が0となり全候補が切り捨てられる。 4. [差分挿入位置の時系列逆転] residualHistory.tsのinsertAfterPriorにおいて、初回priorAddedIdentitiesが空の場合にfoundPriorがfalseとなり、配列最末尾（最古画像の後ろ）に追記される。
-- Failure_Location: `frontend/src/store/slices/connectionSlice.ts:176-179, 255; frontend/src/services/residualHistory.ts:73-85, 103-109, 113-118; frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts:380-413`
+- Defect_Classification: Type B: Specification Gap
+- Root_Cause_Mechanism: REQ-362で廃止（ゼロプローブ化）されたのは『サムネイル/プレビュー画像配信エンドポイント（/thumbnail, /view）におけるキャッシュヒット時のComfyUI HEADプローブ』のみである。一方、現在観測されている原画確認処理はREQ-333/345で策定された『Galleryの試行履歴表示に伴う原画実在確認（SPEC_COMMON/SPEC_GENERATE規定）』であり、REQ-362のスコープ外として現行SSoT上も維持されている。また、comfy.py内のget_comfy_thumbnailに旧プローブの残骸関数（_check_comfy_exists）がデッドコードとして残存している。
+- Failure_Location: `backend/app/routers/comfy.py:444; frontend/src/services/trialImageAvailability.ts:96; docs/specs/SPEC_COMMON.md:460; docs/specs/SPEC_GENERATE.md:243`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: 1. connectionSlice.tsのapplyGenerationSnapshotにおいて、遷移ジョブだけでなくスナップショット内の全成功ジョブ(succeededかつoutputs保有)を対象にmergeManagedHistoryを実行し、未反映の完了画像を網羅マージする。 2. residualHistory.tsのスロット計算を空き容量上限からFIFO方式（新規候補を受け入れてから最大200件に切り詰め）に是正する。 3. insertAfterPriorの挿入順序を時系列に整合する位置（最新側/先頭ブロック等）へ補正する。 4. タブ復帰時(visibilitychange)にgenerationApi.getState()を明示的に呼び出してスナップショット整合性を再検証する。
-- SSoT_Update_Required: No (Pure implementation bug fix)
-- Recommended_Route: engineer (/dev-impl)
+- Proposed_Action: 1. ユーザーの意図が『Gallery試行履歴の原画確認機能も不要であり全廃したい』である場合、SSoT（SPEC_COMMON, SPEC_GENERATE）の改定およびFE/BEのavailability機能削除（Type B）を実施する。 2. 意図が『原画確認機能自体は維持でよいが不要プローブの残骸確認だった』場合、comfy.pyの未使用関数_check_comfy_existsを削除するクリーンアップを実施する。
+- SSoT_Update_Required: Yes (Requires updating specifications/OpenAPI)
+- Recommended_Route: architect (/sys-design or /dev-design)
 </remediation_strategy>
 
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: REQ-370
+- PBI_ID: REQ-379
 </linked_artifacts>

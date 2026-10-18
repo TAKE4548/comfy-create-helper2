@@ -68,30 +68,22 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
   const getImageIdentity = (imageUrl: string) => trialAvailability.getIdentity(imageUrl)
   const getAvailability = (imageUrl: string) => {
     void availabilityRevision
-    return trialAvailability.getStatus(imageUrl)
+    return trialAvailability.getStatus(imageUrl) ?? 'present'
   }
 
-  const observeThumbnail = (imageUrl: string) => {
-    if (thumbnailTab !== 'history') return
-    observedImagesRef.current.add(imageUrl)
-    trialAvailability.observe(imageUrl, ownerRef.current)
-    trialAvailability.retainOwnerImages(ownerRef.current, [...observedImagesRef.current])
-    setAvailabilityRevision((revision) => revision + 1)
+  const handleThumbnailLoad = (_imageUrl: string) => {
+    // REQ-379: ゼロプローブ方針によりサムネイル読込契機の原画availabilityプローブは行わない
   }
-
-  const handleThumbnailLoad = (imageUrl: string) => observeThumbnail(imageUrl)
 
   const handleThumbnailError = (imageUrl: string) => {
     const identity = getImageIdentity(imageUrl)
     setThumbnailErrors((old) => new Set(old).add(identity?.key ?? imageUrl))
-    observeThumbnail(imageUrl)
   }
 
   const retryThumbnail = (imageUrl: string, event: React.MouseEvent | React.KeyboardEvent) => {
     event.stopPropagation()
     const identity = getImageIdentity(imageUrl)
     const key = identity?.key ?? imageUrl
-    if (getAvailability(imageUrl) === 'unknown') void trialAvailability.check(imageUrl, { retry: true })
     setThumbnailErrors((old) => new Set([...old].filter((item) => item !== key)))
     setRetryVersions((old) => new Map(old).set(key, (old.get(key) ?? 0) + 1))
   }
@@ -326,7 +318,7 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
               const identity = getImageIdentity(img)
               const key = identity?.key ?? img
               const availability = getAvailability(img)
-              const canInteract = availability === 'present' || availability === 'unknown'
+              const canInteract = availability !== 'missing'
               return (
                 <button
                   key={img || i}
@@ -367,26 +359,20 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                     className="w-full h-full object-cover pointer-events-none select-none"
                     style={{ WebkitTouchCallout: 'none' }}
                   />
-                  {(availability === undefined || availability === 'checking' || availability === 'missing') ? (
+                  {thumbnailErrors.has(key) && (
                     <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
-                      <span role="status" className="pointer-events-auto rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-200">
-                        {availability === 'missing' ? '原画が見つかりません' : '原画を確認中…'}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="サムネイル再試行"
+                        onClick={(event) => retryThumbnail(img, event)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') retryThumbnail(img, event)
+                        }}
+                        className="pointer-events-auto cursor-pointer rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-100"
+                      >
+                        サムネイル再試行
                       </span>
-                    </div>
-                  ) : (thumbnailErrors.has(key) || availability === 'unknown') && (
-                    <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          aria-label="サムネイル再試行"
-                          onClick={(event) => retryThumbnail(img, event)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') retryThumbnail(img, event)
-                          }}
-                          className="pointer-events-auto cursor-pointer rounded bg-black/75 px-1.5 py-0.5 text-[9px] text-zinc-100"
-                        >
-                          {availability === 'unknown' ? '原画を再確認' : 'サムネイル再試行'}
-                        </span>
                     </div>
                   )}
                   {getSetNameForImage(img) && (

@@ -123,7 +123,6 @@ export function useGenerateDisplayState({
   } = store
 
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
-  const [, setAvailabilityRevision] = useState(0)
   const [trialAvailability] = useState(() => createTrialAvailabilityController(
     (identity: ImageIdentity): Promise<ImageAvailability> => generationApi.imageAvailability(identity),
   ))
@@ -138,43 +137,16 @@ export function useGenerateDisplayState({
 
   const removeSelectedIdentityRef = useRef<(identity: string) => void>(() => {})
   const confirmedMissingRef = useRef(new Set<string>())
-  const snapshotMissing = useMemo(() => new Set((store.generationSnapshot?.jobs ?? []).flatMap((job) =>
-    job.outputs.filter((output) => output.availability === 'missing').map((output) => imageIdentity(output.view_url))
-  )), [store.generationSnapshot])
+  const snapshotMissing = useMemo(() => new Set<string>(), [])
   const foreignManagedIdentities = useMemo(() => new Set((store.generationSnapshot?.jobs ?? [])
     .filter((job) => job.session_id !== clientId)
     .flatMap((job) => job.outputs
-      .filter((output) => output.availability !== 'missing')
       .map((output) => imageIdentity(output.view_url)))), [store.generationSnapshot, clientId])
-  const unavailableImages = useMemo(() => new Set([
-    ...snapshotMissing,
-    ...confirmedMissingRef.current,
-  ]), [snapshotMissing, confirmedMissingRef.current.size])
+  const unavailableImages = useMemo(() => new Set<string>(), [])
 
-  const applyMissing = useCallback((url: string) => {
-    const identity = imageIdentity(toSameOriginViewUrl(url))
-    const newlyMissing = !confirmedMissingRef.current.has(identity)
-    confirmedMissingRef.current.add(identity)
-    if (newlyMissing) setAvailabilityRevision((revision) => revision + 1)
-    const nowUnavailable = new Set([...snapshotMissing, ...confirmedMissingRef.current])
-    for (const own of [false, true]) {
-      const key = ['generateDisplayImages', { filterOwnSession: own }]
-      const storeState = useGenerationStore.getState()
-      queryClient.setQueryData<string[]>(key, (old) => {
-        const filtered = uniqueImages(old ?? (own ? storeState.batchImages : storeState.comfyHistoryImages), nowUnavailable)
-        return old && filtered.length === old.length ? old : filtered
-      })
-    }
-    const state = useGenerationStore.getState()
-    const comfyHistoryImages = uniqueImages(state.comfyHistoryImages, nowUnavailable)
-    const batchImages = uniqueImages(state.batchImages, nowUnavailable)
-    if (comfyHistoryImages.length !== state.comfyHistoryImages.length || batchImages.length !== state.batchImages.length) {
-      useGenerationStore.setState({ comfyHistoryImages, batchImages })
-    }
-    const selected = useGenerationStore.getState().selectedImg
-    if (selected && imageIdentity(selected) === identity) setSelectedImg(null)
-    removeSelectedIdentityRef.current(identity)
-  }, [queryClient, setSelectedImg, snapshotMissing])
+  const applyMissing = useCallback((_url: string) => {
+    // REQ-379: BE自立キャッシュ正本化により、ComfyUI元画像不在による強制除外は行わない
+  }, [])
 
   const retryResidualHistory = useCallback(() => {
     residualRecord.generation += 1

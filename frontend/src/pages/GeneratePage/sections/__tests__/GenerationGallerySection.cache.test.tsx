@@ -34,38 +34,42 @@ describe('GenerationGallerySection REQ-345-T4', () => {
     expect(probe).not.toHaveBeenCalled(); expect(rowClick).toHaveBeenCalledOnce()
   })
 
-  it('blocks checking interactions and confirms missing without retry', async () => {
-    let resolve!: (value: { availability: 'missing' }) => void
-    const c = controller(() => new Promise((r) => { resolve = r }))
-    const { rowClick, longPress, keyDown } = gallery(c), row = screen.getByAltText('Generated 1').closest('button')!
-    fireEvent.load(screen.getByAltText('Generated 1')); expect(row).toBeDisabled()
-    fireEvent.click(row); fireEvent.touchStart(row); fireEvent.keyDown(row, { key: 'Enter' })
+  it('does not trigger probe on thumbnail load (zero probe) and blocks interaction if status is missing', () => {
+    const probe = vi.fn(), c = controller(probe)
+    const { rowClick, longPress, keyDown } = gallery(c)
+    const row = screen.getByAltText('Generated 1').closest('button')!
+    fireEvent.load(screen.getByAltText('Generated 1'))
+    expect(probe).not.toHaveBeenCalled()
+    expect(row).not.toBeDisabled()
+
+    act(() => {
+      c.adopt(url, 'missing')
+    })
+    const view2 = gallery(c)
+    const missingRow = screen.getAllByAltText('Generated 1')[1].closest('button')!
+    expect(missingRow).toBeDisabled()
+    fireEvent.click(missingRow); fireEvent.touchStart(missingRow); fireEvent.keyDown(missingRow, { key: 'Enter' })
     expect(rowClick).not.toHaveBeenCalled(); expect(longPress).not.toHaveBeenCalled(); expect(keyDown).not.toHaveBeenCalled()
-    await act(async () => { resolve({ availability: 'missing' }) })
-    await waitFor(() => expect(screen.getByText('原画が見つかりません')).toBeInTheDocument())
-    fireEvent.load(screen.getByAltText('Generated 1'))
-    expect(screen.getByText('原画が見つかりません')).toBeInTheDocument()
-    expect(screen.queryByText(/再試行/)).not.toBeInTheDocument()
+    expect(screen.queryByText('原画が見つかりません')).not.toBeInTheDocument()
+    view2.unmount()
   })
 
-  it('keeps unknown selectable, retries explicitly, and isolates residual retry', async () => {
-    const probe = vi.fn().mockResolvedValueOnce({ availability: 'unknown' }).mockResolvedValueOnce({ availability: 'present' })
-    const c = controller(probe), { rowClick, retry } = gallery(c, { residualHistoryStatus: 'error' })
+  it('isolates residual retry and does not probe original availability on thumbnail load', () => {
+    const probe = vi.fn()
+    const c = controller(probe), { retry } = gallery(c, { residualHistoryStatus: 'error' })
     fireEvent.load(screen.getByAltText('Generated 1'))
-    await waitFor(() => expect(screen.getByText('原画を再確認')).toBeInTheDocument())
+    expect(probe).not.toHaveBeenCalled()
     expect(screen.getByAltText('Generated 1').closest('button')).not.toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: '再試行' })); expect(retry).toHaveBeenCalledOnce()
-    await act(async () => { fireEvent.click(screen.getByText('原画を再確認')) })
-    await waitFor(() => expect(probe).toHaveBeenCalledTimes(2))
-    expect(rowClick).not.toHaveBeenCalled(); expect(screen.getByText('履歴の追加確認に失敗')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '再試行' }))
+    expect(retry).toHaveBeenCalledOnce()
+    expect(screen.getByText('履歴の追加確認に失敗')).toBeInTheDocument()
   })
 
-  it('shares a pending probe across owners and leaves Snapshot images unregistered', () => {
-    const probe = vi.fn(() => new Promise(() => {})), c = controller(probe), observe = vi.spyOn(c, 'observe')
+  it('does not register observers or probe on load and leaves Snapshot images unregistered', () => {
+    const probe = vi.fn(), c = controller(probe), observe = vi.spyOn(c, 'observe')
     const first = gallery(c); fireEvent.load(screen.getByAltText('Generated 1'))
-    const second = gallery(c); fireEvent.load(screen.getAllByAltText('Generated 1')[1])
-    expect(observe).toHaveBeenCalledTimes(2); expect(probe).toHaveBeenCalledOnce(); first.unmount()
-    second.unmount(); c.dispose()
+    expect(observe).not.toHaveBeenCalled(); expect(probe).not.toHaveBeenCalled(); first.unmount()
+    c.dispose()
     const snapshotController = controller(), snapshotObserve = vi.spyOn(snapshotController, 'observe')
     gallery(snapshotController, { thumbnailTab: 'snapshots', sortedSnapshots: [{ id: 1, image_path: url, params: {} }] })
     expect(screen.getByAltText('Snapshot')).toBeInTheDocument(); expect(snapshotObserve).not.toHaveBeenCalled()

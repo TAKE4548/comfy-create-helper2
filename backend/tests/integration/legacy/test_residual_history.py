@@ -10,7 +10,6 @@ from fastapi import HTTPException
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.comfy import ImageAvailability
 from app.routers.generation import router
 from app.services.generation_service import GenerationService
 from app.services import residual_history as residual
@@ -59,7 +58,8 @@ def _managed(job_id: str, filename: str, *, session_id: str | None = "session", 
     }
 
 
-def test_residual_history_deduplicates_and_probes_only_unseen_page(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_residual_history_deduplicates_and_returns_unseen_page_req379_ac3(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[REQ-379/AC-3] ComfyUIへの原画プローブを行わず、未表示の候補ページを直接 items として返却すること。"""
     client = FakeClient({
         "legacy-prompt": {
             "prompt": [5, "legacy-prompt", {}, {"client_id": "legacy-session"}],
@@ -67,19 +67,6 @@ def test_residual_history_deduplicates_and_probes_only_unseen_page(monkeypatch: 
         },
     })
     monkeypatch.setattr(residual, "get_comfy_client", lambda: client)
-    active = maximum = 0
-    probed: list[tuple[str, str, str]] = []
-
-    async def probe(filename: str, subfolder: str = "", type: str = "output") -> ImageAvailability:
-        nonlocal active, maximum
-        active += 1
-        maximum = max(maximum, active)
-        probed.append((filename, subfolder, type))
-        await asyncio.sleep(0)
-        active -= 1
-        return ImageAvailability(availability="present")
-
-    monkeypatch.setattr(residual, "probe_image_availability", probe)
     service = FakeService([
         _managed("newer", "same.png", session_id="managed-session", finished_at="2026-01-02T00:00:00Z"),
         _managed("older", "same.png", session_id="old-session"),
@@ -96,43 +83,25 @@ def test_residual_history_deduplicates_and_probes_only_unseen_page(monkeypatch: 
     assert [item.session_id for item in result.items] == ["managed-session", "legacy-session"]
     assert [item.identity.filename for item in result.rejected] == []
     assert result.has_more is False
-    assert probed == [("same.png", "folder", "output"), ("legacy.png", "", "output")]
-    assert maximum <= 2
     assert client.calls[0][0].endswith("/history")
     assert client.calls[0][1:] == ({"max_items": 200}, 15.0)
     assert "t=" not in result.items[0].view_url
 
 
-def test_residual_history_pages_ten_and_reports_missing_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_residual_history_pages_ten_without_probing(monkeypatch: pytest.MonkeyPatch) -> None:
     client = FakeClient({})
     monkeypatch.setattr(residual, "get_comfy_client", lambda: client)
-    probed: list[str] = []
-
-    async def probe(filename: str, subfolder: str = "", type: str = "output") -> ImageAvailability:
-        probed.append(filename)
-        return ImageAvailability(availability="missing" if filename.endswith("0.png") else "unknown")
-
-    monkeypatch.setattr(residual, "probe_image_availability", probe)
     jobs = [_managed(f"j{index:03}", f"file-{index}.png") for index in range(12)]
     result = asyncio.run(residual.get_residual_history(residual.ResidualHistoryRequest(known=[], examined=[]), cast(GenerationService, FakeService(jobs))))
 
-    assert len(probed) == 10
-    assert result.items == []
-    assert len(result.rejected) == 10
-    assert {item.availability for item in result.rejected} == {"missing", "unknown"}
+    assert len(result.items) == 10
+    assert result.rejected == []
     assert result.has_more is True
 
 
-def test_known_and_examined_identities_are_never_probed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_known_and_examined_identities_are_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
     client = FakeClient({})
     monkeypatch.setattr(residual, "get_comfy_client", lambda: client)
-    probed: list[str] = []
-
-    async def probe(filename: str, subfolder: str = "", type: str = "output") -> ImageAvailability:
-        probed.append(filename)
-        return ImageAvailability(availability="present")
-
-    monkeypatch.setattr(residual, "probe_image_availability", probe)
     payload = residual.ResidualHistoryRequest(
         known=[residual.ImageIdentity(filename="known.png", subfolder="folder")],
         examined=[residual.ImageIdentity(filename="examined.png", subfolder="folder")],
@@ -144,7 +113,6 @@ def test_known_and_examined_identities_are_never_probed(monkeypatch: pytest.Monk
     assert result.items == []
     assert result.rejected == []
     assert result.has_more is False
-    assert probed == []
 
 
 def test_managed_identity_uses_legacy_client_id_when_managed_session_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,10 +124,6 @@ def test_managed_identity_uses_legacy_client_id_when_managed_session_is_unknown(
     })
     monkeypatch.setattr(residual, "get_comfy_client", lambda: client)
 
-    async def probe(filename: str, subfolder: str = "", type: str = "output") -> ImageAvailability:
-        return ImageAvailability(availability="present")
-
-    monkeypatch.setattr(residual, "probe_image_availability", probe)
     result = asyncio.run(residual.get_residual_history(
         residual.ResidualHistoryRequest(known=[], examined=[]),
         cast(GenerationService, FakeService([_managed("managed", "shared.png", session_id=None)])),

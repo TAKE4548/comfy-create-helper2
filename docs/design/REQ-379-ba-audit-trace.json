@@ -1,0 +1,24 @@
+{
+  "pbi_id": "REQ-379",
+  "date": "2026-10-19",
+  "timezone": "Asia/Tokyo",
+  "design_audit": {
+    "result": "INCONCLUSIVE",
+    "result_obtained": false,
+    "exit_code": 1,
+    "reason": "Local model (qwen/qwen3.5-9b) schema validation failure (output invalid after retry: finding[0] fields are not exactly the required set) on docs/design/REQ-379-test-plan.md:target:s0.",
+    "targets": [
+      "docs/design/REQ-379.md",
+      "docs/design/REQ-379-test-plan.md",
+      "docs/backlog/task/active/REQ-379-T1.md",
+      "docs/backlog/task/active/REQ-379-T2.md",
+      "docs/backlog/task/active/REQ-379-T3.md"
+    ],
+    "model_key": "qwen/qwen3.5-9b",
+    "settings": {
+      "context_length": 32768,
+      "reasoning_effort": "none",
+      "unload_after_requested": true
+    }
+  }
+}

@@ -441,10 +441,6 @@ async def get_comfy_thumbnail(
 
     client = get_comfy_client()
 
-    async def _check_comfy_exists() -> bool:
-        availability = await probe_image_availability(filename, subfolder, type)
-        return availability.availability != "missing"
-
     # L1: メモリキャッシュ確認
     if cache_key in _thumbnail_cache:
         _thumbnail_cache.move_to_end(cache_key)
