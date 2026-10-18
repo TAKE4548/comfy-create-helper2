@@ -61,10 +61,8 @@ export function mountSettingsProposal() {
       button.addEventListener('click',event=>{
         event.preventDefault();event.stopPropagation()
         const opening=detail.hidden
-        document.querySelectorAll<HTMLElement>('.settings-info-detail:not([hidden])').forEach(el=>{
-          el.hidden=true
-          el.parentElement?.querySelector('button')?.setAttribute('aria-expanded','false')
-        })
+        document.querySelectorAll<HTMLElement>('.settings-info-detail:not([hidden])').forEach(el=>{ el.hidden=true })
+        document.querySelectorAll<HTMLElement>('.settings-info-trigger[aria-expanded="true"]').forEach(el=>el.setAttribute('aria-expanded','false'))
         if(!opening) return
         detail.hidden=false
         button.setAttribute('aria-expanded','true')
@@ -89,7 +87,8 @@ export function mountSettingsProposal() {
       })
       window.addEventListener('scroll',closeInfo,true)
       window.addEventListener('resize',closeInfo)
-      wrapper.append(button,detail)
+      wrapper.append(button)
+      document.body.append(detail)
       host.insertBefore(wrapper,note.nextSibling)
       host.dataset.settingsInfoHost='true'
     })
