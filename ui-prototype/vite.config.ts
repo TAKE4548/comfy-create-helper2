@@ -47,9 +47,25 @@ function offlineFixtureGalleryInteraction(): Plugin {
   }
 }
 
+// Inject offline review data ONLY into the proposal render of Studio evaluation.
+function studioEvaluationFixtures(): Plugin {
+  return {
+    name: 'prototype-studio-evaluation-fixtures',
+    enforce: 'pre',
+    transform(source,id){
+      if(!id.replaceAll('\\','/').endsWith('/frontend/src/pages/DatasetStudioPage/index.tsx'))return
+      const anchor='<BenchmarkGrid'
+      if(!source.includes(anchor))throw new Error('Studio evaluation component changed')
+      const imported="import { studioBenchmarkCells, studioBenchmarkSweetSpot } from '../../../../ui-prototype/src/studioFixtures'\n"
+      return imported+source.replace(anchor,
+        "<BenchmarkGrid initialCells={document.documentElement.dataset.prototypeVariant === 'proposal' ? studioBenchmarkCells : undefined} initialSweetSpot={document.documentElement.dataset.prototypeVariant === 'proposal' ? studioBenchmarkSweetSpot : null}")
+    }
+  }
+}
+
 export default defineConfig({
   base: process.env.PROTOTYPE_PAGES === '1' ? '/comfy-create-helper2/' : '/',
-  plugins: [pagesRouterBasename(), offlineFixtureGalleryInteraction(), react()],
+  plugins: [pagesRouterBasename(), offlineFixtureGalleryInteraction(), studioEvaluationFixtures(), react()],
   resolve: { dedupe: ['react', 'react-dom'] },
   server: {
     host: '0.0.0.0',
