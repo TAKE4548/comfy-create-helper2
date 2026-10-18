@@ -1538,3 +1538,9 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    grid-template-columns:repeat(1,minmax(0,1fr));gap:5px!important;
  }
 }
+
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] div:has(> #bypass-mapping-section){
+   display:none!important;
+ }
+}
