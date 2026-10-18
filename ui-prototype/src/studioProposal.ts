@@ -4,6 +4,7 @@ import { useStudioStore } from '../../frontend/src/pages/DatasetStudioPage/useSt
 export function mountStudioProposal(){
  if(document.documentElement.dataset.prototypeVariant!=='proposal')return
  let mounted=false
+ let lastItemState=useStudioStore.getState().items
  const sync=()=>{
   if(!matchMedia('(max-width:767px)').matches)return
   const root=document.querySelector<HTMLElement>('[data-studio-proposal]')??document.querySelector<HTMLElement>('.bg-zinc-950.text-zinc-100:has([data-testid="project-selector"])')
