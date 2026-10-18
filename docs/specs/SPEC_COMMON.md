@@ -192,7 +192,7 @@
 
 | 項目 | 判断が必要な内容 | 影響画面 | 判断の場 | 状態 |
 |---|---|---|---|---|
-| `TagChipEditor`／`TagChip` のチップ密度 | チップの寸法・編集操作を変えるか。Generate限定の例外とするか、共有部品として全利用箇所で変えるか。MUI-06の有効タップ領域との両立。 | Generateのプロンプト、Tag Setの作成・編集（`TagSetFormFields` 経由）、LoRA、Studio（`MatrixGenerationStep`） | 担当: 専任PBI(未起票・ID未定。起票後に更新) | 未承認 |
+| `TagChipEditor`／`TagChip` のチップ密度 | チップの寸法・編集操作を変えるか。Generate限定の例外とするか、共有部品として全利用箇所で変えるか。MUI-06の有効タップ領域との両立。 | Generateのプロンプト、Tag Setの作成・編集（`TagSetFormFields` 経由）、LoRA、Studio（`MatrixGenerationStep`） | 担当: REQ-384 | 未承認 |
 | `ImageCarousel` の中央配置 | カード画像の中央配置を共有部品のグローバルな変更とするか、一覧側の対応にとどめるか。 | LoRA・Tag Setの一覧、`ImageCarousel` の他の利用箇所（§4-2） | REQ-376の設計時（影響調査） | 未承認 |
 | `MultiSelectToolbar` の統合 | モバイルの状態バー・下部ドック（§5-6）を共有部品（`MultiSelectToolbar`／`useMultiSelect`）へ統合するか、画面ごとの適用にとどめるか。Generateは画面内の独自の選択バーを使う。 | History一覧・アルバム詳細、Generate履歴、`MultiSelectToolbar` を使うLoRA・Tag Set・Settings | REQ-375の設計時（利用箇所の調査） | 未承認 |
 | `TagSetFormFields` のスクロール仕様 | Subsetsの内部スクロールを廃止するか。共有フォームを変える場合の作成・編集の両導線への影響。 | Tag Setの作成・編集、`TagSetFormFields` の他の利用箇所 | REQ-377の設計時（両導線の整合確認） | 未承認 |
