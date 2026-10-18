@@ -172,6 +172,49 @@ export function mountStudioProposal(){
     const main=root.querySelector<HTMLElement>('main')
     if(main)main.dataset.studioHasFixedActions='true'
   }
+  // Step 2: keep the existing export action in a bottom dock without changing its handler.
+  const curator=root.querySelector<HTMLElement>('[data-testid="curator-grid"]')
+  const exportButton=root.querySelector<HTMLButtonElement>('[data-testid="export-dataset-button"]')
+  if(curator && exportButton){
+    const header=exportButton.closest<HTMLElement>('.bg-slate-800\\/80')
+    if(header)header.dataset.studioCuratorHeader='true'
+    const dock=exportButton.parentElement
+    if(dock)dock.dataset.studioCuratorExportDock='true'
+    const main=root.querySelector<HTMLElement>('main')
+    if(main)main.dataset.studioHasExportDock='true'
+    // Thumbnail has a keyboard-accessible preview action; use the existing image preview overlay.
+    curator.querySelectorAll<HTMLElement>('[data-testid^="curator-item-"]').forEach(card=>{
+      if(card.dataset.studioCuratorEnhanced)return
+      card.dataset.studioCuratorEnhanced='true'
+      const image=card.querySelector<HTMLImageElement>('img[data-testid^="item-image-"]')
+      if(!image)return
+      const thumb=image.parentElement
+      if(!thumb)return
+      thumb.dataset.studioThumbnail='true'
+      const open=()=>{
+        const slot=card.querySelector<HTMLElement>('.font-mono.font-semibold')?.textContent?.trim()??''
+        const key=new KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true})
+        card.dispatchEvent(key)
+      }
+      const button=document.createElement('button')
+      button.type='button'
+      button.className='studio-thumbnail-hit'
+      button.textContent='拡大'
+      button.setAttribute('aria-label',image.alt+'を拡大表示')
+      button.addEventListener('click',open)
+      thumb.append(button)
+      const badge=card.querySelector<HTMLButtonElement>('[data-testid^="status-badge-"]')
+      if(badge){
+        badge.dataset.studioCuratorStatus='true'
+        const syncBadge=()=>{
+          const value=badge.textContent?.trim()??''
+          badge.textContent=value==='APPROVED'?'採用':value==='REJECTED'?'除外':value==='REROLLING'?'生成中':value==='PENDING'?'未選別':value
+          badge.setAttribute('aria-label','選別状態：'+badge.textContent+'。タップして切替')
+        }
+        syncBadge()
+      }
+    })
+  }
   if(mounted)return
   document.addEventListener('pointerdown',event=>{if(!(event.target as Element).closest?.('.studio-donut,[data-studio-donut-popup]'))document.querySelector('[data-studio-donut-popup]')?.remove()})
   document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelector('[data-studio-donut-popup]')?.remove()})
