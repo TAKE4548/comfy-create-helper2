@@ -977,10 +977,11 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
   html[data-prototype-variant="proposal"] [data-generate-reel-tile="true"] {
     position: relative;
     flex: 0 0 auto;
-    height: min(100%, 620px);
-    max-height: calc(100% - 6px);
-    min-width: 80px;
-    max-width: 100%;
+    /* Size is computed by generateReelProposal from the image aspect ratio and
+       reel viewport. Avoid a second CSS constraint system that can distort it. */
+    min-width: 0;
+    max-width: none;
+    max-height: none;
     overflow: hidden;
     border-radius: 10px;
     border: 2px solid rgb(39 39 42);
