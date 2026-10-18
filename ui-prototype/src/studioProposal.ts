@@ -18,6 +18,39 @@ export function mountStudioProposal(){
   nav.dataset.studioTabs='true'
   const header=nav.closest<HTMLElement>('[data-page-header-root]')
   if(header)header.dataset.studioHeader='true'
+  // Step 1: retain project fields but tuck them behind an explicit edit action.
+  const projectTitle=Array.from(root.querySelectorAll<HTMLElement>('h2')).find(x=>x.textContent?.includes('プロジェクト & トリガー連動設定'))
+  const projectCard=projectTitle?.parentElement
+  if(projectCard && !projectCard.dataset.studioProjectCompact){
+    projectCard.dataset.studioProjectCompact='true'
+    const edit=document.createElement('button')
+    edit.type='button'
+    edit.textContent='編集する'
+    edit.dataset.studioProjectEdit='true'
+    edit.setAttribute('aria-expanded','false')
+    edit.addEventListener('click',()=>{
+      const open=projectCard.dataset.studioProjectExpanded!=='true'
+      projectCard.dataset.studioProjectExpanded=String(open)
+      edit.setAttribute('aria-expanded',String(open))
+      edit.textContent=open?'閉じる':'編集する'
+    })
+    projectTitle.after(edit)
+  }
+  // Bypass is already accessible in generation parameters; keep the distinct remap operation.
+  const extraBypass=root.querySelector<HTMLElement>('[data-testid="open-bypass-modal-button"]')
+  if(extraBypass)extraBypass.dataset.studioDuplicateBypass='true'
+
+  const matrixTitle=Array.from(root.querySelectorAll<HTMLElement>('h3')).find(x=>x.textContent?.includes('生成マトリクスプレビュー'))
+  const matrixCard=matrixTitle?.parentElement?.parentElement
+  if(matrixTitle && matrixCard && !matrixCard.dataset.studioMatrixReview){
+    matrixCard.dataset.studioMatrixReview='true'
+    const summary=document.createElement('div')
+    summary.dataset.studioMatrixSummary='true'
+    summary.setAttribute('role','status')
+    const count=root.querySelectorAll('[data-testid^="matrix-item-card-"]').length
+    summary.textContent='ⓘ 確認用プレビュー：先頭'+count+'件を表示。件数・衣装割合・プロンプト内容を確認してください。表示だけでは生成可能性やマッピング整合性は保証されません。'
+    matrixTitle.parentElement?.after(summary)
+  }
   if(mounted)return
   mounted=true
   let start:{x:number;y:number}|null=null
