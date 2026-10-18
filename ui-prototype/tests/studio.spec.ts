@@ -2,7 +2,15 @@ import {test,expect} from '@playwright/test'
 
 test('Studio mobile proposal shows five tabs and offline sample project',async ({page},info)=>{
   test.skip(!info.project.name.includes('mobile'),'Mobile Studio review')
-  await page.goto('/studio?ui=proposal')
+  const errors:string[]=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  const errors:string[]=[]
+ page.on('pageerror',e=>errors.push(e.message))
+ await page.goto('/studio?ui=proposal')
+ await page.waitForTimeout(900)
+ console.log('STUDIO EXPORT DIAGNOSTIC',JSON.stringify({url:page.url(),body:(await page.locator('body').innerText()).slice(0,1200),errors}))
+  await page.waitForTimeout(900)
+  console.log('STUDIO DIAGNOSTIC',JSON.stringify({url:page.url(),body:(await page.locator('body').innerText()).slice(0,1200),errors}))
   await expect(page.getByTestId('project-selector')).toContainText('UI Review / Sample LoRA',{timeout:20000})
   const tabs=page.locator('[data-studio-tabs="true"] > button')
   await expect(tabs).toHaveCount(5)
