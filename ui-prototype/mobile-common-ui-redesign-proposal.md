@@ -1,8 +1,8 @@
 # モバイル共通 UI/UX 改修案仕様（レビュー版）
 
 - **状態**：改修案・採用未確定。ここに記載したルールは本番の全画面へ自動適用されない。
-- **適用検討範囲**：Generate、LoRA、Tag Set、History のモバイルUI。以後の他ページのレビューでも比較基準として参照可能。
-- **画面固有の仕様**：[Generate改修案](./mobile-generate-redesign-proposal.md) ／ [LoRA・タグセット改修案](./mobile-lora-tagset-redesign-proposal.md) ／ [History画面別改修案](./mobile-history-generate-selection-design-draft.md)
+- **適用検討範囲**：Generate、LoRA、Tag Set、History のモバイルUI。Settingsの画面固有の合意内容はリンク先文書を参照し、既存共通ルールの全画面適用とは区別する。
+- **画面固有の仕様**：[Generate改修案](./mobile-generate-redesign-proposal.md) ／ [LoRA・タグセット改修案](./mobile-lora-tagset-redesign-proposal.md) ／ [History画面別改修案](./mobile-history-generate-selection-design-draft.md) ／ [Settings改修仕様](./mobile-settings-redesign-proposal.md)
 - **実装境界**：`prototype/ui-review`・`ui-prototype/` の試案。 `main`、`frontend/`、`backend/` は変更・採用未実施。
 - **判断原則**：Baseline-Preserving, Problem-Driven Design。ユーザーの確定判断 ＞ 有効な仕様書 ＞ 現行実装 ＞ 一般設計原則。
 
