@@ -192,7 +192,6 @@ export function mountStudioProposal(){
       if(!thumb)return
       thumb.dataset.studioThumbnail='true'
       const open=()=>{
-        const slot=card.querySelector<HTMLElement>('.font-mono.font-semibold')?.textContent?.trim()??''
         const key=new KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true})
         card.dispatchEvent(key)
       }
@@ -208,8 +207,8 @@ export function mountStudioProposal(){
         badge.dataset.studioCuratorStatus='true'
         const syncBadge=()=>{
           const value=badge.textContent?.trim()??''
-          badge.textContent=value==='APPROVED'?'採用':value==='REJECTED'?'除外':value==='REROLLING'?'生成中':value==='PENDING'?'未選別':value
-          badge.setAttribute('aria-label','選別状態：'+badge.textContent+'。タップして切替')
+          badge.textContent=value==='APPROVED'?'除外する':value==='REJECTED'?'採用に戻す':value==='REROLLING'?'生成中':value==='PENDING'?'採用する':value
+          badge.setAttribute('aria-label',badge.textContent+'（選別状態を変更）')
         }
         syncBadge()
       }
