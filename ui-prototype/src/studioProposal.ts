@@ -192,7 +192,7 @@ export function mountStudioProposal(){
     const current=useStudioStore.getState().items
     const complete=current.filter(item=>item.status==='APPROVED').length
     const needsRedo=current.filter(item=>item.status!=='APPROVED').length
-    if(progress)progress.textContent='確定 '+complete+' / '+current.length+'枠 · 再生成対象 '+needsRedo+'件'
+    if(progress){const next='確定 '+complete+' / '+current.length+'枠 · 再生成対象 '+needsRedo+'件';if(progress.textContent!==next)progress.textContent=next}
     if(dock && !dock.querySelector('[data-studio-bulk-redo]')){
       const redo=document.createElement('button')
       redo.type='button'
@@ -213,11 +213,11 @@ export function mountStudioProposal(){
     const redo=dock?.querySelector<HTMLButtonElement>('[data-studio-bulk-redo]')
     if(redo){
       redo.disabled=needsRedo===0
-      if(needsRedo>0)redo.textContent='未確定 '+needsRedo+'件を一括再生成（モック）'
-      else redo.textContent='20枠確認済み'
+      const label=needsRedo>0?'未確定 '+needsRedo+'件を一括再生成（モック）':'20枠確認済み'
+      if(redo.textContent!==label)redo.textContent=label
     }
     if(exportButton){
-      exportButton.disabled=needsRedo>0 || exportButton.disabled
+      exportButton.disabled=needsRedo>0
       exportButton.title=needsRedo>0?'すべての素材を確定すると出力できます':''
     }
     // Thumbnail has a keyboard-accessible preview action; use the existing image preview overlay.
