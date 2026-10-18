@@ -1572,3 +1572,39 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    box-shadow:0 12px 32px rgba(0,0,0,.55);white-space:normal;
  }
 }
+
+/* Studio Step 1: keep original actions accessible independently of scroll. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-fixed-actions="true"]{
+   position:fixed!important;
+   left:0!important;right:0!important;
+   bottom:calc(54px + env(safe-area-inset-bottom))!important;
+   z-index:90!important;
+   width:100%!important;
+   max-width:100vw!important;
+   box-sizing:border-box!important;
+   border-radius:0!important;
+   border-left:0!important;border-right:0!important;
+   padding:8px 10px!important;margin:0!important;
+   background:#18181b!important;
+   box-shadow:0 -6px 22px rgba(0,0,0,.48)!important;
+   gap:5px!important;
+   flex-direction:column!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-fixed-actions="true"] > div:first-child{
+   display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+   gap:8px!important;width:100%!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-fixed-actions="true"] > div:first-child > button{
+   width:100%!important;min-width:0!important;min-height:43px!important;
+   padding:8px 6px!important;font-size:11px!important;
+   justify-content:center!important;text-align:center!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-fixed-actions="true"] > button{
+   width:100%!important;min-height:34px!important;
+   justify-content:center!important;padding:5px 8px!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] main[data-studio-has-fixed-actions="true"]{
+   padding-bottom:calc(180px + env(safe-area-inset-bottom))!important;
+ }
+}
