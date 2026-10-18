@@ -7,6 +7,7 @@ import { mountCollectionProposal } from './collectionProposal'
 import { mountHistoryProposal } from './historyProposal'
 import { mountGenerateReelProposal } from './generateReelProposal'
 import { mountSettingsProposal } from './settingsProposal'
+import { mountStudioProposal } from './studioProposal'
 import { fixtureHistoryImages } from './fixtureData'
 
 // Explicit query switch allows identical fixture, viewport and app for A/B captures.
@@ -20,6 +21,7 @@ mountCollectionProposal()
 mountHistoryProposal()
 mountGenerateReelProposal()
 mountSettingsProposal()
+mountStudioProposal()
 
 
 // Mock SVG images have no ComfyUI /view identity; the production availability
