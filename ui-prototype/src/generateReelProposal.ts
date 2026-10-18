@@ -144,6 +144,26 @@ export function mountGenerateReelProposal() {
     latestButton.textContent = '← 最新へ'
     latestButton.hidden = true
 
+    const oldestButton = document.createElement('button')
+    oldestButton.type = 'button'
+    oldestButton.dataset.generateReelOldest = 'true'
+    oldestButton.setAttribute('aria-label', '最古の生成画像へ移動')
+    oldestButton.textContent = '最古へ →'
+
+    const autoFollowButton = document.createElement('button')
+    autoFollowButton.type = 'button'
+    autoFollowButton.dataset.generateReelAutoFollow = 'true'
+
+    const sessionButton = document.createElement('button')
+    sessionButton.type = 'button'
+    sessionButton.dataset.generateReelSessionFilter = 'true'
+
+    const historyCloseButton = document.createElement('button')
+    historyCloseButton.type = 'button'
+    historyCloseButton.dataset.generateReelHistoryClose = 'true'
+    historyCloseButton.textContent = '⌄ 履歴を閉じる'
+    historyCloseButton.hidden = true
+
     const historyButton = document.createElement('button')
     historyButton.type = 'button'
     historyButton.dataset.generateReelHistoryToggle = 'true'
@@ -152,7 +172,34 @@ export function mountGenerateReelProposal() {
 
     const toolbar = document.createElement('div')
     toolbar.dataset.generateReelToolbar = 'true'
-    toolbar.append(historyButton, latestButton)
+    toolbar.append(autoFollowButton, sessionButton, oldestButton, historyButton, latestButton)
+
+    const sourceAutoFollow = galleryRoot.querySelector<HTMLButtonElement>('#preview-autofollow-toggle-desktop')
+    const sourceSessionFilter = galleryRoot.querySelector<HTMLInputElement>('#session-filter-toggle')
+    const sortButtons = Array.from(galleryRoot.querySelectorAll<HTMLButtonElement>('button'))
+      .filter((button) => button.textContent?.trim() === '新しい順' || button.textContent?.trim() === '古い順')
+    const sortControl = sortButtons[0]?.parentElement as HTMLElement | null
+    if (sortControl) sortControl.dataset.generateReelSortControl = 'true'
+
+    const syncSharedControls = () => {
+      if (sourceAutoFollow) {
+        const following = sourceAutoFollow.getAttribute('aria-label')?.includes('自動追従中') ?? false
+        autoFollowButton.dataset.active = String(following)
+        autoFollowButton.setAttribute('aria-pressed', String(following))
+        autoFollowButton.textContent = following ? '● 最新追従' : '○ 最新追従'
+        autoFollowButton.title = sourceAutoFollow.getAttribute('aria-label') ?? '最新画像の自動追従'
+      } else {
+        autoFollowButton.hidden = true
+      }
+
+      if (sourceSessionFilter) {
+        sessionButton.dataset.active = String(sourceSessionFilter.checked)
+        sessionButton.setAttribute('aria-pressed', String(sourceSessionFilter.checked))
+        sessionButton.textContent = sourceSessionFilter.checked ? '✓ 自セッション' : '自セッション'
+      } else {
+        sessionButton.hidden = true
+      }
+    }
 
     const updateLatestButton = () => {
       latestButton.hidden = reel.scrollLeft < 72
@@ -249,16 +296,69 @@ export function mountGenerateReelProposal() {
       reel.focus({ preventScroll: true })
     })
 
-    historyButton.addEventListener('click', () => {
-      const expanded = split.dataset.historyExpanded !== 'true'
+    oldestButton.addEventListener('click', () => {
+      stopInertia()
+      if (tiles.length > 0) centerTile(tiles[tiles.length - 1])
+      reel.focus({ preventScroll: true })
+    })
+
+    autoFollowButton.addEventListener('click', () => {
+      sourceAutoFollow?.click()
+      requestAnimationFrame(syncSharedControls)
+    })
+
+    sessionButton.addEventListener('click', () => {
+      sourceSessionFilter?.click()
+      requestAnimationFrame(syncSharedControls)
+    })
+
+    const setHistoryExpanded = (expanded: boolean) => {
       split.dataset.historyExpanded = String(expanded)
       historyButton.setAttribute('aria-expanded', String(expanded))
       historyButton.textContent = expanded ? '履歴を閉じる' : '履歴を展開'
+      historyCloseButton.hidden = !expanded
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event('resize'))
         layoutTiles()
       })
+    }
+
+    historyButton.addEventListener('click', () => {
+      setHistoryExpanded(split.dataset.historyExpanded !== 'true')
     })
+
+    historyCloseButton.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      setHistoryExpanded(false)
+    })
+
+    // History and reel are two views of the same newest-first sequence.
+    // A normal history click recenters the matching reel image; multi-select
+    // intentionally keeps the preview stationary.
+    galleryRoot.addEventListener('click', (event) => {
+      const mouseEvent = event as MouseEvent
+      const target = event.target as HTMLElement | null
+      const thumb = target?.closest<HTMLButtonElement>('button[id^="thumb-"]')
+      if (!thumb || mouseEvent.ctrlKey || mouseEvent.metaKey || mouseEvent.shiftKey) return
+      if (galleryRoot.querySelector('button[aria-label="選択モード終了"]')) return
+      const match = thumb.id.match(/^thumb-(\d+)$/)
+      const index = match ? Number(match[1]) : -1
+      if (index < 0 || !tiles[index]) return
+      requestAnimationFrame(() => {
+        stopInertia()
+        selectedIndex = index
+        tiles.forEach((tile, tileIndex) => tile.setAttribute('aria-selected', String(tileIndex === index)))
+        centerTile(tiles[index])
+      })
+    })
+
+    separator.append(historyCloseButton)
+    syncSharedControls()
+    const sharedControlObserver = new MutationObserver(syncSharedControls)
+    if (sourceAutoFollow) sharedControlObserver.observe(sourceAutoFollow, { attributes: true, attributeFilter: ['aria-label', 'class'] })
+    if (sourceSessionFilter) sharedControlObserver.observe(sourceSessionFilter, { attributes: true, attributeFilter: ['checked'] })
+    sourceSessionFilter?.addEventListener('change', syncSharedControls)
 
     preview.append(reel, toolbar)
     const resizeObserver = new ResizeObserver(layoutTiles)
