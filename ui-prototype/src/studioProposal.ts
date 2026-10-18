@@ -204,9 +204,9 @@ export function mountStudioProposal(){
         // Offline UI demonstration only: swap synthetic images, without claiming backend generation.
         for(const [index,item] of pending.entries()){
           store.updateItemImage(item.slot_index,studioItems[(item.slot_index+index+3)%studioItems.length].image_path??'')
-          store.updateItemStatus(item.id,'APPROVED')
+          // Remain unconfirmed until the user explicitly accepts the replacement.
         }
-        redo.textContent='モック再生成済み（'+pending.length+'件）'
+        redo.textContent='差し替えサンプル表示中 · 確認してください'
       })
       dock.prepend(redo)
     }
