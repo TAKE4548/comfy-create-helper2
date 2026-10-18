@@ -1162,3 +1162,13 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    display:none!important;
  }
 }
+
+/* Viewport-constrained Settings help popup; escapes settings scroll/clipping. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings .settings-info-detail:not([hidden]){
+   position:fixed!important;right:auto!important;bottom:auto!important;
+   max-height:calc(100dvh - 24px);overflow-y:auto;
+   z-index:9999!important;
+   box-sizing:border-box;
+ }
+}
