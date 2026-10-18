@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "endpoints": [
+    "source-only"
+  ],
+  "gates": {
+    "fixed_commands": [
+      {
+        "gate": 1,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "-m",
+          "mypy",
+          "backend"
+        ]
+      },
+      {
+        "gate": 1,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "-m",
+          "pytest",
+          "backend/tests/unit"
+        ]
+      },
+      {
+        "gate": 1,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "scripts/run_in_dir.py",
+          "frontend",
+          "npm.cmd",
+          "exec",
+          "--",
+          "vitest",
+          "run",
+          "src/utils",
+          "src/components/**/__tests__"
+        ]
+      },
+      {
+        "gate": 1,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "scripts/verify_ui_invariants.py"
+        ]
+      },
+      {
+        "gate": 1,
+        "command_argv": [
+          "npm.cmd",
+          "--prefix",
+          "frontend",
+          "run",
+          "typecheck"
+        ]
+      },
+      {
+        "gate": 2,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "scripts/run_full_suite.py"
+        ]
+      },
+      {
+        "gate": 3,
+        "command_argv": [
+          "backend\\.venv\\Scripts\\python.exe",
+          "scripts/run_e2e.py"
+        ]
+      }
+    ],
+    "full_suite_argv": [
+      "backend\\.venv\\Scripts\\python.exe",
+      "scripts/run_full_suite.py"
+    ],
+    "require_scenario": true
+  },
+  "identity": {
+    "input_dirs": [
+      "backend",
+      "frontend",
+      "scripts",
+      "tests",
+      "docs"
+    ],
+    "root_files": [
+      "README.md",
+      ".gitignore",
+      ".gitattributes"
+    ],
+    "excluded_prefixes": [
+      "docs/logs/",
+      "frontend/node_modules/",
+      "backend/.venv/",
+      "frontend/dist/",
+      "frontend/test-results/",
+      "frontend/playwright-report/",
+      "frontend/coverage/"
+    ],
+    "excluded_paths": [],
+    "dependency_file": null
+  }
+}
