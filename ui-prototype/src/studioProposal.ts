@@ -165,6 +165,45 @@ export function mountStudioProposal(){
       }
     }
   }
+  // Step 3: UI-only caption confirmation progress and bottom dock.
+  const captionSection=root.querySelector<HTMLElement>('section[aria-labelledby="studio-caption-heading"]')
+  if(captionSection){
+    const captionCards=Array.from(captionSection.querySelectorAll<HTMLElement>('[data-studio-caption-card]'))
+    let progress=captionSection.querySelector<HTMLElement>('[data-studio-caption-progress]')
+    if(!progress){
+      progress=document.createElement('div')
+      progress.dataset.studioCaptionProgress='true'
+      captionSection.querySelector('#studio-caption-heading')?.after(progress)
+    }
+    let dock=captionSection.querySelector<HTMLElement>('[data-studio-caption-dock]')
+    if(!dock){
+      dock=document.createElement('div')
+      dock.dataset.studioCaptionDock='true'
+      const button=document.createElement('button')
+      button.type='button'
+      button.dataset.studioCaptionFinalize='true'
+      button.textContent='キャプションを一括確定（モック）'
+      button.addEventListener('click',()=>{
+        dock?.querySelector<HTMLElement>('[data-studio-caption-notice]')?.remove()
+        const note=document.createElement('div')
+        note.dataset.studioCaptionNotice='true'
+        note.textContent='確定状態のUI確認のみです。保存・出力は実行していません。'
+        dock?.append(note)
+      })
+      dock.append(button)
+      captionSection.append(dock)
+    }
+    const confirmed=captionCards.filter(card=>card.querySelector('[data-testid^="caption-confirm-"]')?.getAttribute('data-confirmed')==='true').length
+    const text='キャプション確定 '+confirmed+' / '+captionCards.length+'件'
+    if(progress && progress.textContent!==text)progress.textContent=text
+    const finalize=dock.querySelector<HTMLButtonElement>('[data-studio-caption-finalize]')
+    if(finalize){
+      finalize.disabled=captionCards.length===0||confirmed!==captionCards.length
+      const label=finalize.disabled?'全件確定で一括確定可能':'キャプション20件を一括確定（モック）'
+      if(finalize.textContent!==label)finalize.textContent=label
+    }
+    root.querySelector('main')?.setAttribute('data-studio-has-caption-dock','true')
+  }
   // Step 1: pin the original action group above mobile bottom navigation.
   const calculate=root.querySelector<HTMLButtonElement>('[data-testid="calculate-matrix-button"]')
   const submit=root.querySelector<HTMLButtonElement>('[data-testid="submit-batch-button"]')
