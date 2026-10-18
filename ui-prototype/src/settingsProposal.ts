@@ -3,6 +3,30 @@ export function mountSettingsProposal() {
   if (document.documentElement.dataset.prototypeVariant !== 'proposal') return
   const sync = () => {
     if (!matchMedia('(max-width:767px)').matches) return
+    // Design-only save control comparison. Keep production handlers unchanged.
+    // A review marker explicitly says autosave is NOT functional in this mock.
+    const previewAutoSave=(button:HTMLButtonElement|null)=>{
+      if(!button || button.dataset.settingsSavePreview==='true')return
+      const row=button.parentElement
+      if(!row)return
+      button.dataset.settingsSavePreview='true'
+      const note=document.createElement('span')
+      note.dataset.settingsAutoSavePreview='true'
+      note.textContent='自動保存（案）'
+      note.title='表示比較のみ。自動保存は未実装です'
+      row.insertBefore(note,button)
+    }
+    // Explicit saves for long-form prompts, service credentials and data editing remain visible.
+    document.querySelectorAll<HTMLElement>('.req314-settings #settings-panel-dialogue h3, .req314-settings #settings-panel-prompt h3').forEach(h=>{
+      if(!/パラメータ設定|パラメータ/.test(h.textContent??''))return
+      const row=h.parentElement
+      previewAutoSave(row?.querySelector<HTMLButtonElement>('button:has(svg.lucide-save)')??null)
+    })
+    previewAutoSave(document.querySelector<HTMLButtonElement>('.req314-settings #settings-panel-system button[aria-label="VRAM安全ガード設定を保存"]'))
+    document.querySelectorAll<HTMLElement>('.req314-settings #settings-panel-dialogue h3').forEach(h=>{
+      if(!/画像処理フィルタパラメータ/.test(h.textContent??''))return
+      previewAutoSave(h.parentElement?.querySelector<HTMLButtonElement>('button:has(svg.lucide-save)')??null)
+    })
     // Convert only explanatory copy, never status/error/field labels.
     const notes = document.querySelectorAll<HTMLElement>([
       '#settings-panel-dialogue section > div:first-child span.text-zinc-600',
