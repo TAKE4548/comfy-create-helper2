@@ -3,6 +3,41 @@ export function mountSettingsProposal() {
   if (document.documentElement.dataset.prototypeVariant !== 'proposal') return
   const sync = () => {
     if (!matchMedia('(max-width:767px)').matches) return
+    // Convert only explanatory copy, never status/error/field labels.
+    const notes = document.querySelectorAll<HTMLElement>([
+      '#settings-panel-dialogue section > div:first-child span.text-zinc-600',
+      '#settings-panel-dialogue section > button:first-child span.text-zinc-600',
+      '#settings-panel-system section > div:first-child span.text-zinc-600',
+      '#settings-panel-system section > button:first-child span.text-zinc-600',
+      '#settings-panel-system [data-testid="thumbnail-settings-section"] p.text-zinc-400'
+    ].join(','))
+    notes.forEach(note => {
+      if(note.dataset.settingsInfoSource==='true') return
+      const content=note.textContent?.trim()
+      if(!content || content.length<8 || note.closest('[role="alert"],[role="status"]')) return
+      const host=note.parentElement
+      if(!host) return
+      note.dataset.settingsInfoSource='true'
+      const wrapper=document.createElement('span')
+      wrapper.dataset.settingsInfo='true'
+      const button=document.createElement('button')
+      button.type='button'
+      button.className='settings-info-trigger'
+      button.textContent='ⓘ'
+      button.setAttribute('aria-label','説明を表示')
+      button.setAttribute('aria-expanded','false')
+      const detail=document.createElement('span')
+      detail.className='settings-info-detail'
+      detail.textContent=content.replace(/^—\s*/,'')
+      detail.hidden=true
+      button.addEventListener('click',event=>{
+        event.preventDefault();event.stopPropagation()
+        detail.hidden=!detail.hidden
+        button.setAttribute('aria-expanded',String(!detail.hidden))
+      })
+      wrapper.append(button,detail)
+      host.insertBefore(wrapper,note.nextSibling)
+    })
     const section = document.querySelector<HTMLElement>('.req314-settings [data-testid="settings-card-mapping"] > section')
     const header = section?.firstElementChild as HTMLElement | null
     if (!header) return
