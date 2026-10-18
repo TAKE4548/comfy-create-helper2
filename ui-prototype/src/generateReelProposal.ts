@@ -60,9 +60,11 @@ export function mountGenerateReelProposal() {
         const [rawW, rawH] = (tile.dataset.aspect ?? '').split('x').map(Number)
         if (!rawW || !rawH) return
         const ar = rawW / rawH
-        const widthFromHeight = availableHeight * ar
-        const width = Math.min(widthFromHeight, availableWidth)
-        const height = Math.min(availableHeight, width / ar)
+        const targetHeight = availableHeight
+        const maxWidth = availableWidth * 0.86
+        const widthFromHeight = targetHeight * ar
+        const width = Math.min(widthFromHeight, maxWidth)
+        const height = widthFromHeight <= maxWidth ? targetHeight : width / ar
         tile.style.width = `${Math.max(80, width)}px`
         tile.style.height = `${Math.max(80, height)}px`
         tile.style.aspectRatio = 'auto'
@@ -142,22 +144,38 @@ export function mountGenerateReelProposal() {
     }
 
     reel.addEventListener('scroll', updateLatestButton, { passive: true })
-    let pendingWheel = 0
-    let wheelFrame = 0
+    let velocity = 0
+    let inertiaFrame = 0
+    const runInertia = () => {
+      const before = reel.scrollLeft
+      reel.scrollLeft += velocity
+      const after = reel.scrollLeft
+
+      if (after === before && Math.abs(velocity) > 0.1) {
+        velocity = 0
+      } else {
+        velocity *= 0.86
+      }
+
+      if (Math.abs(velocity) < 0.35) {
+        velocity = 0
+        inertiaFrame = 0
+        return
+      }
+      inertiaFrame = requestAnimationFrame(runInertia)
+    }
+
     reel.addEventListener('wheel', (event) => {
       event.preventDefault()
       const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 18
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? reel.clientWidth
         : 1
-      const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-      const multiplier = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? 1 : 2.15
-      pendingWheel += dominantDelta * unit * multiplier
-      if (wheelFrame) return
-      wheelFrame = requestAnimationFrame(() => {
-        reel.scrollLeft += pendingWheel
-        pendingWheel = 0
-        wheelFrame = 0
-      })
+      const horizontalInput = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      const dominantDelta = horizontalInput ? event.deltaX : event.deltaY
+      const impulse = dominantDelta * unit * (horizontalInput ? 0.45 : 0.72)
+      const maxVelocity = Math.max(36, reel.clientWidth * 0.12)
+      velocity = Math.max(-maxVelocity, Math.min(maxVelocity, velocity + impulse))
+      if (!inertiaFrame) inertiaFrame = requestAnimationFrame(runInertia)
     }, { passive: false })
 
     reel.addEventListener('keydown', (event) => {
