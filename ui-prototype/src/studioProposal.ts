@@ -79,34 +79,73 @@ export function mountStudioProposal(){
             const value=String(data[key]??'未設定')
             counts.set(value,(counts.get(value)??0)+1)
           }
-          const row=document.createElement('div')
-          row.className='studio-matrix-factor'
-          const title=document.createElement('div')
-          title.className='studio-matrix-factor-label'
-          title.textContent=label
-          const bar=document.createElement('div')
-          bar.className='studio-matrix-bar'
-          bar.setAttribute('role','img')
-          bar.setAttribute('aria-label',label+': '+[...counts].map(([name,n])=>name+' '+n+'件').join('、'))
-          const legend=document.createElement('div')
-          legend.className='studio-matrix-legend'
-          Array.from(counts).sort((a,b)=>b[1]-a[1]).forEach(([name,n],i)=>{
-            const piece=document.createElement('span')
-            piece.style.width=(100*n/values.length)+'%'
-            piece.style.background=palette[i%palette.length]
-            bar.append(piece)
-            const labelEl=document.createElement('span')
-            const swatch=document.createElement('i')
-            swatch.style.background=palette[i%palette.length]
-            labelEl.append(swatch,document.createTextNode((key==='outfit_type'?(name==='default'?'本命衣装':name==='alt'?'別衣装':name):name)+' '+n+'件'))
-            legend.append(labelEl)
+          const card=document.createElement('div')
+          card.className='studio-donut-card'
+          const svgNS='http://www.w3.org/2000/svg'
+          const svg=document.createElementNS(svgNS,'svg')
+          svg.setAttribute('viewBox','0 0 120 120')
+          svg.classList.add('studio-donut')
+          svg.setAttribute('role','group')
+          svg.setAttribute('aria-label',label+'の内訳')
+          const ordered=[...counts].sort((a,b)=>b[1]-a[1])
+          let offset=0
+          ordered.forEach(([name,n],i)=>{
+            const circle=document.createElementNS(svgNS,'circle')
+            circle.setAttribute('cx','60')
+            circle.setAttribute('cy','60')
+            circle.setAttribute('r','39')
+            circle.setAttribute('fill','none')
+            circle.setAttribute('stroke',palette[i%palette.length])
+            circle.setAttribute('stroke-width','19')
+            const circumference=2*Math.PI*39
+            circle.setAttribute('stroke-dasharray',String(circumference*n/values.length)+' '+String(circumference))
+            circle.setAttribute('stroke-dashoffset',String(-circumference*offset/values.length))
+            circle.setAttribute('transform','rotate(-90 60 60)')
+            circle.setAttribute('tabindex','0')
+            circle.setAttribute('role','button')
+            const human=key==='outfit_type'?(name==='default'?'本命衣装':name==='alt'?'別衣装':name):name
+            const info=human+'：'+n+'件（'+(100*n/values.length).toFixed(1)+'%）'
+            circle.setAttribute('aria-label',label+' '+info)
+            const reveal=(ev:Event)=>{
+              ev.stopPropagation()
+              const old=document.querySelector<HTMLElement>('[data-studio-donut-popup]')
+              old?.remove()
+              const popup=document.createElement('div')
+              popup.dataset.studioDonutPopup='true'
+              popup.setAttribute('role','status')
+              popup.textContent=info
+              document.body.append(popup)
+              const bounds=svg.getBoundingClientRect()
+              popup.style.left=Math.max(10,Math.min(bounds.left,window.innerWidth-popup.offsetWidth-10))+'px'
+              popup.style.top=Math.max(10,Math.min(bounds.bottom+5,window.innerHeight-popup.offsetHeight-10))+'px'
+            }
+            circle.addEventListener('click',reveal)
+            circle.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();reveal(ev)}})
+            svg.append(circle)
+            offset+=n
           })
-          row.append(title,bar,legend)
-          overview.append(row)
+          const center=document.createElementNS(svgNS,'text')
+          center.setAttribute('x','60')
+          center.setAttribute('y','63')
+          center.setAttribute('text-anchor','middle')
+          center.classList.add('studio-donut-center')
+          center.textContent=label==='構図（ショット）'?'構図':label
+          svg.append(center)
+          card.append(svg)
+          const keyline=document.createElement('div')
+          keyline.className='studio-donut-keys'
+          ordered.forEach(([name],i)=>{
+            const marker=document.createElement('i')
+            marker.style.background=palette[i%palette.length]
+            keyline.append(marker)
+          })
+          card.append(keyline)
+          overview.append(card)
         }
+        overview.classList.add('studio-donut-grid')
         const foot=document.createElement('p')
         foot.className='studio-matrix-footnote'
-        foot.textContent='選択内容の分布表示です。良否の自動判定ではありません。未設定もそのまま表示します。'
+        foot.textContent='色の部分をタップすると分類名・件数・比率を表示します。良否の自動判定ではありません。'
         overview.append(foot)
       }
     }
@@ -125,6 +164,8 @@ export function mountStudioProposal(){
     }
   }
   if(mounted)return
+  document.addEventListener('pointerdown',event=>{if(!(event.target as Element).closest?.('.studio-donut,[data-studio-donut-popup]'))document.querySelector('[data-studio-donut-popup]')?.remove()})
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelector('[data-studio-donut-popup]')?.remove()})
   mounted=true
   let start:{x:number;y:number}|null=null
   root.addEventListener('touchstart',event=>{
