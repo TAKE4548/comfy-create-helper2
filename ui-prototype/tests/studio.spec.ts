@@ -49,6 +49,7 @@ test('Studio caption proposal pairs image with editable chips and text',async ({
  await page.getByTestId('studio-step-tab-3').click()
  const card=page.locator('[data-studio-caption-card]').first()
  await expect(card.locator('img')).toBeVisible()
+ console.log('CAPTION_LAYOUT',JSON.stringify(await card.evaluate(el=>{const chip=el.querySelector('[data-testid^="caption-chip-editor-"]');const inner=chip?.firstElementChild;const parent=chip?.parentElement;return {chip:chip?.outerHTML.slice(0,450),chipRect:chip?.getBoundingClientRect().toJSON(),chipCSS:chip?{display:getComputedStyle(chip).display,visibility:getComputedStyle(chip).visibility}:null,parentRect:parent?.getBoundingClientRect().toJSON(),parentCSS:parent?{display:getComputedStyle(parent).display,width:getComputedStyle(parent).width}:null,innerRect:inner?.getBoundingClientRect().toJSON()}})))
  await expect(card.locator('[data-testid^="caption-chip-editor-"]')).toBeVisible()
  await card.locator('[data-testid^="caption-mode-toggle-"]').click()
  const editor=card.locator('textarea')
