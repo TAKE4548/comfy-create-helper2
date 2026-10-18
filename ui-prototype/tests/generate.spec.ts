@@ -198,3 +198,62 @@ test('Generate reel fits mixed aspect ratios and opens the existing detail previ
   await reel.locator('[data-generate-reel-tile="true"]').nth(2).click()
   await expect(page.locator('.modal-backdrop.flex.flex-col')).toBeVisible()
 })
+
+
+test('Generate reel supports oldest jump and history-to-preview navigation', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop Generate proposal only')
+  await page.goto('/?ui=proposal')
+  await expect(page.locator('body')).toContainText('UI review / Sample SDXL', { timeout: 20000 })
+
+  const reel = page.locator('[data-generate-reel-proposal="true"]')
+  await expect(reel).toBeVisible()
+
+  const oldest = page.locator('[data-generate-reel-oldest="true"]')
+  await expect(oldest).toBeVisible()
+  await oldest.click()
+  await expect.poll(async () => reel.evaluate((el) => {
+    const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+    const last = tiles[tiles.length - 1]
+    const viewportCenter = el.scrollLeft + el.clientWidth / 2
+    return Math.abs(last.offsetLeft + last.offsetWidth / 2 - viewportCenter)
+  }), { timeout: 3000 }).toBeLessThanOrEqual(3)
+
+  const toggle = page.locator('[data-generate-reel-history-toggle="true"]')
+  await toggle.click()
+  const close = page.locator('[data-generate-reel-history-close="true"]')
+  await expect(close).toBeVisible()
+
+  const sortControl = page.locator('[data-generate-reel-sort-control="true"]')
+  await expect(sortControl).toBeHidden()
+
+  const thumb = page.locator('#thumb-3')
+  await expect(thumb).toBeVisible()
+  await thumb.click()
+  await expect.poll(async () => reel.evaluate((el) => {
+    const tile = el.querySelector<HTMLElement>('[data-generate-reel-tile="true"][data-index="3"]')!
+    const viewportCenter = el.scrollLeft + el.clientWidth / 2
+    return Math.abs(tile.offsetLeft + tile.offsetWidth / 2 - viewportCenter)
+  }), { timeout: 3000 }).toBeLessThanOrEqual(3)
+
+  await close.click()
+  await expect(page.locator('[data-generate-reel-history-pane="true"]')).toBeHidden()
+})
+
+test('Generate reel exposes auto-follow and session filter outside history', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop Generate proposal only')
+  await page.goto('/?ui=proposal')
+  await expect(page.locator('body')).toContainText('UI review / Sample SDXL', { timeout: 20000 })
+
+  const autoFollow = page.locator('[data-generate-reel-auto-follow="true"]')
+  const session = page.locator('[data-generate-reel-session-filter="true"]')
+  await expect(autoFollow).toBeVisible()
+  await expect(session).toBeVisible()
+
+  const beforeFollow = await autoFollow.getAttribute('aria-pressed')
+  await autoFollow.click()
+  await expect(autoFollow).toHaveAttribute('aria-pressed', beforeFollow === 'true' ? 'false' : 'true')
+
+  const beforeSession = await session.getAttribute('aria-pressed')
+  await session.click()
+  await expect(session).toHaveAttribute('aria-pressed', beforeSession === 'true' ? 'false' : 'true')
+})
