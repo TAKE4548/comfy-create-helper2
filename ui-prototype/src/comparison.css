@@ -1107,3 +1107,49 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    display:none;
  }
 }
+
+/* Settings: replace overlapping grid action layout with a clean two-column row. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-mapping-menu="true"]{
+   display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;
+   grid-template-rows:auto auto!important;align-items:center!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-mapping-menu="true"] > div:nth-child(2){
+   grid-column:1!important;grid-row:2!important;
+   display:flex!important;width:100%;min-width:0!important;margin:0!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-mapping-menu="true"] > div:nth-child(2) > button:nth-child(3){
+   display:flex!important;width:100%;flex:1 1 auto!important;
+   min-width:0!important;justify-content:center!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-management-menu]{
+   grid-column:2!important;grid-row:2!important;
+   align-self:stretch;justify-self:end;min-width:82px;margin:0!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-management-menu] > button{
+   height:100%;width:100%;white-space:nowrap;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-mapping-menu="true"] > div:nth-child(2) > svg:last-child{
+   position:absolute!important;right:12px!important;top:18px!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-source="true"]{
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info]{
+   position:relative;display:inline-flex;align-items:center;flex:0 0 auto;
+   margin-left:4px;vertical-align:middle;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings .settings-info-trigger{
+   display:inline-flex;align-items:center;justify-content:center;
+   min-width:36px!important;width:36px;min-height:36px!important;height:36px;
+   padding:0;border:1px solid rgba(161,161,170,.24);border-radius:50%;
+   color:#a5a3b7;background:rgba(255,255,255,.04);font-size:16px;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings .settings-info-detail:not([hidden]){
+   display:block;position:absolute;right:0;top:calc(100% + 6px);
+   z-index:100;width:min(265px,calc(100vw - 35px));padding:11px 12px;
+   border:1px solid rgba(255,255,255,.18);border-radius:9px;
+   background:#2b2b32;color:#e4e4e7;box-shadow:0 10px 32px #0009;
+   font-size:12px;line-height:1.55;text-align:left;white-space:normal;
+ }
+}
