@@ -968,7 +968,7 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
     padding: 12px 54px 82px 18px;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
     outline: none;
   }
   html[data-prototype-variant="proposal"] [data-generate-reel-proposal="true"]:focus-visible {
@@ -979,8 +979,8 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
     flex: 0 0 auto;
     height: min(100%, 620px);
     max-height: calc(100% - 6px);
-    aspect-ratio: 3 / 4;
-    min-width: 150px;
+    min-width: 80px;
+    max-width: 100%;
     overflow: hidden;
     border-radius: 10px;
     border: 2px solid rgb(39 39 42);
