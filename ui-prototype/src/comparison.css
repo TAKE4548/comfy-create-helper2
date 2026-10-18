@@ -1284,3 +1284,29 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    border:1px solid #3f3f46;border-radius:8px;line-height:1.55;
  }
 }
+
+/* Settings mobile: unobtrusive inline help and quiet autosave preview. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info]{
+   display:inline-flex!important;vertical-align:baseline!important;
+   margin:0 0 0 4px!important;flex:0 0 auto!important;
+   width:20px!important;height:20px!important;align-items:center;justify-content:center;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings .settings-info-trigger{
+   width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;
+   border:0!important;background:transparent!important;border-radius:50%;
+   color:#71717a!important;font-size:15px!important;line-height:1;padding:0!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-inline-info="true"]{
+   width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;
+   margin-left:4px;vertical-align:baseline;border:0!important;background:transparent!important;
+   color:#71717a!important;font-size:15px!important;padding:0!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-auto-save-preview="true"]{
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info] button:focus-visible,
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-inline-info="true"]:focus-visible{
+   outline:2px solid #a78bfa;outline-offset:2px;
+ }
+}
