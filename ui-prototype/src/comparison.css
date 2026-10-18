@@ -1718,3 +1718,29 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    width:100%;min-width:0;overflow-wrap:anywhere;
  }
 }
+
+/* Step 3: visual-only confirmation flow, no persistence or export API. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-caption-progress="true"]{
+   font-size:12px;color:#a5b4fc;font-weight:600;margin:3px 0 8px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-dock="true"]{
+   position:fixed;z-index:90;left:0;right:0;
+   bottom:calc(54px + env(safe-area-inset-bottom));
+   padding:9px 12px;background:#18181b;border-top:1px solid #3f3f46;
+   box-shadow:0 -6px 20px rgba(0,0,0,.4);
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-finalize="true"]{
+   display:block;width:100%;min-height:44px;border-radius:8px;
+   font-size:12px;font-weight:600;color:white;background:#4f46e5;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-finalize="true"]:disabled{
+   opacity:.55;background:#52525b;cursor:not-allowed;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-notice="true"]{
+   font-size:10px;color:#a5b4fc;margin-top:5px;
+ }
+ html[data-prototype-variant="proposal"] main[data-studio-has-caption-dock="true"]{
+   padding-bottom:calc(145px + env(safe-area-inset-bottom))!important;
+ }
+}
