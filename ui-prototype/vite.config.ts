@@ -63,9 +63,48 @@ function studioEvaluationFixtures(): Plugin {
   }
 }
 
+
+// Studio caption visual review: production component remains untouched.
+function studioCaptionProposal(): Plugin {
+  return {
+    name:'prototype-studio-caption-proposal',
+    enforce:'pre',
+    transform(source,id){
+      if(!id.replaceAll('\\\\','/').endsWith('/frontend/src/pages/DatasetStudioPage/components/CaptionEditorCard.tsx'))return
+      const anchor='  return ('
+      if(!source.includes(anchor))throw new Error('Studio caption component changed')
+      const imports="import { TagChipInput } from '../../../components/TagChipInput'\nimport { useStudioStore } from '../useStudioStore'\n"
+      const setup=`  const proposal = document.documentElement.dataset.prototypeVariant === 'proposal'
+  const step = useStudioStore(s => s.currentStep)
+  const image = useStudioStore(s => s.items.find(item => item.id === itemId)?.image_path)
+  const [chipMode, setChipMode] = React.useState(true)
+  if (proposal && step === 3) {
+    return (
+      <div data-studio-caption-card="" className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-2 flex gap-3 min-w-0">
+        <div className="w-[92px] flex-shrink-0">
+          <div className="text-[11px] text-zinc-400 mb-1">#{slotIndex + 1}</div>
+          {image ? <img src={image} alt={\`素材 #\${slotIndex + 1}\`} className="w-full aspect-[3/4] object-cover rounded-md" /> : <div className="aspect-[3/4] rounded-md bg-zinc-800 flex items-center justify-center text-xs text-zinc-400">画像なし</div>}
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="flex justify-between items-center gap-2">
+            <span className="text-xs font-semibold text-zinc-200">キャプション</span>
+            <button type="button" data-testid={\`caption-mode-toggle-\${itemId}\`} aria-pressed={chipMode} onClick={() => setChipMode(v=>!v)} className="text-[11px] border border-zinc-700 rounded px-2 py-1 text-indigo-300">{chipMode ? 'テキスト入力へ' : 'チップ入力へ'}</button>
+          </div>
+          {chipMode ? <div data-testid={\`caption-chip-editor-\${itemId}\`}><TagChipInput value={caption} onChange={onChange} placeholder="タグを追加…" variant="neutral" /></div> :
+            <textarea data-testid={\`caption-editor-\${itemId}\`} value={caption} onChange={e=>onChange(e.target.value)} className="w-full min-h-[90px] bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 resize-y" placeholder="カンマ区切りのキャプション…" />}
+        </div>
+      </div>
+    )
+  }
+`
+      return imports+source.replace(anchor,setup+anchor)
+    }
+  }
+}
+
 export default defineConfig({
   base: process.env.PROTOTYPE_PAGES === '1' ? '/comfy-create-helper2/' : '/',
-  plugins: [pagesRouterBasename(), offlineFixtureGalleryInteraction(), studioEvaluationFixtures(), react()],
+  plugins: [pagesRouterBasename(), offlineFixtureGalleryInteraction(), studioEvaluationFixtures(), studioCaptionProposal(), react()],
   resolve: { dedupe: ['react', 'react-dom'] },
   server: {
     host: '0.0.0.0',
