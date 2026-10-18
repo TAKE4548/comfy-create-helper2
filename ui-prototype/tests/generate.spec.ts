@@ -89,3 +89,40 @@ test('resource monitor displays deterministic offline hardware metrics on deskto
   await expect(page.getByTestId('resource-hover-card')).toBeVisible()
   await expect(page.getByTestId('resource-hover-card')).toContainText('9.2 / 24.0 GB')
 })
+
+
+test('Generate proposal uses a continuous latest-first horizontal reel', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop Generate proposal only')
+  await page.goto('/?ui=proposal')
+  await expect(page.locator('body')).toContainText('UI review / Sample SDXL', { timeout: 20000 })
+
+  const reel = page.locator('[data-generate-reel-proposal="true"]')
+  await expect(reel).toBeVisible()
+  await expect(reel.locator('[data-generate-reel-tile="true"]')).toHaveCount(12)
+  await expect(reel.locator('[data-generate-reel-tile="true"]').first()).toContainText('LATEST')
+
+  const initial = await reel.evaluate((el) => ({ left: el.scrollLeft, width: el.scrollWidth, client: el.clientWidth }))
+  expect(initial.left).toBe(0)
+  expect(initial.width).toBeGreaterThan(initial.client)
+
+  await reel.hover()
+  await page.mouse.wheel(0, 700)
+  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(50)
+
+  const latest = page.locator('[data-generate-reel-latest="true"]')
+  await expect(latest).toBeVisible()
+  await latest.click()
+  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeLessThan(8)
+
+  const toggle = page.locator('[data-generate-reel-history-toggle="true"]')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('[data-generate-reel-history-pane="true"]')).toBeVisible()
+
+  await page.screenshot({ path: testInfo.outputPath('generate-reel-proposal.png'), fullPage: true })
+  await testInfo.attach('generate-reel-proposal', {
+    path: testInfo.outputPath('generate-reel-proposal.png'),
+    contentType: 'image/png',
+  })
+})
