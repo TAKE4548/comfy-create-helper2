@@ -1439,3 +1439,45 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    background:transparent!important;color:#a1a1aa!important;box-shadow:none!important;
  }
 }
+
+/* Studio Step 1 review refinements: proposal/mobile only. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-tabs="true"] > [data-testid="open-post-training-evaluation"]{
+   gap:0!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-tabs="true"] > [data-testid="open-post-training-evaluation"]::after{
+   line-height:1.2!important;margin:0!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-project-compact="true"]{
+   position:relative;padding:12px!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-project-compact="true"] > h2{
+   margin:0!important;padding-right:65px;min-height:36px;align-items:center;
+   font-size:13px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-project-edit="true"]{
+   position:absolute;right:12px;top:11px;min-height:36px;
+   padding:0 9px;color:#c4b5fd;border:1px solid #52525b;
+   border-radius:7px;font-size:11px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-project-compact="true"]:not([data-studio-project-expanded="true"]) > :not(h2):not([data-studio-project-edit]){
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-duplicate-bypass="true"]{
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-matrix-review="true"]{
+   padding:12px!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-matrix-review="true"] > div:first-child{
+   flex-wrap:wrap;gap:5px;margin-bottom:8px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-matrix-review="true"] > div:first-child > span{
+   overflow-wrap:anywhere;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-matrix-summary="true"]{
+   margin:0 0 12px;padding:10px 11px;border:1px solid #57534e;
+   border-radius:8px;background:#292524;color:#e7e5e4;
+   font-size:11px;line-height:1.5;
+ }
+}
