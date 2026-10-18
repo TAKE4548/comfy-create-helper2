@@ -163,6 +163,15 @@ export function mountStudioProposal(){
       }
     }
   }
+  // Step 1: pin the original action group above mobile bottom navigation.
+  const calculate=root.querySelector<HTMLButtonElement>('[data-testid="calculate-matrix-button"]')
+  const submit=root.querySelector<HTMLButtonElement>('[data-testid="submit-batch-button"]')
+  const actionPanel=calculate?.parentElement?.parentElement
+  if(actionPanel && submit && !actionPanel.dataset.studioFixedActions){
+    actionPanel.dataset.studioFixedActions='true'
+    const main=root.querySelector<HTMLElement>('main')
+    if(main)main.dataset.studioHasFixedActions='true'
+  }
   if(mounted)return
   document.addEventListener('pointerdown',event=>{if(!(event.target as Element).closest?.('.studio-donut,[data-studio-donut-popup]'))document.querySelector('[data-studio-donut-popup]')?.remove()})
   document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelector('[data-studio-donut-popup]')?.remove()})
