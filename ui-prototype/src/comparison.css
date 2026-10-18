@@ -873,3 +873,55 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
     line-height:1.45;font-size:11px;
   }
 }
+
+/* Settings mobile density revision: local, proposal-only; retain inputs and warnings. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings > .flex-1.overflow-y-auto{
+   padding:8px 10px calc(54px + env(safe-area-inset-bottom) + 20px)!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [role="tabpanel"]{
+   row-gap:12px;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-workflows > div{
+   gap:10px!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-workflows [data-testid^="settings-card-"] > section > div:not([role="dialog"]){
+   min-width:0;
+ }
+ /* Node Mapping header: keep title on one line; organize three actions below. */
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child{
+   position:relative;
+   display:flex;flex-direction:column;align-items:stretch;gap:8px;
+   padding:10px 12px!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:first-child{
+   min-width:0;max-width:calc(100% - 44px);gap:7px;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child h2{
+   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:first-child > span{
+   display:none;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:nth-child(2){
+   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;min-width:0;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:nth-child(2) > button{
+   min-width:0;min-height:40px;padding:6px 7px;
+   justify-content:center;text-align:center;white-space:normal;font-size:11px;line-height:1.3;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:nth-child(2) > button:nth-child(3){
+   grid-column:1/-1;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section > div:first-child > div:nth-child(2) > svg:last-child{
+   position:absolute;right:13px;top:21px;pointer-events:none;
+ }
+ /* Redundant header subtitles consume vertical space without aiding task choice. */
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-basemodel"] > section > button:first-child span{
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-workflows [data-testid="settings-card-mapping"] > section > div:nth-child(2),
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-basemodel"] > section > div:nth-child(2){
+   padding:12px!important;
+ }
+}
