@@ -63,8 +63,10 @@ export function mountGenerateReelProposal() {
         const targetHeight = availableHeight
         const maxWidth = availableWidth * 0.86
         const widthFromHeight = targetHeight * ar
+        const widthConstrained = widthFromHeight > maxWidth
         const width = Math.min(widthFromHeight, maxWidth)
-        const height = widthFromHeight <= maxWidth ? targetHeight : width / ar
+        const height = widthConstrained ? width / ar : targetHeight
+        tile.dataset.widthConstrained = String(widthConstrained)
         tile.style.width = `${Math.max(80, width)}px`
         tile.style.height = `${Math.max(80, height)}px`
         tile.style.aspectRatio = 'auto'
@@ -182,20 +184,31 @@ export function mountGenerateReelProposal() {
       const stride = Math.max(220, Math.round(reel.clientWidth * 0.55))
       if (event.key === 'Home') {
         event.preventDefault()
+        stopInertia()
         reel.scrollTo({ left: 0, behavior: 'smooth' })
       } else if (event.key === 'End') {
+        stopInertia()
         event.preventDefault()
         reel.scrollTo({ left: reel.scrollWidth, behavior: 'smooth' })
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault()
+        stopInertia()
         reel.scrollBy({ left: -stride, behavior: 'smooth' })
       } else if (event.key === 'ArrowRight') {
         event.preventDefault()
+        stopInertia()
         reel.scrollBy({ left: stride, behavior: 'smooth' })
       }
     })
 
+    const stopInertia = () => {
+      velocity = 0
+      if (inertiaFrame) cancelAnimationFrame(inertiaFrame)
+      inertiaFrame = 0
+    }
+
     latestButton.addEventListener('click', () => {
+      stopInertia()
       reel.scrollTo({ left: 0, behavior: 'smooth' })
       reel.focus({ preventScroll: true })
     })
