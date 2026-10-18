@@ -222,7 +222,7 @@ export function mountStudioProposal(){
     }
     // Thumbnail has a keyboard-accessible preview action; use the existing image preview overlay.
     curator.querySelectorAll<HTMLElement>('[data-testid^="curator-item-"]').forEach(card=>{
-      if(card.dataset.studioCuratorEnhanced)return
+      const alreadyEnhanced=card.dataset.studioCuratorEnhanced==='true'
       card.dataset.studioCuratorEnhanced='true'
       const image=card.querySelector<HTMLImageElement>('img[data-testid^="item-image-"]')
       if(!image)return
@@ -233,20 +233,24 @@ export function mountStudioProposal(){
         const key=new KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true})
         card.dispatchEvent(key)
       }
-      const button=document.createElement('button')
-      button.type='button'
-      button.className='studio-thumbnail-hit'
-      button.textContent='拡大'
-      button.setAttribute('aria-label',image.alt+'を拡大表示')
-      button.addEventListener('click',open)
-      thumb.append(button)
+      if(!alreadyEnhanced){
+        const button=document.createElement('button')
+        button.type='button'
+        button.className='studio-thumbnail-hit'
+        button.textContent='拡大'
+        button.setAttribute('aria-label',image.alt+'を拡大表示')
+        button.addEventListener('click',open)
+        thumb.append(button)
+      }
       const badge=card.querySelector<HTMLButtonElement>('[data-testid^="status-badge-"]')
       if(badge){
         badge.dataset.studioCuratorStatus='true'
         const syncBadge=()=>{
-          const value=badge.textContent?.trim()??''
-          badge.textContent=value==='APPROVED'?'確定済み':value==='REJECTED'?'要再生成':value==='REROLLING'?'生成中':value==='PENDING'?'未確定':value
-          badge.setAttribute('aria-label',badge.textContent+'。タップして確定と再生成対象を切替')
+          const id=Number(card.dataset.testid?.replace('curator-item-',''))
+          const value=useStudioStore.getState().items.find(item=>item.id===id)?.status??''
+          const label=value==='APPROVED'?'確定済み':value==='REJECTED'?'要再生成':value==='REROLLING'?'生成中':value==='PENDING'?'未確定':value
+          if(badge.textContent!==label)badge.textContent=label
+          badge.setAttribute('aria-label',label+'。タップして確定と再生成対象を切替')
         }
         syncBadge()
       }
