@@ -1310,3 +1310,29 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    outline:2px solid #a78bfa;outline-offset:2px;
  }
 }
+
+/* Settings mobile: help markers occupy existing header/label rows, never a new row. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-host="true"]{
+   position:relative!important;min-width:0!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-host="true"] > [data-settings-info]{
+   position:absolute!important;top:50%;right:0;
+   transform:translateY(-50%);margin:0!important;
+   flex:none!important;z-index:2;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-host="true"] > [data-settings-info-source="true"]{
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-host="true"] > h2,
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-info-host="true"] > h3{
+   min-width:0;max-width:calc(100% - 26px);
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-inline-info="true"]{
+   display:inline-flex!important;position:static!important;flex:0 0 20px;
+   vertical-align:middle!important;margin:0 0 0 3px!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-inline-info="true"]:only-child{
+   margin-left:0!important;
+ }
+}
