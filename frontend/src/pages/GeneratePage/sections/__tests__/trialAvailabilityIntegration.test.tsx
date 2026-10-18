@@ -79,22 +79,10 @@ afterEach(() => {
 })
 
 describe('REQ-345 DisplayState, Gallery, controller and restored QueryClient', () => {
-  it('probes only two loaded rows among 200 restored candidates and never rechecks missing A after view changes', async () => {
+  it('never probes on thumbnail load (zero probe) and retains all history images', async () => {
     const urls = [imageA, imageB, ...Array.from({ length: 198 }, (_, i) => image(`candidate-${i}.png`))]
     setStore(urls, imageB)
     const client = createClient(urls)
-    let releaseA!: (result: { availability: 'missing' }) => void
-    let releaseB!: (result: { availability: 'present' }) => void
-    let active = 0, maxActive = 0
-    mocks.imageAvailability.mockImplementation(({ filename }: { filename: string }) => {
-      active++; maxActive = Math.max(active, maxActive)
-      const promise = new Promise((resolve) => {
-        if (filename === 'A.png') releaseA = resolve as typeof releaseA
-        else if (filename === 'B.png') releaseB = resolve as typeof releaseB
-        else resolve({ availability: 'present' })
-      })
-      return promise.finally(() => { active-- })
-    })
     const removeMetadata = vi.spyOn(Storage.prototype, 'removeItem')
     const snapshotWrites = vi.spyOn(client, 'setQueryData')
     const page = renderPage(client)
@@ -103,50 +91,37 @@ describe('REQ-345 DisplayState, Gallery, controller and restored QueryClient', (
     const thumbs = screen.getAllByAltText(/^Generated /)
     fireEvent.load(thumbs.find((node) => node.getAttribute('src')?.includes('filename=A.png'))!)
     fireEvent.load(thumbs.find((node) => node.getAttribute('src')?.includes('filename=B.png'))!)
-    await waitFor(() => expect(generationApi.imageAvailability.mock.calls.length).toBeGreaterThanOrEqual(2))
-    expect(generationApi.imageAvailability.mock.calls.length).toBeLessThan(200)
-    expect(generationApi.imageAvailability.mock.calls.map(([arg]) => arg.filename)).toEqual(expect.arrayContaining(['A.png', 'B.png']))
-    expect(maxActive).toBeLessThanOrEqual(2)
-    await act(async () => { releaseA({ availability: 'missing' }); releaseB({ availability: 'present' }) })
-    await waitFor(() => expect(useGenerationStore.getState().comfyHistoryImages).not.toContain(imageA))
+    // REQ-379: zero probe on thumbnail load
+    expect(generationApi.imageAvailability).not.toHaveBeenCalled()
+    expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageA)
     expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageB)
     expect(useGenerationStore.getState().selectedImg).toBe(imageB)
-    const missingCalls = generationApi.imageAvailability.mock.calls.filter(([arg]) => arg.filename === 'A.png').length
     page.update({ isMobile: true, filterOwnSession: true, sortOrder: 'asc' })
     page.update({ isMobile: false, filterOwnSession: false, sortOrder: 'desc' })
     act(() => window.dispatchEvent(new CustomEvent('comfy-job-event', {
       detail: { type: 'history-fetched', allImages: urls, ownImages: urls },
     })))
-    await waitFor(() => expect(generationApi.imageAvailability.mock.calls.filter(([arg]) => arg.filename === 'A.png')).toHaveLength(missingCalls))
-    expect(useGenerationStore.getState().comfyHistoryImages).not.toContain(imageA)
+    expect(generationApi.imageAvailability).not.toHaveBeenCalled()
+    expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageA)
     expect(useGenerationStore.getState().generationSnapshot).toEqual({ jobs: [] })
     expect(removeMetadata).not.toHaveBeenCalled()
     expect(snapshotWrites.mock.calls.filter(([key]) => Array.isArray(key) && key[0] === 'snapshots')).toHaveLength(0)
     expect(screen.getAllByAltText(/^Generated /).every((node) => node.getAttribute('src')?.includes('/api/comfy/thumbnail?'))).toBe(true)
   })
 
-  it('retains history for thumbnail-only failure and unknown API failures until explicit retry', async () => {
+  it('retains history on thumbnail failure and shows thumbnail retry without probing original availability', async () => {
     setStore([imageA])
     const client = createClient([imageA])
-    mocks.imageAvailability.mockResolvedValueOnce({ availability: 'present' })
     const page = renderPage(client, { restoring: false })
     const thumb = await screen.findByAltText('Generated 1')
     fireEvent.error(thumb)
     await waitFor(() => expect(screen.getByText(/サムネイル再試行/)).toBeInTheDocument())
     expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageA)
-    expect(generationApi.imageAvailability).toHaveBeenCalledTimes(1)
+    expect(generationApi.imageAvailability).not.toHaveBeenCalled()
 
-    const imageC = image('C.png')
-    setStore([imageA, imageC])
-    const retryPage = renderPage(createClient([imageA, imageC]), { restoring: false })
-    mocks.imageAvailability.mockRejectedValueOnce(new Error('503')).mockRejectedValueOnce(new Error('timeout'))
-    fireEvent.error(await screen.findByAltText('Generated 2'))
-    await waitFor(() => expect(screen.getByText('原画を再確認')).toBeInTheDocument())
-    expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageC)
-    fireEvent.click(screen.getByText('原画を再確認'))
-    await waitFor(() => expect(generationApi.imageAvailability).toHaveBeenCalledTimes(3))
-    expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageC)
-    retryPage.unmount()
+    fireEvent.click(screen.getByText(/サムネイル再試行/))
+    expect(useGenerationStore.getState().comfyHistoryImages).toContain(imageA)
+    expect(generationApi.imageAvailability).not.toHaveBeenCalled()
     page.unmount()
   })
 

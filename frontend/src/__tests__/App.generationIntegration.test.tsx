@@ -150,18 +150,17 @@ describe('App generation integration', () => {
 
   afterEach(() => queryClient.clear())
 
-  it('propagates a confirmed missing trial image through the gallery, store, and both cached filters', async () => {
+  it('retains trial image on thumbnail error and does not probe ComfyUI availability', async () => {
     renderGenerationAndSettings(queryClient)
     fireEvent.error(screen.getByAltText('Generated 1'))
 
-    await waitFor(() => {
-      expect(queryClient.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([])
-      expect(queryClient.getQueryData(['generateDisplayImages', { filterOwnSession: true }])).toEqual([])
-    })
-    expect(generationApi.imageAvailability).toHaveBeenCalledWith({ filename: 'trial.png', subfolder: 'tests', type: 'temp' })
-    expect(useGenerationStore.getState().comfyHistoryImages).toEqual([])
-    expect(useGenerationStore.getState().batchImages).toEqual([])
-    expect(useGenerationStore.getState().selectedImg).toBeNull()
+    expect(generationApi.imageAvailability).not.toHaveBeenCalled()
+    expect(screen.getByText(/サムネイル再試行/)).toBeInTheDocument()
+    expect(queryClient.getQueryData(['generateDisplayImages', { filterOwnSession: false }])).toEqual([managedUrl])
+    expect(queryClient.getQueryData(['generateDisplayImages', { filterOwnSession: true }])).toEqual([managedUrl])
+    expect(useGenerationStore.getState().comfyHistoryImages).toEqual([managedUrl])
+    expect(useGenerationStore.getState().batchImages).toEqual([managedUrl])
+    expect(useGenerationStore.getState().selectedImg).toBe(managedUrl)
   })
 
   it('keeps the Comfy URL read-only and the Manager recovery controls honest when Manager is unavailable', async () => {

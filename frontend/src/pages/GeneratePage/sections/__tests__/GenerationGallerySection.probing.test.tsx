@@ -43,68 +43,33 @@ function renderGallery(overrides: Record<string, unknown> = {}) {
   />), trialAvailability }
 }
 
-describe('GenerationGallerySection REQ-333-T31', () => {
+describe('GenerationGallerySection REQ-379', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.imageAvailability.mockResolvedValue({ availability: 'present' })
   })
   afterEach(() => vi.restoreAllMocks())
 
-  it('probes the original identity after thumbnail load and keeps the selected row when present', async () => {
+  it('does not trigger image availability probe on thumbnail load [REQ-379/AC-1]', async () => {
     const { trialAvailability } = renderGallery()
     fireEvent.load(screen.getByAltText('Generated 1'))
     fireEvent.error(screen.getByAltText('Generated 1'))
 
-    await waitFor(() => expect(mocks.imageAvailability).toHaveBeenCalledWith(identity))
-    expect(mocks.imageAvailability).toHaveBeenCalledTimes(1)
+    expect(mocks.imageAvailability).not.toHaveBeenCalled()
     expect(screen.getByAltText('Generated 1')).toHaveAttribute('src', expect.stringContaining('/api/comfy/thumbnail?'))
     expect(screen.getByText(/サムネイル再試行/)).toBeInTheDocument()
     expect(mocks.setState).not.toHaveBeenCalled()
-    expect(trialAvailability.getStatus(imageUrl)).toBe('present')
+    expect(trialAvailability.getStatus(imageUrl)).toBeUndefined()
   })
 
-  it('keeps image on availability failure and reports unknown without removing history', async () => {
-    mocks.imageAvailability.mockRejectedValue(new Error('503'))
-    const { trialAvailability } = renderGallery()
-    fireEvent.load(screen.getByAltText('Generated 1'))
+  it('retries thumbnail reload on retry click without probing ComfyUI [REQ-379/AC-1]', async () => {
+    renderGallery()
     fireEvent.error(screen.getByAltText('Generated 1'))
+    expect(screen.getByText(/サムネイル再試行/)).toBeInTheDocument()
 
-    await waitFor(() => expect(trialAvailability.getStatus(imageUrl)).toBe('unknown'))
-    expect(screen.getByAltText('Generated 1')).toBeInTheDocument()
-    expect(mocks.setState).not.toHaveBeenCalled()
-  })
-
-  it('keeps confirmed missing state out of Gallery-owned store updates and offers no thumbnail retry', async () => {
-    mocks.imageAvailability.mockResolvedValue({ availability: 'missing' })
-    const { trialAvailability } = renderGallery()
-    fireEvent.load(screen.getByAltText('Generated 1'))
-    fireEvent.error(screen.getByAltText('Generated 1'))
-
-    await waitFor(() => expect(trialAvailability.getStatus(imageUrl)).toBe('missing'))
-    expect(screen.queryByText(/再試行/)).not.toBeInTheDocument()
-    expect(mocks.setState).not.toHaveBeenCalled()
-  })
-
-  it('shares concurrent probes and does not repeat completed probes until explicit retry', async () => {
-    let resolveProbe: ((value: { availability: 'unknown' }) => void) | undefined
-    mocks.imageAvailability.mockReturnValue(new Promise((resolve) => { resolveProbe = resolve }))
-    const { trialAvailability } = renderGallery()
-    fireEvent.load(screen.getByAltText('Generated 1'))
-    fireEvent.error(screen.getByAltText('Generated 1'))
-    fireEvent.load(screen.getByAltText('Generated 1'))
-    fireEvent.error(screen.getByAltText('Generated 1'))
-    expect(mocks.imageAvailability).toHaveBeenCalledTimes(1)
-    resolveProbe?.({ availability: 'unknown' })
-    await waitFor(() => expect(trialAvailability.getStatus(imageUrl)).toBe('unknown'))
-    expect(screen.getByText(/原画を再確認/)).toBeInTheDocument()
-    fireEvent.error(screen.getByAltText('Generated 1'))
-    expect(mocks.imageAvailability).toHaveBeenCalledTimes(1)
-
-    fireEvent.click(screen.getByText(/原画を再確認/))
+    fireEvent.click(screen.getByText(/サムネイル再試行/))
+    expect(mocks.imageAvailability).not.toHaveBeenCalled()
     expect(mocks.rowClick).not.toHaveBeenCalled()
-    expect(screen.getByAltText('Generated 1')).toHaveAttribute('src', expect.stringContaining('/api/comfy/thumbnail?'))
-    fireEvent.error(screen.getByAltText('Generated 1'))
-    await waitFor(() => expect(mocks.imageAvailability).toHaveBeenCalledTimes(2))
   })
 
   it('does not probe or mutate saved Snapshot images', () => {

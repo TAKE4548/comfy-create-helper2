@@ -447,3 +447,10 @@ class TestComfyProxyAPI(unittest.TestCase):
             remaining = list(disk_dir.glob("*.webp"))
             self.assertLessEqual(len(remaining), comfy_router._FULL_CACHE_TARGET_FILES)
             self.assertEqual(len(remaining), 200)
+
+    def test_comfy_router_dead_code_eliminated_req379_ac3(self):
+        """[REQ-379/AC-3] comfy.py の get_comfy_thumbnail 内から _check_comfy_exists が完全除去されていること。"""
+        import inspect
+        source = inspect.getsource(comfy_router.get_comfy_thumbnail)
+        self.assertNotIn("_check_comfy_exists", source)
+

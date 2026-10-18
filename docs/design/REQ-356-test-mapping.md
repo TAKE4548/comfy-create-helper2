@@ -7,13 +7,13 @@
 
 | 項目 | 件数 | 備考 |
 |---|---|---|
-| Backend テストファイル数 | 74 | `backend/tests/**/*.py` |
-| Frontend テストファイル数 | 232 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 2648 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 308 | `REQ-xxx` 関連 |
-| PBI 紐づけなしテスト数 | 2340 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
+| Backend テストファイル数 | 75 | `backend/tests/**/*.py` |
+| Frontend テストファイル数 | 244 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
+| 抽出テストケース総数 | 2922 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 607 | `REQ-xxx` 関連 |
+| PBI 紐づけなしテスト数 | 2315 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
-| テスト名規約違反数 (AC-15) | 0 | `[REQ-xxx/AC-n]` 未準拠 |
+| テスト名規約違反数 (AC-15) | 10 | `[REQ-xxx/AC-n]` 未準拠 |
 
 ## 2. ファイル名規約違反一覧 (移行対象: AC-1)
 
@@ -333,6 +333,112 @@
 |---|---|---|---|
 | `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` | [REQ-342/AC-1] TC-COMP-03: renders candidate node options in parameter dropdown using unified format | AC-1 | PASS |
 
+### REQ-346 (計 127 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-1] A4 hover card opens below the header bottom without pushing the layout ${tag} | AC-1 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-2] A4 hover continuity: moving the real pointer from the monitor through the gap into the card keeps it open ${tag} | AC-2 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-4] A4 closes when the pointer leaves, when pressing outside, and has no click toggle ${tag} | AC-4 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-5] A4 hover card stays inside the viewport and is not covered ${tag} | AC-5 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-3] A4 hover card scrolls inside the viewport-capped height and the last row is reachable @1024x768 | AC-3 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-6] A4 recomputes after resize while hovered and is hidden below 640px @1280x800 | AC-6 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-1] A4 is not shown at 639px (A3 pill is responsible) @639x667 | AC-1 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-3] A4 auto-closes when the remaining height is below 96px @1024x768 | AC-3 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-4] rapid hover in/out ten times leaves no orphan panel @1024x768 | AC-4 | PASS |
+| `frontend/e2e/headerHoverCard.spec.ts` | [REQ-346/AC-4] opening the header menu while the A4 card is open leaves only one body-level panel @1024x768 | AC-4 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-1] ${tag}: 展開パネルはヘッダー下端+6pxに出て重ならない | AC-1 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-1] ${tag}: 開いてもヘッダー・スクロール領域が押し広げられない | AC-1 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-2] ${tag}: ヘッダー下の項目をクリックできる | AC-2 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-4] ${tag}: トリガー再押下・外側クリックで閉じる | AC-4 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-5] ${tag}: 画面内に収まり、重なり順で隠れず、末尾に到達できる | AC-5 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-3] ${a.id} @1280x${h}: maxHeight内に収まり末尾に到達できる | AC-3 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-8] future @${v.w}x${v.h}: 40項目の末尾まで到達し実クリックできる | AC-8 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-6] workflow 1280x800→375x360 リサイズ中も開いたまま末尾到達・ヘッダー下+6px | AC-6 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-6] pill 375x667→600x400 開いたまま、800x400 で閉じる(640px境界) | AC-6 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-6] future 1280x800→768x1024→375x360 連続リサイズで末尾到達・ヘッダー下+6px | AC-6 | PASS |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/RedTeam] 幅320: 全アクションのパネルが左右 >= 0 かつ画面内 | - | VIOLATION |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/RedTeam] 高さ280: 全アクションで末尾到達 | - | VIOLATION |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/RedTeam] 連続トグル10回後にパネルは1つ以下 | - | VIOLATION |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/RedTeam] 別アクションを開くと前のアクションが閉じる | - | VIOLATION |
+| `frontend/e2e/headerMenuOverlay.spec.ts` | [REQ-346/AC-5] A4 hover overlap @${w}: resource-hover-card がヘッダー下+6pxに出て隠れない | AC-5 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-1] Generate ${w}x${h}: workflow menu top is header bottom + 6px and does not overlap the header | AC-1 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-1] Generate 1280x800: kebab dropdown top is header bottom + 6px | AC-1 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-1] Generate ${w}x${h}: VRAM pill overlay sits below the wrapped header (header bottom + 6px) | AC-1 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-1] Generate 375x360 (red team): open menu follows header bottom when the route scrolls ${dy}px | AC-1 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-2] Generate 1280x800: clicking 名前を変更 below the header runs the action and closes the menu | AC-2 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-3] Generate 375x360: last item (ノード再スキャン) is reachable | AC-3 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-5] Generate 1280x800: kebab dropdown stays inside viewport and not covered | AC-5 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-5] Generate 375x667: VRAM overlay stays inside the viewport and its last control is not covered by bottom navigation | AC-5 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-6] Generate (same layout): resize while workflow menu is open keeps it open and last item reachable @${from}->${to} | AC-6 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-6] Generate (layout boundary 768px): crossing the boundary closes the menu and re-opening makes the last item reachable @${from}->${to} | AC-6 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-4] Generate 1280x800: toggling the trigger twice closes the menu | AC-4 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-5] Generate Desktop ${w}x${h}: A4 hover card is not covered by the preset tab bar | AC-5 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-5] Generate 700x900 (wrapped header): A4 card top is header bottom + 6px and the hover bridge carries the pointer | AC-5 | PASS |
+| `frontend/e2e/headerMenuRoutes.spec.ts` | [REQ-346/AC-5] Generate 375x667: A4 hover card is not shown and no hover bridge exists (A3 pill covers mobile) | AC-5 | PASS |
+| `frontend/src/components/common/__tests__/PageHeader.test.tsx` | [REQ-346/AC-1] the PageHeader root element carries data-page-header-root exactly once so expand panels can anchor to the header bottom | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/PageHeader.test.tsx` | [REQ-346/AC-1] the attribute matches the placement module PAGE_HEADER_ROOT_SELECTOR | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/PageHeader.test.tsx` | [REQ-346/AC-1] the attribute does not change the header layout classes | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-1] A4 hover card is a body-level fixed layer below the monitor and outside the header container | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-2] A4 hover continuity: moving from the monitor or bridge into the card keeps it open | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-3] A4 hover card height is capped by the viewport (360px) and keeps in-panel scroll | AC-3 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-4] A4 closes on leave and on outside pointerdown; it has no click toggle | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-5] A4 stays inside 640/768/1280 wide viewports | AC-5 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-6] A4 recomputes maxHeight on resize while hovered | AC-6 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-4] pressing another header trigger while the A4 card is open leaves only one body-level panel | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-8] a new header action with content taller than the header renders in a body-level layer outside the overflow-x-auto actions wrapper | AC-8 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-4] rapid open/close/open of two different header menus does not leave two panels open | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-6] unmount while open leaves no body-level panel or listener | AC-6 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-1] kebab hit-slop: the 44px button below the 28px wrapper keeps the panel below the button | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-2] A4 bridge spans the monitor bottom to the card top, lives outside the header, and keeps hover across the portal | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-6] header height change while open re-anchors the panel (ResizeObserver) | AC-6 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-346/AC-8] a future action placed in PageHeader actions is anchored to the header bottom without extra props | AC-8 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-1] renders the panel through a portal under document.body with position fixed below the anchor | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-2] keeps interactive children clickable inside the panel | AC-2 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-3] sets maxHeight from the viewport and enables in-panel scrolling | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-4] closes on outside pointerdown/mousedown but not on anchor or panel interactions | AC-4 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-4] renders nothing when open is false | AC-4 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-5] clamps left inside the viewport for 375, 768 and 1280 wide viewports | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] recomputes maxHeight on window resize while open | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] closes when the anchor scrolls off-screen | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] works when visualViewport is undefined | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] removes all listeners on unmount and under StrictMode double mount | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-8] accepts tall content (40 items) with the last item present in the panel | AC-8 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-1] anchors the top to the header bottom + 6 when inside [data-page-header-root] (header 118, trigger 39 -> 124px) | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-1] falls back to the trigger bottom when there is no header ancestor | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-1] hit-slop: a trigger child extending below the wrapper moves the top below the child (wrapper bottom 36, button bottom 44, no header -> 50px; header bottom 40 -> 50px; header bottom 118 -> 124px) | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-3] maxHeight uses the header-based top (innerHeight 360 -> 228px; innerHeight 227 closes via onClose) | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] re-reads the header bottom on scroll and keeps following it | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] observes the header with ResizeObserver, re-measures from its callback and disconnects on close/unmount | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] works without ResizeObserver and does not observe when headerless | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-2] hoverBridge renders a fixed, aria-hidden, transparent bridge from the trigger bottom to the panel top (+1px) | AC-2 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-2] headerless hoverBridge is 7px high; no bridge without hoverBridge or when the card is not rendered | AC-2 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-2] hover continuity through the portal: moving between the anchor, bridge and panel does not fire the ancestor onMouseLeave; leaving to body does | AC-2 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-4] pointerdown on the bridge does not close; pointerdown outside closes | AC-4 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-346/AC-6] removes the ResizeObserver and listeners symmetrically under StrictMode double mount | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-346/AC-1] renders the dropdown in a body-level fixed layer below the trigger (portal) | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-346/AC-3] limits the dropdown height to the viewport (maxHeight) so the last item stays reachable by in-menu scroll | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-346/AC-4] toggles closed when the trigger is pressed again | AC-4 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-346/AC-5] keeps the 270px panel inside 375px and 1280px wide viewports (align end) | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-346/AC-6] recomputes the maxHeight on window resize while open | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] align start clamps left to viewport right edge limit (375x667, panel 240) | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] align end aligns panel right edge to anchor right (375x667, panel 240) | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-3] maxHeight follows viewport height (height 360) | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-6] zero rect is not treated as offscreen (jsdom getBoundingClientRect) | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] Red Team: align end with anchor near left edge clamps left to edge margin | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] Red Team: viewport narrower than panel yields left === edge margin | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-1] headerBottom below the trigger wins: top === headerBottom + 6 (375x667, anchor.bottom 39, headerBottom 118 -> top 124, maxHeight 535) | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-1] trigger bottom wins when it is below the header bottom (hit-slop overflow): anchor.bottom 44, headerBottom 40 -> top 50 | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-1] headerBottom undefined, NaN and Infinity fall back to the trigger bottom (top 45) | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-6] zero header rect (headerBottom 0) with a zero anchor does not close and gives top 6 | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-6] header bottom beyond the viewport yields maxHeight 0 and shouldClose true | AC-6 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-3] mobile wrapped header: 375x360 open, 375x228 open at the threshold, 375x227 closes | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-1] top is always at least anchor.bottom + 6 | AC-1 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-3] top + maxHeight never exceeds viewport.height - 8 (maxHeight >= 0) | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] left stays within [8, viewport.width - width - 8] when the panel fits | AC-5 | PASS |
+| `frontend/src/components/common/header/__tests__/headerMenuPlacement.test.ts` | [REQ-346/AC-5] left equals 8 when panelWidth exceeds the usable width | AC-5 | PASS |
+| ... | *(他 27 件割愛)* | - | - |
+
 ### REQ-347 (計 15 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
@@ -447,7 +553,7 @@
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-16] shows unresolved roles in the same mapping list | AC-16 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-17] keeps direct input mounted while typing | AC-17 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-18] keeps master order across matched and unresolved rows | AC-18 | PASS |
-| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-29] keeps mappings for masters absent from current settings | AC-29 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-29][REQ-369/AC-1] drops orphaned mappings for deleted masters while keeping valid disabled variants | AC-29 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-33] retains a saved non-default node present in the graph | AC-33 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-35] preserves a saved mapping whose node is missing from the workflow graph | AC-35 | PASS |
 | `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-358/AC-19] saves remapped nodes and persisted slot states | AC-19 | PASS |
@@ -473,7 +579,7 @@
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-26] saves the new mapping default-enabled choice | AC-26 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-27] treats legacy defaults as enabled and locks the control while saving | AC-27 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-30] preserves an existing disabled default on save | AC-30 | PASS |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-28] keeps disabled masters visible and editable | AC-28 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-28][REQ-365/AC-3] keeps disabled masters visible and editable | AC-28 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/WIRING] [REQ-358/AC-14] class候補と選択中node metadataを表示する | AC-14 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23] slot無効状態を保持し、保存時にstateを渡す | AC-23 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23][REQ-358/AC-34] keeps a legacy single-variant ID while disabled and saves its canonical permission | AC-23 | PASS |
@@ -529,7 +635,192 @@
 | `frontend/src/pages/GeneratePage/components/__tests__/GenerateParallelPreview.test.tsx` | renders progressive thumbnail placeholder first and transitions to full-size WebP [REQ-362/AC-7] | AC-7 | PASS |
 | `frontend/src/pages/GeneratePage/components/__tests__/GenerateParallelPreview.test.tsx` | maintains thumbnail fallback if full-size WebP fails to load [REQ-362/AC-7] | AC-7 | PASS |
 
-### PBI紐づけなし (汎用/ガバナンス) (計 2340 件)
+### REQ-363 (計 9 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/common/header/__tests__/ResourceHoverMonitor.test.tsx` | [REQ-363/AC-6] displays dropdown card with proportional VRAM and RAM gauges anchored below pill | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/__tests__/GeneratePage.test.tsx` | [REQ-363/AC-4] renders preset manager as bottom sheet with 75dvh max-height and fixed action dock | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/AddAssetModal.test.tsx` | [REQ-363/AC-8] applies tightened padding (p-3.5) on mobile viewport | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-363/AC-1] renders prompt tabs with shrink-0 and whitespace-nowrap preventing overlap | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-363/AC-2] keeps mobile action bar visible when tapping checkboxes or radio buttons | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-363/AC-3] applies bottom padding ensuring last tag chips scroll clear of action bar | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-363/AC-5] defaults to compact preview (105px) and supports manual toggle without forcing expansion on job start | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-363/AC-5] enforces 2-tap sequence before opening full modal preview | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/ParamPanel.test.tsx` | [REQ-363/AC-7] renders parameter steppers and selects in compact 1-row layout on mobile | AC-7 | PASS |
+
+### REQ-364 (計 17 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-1] displays dynamic DEV :${currentPort} tag on desktop in dev mode | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-2] does not display DEV tag in prod mode or in dot variant | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-3] opens popover when clicked and renders all sections | AC-3 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-4] renders right-aligned vertical status format with dynamic ports | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-5] navigates to production port while preserving URL parts in DEV mode | AC-5 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/AC-6] navigates to development port while preserving URL parts in PROD mode | AC-6 | PASS |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/LC-1] shows start button and calls systemManagerApi.action in PROD when frontend is stopped | - | VIOLATION |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/LC-2] disables action button while lifecycle action is in flight | - | VIOLATION |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/LC-3] calls stop frontend action and navigates to prod URL in DEV mode | - | VIOLATION |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/RT-1] preserves complex URL parameters, queries, and hashes during switch URL generation | - | VIOLATION |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/RT-2] dynamically reflects custom ports for all services in badge and monitor without layout distortion | - | VIOLATION |
+| `frontend/src/components/common/__tests__/SystemStatusBadge.test.tsx` | [REQ-364/RT-3] recovers from ServerManager action errors gracefully and disables controls when managerAvailable is false | - | VIOLATION |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-364/AC-1] desktop header rendering: PageHeader in desktop mode shows SystemStatusBadge (slim) with dynamic DEV :${port} tag | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-364/AC-2] mobile header rendering: PageHeader in mobile mode shows SystemStatusBadge (dot) and suppresses DEV :port badge | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/unifiedHeaderIntegration.test.tsx` | [REQ-364/AC-3] popover interaction: clicking status badge opens system monitor popover without breaking adjacent header elements | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-364/AC-3] closes the dropdown when Escape key is pressed | AC-3 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-364/AC-3] does not close on Escape if closeOnEsc is false | AC-3 | PASS |
+
+### REQ-365 (計 123 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-1] 1280px: dual pane | AC-1 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-1] 1279px: single column order | AC-1 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-2] 767px: horizontal swipe tablist with numbered compact labels | AC-2 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-2] 768px: grid tabs with long labels | AC-2 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-2] 375px: interactive controls are >=44px | AC-2 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-3] 375px: mapping master cards | AC-3 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 375px: param type manager opens as bottom sheet | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 768px: same dialog is centered, not a sheet | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 375px: ${target.name} opens as bottom sheet (one handle, 16px top radius, <=85dvh, no legacy ::before) | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 1280px: ${target.name} is centered, not a sheet | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 375px: ${target.name} opens as bottom sheet (one handle, 16px top radius, <=85dvh, no legacy ::before) | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 1280px: ${target.name} is centered, not a sheet | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] ${vw}px: ${target.name} backdrop covers the full viewport and blocks the header | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-9] 375px: sheet backdrop is not shrunk (modal-backdrop covers the full viewport height) | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-2] 375px: content bottom padding clears the bottom nav | AC-2 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] renders in the common bottom-sheet Modal (single handle, max-h-[85dvh], exactly one dialog) | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] closes via Escape, backdrop click and close/cancel buttons | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] does not close on Escape while the workflow node picker is open | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] nested node picker backdrop is not inside the space-y form (no sibling margin) | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] form submit and validation are unchanged inside the sheet | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] touch targets: close/cancel/save expose min-h-[44px]; chip delete and candidate buttons have hit-slop | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] renders nothing when isOpen is false | AC-9 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] renders as a single dialog listing param types with create/edit/delete callbacks | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] shows empty message and still offers create | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] closes on Escape and backdrop click via onClose, and delete requires inline confirmation | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-9] uses the common bottom-sheet Modal (modal-backdrop, rounded-t-2xl, modal-sheet-handle, max-h-[85dvh]) | AC-9 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] Tab key keeps focus inside the dialog and focus returns to the opener on close | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] keeps full 200-char name in aria-label and title while truncating visually (RT-11) | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterModal.test.tsx` | [REQ-365/AC-9] renders inside the common bottom-sheet Modal with handle and 85dvh cap | AC-9 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterModal.test.tsx` | [REQ-365/AC-4] keeps create validation and submit contract | AC-4 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterModal.test.tsx` | [REQ-365/AC-9] closes on Escape and backdrop click | AC-9 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterModal.test.tsx` | [REQ-365/AC-9] close button has accessible label and 44px target | AC-9 | PASS |
+| `frontend/src/components/__tests__/ParamTypeMasterModal.test.tsx` | [REQ-365/AC-4] toggles the Auto-Fill section | AC-4 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-365/AC-9] renders in the common bottom-sheet Modal (single handle, max-h-[85dvh], exactly one dialog) | AC-9 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-365/AC-9] closes via Escape, backdrop click and both close buttons | AC-9 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-365/AC-9] inline delete guard and add form stay inside the single dialog | AC-9 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-365/AC-9] touch targets: close/edit/delete/footer buttons expose min-h-[44px] | AC-9 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-365/AC-9] renders nothing when isOpen is false | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowManageModal.test.tsx` | [REQ-365/AC-9] renders in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], no legacy overlay) | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowManageModal.test.tsx` | [REQ-365/AC-9] input is focused and selected on open; Escape calls onClose exactly once | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowManageModal.test.tsx` | [REQ-365/AC-9] backdrop click, close button and cancel close; submit passes the trimmed name | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowManageModal.test.tsx` | [REQ-365/AC-9] shows conflict message on 409 error | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowManageModal.test.tsx` | [REQ-365/AC-9] touch targets expose min-h-[44px] | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowNodePicker.test.tsx` | [REQ-365/AC-9] picker renders in the common bottom-sheet Modal (one handle, max-h-[85dvh], no own overlay) | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowNodePicker.test.tsx` | [REQ-365/AC-9] nested in another Modal: Escape closes only the picker and backdrop click does not close it | AC-9 | PASS |
+| `frontend/src/components/__tests__/WorkflowNodePicker.test.tsx` | [REQ-365/AC-9] picker close button and cancel call onClose; touch targets expose min-h-[44px] | AC-9 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-365/AC-9] renders the sheet handle with testid and applies sheetMaxHeightClass | AC-9 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-365/AC-9] falls back to the default max-height class when sheetMaxHeightClass is empty | AC-9 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-365/AC-9] keeps rounded-t-2xl and items-end bottom-sheet classes on mobile | AC-9 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-365/AC-9] exempts the sheet from the global radius override and keeps responsive radius classes | AC-9 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-365/AC-9] exposes sheetMaxHeightClass max-h-[...] value to the mobile sheet CSS only when provided | AC-9 | PASS |
+| `frontend/src/components/common/header/__tests__/HeaderKebabMenu.test.tsx` | [REQ-365/AC-2] keeps a 28x28px visual box with a 44px (w-11 h-11) touch target below md | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-365/AC-1] renders workflows tab as a dual-pane grid with WF/Base left and Mapping right at xl | AC-1 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-365/AC-1] orders cards workflow, mapping, base model below xl | AC-1 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-365/AC-2] keeps bottom-nav safe padding below md and releases it from md | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-365/AC-3] ships the mobile card and table CSS contract | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-365/AC-9] SettingsResponsive.css no longer shrinks role=dialog elements | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-3] checkpoint mapping rows expose data-cell=actions and keep thead as accessible hidden header | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-3] model master list lives only inside the manager dialog with 44px actions | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-9] model master manager and create/edit/mapping dialogs render in the common bottom-sheet Modal (handle, rounded-t-2xl, max-h-[85dvh]) | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-9] dialogs are not rendered inside a space-y/divide wrapper (backdrop must not receive a margin) | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-9] manager -> edit -> manager transition keeps exactly one dialog open | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-9] Escape and backdrop close the manager dialog | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-9] keeps mapping create and checkpoint refresh actions available with 44px targets | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/BaseModelSection.test.tsx` | [REQ-365/AC-3] keeps empty states visible without model master list inline | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts` | [REQ-365/AC-5] maps each of the six prompt editor keys to a param group contained in GROUP_PARAMS.prompt | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts` | [REQ-365/AC-5] every PROMPT_EDITOR_KEYS entry equals GROUP_PROMPTS.prompt in order | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts` | [REQ-365/AC-5] PBT: returns null for any string outside PROMPT_EDITOR_KEYS and never throws | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts` | [REQ-365/AC-5] PBT: result is total over PROMPT_EDITOR_KEYS (non-null) and idempotent | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/llmSettingsGroups.test.ts` | [REQ-365/AC-5] two param groups are both reachable | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] switches the prompt body textarea immediately when the type selector changes | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] links Temperature and Max Tokens to the selected type param group | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] keeps unsaved body and param drafts when switching types and back | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] saves params of the selected group with the exact existing payload | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] shows the shared model read-only and does not add a per-type model save | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] still routes the details toggle through onTogglePrompts | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] disables the textarea when the selected prompt record is not fetched | AC-5 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-3] renders each master as a settings-mobile-card with pinned actions, hidden target node and contextual aria-label | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-3] shows +N classes and +N stages compact badges without duplicating variant names | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-4] opens ParamTypeMaster manager as a dialog from the カスタム型マスタ button and no longer renders the always-on bar | AC-4 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-4] transitions list -> create form -> back to list with exactly one dialog at a time | AC-4 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-9] param type dialogs use the bottom-sheet Modal | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx` | [REQ-365/AC-9] delete dialogs render in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], role stays dialog) | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx` | [REQ-365/AC-9] MappingMasterDeleteModal: backdrop click does not close; Cancel closes; Delete is not initially focused | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx` | [REQ-365/AC-9] WorkflowDeleteConfirmDialog: delete stays disabled until acknowledged; backdrop closes unless pending | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.test.tsx` | [REQ-365/AC-9] delete dialogs: close/cancel/confirm controls expose min-h-[44px] | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] expands the log accordion directly under the clicked service row and fetches that service | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] toggles closed on second click without refetching | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] keeps logs collapsed initially and disables log buttons when the manager is unavailable | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] shows the failure reason (RT-7: 504/timeout) and allows retry | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] renders a very large log inside a bounded scroll region | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/ServiceConnectionCard.test.tsx` | [REQ-365/AC-7] service status lamps expose accessible state text | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SettingsTabBar.test.tsx` | [REQ-365/AC-2] shows numbered compact labels below md while keeping unnumbered aria-labels | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-9] preset modal renders in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], no own overlay) | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-9] preset modal closes via close button and cancel but not via backdrop click | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-9] preset modal keeps save behavior inside the sheet | AC-9 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-6] runs rewrite with the selected preset prompt and shows the output in the test panel | AC-6 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-6] disables テスト実行 until a preset is selected and non-blank input exists | AC-6 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-6] ignores a stale response after the input or preset changes | AC-6 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/SpeechToneSection.test.tsx` | [REQ-365/AC-6] shows an alert and keeps input when rewrite rejects | AC-6 | PASS |
+| ... | *(他 23 件割愛)* | - | - |
+
+### REQ-366 (計 7 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_detects_global_font_floor: [REQ-366/AC-4] Detects font-size: 11px floor on global and attribute selectors. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_detects_raw_100vh: [REQ-366/AC-4] Detects raw 100vh in CSS and TSX/JSX, but allows dvh and 100%. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_detects_important_abuse: [REQ-366/AC-4] Detects !important in CSS declarations, ignores in comments. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_honors_ignore_comments: [REQ-366/AC-4] Inline comments on the same or preceding line suppress violations. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_allowlist: [REQ-366/AC-4] Allowlisted paths are skipped without violations. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_cli_exit_code: [REQ-366/AC-4] CLI exits with code 1 on violations and code 0 when clean. | AC-4 | PASS |
+| `backend/tests/governance/test_ui_invariants.py` | test_ui_invariants_clean_on_compliant_code: [REQ-366/AC-4] Fully compliant CSS and TSX return 0 violations. | AC-4 | PASS |
+
+### REQ-369 (計 6 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/api/test_workflows.py` | test_workflow_save_filters_orphaned_master_and_variant_mappings: [REQ-369/AC-4] Workflow save/update/copy/rollback filters out orphaned master and variant mappings. | AC-4 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_step_031_cleanup_orphaned_workflow_mappings: [REQ-369/AC-5] Migration step 031 idempotently removes orphaned workflow_mappings rows. | AC-5 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-369/AC-2] does not auto-populate unassigned stage slots when rescanning existing workflow | AC-2 | PASS |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-369/AC-1] drops orphaned mappings for nonexistent masters and variants while keeping valid disabled variants | AC-1 | PASS |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-369/AC-2] keeps unassigned stage slots empty during rescan of existing workflow without auto-assigning | AC-2 | PASS |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-369/AC-3] auto-populates scan defaults on new workflow without existing mappings | AC-3 | PASS |
+
+### REQ-370 (計 4 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.residual.test.tsx` | [REQ-370/AC-4] calls store.loadSnapshot on visibilitychange and updates query cache with newly completed images | AC-4 | PASS |
+| `frontend/src/services/__tests__/residualHistory.test.ts` | [REQ-370/AC-3] places initial residual batch at the front of existing history | AC-3 | PASS |
+| `frontend/src/services/__tests__/residualHistory.test.ts` | [REQ-370/AC-2] accepts new candidates via FIFO up to 200 items even when already holding 200 items | AC-2 | PASS |
+| `frontend/src/store/__tests__/slices/connectionSlice.test.ts` | [REQ-370/AC-1] merges historical succeeded jobs from a snapshot even on initial load or epoch change | AC-1 | PASS |
+
+### REQ-379 (計 6 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/legacy/test_comfy_proxy.py` | test_comfy_router_dead_code_eliminated_req379_ac3: [REQ-379/AC-3] comfy.py の get_comfy_thumbnail 内から _check_comfy_exists が完全除去されていること。 | AC-3 | PASS |
+| `backend/tests/integration/legacy/test_residual_history.py` | test_residual_history_deduplicates_and_returns_unseen_page_req379_ac3: [REQ-379/AC-3] ComfyUIへの原画プローブを行わず、未表示の候補ページを直接 items として返却すること。 | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.availability.test.tsx` | retains trial history image even if upstream ComfyUI original is missing [REQ-379/AC-2] | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateDisplayState.availability.test.tsx` | retains snapshot identity even if marked missing in job output [REQ-379/AC-2] | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.probing.test.tsx` | does not trigger image availability probe on thumbnail load [REQ-379/AC-1] | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.probing.test.tsx` | retries thumbnail reload on retry click without probing ComfyUI [REQ-379/AC-1] | AC-1 | PASS |
+
+### PBI紐づけなし (汎用/ガバナンス) (計 2315 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -633,5 +924,5 @@
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_chunking_over_max_batch_size | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_non_existent_directory | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_auto_download_success | - | PASS |
-| ... | *(他 2240 件割愛)* | - | - |
+| ... | *(他 2215 件割愛)* | - | - |
 

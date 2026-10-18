@@ -440,7 +440,7 @@ describe('useGenerateDisplayState', () => {
       )
     })
 
-    it('removes only confirmed missing image identities and clears selection/cache', async () => {
+    it('retains image identities in display and cache even if comfy-image-availability reports missing', async () => {
       const legacy = 'http://localhost:8188/view?filename=trial.png&subfolder=tests&type=temp&t=11'
       useGenerationStore.setState({ selectedImg: legacy, batchImages: [legacy], comfyHistoryImages: [legacy] })
       const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
@@ -450,15 +450,12 @@ describe('useGenerateDisplayState', () => {
       act(() => window.dispatchEvent(new CustomEvent('comfy-image-availability', {
         detail: { url: '/view?filename=trial.png&subfolder=tests&type=temp&t=99', availability: 'missing' },
       })))
-      await waitFor(() => {
-        expect(result.current.displayImages).not.toContain(legacy)
-        expect(queryClient.getQueryData<string[]>(['generateDisplayImages', { filterOwnSession: false }])).not.toContain(legacy)
-        expect(useGenerationStore.getState().setSelectedImg).toHaveBeenCalledWith(null)
-        expect(result.current.selectedIds.has(canonical)).toBe(false)
-      })
+      expect(result.current.displayImages).toContain(canonical)
+      expect(queryClient.getQueryData<string[]>(['generateDisplayImages', { filterOwnSession: false }])).toContain(canonical)
+      expect(result.current.selectedIds.has(canonical)).toBe(true)
     })
 
-    it('retains unknown and thumbnail-failure images, and excludes snapshot outputs from trial history', () => {
+    it('retains unknown and thumbnail-failure images and snapshot outputs in trial history', () => {
       const original = '/view?filename=keep.png&subfolder=tests&type=temp&t=1'
       useGenerationStore.setState({
         comfyHistoryImages: [original, '/view?filename=thumb-error.png&subfolder=tests&type=temp', '/view?filename=missing.png&subfolder=tests&type=temp'],
@@ -477,7 +474,7 @@ describe('useGenerateDisplayState', () => {
       const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
       expect(result.current.displayImages).toContain(original)
       expect(result.current.displayImages).toContain('/view?filename=thumb-error.png&subfolder=tests&type=temp')
-      expect(result.current.displayImages).not.toContain('/view?filename=missing.png&subfolder=tests&type=temp')
+      expect(result.current.displayImages).toContain('/view?filename=missing.png&subfolder=tests&type=temp')
     })
   })
 })

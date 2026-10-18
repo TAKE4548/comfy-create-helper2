@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping
 from typing import Literal
@@ -11,13 +10,12 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import settings
-from app.routers.comfy import get_comfy_client, probe_image_availability
+from app.routers.comfy import get_comfy_client
 from app.services.generation_service import GenerationService
 
 logger = logging.getLogger(__name__)
 _PAGE_SIZE = 10
 _CANDIDATE_LIMIT = 200
-_PROBE_CONCURRENCY = 2
 
 
 class ImageIdentity(BaseModel):
@@ -202,23 +200,12 @@ async def get_residual_history(
         excluded = {(item.filename, item.subfolder, item.type) for item in (*payload.known, *payload.examined)}
         pending = [(identity, data) for identity, data in ordered if identity not in excluded]
         page = pending[:_PAGE_SIZE]
-        semaphore = asyncio.Semaphore(_PROBE_CONCURRENCY)
-
-        async def probe(identity: tuple[str, str, str]):
-            async with semaphore:
-                return await probe_image_availability(*identity)
-
-        results = await asyncio.gather(*(probe(identity) for identity, _ in page))
         items: list[ResidualHistoryItem] = []
-        rejected: list[ResidualHistoryRejected] = []
-        for ((filename, subfolder, image_type), (_, session_id)), result in zip(page, results, strict=True):
+        for (filename, subfolder, image_type), (_, session_id) in page:
             image_identity = ImageIdentity(filename=filename, subfolder=subfolder, type=image_type)
-            if result.availability == "present":
-                query = urlencode({"filename": filename, "subfolder": subfolder, "type": image_type})
-                items.append(ResidualHistoryItem(identity=image_identity, view_url=f"/api/comfy/view?{query}", session_id=session_id))
-            else:
-                rejected.append(ResidualHistoryRejected(identity=image_identity, availability=result.availability))
-        return ResidualHistoryResponse(items=items, rejected=rejected, has_more=len(pending) > len(page))
+            query = urlencode({"filename": filename, "subfolder": subfolder, "type": image_type})
+            items.append(ResidualHistoryItem(identity=image_identity, view_url=f"/api/comfy/view?{query}", session_id=session_id))
+        return ResidualHistoryResponse(items=items, rejected=[], has_more=len(pending) > len(page))
     except HTTPException:
         raise
     except (httpx.HTTPError, ValueError) as exc:
