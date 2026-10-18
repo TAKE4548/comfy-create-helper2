@@ -25,3 +25,20 @@ test('Studio baseline retains existing navigation',async ({page},info)=>{
   await expect(page.getByTestId('studio-step-tab-1')).toBeVisible()
   await expect(page.locator('[data-studio-tabs="true"]')).toHaveCount(0)
 })
+
+test('Studio export unlocks after all slots are confirmed and status labels stay singular',async ({page},info)=>{
+ test.skip(!info.project.name.includes('mobile'))
+ await page.goto('/studio?ui=proposal')
+ await page.getByTestId('studio-step-tab-2').click()
+ const exportButton=page.getByTestId('export-dataset-button')
+ await expect(exportButton).toBeDisabled()
+ const badges=page.locator('[data-studio-curator-status][data-studio-status="REJECTED"]')
+ for(let i=0;i<6;i++){
+   await badges.first().click()
+ }
+ await expect(page.locator('[data-studio-curator-progress]')).toContainText('確定 20 / 20枠')
+ await expect(exportButton).toBeEnabled()
+ const badge=page.locator('[data-studio-curator-status]').first()
+ await expect(badge).toHaveAttribute('data-studio-status','APPROVED')
+ await expect(badge).toHaveCSS('font-size','0px')
+})
