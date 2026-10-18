@@ -1675,3 +1675,17 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    padding-bottom:calc(200px + env(safe-area-inset-bottom))!important;
  }
 }
+
+/* React owns the status text; show a single localized label via state attribute. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-curator-status]{
+   font-size:0!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-curator-status]::after{
+   font-size:11px!important;letter-spacing:normal!important;text-transform:none!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="APPROVED"]::after{content:"確定済み"}
+ html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="REJECTED"]::after{content:"要再生成"}
+ html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="REROLLING"]::after{content:"生成中"}
+ html[data-prototype-variant="proposal"] [data-studio-curator-status][data-studio-status="PENDING"]::after{content:"未確定"}
+}
