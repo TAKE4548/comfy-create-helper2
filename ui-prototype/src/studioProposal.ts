@@ -326,6 +326,6 @@ export function mountStudioProposal(){
     if(tabs[next])tabs[next].click()
   },{passive:true})
  }
- new MutationObserver(sync).observe(document.body,{subtree:true,childList:true})
+ new MutationObserver(sync).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-confirmed']})
  sync()
 }
