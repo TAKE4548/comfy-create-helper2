@@ -106,8 +106,12 @@ export function mountGenerateReelProposal() {
         // remains authoritative.
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const originalButton = Array.from(
-            preview.querySelectorAll<HTMLButtonElement>('[data-generate-reel-original="true"] button'),
-          ).find((button) => Array.from(button.querySelectorAll<HTMLImageElement>('img')).some((node) => node.src === image))
+            preview.querySelectorAll<HTMLButtonElement>('button'),
+          ).find((button) =>
+            !button.closest('[data-generate-reel-proposal="true"]') &&
+            !button.closest('[data-generate-reel-toolbar="true"]') &&
+            Array.from(button.querySelectorAll<HTMLImageElement>('img')).some((node) => node.src === image),
+          )
           originalButton?.click()
         }))
       })
