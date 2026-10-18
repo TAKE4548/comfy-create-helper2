@@ -1153,3 +1153,12 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    font-size:12px;line-height:1.55;text-align:left;white-space:normal;
  }
 }
+
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings [data-testid="settings-card-mapping"] > section{
+   overflow:visible!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-mapping-menu="true"] > div:nth-child(2) > button:nth-child(-n+2){
+   display:none!important;
+ }
+}
