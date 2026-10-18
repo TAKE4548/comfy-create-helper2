@@ -1379,3 +1379,56 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
     z-index:2147483000!important;
   }
 }
+
+/* Studio mobile proposal: preserve existing 5 destinations and content components. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-header="true"] > div:first-child{
+   padding:5px 10px!important;row-gap:3px;min-width:0;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-header="true"] [data-studio-actions="true"]{
+   display:grid!important;grid-template-columns:minmax(0,1fr) auto auto;
+   grid-template-rows:auto auto;gap:6px!important;width:100%;min-width:0;
+   align-items:center;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-actions="true"] > [data-testid="project-selector"]{
+   grid-column:1;grid-row:1;width:100%;min-width:0;max-width:none!important;
+   padding:7px 6px;font-size:11px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-actions="true"] > [data-testid="open-create-project-modal-btn"]{
+   grid-column:2;grid-row:1;min-height:35px;padding:5px 7px;font-size:10px;
+   white-space:nowrap;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-actions="true"] > [data-testid="autosave-status"]{
+   grid-column:3;grid-row:1;white-space:nowrap;
+   min-width:0;padding:4px 5px;font-size:9px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"]{
+   grid-column:1/-1;grid-row:2;display:grid!important;
+   grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;
+   width:100%;min-width:0;padding:3px;
+   overflow:visible!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button{
+   display:flex!important;flex-direction:column;justify-content:center;
+   gap:3px;min-height:48px;min-width:0;padding:5px 1px!important;
+   font-size:10px;text-align:center;white-space:nowrap;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button svg{
+   height:15px;width:15px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button span{
+   font-size:0;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(1) span::after{content:"生成";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(2) span::after{content:"選別";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(3) span::after{content:"説明文";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(4) span::after{content:"学習";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(5) span{font-size:0}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(5)::after{content:"評価";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] > main{
+   padding:12px 10px calc(65px + env(safe-area-inset-bottom))!important;min-width:0;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-testid="training-config-panel"]{
+   padding:12px 0!important;
+ }
+}
