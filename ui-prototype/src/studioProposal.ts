@@ -249,7 +249,7 @@ export function mountStudioProposal(){
           const id=Number(card.dataset.testid?.replace('curator-item-',''))
           const value=useStudioStore.getState().items.find(item=>item.id===id)?.status??''
           const label=value==='APPROVED'?'確定済み':value==='REJECTED'?'要再生成':value==='REROLLING'?'生成中':value==='PENDING'?'未確定':value
-          if(badge.textContent!==label)badge.textContent=label
+          if(badge.dataset.studioStatus!==value)badge.dataset.studioStatus=value
           badge.setAttribute('aria-label',label+'。タップして確定と再生成対象を切替')
         }
         syncBadge()
@@ -257,6 +257,11 @@ export function mountStudioProposal(){
     })
   }
   if(mounted)return
+  useStudioStore.subscribe(state=>{
+    if(state.items===lastItemState)return
+    lastItemState=state.items
+    queueMicrotask(sync)
+  })
   document.addEventListener('pointerdown',event=>{if(!(event.target as Element).closest?.('.studio-donut,[data-studio-donut-popup]'))document.querySelector('[data-studio-donut-popup]')?.remove()})
   document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelector('[data-studio-donut-popup]')?.remove()})
   mounted=true
