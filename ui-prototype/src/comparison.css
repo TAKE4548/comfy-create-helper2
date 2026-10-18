@@ -1655,3 +1655,23 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    padding:8px!important;gap:6px!important;
  }
 }
+
+/* Studio selection is a 20-slot completion workflow, not item removal. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-curator-progress="true"]{
+   margin-top:5px;font-size:11px;color:#a5b4fc;font-weight:600;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-curator-export-dock="true"]{
+   flex-wrap:nowrap!important;flex-direction:column!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-curator-export-dock="true"] [data-studio-bulk-redo="true"]{
+   width:100%;min-height:40px;background:#4338ca;color:#fff;
+   border:1px solid #6366f1;border-radius:7px;font-size:11px;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-curator-export-dock="true"] button:disabled{
+   opacity:.55;cursor:not-allowed;
+ }
+ html[data-prototype-variant="proposal"] main[data-studio-has-export-dock="true"]{
+   padding-bottom:calc(200px + env(safe-area-inset-bottom))!important;
+ }
+}
