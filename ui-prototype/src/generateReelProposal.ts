@@ -46,6 +46,29 @@ export function mountGenerateReelProposal() {
     let selectedIndex = 0
     const tiles: HTMLButtonElement[] = []
 
+    const layoutTiles = () => {
+      const style = getComputedStyle(reel)
+      const availableHeight = Math.max(
+        80,
+        reel.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+      )
+      const availableWidth = Math.max(
+        120,
+        reel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      )
+      tiles.forEach((tile) => {
+        const [rawW, rawH] = (tile.dataset.aspect ?? '').split('x').map(Number)
+        if (!rawW || !rawH) return
+        const ar = rawW / rawH
+        const widthFromHeight = availableHeight * ar
+        const width = Math.min(widthFromHeight, availableWidth)
+        const height = Math.min(availableHeight, width / ar)
+        tile.style.width = `${Math.max(80, width)}px`
+        tile.style.height = `${Math.max(80, height)}px`
+        tile.style.aspectRatio = 'auto'
+      })
+    }
+
     fixtureHistoryImages.forEach((image, index) => {
       const tile = document.createElement('button')
       tile.type = 'button'
@@ -61,8 +84,8 @@ export function mountGenerateReelProposal() {
       img.draggable = false
       img.addEventListener('load', () => {
         if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          tile.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`
           tile.dataset.aspect = `${img.naturalWidth}x${img.naturalHeight}`
+          layoutTiles()
         }
       })
       tile.append(img)
@@ -77,6 +100,16 @@ export function mountGenerateReelProposal() {
         tiles.forEach((item, itemIndex) => item.setAttribute('aria-selected', String(itemIndex === selectedIndex)))
         const thumb = document.getElementById(`thumb-${index}`) as HTMLButtonElement | null
         thumb?.click()
+
+        // Let React update the production preview to the selected image, then
+        // invoke its original image button so the existing modal/open behavior
+        // remains authoritative.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const originalButton = Array.from(
+            preview.querySelectorAll<HTMLButtonElement>('[data-generate-reel-original="true"] button'),
+          ).find((button) => Array.from(button.querySelectorAll<HTMLImageElement>('img')).some((node) => node.src === image))
+          originalButton?.click()
+        }))
       })
 
       tiles.push(tile)
@@ -105,13 +138,22 @@ export function mountGenerateReelProposal() {
     }
 
     reel.addEventListener('scroll', updateLatestButton, { passive: true })
+    let pendingWheel = 0
+    let wheelFrame = 0
     reel.addEventListener('wheel', (event) => {
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
       event.preventDefault()
       const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 18
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? reel.clientWidth
         : 1
-      reel.scrollLeft += event.deltaY * unit * 2.15
+      const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+      const multiplier = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? 1 : 2.15
+      pendingWheel += dominantDelta * unit * multiplier
+      if (wheelFrame) return
+      wheelFrame = requestAnimationFrame(() => {
+        reel.scrollLeft += pendingWheel
+        pendingWheel = 0
+        wheelFrame = 0
+      })
     }, { passive: false })
 
     reel.addEventListener('keydown', (event) => {
@@ -141,10 +183,16 @@ export function mountGenerateReelProposal() {
       split.dataset.historyExpanded = String(expanded)
       historyButton.setAttribute('aria-expanded', String(expanded))
       historyButton.textContent = expanded ? '履歴を閉じる' : '履歴を展開'
-      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+        layoutTiles()
+      })
     })
 
     preview.append(reel, toolbar)
+    const resizeObserver = new ResizeObserver(layoutTiles)
+    resizeObserver.observe(reel)
+    layoutTiles()
     updateLatestButton()
   }
 
