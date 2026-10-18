@@ -1,3 +1,4 @@
+import { studioItems } from './studioFixtures'
 import { useStudioStore } from '../../frontend/src/pages/DatasetStudioPage/useStudioStore'
 /** Studio mobile visual proposal: no production code or real backend writes. */
 export function mountStudioProposal(){
@@ -182,6 +183,43 @@ export function mountStudioProposal(){
     if(dock)dock.dataset.studioCuratorExportDock='true'
     const main=root.querySelector<HTMLElement>('main')
     if(main)main.dataset.studioHasExportDock='true'
+    let progress=header?.querySelector<HTMLElement>('[data-studio-curator-progress]')
+    if(header && !progress){
+      progress=document.createElement('div')
+      progress.dataset.studioCuratorProgress='true'
+      header.firstElementChild?.append(progress)
+    }
+    const current=useStudioStore.getState().items
+    const complete=current.filter(item=>item.status==='APPROVED').length
+    const needsRedo=current.filter(item=>item.status!=='APPROVED').length
+    if(progress)progress.textContent='確定 '+complete+' / '+current.length+'枠 · 再生成対象 '+needsRedo+'件'
+    if(dock && !dock.querySelector('[data-studio-bulk-redo]')){
+      const redo=document.createElement('button')
+      redo.type='button'
+      redo.dataset.studioBulkRedo='true'
+      redo.addEventListener('click',()=>{
+        const store=useStudioStore.getState()
+        const pending=store.items.filter(item=>item.status!=='APPROVED')
+        if(!pending.length)return
+        // Offline UI demonstration only: swap synthetic images, without claiming backend generation.
+        for(const [index,item] of pending.entries()){
+          store.updateItemImage(item.slot_index,studioItems[(item.slot_index+index+3)%studioItems.length].image_path??'')
+          store.updateItemStatus(item.id,'APPROVED')
+        }
+        redo.textContent='モック再生成済み（'+pending.length+'件）'
+      })
+      dock.prepend(redo)
+    }
+    const redo=dock?.querySelector<HTMLButtonElement>('[data-studio-bulk-redo]')
+    if(redo){
+      redo.disabled=needsRedo===0
+      if(needsRedo>0)redo.textContent='未確定 '+needsRedo+'件を一括再生成（モック）'
+      else redo.textContent='20枠確認済み'
+    }
+    if(exportButton){
+      exportButton.disabled=needsRedo>0 || exportButton.disabled
+      exportButton.title=needsRedo>0?'すべての素材を確定すると出力できます':''
+    }
     // Thumbnail has a keyboard-accessible preview action; use the existing image preview overlay.
     curator.querySelectorAll<HTMLElement>('[data-testid^="curator-item-"]').forEach(card=>{
       if(card.dataset.studioCuratorEnhanced)return
@@ -207,8 +245,8 @@ export function mountStudioProposal(){
         badge.dataset.studioCuratorStatus='true'
         const syncBadge=()=>{
           const value=badge.textContent?.trim()??''
-          badge.textContent=value==='APPROVED'?'除外する':value==='REJECTED'?'採用に戻す':value==='REROLLING'?'生成中':value==='PENDING'?'採用する':value
-          badge.setAttribute('aria-label',badge.textContent+'（選別状態を変更）')
+          badge.textContent=value==='APPROVED'?'確定済み':value==='REJECTED'?'要再生成':value==='REROLLING'?'生成中':value==='PENDING'?'未確定':value
+          badge.setAttribute('aria-label',badge.textContent+'。タップして確定と再生成対象を切替')
         }
         syncBadge()
       }
