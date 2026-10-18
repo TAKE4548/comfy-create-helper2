@@ -1246,3 +1246,41 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
     display: none !important;
   }
 }
+
+/* Settings Proposal: clamp auto-save labels; protect preset bottom-sheet footer. */
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system [data-settings-auto-save-preview="true"]{
+   max-width:100%;min-width:0;white-space:normal;text-align:center;
+   overflow-wrap:anywhere;font-size:10px;padding:3px 5px;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings #settings-panel-system div:has(> [data-settings-auto-save-preview="true"]){
+   min-width:0;flex-wrap:wrap;gap:5px;justify-content:flex-end;
+ }
+ html[data-prototype-variant="proposal"] [data-testid="speech-tone-preset-modal"],
+ html[data-prototype-variant="proposal"] [data-testid="speech-tone-preset-modal"] [role="dialog"]{
+   min-width:0!important;max-width:100vw!important;width:100%!important;box-sizing:border-box;
+ }
+ html[data-prototype-variant="proposal"] [data-testid="speech-tone-preset-modal"] [role="dialog"] form{
+   min-width:0!important;width:100%!important;max-width:100%!important;overflow:hidden;
+ }
+ html[data-prototype-variant="proposal"] [data-testid="speech-tone-preset-modal"] [role="dialog"] form > div:last-child{
+   display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+   align-items:center!important;gap:8px!important;width:100%;min-width:0;max-width:100%;
+   box-sizing:border-box;padding:10px 12px!important;
+ }
+ html[data-prototype-variant="proposal"] [data-testid="speech-tone-preset-modal"] [role="dialog"] form > div:last-child > button{
+   width:100%;min-width:0!important;margin:0!important;justify-content:center;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings [data-settings-inline-info="true"]{
+   min-height:32px!important;min-width:32px!important;width:32px;height:32px;
+   border-radius:50%;border:1px solid #52525b;color:#a1a1aa;
+   font-size:17px;vertical-align:middle;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings p[data-settings-info-source="true"]:not([data-settings-inline-open="true"]){
+   display:none!important;
+ }
+ html[data-prototype-variant="proposal"] .req314-settings p[data-settings-inline-open="true"]{
+   display:block!important;margin-top:8px;padding:9px 10px;background:#27272a;
+   border:1px solid #3f3f46;border-radius:8px;line-height:1.55;
+ }
+}
