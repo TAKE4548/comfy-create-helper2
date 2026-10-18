@@ -89,12 +89,11 @@ function studioCaptionProposal(): Plugin {
         </div>
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex justify-between items-center gap-2">
-            <span className="text-xs font-semibold text-zinc-200">キャプション</span>
             <button type="button" data-testid={\`caption-mode-toggle-\${itemId}\`} aria-pressed={chipMode} onClick={() => setChipMode(v=>!v)} className="text-[11px] border border-zinc-700 rounded px-2 py-1 text-indigo-300">{chipMode ? 'テキスト入力へ' : 'チップ入力へ'}</button>
+            <button type="button" data-testid={\`caption-confirm-\${itemId}\`} data-confirmed={confirmed} onClick={() => setConfirmed(v => !v)} className={\`px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md border \${confirmed ? 'text-emerald-300 bg-emerald-950/40 border-emerald-700/60' : 'text-indigo-300 border-indigo-700 bg-indigo-950/30'}\`}>{confirmed ? '確定済み ✓' : '確定する'}</button>
           </div>
           {chipMode ? <div data-testid={\`caption-chip-editor-\${itemId}\`}><TagChipInput value={caption} onChange={handleCaptionChange} placeholder="タグを追加…" variant="neutral" /></div> :
             <textarea data-testid={\`caption-editor-\${itemId}\`} value={caption} onChange={e=>handleCaptionChange(e.target.value)} className="w-full min-h-[90px] bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-zinc-200 resize-y" placeholder="カンマ区切りのキャプション…" />}
-          <button type="button" data-testid={\`caption-confirm-\${itemId}\`} data-confirmed={confirmed} onClick={() => setConfirmed(v => !v)} className={\`self-end px-3 py-1.5 text-xs rounded-md border \${confirmed ? 'text-emerald-300 bg-emerald-950/40 border-emerald-700/60' : 'text-indigo-300 border-indigo-700 bg-indigo-950/30'}\`}>{confirmed ? '確定済み ✓' : 'このキャプションを確定'}</button>
         </div>
       </div>
     )
