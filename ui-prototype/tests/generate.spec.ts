@@ -122,13 +122,11 @@ test('Generate proposal uses a continuous latest-first horizontal reel', async (
   const afterInertia = await reel.evaluate((el) => el.scrollLeft)
   expect(afterInertia).toBeGreaterThan(afterImpulse + 10)
 
-  await page.waitForTimeout(900)
-  const centered = await reel.evaluate((el) => {
+  await expect.poll(async () => reel.evaluate((el) => {
     const viewportCenter = el.scrollLeft + el.clientWidth / 2
     const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
     return Math.min(...tiles.map(tile => Math.abs(tile.offsetLeft + tile.offsetWidth / 2 - viewportCenter)))
-  })
-  expect(centered).toBeLessThanOrEqual(3)
+  }), { timeout: 3000 }).toBeLessThanOrEqual(3)
 
   const aspects = await reel.locator('[data-generate-reel-tile="true"]').evaluateAll((tiles) =>
     tiles.map((tile) => (tile as HTMLElement).dataset.aspect).filter(Boolean),
