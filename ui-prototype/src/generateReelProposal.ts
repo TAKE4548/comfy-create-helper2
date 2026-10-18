@@ -59,6 +59,12 @@ export function mountGenerateReelProposal() {
       img.src = image
       img.alt = index === 0 ? '最新の生成画像' : `生成画像 ${index + 1}`
       img.draggable = false
+      img.addEventListener('load', () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          tile.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`
+          tile.dataset.aspect = `${img.naturalWidth}x${img.naturalHeight}`
+        }
+      })
       tile.append(img)
 
       const meta = document.createElement('span')
@@ -102,7 +108,10 @@ export function mountGenerateReelProposal() {
     reel.addEventListener('wheel', (event) => {
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
       event.preventDefault()
-      reel.scrollLeft += event.deltaY
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 18
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? reel.clientWidth
+        : 1
+      reel.scrollLeft += event.deltaY * unit * 2.15
     }, { passive: false })
 
     reel.addEventListener('keydown', (event) => {
