@@ -58,7 +58,7 @@ function studioEvaluationFixtures(): Plugin {
       if(!source.includes(anchor))throw new Error('Studio evaluation component changed')
       const imported="import { studioBenchmarkCells, studioBenchmarkSweetSpot } from '../../../../ui-prototype/src/studioFixtures'\n"
       return imported+source.replace(anchor,
-        "<BenchmarkGrid initialCells={document.documentElement.dataset.prototypeVariant === 'proposal' ? studioBenchmarkCells : undefined} initialSweetSpot={document.documentElement.dataset.prototypeVariant === 'proposal' ? studioBenchmarkSweetSpot : null}")
+        "<BenchmarkGrid initialCells={studioBenchmarkCells} initialSweetSpot={studioBenchmarkSweetSpot}")
     }
   }
 }
