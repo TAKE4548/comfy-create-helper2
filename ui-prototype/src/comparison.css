@@ -1421,7 +1421,7 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
  }
  html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(1) span::after{content:"生成";font-size:11px}
  html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(2) span::after{content:"選別";font-size:11px}
- html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(3) span::after{content:"説明文";font-size:11px}
+ html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(3) span::after{content:"キャプション";font-size:10px}
  html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(4) span::after{content:"学習";font-size:11px}
  html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(5) span{font-size:0}
  html[data-prototype-variant="proposal"] [data-studio-proposal="true"] [data-studio-tabs="true"] > button:nth-child(5)::after{content:"評価";font-size:11px}
