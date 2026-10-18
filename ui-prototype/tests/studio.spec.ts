@@ -4,11 +4,7 @@ test('Studio mobile proposal shows five tabs and offline sample project',async (
   test.skip(!info.project.name.includes('mobile'),'Mobile Studio review')
   const errors:string[]=[]
   page.on('pageerror',e=>errors.push(e.message))
-  const errors:string[]=[]
- page.on('pageerror',e=>errors.push(e.message))
- await page.goto('/studio?ui=proposal')
- await page.waitForTimeout(900)
- console.log('STUDIO EXPORT DIAGNOSTIC',JSON.stringify({url:page.url(),body:(await page.locator('body').innerText()).slice(0,1200),errors}))
+  await page.goto('/studio?ui=proposal')
   await page.waitForTimeout(900)
   console.log('STUDIO DIAGNOSTIC',JSON.stringify({url:page.url(),body:(await page.locator('body').innerText()).slice(0,1200),errors}))
   await expect(page.getByTestId('project-selector')).toContainText('UI Review / Sample LoRA',{timeout:20000})
