@@ -1702,3 +1702,19 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    min-width:0!important;
  }
 }
+
+@media(max-width:767px){
+ html[data-prototype-variant="proposal"] [data-studio-caption-card]{
+   display:grid!important;grid-template-columns:92px minmax(0,1fr)!important;
+   width:100%!important;min-width:0!important;align-items:start!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-card] > :nth-child(2){
+   min-width:0!important;width:100%!important;flex:none!important;
+ }
+ html[data-prototype-variant="proposal"] section[aria-labelledby="studio-caption-heading"] > .grid{
+   width:100%!important;min-width:0!important;
+ }
+ html[data-prototype-variant="proposal"] [data-studio-caption-card] [data-testid^="caption-chip-editor-"]{
+   width:100%;min-width:0;overflow-wrap:anywhere;
+ }
+}
