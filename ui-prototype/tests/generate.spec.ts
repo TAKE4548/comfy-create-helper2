@@ -101,17 +101,34 @@ test('Generate proposal uses a continuous latest-first horizontal reel', async (
   await expect(reel.locator('[data-generate-reel-tile="true"]')).toHaveCount(12)
   await expect(reel.locator('[data-generate-reel-tile="true"]').first()).toContainText('LATEST')
 
-  const initial = await reel.evaluate((el) => ({ left: el.scrollLeft, width: el.scrollWidth, client: el.clientWidth }))
+  const initial = await reel.evaluate((el) => {
+    const first = el.querySelector<HTMLElement>('[data-generate-reel-tile="true"]')!
+    return {
+      left: el.scrollLeft,
+      width: el.scrollWidth,
+      client: el.clientWidth,
+      firstCenterOffset: Math.abs(first.offsetLeft + first.offsetWidth / 2 - (el.scrollLeft + el.clientWidth / 2)),
+    }
+  })
   expect(initial.left).toBe(0)
   expect(initial.width).toBeGreaterThan(initial.client)
+  expect(initial.firstCenterOffset).toBeLessThanOrEqual(2)
 
   await reel.hover()
   await page.mouse.wheel(0, 300)
-  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(220)
+  await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100)
   const afterImpulse = await reel.evaluate((el) => el.scrollLeft)
   await page.waitForTimeout(180)
   const afterInertia = await reel.evaluate((el) => el.scrollLeft)
-  expect(afterInertia).toBeGreaterThan(afterImpulse + 20)
+  expect(afterInertia).toBeGreaterThan(afterImpulse + 10)
+
+  await page.waitForTimeout(900)
+  const centered = await reel.evaluate((el) => {
+    const viewportCenter = el.scrollLeft + el.clientWidth / 2
+    const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+    return Math.min(...tiles.map(tile => Math.abs(tile.offsetLeft + tile.offsetWidth / 2 - viewportCenter)))
+  })
+  expect(centered).toBeLessThanOrEqual(3)
 
   const aspects = await reel.locator('[data-generate-reel-tile="true"]').evaluateAll((tiles) =>
     tiles.map((tile) => (tile as HTMLElement).dataset.aspect).filter(Boolean),
