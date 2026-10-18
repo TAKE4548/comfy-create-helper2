@@ -1184,3 +1184,65 @@ html[data-prototype-variant="proposal"] [data-generate-selection-dock]{display:n
    font-size:10px;font-weight:500;white-space:nowrap;
  }
 }
+
+
+/* Generate reel iteration: newest-first fixed order with shared controls and
+   history-local close affordance. Proposal only. */
+@media (min-width: 768px) {
+  html[data-prototype-variant="proposal"] [data-generate-reel-sort-control="true"] {
+    display: none !important;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-toolbar="true"] {
+    max-width: calc(100% - 28px);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-toolbar="true"] > button {
+    min-height: 32px;
+    padding-inline: 9px;
+    white-space: nowrap;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-auto-follow="true"][data-active="true"],
+  html[data-prototype-variant="proposal"] [data-generate-reel-session-filter="true"][data-active="true"] {
+    color: var(--color-accent-green, #3ecf8e);
+    border-color: rgb(62 207 142 / .32);
+    background: rgb(62 207 142 / .09);
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-oldest="true"] {
+    color: #d4d4d8;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-separator="true"] {
+    position: relative;
+    overflow: visible !important;
+    z-index: 30;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-history-close="true"] {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 40;
+    transform: translate(-50%, -50%);
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid rgb(255 255 255 / .12);
+    border-radius: 999px;
+    background: rgb(24 24 28 / .96);
+    color: #d4d4d8;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 5px 16px rgb(0 0 0 / .35);
+    cursor: pointer;
+  }
+
+  html[data-prototype-variant="proposal"] [data-generate-reel-history-close="true"][hidden] {
+    display: none !important;
+  }
+}
