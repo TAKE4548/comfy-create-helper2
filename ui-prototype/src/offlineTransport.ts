@@ -1,3 +1,4 @@
+import { studioProject, studioItems } from './studioFixtures'
 import { fixtureWorkflow, fixtureMasters, fixtureSnapshot, fixturePresets, fixtureCollectionCategories, fixtureCollectionModels, fixtureLoras, fixtureTagSets, fixtureHistorySnapshots, fixtureHistoryAlbums } from './fixtureData'
 /**
  * Preview-only transport sandbox. Loaded before the real App via dynamic import.
@@ -19,6 +20,8 @@ const fixtures: Record<string, unknown> = {
   '/api/tag-sets': fixtureTagSets,
   '/api/albums': fixtureHistoryAlbums,
   '/api/snapshots': fixtureHistorySnapshots,
+  '/api/dataset/projects': [studioProject],
+  '/api/dataset/projects/93101/items': studioItems,
 
   '/api/config': { comfy_url: 'http://offline-prototype.invalid:8188' },
   '/api/generation/snapshot': fixtureSnapshot,
@@ -75,6 +78,8 @@ export function installOfflineTransport() {
       }
       return json(null)
     }
+    if (method === 'GET' && /^\\/api\\/dataset\\/projects\\/93101\\/items\\/?$/.test(path)) return json(studioItems)
+    if (method === 'GET' && /^\\/api\\/dataset\\/projects\\/?$/.test(path)) return json([studioProject])
     if (method !== 'GET' && method !== 'HEAD') {
       return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
     }
