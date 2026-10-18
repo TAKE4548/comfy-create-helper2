@@ -78,8 +78,8 @@ export function installOfflineTransport() {
       }
       return json(null)
     }
-    if (method === 'GET' && /^\\/api\\/dataset\\/projects\\/93101\\/items\\/?$/.test(path)) return json(studioItems)
-    if (method === 'GET' && /^\\/api\\/dataset\\/projects\\/?$/.test(path)) return json([studioProject])
+    if (method === 'GET' && path === '/api/dataset/projects/93101/items') return json(studioItems)
+    if (method === 'GET' && path === '/api/dataset/projects') return json([studioProject])
     if (method !== 'GET' && method !== 'HEAD') {
       return json({ detail: 'Unsupported offline write: ' + method + ' ' + path }, 403)
     }
