@@ -4,7 +4,7 @@ export function mountStudioProposal(){
  let mounted=false
  const sync=()=>{
   if(!matchMedia('(max-width:767px)').matches)return
-  const root=document.querySelector<HTMLElement('[data-studio-proposal]')??document.querySelector<HTMLElement>('.bg-zinc-950.text-zinc-100:has([data-testid="project-selector"])')
+  const root=document.querySelector<HTMLElement>('[data-studio-proposal]')??document.querySelector<HTMLElement>('.bg-zinc-950.text-zinc-100:has([data-testid="project-selector"])')
   if(!root)return
   root.dataset.studioProposal='true'
   const selector=root.querySelector<HTMLElement>('[data-testid="project-selector"]')
