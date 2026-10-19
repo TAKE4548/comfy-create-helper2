@@ -1,9 +1,9 @@
-# Incident Triage Report: ComfyUIへの原画確認処理の残存状況調査と仕様整合性の分析
+# Incident Triage Report: 生成完了後のプレビュー表示遅延（約2.5秒）およびジョブキャンセル処理の遅延
 
 <incident_metadata>
-- Created_At: 2026-10-19 00:44:36
+- Created_At: 2026-10-20 03:50:46
 - Investigation_Status: INVESTIGATION_COMPLETED_AWAITING_PBI
-- Classification: Type B: Specification Gap
+- Classification: Type A: Implementation Defect
 </incident_metadata>
 
 ---
@@ -11,29 +11,29 @@
 ## 1. Executive Summary & Symptoms
 
 <incident_summary>
-- Observed_Symptom: ユーザーより「REQ-362等でComfyUIへの原画確認はやめたはずだが、まだ確認処理が残っているのは廃止漏れか」との指摘。実際にGallery表示時等にComfyUIへの原画確認通信（GET /api/comfy/image-availability）が発生している。
-- Reproducibility: 100% (Confirmed)
-- Impact_Scope: Under Evaluation
+- Observed_Symptom: 1. 生成完了後、UI上に生成画像プレビューが表示されるまでに1秒を大幅に超える遅延（約2.5秒）が発生する。 2. 生成ジョブのキャンセル操作（待機中および実行中）の反映が著しく遅い。
+- Reproducibility: 100% (コード解析およびComfyUI WebSocket仕様との不整合により確定)
+- Impact_Scope: 画像生成完了通知・プレビュー自動追従（auto-follow）、およびジョブキュー/実行中キャンセル機能全体（Backend GenerationService/Bridge, Frontend JobManagementModal）
 </incident_summary>
 
 ## 2. Root Cause Isolation & Evidence
 
 <root_cause_analysis>
-- Defect_Classification: Type B: Specification Gap
-- Root_Cause_Mechanism: REQ-362で廃止（ゼロプローブ化）されたのは『サムネイル/プレビュー画像配信エンドポイント（/thumbnail, /view）におけるキャッシュヒット時のComfyUI HEADプローブ』のみである。一方、現在観測されている原画確認処理はREQ-333/345で策定された『Galleryの試行履歴表示に伴う原画実在確認（SPEC_COMMON/SPEC_GENERATE規定）』であり、REQ-362のスコープ外として現行SSoT上も維持されている。また、comfy.py内のget_comfy_thumbnailに旧プローブの残骸関数（_check_comfy_exists）がデッドコードとして残存している。
-- Failure_Location: `backend/app/routers/comfy.py:444; frontend/src/services/trialImageAvailability.ts:96; docs/specs/SPEC_COMMON.md:460; docs/specs/SPEC_GENERATE.md:243`
+- Defect_Classification: Type A: Implementation Defect
+- Root_Cause_Mechanism: 【プレビュー遅延】ComfyUIは生成完了時にWebSocketで execution_success イベントを送信せず、executing (node: null) を送信する。しかし backend/app/services/generation_service.py の on_event は execution_success のみで完了処理（history取得・succeeded遷移）を行い、executing (node: null) を空処理として無視している。このため、バックエンドはリアルタイムに完了を検知できず、バックグラウンドワーカーのポーリング周期（_RECONCILE_SECONDS = 2.5秒）が満了して _reconcile_locked が走るまで完了状態および出力画像URLがフロントエンドへ配信されない。【キャンセル遅延】1. 待機中ジョブの単件キャンセルでは、Frontend JobManagementModal.tsx に3秒間の取り消し猶予タイマー（setTimeout 3000ms）が存在し即時送信されない。2. 実行中ジョブ中断（interrupt）では、comfy_generation_bridge.py が中断送信前に連続して2回 redundant な GET /queue を呼び出している上、generation_service.py がロック保持下で多重のHTTP問い合わせ（queue/history）を同期実行し、ComfyUIサンプラー停止直後の未完了状態で unconfirmed と判定され、結局2.5秒周期の reconcile ループ待ちとなる。
+- Failure_Location: `backend/app/services/generation_service.py:288-326,421,599-612; backend/app/services/comfy_generation_bridge.py:150-160; frontend/src/components/JobManagementModal.tsx:99-118`
 </root_cause_analysis>
 
 ## 3. Remediation Strategy & SSoT Synchronization
 
 <remediation_strategy>
-- Proposed_Action: 1. ユーザーの意図が『Gallery試行履歴の原画確認機能も不要であり全廃したい』である場合、SSoT（SPEC_COMMON, SPEC_GENERATE）の改定およびFE/BEのavailability機能削除（Type B）を実施する。 2. 意図が『原画確認機能自体は維持でよいが不要プローブの残骸確認だった』場合、comfy.pyの未使用関数_check_comfy_existsを削除するクリーンアップを実施する。
-- SSoT_Update_Required: Yes (Requires updating specifications/OpenAPI)
-- Recommended_Route: architect (/sys-design or /dev-design)
+- Proposed_Action: 1. 【プレビュー即時反映】generation_service.py の on_event において、event_type == 'executing' and data.get('node') is None を検知した時点で、即時に upstream history を取得し、job を succeeded へ遷移させてスナップショットを配信する（2.5秒ポーリング待ちを解消）。2. 【キャンセル高速化】comfy_generation_bridge.py の interrupt メソッド内の冗長な多重 queue() 呼び出しを削減する。また、generation_service.py の _cancel_single において interrupt 後の過度な多重同期待ちを最適化し、WebSocketの execution_interrupted イベント受信と連携して迅速に cancelled 状態を反映する。さらに JobManagementModal.tsx の待機キャンセル3秒タイマーの必要性を精査する。
+- SSoT_Update_Required: No (Pure implementation bug fix)
+- Recommended_Route: engineer (/dev-impl)
 </remediation_strategy>
 
 ## 4. Linked Work Items
 
 <linked_artifacts>
-- PBI_ID: REQ-379
+- PBI_ID: REQ-385
 </linked_artifacts>

@@ -148,11 +148,6 @@ class ComfyGenerationBridge:
         return data
 
     async def interrupt(self, prompt_id: str) -> None:
-        before = await self.queue()
-        if len(before["running"]) != 1 or before["running"][0]["prompt_id"] != prompt_id:
-            raise RuntimeError("target is no longer the uniquely observed running prompt")
-        # ComfyUI's /interrupt has no target parameter. Recheck immediately before
-        # sending it and refuse to interrupt if the running prompt changed.
         latest = await self.queue()
         if len(latest["running"]) != 1 or latest["running"][0]["prompt_id"] != prompt_id:
             raise RuntimeError("target is no longer the uniquely observed running prompt")
@@ -241,11 +236,19 @@ class ComfyGenerationBridge:
         if isinstance(prompt_id, str):
             delivered["prompt_id"] = prompt_id
         await self._invoke(self._on_event, delivered)
-        if isinstance(prompt_id, str) and event["type"] in {
-            "execution_success",
-            "execution_error",
-            "execution_interrupted",
-        }:
+        is_node_null_executing = (
+            event["type"] == "executing"
+            and isinstance(data, dict)
+            and data.get("node") is None
+        )
+        if isinstance(prompt_id, str) and (
+            event["type"] in {
+                "execution_success",
+                "execution_error",
+                "execution_interrupted",
+            }
+            or is_node_null_executing
+        ):
             self._latest_preview.pop(prompt_id, None)
 
     async def _handle_binary_message(self, raw: bytes) -> None:

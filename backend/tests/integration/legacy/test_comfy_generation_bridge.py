@@ -223,7 +223,8 @@ async def test_upstream_health_preserves_first_failure_and_resets_after_http_suc
 
 
 @pytest.mark.asyncio
-async def test_single_interrupt_preflights_target_twice_and_never_interrupts_wrong_prompt() -> None:
+async def test_single_interrupt_preflights_target_once_and_never_interrupts_wrong_prompt() -> None:
+    """[REQ-385/AC-2] Single preflight check ensures fast interrupt dispatch without redundant queue reads."""
     queue_reads = 0
     post_paths: list[str] = []
 
@@ -231,8 +232,7 @@ async def test_single_interrupt_preflights_target_twice_and_never_interrupts_wro
         nonlocal queue_reads
         if request.method == "GET" and request.url.path == "/queue":
             queue_reads += 1
-            running = "target" if queue_reads == 1 else "other"
-            return httpx.Response(200, json={"queue_running": [[1, running, {}, {}, []]], "queue_pending": []})
+            return httpx.Response(200, json={"queue_running": [[1, "other", {}, {}, []]], "queue_pending": []})
         if request.method == "POST":
             post_paths.append(request.url.path)
         return httpx.Response(200, json={})
@@ -241,10 +241,50 @@ async def test_single_interrupt_preflights_target_twice_and_never_interrupts_wro
     try:
         with pytest.raises(RuntimeError, match="no longer the uniquely observed running prompt"):
             await bridge.interrupt("target")
-        assert queue_reads == 2
+        assert queue_reads == 1
         assert post_paths == []
     finally:
         await bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_single_interrupt_posts_immediately_when_target_matches() -> None:
+    """[REQ-385/AC-2] When target matches uniquely running prompt, /interrupt POST is sent with single queue check."""
+    queue_reads = 0
+    post_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal queue_reads
+        if request.method == "GET" and request.url.path == "/queue":
+            queue_reads += 1
+            return httpx.Response(200, json={"queue_running": [[1, "target", {}, {}, []]], "queue_pending": []})
+        if request.method == "POST":
+            post_paths.append(request.url.path)
+        return httpx.Response(200, json={})
+
+    bridge = _http_bridge(handler)
+    try:
+        await bridge.interrupt("target")
+        assert queue_reads == 1
+        assert post_paths == ["/interrupt"]
+    finally:
+        await bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_executing_null_node_clears_latest_preview() -> None:
+    """[REQ-385/AC-2] Executing event with node: null clears ephemeral preview cache."""
+    events: list[dict[str, Any]] = []
+    bridge = _http_bridge(lambda req: httpx.Response(200, json={}))
+    bridge._on_event = lambda event: events.append(event)
+    bridge._latest_preview["prompt-preview-clear"] = (b"preview-data", "image/png")
+    assert bridge.get_preview("prompt-preview-clear") is not None
+
+    await bridge._handle_json_message(
+        json.dumps({"type": "executing", "data": {"prompt_id": "prompt-preview-clear", "node": None}})
+    )
+
+    assert bridge.get_preview("prompt-preview-clear") is None
 
 
 class _FakeSocket:

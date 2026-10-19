@@ -306,9 +306,9 @@ async def test_bridge_running_target_race_never_interrupts_the_newly_running_for
             assert prompt_id == "prompt-1"
             target_running = {"queue_running": [[1, prompt_id, {}, {"client_id": "backend-integration"}, []]], "queue_pending": []}
             foreign_running = {"queue_running": [[2, "foreign-prompt", {}, {"client_id": "other-client"}, []]], "queue_pending": []}
-            # Service sees its target first; Bridge's immediate preflight sees it,
-            # then detects that Comfy's unscoped interrupt would hit another job.
-            upstream.queue_responses = [target_running, target_running, foreign_running]
+            # Service sees its target first; Bridge's immediate preflight detects that
+            # Comfy's unscoped interrupt would hit another job.
+            upstream.queue_responses = [target_running, foreign_running]
 
             response = await client.post(f"/api/generation/jobs/{job_id}/cancel")
             assert response.status_code == 202

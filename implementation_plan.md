@@ -1,67 +1,59 @@
-# Implementation Plan: REQ-372 モバイルGenerate：常駐プレビューを廃止し、履歴グリッド・画像シート・全画面ビューアで画像を確認できるようにする
+# Implementation Plan: REQ-385 生成完了プレビュー表示遅延およびジョブキャンセル処理の遅延解消
 
 ## 1. Overview & Objectives (概要と目的)
-現行モバイルGenerate（幅767px以下）において、縦面積を恒常的に圧迫していた常駐プレビュー（105px〜220px）を撤去し、プロンプト入力およびタグ編集の有効面積を最大化する。
-画像確認は「履歴（3列縦スクロール正方形グリッド） → 画像ボトムシート（MobileImageSheet） → 黒背景全画面ビューア（Fullscreen + Screen Wake Lock API）」の3段階導線へ分離・再設計する。
-常駐プレビューが担っていた既存機能（進捗・ETA表示、自動追従/固定、ダウンロード、スナップショット保存、画像エラー表示、複数選択）は機能対応表に基づき100%継承し、PCレイアウト（幅768px以上）や他ページへの影響はゼロとする。
+ComfyUI連携において、生成完了シグナル（WebSocket `executing` node: null）を即時検知し、2.5秒のフォールバックポーリング待ちを解消して生成完了プレビュー表示を高速化する。
+また、キャンセル操作（`/interrupt`）時の不要な二重 `queue()` 照会を削減し、先行キャンセル予約（`_cancel_requested`）とイベントハンドラ（`on_event`）を密連携させることで、サンプラー停止と同時に即時 `cancelled` 状態へ確定・配信する。
 
 ## 2. Architecture & Seam Map (設計方針とSeam Map)
 - **Integrated (実コード実行)**:
-  - `MobileLayout.tsx`: 常駐プレビュー撤去、プロンプト領域解放、最上部固定ステータスヘッダー（進捗/ETA/キュー数）の維持と生成完了時の新画像導線。
-  - `GenerationGallerySection.tsx`: 履歴の3列正方形グリッド化（縦スクロール）、空状態（0枚）保護、複数選択モード保護。
-  - `MobileImageSheet.tsx`: サムネイルタップ時のボトムシート展開、画像タップ時の全画面ビューア切り替え、Fullscreen API & Screen Wake Lock API制御、CSS 100dvh縮退フォールバック。
-  - `useGalleryInteraction.ts`: サムネイルタップ時のシート起動と複数選択モード時のタップ選択トグル制御。
+  - `backend/app/services/generation_service.py`: `on_event` の `executing` (node: null) 即時完了判定および `_cancel_single` の interrupt 発行連携。
+  - `backend/app/services/comfy_generation_bridge.py`: `interrupt()` 内の冗長な二重 `queue()` 削減、完了時プレビューキャッシュクリア。
+  - `backend/app/services/generation_repository.py`: 既存ステータス遷移（`transition`）契約の維持。
 - **Severed (外部I/O遮断)**:
-  - ComfyUI WebSocket & HTTP API: トランスポート層（MSWまたはモッククライアント）で遮断。
-  - Fullscreen / Wake Lock DOM API: コンポーネント単体テストではDOMインターフェースをモック化。E2Eテストでは実ブラウザ挙動を検証。
-- **PBT判定**: 不採用（No）。UIレイアウトおよび状態遷移マトリクステストで網羅検証。
-- **Fault Injection**: Fullscreen API非対応/拒否時の100dvh CSS縮退、Wake Lock拒否時の非阻害継続とバックグラウンド時の解除、画像URL破損時のエラー表示。
+  - ComfyUI HTTP API (`/prompt`, `/queue`, `/history`, `/interrupt`): `httpx.AsyncClient` トランスポートモックで切断。
+  - ComfyUI WebSocket (`/ws`): `_FakeSocket` によるイベント注入。
+- **PBT判定**: 不採用（No）。固定イベントスキーマおよび確定的な状態遷移ロジックの単体・結合テストで網羅。
+- **Fault Injection**: `executing` (node: null) 受信時に history が一時的に 404/503 を返した場合でも例外でクラッシュせず、既存ポーリングで安全にリカバリすること。
 
 ## 3. Task Breakdown & Mermaid DAG (タスク分解とDAG)
-- **REQ-372-T1**: SSoT 仕様書改定（`SPEC_GENERATE.md`, `SPEC_COMMON.md`）[change_kind: document]
-  - 対象: `docs/specs/SPEC_GENERATE.md`, `docs/specs/SPEC_COMMON.md`
-- **REQ-372-T2**: モバイルGenerate：常駐プレビュー撤去・入力領域解放・ステータスヘッダー完了導線 (`MobileLayout.tsx`) [change_kind: code]
-  - 対象: `frontend/src/pages/GeneratePage/components/MobileLayout.tsx`, `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx`
-- **REQ-372-T3**: モバイル履歴：3列縦スクロールグリッド化・空状態・複数選択保護 (`GenerationGallerySection.tsx`, `useGalleryInteraction.ts`) [change_kind: code]
-  - 対象: `frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx`, `frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx`, `frontend/src/pages/GeneratePage/hooks/useGalleryInteraction.ts`
-- **REQ-372-T4**: モバイル画像確認：ボトムシート・全画面ビューア・WakeLock・Fullscreen縮退フォールバック (`MobileImageSheet.tsx`) [change_kind: code]
-  - 対象: `frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx`, `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx`, `frontend/src/pages/GeneratePage/components/MobileLayout.tsx`
-- **REQ-372-T5**: 結合検証：Playwright E2E実ブラウザ描画・縮退フロー・PC非退行検証 (`generateMobileGallery.spec.ts`) [change_kind: code]
-  - 対象: `frontend/e2e/generateMobileGallery.spec.ts`
+- **REQ-385-T1**: `GenerationService.on_event` の `executing` (node: null) 即時完了ハンドリング [change_kind: code]
+  - 対象: `backend/app/services/generation_service.py`, `backend/tests/integration/legacy/test_generation_service.py`
+  - AC: AC-1, AC-3
+- **REQ-385-T2**: `ComfyGenerationBridge` の不要な二重 `queue()` 削減と完了時プレビュークリア [change_kind: code]
+  - 対象: `backend/app/services/comfy_generation_bridge.py`, `backend/tests/integration/legacy/test_comfy_generation_bridge.py`
+  - AC: AC-2
+- **REQ-385-T3**: `GenerationService._cancel_single` の interrupt 発行とキャンセル完了連携最適化 [change_kind: code]
+  - 対象: `backend/app/services/generation_service.py`, `backend/tests/integration/legacy/test_generation_service.py`
+  - AC: AC-2, AC-3
 
 ```mermaid
 graph TD
-  REQ-372-T1["REQ-372-T1: SSoT 仕様書改定 (Doc) [AC-1, AC-8, AC-14]"]
-  REQ-372-T2["REQ-372-T2: 常駐プレビュー撤去 & ヘッダー完了導線 (Code) [AC-1, AC-9, AC-11, AC-14]"]
-  REQ-372-T3["REQ-372-T3: 履歴3列グリッド化 & 複数選択保護 (Code) [AC-2, AC-7, AC-8, AC-10]"]
-  REQ-372-T4["REQ-372-T4: ボトムシート & 全画面ビューア (Code) [AC-3, AC-4, AC-5, AC-6, AC-8, AC-11, AC-12, AC-13]"]
-  REQ-372-T5["REQ-372-T5: Playwright E2E & PC非退行検証 (Code) [Gate 3 Baseline]"]
+  REQ-385-T1["REQ-385-T1: on_event executing(node:null) 即時完了 [AC-1, AC-3]"]
+  REQ-385-T2["REQ-385-T2: Bridge interrupt二重queue削減 & プレビュー破棄 [AC-2]"]
+  REQ-385-T3["REQ-385-T3: _cancel_single interrupt先行予約・連携最適化 [AC-2, AC-3]"]
 
-  REQ-372-T1 --> REQ-372-T2
-  REQ-372-T1 --> REQ-372-T3
-  REQ-372-T2 --> REQ-372-T4
-  REQ-372-T3 --> REQ-372-T4
-  REQ-372-T4 --> REQ-372-T5
+  REQ-385-T1 --> REQ-385-T3
+  REQ-385-T2 --> REQ-385-T3
 ```
 
 ## 4. Technical Trade-offs & Alternatives (技術的トレードオフと代替案)
-- **常駐プレビュー撤去に伴う画像確認の2段階化**:
-  - *採否*: 採用。モバイル幅でのプロンプト・タグ編集の作業性を最優先し、画像確認は「サムネイルタップ（シート） → 画像タップ（全画面）」へ分離。
-  - *緩和策*: ジョブ完了直後に最上部ステータスヘッダーに「生成完了: 最新画像を表示」導線を配置し、1タップで履歴タブおよび最新画像へ切り替え可能とする。
-- **Fullscreen API 非対応環境の縮退設計（CSS 100dvh）**:
-  - *採否*: 採用。iOS Safari等のブラウザ制限を考慮し、Fullscreen APIが拒否または未サポートの場合でも例外を握り潰して CSS `fixed inset-0 w-full h-[100dvh] z-50 bg-black` による全景表示へ安全にフォールバックする。
-- **Screen Wake Lock API の厳格な解放制御**:
-  - *採否*: 採用。全画面ビューア表示中のみ自動ロックを抑止し、シート復帰・ビューア閉じる・アプリバックグラウンド移行（`visibilitychange`）で直ちに sentinel を release して無駄なバッテリー消費を抑止。
+- **`executing` (node: null) 時の upstream history 即時照会**:
+  - *採否*: 採用。ComfyUI が完了時に `execution_success` を送らない現行仕様において、ミリ秒単位で完了を検知してプレビュー反映できる唯一の正規イベントパス。
+  - *緩和策*: もし ComfyUI 側で history の書き込みがミリ秒単位でわずかに遅延して空が返った場合、例外を補足してフォールバックポーリング（2.5秒）に委ねることで、システムの安定性を損なわない。
+- **キャンセル時の二重 `queue()` 削減**:
+  - *採否*: 採用。以前のコードは `/interrupt` 直前に二重に `queue()` を呼んでおり無駄な往復レイテンシを生んでいた。1回の事前確認で十分安全。
+- **フロントエンドの待機タイマー（3000ms）維持**:
+  - *採否*: 採用。`SPEC_GENERATE.md:203` の既存規定（待機中キャンセルボタン長押し・連打抑止タイマー）を尊重し、バックエンドの即時反映化によってユーザー体感を改善しつつ、UIの既存契約を破壊しない。
 
 ## 5. Verification Plan (3-Gate検証計画)
-- **Gate 1: 静的型チェック & ユニットテスト (3〜5秒)**
-  - UI不変条件: `backend\.venv\Scripts\python scripts/verify_ui_invariants.py`
+- **Gate 1: 静的型チェック & ユニットテスト**
+- **Gate 1: 静的型チェック & 命名規約**
   - テスト命名規約: `backend\.venv\Scripts\python scripts/verify_test_naming.py`
-  - フロント型検査: `cd frontend; npm run typecheck`
-  - 局所ユニットテスト: `cd frontend; npx vitest run src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx`
-- **Gate 2: フルスイート統合テスト (~30秒)**
-  - `cd frontend; npm test`
-  - `backend\.venv\Scripts\python -m pytest`
-- **Gate 3: 実ブラウザ E2E & Red Team 検証 (~1.2秒)**
-  - `cd frontend; npx playwright test generateMobileGallery.spec.ts`
-  - 縮退フォールバック・異常系検証（Fullscreen API/Wake Lock API非対応、画像URL破損、履歴0枚、360px狭幅・セーフエリア）
+  - バックエンド型検査: `backend\.venv\Scripts\mypy backend/app`
+  - フロントエンド型検査: `cd frontend; npm run typecheck`
+- **Gate 2: バックエンド統合テストスイート**
+  - `backend\.venv\Scripts\python -m pytest backend/tests`
+- **Gate 3: シナリオ受け入れ検証**
+  - `test_generation_service.py` における `executing` (node: null) 即時完了テスト
+  - `test_comfy_generation_bridge.py` における `interrupt` 1回 queue 照会検証
+  - キャンセル操作時の即時確定・スナップショット配信の整合性検証

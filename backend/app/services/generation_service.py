@@ -286,21 +286,26 @@ class GenerationService:
                 return
             now = self._now()
             if event_type in {"execution_start", "executing", "progress"}:
-                fields: dict[str, Any] = {}
-                if job.status != "running":
-                    fields.update(status="running", started_at=job.started_at or now)
                 node_id = data.get("node")
-                progress = event_type == "progress"
-                if not isinstance(node_id, str) and progress and job.node is not None:
-                    node_id = job.node.id
-                if isinstance(node_id, str):
-                    node = self._node_progress(job.job_id, node_id, data, job.node)
-                    if node is not None:
-                        fields["node"] = node
-                if not fields:
-                    return
-                status = fields.pop("status", job.status)
-                self.repository.transition(job.job_id, status, **fields)
+                if event_type == "executing" and node_id is None:
+                    # ComfyUI sends executing with node: null to signal execution completion
+                    await self._handle_prompt_completion(job, prompt_id, now)
+                else:
+                    fields: dict[str, Any] = {}
+                    if job.status != "running":
+                        fields.update(status="running", started_at=job.started_at or now)
+                    progress = event_type == "progress"
+                    if not isinstance(node_id, str) and progress and job.node is not None:
+                        node_id = job.node.id
+                    if isinstance(node_id, str):
+                        node = self._node_progress(job.job_id, node_id, data, job.node)
+                        if node is not None:
+                            fields["node"] = node
+                    if not fields:
+                        return
+                    status: JobStatus = "running" if "status" in fields else job.status
+                    fields.pop("status", None)
+                    self.repository.transition(job.job_id, status, **fields)
             elif event_type == "execution_error":
                 reason = data.get("exception_message") or data.get("error") or "ComfyUI execution failed"
                 self.repository.transition(
@@ -324,46 +329,64 @@ class GenerationService:
                 self._cancel_requested.discard(job.job_id)
                 self._frozen_graphs.pop(job.job_id, None)
             elif event_type == "execution_success":
-                try:
-                    history = await self.bridge.history(prompt_id)
-                except Exception:
-                    logger.warning("History unavailable after execution_success for %s", prompt_id, exc_info=True)
-                    return
-                record = history.get(prompt_id) if isinstance(history, dict) else None
-                if not isinstance(record, dict):
-                    return
-                raw_status = record.get("status")
-                raw_status = raw_status if isinstance(raw_status, dict) else {}
-                messages = raw_status.get("messages", [])
-                event_names = {
-                    str(message[0])
-                    for message in messages
-                    if isinstance(message, (list, tuple)) and message
-                } if isinstance(messages, list) else set()
-                if raw_status.get("status_str") == "error" or "execution_error" in event_names:
-                    self.repository.transition(
-                        job.job_id,
-                        "failed",
-                        failure={"reason": "ComfyUI execution failed", "outcome": "failed"},
-                        finished_at=now,
-                    )
-                    self._frozen_graphs.pop(job.job_id, None)
-                elif raw_status.get("completed") is True and (
-                    raw_status.get("status_str") == "success" or "execution_success" in event_names
-                ):
-                    self.repository.transition(
-                        job.job_id,
-                        "succeeded",
-                        outputs=self._history_outputs(prompt_id, record.get("outputs")),
-                        finished_at=now,
-                    )
-                    self._frozen_graphs.pop(job.job_id, None)
-                    self._eager_cache_outputs(record.get("outputs"))
-                else:
-                    return
+                await self._handle_prompt_completion(job, prompt_id, now)
             else:
                 return
         await self._publish_snapshot()
+
+    async def _handle_prompt_completion(self, job: JobView, prompt_id: str, now: str) -> None:
+        try:
+            history = await self.bridge.history(prompt_id)
+        except Exception:
+            logger.warning("History unavailable after completion signal for %s", prompt_id, exc_info=True)
+            return
+        record = history.get(prompt_id) if isinstance(history, dict) else None
+        if not isinstance(record, dict):
+            return
+        raw_status = record.get("status")
+        raw_status = raw_status if isinstance(raw_status, dict) else {}
+        messages = raw_status.get("messages", [])
+        event_names = {
+            str(message[0])
+            for message in messages
+            if isinstance(message, (list, tuple)) and message
+        } if isinstance(messages, list) else set()
+        if raw_status.get("status_str") == "error" or "execution_error" in event_names:
+            self.repository.transition(
+                job.job_id,
+                "failed",
+                failure={"reason": "ComfyUI execution failed", "outcome": "failed"},
+                finished_at=now,
+            )
+            self._cancel_requested.discard(job.job_id)
+            self._frozen_graphs.pop(job.job_id, None)
+        elif "execution_interrupted" in event_names:
+            if job.job_id in self._cancel_requested:
+                self.repository.transition(job.job_id, "cancelled", finished_at=now)
+            else:
+                self.repository.transition(
+                    job.job_id,
+                    "unconfirmed",
+                    failure={"reason": "upstream execution interrupted without a known cancel request", "outcome": "unconfirmed"},
+                    finished_at=now,
+                )
+            self._cancel_requested.discard(job.job_id)
+            self._frozen_graphs.pop(job.job_id, None)
+        elif raw_status.get("completed") is True and (
+            raw_status.get("status_str") == "success" or "execution_success" in event_names
+        ):
+            if job.job_id in self._cancel_requested:
+                self.repository.transition(job.job_id, "cancelled", finished_at=now)
+                self._cancel_requested.discard(job.job_id)
+            else:
+                self.repository.transition(
+                    job.job_id,
+                    "succeeded",
+                    outputs=self._history_outputs(prompt_id, record.get("outputs")),
+                    finished_at=now,
+                )
+                self._eager_cache_outputs(record.get("outputs"))
+            self._frozen_graphs.pop(job.job_id, None)
 
     async def on_preview(self, prompt_id: str, frame: bytes, mime: str) -> None:
         del frame, mime  # Preview bytes stay in the bridge's ephemeral cache.

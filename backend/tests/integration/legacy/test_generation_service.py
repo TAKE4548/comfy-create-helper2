@@ -428,6 +428,58 @@ async def test_live_events_update_progress_using_frozen_graph_then_save_history_
 
 
 @pytest.mark.asyncio
+async def test_executing_null_node_immediately_completes_job_and_publishes_snapshot() -> None:
+    """[REQ-385/AC-1] ComfyUI executing event with node: null signals prompt completion."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    accepted = await service.accept(_payload())
+    job_id = accepted["job_ids"][0]
+    repository.transition(job_id, "running", prompt_id="prompt-exec-null", started_at="2026-10-10T00:00:00Z")
+
+    bridge.history_by_prompt["prompt-exec-null"] = {
+        "status": {"completed": True, "status_str": "success", "messages": [["execution_success", {}]]},
+        "outputs": {"7": {"images": [{"filename": "finished.png"}]}},
+    }
+
+    # ComfyUI sends executing event with node: null upon completion
+    await service.on_event({"type": "executing", "data": {"prompt_id": "prompt-exec-null", "node": None}})
+
+    assert repository.jobs[job_id]["status"] == "succeeded"
+    assert "filename=finished.png" in repository.jobs[job_id]["outputs"][0]["view_url"]
+    assert received[-1]["jobs"][0]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_cancel_running_job_with_executing_null_node_transitions_to_cancelled() -> None:
+    """[REQ-385/AC-3] Cancelled running job transitioning via executing(node: null) is confirmed as cancelled."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    accepted = await service.accept(_payload())
+    job_id = accepted["job_ids"][0]
+    prompt_id = "prompt-cancel-exec-null"
+    repository.transition(job_id, "running", prompt_id=prompt_id, started_at="2026-10-10T00:00:00Z")
+    bridge.running = [{"prompt_id": prompt_id, "client_id": "backend"}]
+
+    # Issue cancel operation
+    cancel_op = await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    assert cancel_op.items[0].job_id == job_id
+
+    # Upstream stops execution and sends executing with node: null
+    bridge.history_by_prompt[prompt_id] = {
+        "status": {"completed": True, "status_str": "success", "messages": [["execution_interrupted", {}]]},
+        "outputs": {},
+    }
+    await service.on_event({"type": "executing", "data": {"prompt_id": prompt_id, "node": None}})
+
+    assert repository.jobs[job_id]["status"] == "cancelled"
+    assert received[-1]["jobs"][0]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_preview_url_changes_only_for_received_frames_and_never_persists_or_survives_terminal() -> None:
     repository = MemoryRepository()
     bridge = FakeBridge()
