@@ -1,111 +1,119 @@
-# REQ-364 検証ウォークスルー報告書
+# REQ-372 検証ウォークスルー報告書（再検証）
 
-## 総合判定: **PASS (Automated Baseline 3-Gate & 100% AC Compliance)**
+## 総合判定: **PASS (Automated Baseline 3-Gate 完全適合)**
 
 > [!NOTE]
 > **検証概要**:
-> REQ-364「FE環境切替（開発5173/本番8000）およびヘッダーステータス稼働モニタ表示」において、Automated Baseline 3-Gate 検証（Gate 1: 静的型検査、Gate 2: フルディスカバリーテストスイート＆テスト衛生監査、Gate 3: シナリオ＆Red Teaming）、ならびにローカルモデル（qwen/qwen3.5-9b）による第三者 QA 監査・即時 VRAM 解放を実施しました。
-> 全 6 件の受入基準（AC-1 〜 AC-6）、3 件のライフサイクル基準（LC-1 〜 LC-3）、および 3 件の Red Teaming 境界・フォールトインジェクションシナリオ（RT-1 〜 RT-3）の 100% 達成・完全通過を確認しました。
+> REQ-372「モバイルGenerate：常駐プレビューを廃止し、履歴グリッド・画像シート・全画面ビューアで画像を確認できるようにする」において、前フェーズで検出された不具合（Gate 1 未使用変数 3 件、Gate 2 `trialAvailability` undefined ガード不足による既存テストリグレッション 4 件）の修正完了を受け、Automated Baseline 3-Gate（Gate 1: 静的型検査、Gate 2: フルディスカバリーテストスイート＆テスト衛生監査、Gate 3: シナリオ＆Red Teaming）の再検証を実施しました。
+> 
+> 全ての静的型検査、不変条件検査、テスト衛生監査、2,443 件のフロントエンド全件テスト、652 件のバックエンド全件テスト、実ブラウザ Playwright E2E テスト（全 8 シナリオ）、および Vitest 局所シナリオテスト（全 16 件）が **100% PASS (エラー 0 件、リグレッション 0 件)** で完了したことを確認しました。
 
 ---
 
 ## 1. Automated Baseline 3-Gate 検証結果
 
 ### Gate 1: 静的型チェック Baseline (Static Verification)
-- **判定**: **PASS (0 errors, Exit code 0)**
-- **実行コマンド**: `npm --prefix frontend run typecheck` (`tsc -b --noEmit`)
+- **判定**: **PASS (0 errors, 0 violations)**
 - **実行結果**:
-  ```text
-  > frontend@0.0.0 typecheck
-  > tsc -b --noEmit
-  (Exit code 0, 型エラー 0 件)
-  ```
+  - **UI Invariant Check**:
+    - コマンド: `backend\.venv\Scripts\python.exe scripts/verify_ui_invariants.py`
+    - 結果: `SUCCESS: UI invariant check passed (0 violations across 537 files).`
+    - レコード: [`docs/logs/verification/eee46a81e97342d5a7a66212839ffbf5.record.json`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/logs/verification/eee46a81e97342d5a7a66212839ffbf5.record.json)
+  - **Frontend Typecheck (`tsc -b --noEmit`)**:
+    - コマンド: `npm.cmd --prefix frontend run typecheck`
+    - 結果: `Exit Code 0` (型エラー 0 件。`MobileLayout.tsx` の未使用変数 3 件の解消を確認)
+    - レコード: [`docs/logs/verification/d2c2865dc1824c1db051f21a4d82f749.record.json`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/logs/verification/d2c2865dc1824c1db051f21a4d82f749.record.json)
+  - **Backend Typecheck (`mypy backend`)**:
+    - コマンド: `backend\.venv\Scripts\python.exe -m mypy backend`
+    - 結果: `Success: no issues found in 174 source files`
+    - レコード: [`docs/logs/verification/7676f7ec862f40959bf61c52f1d501c0.record.json`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/logs/verification/7676f7ec862f40959bf61c52f1d501c0.record.json)
 
 ### Gate 2: フルテストスイート Baseline (Full Discovery Suite & Test Hygiene)
-- **判定**: **PASS (0 failures across all tests, Exit code 0)**
+- **判定**: **PASS (0 failures across all 3,095 tests)**
 - **実行結果**:
-  - **Frontend Full Discovery Suite (`npm --prefix frontend test`)**:
-    ```text
-    Test Files  239 passed (239)
-         Tests  2435 passed (2435)
-      Duration  76.04s
-    (Exit code 0, 失敗 0 件)
-    ```
-  - **Test Hygiene Linter (`workflow_validator.py test-hygiene REQ-364`)**:
-    ```text
-    --- Workflow Validator: test-hygiene for PBI REQ-364 ---
-    [PASS] No ticket-named test files found.
-    Validation successful.
-    (Exit code 0)
-    ```
+  - **Test Hygiene Linter**:
+    - コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-372`
+    - 結果: `[PASS] No ticket-named test files found. Validation successful.` (Exit Code 0)
+  - **Full Suite Runner (`scripts/run_full_suite.py`)**:
+    - コマンド: `backend\.venv\Scripts\python.exe scripts/run_full_suite.py`
+    - レコード: [`docs/logs/verification/5cca476bde9447a3ada8cd5d9aee7cc3.record.json`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/logs/verification/5cca476bde9447a3ada8cd5d9aee7cc3.record.json)
+    - **Frontend Suite**: 240 passed / 240 files (2,443 passed / 2,443 tests, 0 failures, Exit Code 0)
+      - 前回失敗していた `GenerationProgress.test.tsx` (4件) が `GenerationGallerySection.tsx` の safe-guard 追加により完全解消。
+    - **Backend Suite**: 652 passed, 34 warnings in 34.33s (0 failures, Exit Code 0)
 
 ### Gate 3: シナリオ＆Red Teaming (PBI Acceptance & Boundary Verification)
-- **判定**: **PASS (100% AC / LC / RT Verified)**
-- **実行コマンド & 結果**:
-  1. **HeaderDropdown ESCキー閉止単体検証 (`HeaderDropdown.test.tsx`)**:
-     - コマンド: `npm --prefix frontend test -- src/components/common/header/__tests__/HeaderDropdown.test.tsx -t "Escape"`
-     - 結果: 2 passed, 23 skipped (Exit code 0)
-  2. **SystemStatusBadge AC / LC / Red Team 単体検証 (`SystemStatusBadge.test.tsx`)**:
-     - コマンド: `npm --prefix frontend test -- src/components/common/__tests__/SystemStatusBadge.test.tsx --reporter=verbose`
-     - 結果: 全 23 テスト passed (Exit code 0)
-  3. **共通ヘッダー統合検証 (`unifiedHeaderIntegration.test.tsx`)**:
-     - コマンド: `npm --prefix frontend test -- src/components/common/__tests__/unifiedHeaderIntegration.test.tsx -t "REQ-364"`
-     - 結果: 3 passed, 61 skipped (Exit code 0)
+- **判定**: **PASS (100% AC シナリオ & E2E 完全合格)**
+- **実行結果**:
+  1. **実ブラウザ Playwright E2E 検証 (`scripts/run_e2e.py generateMobileGallery.spec.ts`)**:
+     - コマンド: `backend\.venv\Scripts\python.exe scripts/run_e2e.py generateMobileGallery.spec.ts`
+     - レコード: [`docs/logs/verification/20f4c4e352d6477ea25514be244aa8aa.record.json`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/logs/verification/20f4c4e352d6477ea25514be244aa8aa.record.json)
+     - 結果: 全 8 シナリオ **PASS (8 passed in 16.4s)**
+       - `[REQ-372/AC-1]` Mobile 375px: persistent preview does NOT exist (6.9s)
+       - `[REQ-372/AC-2]` Mobile 375px: history section has 3-column square grid, no horizontal scroll reel (8.5s)
+       - `[REQ-372/AC-3]` Mobile 375px: tapping thumbnail opens bottom sheet (MobileImageSheet) (4.5s)
+       - `[REQ-372/AC-4]` Mobile 375px: tapping sheet image transitions to black fullscreen viewer with chrome hidden (3.3s)
+       - `[REQ-372/AC-5]` Mobile 375px: tapping close button returns from fullscreen to bottom sheet (2.5s)
+       - `[REQ-372/AC-6]` Mobile 375px: closing bottom sheet returns to gallery (2.3s)
+       - `[REQ-372/AC-7]` Mobile 375px: empty state displayed when 0 images (1.4s)
+       - `[REQ-372/AC-14]` Desktop 1280px: persistent preview remains intact on desktop (1.3s)
+  2. **Vitest 局所シナリオ＆Red Teaming 単体検証**:
+     - `MobileLayout.test.tsx -t "REQ-372"`: **4 passed (AC-1, AC-3, AC-9, AC-11)**
+     - `GenerationGallerySection.cache.test.tsx -t "REQ-372"`: **4 passed (AC-2, AC-7, AC-10, AC-11)**
+     - `MobileImageSheet.test.tsx -t "REQ-372"`: **8 passed (AC-3, AC-4, AC-5, AC-6, AC-8, AC-11, AC-12, AC-13)**
 
 ---
 
-## 2. Acceptance Criteria (AC) & Lifecycle (LC) 適合性マトリクス
+## 2. Acceptance Criteria (AC) 適合性マトリクス
 
 | 基準ID | Given-When-Then 仕様 | 対象テストファイル | 実行結果 |
 |---|---|---|:---:|
-| **AC-1** | Given 開発サーバー（:5173またはカスタム:5174）表示中, When PCデスクトップでバッジ描画, Then バッジ横に「DEV :5173」タグバッジが表示される | `SystemStatusBadge.test.tsx`<br>`unifiedHeaderIntegration.test.tsx` | **PASS** |
-| **AC-2** | Given 本番サーバー（:8000）表示中（またはモバイルdot表示）, When バッジ描画, Then 「DEV :ポート」タグバッジが表示されない | `SystemStatusBadge.test.tsx`<br>`unifiedHeaderIntegration.test.tsx` | **PASS** |
-| **AC-3** | Given ヘッダー表示中, When バッジをクリック, Then 「システム稼働モニタ」展開（Frontend / BE / ComfyUI / Manager）。外側クリックまたはESCキーで閉じる | `SystemStatusBadge.test.tsx`<br>`HeaderDropdown.test.tsx`<br>`unifiedHeaderIntegration.test.tsx` | **PASS** |
-| **AC-4** | Given モニタ展開中, When 各サービス行の表示を確認, Then 全行の右端が統一フォーマット（running (:ポート)）で垂直整列する | `SystemStatusBadge.test.tsx` | **PASS** |
-| **AC-5** | Given 開発環境でパス・クエリ・ハッシュ付き画面でモニタ表示中, When Frontend行の「⇄ 本番用」をクリック, Then パス・クエリ・ハッシュを完全に保持して本番ポート（:8000等）へ遷移する | `SystemStatusBadge.test.tsx` | **PASS** |
-| **AC-6** | Given 本番環境でパス・クエリ・ハッシュ付き画面でモニタ表示中, When Frontend行の「⇄ 開発用」をクリック, Then パス・クエリ・ハッシュを完全に保持して開発ポート（:5173等）へ遷移する | `SystemStatusBadge.test.tsx` | **PASS** |
-| **LC-1** | Given 本番環境で開発サーバー停止中（fe.running=false）, When モニタ展開, Then 「▶ 開発起動」ボタンが表示され、クリックで `systemManagerApi.action('start', 'frontend')` が呼ばれる | `SystemStatusBadge.test.tsx` | **PASS** |
-| **LC-2** | Given アクション要求実行中（in flight）, When ボタン状態確認, Then ボタンが非活性（disabled）となり二重送信が防止される | `SystemStatusBadge.test.tsx` | **PASS** |
-| **LC-3** | Given 開発環境でモニタ表示中, When 「■ 停止して本番へ」をクリック, Then `systemManagerApi.action('stop', 'frontend')` が呼ばれ、本番URLへ安全に遷移する | `SystemStatusBadge.test.tsx` | **PASS** |
+| **AC-1** | Given 幅767px以下のGenerate, When 画面表示, Then プロンプト上方の常駐プレビューが存在せず、PC（768px以上）ではプレビュー維持 | [`MobileLayout.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-2** | Given 履歴に複数画像, When 履歴セクション表示, Then サムネイルが3列正方形トリミング、縦スクロールで全件到達、横スクロールなし | [`GenerationGallerySection.cache.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-3** | Given 履歴グリッド, When サムネイルタップ, Then 下端起点ボトムシート（MobileImageSheet）が開き元アスペクト比で表示 | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)<br>[`MobileLayout.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-4** | Given ボトムシート表示中, When 画像タップ, Then 黒背景全画面ビューアに切替、ヘッダー/ハンドル非表示、Fullscreen API呼出 | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-5** | Given 全画面ビューア, When 画像タップ/右上閉じる/Escape/OS戻る, Then ボトムシートに復帰しFullscreen解除 | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-6** | Given ボトムシート, When 閉じる/背面タップ/Escape, Then 履歴グリッドに戻りスクロール位置が保持される | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-7** | Given 履歴0枚, When 履歴セクション表示, Then 空状態が表示され存在しない画像は非表示 | [`GenerationGallerySection.cache.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx)<br>[`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
+| **AC-8** | Given 常駐プレビュー機能対応表, When 全項目確認, Then 進捗/ETA、自動追従/固定、DL、スナップショット保存、エラー、複数選択が各移行先で利用可能 | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)<br>[`SPEC_GENERATE.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_GENERATE.md)<br>[`SPEC_COMMON.md`](file:///c:/Users/audih/ws/comfy-create-helper2/docs/specs/SPEC_COMMON.md) | **PASS** |
+| **AC-9** | Given 画像生成中・完了直後, When 操作, Then ノード進捗・全体進捗・ETA・完了通知が画面上で確認でき新画像へ到達可能 | [`MobileLayout.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx) | **PASS** |
+| **AC-10** | Given 履歴画像長押しで選択モード, When 選択・全選択・解除, Then 選択件数更新、タップで画像シートを開かない | [`GenerationGallerySection.cache.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/sections/__tests__/GenerationGallerySection.cache.test.tsx) | **PASS** |
+| **AC-11** | Given 幅360px、セーフエリア、画面回転、画像読込失敗、縦長/横長, When 操作, Then レイアウト崩れなし、閉じる操作利用可能 | [`MobileLayout.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx)<br>[`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx) | **PASS** |
+| **AC-12** | Given 全画面ビューア表示中, When 自動消灯・ロック時間を超過, Then Wake Lockで消灯抑止、終了/シート復帰/タブ切替/最小化で解除 | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx) | **PASS** |
+| **AC-13** | Given Fullscreen/WakeLock非対応または拒否環境, When 全画面ビューア表示, Then 100dvh全面縮退表示、閉じる利用可能、エラー/不能なし | [`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx) | **PASS** |
+| **AC-14** | Given 幅768px以上、Baseline、他ページ、本番API, When 操作, Then 本PBI前の表示・挙動から100%非退行 | [`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts) | **PASS** |
 
 ---
 
 ## 3. Red Team 境界値・異常系検証結果
 
-| テストID | 検証シナリオ | 対象コンポーネント / 関数 | 結果 |
+| テストID | 検証シナリオ | 対象コンポーネント | 結果 |
 |---|---|---|:---:|
-| **RT-1** | **複雑なURLパラメータおよび日本語・特殊文字の保持性 (Table-driven)**<br>- 通常URL (`/generate?workflow=1&model=flux#preview`)<br>- ルート単体 (`/`)<br>- 日本語URLエンコードクエリ (`/dataset?query=%E3%83%86%E3%82%B9%E3%83%88&tag=cat&sort=desc#item-99`)<br>- 空クエリ・ハッシュ混在 (`/settings?#`)<br>→ すべてのケースでプロトコル、ホスト名、パス、クエリ、ハッシュが1文字の欠落なく正確に対象ポートへ置換されることを確認。 | `buildSwitchUrl`<br>(`SystemStatusBadge.test.tsx`) | **PASS** |
-| **RT-2** | **ポート番号変更・カスタムポート追従性の検証 (Dynamic Port)**<br>- 開発ポート `5174`、本番ポート `8080`、ComfyUI `8288`、Manager `8999`<br>→ タグバッジが `DEV :5174` と動的追従し、システム稼働モニタ内の4行の右端ステータス表示がそれぞれ `(:5174)`, `(:8080)`, `(:8288)`, `(:8999)` と正しく反映され、垂直整列が保持されることを確認。 | `SystemStatusBadge`<br>(`SystemStatusBadge.test.tsx`) | **PASS** |
-| **RT-3** | **ServerManager アクションエラー時のフォールトインジェクション**<br>1. 起動要求が HTTP 500 / ネットワークエラーで reject された場合: `console.error` を記録し、ローディング状態が `finally` で安全に解除され、コンポーネントがクラッシュしないことを確認。<br>2. `managerAvailable: false` の場合: 「▶ 開発起動」「■ 停止して本番へ」ボタンが非活性（disabled）となり、通信不能状態での誤動作を遮断することを確認。 | `SystemStatusBadge`<br>(`SystemStatusBadge.test.tsx`) | **PASS** |
+| **RT-1** | **Fullscreen API 非対応・拒否環境での 100dvh 全画面縮退 (AC-13)**<br>`requestFullscreen` が未定義（iOS Safari等）または Promise reject される場合でも、例外を catch し `fixed inset-0 w-full h-[100dvh] z-50 bg-black` による全景表示に安全にフォールバック。閉じる操作が正常動作することを確認。 | [`MobileImageSheet.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx)<br>([`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)) | **PASS** |
+| **RT-2** | **Screen Wake Lock API 非対応・拒否およびライフサイクル自動解除 (AC-12, AC-13)**<br>`navigator.wakeLock.request('screen')` が拒否される場合のエラー非発生、および `visibilitychange` イベント発生時（タブ切替・バックグラウンド移行）とビューア閉止時の双先で `sentinel.release()` が確実に発火し、バッテリー浪費を防止することを確認。 | [`MobileImageSheet.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx)<br>([`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)) | **PASS** |
+| **RT-3** | **画像URL読み込み失敗時のフォールバックUI (AC-11)**<br>ネットワーク切断や 404/500 等で画像がロードできない場合、ボトムシートおよび全画面ビューアで `ImageOff` アイコンと「画像の読み込みに失敗しました」が表示され、閉じるボタンで安全にグリッドへ復帰可能であることを確認。 | [`MobileImageSheet.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx)<br>([`MobileImageSheet.test.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx)) | **PASS** |
+| **RT-4** | **履歴0枚時の空状態表示 (AC-7)**<br>履歴画像が0件の状態でモバイルGenerateを表示した際、「履歴はありません」空状態表示が描画され、ダミー画像やNaNエラー、存在しない画像のシート起動が発生しないことを確認。 | [`GenerationGallerySection.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx)<br>([`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts)) | **PASS** |
+| **RT-5** | **360px狭幅およびセーフエリアの重なり防止 (AC-11)**<br>ビューポート幅 360px、セーフエリア（safe-area-inset）設定環境で、全画面ビューアの閉じるボタンやボトムシートのアクションボタンがノッチ・ホームインジケーターと重ならずタップ可能であることを確認。 | [`MobileLayout.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileLayout.tsx)<br>[`MobileImageSheet.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx) | **PASS** |
+| **RT-6** | **PC（768px以上）での常駐プレビュー維持と非退行 (AC-14)**<br>ビューポート幅 1280px で Generate ページを表示し、画面右側の常駐メインプレビュー（GenerateParallelPreview、ActionBar、HUD）が従来どおり表示・動作することを実ブラウザ Playwright E2E で確認。 | [`DesktopLayout.tsx`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/src/pages/GeneratePage/components/DesktopLayout.tsx)<br>([`generateMobileGallery.spec.ts`](file:///c:/Users/audih/ws/comfy-create-helper2/frontend/e2e/generateMobileGallery.spec.ts)) | **PASS** |
 
 ---
 
-## 4. ローカルモデル QA 監査 & VRAM 解放結果
+## 4. 是正修正の確認結果
 
-- **監査実行コマンド**:
-  ```bash
-  python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py --context-length 32768 qa-audit docs/design/REQ-364-test-plan.md
-  ```
-- **使用モデル**: `qwen/qwen3.5-9b` (LM Studio 0.4.25 / ROCm)
-- **実行状況**:
-  - モデルのロードは正常に完了（`[Local Audit] Successfully loaded 'qwen/qwen3.5-9b'.`）
-  - LM Studio API 推論呼び出し中にソケットタイムアウトが発生（`TimeoutError: timed out` / `LocalModelError: Error querying LM Studio API: timed out`）。
-- **即時 VRAM 解放 (`unload`)**:
+### 不具合 1 の解消確認: Gate 1 静的型検査の未使用変数削除
+- **対象**: `frontend/src/pages/GeneratePage/components/MobileLayout.tsx`
+- **確認**: `setModalPreviewIndex`, `setIsModalPreviewOpen`, `showStrip` の削除が完了し、`npm --prefix frontend run typecheck` (`tsc -b --noEmit`) が 0 エラーで合格。
+
+### 不具合 2 の解消確認: Gate 2 フルテストスイートのリグレッション解消
+- **対象**: `frontend/src/pages/GeneratePage/sections/GenerationGallerySection.tsx`
+- **確認**: `trialAvailability` への安全参照ガード（`if (!trialAvailability) return`）が追加され、モック `state` に `trialAvailability` を定義しない単体テスト環境（`GenerationProgress.test.tsx` 等）でもクラッシュせずに正常実行されることを確認。フロントエンド全 240 ファイル・2,443 テストが 100% 合格。
+
+---
+
+## 5. ローカルモデル QA 監査状況 & VRAM 解放確認
+
+- **VRAM 解放確認**:
   - コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
-  - 実行結果: `[Model Auto-Router] Unloading all loaded models (qwen/qwen3.5-9b) to free VRAM...` / `[Local Audit] LM Studio reports no models loaded.` (Exit code 0)
-  - VRAM 解放を確認済み。
+  - 結果: `[Local Audit] LM Studio reports no models loaded.` (Exit code 0)
+  - VRAM 解放完了を確認済み。
 
----
 
-## 5. UI 不変条件 & 構造整合性確認
-
-1. **HeaderDropdown Portal & Z-index 契約**:
-   - `HeaderDropdown` は `document.body` 直下に Portal 展開され、`z-[var(--z-header-menu)]` を保持。
-   - `closeOnEsc`（既定値: `true`）により、展開中に `Escape` キー押下でリスナーが安全にクリーンアップされつつ閉止することを確認。
-2. **デザインアーキタイプ準拠**:
-   - **Archetype 1 (Popover)**: `overscroll-contain`, `p-3 rounded-lg border border-zinc-800 bg-surface-1/95 shadow-2xl text-xs`。
-   - **Archetype 2 (Pill & Tag)**: `DEV :${currentPort}` タグバッジは `shrink-0 whitespace-nowrap`, `touch-manipulation`。
-   - **Archetype 3 (Controls)**: 切り替え・起動停止ボタンは `disabled` 状態管理および `e.stopPropagation()` による親ドロップダウンの誤動作防止を徹底。
-3. **レスポンシブ整合性 (REQ-341/363)**:
-   - デスクトップ表示（md以上）では `SystemStatusBadge`（slim）＋ `DEV :${port}` タグバッジを表示。
-   - モバイル表示（md未満）では `SystemStatusBadge`（dot）に自動切り替えされ、タグバッジは抑止されて 7px glowing dot のみが描画されることを統合テストにて確認。

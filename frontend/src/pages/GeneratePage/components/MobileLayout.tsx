@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { useAppLifecycleSync } from '../../../hooks/useAppLifecycleSync'
 import {
-  Library, Loader2, Redo2, ImageOff, Download, Plus, Undo2, X,
+  Library, Loader2, Redo2, Plus, Undo2, X,
   ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
@@ -17,6 +17,7 @@ import { TagChipEditor } from '../../../components/TagChipEditor'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
 import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
+import { MobileImageSheet } from './MobileImageSheet'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useSystemStats } from '../../../hooks/useSystemStats'
 import { selectProgress, selectWait } from '../../../utils/generationSelectors'
@@ -32,7 +33,7 @@ export const MobileLayout = ({
 }) => {
   useSystemStats()
   const {
-    isConnected, isGenerating, progress, previewImage,
+    isConnected, isGenerating, progress,
     selectedWorkflowId, setSelectedWorkflowId,
     paramValues, setParamValues,
     batchSize, setBatchSize, seedMode, setSeedMode, seed, setSeed,
@@ -50,8 +51,6 @@ export const MobileLayout = ({
     setRescanOpen,
     selectedMasters, setSelectedMasters,
     openAddAssetRole, setOpenAddAssetRole,
-    setModalPreviewIndex,
-    setIsModalPreviewOpen,
     setIsJobModalOpen,
     setIsPresetManagerOpen,
     handleSelectPresetTab,
@@ -86,12 +85,11 @@ export const MobileLayout = ({
     isOtherSessionGenerating,
     allQueueCount,
     totalQueueCount,
-    showStrip, invalidMappings, textMappings, paramMappings,
+    invalidMappings, textMappings, paramMappings,
     
     // handlers
     handleLoadSnapshot,
     handleUpdateMapping,
-    handleOpenModalPreview,
     handleGenerateSets,
     getIsRoleCollapsed,
     setRoleCollapsed,
@@ -195,7 +193,25 @@ export const MobileLayout = ({
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [mobileSegment, setMobileSegment] = useState<'prompt' | 'parameters' | 'history'>('prompt')
-  const [isCompactPreview, setIsCompactPreview] = useState(true)
+  const [showCompletionNav, setShowCompletionNav] = useState(false)
+  const [isImageSheetOpen, setIsImageSheetOpen] = useState(false)
+  const scrollPositionRef = useRef(0)
+  const mainContainerRef = useRef<HTMLDivElement>(null)
+  const prevGeneratingRef = useState<{ value: boolean }>({ value: false })[0]
+
+  const handleOpenImageSheet = useCallback(() => {
+    if (mainContainerRef.current) {
+      scrollPositionRef.current = mainContainerRef.current.scrollTop
+    }
+    setIsImageSheetOpen(true)
+  }, [])
+
+  const handleCloseImageSheet = useCallback(() => {
+    setIsImageSheetOpen(false)
+    if (mainContainerRef.current) {
+      mainContainerRef.current.scrollTop = scrollPositionRef.current
+    }
+  }, [])
 
   const gallery = useGalleryInteraction({
     isMobile: true,
@@ -213,9 +229,8 @@ export const MobileLayout = ({
       isSelected,
       getLongPressHandlers,
     },
-    onOpenModalPreview: (i) => {
-      setModalPreviewIndex(i)
-      setIsModalPreviewOpen(true)
+    onOpenModalPreview: (_i) => {
+      handleOpenImageSheet()
     },
     onLoadSnapshot: handleLoadSnapshot,
   })
@@ -261,6 +276,14 @@ export const MobileLayout = ({
     return () => clearInterval(timer)
   }, [managedStartTime, generationStartTime])
   const displayProgressActive = generationSnapshot ? (normalUnfinished && normalWait?.kind !== 'session') : isGeneratingHere
+  useEffect(() => {
+    if (prevGeneratingRef.value && !displayProgressActive) {
+      setShowCompletionNav(true)
+    } else if (displayProgressActive) {
+      setShowCompletionNav(false)
+    }
+    prevGeneratingRef.value = displayProgressActive
+  }, [displayProgressActive, prevGeneratingRef])
   const displayNodeName = generationSnapshot ? (normalRunningJob?.node?.name || (normalWait ? `${normalWait.label} 待機中 (${normalWait.remaining})` : '準備中...')) : currentNode?.name || '準備中...'
   const displayNodePercentage = generationSnapshot ? managedNodePercentage : nodeProgress?.percentage || 0
   const displayElapsedTime = generationSnapshot ? managedElapsedTime : elapsedTime
@@ -335,6 +358,7 @@ export const MobileLayout = ({
 
   return (
     <div
+      ref={mainContainerRef}
       className="flex flex-col h-[100dvh] overflow-y-auto overscroll-contain overscroll-y-contain scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)] pb-[calc(54px+env(safe-area-inset-bottom)+72px)] bg-surface relative w-full"
       style={{ overscrollBehaviorY: 'contain' }}
       onFocus={(e) => {
@@ -396,15 +420,34 @@ export const MobileLayout = ({
       />
 
       {/* Compact progress stays visible below the scrolling header. */}
-      <div data-testid="mobile-progress-line" className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[10px] font-mono text-zinc-300">
-        <span className="truncate">{displayProgressActive ? displayNodeName : vramWaitStatus?.isWaiting ? 'VRAM解放待ち' : (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? '他セッションで生成中' : '待機中'}</span>
+      <div
+        data-testid="mobile-sticky-status-header"
+        data-test-progress-line="true"
+        className="sticky top-0 z-40 h-6 min-h-6 bg-surface-2/95 backdrop-blur border-b border-white/5 px-3 flex items-center justify-between gap-2 text-[10px] font-mono text-zinc-300"
+      >
+        <span className="truncate flex-1 min-w-0" data-testid="mobile-progress-line">
+          {displayProgressActive ? displayNodeName : vramWaitStatus?.isWaiting ? 'VRAM解放待ち' : (generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? '他セッションで生成中' : '待機中'}
+        </span>
+        {showCompletionNav && (
+          <button
+            type="button"
+            data-testid="mobile-completion-nav-btn"
+            onClick={() => {
+              setMobileSegment('history')
+              setShowCompletionNav(false)
+            }}
+            className="shrink-0 text-accent-green hover:underline font-sans text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            生成完了: 最新画像を表示
+          </button>
+        )}
         <span className="shrink-0">{displayProgressActive ? '進行中' : '—'}</span>
         <span className="shrink-0 ux-numeric">ETA {displayProgressActive ? (eta === null ? '未取得' : `${eta}秒`) : '未取得'}</span>
         {displayProgressActive && <span className="absolute bottom-0 left-0 h-0.5 bg-accent-green" style={{ width: `${overallPercentage}%` }} />}
       </div>
 
       {/* Progress Line */}
-      <div className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-3 py-2.5 flex flex-col gap-2">
+      <div data-testid="mobile-progress-section" className="w-full bg-surface-2 border-b border-[rgba(255,255,255,0.06)] px-3 py-2.5 flex flex-col gap-2">
         {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
         {vramWaitStatus?.isWaiting ? (
           <div className="flex items-center justify-between text-[10px]">
@@ -528,67 +571,6 @@ export const MobileLayout = ({
         )}
       </div>
 
-      {/* Main Preview */}
-      <div
-        data-testid="mobile-main-preview"
-        role="button"
-        tabIndex={0}
-        aria-expanded={!isCompactPreview}
-        aria-label="プレビュートグル"
-        onClick={() => setIsCompactPreview((prev) => !prev)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            setIsCompactPreview((prev) => !prev)
-          }
-        }}
-        className={`bg-grid relative w-full shrink-0 flex items-center justify-center overflow-hidden border-b border-[rgba(255,255,255,0.06)] bg-surface-2 transition-all duration-200 cursor-pointer ${
-          isCompactPreview ? 'h-[105px]' : 'aspect-[2/3] max-h-[42vh]'
-        }`}
-      >
-        <button
-          type="button"
-          data-testid="preview-toggle-btn"
-          aria-label={isCompactPreview ? "プレビューを展開" : "プレビューを縮小"}
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsCompactPreview((prev) => !prev)
-          }}
-          className="absolute top-2 left-2 z-10 text-[10px] px-2 py-0.5 rounded bg-surface/80 hover:bg-surface border border-white/10 text-zinc-300 font-medium transition-colors"
-        >
-          {isCompactPreview ? "展開 (220px)" : "縮小 (105px)"}
-        </button>
-        {(previewImage || selectedImg) ? (
-          <div
-            className="relative w-full h-full flex items-center justify-center"
-            onClick={(e) => {
-              if (!isCompactPreview) {
-                e.stopPropagation()
-                handleOpenModalPreview()
-              }
-            }}
-          >
-            <img src={previewImage || selectedImg!} alt="Generated" className="w-full h-full object-contain" />
-            {isGeneratingHere && <div className="absolute top-2 right-2 bg-surface-2/80 backdrop-blur p-1.5 rounded-full border border-white/5 shadow-md"><Loader2 size={16} className="animate-spin text-accent-green" /></div>}
-            <a href={previewImage || selectedImg!} download="generated.png" id="download-btn-mobile"
-              onClick={(e) => e.stopPropagation()}
-              className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface/80 backdrop-blur border border-[rgba(255,255,255,0.1)] text-zinc-200 text-xs font-medium hover:bg-surface">
-              <Download size={12} />Download
-            </a>
-          </div>
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
-            {isGeneratingHere ? <Loader2 size={24} className="animate-spin text-accent-green" /> : <ImageOff size={32} strokeWidth={1} />}
-            <p className="text-xs">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
-          </div>
-        )}
-        {isGeneratingHere && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-955 overflow-hidden">
-            <div className="h-full bg-accent-green progress-shimmer transition-all duration-200" style={{ width: `${batchProgress.percentage}%` }} />
-          </div>
-        )}
-      </div>
-
       <div role="group" aria-label="表示セクション" className="grid grid-cols-3 gap-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2 px-3 py-2.5">
         {([
           ['prompt', 'プロンプト'],
@@ -606,7 +588,7 @@ export const MobileLayout = ({
       <section id="mobile-history-panel" data-testid="mobile-history-panel" aria-label="履歴"
         hidden={mobileSegment !== 'history'} style={{ display: mobileSegment === 'history' ? undefined : 'none' }}>
         {/* Keep the gallery mounted while switching segments so its selection survives. */}
-        {showStrip && <GenerationGallerySection state={state} gallery={gallery} isMobile={true} />}
+        <GenerationGallerySection state={state} gallery={gallery} isMobile={true} />
       </section>
 
       <section id="mobile-prompt-panel" data-testid="mobile-prompt-panel" aria-label="プロンプト"
@@ -930,6 +912,13 @@ export const MobileLayout = ({
         setSaveAsTagSetRole={setSaveAsTagSetRole}
         errorToast={errorToast}
         setErrorToast={setErrorToast}
+      />
+
+      <MobileImageSheet
+        isOpen={isImageSheetOpen}
+        onClose={handleCloseImageSheet}
+        image={selectedImg}
+        onSaveSnapshot={(_img) => setIsSaveModalOpen(true)}
       />
     </div>
   )

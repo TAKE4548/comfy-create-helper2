@@ -54,6 +54,9 @@
   - Settingsに独自overlay（`fixed inset-0` + `role="dialog"`）として残るものはない。`SettingsComponents.tsx` の `MappingMasterModal`（`fixed inset-0`）は本番コードから未参照（テストのみ）で、Settingsから到達しない。`ServiceConnectionCard` / `SpeechToneSection` の `role="alertdialog"` は行内の確認ブロックでオーバーレイではない。
   - `.modal-backdrop` を直接使うレガシーdialog（非テスト、2026-10-15 grep）: BulkEditModal、BypassSettingsModal、CategoryManagerModal、HistoryModalPreview、LoraDetailModal、LoraRegisterModal、ParamSyncModal、ProfileBulkEditModal（本体と BulkEditConfirmView）、RescanModal、SceneGeneratorModal、SpeechBubbleEditorModal、TagSetCreateModal / TagSetDetailModal / TagSetEditModal、UploadWorkflowModal、DatasetStudioPage の OutfitMasterModal / CreateProjectModal、GeneratePage の AddAssetModal。これらにはレガシーsheet規則（下部寄せ・疑似要素ハンドル・角丸12px）が適用され、Settingsからは到達しない（UploadWorkflowModal は GeneratePage から使用）。共通Modal自身も `.modal-backdrop` 要素を用いるが、`data-radius-exempt` により疑似ハンドル・12px補正の対象外である。
 - モーダルは相互に排他とし、ネスト表示しない（list→form は一覧を閉じてからフォームを開く）。唯一の例外は MappingMasterEditModal 内の WorkflowNodePicker で、共通Modalの中に共通Modalをネストして開く。このとき外側は `closeOnEsc={!isNodePickerOpen}` により Esc を無視し、Esc は内側（WorkflowNodePicker）のみを閉じる。
+- **モバイル画像確認シートと全画面ビューア (REQ-372)**:
+  - 画像閲覧・確認を目的とするモバイル下端起点シート（`MobileImageSheet`）は、上部セーフエリア侵食防止のため最大高さ `max-h-[88dvh]`（角丸 `rounded-t-2xl`）とし、`overscroll-contain` を適用する。操作ボタン（閉じる、ダウンロード、スナップショット保存）は最小44×44pxのHit-Slopを確保する。
+  - シート内タップから移行する全画面ビューアは、シートクロームを隠蔽して画面全面（`fixed inset-0 z-50 bg-black`）に画像を展開する没入表示契約とする。Fullscreen API非対応環境（iOS Safari等）や拒否時は CSS 100dvh 全画面へ安全に縮退フォールバックする。全画面表示中はScreen Wake Lock APIで画面消灯を抑止し、全画面解除時またはタブ切替時に直ちに解放する。
 - 画像閲覧を目的とする全画面プレビューだけは通常モーダル幅の上限を使わず、画像表示用の全画面契約を維持する。
 - モバイルUI共通規約（§1-6）のMUI-03・MUI-04・MUI-05は、共通Modalと`.modal-backdrop`のレガシーモーダルのどちらにも適用する。上記のレガシーモーダルの一覧と規則は、適用PBI（REQ-377）が実画面を確認して更新するまで変更しない。
 
@@ -68,7 +71,7 @@
    - 防御策: `min-w-0 flex-1 truncate` のように、Flexコンテナおよびtruncateを持つ要素自身に `min-w-0` を付与する。
 3. **Centered Modal Trap (中央配置モーダルの流用)**
    - 現象・リスク: PC向けの中央ダイアログを流用。上部がアドレスバーに潜り込み、下部は仮想キーボードで潰され操作不能になる。
-   - 防御策: モバイルは原則ボトムシート（上限 `max-h-[75dvh]` / `max-h-[90dvh]`）に倒し、最下部に固定操作ドックを常駐させる。
+   - 防御策: モバイルは原則ボトムシート（上限 `max-h-[75dvh]` / `max-h-[90dvh]`、画像確認シート `max-h-[88dvh]`）に倒し、最下部に固定操作ドックを常駐させる。
 4. **Double Padding (二重パディングの蓄積)**
    - 現象・リスク: 親（AppShell）が `pb-[54px+env(safe-area)]` を持っているのに、子画面が `h-[100dvh]` や `pb-24` を重ね、下部に巨大な虚無空間が生じる。
    - 防御策: 最外層コンテナがSafe Areaとバー高さを一元管理。子画面内部での全画面高さ指定（`h-[100dvh]`）や過剰な `pb` 重複を禁止（既知の例外: Settingsの `pb-[calc(6rem+env(safe-area-inset-bottom))]`、§2-4参照）。
@@ -119,7 +122,8 @@
 
 #### 1-5-3. 4大コンポーネントプリセット (4 Component Presets with Tailwind)
 1. **🪟 Preset 1: Modals & Overlays (モーダル・オーバーレイ)**
-   - モバイル: 原則ボトムシート化 (`fixed inset-x-0 bottom-0 rounded-t-2xl max-h-[75dvh] overflow-y-auto`)。最下部固定アクションバー必須。中央配置は禁止。
+   - モバイル: 原則ボトムシート化 (`fixed inset-x-0 bottom-0 rounded-t-2xl max-h-[75dvh] overflow-y-auto`)。画像確認シートは上部余白を確保した `max-h-[88dvh]`。最下部固定アクションバー必須。中央配置は禁止。
+   - 全画面ビューア: `fixed inset-0 z-50 bg-black` による全面没入表示。Fullscreen API非対応時は 100dvh 全画面へ安全に縮退。Screen Wake Lockによる画面消灯抑止と終了時の自動解放を徹底。
    - スクロール制御: `overscroll-behavior-y: contain` (`overscroll-contain`) で親ブラウザ競合を遮断。
    - GPU負荷抑制: `backdrop-blur-sm` (<=8px) または `bg-black/60` (半透明ベタ塗り)。
    - デスクトップ: 中央配置 (`sm:max-w-lg sm:mx-auto sm:my-auto sm:rounded-xl`)、多重モーダル禁止・スタック一元化。

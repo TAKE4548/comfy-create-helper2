@@ -50,9 +50,10 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
     retryResidualHistory,
   } = state
 
-  useEffect(() => trialAvailability.subscribe(() => setAvailabilityRevision((revision) => revision + 1)), [trialAvailability])
+  useEffect(() => trialAvailability?.subscribe(() => setAvailabilityRevision((revision) => revision + 1)), [trialAvailability])
 
   useEffect(() => {
+    if (!trialAvailability) return
     if (thumbnailTab !== 'history') {
       trialAvailability.releaseOwner(ownerRef.current)
       observedImagesRef.current.clear()
@@ -63,12 +64,12 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
     trialAvailability.retainOwnerImages(ownerRef.current, [...observedImagesRef.current])
   }, [sortedDisplayImages, thumbnailTab, trialAvailability])
 
-  useEffect(() => () => trialAvailability.releaseOwner(ownerRef.current), [trialAvailability])
+  useEffect(() => () => trialAvailability?.releaseOwner(ownerRef.current), [trialAvailability])
 
-  const getImageIdentity = (imageUrl: string) => trialAvailability.getIdentity(imageUrl)
+  const getImageIdentity = (imageUrl: string) => trialAvailability?.getIdentity(imageUrl)
   const getAvailability = (imageUrl: string) => {
     void availabilityRevision
-    return trialAvailability.getStatus(imageUrl) ?? 'present'
+    return trialAvailability?.getStatus(imageUrl) ?? 'present'
   }
 
   const handleThumbnailLoad = (_imageUrl: string) => {
@@ -308,7 +309,7 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
             onWheel={gallery.handleWheelScroll}
             className={
               isMobile
-                ? 'flex gap-2 overflow-x-auto custom-scrollbar pb-1'
+                ? 'grid grid-cols-3 gap-2 py-2 overflow-x-visible'
                 : 'flex-1 min-h-0 flex gap-2 overflow-x-auto custom-scrollbar pb-1 items-center'
             }
           >
@@ -329,7 +330,7 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={
                     isMobile
-                      ? `flex-shrink-0 w-12 h-12 rounded overflow-hidden border-2 transition-all relative select-none ${
+                      ? `w-full aspect-square rounded-lg overflow-hidden border-2 transition-all relative select-none ${
                           isMultiSelectMode
                             ? isSel
                               ? 'border-purple-500 ring-2 ring-purple-500/30'

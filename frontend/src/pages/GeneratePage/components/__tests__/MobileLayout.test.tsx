@@ -435,16 +435,12 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(screen.getByText('Anima特化')).toBeInTheDocument()
   })
 
-  it('keeps the portrait preview, progress, and actions above the mobile navigation safe area', () => {
-    const state = createMockState({ selectedImg: '/portrait.png', isGeneratingHere: true })
+  it('keeps progress and actions above the mobile navigation safe area', () => {
+    const state = createMockState({ isGeneratingHere: true })
     const { container } = render(<MobileLayout state={state} />)
 
-    const previewImage = screen.getByAltText('Generated')
-    const previewContainer = previewImage.parentElement?.parentElement
-    expect(previewContainer).toHaveClass('h-[105px]')
-    fireEvent.click(previewContainer!)
-    expect(previewContainer).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
-    expect(container.querySelector('[data-testid="mobile-progress-line"]')).toHaveClass('sticky', 'top-0', 'h-6')
+    expect(screen.queryByTestId('mobile-main-preview')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-testid="mobile-sticky-status-header"]')).toHaveClass('sticky', 'top-0', 'h-6')
     expect(screen.getByTestId('mobile-action-bar').className).toContain('bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))]')
     expect(container.firstElementChild).toHaveClass('pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
     expect(screen.getByText(/ETA 未取得/)).toBeInTheDocument()
@@ -462,16 +458,12 @@ describe('MobileLayout - TagChipEditor Integration', () => {
     expect(screen.getByText(/ETA .*20秒/)).toBeInTheDocument()
   })
 
-  it('keeps the generated portrait preview from shrinking and exposes mobile queue and save actions', () => {
+  it('exposes mobile queue and save actions in action bar', () => {
     const setIsJobModalOpen = vi.fn()
-    const state = createMockState({ previewImage: '/portrait.png', totalQueueCount: 3, setIsJobModalOpen })
+    const state = createMockState({ totalQueueCount: 3, setIsJobModalOpen })
     render(<MobileLayout state={state} />)
 
-    const preview = screen.getByAltText('Generated')
-    const previewContainer = preview.parentElement?.parentElement
-    expect(previewContainer).toHaveClass('shrink-0', 'h-[105px]')
-    fireEvent.click(previewContainer!)
-    expect(previewContainer).toHaveClass('shrink-0', 'aspect-[2/3]', 'max-h-[42vh]')
+    expect(screen.queryByTestId('mobile-main-preview')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Snapshot保存' })).toHaveClass('min-h-[44px]')
     const queueButton = screen.getByRole('button', { name: 'キュー管理: 3件' })
     expect(queueButton).toHaveClass('min-h-[44px]')
@@ -496,7 +488,7 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(root.style.overscrollBehaviorY).toBe('contain')
 
       // Check outer padding token px-3 py-2.5 on progress section and action bar
-      const progressSection = container.querySelector('[data-testid="mobile-progress-line"]')?.nextElementSibling
+      const progressSection = screen.getByTestId('mobile-progress-section')
       expect(progressSection).toHaveClass('px-3', 'py-2.5')
 
       const actionBar = screen.getByTestId('mobile-action-bar')
@@ -640,58 +632,90 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(scrollContainer.className).toContain('scroll-pb-[calc(54px+env(safe-area-inset-bottom)+72px)]')
     })
 
-    it('[REQ-363/AC-5] defaults to compact preview (105px) and supports manual toggle without forcing expansion on job start', () => {
+    it('[REQ-372/AC-1] removes persistent main preview container in mobile layout', () => {
       const state = createMockState({
         isGenerating: false,
         previewImage: 'data:image/png;base64,mock',
+        selectedImg: 'data:image/png;base64,mock',
+      })
+      render(<MobileLayout state={state} />)
+
+      // Verify that data-testid="mobile-main-preview" and preview toggle btn are completely absent
+      expect(screen.queryByTestId('mobile-main-preview')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('preview-toggle-btn')).not.toBeInTheDocument()
+    })
+
+    it('[REQ-372/AC-9] displays sticky status header with progress and shows completion navigation on job end', () => {
+      const state = createMockState({
+        isGeneratingHere: true,
+        progress: { percentage: 45, value: 45, max: 100 },
+        activeBatch: [{ status: 'generating' }],
       })
       const { rerender } = render(<MobileLayout state={state} />)
 
-      const preview = screen.getByTestId('mobile-main-preview')
-      expect(preview).toHaveClass('h-[105px]')
-      expect(preview).toHaveAttribute('aria-expanded', 'false')
+      const header = screen.getByTestId('mobile-sticky-status-header')
+      expect(header).toBeInTheDocument()
+      expect(header).toHaveClass('sticky', 'top-0')
+      expect(within(header).getByText('進行中')).toBeInTheDocument()
+      expect(screen.queryByTestId('mobile-completion-nav-btn')).not.toBeInTheDocument()
 
-      // Toggle preview via container click
-      fireEvent.click(preview)
-      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
-      expect(preview).toHaveAttribute('aria-expanded', 'true')
+      // Generation completes: isGeneratingHere becomes false
+      rerender(<MobileLayout state={{ ...state, isGeneratingHere: false, activeBatch: [{ status: 'completed' }] }} />)
 
-      // Toggle back via button
-      const toggleBtn = screen.getByTestId('preview-toggle-btn')
-      fireEvent.click(toggleBtn)
-      expect(preview).toHaveClass('h-[105px]')
-      expect(preview).toHaveAttribute('aria-expanded', 'false')
+      // Completion navigation link appears
+      const completionNav = screen.getByTestId('mobile-completion-nav-btn')
+      expect(completionNav).toBeInTheDocument()
+      expect(completionNav).toHaveTextContent('生成完了: 最新画像を表示')
 
-      // Keydown Enter toggles
-      fireEvent.keyDown(preview, { key: 'Enter' })
-      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
-      expect(preview).toHaveAttribute('aria-expanded', 'true')
-
-      // When job starts (isGenerating: true), does NOT force expand or reset state
-      rerender(<MobileLayout state={{ ...state, isGenerating: true }} />)
-      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+      // Clicking completion navigation switches active segment to history
+      fireEvent.click(completionNav)
+      const historyPanel = screen.getByTestId('mobile-history-panel')
+      expect(historyPanel).toBeVisible()
+      expect(historyPanel).not.toHaveAttribute('hidden')
     })
 
-    it('[REQ-363/AC-5] enforces 2-tap sequence before opening full modal preview', () => {
-      const handleOpenModalPreview = vi.fn()
+    it('[REQ-372/AC-11] maintains sticky status header layout and text truncation on 360px viewport', () => {
       const state = createMockState({
-        previewImage: 'data:image/png;base64,mock',
-        handleOpenModalPreview,
+        isGeneratingHere: true,
+        progress: { percentage: 70 },
       })
       render(<MobileLayout state={state} />)
-      const preview = screen.getByTestId('mobile-main-preview')
-      expect(preview).toHaveClass('h-[105px]')
 
-      const img = screen.getByAltText('Generated')
+      const header = screen.getByTestId('mobile-sticky-status-header')
+      expect(header).toBeInTheDocument()
+      const progressLine = screen.getByTestId('mobile-progress-line')
+      expect(progressLine).toHaveClass('truncate', 'flex-1', 'min-w-0')
+    })
+    it('[REQ-372/AC-3] opens MobileImageSheet on clicking thumbnail and closes properly', () => {
+      const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' as const }))
+      const state = createMockState({
+        showStrip: true,
+        thumbnailTab: 'history',
+        selectedImg: 'http://example.com/test.png',
+        sortedDisplayImages: ['http://example.com/test.png'],
+        images: ['http://example.com/test.png'],
+        selectedIds: new Set(),
+        trialAvailability,
+      })
+      render(<MobileLayout state={state} />)
 
-      // Tap 1: while compact, clicking image expands preview and does NOT open modal
-      fireEvent.click(img)
-      expect(handleOpenModalPreview).not.toHaveBeenCalled()
-      expect(preview).toHaveClass('aspect-[2/3]', 'max-h-[42vh]')
+      // Initially closed
+      expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
 
-      // Tap 2: clicking expanded image now opens modal preview
-      fireEvent.click(img)
-      expect(handleOpenModalPreview).toHaveBeenCalledTimes(1)
+      // Switch to history segment
+      const historyTabBtn = screen.getByRole('button', { name: '履歴' })
+      fireEvent.click(historyTabBtn)
+
+      // Click thumbnail
+      const thumb = screen.getByRole('button', { name: /generated 1/i })
+      fireEvent.click(thumb)
+
+      // Image sheet should now be open
+      expect(screen.getByTestId('mobile-image-sheet')).toBeInTheDocument()
+
+      // Close image sheet
+      fireEvent.click(screen.getByTestId('mobile-sheet-close-btn'))
+      expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
     })
   })
 })
