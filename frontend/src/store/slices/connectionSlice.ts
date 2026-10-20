@@ -199,9 +199,8 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
         previewImage = previousPreview
       }
     } else {
-      const followedJobPreviewIsObsolete = autoFollowImage !== null &&
-        lastObservedPreview?.epoch === snapshot.epoch && lastObservedPreview.jobId === autoFollowImage.jobId
-      previewImage = followedJobPreviewIsObsolete
+      if (autoFollowImage !== null) lastObservedPreview = null
+      previewImage = autoFollowImage !== null
         ? null
         : ownActive.length > 0 && previous?.epoch === snapshot.epoch ? previousPreview : null
     }

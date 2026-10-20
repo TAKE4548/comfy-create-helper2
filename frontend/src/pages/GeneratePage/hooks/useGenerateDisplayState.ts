@@ -654,9 +654,9 @@ export function useGenerateDisplayState({
     if (isModalPreviewOpen) {
       if (previewAutoFollow && pendingAutoFollowUrlRef.current) {
         const targetUrl = pendingAutoFollowUrlRef.current
-        pendingAutoFollowUrlRef.current = null
         const idx = sortedDisplayImages.indexOf(targetUrl)
         if (idx !== -1) {
+          pendingAutoFollowUrlRef.current = null
           setModalPreviewIndex(idx)
           currentModalUrlRef.current = targetUrl
           return

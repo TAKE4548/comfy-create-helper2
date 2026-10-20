@@ -452,4 +452,62 @@ describe('connectionSlice - server generation state', () => {
     expect(useGenerationStore.getState().applyGenerationSnapshot(snapshot(2, [invalid], 'legacy-preview-epoch'), { running: [], pending: [] })).toBe(false)
     expect(useGenerationStore.getState().generationSnapshot?.revision).toBe(1)
   })
+
+  it('[REQ-386/AC-2] clears obsolete previewImage immediately upon autoFollowImage transition even if next job has no preview frame', () => {
+    const own = useGenerationStore.getState().clientId
+    useGenerationStore.setState({ previewAutoFollow: true })
+
+    // Job 0 sets a preview frame
+    const job0 = job({ job_id: 'job-0', prompt_id: 'prompt-0', session_id: own, status: 'running', preview_url: '/preview/frame-0.jpg' })
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(1, [job0], 'epoch-ac2'), { running: [], pending: [] })
+    expect(useGenerationStore.getState().previewImage).toBe('/preview/frame-0.jpg')
+
+    // Job 1 runs without its own preview frame, so previewImage holds frame-0
+    const job1 = job({ job_id: 'job-1', prompt_id: 'prompt-1', session_id: own, status: 'running', preview_url: null })
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(2, [job1], 'epoch-ac2'), { running: [], pending: [] })
+    expect(useGenerationStore.getState().previewImage).toBe('/preview/frame-0.jpg')
+
+    // Job 1 completes (autoFollowImage transition occurs for job-1), while job 2 is running without preview frame
+    const completed1 = {
+      ...job1,
+      status: 'succeeded' as const,
+      preview_url: null,
+      node: null,
+      outputs: [
+        { node_id: 'img', index: 0, view_url: '/view?filename=output1.png&t=prompt-1', thumbnail_url: '/thumb/1.png', availability: 'present' as const },
+      ],
+    }
+    const job2 = job({ job_id: 'job-2', prompt_id: 'prompt-2', session_id: own, status: 'running', preview_url: null })
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(3, [completed1, job2], 'epoch-ac2'), { running: [], pending: [] })
+
+    // autoFollowImage has fired: previewImage must be cleared immediately
+    expect(useGenerationStore.getState().selectedImg).toBe('/view?filename=output1.png&t=prompt-1')
+    expect(useGenerationStore.getState().previewImage).toBeNull()
+
+    // Subsequent real frame from job 2 is accepted and preserved
+    const job2WithFrame = { ...job2, preview_url: '/preview/frame-2.jpg' }
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(4, [completed1, job2WithFrame], 'epoch-ac2'), { running: [], pending: [] })
+    expect(useGenerationStore.getState().previewImage).toBe('/preview/frame-2.jpg')
+  })
+
+  it('[REQ-386/AC-2] safely skips autoFollowImage when outputs array is empty upon completion', () => {
+    const own = useGenerationStore.getState().clientId
+    useGenerationStore.setState({ previewAutoFollow: true, selectedImg: '/existing-image.png' })
+
+    const running = job({ job_id: 'job-empty-out', prompt_id: 'prompt-empty', session_id: own, status: 'running' })
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(1, [running], 'epoch-empty-out'), { running: [], pending: [] })
+
+    // Succeeded with empty outputs array
+    const completedEmpty = {
+      ...running,
+      status: 'succeeded' as const,
+      outputs: [],
+    }
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(2, [completedEmpty], 'epoch-empty-out'), { running: [], pending: [] })
+
+    // selectedImg should not crash or overwrite with undefined
+    expect(useGenerationStore.getState().selectedImg).toBe('/existing-image.png')
+  })
 })
+
+

@@ -1287,3 +1287,129 @@ async def test_empty_global_all_stays_unconfirmed_when_history_read_fails() -> N
     assert result.items == []
     assert result.upstream_clear == "confirmed"
     assert result.upstream_interrupt == "unconfirmed"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-386")
+@getattr(pytest.mark, "AC-1")
+async def test_progress_event_without_prompt_id_binds_to_single_active_job() -> None:
+    """[REQ-386/AC-1] progress event without prompt_id falls back to single active running job."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    payload = _payload()
+    payload.items[0].graph = {
+        "10": {"class_type": "KSampler", "_meta": {"title": "Main Sampler"}}
+    }
+    accepted = await service.accept(payload)
+    job_id = accepted["job_ids"][0]
+    repository.transition(job_id, "running", prompt_id="prompt-active-1", started_at="2026-10-10T00:00:00Z")
+
+    await service.on_event({
+        "type": "progress",
+        "data": {"value": 5, "max": 20},
+    })
+
+    assert repository.jobs[job_id]["status"] == "running"
+    assert repository.jobs[job_id]["node"] == {
+        "id": "10",
+        "name": "Main Sampler",
+        "value": 5.0,
+        "max": 20.0,
+    }
+    assert len(received) >= 1
+    assert received[-1]["jobs"][0]["node"]["value"] == 5.0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-386")
+@getattr(pytest.mark, "AC-1")
+async def test_progress_event_with_integer_node_id_updates_node_progress() -> None:
+    """[REQ-386/AC-1] progress event with integer node ID safely normalizes to string and updates progress."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    payload = _payload()
+    payload.items[0].graph = {
+        "12": {"class_type": "KSamplerAdvanced", "_meta": {"title": "Advanced Step"}}
+    }
+    accepted = await service.accept(payload)
+    job_id = accepted["job_ids"][0]
+    repository.transition(job_id, "running", prompt_id="prompt-int-node", started_at="2026-10-10T00:00:00Z")
+
+    await service.on_event({
+        "type": "progress",
+        "prompt_id": "prompt-int-node",
+        "data": {"node": 12, "value": 7, "max": 25},
+    })
+
+    assert repository.jobs[job_id]["node"] == {
+        "id": "12",
+        "name": "Advanced Step",
+        "value": 7.0,
+        "max": 25.0,
+    }
+    assert received[-1]["jobs"][0]["node"]["id"] == "12"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-386")
+@getattr(pytest.mark, "AC-1")
+async def test_progress_event_boundary_zero_division_and_clamp() -> None:
+    """[REQ-386/AC-1] progress event boundary: zero max or zero value does not raise ZeroDivisionError and safely updates node."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    payload = _payload()
+    payload.items[0].graph = {
+        "10": {"class_type": "KSampler", "_meta": {"title": "Main Sampler"}}
+    }
+    accepted = await service.accept(payload)
+    job_id = accepted["job_ids"][0]
+    repository.transition(job_id, "running", prompt_id="prompt-boundary-zero", started_at="2026-10-10T00:00:00Z")
+
+    await service.on_event({
+        "type": "progress",
+        "prompt_id": "prompt-boundary-zero",
+        "data": {"node": "10", "value": 0, "max": 0},
+    })
+    assert repository.jobs[job_id]["node"]["value"] == 0.0
+    assert repository.jobs[job_id]["node"]["max"] == 0.0
+
+    await service.on_event({
+        "type": "progress",
+        "prompt_id": "prompt-boundary-zero",
+        "data": {"node": "10", "value": 25, "max": 20},
+    })
+    assert repository.jobs[job_id]["node"]["value"] == 25.0
+    assert repository.jobs[job_id]["node"]["max"] == 20.0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-386")
+@getattr(pytest.mark, "AC-1")
+async def test_progress_event_multiple_jobs_without_prompt_id_dropped() -> None:
+    """[REQ-386/AC-1] progress event without prompt_id is safely ignored when multiple running jobs exist."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=received.append)
+    payload = _payload(count=2)
+    accepted = await service.accept(payload)
+    job_1, job_2 = accepted["job_ids"][0], accepted["job_ids"][1]
+    repository.transition(job_1, "running", prompt_id="prompt-multi-1", started_at="2026-10-10T00:00:00Z")
+    repository.transition(job_2, "running", prompt_id="prompt-multi-2", started_at="2026-10-10T00:00:00Z")
+
+    await service.on_event({
+        "type": "progress",
+        "data": {"value": 5, "max": 20},
+    })
+
+    assert repository.jobs[job_1].get("node") is None
+    assert repository.jobs[job_2].get("node") is None
+
+
+

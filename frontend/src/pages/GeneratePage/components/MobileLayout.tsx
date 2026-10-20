@@ -262,9 +262,10 @@ export const MobileLayout = ({
   const normalWait = generationSnapshot && normalUnfinished && !normalRunningJob
     ? selectWait(generationSnapshot, 'normal', normalSessionId)
     : null
-  const managedNodePercentage = normalRunningJob?.node && normalRunningJob.node.max > 0
-    ? Math.min(100, Math.max(0, (normalRunningJob.node.value / normalRunningJob.node.max) * 100))
-    : 0
+  const hasRunningJobNode = Boolean(normalRunningJob?.node && Number.isFinite(normalRunningJob.node.max) && normalRunningJob.node.max > 0)
+  const managedNodePercentage = hasRunningJobNode
+    ? Math.min(100, Math.max(0, (normalRunningJob!.node!.value / normalRunningJob!.node!.max) * 100))
+    : (nodeProgress?.percentage ?? 0)
   const managedStartTime = normalRunningJob?.started_at ? Date.parse(normalRunningJob.started_at) : NaN
   const managedElapsedTime = Number.isFinite(managedStartTime) ? Math.max(0, Math.floor((Date.now() - managedStartTime) / 1000)) : elapsedTime
   useEffect(() => {
@@ -275,7 +276,17 @@ export const MobileLayout = ({
     const timer = setInterval(update, 1000)
     return () => clearInterval(timer)
   }, [managedStartTime, generationStartTime])
-  const displayProgressActive = generationSnapshot ? (normalUnfinished && normalWait?.kind !== 'session') : isGeneratingHere
+  const isAllNormalCompleted = Boolean(
+    generationSnapshot &&
+    normalJobs.length > 0 &&
+    !normalUnfinished &&
+    normalProgress &&
+    normalProgress.total > 0 &&
+    normalProgress.finished === normalProgress.total
+  )
+  const displayProgressActive = generationSnapshot
+    ? ((normalUnfinished || (isGeneratingHere && isAllNormalCompleted)) && normalWait?.kind !== 'session')
+    : isGeneratingHere
   useEffect(() => {
     if (prevGeneratingRef.value && !displayProgressActive) {
       setShowCompletionNav(true)
@@ -284,8 +295,14 @@ export const MobileLayout = ({
     }
     prevGeneratingRef.value = displayProgressActive
   }, [displayProgressActive, prevGeneratingRef])
-  const displayNodeName = generationSnapshot ? (normalRunningJob?.node?.name || (normalWait ? `${normalWait.label} 待機中 (${normalWait.remaining})` : '準備中...')) : currentNode?.name || '準備中...'
-  const displayNodePercentage = generationSnapshot ? managedNodePercentage : nodeProgress?.percentage || 0
+  const displayNodeName = generationSnapshot
+    ? (normalRunningJob?.node?.name || (isAllNormalCompleted ? '完了' : (normalWait ? `${normalWait.label} 待機中 (${normalWait.remaining})` : (nodeProgress?.nodeName || currentNode?.name || '準備中...'))))
+    : (currentNode?.name || nodeProgress?.nodeName || '準備中...')
+  const displayNodePercentage = isAllNormalCompleted
+    ? 100
+    : generationSnapshot
+      ? (hasRunningJobNode ? managedNodePercentage : (nodeProgress?.percentage ?? 0))
+      : (nodeProgress?.percentage ?? 0)
   const displayElapsedTime = generationSnapshot ? managedElapsedTime : elapsedTime
   const batchProgress = (() => {
     if (!activeBatch || activeBatch.length === 0) {
@@ -443,7 +460,7 @@ export const MobileLayout = ({
         )}
         <span className="shrink-0">{displayProgressActive ? '進行中' : '—'}</span>
         <span className="shrink-0 ux-numeric">ETA {displayProgressActive ? (eta === null ? '未取得' : `${eta}秒`) : '未取得'}</span>
-        {displayProgressActive && <span className="absolute bottom-0 left-0 h-0.5 bg-accent-green" style={{ width: `${overallPercentage}%` }} />}
+        {displayProgressActive && <span className="absolute bottom-0 left-0 h-0.5 bg-accent-green" style={{ width: `${generationSnapshot && normalProgress ? normalProgress.fraction * 100 : overallPercentage}%` }} />}
       </div>
 
       {/* Progress Line */}
@@ -483,8 +500,8 @@ export const MobileLayout = ({
             {/* 詳細ノード進捗 */}
             <div className="space-y-1">
               <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                <span>実行中: {displayNodeName}</span>
-                <span>{Math.round(displayNodePercentage)}%</span>
+                <span className="min-w-0 flex-1 truncate">実行中: {displayNodeName}</span>
+                <span className="shrink-0 ml-2">{Math.round(displayNodePercentage)}%</span>
               </div>
               <div className="h-1 bg-surface-2 rounded-full overflow-hidden w-full border border-white/5">
                 <div className="h-full bg-blue-500 progress-shimmer transition-all duration-200" style={{ width: `${displayNodePercentage}%` }} />

@@ -373,7 +373,67 @@ describe('useGenerateDisplayState', () => {
         expect(result.current.sortedDisplayImages[result.current.modalPreviewIndex]).toBe('img-initial.png')
       })
     })
+
+    it('[REQ-386/AC-2] preserves pendingAutoFollowUrl until image is confirmed in sortedDisplayImages', async () => {
+      useGenerationStore.setState({
+        previewAutoFollow: true,
+        batchImages: ['img-initial-1.png', 'img-initial-2.png'],
+        comfyHistoryImages: ['img-initial-1.png', 'img-initial-2.png'],
+        selectedImg: 'img-initial-1.png',
+      })
+      queryClient.setQueryData(['generateDisplayImages', { filterOwnSession: false }], ['img-initial-1.png', 'img-initial-2.png'])
+
+      const { result, rerender } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      act(() => {
+        result.current.handleOpenModalPreview()
+      })
+      expect(result.current.isModalPreviewOpen).toBe(true)
+      expect(result.current.modalPreviewIndex).toBe(0)
+
+      // Spy on setQueryData to delay cache update so sortedDisplayImages does not contain targetUrl immediately
+      const originalSetQueryData = queryClient.setQueryData.bind(queryClient)
+      const pendingUpdates: Array<() => void> = []
+      const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData').mockImplementation((key: any, updater: any) => {
+        pendingUpdates.push(() => {
+          originalSetQueryData(key, updater)
+        })
+        return undefined as any
+      })
+
+      // Dispatch executed event: sets pendingAutoFollowUrlRef, but cache is not updated yet
+      await act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('comfy-job-event', {
+            detail: {
+              type: 'executed',
+              images: ['img-delayed.png'],
+              isOwn: true,
+            },
+          })
+        )
+      })
+
+      // Trigger a re-render while image is not yet in sortedDisplayImages
+      act(() => {
+        rerender()
+      })
+      expect(result.current.sortedDisplayImages).not.toContain('img-delayed.png')
+
+      // Restore setQueryData and apply delayed cache update
+      setQueryDataSpy.mockRestore()
+      act(() => {
+        pendingUpdates.forEach((fn) => fn())
+      })
+
+      // When sortedDisplayImages updates, pendingAutoFollowUrlRef should be consumed and modalPreviewIndex updated
+      await waitFor(() => {
+        expect(result.current.sortedDisplayImages).toContain('img-delayed.png')
+        expect(result.current.modalPreviewIndex).toBe(result.current.sortedDisplayImages.indexOf('img-delayed.png'))
+      })
+    })
   })
+
 
   describe('REQ-333-T21: image identity and availability', () => {
     it('prepends foreign live images while preserving the modal image and index context', async () => {

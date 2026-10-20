@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DesktopLayout } from '../DesktopLayout'
@@ -216,4 +216,92 @@ describe('REQ-333 progress bars use managed snapshots on desktop and mobile', ()
     expect(desktop.container).toHaveTextContent('残り約: 30秒')
     expect(mobile.container).toHaveTextContent('ETA 30秒')
   })
+
+  it('[REQ-386/AC-1] displays individual node progress percentage and name with store fallback when managed job lacks node', () => {
+    const runningJob = job({ job_id: 'run-1', status: 'running', node: null })
+    setManagedState(snapshot([runningJob]), {
+      nodeProgress: { percentage: 42, nodeName: 'Fallback KSampler' },
+      generationStartTime: Date.now(),
+    })
+    const { desktop, mobile } = renderBoth(makeState({ isGeneratingHere: true }))
+    expect(screen.getAllByText('実行中: Fallback KSampler')).toHaveLength(2)
+    expect(screen.getAllByText('42%')).toHaveLength(2)
+    expect(desktop.container.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('42%')
+    expect(mobile.container.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('42%')
+  })
+
+  it('[REQ-386/AC-2] immediately renders newly completed auto-follow image in desktop preview without waiting for next batch job', () => {
+    const jobs = [
+      job({ job_id: 'job-1', status: 'succeeded' }),
+      job({ job_id: 'job-2', status: 'running', node: { id: 'k', name: 'Sampler', value: 1, max: 2 } }),
+    ]
+    setManagedState(snapshot(jobs), { previewImage: null })
+    const state = makeState({
+      isGeneratingHere: true,
+      selectedImg: '/outputs/job-1.png',
+      displayImages: ['/outputs/old-history.png'],
+    })
+    const view = renderGroupedDesktop(<DesktopLayout state={state as never} />)
+    const root = view.container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
+    expect(root).toBeInTheDocument()
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({})
+    } as DOMRect)
+    fireEvent(window, new Event('resize'))
+    const previewImg = root.querySelector('img')
+    expect(previewImg).toBeInTheDocument()
+    expect(previewImg?.getAttribute('src')).toBe('/outputs/job-1.png')
+  })
+
+  it('[REQ-386/AC-3] displays 100 percent completion and latest image preview upon batch completion', () => {
+    const jobs = [
+      job({ job_id: 'job-1', status: 'succeeded' }),
+      job({ job_id: 'job-2', status: 'succeeded' }),
+    ]
+    setManagedState(snapshot(jobs), { previewImage: null })
+    const state = makeState({
+      isGeneratingHere: true,
+      selectedImg: '/outputs/job-2.png',
+      displayImages: ['/outputs/job-1.png'],
+    })
+    const { desktop, mobile } = renderBoth(state)
+    expect(screen.getAllByText('全体進捗: 2/2 枚目')).toHaveLength(2)
+    expect(screen.getAllByText('100%')).toHaveLength(4)
+    expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(mobile.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(desktop.container.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('100%')
+    expect(mobile.container.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('100%')
+
+    const previewRoot = desktop.container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
+    expect(previewRoot).toBeInTheDocument()
+    vi.spyOn(previewRoot, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({})
+    } as DOMRect)
+    fireEvent(window, new Event('resize'))
+    expect(previewRoot.querySelector('img')?.getAttribute('src')).toBe('/outputs/job-2.png')
+  })
+
+  it('[REQ-386/AC-3] keeps 100 percent progress and does not revert to 0 on final event', () => {
+    const jobs = [
+      job({ job_id: 'job-1', status: 'succeeded' }),
+      job({ job_id: 'job-2', status: 'succeeded' }),
+    ]
+    setManagedState(snapshot(jobs), { previewImage: null })
+    const state = makeState({
+      isGeneratingHere: true,
+      selectedImg: '/outputs/job-2.png',
+      displayImages: ['/outputs/job-2.png', '/outputs/job-1.png'],
+    })
+    const { desktop, mobile } = renderBoth(state)
+    expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(mobile.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+
+    // Extraneous empty event after completion preserves 100%
+    act(() => {
+      setManagedState(snapshot(jobs), { previewImage: null, nodeProgress: null })
+    })
+    expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(mobile.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+  })
 })
+

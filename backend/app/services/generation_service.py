@@ -274,6 +274,10 @@ class GenerationService:
         if not isinstance(prompt_id, str):
             prompt_id = data.get("prompt_id")
         if not isinstance(prompt_id, str):
+            running_jobs = [j for j in self._snapshot().jobs if j.status == "running" and isinstance(j.prompt_id, str)]
+            if len(running_jobs) == 1:
+                prompt_id = running_jobs[0].prompt_id
+        if not isinstance(prompt_id, str):
             prompt_id = await self._verified_event_prompt()
         if not isinstance(prompt_id, str):
             await self._publish_if_composite_changed()
@@ -286,7 +290,8 @@ class GenerationService:
                 return
             now = self._now()
             if event_type in {"execution_start", "executing", "progress"}:
-                node_id = data.get("node")
+                raw_node = data.get("node")
+                node_id = str(raw_node) if raw_node is not None else None
                 if event_type == "executing" and node_id is None:
                     # ComfyUI sends executing with node: null to signal execution completion
                     await self._handle_prompt_completion(job, prompt_id, now)
@@ -295,8 +300,19 @@ class GenerationService:
                     if job.status != "running":
                         fields.update(status="running", started_at=job.started_at or now)
                     progress = event_type == "progress"
-                    if not isinstance(node_id, str) and progress and job.node is not None:
-                        node_id = job.node.id
+                    if node_id is None and progress:
+                        if job.node is not None:
+                            node_id = job.node.id
+                        else:
+                            graph = self._frozen_graphs.get(job.job_id, {})
+                            node_id = next(
+                                (
+                                    str(nid)
+                                    for nid, nval in graph.items()
+                                    if isinstance(nval, dict) and "Sampler" in str(nval.get("class_type", ""))
+                                ),
+                                "sampler",
+                            )
                     if isinstance(node_id, str):
                         node = self._node_progress(job.job_id, node_id, data, job.node)
                         if node is not None:
