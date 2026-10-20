@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 import { tagSetsApi, tagsetCategoriesApi, baseModelsApi } from '../api/client'
 import type { TagSet, Category, BaseModel } from '../api/types'
+import { formatBaseModelSummary } from './LoRAsPage'
 import { useAccordionSections } from '../hooks/useAccordionSections'
 import { ImageCarousel } from '../components/ImageCarousel'
 import { CategoryManagerModal } from '../components/CategoryManagerModal'
@@ -448,6 +449,10 @@ export function TagsPage() {
 
   const renderTagSetCard = (ts: TagSet) => {
     const catName = categories?.find((c) => c.id === ts.category_id)?.name
+    const { caption: tagSetBaseModelCaption, tooltip: tagSetBaseModelTooltip } = formatBaseModelSummary(
+      ts.target_base_model_ids,
+      baseModels,
+    )
     const longPressHandlers = getLongPressHandlers(ts.id)
     return (
       <SortableTagSetCard key={ts.id} id={ts.id} disabled={!isDndActive || isMultiSelectMode}>
@@ -466,7 +471,7 @@ export function TagsPage() {
             onMouseLeave={longPressHandlers.onMouseLeave}
             onTouchStart={longPressHandlers.onTouchStart}
             onTouchEnd={longPressHandlers.onTouchEnd}
-            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col h-[320px] w-full max-w-[220px] ${
+            className={`group relative rounded-xl border overflow-hidden hover:border-[rgba(255,255,255,0.12)] transition-all animate-fade-in cursor-pointer flex flex-col h-[320px] min-h-[320px] max-h-[320px] w-full max-w-[220px] ${
               isMultiSelectMode && isSelected(ts.id)
                 ? 'border-accent-green ring-2 ring-accent-green/40 bg-surface'
                 : 'border-[rgba(255,255,255,0.06)] bg-surface'
@@ -499,20 +504,20 @@ export function TagsPage() {
               thumbnailPath={ts.thumbnail_path}
               snapshotPaths={ts.snapshot_paths}
               alt={ts.name}
-              className="w-full shrink-0"
+              className="w-full shrink-0 flex justify-center max-md:[&>[data-testid=image-carousel-frame]]:left-1/2 max-md:[&>[data-testid=image-carousel-frame]]:-translate-x-1/2 max-md:[&.justify-start]:justify-center"
               imageAspectRatio={numericRatio}
               imageAreaFraction={0.58}
             >
               {!isMultiSelectMode && <button id={`tagset-edit-${ts.id}`}
                 onClick={(e) => { e.stopPropagation(); openEdit(ts) }}
                 aria-label={`タグセット編集 ${ts.name}`}
-                className="absolute top-2 right-12 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
+                className="absolute top-1 right-[50px] md:top-2 md:right-12 min-h-[44px] min-w-[44px] flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                 <Pencil size={13} />
               </button>}
               {!isMultiSelectMode && <button id={`tagset-delete-${ts.id}`}
                 onClick={(e) => { e.stopPropagation(); setPendingDeleteTagSet(ts) }}
                 aria-label={`タグセット削除 ${ts.name}`}
-                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+                className="absolute top-1 right-1 md:top-2 md:right-2 min-h-[44px] min-w-[44px] flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
                 <Trash2 size={13} />
               </button>}
               {pendingDeleteTagSet?.id === ts.id && <div role="alertdialog" aria-label="タグセット削除の確認" className="absolute inset-x-2 top-12 z-30 rounded-lg border border-red-500/40 bg-surface p-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -524,7 +529,23 @@ export function TagsPage() {
               </div>}
             </ImageCarousel>
 
-            <div className="p-1 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-start gap-1">
+            {/* Mobile Information Area */}
+            <div className="flex md:hidden flex-1 min-h-0 flex-col p-2.5 overflow-hidden justify-between">
+              <div className="space-y-1 min-w-0 overflow-hidden">
+                <p className="text-xs font-semibold text-zinc-200 line-clamp-2 break-words" title={ts.name}>
+                  {ts.name}
+                </p>
+                <p className="text-[11px] text-zinc-400 line-clamp-2 break-words" title={ts.description || '説明なし'}>
+                  {ts.description || '説明なし'}
+                </p>
+              </div>
+              <p className="text-[11px] text-zinc-500 truncate mt-auto pt-1 whitespace-nowrap" title={tagSetBaseModelTooltip}>
+                {tagSetBaseModelCaption}
+              </p>
+            </div>
+
+            {/* Desktop Information Area (hidden on mobile, flex on md+) */}
+            <div className="hidden md:flex p-1 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex-col justify-start gap-1">
               <div className="space-y-1.5 min-w-0 shrink-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-xs font-semibold text-zinc-200 truncate flex-1" title={ts.name}>{ts.name}</p>
@@ -684,7 +705,7 @@ export function TagsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-5 pt-0 md:pt-5">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="space-y-6">
             {visibleCategories.map((cat) => {
@@ -698,7 +719,7 @@ export function TagsPage() {
                     type="button"
                     id={`category-section-header-${catKey}`}
                     onClick={() => toggleSection(catKey)}
-                    className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
+                    className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-2 backdrop-blur"
                   >
                     {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                     <span>{cat.name}</span>
@@ -724,7 +745,7 @@ export function TagsPage() {
                   type="button"
                   id="category-section-header-uncategorized"
                   onClick={() => toggleSection('uncategorized')}
-                  className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
+                  className="sticky top-0 z-20 flex min-h-[44px] items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-2 backdrop-blur"
                 >
                   {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                   <span>未分類</span>

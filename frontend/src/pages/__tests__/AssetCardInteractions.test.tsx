@@ -87,7 +87,7 @@ describe('asset card copy and drag interactions', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
     mount(<LoRAsPage />)
-    await waitFor(() => expect(screen.getByText('portrait.safetensors')).toBeInTheDocument())
+    await waitFor(() => expect(document.getElementById('lora-card-51')).toBeInTheDocument())
     const card = document.getElementById('lora-card-51')!
     const handle = screen.getByRole('button', { name: '並び替えハンドル' })
     expect(card).not.toHaveAttribute('role')
@@ -115,7 +115,7 @@ describe('asset card copy and drag interactions', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
     mount(<TagsPage />)
-    await waitFor(() => expect(screen.getByText('Portrait tags')).toBeInTheDocument())
+    await waitFor(() => expect(document.getElementById('tagset-card-61')).toBeInTheDocument())
     const card = document.getElementById('tagset-card-61')!
     const handle = screen.getByRole('button', { name: '並び替えハンドル' })
     expect(card).not.toHaveAttribute('role')
@@ -135,5 +135,64 @@ describe('asset card copy and drag interactions', () => {
     expect(document.getElementById('category-section-header-1')).toHaveClass('sticky', 'top-0')
     expect(card.querySelector('.line-clamp-2')).toBeInTheDocument()
     window.removeEventListener('sortable-handle-fired', fired)
+  })
+
+  it('[REQ-376/AC-6] isolates edit and delete touch targets (>= 44x44px) without overlapping and stops card click bubbling', async () => {
+    mount(<LoRAsPage />)
+    await waitFor(() => expect(document.getElementById('lora-card-51')).toBeInTheDocument())
+
+    const editBtn = document.getElementById('lora-edit-51')!
+    const deleteBtn = document.getElementById('lora-delete-51')!
+
+    expect(editBtn).toBeInTheDocument()
+    expect(deleteBtn).toBeInTheDocument()
+
+    // 44x44px touch targets on mobile and non-overlapping positioning
+    expect(editBtn).toHaveClass('min-h-[44px]', 'min-w-[44px]', 'top-1', 'right-[50px]')
+    expect(deleteBtn).toHaveClass('min-h-[44px]', 'min-w-[44px]', 'top-1', 'right-1')
+
+    // Desktop positioning preservation
+    expect(editBtn).toHaveClass('md:top-2', 'md:right-8', 'md:min-h-0', 'md:min-w-0')
+    expect(deleteBtn).toHaveClass('md:top-2', 'md:right-2', 'md:min-h-0', 'md:min-w-0')
+
+    // Click delete stops propagation (does not open lora-detail)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    fireEvent.click(deleteBtn)
+    expect(confirmSpy).toHaveBeenCalledWith('Delete this LoRA?')
+    expect(screen.queryByTestId('lora-detail')).not.toBeInTheDocument()
+
+    // Click edit opens detail modal directly
+    fireEvent.click(editBtn)
+    expect(screen.getByTestId('lora-detail')).toHaveTextContent('models/portrait.safetensors')
+
+    confirmSpy.mockRestore()
+
+    // TagSet card: edit and delete buttons isolation and non-overlapping touch targets
+    cleanupAllTestState()
+    mount(<TagsPage />)
+    await waitFor(() => expect(document.getElementById('tagset-card-61')).toBeInTheDocument())
+
+    const tagEditBtn = document.getElementById('tagset-edit-61')!
+    const tagDeleteBtn = document.getElementById('tagset-delete-61')!
+
+    expect(tagEditBtn).toBeInTheDocument()
+    expect(tagDeleteBtn).toBeInTheDocument()
+
+    // 44x44px touch targets on mobile and non-overlapping positioning
+    expect(tagEditBtn).toHaveClass('min-h-[44px]', 'min-w-[44px]', 'top-1', 'right-[50px]')
+    expect(tagDeleteBtn).toHaveClass('min-h-[44px]', 'min-w-[44px]', 'top-1', 'right-1')
+
+    // Desktop positioning
+    expect(tagEditBtn).toHaveClass('md:top-2', 'md:right-12')
+    expect(tagDeleteBtn).toHaveClass('md:top-2', 'md:right-2')
+
+    // Click delete opens confirmation alertdialog without triggering card click (detail modal)
+    fireEvent.click(tagDeleteBtn)
+    expect(screen.getByRole('alertdialog', { name: 'タグセット削除の確認' })).toBeInTheDocument()
+    expect(screen.queryByTestId('tagset-detail')).not.toBeInTheDocument()
+
+    // Click edit stops propagation and does not trigger detail modal
+    fireEvent.click(tagEditBtn)
+    expect(screen.queryByTestId('tagset-detail')).not.toBeInTheDocument()
   })
 })

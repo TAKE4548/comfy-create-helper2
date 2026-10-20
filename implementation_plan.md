@@ -1,76 +1,109 @@
-# Implementation Plan: REQ-386 生成中ステップ進捗（個別プログレスバー）の停止および次画像完了までのプレビュー表示遅延の解消
+# Implementation Plan: REQ-376 モバイルLoRA／Tag Set：一覧カードの情報整理と縦スクロールの一本化
 
-## 1. Overview & Objectives (概要と目的)
-画像生成中に個別のノード/ステップ進捗（個別プログレスバー）が停止したまま動かず、さらにバッチ生成等において直前の生成画像のプレビューが次の画像の生成完了タイミングまで表示されない（または大幅に遅延する）問題を解消する。
+モバイル環境（幅767px以下）におけるLoRA一覧（`/loras`）およびTag Set一覧（`/tags`）のカード情報整理、内部独立スクロールの撤去、編集・削除ボタン配置適正化、サムネイル中央配置、Stickyカテゴリ見出しの空隙解消を実施する。
 
-## 2. Architecture & Seam Map (設計方針とSeam Map)
-- **Integrated (実コード実行)**:
-  - `backend/app/services/generation_service.py`: `on_event` の `progress` イベント受信時の `prompt_id` 解決フォールバックおよびノード進捗更新。
-  - `frontend/src/store/slices/connectionSlice.ts`: `autoFollowImage` 発生時の旧 `previewImage` 即時解除。
-  - `frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts`: モーダル自動追従URLの消費タイミング制御。
-  - `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx`: 個別進捗率フォールバックおよび `selectedImg` 即時プレビュー供給。
-  - `frontend/src/pages/GeneratePage/components/MobileLayout.tsx`: 個別進捗率フォールバック。
-- **Severed (外部I/O遮断)**:
-  - ComfyUI HTTP/WS API: `FakeBridge` / `httpx.AsyncClient` モックで切断。
-  - ブラウザ WebSocket: `applyGenerationSnapshot` / `wsHelpers` によるステート注入。
-- **PBT判定**: 不採用（No）。進捗パーセンテージ計算（`Math.min(100, Math.max(0, ...))`）のクランプおよび境界値テストで網羅。
-- **Fault Injection**:
-  - `progress` イベント受信時に `prompt_id` が存在しないケース。
-  - `node` が数値型 `10` や `None` で送られるケース。
-  - `value > max` や `max == 0` の異常進捗データが送られたケース。
-  - 画像生成完了直後に後続ジョブが未初期化（preview_url: null）の状態で snapshot が届くケース。
+---
 
-## 3. Task Breakdown & Mermaid DAG (タスク分解とDAG)
-- **REQ-386-T1**: GenerationService.on_eventのprogressイベントprompt_id/nodeバインド強化およびactive jobフォールバック [change_kind: code]
-  - 対象: `backend/app/services/generation_service.py`, `backend/tests/integration/legacy/test_generation_service.py`
-  - AC: AC-1
-- **REQ-386-T2**: connectionSliceのautoFollowImage契機previewImage即時解除およびuseGenerateDisplayStateの自動追従URL保持 [change_kind: code]
-  - 対象: `frontend/src/store/slices/connectionSlice.ts`, `frontend/src/pages/GeneratePage/hooks/useGenerateDisplayState.ts`, `frontend/src/store/__tests__/slices/connectionSlice.test.ts`
-  - AC: AC-2
-- **REQ-386-T3**: DesktopLayoutおよびMobileLayoutの個別進捗バーフォールバック表示とプレビュー即時表示統合 [change_kind: code]
-  - 対象: `frontend/src/pages/GeneratePage/components/DesktopLayout.tsx`, `frontend/src/pages/GeneratePage/components/MobileLayout.tsx`, `frontend/src/pages/GeneratePage/components/__tests__/GenerationProgress.test.tsx`
-  - AC: AC-1, AC-2, AC-3
+## Problem Analysis and Overview
+
+1. **ボタンの重なりとタップ誤爆**:
+   カード右上に配置されている編集（Pencil）と削除（Trash2）ボタンのタップ可能領域が近接または重複しており、モバイル端末上で意図しない削除確認や誤タップを誘発していた。
+2. **入れ子スクロールによるページ縦スクロールの阻害**:
+   カード下部が固定高さ内で `overflow-y-auto` による独立スクロールを持っており、一覧を指でスクロールしようとした際にカード内部のスクロールが奪われ、ページ全体のスクロールが途切れていた。
+3. **一覧カードの情報過多**:
+   一覧カード内にカテゴリバッジ、タグチップ、トリガーワード、強度、ファイルパスなどが詰め込まれ、識別に重要な情報（タイトル、説明、対象Base Model）が見づらくなっていた。
+4. **Sticky見出しの浮き・空隙**:
+   スクロール親コンテナのパディング設定（`p-5`）により、カテゴリ見出しがSticky吸着した際に上部に不自然な20pxの空隙が発生していた。
+5. **サムネイル画像の寄り**:
+   画像フレームが左寄せになっており、固定幅カード内で中央に配置されていない。
+
+---
+
+## Architectural Design and Layout Strategy
+
+- **固定カード高 320px の維持**: モバイルグリッドの列高さの均一性を保つため、カード外形は `h-[320px]` を維持。
+- **下部情報の3項目厳格制限**: モバイル時のみ、下部を「①タイトル（最大2行）」「②Description（最大2行）」「③対象Base Model（1行、下端揃え）」の3項目のみとし、他は非表示。
+- **内部スクロール全廃**: 下部情報コンテナを `overflow-hidden` に変更し、縦スクロールジェスチャーをページコンテナに一本化。
+- **カテゴリの集約**: カード内のカテゴリバッジを非表示化し、Stickyカテゴリ見出しに一元化。
+- **ボタン分離**: 削除を `top-1 right-1`（44×44px）、編集を `top-1 right-[50px]`（44×44px）に配置し、重なりを物理的に排除。
+- **画像中央配置**: 共有コンポーネント `ImageCarousel` 本体を変更せず、ページ側の指定（Tailwind任意セレクタ）で中央配置を実現。
+- **デスクトップ（>=768px）Baseline維持**: `md:` レスポンシブプレフィックスを活用し、PC表示時は従来のトリガーワードコピー、タグチップ、カード内スクロールを100%維持。
+
+---
+
+## Proposed Changes
+
+### Frontend Implementation
+
+#### `frontend/src/pages/LoRAsPage.tsx` [Task: REQ-376-T1]
+- `renderLoraCard`:
+  - `ImageCarousel` に中央寄せ用クラスを付与。
+  - 編集ボタン・削除ボタンのタップ領域を44×44px確保し、配置を分離。
+  - カード下部情報エリアをモバイル用（3項目固定・`overflow-hidden`）とデスクトップ用（従来Baseline・`md:overflow-y-auto`）に分岐。
+  - 対象Base Modelの複数件フォーマット（`names.join(' · ')` / `対象モデル未設定`）とツールチップを実装。
+- スクロールコンテナ:
+  - `p-5 pt-0 md:pt-5` に修正し、Stickyカテゴリ見出しの上端空隙を解消。
+
+#### `frontend/src/pages/TagsPage.tsx` [Task: REQ-376-T2]
+- `renderTagSetCard`:
+  - `ImageCarousel` に中央寄せ用クラスを付与。
+  - 編集ボタン・削除ボタンのタップ領域を44×44px確保し、配置を分離。
+  - カード下部情報エリアをモバイル用（3項目固定・`overflow-hidden`）とデスクトップ用（従来Baseline・`md:overflow-y-auto`）に分岐。
+  - 対象Base Modelの複数件フォーマット（`names.join(' · ')` / `対象モデル未設定`）とツールチップを実装。
+- スクロールコンテナ:
+  - `p-5 pt-0 md:pt-5` に修正し、Stickyカテゴリ見出しの上端空隙を解消。
+
+---
+
+## Verification Plan
+
+### Test Placement Plan
+- `frontend/src/pages/__tests__/LoRAsPage.test.tsx` (拡張)
+- `frontend/src/pages/__tests__/TagsPage.test.tsx` (拡張)
+- `frontend/src/pages/__tests__/AssetCardInteractions.test.tsx` (拡張)
+※ 新規チケット番号付きテストファイルは作成しない。各テストケースに `[REQ-376/AC-n]` タグを付与。
+
+### Exact Verification Commands
+```bash
+# 1. 静的型検査
+cd frontend && npm run typecheck
+
+# 2. LoRAページ単体・受入テスト
+cd frontend && npm test -- --run src/pages/__tests__/LoRAsPage.test.tsx -t "REQ-376"
+
+# 3. Tag Setページ単体・受入テスト
+cd frontend && npm test -- --run src/pages/__tests__/TagsPage.test.tsx -t "REQ-376"
+
+# 4. ボタン配置・競合テスト
+cd frontend && npm test -- --run src/pages/__tests__/AssetCardInteractions.test.tsx -t "REQ-376"
+
+# 5. 全件回帰テスト
+cd frontend && npm test
+```
+
+---
+
+## Mermaid DAG
 
 ```mermaid
 graph TD
-  REQ-386-T1["REQ-386-T1: Backend Progress Binding & Fallback [AC-1]"]
-  REQ-386-T2["REQ-386-T2: Store Auto-follow & Preview Clear [AC-2]"]
-  REQ-386-T3["REQ-386-T3: Layout Progress Fallback & Immediate Preview [AC-1, AC-2, AC-3]"]
-
-  REQ-386-T2 --> REQ-386-T3
+  REQ-376-T1["REQ-376-T1: LoRA一覧カード モバイル改修 (LoRAsPage.tsx)"]
+  REQ-376-T2["REQ-376-T2: Tag Set一覧カード モバイル改修 (TagsPage.tsx)"]
+  REQ-376-VERIFY["dev-verify: 3-Gate Baseline & Acceptance Audit"]
+  REQ-376-T1 --> REQ-376-VERIFY
+  REQ-376-T2 --> REQ-376-VERIFY
 ```
 
-## 4. Technical Trade-offs & Alternatives (技術的トレードオフと代替案)
-- **ComfyUI progress 受信時の prompt_id フォールバック**:
-  - *採否*: 採用。ComfyUI 標準では progress イベントに `prompt_id` が含まれない場合があり、都度 `/queue` HTTP照会を走らせると 30ms 毎のステップ更新パケットに対して大量の不要なHTTPリクエストが発生し、ネットワークの飽和や進捗イベントの脱落を招く。単一の実行中ジョブが存在する場合はその `prompt_id` に即座に紐付けることで、低負荷かつリアルタイムな反映を実現する。
-- **autoFollowImage 発生時の previewImage 即時解除**:
-  - *採否*: 採用。バッチ処理で次ジョブが開始された直後、次ジョブのプレビューフレームが未到着の間に旧ジョブの中間プレビューが残存すると、完了原画（`selectedImg`）が覆い隠されてしまう。完了画像が得られた時点で `previewImage` を直ちに null 化し、原画を最優先でプレビュー表示する。後続ジョブが実際のフレームを受信した場合は正しく上書きされるため仕様整合性も保たれる。
-- **DesktopLayout での effectiveDisplayImages 合成**:
-  - *採否*: 採用。TanStack Query のキャッシュ反映と React レンダリングの極小のタイムラグにより、完了直後に `images.indexOf(selectedImage)` が -1 になるのを防止する。完了画像 `selectedImg` を先頭に付加した一時配列を供給することで、完了の瞬間から 1 秒以内（即時）にメインプレビューへ新画像がレンダリングされることを保証する。
+---
 
-## 5. Verification Plan (3-Gate検証計画)
-- **Gate 1: 静的型チェック & 命名規約**
-  - バックエンド型検査: `mypy backend`
-  - フロントエンド型検査: `npm run typecheck`
-- **Gate 2: ユニット＆結合テストスイート**
-  - バックエンド: `pytest backend/tests/integration/legacy/test_generation_service.py`
-  - フロントエンド: `npm test -- src/store/__tests__/slices/connectionSlice.test.ts src/pages/GeneratePage/components/__tests__/GenerationProgress.test.tsx --run`
-- **Gate 3: シナリオ受け入れ検証**
-  - `[REQ-386/AC-1]`: 個別ノード進捗（サンプラー進捗）がリアルタイムに 0%〜100% へ進行表示されることの検証。
-  - `[REQ-386/AC-2]`: バッチ生成時、1枚目完了時に次ジョブの完了を待たずに 1 秒以内にプレビュー領域へ即時表示（auto-follow）されることの検証。
-  - `[REQ-386/AC-3]`: 全ジョブ完了時に全体・個別進捗バーが共に 100% 完了状態となり、最新画像がプレビュー表示されていることの検証。
+## Trade-offs and Risk Disclosure
 
-## 6. BA Design Audit Results & Disposition (BA設計監査結果と対応)
-- **監査モデル**: `qwen/qwen3.5-9b` (LM Studio, `--context-length 32768`)
-- **パッケージ**: `scratch/req386_audit_pkg_v14.json` (`sha256: 6397715d5c3014f88f2e09710df3c3e54987548b9075f1179cc11c548203eed1`)
-- **監査判定ステータス**: `ISSUES_FOUND` (6 件の指摘)
-- **指摘事項と対応方針 (Disposition)**:
-
-| 指摘ID | 対象 | 対象AC | 指摘内容概要 | 対応方針 (Disposition) | 詳細対応内容 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **F-001** | `REQ-386-test-plan.md` | AC-1 | Gate 2 ユニットテストにおける進捗イベントUI伝播の具体的ケース明記 | `resolved` | Section 2「ケース名タグ定義」および Task Card T3 にて `[REQ-386/AC-1]` タグ付きテストケースを定義し、UI へのリアルタイム伝播検証を網羅。 |
-| **F-002** | `REQ-386-test-plan.md` | AC-2 | プレビュー自動追従の1秒以内表示および旧フレーム保護の検証明記 | `resolved` | Section 2 および Task Card T2/T3 にて `[REQ-386/AC-2]` タグ付きテストケースを定義し、1秒以内の即時レンダリングと旧プレビュー即時解除を検証。 |
-| **F-003** | `REQ-386-test-plan.md` | AC-3 | 単体・複数完了時の全体および個別プログレス双方の100%表示検証 | `resolved` | Section 2 および Section 3「境界値テスト 4」にて `[REQ-386/AC-3]` タグ付きテストケースを定義し、全体・個別プログレス双方の100%固定と最新画像維持を検証。 |
-| **F-004** | `REQ-386.md` | AC-1 | 個別進捗率計算・ゼロ除算回避の具体的ロジックの明記 | `resolved` | `REQ-386.md` Section 2 および Task Card T1/T3 にて `Math.min(100, Math.max(0, ...))` によるクランプ計算式およびゼロ除算ガードを明記。 |
-| **F-005** | `REQ-386.md` | AC-2 | 1秒以内プレビュー反映を満たすステート更新ロジックの明記 | `resolved` | `REQ-386.md` Section 2 および Task Card T2 にて `autoFollowImage` 遷移時の `previewImage = null` 即時解除と `pendingAutoFollowUrl` 保持制御を明記。 |
-| **F-006** | `REQ-386.md` | AC-3 | 全ジョブ完了時の状態整合を満たす実装ロジックの明記 | `resolved` | `REQ-386.md` Section 2 および Task Card T1/T3 にて `status == 'succeeded'` 時のプログレス100%維持と最新画像プレビュー整合ロジックを明記。 |
+1. **一覧からの個別コピー導線の詳細画面への集約 (AC-8)**
+   - *Trade-off*: モバイル一覧画面からトリガーワードやタグをワンタップで直接コピーする機能が省略され、詳細画面を開いてコピーする導線に一本化される。
+   - *Rationale*: 一覧カード内に小さなボタン群を詰め込むことによる誤タップおよび独立スクロールの弊害を排除し、一覧の本来目的である「素早い識別と快適なスクロール」を最優先とする（ユーザーレビューで合意・許容済み）。
+2. **共有コンポーネント `ImageCarousel` の本体不改変方針 (AC-7)**
+   - *Trade-off*: `ImageCarousel.tsx` の内部CSS（`absolute left-0`）を変更せず、ページ側から親・子セレクタを通じて中央寄せを適用する。
+   - *Rationale*: `ImageCarousel` は他画面（Generate等）でも広く使用されており、グローバル変更による他画面への予期せぬ表示崩れ（リグレッション）を防止するため。
+3. **複数Base Modelの省略と全文確認 (AC-9)**
+   - *Trade-off*: 対象Base Modelが多数ある場合、一覧カード上では ` · ` で結合された上で末尾が `…` に省略される。
+   - *Rationale*: カード高320pxの厳格な固定とレイアウト崩れ防止のため、一覧では1行に収め、全件確認はカードタップ（詳細モーダル）で行う設計とした。

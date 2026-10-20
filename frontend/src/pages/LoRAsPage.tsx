@@ -107,6 +107,35 @@ function CategorySectionDroppable({
   )
 }
 
+export function formatBaseModelSummary(
+  targetBaseModelIds?: number[] | null,
+  baseModels?: BaseModel[] | null,
+): { caption: string; tooltip: string } {
+  if (!targetBaseModelIds || targetBaseModelIds.length === 0) {
+    return {
+      caption: '対象モデル未設定',
+      tooltip: '対象モデル未設定',
+    }
+  }
+
+  const modelMap = new Map((baseModels || []).map((bm) => [bm.id, bm.name]))
+  const names = targetBaseModelIds
+    .map((id) => modelMap.get(id))
+    .filter((name): name is string => Boolean(name))
+
+  if (names.length === 0) {
+    return {
+      caption: '対象モデル未設定',
+      tooltip: '対象モデル未設定',
+    }
+  }
+
+  return {
+    caption: names.join(' · '),
+    tooltip: names.join(', '),
+  }
+}
+
 export function LoRAsPage() {
   const qc = useQueryClient()
   
@@ -442,6 +471,10 @@ export function LoRAsPage() {
 
   const renderLoraCard = (lora: Lora) => {
     const catName = categories?.find((c) => c.id === lora.category_id)?.name
+    const { caption: loraBaseModelCaption, tooltip: loraBaseModelTooltip } = formatBaseModelSummary(
+      lora.target_base_model_ids,
+      baseModels,
+    )
     const longPressHandlers = getLongPressHandlers(lora.id)
     return (
       <SortableLoraCard key={lora.id} id={lora.id} disabled={!isDndActive}>
@@ -497,22 +530,40 @@ export function LoRAsPage() {
               thumbnailPath={lora.thumbnail_path}
               snapshotPaths={lora.snapshot_paths}
               alt={lora.model_name}
-              className="w-full shrink-0"
+              className="w-full shrink-0 flex justify-center max-md:[&>[data-testid=image-carousel-frame]]:left-1/2 max-md:[&>[data-testid=image-carousel-frame]]:-translate-x-1/2 max-md:[&.justify-start]:justify-center"
               imageAspectRatio={numericRatio}
               imageAreaFraction={0.58}
             >
               <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
-                className="absolute top-2 right-8 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
+                aria-label={`LoRA編集 ${lora.model_name}`}
+                className="absolute top-1 right-[50px] min-h-[44px] min-w-[44px] flex items-center justify-center md:top-2 md:right-8 md:min-h-0 md:min-w-0 md:p-1 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                 <Pencil size={13} />
               </button>
               <button id={`lora-delete-${lora.id}`}
                 onClick={(e) => { e.stopPropagation(); if (confirm('Delete this LoRA?')) deleteLora.mutate(lora.id) }}
-                className="absolute top-2 right-2 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity p-1 rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
+                aria-label={`LoRA削除 ${lora.model_name}`}
+                className="absolute top-1 right-1 min-h-[44px] min-w-[44px] flex items-center justify-center md:top-2 md:right-2 md:min-h-0 md:min-w-0 md:p-1 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-red-400 hover:bg-red-500/20">
                 <Trash2 size={13} />
               </button>
             </ImageCarousel>
 
-            <div className="p-3 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-start gap-2">
+            {/* Mobile Information Area */}
+            <div className="flex md:hidden flex-1 min-h-0 flex-col p-2.5 overflow-hidden justify-between">
+              <div className="space-y-1 min-w-0 overflow-hidden">
+                <p className="text-xs font-semibold text-zinc-200 line-clamp-2 break-words" title={lora.model_name.split('/').pop()}>
+                  {lora.model_name.split('/').pop()}
+                </p>
+                <p className="text-[11px] text-zinc-400 line-clamp-2 break-words" title={lora.description || '説明なし'}>
+                  {lora.description || '説明なし'}
+                </p>
+              </div>
+              <p className="text-[11px] text-zinc-500 truncate mt-auto pt-1 whitespace-nowrap" title={loraBaseModelTooltip}>
+                {loraBaseModelCaption}
+              </p>
+            </div>
+
+            {/* Desktop Information Area (hidden on mobile, flex on md+) */}
+            <div className="hidden md:flex p-3 flex-1 min-h-0 overflow-y-auto custom-scrollbar flex-col justify-start gap-2">
                 <div className="space-y-1.5 min-w-0 overflow-hidden shrink-0">
                 <div>
                   <p className="text-xs font-medium text-zinc-200 line-clamp-2 break-words" title={lora.description || lora.model_name}>
@@ -714,7 +765,7 @@ export function LoRAsPage() {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-5 pt-0 md:pt-5">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="space-y-6">
             {visibleCategories.map((cat) => {
@@ -728,7 +779,7 @@ export function LoRAsPage() {
                     type="button"
                     id={`category-section-header-${catKey}`}
                     onClick={() => toggleSection(catKey)}
-                    className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
+                    className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-2 min-h-[44px] backdrop-blur"
                   >
                     {expanded ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                     <span>{cat.name}</span>
@@ -754,7 +805,7 @@ export function LoRAsPage() {
                   type="button"
                   id="category-section-header-uncategorized"
                   onClick={() => toggleSection('uncategorized')}
-                  className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-1 backdrop-blur"
+                  className="sticky top-0 z-20 flex items-center gap-2 bg-surface/95 text-sm font-semibold text-zinc-300 hover:text-white transition-colors w-full text-left py-2 min-h-[44px] backdrop-blur"
                 >
                   {isExpanded('uncategorized') ? <ChevronDown size={16} className="text-zinc-400" /> : <ChevronRight size={16} className="text-zinc-400" />}
                   <span>未分類</span>

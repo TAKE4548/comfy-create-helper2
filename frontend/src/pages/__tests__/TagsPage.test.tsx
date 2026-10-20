@@ -1,7 +1,9 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import fc from 'fast-check'
 import { TagsPage } from '../TagsPage'
+import { formatBaseModelSummary } from '../LoRAsPage'
 import { tagSetsApi, tagsetCategoriesApi, baseModelsApi } from '../../api/client'
 import type { TagSet, Category, BaseModel } from '../../api/types'
 import { TagSetDetailModal } from '../../components/TagSetModals/TagSetDetailModal'
@@ -54,7 +56,7 @@ vi.mock('../../components/TagSetModals', () => ({
     {form.subsets?.map((s: any, i: number) => <input key={i} aria-label={`edit-subset-image-${i}`} value={s.thumbnail_path ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets.map((subset: any, idx: number) => idx === i ? { ...subset, thumbnail_path: e.target.value } : subset) }))} />)}
     <button onClick={onSubmit}>edit-submit</button>
   </div>,
-  TagSetDetailModal: () => null,
+  TagSetDetailModal: ({ tagSet }: any) => tagSet ? <div role="dialog" aria-label="タグセット詳細モーダル">{tagSet.name}</div> : null,
 }))
 
 vi.mock('../../components/BulkEditModal', () => ({
@@ -127,18 +129,21 @@ describe('TagsPage Component', () => {
       </QueryClientProvider>
     )
 
+  const getTagSet = (name: string) => screen.getAllByText(name)[0]
+  const queryTagSet = (name: string) => screen.queryAllByText(name)[0] ?? null
+
   it('renders tag set list, tags, and category/model controls', async () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
     })
 
     expect(screen.getByRole('button', { name: 'Costume' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lighting' })).toBeInTheDocument()
-    expect(screen.getByText('SD 1.5')).toBeInTheDocument()
-    expect(screen.getByText('SDXL')).toBeInTheDocument()
+    expect(screen.getAllByText('SD 1.5')[0]).toBeInTheDocument()
+    expect(screen.getAllByText('SDXL')[0]).toBeInTheDocument()
     expect(screen.getByText('serafuku')).toBeInTheDocument()
     expect(screen.getByText('cinematic light')).toBeInTheDocument()
   })
@@ -147,15 +152,15 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
     })
 
     const searchInput = screen.getByPlaceholderText('Search tags…')
     fireEvent.change(searchInput, { target: { value: 'Dramatic' } })
 
-    expect(screen.queryByText('Costume Set')).not.toBeInTheDocument()
-    expect(screen.getByText('Lighting Set')).toBeInTheDocument()
+    expect(queryTagSet('Costume Set')).not.toBeInTheDocument()
+    expect(getTagSet('Lighting Set')).toBeInTheDocument()
   })
 
   it('renders accordion sections per category, 0-item empty section, and uncategorized section', async () => {
@@ -179,9 +184,9 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
-      expect(screen.getByText('Uncategorized Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Uncategorized Set')).toBeInTheDocument()
     })
 
     // Section headers
@@ -200,7 +205,7 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
 
     const costumeHeader = document.getElementById('category-section-header-1')
@@ -210,7 +215,7 @@ describe('TagsPage Component', () => {
     fireEvent.click(costumeHeader!)
 
     await waitFor(() => {
-      expect(screen.queryByText('Costume Set')).not.toBeInTheDocument()
+      expect(queryTagSet('Costume Set')).not.toBeInTheDocument()
     })
 
     const saved = localStorage.getItem('ps_accordion_tagsets')
@@ -221,7 +226,7 @@ describe('TagsPage Component', () => {
     fireEvent.click(costumeHeader!)
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
     expect(JSON.parse(localStorage.getItem('ps_accordion_tagsets')!)['1']).toBe(true)
   })
@@ -243,9 +248,9 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
-      expect(screen.getByText('Uncategorized Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Uncategorized Set')).toBeInTheDocument()
     })
 
     // Filter by Costume (1)
@@ -253,9 +258,9 @@ describe('TagsPage Component', () => {
     fireEvent.click(costumeFilterBtn!)
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.queryByText('Lighting Set')).not.toBeInTheDocument()
-      expect(screen.queryByText('Uncategorized Set')).not.toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(queryTagSet('Lighting Set')).not.toBeInTheDocument()
+      expect(queryTagSet('Uncategorized Set')).not.toBeInTheDocument()
     })
 
     // Also select Uncategorized (OR filter: Costume + Uncategorized)
@@ -263,9 +268,9 @@ describe('TagsPage Component', () => {
     fireEvent.click(uncatFilterBtn!)
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Uncategorized Set')).toBeInTheDocument()
-      expect(screen.queryByText('Lighting Set')).not.toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Uncategorized Set')).toBeInTheDocument()
+      expect(queryTagSet('Lighting Set')).not.toBeInTheDocument()
     })
 
     // Click All button to reset
@@ -273,9 +278,9 @@ describe('TagsPage Component', () => {
     fireEvent.click(allFilterBtn!)
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
-      expect(screen.getByText('Uncategorized Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Uncategorized Set')).toBeInTheDocument()
     })
   })
 
@@ -297,8 +302,8 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Costume Set 2')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set 2')).toBeInTheDocument()
     })
 
     // Select Costume category filter
@@ -322,8 +327,8 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
-      expect(screen.getByText('Lighting Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Lighting Set')).toBeInTheDocument()
     })
 
     // Move Costume Set (id: 1, cat: 1) to Lighting category (container-2)
@@ -358,7 +363,7 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
 
     const sdxlCheckbox = screen.getByRole('checkbox', { name: 'SDXL' })
@@ -373,7 +378,7 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
 
     const deleteBtn = document.getElementById('tagset-delete-1')
@@ -390,7 +395,7 @@ describe('TagsPage Component', () => {
 
   it('select all uses the complete filtered display list and disables sorting while selected', async () => {
     renderComponent()
-    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    await waitFor(() => expect(getTagSet('Costume Set')).toBeInTheDocument())
     fireEvent.change(screen.getByPlaceholderText('Search tags…'), { target: { value: 'Costume' } })
     fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
     fireEvent.click(screen.getByRole('button', { name: /すべて選択/ }))
@@ -437,7 +442,7 @@ describe('TagsPage Component', () => {
 
   it('preserves named subset images when bulk category and model changes use full replacement updates', async () => {
     renderComponent()
-    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    await waitFor(() => expect(getTagSet('Costume Set')).toBeInTheDocument())
     fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
     fireEvent.click(screen.getByRole('button', { name: '一括編集' }))
     fireEvent.click(screen.getByRole('button', { name: 'apply-tagset-bulk-edit' }))
@@ -460,7 +465,7 @@ describe('TagsPage Component', () => {
 
   it('confirms deletion of only selected tag sets and cancel leaves them untouched', async () => {
     renderComponent()
-    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    await waitFor(() => expect(getTagSet('Costume Set')).toBeInTheDocument())
     fireEvent.click(document.getElementById('tagset-card-1')!, { ctrlKey: true })
 
     fireEvent.click(screen.getByRole('button', { name: /選択を削除/ }))
@@ -504,7 +509,7 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
 
     const card1 = document.getElementById('tagset-card-1')
@@ -561,7 +566,7 @@ describe('TagsPage Component', () => {
     renderComponent()
 
     await waitFor(() => {
-      expect(screen.getByText('Costume Set')).toBeInTheDocument()
+      expect(getTagSet('Costume Set')).toBeInTheDocument()
     })
 
     const copyBtn = document.getElementById('copy-tagset-1')
@@ -576,7 +581,7 @@ describe('TagsPage Component', () => {
   it('renders portrait cards in a 2/3/4 responsive grid with configured image ratio and usable controls', async () => {
     localStorage.setItem('prompt-surgeon-thumbnail-aspect-ratio', '2:3')
     renderComponent()
-    await waitFor(() => expect(screen.getByText('Costume Set')).toBeInTheDocument())
+    await waitFor(() => expect(getTagSet('Costume Set')).toBeInTheDocument())
 
     const card = document.getElementById('tagset-card-1')!
     expect(card.className).toContain('w-full')
@@ -592,11 +597,189 @@ describe('TagsPage Component', () => {
     expect(carousel).toBeInTheDocument()
     expect(carousel).toHaveClass('w-full', 'shrink-0')
     expect(card.querySelector('[data-testid="image-carousel-frame"]')).toBeInTheDocument()
-    expect(screen.getByText('School uniform style')).toHaveClass('line-clamp-2')
+    expect(getTagSet('School uniform style')).toHaveClass('line-clamp-2')
     expect(document.getElementById('category-section-header-1')).toHaveClass('sticky', 'top-0', 'min-h-[44px]')
     expect(screen.getByRole('button', { name: 'Copy tag serafuku' })).toHaveClass('min-h-[44px]', 'text-[11px]')
     expect(card.querySelector('[aria-label="並び替えハンドル"]')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
     expect(document.getElementById('tagset-edit-1')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
     expect(document.getElementById('tagset-delete-1')).toHaveClass('min-h-[44px]', 'min-w-[44px]')
+  })
+
+  describe('REQ-376: Mobile Tag Set Card Layout & Scroll Unification', () => {
+    it('[REQ-376/AC-1] maintains fixed 320px card height without overflow', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      expect(card).toHaveClass('h-[320px]', 'min-h-[320px]', 'max-h-[320px]', 'overflow-hidden')
+    })
+
+    it('[REQ-376/AC-2] displays exactly 3 items in order in mobile area (title, description, base model)', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      const mobileArea = card.querySelector('.flex.md\\:hidden')!
+      expect(mobileArea).toBeInTheDocument()
+
+      const paragraphs = mobileArea.querySelectorAll('p')
+      expect(paragraphs).toHaveLength(3)
+
+      // 1: Title
+      expect(paragraphs[0]).toHaveTextContent('Costume Set')
+      expect(paragraphs[0]).toHaveClass('text-xs', 'font-semibold', 'text-zinc-200', 'line-clamp-2', 'break-words')
+
+      // 2: Description
+      expect(paragraphs[1]).toHaveTextContent('School uniform style')
+      expect(paragraphs[1]).toHaveClass('text-[11px]', 'text-zinc-400', 'line-clamp-2', 'break-words')
+
+      // 3: Base Model (aligned to bottom)
+      expect(paragraphs[2]).toHaveTextContent('SD 1.5')
+      expect(paragraphs[2]).toHaveClass('text-[11px]', 'text-zinc-500', 'truncate', 'mt-auto', 'pt-1', 'whitespace-nowrap')
+    })
+
+    it('[REQ-376/AC-3] clamps multi-line titles and descriptions with line-clamp-2 and break-words', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      const mobileArea = card.querySelector('.flex.md\\:hidden')!
+      const title = mobileArea.querySelector('p.text-xs')
+      const desc = mobileArea.querySelector('p.text-\\[11px\\]')
+      expect(title).toHaveClass('line-clamp-2', 'break-words')
+      expect(desc).toHaveClass('line-clamp-2', 'break-words')
+    })
+
+    it('[REQ-376/AC-4] removes card-internal scroll in mobile view using overflow-hidden', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      const mobileArea = card.querySelector('.flex.md\\:hidden')!
+      expect(mobileArea).toHaveClass('overflow-hidden')
+      expect(mobileArea).not.toHaveClass('overflow-y-auto')
+    })
+
+    it('[REQ-376/AC-5] sticks category section header with pt-0 container and removes category badge from mobile card', async () => {
+      const { container } = renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const scrollContainer = container.querySelector('.flex-1.overflow-y-auto.custom-scrollbar')!
+      expect(scrollContainer).toHaveClass('p-5', 'pt-0', 'md:pt-5')
+
+      const header = document.getElementById('category-section-header-1')!
+      expect(header).toHaveClass('sticky', 'top-0', 'min-h-[44px]')
+
+      const card = document.getElementById('tagset-card-1')!
+      const mobileArea = card.querySelector('.flex.md\\:hidden')!
+      expect(mobileArea.querySelector('span')).not.toBeInTheDocument()
+
+      const desktopArea = card.querySelector('.hidden.md\\:flex')!
+      expect(desktopArea.querySelector('span.rounded-full')).toHaveTextContent('Costume')
+    })
+
+    it('[REQ-376/AC-7] applies centering classes to ImageCarousel for mobile thumbnail alignment', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      const carousel = card.querySelector('[data-testid="image-carousel"]')!
+      expect(carousel.className).toContain('justify-center')
+      expect(carousel.className).toContain('max-md:[&>[data-testid=image-carousel-frame]]:left-1/2')
+      expect(carousel.className).toContain('max-md:[&>[data-testid=image-carousel-frame]]:-translate-x-1/2')
+    })
+
+    it('[REQ-376/AC-8] keeps tag set tags accessible via detail modal on card click', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      fireEvent.click(card)
+      await waitFor(() => {
+        expect(screen.getByRole('dialog', { name: 'タグセット詳細モーダル' })).toBeInTheDocument()
+      })
+    })
+
+    it('[REQ-376/AC-9] formats base models with delimiter and validates properties with fast-check', () => {
+      // Unit behavior
+      expect(formatBaseModelSummary([], MOCK_BASE_MODELS).caption).toBe('対象モデル未設定')
+      expect(formatBaseModelSummary(null, MOCK_BASE_MODELS).caption).toBe('対象モデル未設定')
+      expect(formatBaseModelSummary([1], MOCK_BASE_MODELS).caption).toBe('SD 1.5')
+      expect(formatBaseModelSummary([1, 2], MOCK_BASE_MODELS).caption).toBe('SD 1.5 · SDXL')
+      expect(formatBaseModelSummary([1, 2], MOCK_BASE_MODELS).tooltip).toBe('SD 1.5, SDXL')
+      expect(formatBaseModelSummary([999], MOCK_BASE_MODELS).caption).toBe('対象モデル未設定')
+
+      // Property-based test
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.integer({ min: 1, max: 100 }),
+              name: fc.string({ minLength: 0, maxLength: 50 }),
+              key: fc.string({ minLength: 1, maxLength: 20 }),
+            }),
+            { maxLength: 20 },
+          ),
+          fc.array(fc.integer({ min: 1, max: 100 }), { maxLength: 10 }),
+          (models, targetIds) => {
+            const res = formatBaseModelSummary(targetIds, models)
+            expect(typeof res.caption).toBe('string')
+            expect(typeof res.tooltip).toBe('string')
+            if (targetIds.length === 0) {
+              expect(res.caption).toBe('対象モデル未設定')
+            }
+          },
+        ),
+      )
+    })
+
+    it('[REQ-376/AC-10] preserves existing search, filter, and accordion functionality', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+
+      // Accordion toggle
+      const header = document.getElementById('category-section-header-1')!
+      fireEvent.click(header)
+      expect(header).toBeInTheDocument()
+
+      // Search input exists
+      const searchInput = screen.getByPlaceholderText('Search tags…')
+      fireEvent.change(searchInput, { target: { value: 'Lighting' } })
+      expect(searchInput).toHaveValue('Lighting')
+    })
+
+    it('[REQ-376/AC-11] renders safely on 360px viewport, missing descriptions, missing thumbnail, and uncategorized cards', async () => {
+      const anomalyTagSets: TagSet[] = [
+        {
+          id: 99,
+          name: 'super_long_tagset_name_without_spaces_1234567890_abcdefghij',
+          description: '',
+          category_id: null,
+          thumbnail_path: '',
+          snapshot_paths: [],
+          tags: ['tag1'],
+          subsets: [],
+          target_base_model_ids: [9999],
+          sort_order: 1,
+          created_at: '2026-01-01',
+        },
+      ]
+      vi.mocked(tagSetsApi.list).mockResolvedValue(anomalyTagSets)
+      renderComponent()
+
+      await waitFor(() => {
+        expect(document.getElementById('tagset-card-99')).toBeInTheDocument()
+      })
+
+      const card = document.getElementById('tagset-card-99')!
+      expect(card).toBeInTheDocument()
+      const mobileArea = card.querySelector('.flex.md\\:hidden')!
+      expect(mobileArea).toBeInTheDocument()
+      expect(mobileArea.querySelector('p[title="説明なし"]')).toHaveTextContent('説明なし')
+      expect(mobileArea.querySelector('p[title="対象モデル未設定"]')).toHaveTextContent('対象モデル未設定')
+    })
+
+    it('[REQ-376/AC-12] preserves full desktop baseline layout with card-internal scroll and tags', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+      const card = document.getElementById('tagset-card-1')!
+      const desktopArea = card.querySelector('.hidden.md\\:flex')!
+      expect(desktopArea).toBeInTheDocument()
+      expect(desktopArea).toHaveClass('overflow-y-auto', 'custom-scrollbar')
+      expect(desktopArea.querySelector('#copy-tagset-1')).toBeInTheDocument()
+    })
   })
 })
