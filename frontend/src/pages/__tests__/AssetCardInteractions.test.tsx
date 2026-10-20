@@ -47,7 +47,9 @@ vi.mock('../../components/LoraModals', () => ({
 vi.mock('../../components/TagSetModals', () => ({
   TagSetCreateModal: () => null,
   TagSetEditModal: () => null,
-  TagSetDetailModal: ({ tagSet }: any) => <div data-testid="tagset-detail">{tagSet.name}</div>,
+  TagSetDetailModal: ({ tagSet, initialEditing }: any) => (
+    <div data-testid={initialEditing ? 'tagset-edit' : 'tagset-detail'}>{tagSet.name}</div>
+  ),
 }))
 
 const lora = {

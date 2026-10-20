@@ -58,7 +58,7 @@ describe('LoraDetailModal manual examples', () => {
 
     expect(screen.getByRole('img', { name: 'Preview' })).toHaveAttribute('src', '/cover.png')
     expect(screen.getByRole('img', { name: 'thumbnail-1' })).toHaveAttribute('src', '/generated/one.png')
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     expect(screen.getByTestId('manual-example-paths')).toHaveTextContent(JSON.stringify(lora.example_paths))
     fireEvent.click(screen.getByRole('button', { name: 'Edit metadata' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
@@ -73,7 +73,7 @@ describe('LoraDetailModal manual examples', () => {
   it('forwards edited manual example paths through the save form', () => {
     const onSave = vi.fn()
     renderModal(onSave)
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     fireEvent.click(screen.getByRole('button', { name: 'Add manual example' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
 
@@ -83,9 +83,9 @@ describe('LoraDetailModal manual examples', () => {
   it('does not save when editing is cancelled', () => {
     const onSave = vi.fn()
     renderModal(onSave)
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     fireEvent.click(screen.getByRole('button', { name: 'Add manual example' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' })[0])
 
     expect(onSave).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()

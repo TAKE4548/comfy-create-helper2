@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -43,6 +44,60 @@ vi.mock('../../api/client', () => ({
   },
 }))
 
+function MockDetailEditor({ tagSet, onSave }: any) {
+  const [form, setForm] = useState({
+    name: tagSet.name,
+    description: tagSet.description ?? '',
+    category_id: tagSet.category_id,
+    tags: Array.isArray(tagSet.tags) ? tagSet.tags.join(', ') : (tagSet.tags ?? ''),
+    thumbnail_path: tagSet.thumbnail_path,
+    target_base_model_ids: tagSet.target_base_model_ids ?? [],
+    subsets: tagSet.subsets
+      ? tagSet.subsets.map((s: any) => ({
+          name: s.name,
+          tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags,
+          thumbnail_path: s.thumbnail_path ?? null,
+        }))
+      : [],
+  })
+
+  return (
+    <div>
+      <input
+        aria-label="edit-main-tags"
+        value={form.tags}
+        onChange={(e) => setForm((f: any) => ({ ...f, tags: e.target.value }))}
+      />
+      <input
+        aria-label="edit-subset-tags"
+        value={form.subsets?.[0]?.tags ?? ''}
+        onChange={(e) =>
+          setForm((f: any) => ({
+            ...f,
+            subsets: f.subsets?.map((s: any, i: number) => (i === 0 ? { ...s, name: 'Summer', tags: e.target.value } : s)),
+          }))
+        }
+      />
+      {form.subsets?.map((s: any, i: number) => (
+        <input
+          key={i}
+          aria-label={`edit-subset-image-${i}`}
+          value={s.thumbnail_path ?? ''}
+          onChange={(e) =>
+            setForm((f: any) => ({
+              ...f,
+              subsets: f.subsets.map((subset: any, idx: number) =>
+                idx === i ? { ...subset, thumbnail_path: e.target.value } : subset
+              ),
+            }))
+          }
+        />
+      ))}
+      <button onClick={() => onSave(tagSet.id, form)}>edit-submit</button>
+    </div>
+  )
+}
+
 vi.mock('../../components/TagSetModals', () => ({
   TagSetCreateModal: ({ form, setForm, onSubmit }: any) => <div>
     <input aria-label="create-main-tags" value={form.tags} onChange={(e) => setForm((f: any) => ({ ...f, tags: e.target.value }))} />
@@ -56,7 +111,12 @@ vi.mock('../../components/TagSetModals', () => ({
     {form.subsets?.map((s: any, i: number) => <input key={i} aria-label={`edit-subset-image-${i}`} value={s.thumbnail_path ?? ''} onChange={(e) => setForm((f: any) => ({ ...f, subsets: f.subsets.map((subset: any, idx: number) => idx === i ? { ...subset, thumbnail_path: e.target.value } : subset) }))} />)}
     <button onClick={onSubmit}>edit-submit</button>
   </div>,
-  TagSetDetailModal: ({ tagSet }: any) => tagSet ? <div role="dialog" aria-label="タグセット詳細モーダル">{tagSet.name}</div> : null,
+  TagSetDetailModal: ({ tagSet, initialEditing, onSave }: any) => tagSet ? (
+    <div role="dialog" aria-label="タグセット詳細モーダル" data-initial-editing={String(Boolean(initialEditing))}>
+      <div>{tagSet.name}</div>
+      {initialEditing && <MockDetailEditor tagSet={tagSet} onSave={onSave} />}
+    </div>
+  ) : null,
 }))
 
 vi.mock('../../components/BulkEditModal', () => ({
@@ -500,7 +560,7 @@ describe('TagsPage Component', () => {
     )
     expect(screen.getByAltText('Summer thumbnail')).toHaveAttribute('src', '/summer-example.png')
     expect(screen.getByAltText('Winter thumbnail')).toHaveAttribute('src', '/winter-example.png')
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     expect(await screen.findByAltText('Summer preview')).toHaveAttribute('src', '/summer-example.png')
     expect(screen.getByAltText('Winter preview')).toHaveAttribute('src', '/winter-example.png')
   })
@@ -780,6 +840,29 @@ describe('TagsPage Component', () => {
       expect(desktopArea).toBeInTheDocument()
       expect(desktopArea).toHaveClass('overflow-y-auto', 'custom-scrollbar')
       expect(desktopArea.querySelector('#copy-tagset-1')).toBeInTheDocument()
+    })
+
+    it('[REQ-377/AC-8] Card edit button and detail edit button open identical TagSetDetailModal edit state', async () => {
+      renderComponent()
+      await waitFor(() => expect(document.getElementById('tagset-card-1')).toBeInTheDocument())
+
+      // 1. Card edit button click directly opens TagSetDetailModal in edit mode (initialEditing=true)
+      const editBtn = document.getElementById('tagset-edit-1')!
+      fireEvent.click(editBtn)
+
+      const modal = await screen.findByRole('dialog', { name: 'タグセット詳細モーダル' })
+      expect(modal).toBeInTheDocument()
+      expect(modal).toHaveAttribute('data-initial-editing', 'true')
+      expect(screen.getByLabelText('edit-main-tags')).toBeInTheDocument()
+
+      // 2. Card click opens TagSetDetailModal in view mode (initialEditing=false)
+      const card2 = document.getElementById('tagset-card-2')!
+      fireEvent.click(card2)
+      await waitFor(() => {
+        const modal2 = screen.getByRole('dialog', { name: 'タグセット詳細モーダル' })
+        expect(modal2).toBeInTheDocument()
+        expect(modal2).toHaveAttribute('data-initial-editing', 'false')
+      })
     })
   })
 })

@@ -139,4 +139,17 @@ describe('TagSetFormFields tag paste parser', () => {
     expect(screen.getByAltText('night preview')).toHaveAttribute('src', 'night-old.png')
     expect(JSON.parse(screen.getByTestId('form-state').textContent!).subsets).toHaveLength(1)
   })
+
+  it('[REQ-377/AC-9][REQ-377/AC-10] renders subsets container without internal scroll constraints to allow natural expansion in parent', () => {
+    render(<FormHarness />)
+    const subsetsLabel = screen.getByText('Subsets (バリエーション)')
+    const subsetsContainer = subsetsLabel.closest('div')?.nextElementSibling as HTMLElement | null
+
+    expect(subsetsContainer).not.toBeNull()
+    expect(subsetsContainer).toHaveClass('space-y-2')
+    expect(subsetsContainer?.className).not.toContain('max-h-[160px]')
+    expect(subsetsContainer?.className).not.toContain('overflow-y-auto')
+    expect(subsetsContainer?.className).not.toContain('custom-scrollbar')
+  })
 })
+

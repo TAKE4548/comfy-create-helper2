@@ -311,10 +311,10 @@ describe('TagSetModals Component (TagSetDetailModal)', () => {
     expect(screen.getByAltText('Night thumbnail')).toHaveAttribute('src', '/images/night.jpg')
     expect(screen.getByAltText('thumbnail-0')).toHaveAttribute('src', '/images/parent-cover.jpg')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     const subsetNames = screen.getAllByPlaceholderText('Subset Name (e.g. 日中)')
     fireEvent.change(subsetNames[0], { target: { value: 'Daylight' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save Changes' })[0])
 
     expect(saveThroughApi).toHaveBeenCalledWith(10, expect.objectContaining({
       thumbnail_path: '/images/parent-cover.jpg',
@@ -363,5 +363,219 @@ describe('TagSetModals Component (TagSetDetailModal)', () => {
     expect(screen.getByText('old tag')).toBeInTheDocument()
     expect(screen.queryByAltText('Legacy thumbnail')).not.toBeInTheDocument()
     expect(screen.getByAltText('thumbnail-0')).toHaveAttribute('src', '/images/legacy-parent.jpg')
+  })
+})
+
+describe('TagSetDetailModal Mobile Redesign (REQ-377)', () => {
+  let queryClient: QueryClient
+  const onCopyMock = vi.fn()
+  const onCloseMock = vi.fn()
+  const onSaveMock = vi.fn()
+  const onCategoryCreatedMock = vi.fn()
+
+  const testTagSet: TagSet = {
+    id: 10,
+    name: 'Sailor Suit',
+    description: 'Classic uniform',
+    category_id: 1,
+    tags: ['sailor suit', 'pleated skirt', 'neckerchief'],
+    thumbnail_path: '/images/thumb.jpg',
+    snapshot_paths: ['/images/thumb.jpg', '/images/snap2.jpg'],
+    sort_order: 1,
+    created_at: '2026-09-17T00:00:00Z',
+    subsets: [
+      { id: 1, tag_set_id: 10, name: 'Summer', tags: ['short sleeves', 'white socks'] },
+    ],
+    target_base_model_ids: [1],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
+    vi.mocked(baseModelsApi.list).mockResolvedValue(MOCK_BASE_MODELS)
+  })
+
+  const renderDetail = (ts = testTagSet, initialEditing = false, isPending = false) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <TagSetDetailModal
+          tagSet={ts}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={isPending}
+          onCategoryCreated={onCategoryCreatedMock}
+          initialEditing={initialEditing}
+        />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('[REQ-377/AC-1] renders as mobile bottom sheet with drag handle, single scrollable body, and fixed footer', () => {
+    renderDetail()
+    const backdrop = document.querySelector('.modal-backdrop')!
+    expect(backdrop).toBeInTheDocument()
+    expect(backdrop).toHaveClass('items-end')
+
+    const sheet = screen.getByTestId('tagset-detail-sheet')
+    expect(sheet).toBeInTheDocument()
+    expect(sheet).toHaveClass('rounded-t-2xl')
+
+    const handle = sheet.querySelector('[aria-hidden="true"]')
+    expect(handle).toBeInTheDocument()
+    expect(handle).toHaveClass('bg-zinc-600')
+
+    const footer = screen.getByTestId('tagset-detail-footer')
+    expect(footer).toBeInTheDocument()
+    expect(footer).toHaveClass('flex-shrink-0')
+  })
+
+  it('[REQ-377/AC-2] displays Close on left and Edit on right in view mode footer and responds to clicks', () => {
+    renderDetail()
+    const footer = screen.getByTestId('tagset-detail-footer')
+    const buttons = footer.querySelectorAll('button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]).toHaveTextContent('Close')
+    expect(buttons[1]).toHaveTextContent('Edit')
+
+    fireEvent.click(buttons[0])
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(buttons[1])
+    expect(screen.getByText('Edit Tag Set')).toBeInTheDocument()
+  })
+
+  it('[REQ-377/AC-3] displays Cancel on left and Save Changes on right in edit mode footer with pending and validation states', () => {
+    const view = renderDetail(testTagSet, true, false)
+    const footer = screen.getByTestId('tagset-detail-footer')
+    const buttons = footer.querySelectorAll('button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]).toHaveTextContent('Cancel')
+    expect(buttons[1]).toHaveTextContent('Save Changes')
+
+    const nameInput = document.getElementById('tagset-detail-edit-name') as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: '' } })
+    expect(buttons[1]).toBeDisabled()
+
+    fireEvent.change(nameInput, { target: { value: 'Valid Name' } })
+    expect(buttons[1]).not.toBeDisabled()
+
+    // Test isPending state
+    view.unmount()
+    renderDetail(testTagSet, true, true)
+    const pendingFooter = screen.getByTestId('tagset-detail-footer')
+    const pendingSaveBtn = pendingFooter.querySelectorAll('button')[1]
+    expect(pendingSaveBtn).toHaveTextContent('Saving…')
+    expect(pendingSaveBtn).toBeDisabled()
+  })
+
+  it('[REQ-377/AC-4] includes safe area bottom padding and 44px min touch target on mobile footer', () => {
+    renderDetail()
+    const footer = screen.getByTestId('tagset-detail-footer')
+    expect(footer.className).toContain('pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]')
+
+    const buttons = footer.querySelectorAll('button')
+    buttons.forEach((btn) => {
+      expect(btn).toHaveClass('min-h-[44px]')
+    })
+  })
+
+  it('[REQ-377/AC-5] displays compact Cover image and snapshot count row at body top on mobile', () => {
+    renderDetail()
+    const coverBanner = screen.getByRole('button', { name: 'スナップショットギャラリーを開く' })
+    expect(coverBanner).toBeInTheDocument()
+    expect(coverBanner).toHaveClass('md:hidden')
+    expect(coverBanner).toHaveTextContent('Cover Image')
+    expect(coverBanner).toHaveTextContent(`Related Snapshots (${testTagSet.snapshot_paths.length}件)`)
+  })
+
+  it('[REQ-377/AC-6] opens gallery subview on cover tap and respects Cancel / Save timing for cover changes', () => {
+    renderDetail(testTagSet, true)
+
+    // Tap compact Cover banner to open gallery
+    const coverBanner = screen.getByRole('button', { name: 'スナップショットギャラリーを開く' })
+    fireEvent.click(coverBanner)
+
+    // Gallery header shows back button
+    const backBtn = screen.getByRole('button', { name: /詳細に戻る/i })
+    expect(backBtn).toBeInTheDocument()
+
+    // Select second snapshot
+    const secondThumb = screen.getByAltText('thumbnail-1')
+    fireEvent.click(secondThumb)
+
+    // Click "Set as Cover"
+    const setCoverBtn = screen.getByRole('button', { name: 'Set as Cover' })
+    fireEvent.click(setCoverBtn)
+
+    // Return to details
+    fireEvent.click(backBtn)
+
+    // In footer, click Cancel -> changes are discarded
+    const footer = screen.getByTestId('tagset-detail-footer')
+    const cancelBtn = footer.querySelectorAll('button')[0]
+    fireEvent.click(cancelBtn)
+
+    expect(onSaveMock).not.toHaveBeenCalled()
+    expect(screen.getByText('Tag Set Details')).toBeInTheDocument()
+  })
+
+  it('[REQ-377/AC-7] gracefully handles missing images and empty snapshot lists without breaking layout', () => {
+    const emptyImageTagSet: TagSet = {
+      ...testTagSet,
+      thumbnail_path: undefined,
+      snapshot_paths: [],
+    }
+    renderDetail(emptyImageTagSet)
+    expect(screen.getByText('No Preview Available')).toBeInTheDocument()
+    const coverBanner = screen.getByRole('button', { name: 'スナップショットギャラリーを開く' })
+    expect(coverBanner).toHaveTextContent('Related Snapshots (0件)')
+  })
+
+  it('[REQ-377/AC-12] preserves full metadata editing, subsets, copy, and save in TagSetDetailModal', () => {
+    renderDetail(testTagSet, true)
+    const nameInput = document.getElementById('tagset-detail-edit-name') as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'Updated Uniform' } })
+
+    const footer = screen.getByTestId('tagset-detail-footer')
+    const saveBtn = footer.querySelectorAll('button')[1]
+    fireEvent.click(saveBtn)
+
+    expect(onSaveMock).toHaveBeenCalledWith(10, expect.objectContaining({
+      name: 'Updated Uniform',
+    }))
+  })
+
+  it('[REQ-377/AC-13] supports Escape key navigation returning from gallery subview or closing modal', () => {
+    renderDetail()
+    // Open gallery
+    const coverBanner = screen.getByRole('button', { name: 'スナップショットギャラリーを開く' })
+    fireEvent.click(coverBanner)
+    expect(screen.getByRole('button', { name: /詳細に戻る/i })).toBeInTheDocument()
+
+    // Press Escape -> closes gallery, returns to details
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('button', { name: /詳細に戻る/i })).not.toBeInTheDocument()
+    expect(onCloseMock).not.toHaveBeenCalled()
+
+    // Press Escape again -> closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('[REQ-377/AC-14] maintains desktop 2-column layout and right-pane action buttons', () => {
+    renderDetail()
+    const grid = document.querySelector('.md\\:grid-cols-2')
+    expect(grid).toBeInTheDocument()
+
+    // Desktop action buttons in right pane
+    const desktopActions = document.querySelector('.hidden.md\\:flex.justify-end')
+    expect(desktopActions).toBeInTheDocument()
   })
 })

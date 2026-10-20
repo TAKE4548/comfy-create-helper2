@@ -18,6 +18,7 @@ export interface TagSetDetailModalProps {
   onSave: (id: number, form: TagSetFormState) => void
   isPending: boolean
   onCategoryCreated: (cat: Category) => void
+  initialEditing?: boolean
 }
 
 export function TagSetDetailModal({
@@ -29,20 +30,36 @@ export function TagSetDetailModal({
   onSave,
   isPending,
   onCategoryCreated,
+  initialEditing,
 }: TagSetDetailModalProps) {
   const catName = categories?.find((c) => c.id === tagSet.category_id)?.name || 'None'
   const { aspectRatioStyle, numericRatio } = useThumbnailAspectRatio()
 
-  const [isEditing, setIsEditing] = useState(false)
-  const [form, setForm] = useState<TagSetFormState>({
-    name: '',
-    description: '',
-    category_id: undefined,
-    tags: '',
-    thumbnail_path: undefined,
-    target_base_model_ids: [],
-    subsets: [],
+  const getInitialForm = (ts: TagSet): TagSetFormState => ({
+    name: ts.name,
+    description: ts.description ?? '',
+    category_id: ts.category_id ?? undefined,
+    tags: ts.tags.join(', '),
+    thumbnail_path: ts.thumbnail_path ?? undefined,
+    target_base_model_ids: ts.target_base_model_ids ?? [],
+    subsets: ts.subsets
+      ? ts.subsets.map((s: any) => ({
+          name: s.name,
+          tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags,
+          thumbnail_path: s.thumbnail_path ?? null,
+        }))
+      : [],
   })
+
+  const [isEditing, setIsEditing] = useState(Boolean(initialEditing))
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false)
+  const [form, setForm] = useState<TagSetFormState>(() => getInitialForm(tagSet))
+
+  useEffect(() => {
+    setForm(getInitialForm(tagSet))
+    setIsEditing(Boolean(initialEditing))
+    setIsGalleryOpen(false)
+  }, [tagSet, initialEditing])
 
   const { data: baseModels } = useQuery({
     queryKey: ['base-models'],
@@ -76,22 +93,35 @@ export function TagSetDetailModal({
   }
 
   const handleStartEdit = () => {
-    setForm({
-      name: tagSet.name,
-      description: tagSet.description ?? '',
-      category_id: tagSet.category_id ?? undefined,
-      tags: tagSet.tags.join(', '),
-      thumbnail_path: tagSet.thumbnail_path ?? undefined,
-      target_base_model_ids: tagSet.target_base_model_ids ?? [],
-      subsets: tagSet.subsets ? tagSet.subsets.map((s: any) => ({ name: s.name, tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags, thumbnail_path: s.thumbnail_path ?? null })) : [],
-    })
+    setForm(getInitialForm(tagSet))
     setIsEditing(true)
+  }
+
+  const handleCancel = () => {
+    setForm(getInitialForm(tagSet))
+    setIsEditing(false)
+    setIsGalleryOpen(false)
   }
 
   const handleSave = () => {
     onSave(tagSet.id, form)
     setIsEditing(false)
+    setIsGalleryOpen(false)
   }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isGalleryOpen) {
+          setIsGalleryOpen(false)
+        } else {
+          onClose()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isGalleryOpen, onClose])
 
   const handleCropComplete = async (blob: Blob) => {
     try {
@@ -111,17 +141,45 @@ export function TagSetDetailModal({
 
   return (
     <>
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="w-full max-w-4xl bg-surface rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-full lg:max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-backdrop items-end md:items-center p-0 md:p-4" onClick={onClose}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tagset-detail-title"
+          data-testid="tagset-detail-sheet"
+          className="relative mt-auto md:my-auto w-full max-w-full bg-surface rounded-t-2xl md:rounded-2xl border border-[rgba(255,255,255,0.08)] shadow-2xl overflow-hidden max-h-[90dvh] md:max-h-[85vh] flex flex-col md:max-w-4xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-zinc-600 md:hidden" />
           <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex-shrink-0">
-            <h2 className="text-sm font-semibold text-zinc-200">{isEditing ? 'Edit Tag Set' : 'Tag Set Details'}</h2>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+            {isGalleryOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsGalleryOpen(false)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent-green hover:underline min-h-[44px]"
+              >
+                <ChevronLeft size={16} /> 詳細に戻る
+              </button>
+            ) : (
+              <h2 id="tagset-detail-title" className="text-sm font-semibold text-zinc-200 truncate">
+                {isEditing ? 'Edit Tag Set' : 'Tag Set Details'}
+              </h2>
+            )}
+            <button
+              type="button"
+              id="close-detail-modal-btn"
+              aria-label="Close modal"
+              onClick={onClose}
+              className="text-zinc-500 hover:text-zinc-300 min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2"
+            >
+              <X size={18} />
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[rgba(255,255,255,0.06)] flex-1 overflow-hidden">
-            {/* Left Side: Images Preview (Pinned) & Related Snapshots (Scrollable) */}
-            <div className="p-5 md:p-6 flex flex-col h-full overflow-hidden flex-shrink-0">
+            {/* Left Side: Images Preview (Pinned) & Related Snapshots (Scrollable / Gallery) */}
+            <div className={`p-5 md:p-6 flex-col h-full overflow-hidden flex-shrink-0 ${isGalleryOpen ? 'flex' : 'hidden md:flex'}`}>
               <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block mb-2">Preview & Cover Image</span>
-              {/* メインプレビュー画像（固定表示: flex-shrink-0、スクロールで流れない） */}
+              {/* メインプレビュー画像 */}
               <div className="bg-zinc-950 rounded-xl overflow-hidden relative flex items-center justify-center border border-[rgba(255,255,255,0.08)] flex-shrink-0 group max-h-[260px] md:max-h-[300px] w-full" style={aspectRatioStyle}>
                 {activeImage ? (
                   <>
@@ -190,7 +248,30 @@ export function TagSetDetailModal({
             </div>
 
             {/* Right Side: Metadata / Form Fields */}
-            <div className="p-5 md:p-6 overflow-y-auto h-full flex flex-col justify-between custom-scrollbar">
+            <div className={`p-5 md:p-6 overflow-y-auto h-full flex-col justify-between custom-scrollbar overscroll-contain ${isGalleryOpen ? 'hidden md:flex' : 'flex'}`}>
+              {/* Mobile compact cover row at top of body */}
+              <button
+                type="button"
+                onClick={() => setIsGalleryOpen(true)}
+                aria-label="スナップショットギャラリーを開く"
+                className="md:hidden flex items-center justify-between p-3 rounded-xl bg-surface-2 border border-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.12)] transition-all w-full text-left flex-shrink-0 min-h-[44px] mb-4 relative before:absolute before:-inset-2 before:content-['']"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-lg bg-zinc-900 border border-[rgba(255,255,255,0.08)] overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    {currentThumbnail ? (
+                      <img src={currentThumbnail} alt="Cover" className="w-full h-full object-cover" />
+                    ) : (
+                      <ImageIcon size={20} className="text-zinc-600" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">Cover Image</span>
+                    <span className="text-xs text-zinc-300 truncate block">Related Snapshots ({images.length}件)</span>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-zinc-400 flex-shrink-0" />
+              </button>
+
               {isEditing ? (
                 <div className="flex flex-col justify-between h-full">
                   <div className="space-y-3">
@@ -202,8 +283,8 @@ export function TagSetDetailModal({
                       onCategoryCreated={onCategoryCreated}
                     />
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-[rgba(255,255,255,0.06)] mt-4 flex-shrink-0">
-                    <button type="button" onClick={() => setIsEditing(false)} className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>
+                  <div className="hidden md:flex gap-2 pt-3 border-t border-[rgba(255,255,255,0.06)] mt-4 flex-shrink-0">
+                    <button type="button" onClick={handleCancel} className="flex-1 py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm hover:bg-surface-2 transition-all">Cancel</button>
                     <button type="button" onClick={handleSave} disabled={!form.name || !form.tags || isPending} className="flex-1 py-2.5 rounded-xl bg-accent-green text-zinc-950 font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all">
                       {isPending ? 'Saving…' : 'Save Changes'}
                     </button>
@@ -214,12 +295,12 @@ export function TagSetDetailModal({
                   <div className="space-y-4">
                     <div className="space-y-1">
                       <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Name</span>
-                      <p className="text-sm font-medium text-zinc-200">{tagSet.name}</p>
+                      <p className="text-sm font-medium text-zinc-200 break-all">{tagSet.name}</p>
                     </div>
                     {tagSet.description && (
                       <div className="space-y-1">
                         <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Description</span>
-                        <p className="text-xs text-zinc-300 leading-relaxed bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)]">{tagSet.description}</p>
+                        <p className="text-xs text-zinc-300 leading-relaxed bg-surface-2 p-3 rounded-lg border border-[rgba(255,255,255,0.04)] break-words">{tagSet.description}</p>
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-4 border-t border-[rgba(255,255,255,0.06)] pt-4">
@@ -275,14 +356,56 @@ export function TagSetDetailModal({
                       </div>
                     )}
                   </div>
-                  <div className="border-t border-[rgba(255,255,255,0.06)] pt-4 flex justify-end gap-2 mt-4 flex-shrink-0">
+                  <div className="hidden md:flex border-t border-[rgba(255,255,255,0.06)] pt-4 justify-end gap-2 mt-4 flex-shrink-0">
                     <button type="button" onClick={handleStartEdit} className="px-4 py-2 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-semibold hover:bg-accent-green/20 transition-all">Edit</button>
-                    <button type="button" id="close-detail-modal-btn" onClick={onClose} className="px-4 py-2 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 text-xs font-semibold hover:bg-surface-2 transition-all">Close</button>
+                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-[rgba(255,255,255,0.08)] text-zinc-400 text-xs font-semibold hover:bg-surface-2 transition-all">Close</button>
                   </div>
                 </div>
               )}
             </div>
           </div>
+          {/* Mobile Fixed Footer */}
+          <footer
+            data-testid="tagset-detail-footer"
+            className="md:hidden flex-shrink-0 border-t border-[rgba(255,255,255,0.06)] px-5 py-3 bg-surface flex gap-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+          >
+            {isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-semibold hover:bg-surface-2 transition-all relative before:absolute before:-inset-2 before:content-['']"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!form.name || !form.tags || isPending}
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-accent-green text-zinc-950 font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all relative before:absolute before:-inset-2 before:content-['']"
+                >
+                  {isPending ? 'Saving…' : 'Save Changes'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl border border-[rgba(255,255,255,0.08)] text-zinc-400 text-sm font-semibold hover:bg-surface-2 transition-all relative before:absolute before:-inset-2 before:content-['']"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartEdit}
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-accent-green/10 border border-accent-green/30 text-accent-green text-sm font-semibold hover:bg-accent-green/20 transition-all relative before:absolute before:-inset-2 before:content-['']"
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          </footer>
         </div>
       </div>
       {cropImageSrc && (

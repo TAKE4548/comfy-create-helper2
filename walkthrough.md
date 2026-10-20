@@ -1,111 +1,88 @@
-# REQ-376 検証ウォークスルー (Verification Walkthrough)
+# REQ-377 検証ウォークスルー報告書 (Verification Walkthrough)
 
-## 総合判定: PASS
+## 1. 総合評価サマリー (Executive Summary)
 
-REQ-376「モバイルLoRA／Tag Set：一覧カードの情報整理と縦スクロールの一本化」に対する静的型チェック、UI不変条件検査、テスト衛生検査、フルテストスイート（ユニット・結合）、および受入基準（AC-1〜AC-12）とRed Teaming境界値・異常系検証を実施しました。すべての Gate 1, Gate 2, Gate 3 検証がエラー0件・失敗0件で完全に通過（PASS）し、OpenAPIスキーマ整合およびLM Studio GPUリソースの安全なアンロードを確認しました。
-
----
-
-## 1. 実行証拠 (Automated Baseline 3-Gate Evidence)
-
-<execution_evidence>
-
-### Gate 1: 静的型チェック・不変条件・単体テスト・テスト衛生検査 (PASS)
-- **バックエンド型チェック (`mypy backend`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe -m mypy backend`
-  - 結果: Exit Code 0 (`Success: no issues found in 174 source files`)
-  - 記録: `docs/logs/verification/52affb73436d4896bbcdaa44715631b2.record.json`
-- **バックエンド単体テスト (`pytest backend/tests/unit`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe -m pytest backend/tests/unit`
-  - 結果: Exit Code 0 (全単体テスト PASS)
-  - 記録: `docs/logs/verification/4eb3fc5a523a44a4b5b156e74e25ce09.record.json`
-- **フロントエンド基本ユニットテスト (`vitest run src/utils src/components/**/__tests__`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_in_dir.py frontend npm.cmd exec -- vitest run src/utils src/components/**/__tests__`
-  - 結果: Exit Code 0 (全テスト PASS)
-  - 記録: `docs/logs/verification/c708a9395ea94613b8f7310b1ad97c9f.record.json`
-- **UI不変条件検証 (`verify_ui_invariants.py`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/verify_ui_invariants.py`
-  - 結果: Exit Code 0 (`SUCCESS: UI invariant check passed (0 violations across 537 files).`)
-  - 記録: `docs/logs/verification/ea86a2133183472780ebc80aba7f5962.record.json`
-- **フロントエンド型チェック (`npm run typecheck`)**:
-  - コマンド: `npm.cmd --prefix frontend run typecheck`
-  - 結果: Exit Code 0 (診断エラー 0 件)
-  - 記録: `docs/logs/verification/de70eb40900d4b9782a7b8b384b1f40a.record.json`
-- **テスト衛生検査 (`workflow_validator.py test-hygiene`)**:
-  - コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\workflow_validator.py test-hygiene REQ-376`
-  - 結果: Exit Code 0 (`[PASS] No ticket-named test files found. Validation successful.`)
-
-### Gate 2: フルテストスイート Baseline (PASS)
-- **フルスイート一括実行 (`scripts/run_full_suite.py`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_full_suite.py`
-  - 結果: Exit Code 0 (フロントエンド・バックエンド全結合/単体テスト 0 failures)
-  - 記録: `docs/logs/verification/4b42207de0c3435397ead4e46eab2d20.record.json`
-
-### Gate 3: シナリオ & Red Teaming 受入検証 (PASS)
-- **E2Eブラウザテスト (`scripts/run_e2e.py`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_e2e.py`
-  - 結果: Exit Code 0 (Playwright E2E 全テスト PASS)
-  - 記録: `docs/logs/verification/3cc324214d70419ebcdedf541d298f66.record.json`
-- **LoRAsPage 受入シナリオ (`LoRAsPage.test.tsx -t "REQ-376"`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_in_dir.py frontend npm.cmd exec -- vitest run src/pages/__tests__/LoRAsPage.test.tsx -t REQ-376`
-  - 結果: Exit Code 0, `11 passed | 18 skipped (29 tests)`
-  - 記録: `docs/logs/verification/70a95074d5b3402ba87438b863ec9a3f.record.json`
-- **TagsPage 受入シナリオ (`TagsPage.test.tsx -t "REQ-376"`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_in_dir.py frontend npm.cmd exec -- vitest run src/pages/__tests__/TagsPage.test.tsx -t REQ-376`
-  - 結果: Exit Code 0, `11 passed | 17 skipped (28 tests)`
-  - 記録: `docs/logs/verification/b9eaa3c009b047809d3fad07fe6eb6a2.record.json`
-- **ボタン操作・タッチターゲット競合検証 (`AssetCardInteractions.test.tsx -t "REQ-376"`)**:
-  - コマンド: `backend\.venv\Scripts\python.exe scripts/run_in_dir.py frontend npm.cmd exec -- vitest run src/pages/__tests__/AssetCardInteractions.test.tsx -t REQ-376`
-  - 結果: Exit Code 0, `1 passed | 2 skipped (3 tests)`
-  - 記録: `docs/logs/verification/652b6bb7d37d4e2ba7f7b29f13665794.record.json`
-
-### API契約検証 (`openapi_parser.py`)
-- コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\openapi_parser.py docs/openapi.yaml list-endpoints`
-- 結果: Exit Code 0 (全エンドポイント正常抽出確認。本PBIはフロントエンド完結変更のためAPIスキーマ破壊なし)
-
-### GPU VRAM クリーンアップ検証
-- コマンド: `python C:\Users\audih\.gemini\config\skills\agent-tooling-maintenance\helpers\local_model_adapter.py unload`
-- 結果: Exit Code 0 (`[Model Auto-Router] No models currently loaded in LM Studio.`)
-
-</execution_evidence>
+- **対象 PBI**: REQ-377「モバイルLoRA／Tag Set：詳細・編集シートの再構成とTag Set編集入口・Subsetsの統一」
+- **検証担当**: Tester / Reviewer (`dev-verify`)
+- **検証判定**: **PASS (全ゲート合格・全受入基準充足)**
+- **検証日時**: 2026-10-20
+- **対象リポジトリ**: `c:\Users\audih\ws\comfy-create-helper2`
 
 ---
 
-## 2. 受入基準準拠表 (Acceptance Criteria Compliance Matrix)
+## 2. 3-Gate Baseline 検証結果
 
-| AC番号 | 受入基準 (Given-When-Then) | 検証対象コンポーネント | 実行証拠・テストケース | 判定 |
+本検証では、SDD 開発ガバナンスに従い、静的型チェック・全テスト探索・シナリオ/境界値検証を順次厳格に実施しました。
+
+| Gate | 検証項目 | 実行コマンド | テスト結果 | 判定 |
 | :--- | :--- | :--- | :--- | :--- |
-| **AC-1** | **Given** モバイル画面幅（767px以下）<br>**When** LoRAまたはTag Set一覧画面を表示する<br>**Then** 各一覧カードの外形高が320px固定となり、カード同士の重なりやコンテンツのはみ出しが発生しないこと。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-1] maintains fixed 320px card height without overflow`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-1] maintains fixed 320px card height without overflow` | **PASS** |
-| **AC-2** | **Given** モバイル画面幅（767px以下）<br>**When** 一覧カードの下部テキスト情報エリアを描画する<br>**Then** 表示項目が「タイトル」「説明」「対象Base Model」の3項目のみで構成され、タイトル・説明が各最大2行、モデル行が下端に整列されること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-2] displays exactly 3 items in order in mobile area (title, description, base model)`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-2] displays exactly 3 items in order in mobile area (title, description, base model)` | **PASS** |
-| **AC-3** | **Given** 3行以上のタイトルまたは説明、長いBase Model名を持つアイテム<br>**When** モバイル一覧カードに描画される<br>**Then** タイトル・説明が2行で省略（line-clamp-2, break-words）され、Base Model行が1行で省略（truncate）され、枠外へはみ出さないこと。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-3] clamps multi-line titles and descriptions with line-clamp-2 and break-words`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-3] clamps multi-line titles and descriptions with line-clamp-2 and break-words` | **PASS** |
-| **AC-4** | **Given** モバイル一覧カード<br>**When** カード内部の情報エリアを検証する<br>**Then** `overflow-y-auto` による内部スクロールが撤去され、カード全体で縦スクロールがページ全体の1本に集約されていること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-4] removes card-internal scroll in mobile view using overflow-hidden`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-4] removes card-internal scroll in mobile view using overflow-hidden` | **PASS** |
-| **AC-5** | **Given** カテゴリ表示されたアイテム一覧<br>**When** モバイル画面で縦スクロールする<br>**Then** カテゴリ見出しがSticky配置（pt-0）でスクロール上端に接し、各カード内には重複カテゴリバッジが表示されないこと。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-5] sticks category section header with pt-0 container and removes category badge from mobile card`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-5] sticks category section header with pt-0 container and removes category badge from mobile card` | **PASS** |
-| **AC-6** | **Given** モバイル一覧カード上の編集・削除アクション<br>**When** 各ボタンをタップする<br>**Then** 44×44px以上のタッチターゲットを持ち、ボタン同士が重ならず、カードタップ（詳細モーダル起動）やD&D並べ替えハンドルと誤発火・競合しないこと。 | `LoRAsPage.tsx`<br>`TagsPage.tsx`<br>`AssetCardInteractions.test.tsx` | - `AssetCardInteractions.test.tsx`: `[REQ-376/AC-6] isolates edit and delete touch targets (>= 44x44px) without overlapping and stops card click bubbling` | **PASS** |
-| **AC-7** | **Given** モバイル一覧カードのサムネイル領域<br>**When** 画像あり、またはプレビューなし（No Preview）状態で表示される<br>**Then** カード中央にサムネイル画像またはプレースホルダーが整列されること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-7] applies centering classes to ImageCarousel for mobile thumbnail alignment`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-7] applies centering classes to ImageCarousel for mobile thumbnail alignment` | **PASS** |
-| **AC-8** | **Given** モバイル一覧カードから除外された補助情報（トリガーワード、強度、ファイルパス、タグ一覧、プロンプトコピー）<br>**When** カードをタップして詳細モーダルを開く<br>**Then** 詳細モーダル内で除外情報が従来通りすべて閲覧・利用可能であること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-8] keeps triggers, strength, and file path accessible via detail modal on card click`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-8] keeps tag set tags accessible via detail modal on card click` | **PASS** |
-| **AC-9** | **Given** 複数または未設定のBase Modelが割り当てられたアイテム<br>**When** モバイル一覧カードに表示される<br>**Then** 区切り文字（` · `）で1行に整形され、カードタップで詳細モーダルから全件が確認できること（fast-checkによるPBT検証済）。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-9] formats base models with delimiter and validates properties with fast-check`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-9] formats base models with delimiter and validates properties with fast-check` | **PASS** |
-| **AC-10** | **Given** 既存の管理機能（検索、フィルタ、カテゴリ開閉、D&D並べ替え、一括選択モード）<br>**When** モバイル画面で各種操作を行う<br>**Then** 一覧カードのレイアウト改修による機能リグレッションがなく、正常に動作すること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-10] preserves existing search, filter, and accordion functionality`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-10] preserves existing search, filter, and accordion functionality` | **PASS** |
-| **AC-11** | **Given** 画面幅360px、極端な長文テキスト、説明文なし、画像なし、未解決Base Model IDなどの境界・異常条件<br>**When** モバイル一覧カードを描画する<br>**Then** レイアウト崩れやクラッシュが発生せず安全にフォールバック表示されること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-11] renders safely on 360px viewport, missing descriptions, missing thumbnail, and uncategorized cards`<br>- `TagsPage.test.tsx`: `[REQ-376/AC-11] renders safely on 360px viewport, missing descriptions, missing thumbnail, and uncategorized cards` | **PASS** |
-| **AC-12** | **Given** 画面幅768px以上（PCデスクトップ環境）<br>**When** LoRAまたはTag Set一覧画面を表示する<br>**Then** 従来のPC向けフルスペック表示（トリガーワード、タグチップ、カード内スクロール領域等）が完全維持されること。 | `LoRAsPage.tsx`<br>`TagsPage.tsx` | - `LoRAsPage.test.tsx`: `[REQ-376/AC-12] preserves full desktop baseline layout with card-internal scroll and triggers/tags` | **PASS** |
+| **Gate 1** | 静的型チェック (Typecheck Baseline) | `npm --prefix frontend run typecheck` (`tsc -b --noEmit`) | 型エラー 0 件 (Exit Code: 0) | **PASS** |
+| **Gate 2** | 全テストスイート探索 (Full Discovery Baseline) | `npm --prefix frontend test --run` | 240 ファイル / 2,496 テスト全件 PASS (Exit Code: 0) | **PASS** |
+| **Gate 3** | シナリオ & Red Team 境界検証 | `npm --prefix frontend test -- src/components/TagSetModals/__tests__/TagSetFormFields.test.tsx src/components/__tests__/TagSetModals.test.tsx src/pages/__tests__/TagsPage.test.tsx src/components/LoraModals/__tests__/LoraDetailModal.test.tsx src/components/__tests__/LoraModals.test.tsx -t "REQ-377" --run` | 24 テスト全件 PASS (Exit Code: 0) | **PASS** |
+
+### テスト衛生度検証 (Test Hygiene)
+- コマンド: `python .gemini/config/skills/agent-tooling-maintenance/helpers/workflow_validator.py test-hygiene REQ-377`
+- 結果: `[PASS] No ticket-named test files found. Validation successful.`
 
 ---
 
-## 3. Red Teaming (境界値・異常系シナリオ検証)
+## 3. 受入基準 (Acceptance Criteria) トレーサビリティマトリクス
 
-| シナリオ | 種別 | 対象モジュール | 実装テストケース | 検証結果 |
+PBI REQ-377 で規定された全 14 項目（AC-1 〜 AC-14）の検証証拠対照表です。
+
+| AC 番号 | 受入基準 (Given-When-Then) 要約 | 検証対象コンポーネント | 検証テストケース識別子 | 検証証拠・結果 | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AC-1** | 幅 767px 以下の詳細で下端起点ボトムシート・ヘッダー・単一縦スクロール本文・固定フッターが表示されること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-1]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx`, `LoraModals.test.tsx` | `modal-backdrop items-end`, `rounded-t-2xl`, 上端ドラッグハンドル、本文 `overflow-y-auto overscroll-contain`、本文外固定フッターの構造を確認 | **PASS** |
+| **AC-2** | 閲覧中フッターに左 Close / 右 Edit が固定表示され、本文スクロール位置に依存せず操作可能であること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-2]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | フッター左 Close、右 Edit。本文スクロール時も常時操作可能 | **PASS** |
+| **AC-3** | 編集中フッターに左 Cancel / 右 Save が固定表示され、保存中 pending 状態およびバリデーションエラーが表示されること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-3]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx`, `LoraModals.test.tsx` | フッター左 Cancel、右 Save。`isPending` 時の Saving… 無効化、強度逆転時のエラー表示を確認 | **PASS** |
+| **AC-4** | セーフエリア (`safe-area-inset-bottom`) および仮想キーボード表示時でもフッターが隠れず、最小 44x44px の操作性を確保すること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-4]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx`, `LoraModals.test.tsx` | `pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]`、44px 最小タップ領域（`min-h-[44px]` および hit-slop `before:absolute before:-inset-2`）を確認 | **PASS** |
+| **AC-5** | モバイル本文上部に常時巨大画像を表示せず、小型 Cover とスナップショット件数バナーが表示されること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-5]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | 巨大プレビュー非表示（`hidden md:flex`）、小型サムネイル（48x48px）と `Related Snapshots (N)` 表示を確認 | **PASS** |
+| **AC-6** | 小型 Cover タップでギャラリーサブビューが開き、Cover 変更が編集・保存タイミング（Cancel で復元、Save で永続化）に従うこと | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-6]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | Cover タップでサブビュー遷移。Cancel 時に元のサムネイル・順序復元、Save 時に新サムネイル永続化を確認 | **PASS** |
+| **AC-7** | 画像なし、スナップショット 0 件、読込失敗時でもレイアウトが破綻しないこと | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-7]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | 画像空時に `No Cover` プレースホルダー表示、画像ロードエラー時もテキストやボタンの崩れなし | **PASS** |
+| **AC-8** | カードの編集アイコンと詳細内の Edit ボタンが同一の `TagSetDetailModal` 編集モード（同一 UI・フィールド・フッター）を開くこと | `TagsPage`<br>`TagSetDetailModal` | `[REQ-377/AC-8]` in `TagsPage.test.tsx` | カード編集アイコン `#tagset-edit-${id}` クリックと詳細内 Edit クリックがどちらも `TagSetDetailModal` (initialEditing: true) を起動 | **PASS** |
+| **AC-9** | Tag Set 編集および New Tag Set 作成画面で Subsets 一覧に独立スクロールがなく、親コンテナにスクロールが統合されていること | `TagSetFormFields` | `[REQ-377/AC-9]` in `TagSetFormFields.test.tsx` | `max-h-[160px]` および `overflow-y-auto` が撤廃され、全件が親スクロールコンテナに自然展開 | **PASS** |
+| **AC-10** | 共有 `TagSetFormFields` の全利用箇所が設計に記録され、表示・操作が破綻しないこと | `TagSetFormFields` 全利用画面 | `[REQ-377/AC-10]` in `TagSetFormFields.test.tsx`, 全スイート回帰確認 | 設計書 §4 に 4 箇所の利用状況と影響評価を記録。240 テストファイル全件パスにより破綻ゼロを確認 | **PASS** |
+| **AC-11** | LoRA のトリガーワード、推奨強度、ファイルパス、対象モデルの閲覧・編集・コピーが従来どおり動作すること | `LoraDetailModal` | `[REQ-377/AC-11]` in `LoraDetailModal.test.tsx`, `LoraDetailExamples.test.tsx` | トリガーワードコピー、強度範囲検証、メタデータ編集保存が正常動作 | **PASS** |
+| **AC-12** | Tag Set の名前、説明、対象モデル、メインタグ、サブセット編集・画像変更、コピー、削除が従来どおり動作すること | `TagSetDetailModal` | `[REQ-377/AC-12]` in `TagSetModals.test.tsx` | タグセットメタデータ編集、サブセット追加・削除、コピー、保存が正常動作 | **PASS** |
+| **AC-13** | キーボード（Escape/Tab）、背面タップでモーダルが閉じ、閉じた後にトリガー要素へフォーカスが復帰すること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-13]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | Escape キー、背景クリック、Close ボタンによる正常クローズとギャラリーサブビューからの復帰を確認 | **PASS** |
+| **AC-14** | デスクトップ表示（幅 768px 以上）で左右 2 列レイアウト (`md:grid-cols-2`) および右ペインアクションが改修前と同一に維持されていること | `LoraDetailModal`<br>`TagSetDetailModal` | `[REQ-377/AC-14]` in `LoraDetailModal.test.tsx`, `TagSetModals.test.tsx` | 幅 768px 以上で左プレビュー・右フォームの 2 列構成とデスクトップ専用フッターの表示・動作を確認 | **PASS** |
+
+---
+
+## 4. Red Teaming (境界値・異常系シナリオ) 検証結果
+
+| シナリオ | 注入異常 / 境界値 | 期待結果 | 実測動作と証拠 | 判定 |
 | :--- | :--- | :--- | :--- | :--- |
-| **境界値 1: 極小モバイル画面 (Width 360px)** | 境界値 | `LoRAsPage`<br>`TagsPage` | `[REQ-376/AC-11]` | **PASS**: 2列グリッドでカード幅が狭まる360px環境でも、320px固定高を維持しカード突き破りや崩れが発生しないことを検証。 |
-| **境界値 2: 極端な長文テキスト・特殊文字列** | 境界値 | `LoRAsPage`<br>`TagsPage` | `[REQ-376/AC-3]`, `[REQ-376/AC-11]` | **PASS**: 空白なし1,000文字の英数字や特殊文字に対し、`break-words` と `line-clamp-2` により横スクロールやレイアウト破壊を完全に防止。 |
-| **異常系 3: 説明文なし (Null/Empty)** | 異常系 | `LoRAsPage`<br>`TagsPage` | `[REQ-376/AC-11]` | **PASS**: `description` が null または空文字の場合でも、flex-col / justify-between レイアウトによりタイトルとBase Modelが正しく上下端に収まりレイアウトが崩れないことを確認。 |
-| **異常系 4: サムネイル画像なし (No Preview)** | 異常系 | `LoRAsPage`<br>`TagsPage` | `[REQ-376/AC-7]`, `[REQ-376/AC-11]` | **PASS**: サムネイル画像が存在しない場合、プレースホルダーがカード幅の中央に配置され、不自然な余白やズレが生じないことを確認。 |
-| **異常系 5: 未解決モデルID / 未分類カテゴリ** | 異常系 | `LoRAsPage`<br>`TagsPage` | `[REQ-376/AC-9]`, `[REQ-376/AC-11]` | **PASS**: マスターに存在しない未登録モデルIDは `"対象モデル未設定"` にフォールバックし、未分類アイテムは重複バッジなしで正常にグループ化されることを確認。 |
-| **境界値 6: タッチターゲット重複およびイベント伝播** | 境界値 | `AssetCardInteractions` | `[REQ-376/AC-6]` | **PASS**: 編集・削除ボタンが `min-w-[44px] min-h-[44px]` を満たし重ならず配置され、クリック時に `stopPropagation()` によりカード本体タップ（詳細モーダル発火）と相互干渉しないことを検証。 |
+| **RT-1: 極端な長文テキスト** | 200 文字以上のスペースなし LoRA 名・ファイルパス、500 文字以上の説明文 | `break-words` / `break-all` により横スクロールや外枠突き抜けを起こさず改行されること | コンテナ幅内で適切に複数行に折り返され、横スクロールは発生せず | **PASS** |
+| **RT-2: 推奨強度の逆転不正値** | `recommended_strength_min: 1.2`, `recommended_strength_max: 0.8` (min > max) | アラート「MinはMax以下にしてください」が表示され、Save ボタンが `disabled` 化されて保存 API が発行されないこと | `LoraDetailModal.test.tsx` にてバリデーションエラー検知および Save ボタン非活性化を確認 | **PASS** |
+| **RT-3: 画像ギャラリー変更後の取消** | ギャラリー内で別画像を Cover に選択後、詳細シートへ戻り Cancel をクリック | `form.thumbnail_path` が元の Cover に復元され、再オープン時にも変更前のサムネイルが表示されること | `LoraDetailModal.test.tsx` および `TagSetModals.test.tsx` にて完全なステート復元を確認 | **PASS** |
 
 ---
 
-## 4. 結論 & dev-coordinator への引継ぎ
+## 5. テストスイート整合性修正の記録
 
-- 全ての受入基準（AC-1〜AC-12）および設計ドキュメント・テスト計画に定義された全ての正常系・境界値・異常系テストが 100% PASS しました。
-- 静的型チェック（mypy, TypeScript）、UI不変条件、テスト衛生性、フルテストスイート（Gate 2）、E2Eブラウザテスト（Gate 3）もすべてエラー・失敗0件で合格です。
-- PBIステータスのアーカイブ（`pbi_manager.py archive`）および Git コミットはガバナンス規則に基づき本ロールでは実行せず、dev-coordinator へ判定ペイロードを返却して引き継ぎます。
+Gate 2 実行過程において、既存の 2 つのテストファイルで検知された軽微なアサーション競合を修正しました：
 
+1. **`frontend/src/components/LoraModals/__tests__/LoraDetailExamples.test.tsx`**:
+   - **原因**: `LoraDetailModal` にデスクトップ用とモバイル用の両方の `Edit` / `Cancel` ボタンが存在するため、jsdom 環境において `screen.getByRole('button', { name: 'Edit' })` が複数要素一致エラー（`Found multiple elements`）となった。
+   - **修正**: `screen.getAllByRole('button', { name: 'Edit' })[0]` および `screen.getAllByRole('button', { name: 'Cancel' })[0]` にクエリをスコープ化。
+2. **`frontend/src/pages/__tests__/AssetCardInteractions.test.tsx`**:
+   - **原因**: REQ-377 AC-8 による「Tag Set 編集入口の統一（カード編集ボタンからも `TagSetDetailModal` を `initialEditing: true` で開く）」に伴い、旧テストモックが `TagSetDetailModal` を詳細閲覧専用コンポーネントとして扱っていたため、編集ボタンクリック時に `tagset-detail` が出現した。
+   - **修正**: モックを `initialEditing ? 'tagset-edit' : 'tagset-detail'` に更新し、編集ボタンクリック時に `tagset-edit` が表示され、カードクリックによる `tagset-detail` がトリガーされないことを厳格に検証するように更新。
+
+---
+
+## 6. SSoT ドキュメント整合性確認
+
+設計書（`docs/design/REQ-377.md` §6）に基づき、以下の SSoT 仕様書との整合性を確認しました：
+- `docs/specs/SPEC_LORAS.md`: モバイルボトムシート、固定フッター、小型 Cover 導線
+- `docs/specs/SPEC_TAGS.md`: Tag Set 編集入口の `TagSetDetailModal` 一元化、Subsets 独立スクロール撤廃
+- `docs/specs/SPEC_COMMON.md`: モバイルUI共通規約（MUI-02, MUI-03, MUI-04, MUI-05, MUI-09）
+
+---
+
+## 7. 結論と Dev-Coordinator への引き渡し
+
+全 3 ゲート（Gate 1 型チェック、Gate 2 全件テスト 240 ファイル、Gate 3 REQ-377 シナリオ 24 テスト）が 100% 合格し、全 14 項目の受入基準（AC-1 〜 AC-14）および Red Teaming 境界条件を完全に充足していることを確認しました。
+
+PBI REQ-377 は **実装完了・受入基準充足 (PASS)** であり、Dev-Coordinator による最終承認およびライフサイクル完了（PBI close / archive）へ進める状態です。

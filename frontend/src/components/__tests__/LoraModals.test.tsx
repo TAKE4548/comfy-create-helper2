@@ -275,7 +275,7 @@ describe('LoraModals Component (LoraDetailModal)', () => {
     expect(screen.getByText('neon lighting')).toBeInTheDocument()
   })
 
-  it('keeps detail as a labelled mobile sheet and caps its centered desktop width', () => {
+  it('[REQ-377/AC-1] keeps detail as a labelled mobile sheet and caps its centered desktop width', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <LoraDetailModal
@@ -298,5 +298,29 @@ describe('LoraModals Component (LoraDetailModal)', () => {
     expect(dialog).not.toHaveClass('sm:max-w-5xl', 'sm:rounded-2xl')
     expect(dialog.querySelector('[aria-hidden="true"]')).toHaveClass('md:hidden')
     expect(dialog.querySelector('.grid')).toHaveClass('md:grid-cols-2')
+  })
+
+  it('[REQ-377/AC-3] opens directly in edit mode when initialEditing is true and displays Cancel and Save footer', () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LoraDetailModal
+          lora={mockLora}
+          categories={MOCK_CATEGORIES}
+          copiedId={null}
+          onCopy={onCopyMock}
+          onClose={onCloseMock}
+          onSave={onSaveMock}
+          isPending={false}
+          onCategoryCreated={onCategoryCreatedMock}
+          initialEditing={true}
+        />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByRole('dialog', { name: 'Edit LoRA Model' })).toBeInTheDocument()
+    const footer = screen.getByTestId('lora-detail-footer')
+    expect(footer).toBeInTheDocument()
+    expect(screen.getByTestId('mobile-cancel-btn')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('mobile-save-btn')).toHaveTextContent('Save')
   })
 })

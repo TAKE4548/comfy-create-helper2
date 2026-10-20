@@ -165,6 +165,7 @@ export function LoRAsPage() {
   const [showCatModal, setShowCatModal] = useState(false)
   const [tooltipLora, setTooltipLora] = useState<number | null>(null)
   const [selectedLoraForDetail, setSelectedLoraForDetail] = useState<Lora | null>(null)
+  const [detailInitialEditing, setDetailInitialEditing] = useState(false)
   const [copiedTriggerSetId, setCopiedTriggerSetId] = useState<number | null>(null)
   const [copiedTriggerWord, setCopiedTriggerWord] = useState<string | null>(null)
   const [form, setForm] = useState<LoraFormState>(EMPTY_FORM)
@@ -486,6 +487,7 @@ export function LoRAsPage() {
                 e.stopPropagation()
                 handleItemClick(lora.id, e)
               } else {
+                setDetailInitialEditing(false)
                 setSelectedLoraForDetail(lora)
               }
             }}
@@ -534,7 +536,7 @@ export function LoRAsPage() {
               imageAspectRatio={numericRatio}
               imageAreaFraction={0.58}
             >
-              <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setSelectedLoraForDetail(lora) }}
+              <button id={`lora-edit-${lora.id}`} onClick={(e) => { e.stopPropagation(); setDetailInitialEditing(true); setSelectedLoraForDetail(lora) }}
                 aria-label={`LoRA編集 ${lora.model_name}`}
                 className="absolute top-1 right-[50px] min-h-[44px] min-w-[44px] flex items-center justify-center md:top-2 md:right-8 md:min-h-0 md:min-w-0 md:p-1 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                 <Pencil size={13} />
@@ -863,10 +865,11 @@ export function LoRAsPage() {
         <LoraDetailModal lora={selectedLoraForDetail} categories={categories}
           copiedId={copiedTriggerSetId}
           onCopy={handleCopy}
-          onClose={() => setSelectedLoraForDetail(null)}
+          onClose={() => { setSelectedLoraForDetail(null); setDetailInitialEditing(false); }}
           onSave={(id, loraForm) => updateLora.mutate({ id, loraForm })}
           isPending={updateLora.isPending}
-          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })} />
+          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['lora-categories'] })}
+          initialEditing={detailInitialEditing} />
       )}
       {showCatModal && (
         <CategoryManagerModal type="lora" onClose={() => setShowCatModal(false)} />

@@ -275,7 +275,7 @@ export function TagSetFormFields({
             <><Plus aria-hidden="true" size={12} /> Add Subset</>
           </button>
         </div>
-        <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+        <div className="space-y-2">
           {(form.subsets || []).map((sub, idx) => {
             const subsetId = sub[TAGSET_SUBSET_CLIENT_ID] || `${idPrefix}-pending-${idx}`
             const fileInputId = `${idPrefix}-subset-image-${subsetId.replace(/[^a-zA-Z0-9_-]/g, '-')}`

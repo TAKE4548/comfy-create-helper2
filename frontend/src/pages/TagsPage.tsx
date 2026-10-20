@@ -160,6 +160,7 @@ export function TagsPage() {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [copiedTagWord, setCopiedTagWord] = useState<string | null>(null)
   const [selectedTagSetForDetail, setSelectedTagSetForDetail] = useState<TagSet | null>(null)
+  const [detailInitialEditing, setDetailInitialEditing] = useState(false)
   const [copiedDetailId, setCopiedDetailId] = useState<number | null>(null)
   const [editTagSet, setEditTagSet] = useState<TagSet | null>(null)
   const [form, setForm] = useState<TagSetFormState>(EMPTY_FORM)
@@ -322,23 +323,6 @@ export function TagsPage() {
     setTimeout(() => setCopiedDetailId(null), 2000)
   }
 
-  const openEdit = (ts: any) => {
-    setEditTagSet(ts)
-    setEditForm({
-      name: ts.name,
-      description: ts.description ?? '',
-      category_id: ts.category_id ?? undefined,
-      tags: ts.tags.join(', '),
-      thumbnail_path: ts.thumbnail_path ?? undefined,
-      subsets: ts.subsets ? ts.subsets.map((s: any) => ({
-        name: s.name,
-        tags: Array.isArray(s.tags) ? s.tags.join(', ') : s.tags,
-        thumbnail_path: s.thumbnail_path ?? null,
-      })) : [],
-      target_base_model_ids: ts.target_base_model_ids ?? []
-    })
-  }
-
   const isDndActive = !search && selectedBaseModelIds.length === 0
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -463,6 +447,7 @@ export function TagsPage() {
                 e.stopPropagation()
                 handleItemClick(ts.id, e)
               } else {
+                setDetailInitialEditing(false)
                 setSelectedTagSetForDetail(ts)
               }
             }}
@@ -509,7 +494,11 @@ export function TagsPage() {
               imageAreaFraction={0.58}
             >
               {!isMultiSelectMode && <button id={`tagset-edit-${ts.id}`}
-                onClick={(e) => { e.stopPropagation(); openEdit(ts) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDetailInitialEditing(true)
+                  setSelectedTagSetForDetail(ts)
+                }}
                 aria-label={`タグセット編集 ${ts.name}`}
                 className="absolute top-1 right-[50px] md:top-2 md:right-12 min-h-[44px] min-w-[44px] flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity rounded-md bg-surface/80 text-zinc-400 hover:bg-accent-green/20 hover:text-accent-green">
                 <Pencil size={13} />
@@ -818,7 +807,8 @@ export function TagsPage() {
           onClose={() => setSelectedTagSetForDetail(null)}
           onSave={(id, tagForm) => updateTagSet.mutate({ id, tagForm })}
           isPending={updateTagSet.isPending}
-          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['tagset-categories'] })} />
+          onCategoryCreated={() => qc.invalidateQueries({ queryKey: ['tagset-categories'] })}
+          initialEditing={detailInitialEditing} />
       )}
       {showCatModal && (
         <CategoryManagerModal type="tagset" onClose={() => setShowCatModal(false)} />
