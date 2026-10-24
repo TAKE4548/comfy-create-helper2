@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider, useRouteError } from 'react-router-dom'
 import { defaultShouldDehydrateQuery, QueryClient } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { AppShell } from './components/layout/AppShell'
@@ -11,6 +11,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { DatasetStudioPage } from './pages/DatasetStudioPage'
 import { useGenerationStore } from './store/useGenerationStore'
 import { API_CACHE_BUSTER, API_CACHE_MAX_AGE, createIndexedDBPersister } from './utils/queryCachePersister'
+import { SettingsDraftBoundary } from './pages/SettingsPage/components/SettingsDraftBoundary'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,25 @@ const queryClient = new QueryClient({
 
 const persister = createIndexedDBPersister()
 const excludedQueryKeys = ['comfy-object-info', 'snapshots', 'workflow-presets', 'prompt-metadata']
+
+function RethrowRouteError(): never {
+  throw useRouteError()
+}
+
+export function createAppRoutes() {
+  return createRoutesFromElements(
+    <Route element={<AppShell />} errorElement={<RethrowRouteError />}>
+      <Route index element={<GeneratePage />} />
+      <Route path="/studio" element={<DatasetStudioPage />} />
+      <Route path="/loras" element={<LoRAsPage />} />
+      <Route path="/tags" element={<TagsPage />} />
+      <Route path="/history" element={<HistoryPage />} />
+      <Route path="/settings" element={<SettingsDraftBoundary><SettingsPage /></SettingsDraftBoundary>} />
+    </Route>,
+  )
+}
+
+const router = createBrowserRouter(createAppRoutes())
 
 function App() {
   const initializeStore = useGenerationStore((state) => state.initialize)
@@ -46,18 +66,7 @@ function App() {
         },
       }}
     >
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<GeneratePage />} />
-            <Route path="/studio" element={<DatasetStudioPage />} />
-            <Route path="/loras" element={<LoRAsPage />} />
-            <Route path="/tags" element={<TagsPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </PersistQueryClientProvider>
   )
 }

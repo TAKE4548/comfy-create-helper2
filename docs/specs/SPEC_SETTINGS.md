@@ -7,6 +7,7 @@ tags:
   - REQ-347
   - REQ-365
   - REQ-380
+  - REQ-381
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
   - docs/backlog/task/archive/REQ-334-T10.md
@@ -18,6 +19,11 @@ related_paths:
   - docs/design/REQ-380.md
   - docs/design/REQ-380-test-plan.md
   - docs/design/REQ-380-implementation-plan.md
+  - docs/backlog/pbi/active/REQ-381.md
+  - docs/design/REQ-381.md
+  - docs/design/REQ-381-document-design.md
+  - docs/design/REQ-381-test-plan.md
+  - docs/backlog/task/active/REQ-381-T8.md
   - frontend/src/pages/SettingsPage/components/VramGuardSection.tsx
   - frontend/src/components/ParamTypeMasterManagerModal.tsx
   - frontend/src/components/MappingMasterEditModal.tsx
@@ -36,11 +42,11 @@ related_paths:
 
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
-**バージョン**: 3.0
+**バージョン**: 3.1
 **最終更新**: 2026-10-24
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md) / [REQ-380設計](../design/REQ-380.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md) / [REQ-380設計](../design/REQ-380.md) / [REQ-381設計](../design/REQ-381.md) / [REQ-381文書設計](../design/REQ-381-document-design.md) / [REQ-381検証計画](../design/REQ-381-test-plan.md)
 
 ---
 
@@ -111,7 +117,21 @@ wire slotのrole名およびparameter/select名は既存の契約どおり表示
 
 設定タブの初期値は有効なURL hash、保存済み有効tab ID、最後に`workflows`の順に解決し、tab選択後の戻る/進むもURL履歴から復元する。LLM Playgroundは設定値を保存するフォームではなく、現在編集中の未保存draftを試すstatelessな場である。token情報が応答にないときは推測せず「未取得」と表示する。
 
-設定変更は成功応答を確認した後だけ保存済み状態として表示する。保存失敗時は入力draftを保持して「未保存」と示し、再取得や古い非同期応答で入力を上書きしない。Speech Toneは名前付きsample cardsで未保存入力をpreviewし、最新draftの結果だけを採用して古い要求結果を表示しない。Bubble Detection等の設定編集中に未保存draftがある状態で遷移しようとした場合は確認overlayを出し、保存/破棄の選択までdraftを保護する。
+設定変更は成功応答を確認した後だけ保存済み状態として表示する。保存失敗時は入力draftを保持して「未保存」と示し、再取得や古い非同期応答で入力を上書きしない。Speech Toneは名前付きsample cardsで未保存入力をpreviewし、最新draftの結果だけを採用して古い要求結果を表示しない。モバイル（幅768px未満）の保存契機は次の分類に従う。サーバーの設定リソース単位で同じ分類を適用し、初期表示・再取得・resizeだけでは保存要求を送らない。モバイルのautosave対象には通常の保存用Saveボタンを設けず、各分類に定める確定操作だけを保存契機とする。明示保存／適用対象は既存のSave／Applyだけで確定し、Retryは失敗したautosaveを利用者が再送するときだけ表示する。
+
+| 分類 | 対象 | 保存契機 |
+|---|---|---|
+| 即時autosave | 既存スイッチ、LLMモデル選択、サムネイル比率、長押し判定時間、VRAMガード有効切替 | 利用者が値を確定変更したとき |
+| 入力確定後autosave | LLM数値パラメータ、Bubble Detectionの`min_area` / `min_brightness`、VRAM空きGB閾値、翻訳debounce | 数値欄はblurまたはEnter、rangeはpointerup・キーボードkeyupまたはblur。`pointercancel`では確定せず、同一snapshotを重複送信しない |
+| 明示保存／適用 | 長文LLM prompt、翻訳providerと認証情報の一体フォーム、workflow一括適用、口調プリセット作成／編集 | 既存のSave／Applyを利用者が押したとき。providerだけを先行保存しない |
+
+autosave中も編集中draftを保持し、空欄・非有限数・不正値・既存範囲外は送信しない。既存min/max/stepを変更せず、validation／未保存を示す。同じリソースの送信は1件ずつとし、送信中に確定した値は最新snapshotへ集約する。成功は提出したrevisionだけへ反映し、新draftを古い応答やrefetchで上書きしない。失敗後は後続送信を止め、最新draftと失敗／未保存を保持する。明示的な「再試行」だけで再送し、自動通信retryは行わない。保存中は控えめに「保存中…」を示し、対応revisionの成功後だけ約2秒の成功表示を許す。通常の「保存済み」badgeを常設しない。
+
+タブ切替は非表示mounted panelとdraftを保持する。767px以下から768px以上へのresizeでもdraft・状態・送信中要求を失わず、desktopの既存手動保存とレイアウトを維持する。幅変更だけで保存要求を起動しない。
+
+【承認済み追加設計】Settings限定の離脱保護はmobile／desktop両方に適用する。この記述は契約を定めるもので、REQ-381コードACの独立受入完了を示さない。dirty／invalid／failed／queued／inFlightのいずれかが登録され、pathnameが`/settings`を離れるrouter PUSH／REPLACE／POP（NavLink、useNavigate、戻る／進むを含む）で確認する。同じSettings内のhash／query／tab変更は許可する。最小のData Router seamとして既存rootを`createBrowserRouter`／`createRoutesFromElements`／`RouterProvider`へ移し、既存AppShell、6 route、QueryClient／persist／store起動provider、外側GlobalErrorBoundaryを維持する。loader／actionは追加しない。`SettingsDraftBoundary`は`/settings`のleaf routeだけを囲み、rootや全画面を囲まない。registryはinstance／resourceごとのflagsと`cancelQueued`／`discardLocal` callbackだけを保持し、入力値や認証情報を保存しない。
+
+確認中もinFlight保存は継続するが、1件でもinFlightがあればLeaveは無効にする。完了しても自動離脱せず、利用者が改めてLeaveを選ぶ。Cancelは現在URL・画面・draft・queueを保ち、保存やretryを起動しない。inFlightがないときの明示Leaveだけが未送信queueを同期取消し、local draftを破棄してproceedを1回実行する。過去の成功保存はrollbackせず、timeout等で結果不明の要求がserver側で取り消されたとは保証しない。reload／close／別document移動はリスクがある場合だけnative `beforeunload`確認を登録する。文言はbrowser依存で非同期flushの完了を保証せず、モバイルOSの強制終了は保護対象としない。修飾click／新規tabは元のSettingsとdraftを保持する。
 
 Translationの辞書照合は大文字小文字を区別するリテラル一致で、長い一致から一度だけ置換する。置換結果を再走査して連鎖変換せず、元の入力を破壊しない。キャッシュは元の入力・設定に対応する結果として扱い、置換済みテキストを別入力のキーへ流用しない。
 
@@ -126,6 +146,16 @@ workflowsタブは `xl`（>=1280px）で2カラムとし、左=ワークフロ�
 モバイル（<768px）ではタブバーを横スワイプ（snap）にし、操作対象は44×44px以上とする。ページ下部余白は `pb-[calc(6rem+env(safe-area-inset-bottom))]` とし、768px以上では解除する。
 
 MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジ（`+N classes` / `+N stages`）とする。Target Node情報は画面表示せず、編集ボタンの `aria-label`「<名称> のマッピング設定を編集（対象ノード: …）」に保持する。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal、WorkflowNodePicker）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
+
+
+### 3-1-2. モバイルSettingsの操作契約（REQ-381）
+
+モバイル（幅768px未満）でも5タブと全設定項目を維持し、375px幅で横はみ出し・重なり・見切れを生じさせない。横幅に収めるためページ外側の余白、カード内側余白、カード間gapをdesktopより縮め、Settings固有の値として各12pxにする（共通tokenへ昇格させない）。本文はページ縦スクロールとする。専用workflow配線、長いinfo、シート等に必要な内部スクロールは個別契約に従う。タブバーは既存の横スクロール／snapを保ち、タブ選択は既存の`selectTab`、URL hash、履歴、保存済みtab IDの契約に従う。
+
+- MappingMasterのモバイル表示では「Add Master」を直接表示し、管理メニューに「ステージ管理」「カスタム型マスタ」を置く。各項目は既存の`StageManagerModal`／`ParamTypeMasterManagerModal`を開き、list→form→listの排他遷移を保つ。BaseModelの「モデルマスタ管理」と混同しない。desktopの既存導線は維持する。
+- 補足説明は必要な詳細説明だけを同一行のinfoへ移す。infoは全文を表示し、不透明な濃色背景と十分な文字コントラスト（本文と背景の比4.5:1以上）、画面内配置、長文時の内部scrollを備える。再タップ・外側タップ・Escape・祖先またはページのscrollで閉じるが、info本文自身の長文内部scrollでは閉じない。警告・error・未保存状態はinfoへ隠さず常時表示する。この契約はSettings固有であり、共通popover基盤へ広げない。
+- 本文の意図的な横swipeは隣接tabへ移動し、端で循環しない。縦scrollを優先し、入力・range・button等の操作対象、独立scroll、開いたoverlayを起点とするジェスチャーを除外する。直接tapを代替経路として残す。
+- Speech Toneの作成／編集シートは共通Modalを使い、左にCancel、右にSaveを置く。keyboard表示時の到達性、44×44px以上の有効領域、focusの視認性を保つ。
 
 ### 3-2. オンデマンド管理
 

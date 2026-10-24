@@ -1,279 +1,303 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { beforeAll, afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { server } from '../../../../test/mocks/server'
 import { SpeechToneSection } from '../SpeechToneSection'
+import { SettingsDraftBoundary } from '../SettingsDraftBoundary'
 
-const mocks = vi.hoisted(() => ({
-  presets: [
-    { id: 17, name: '丁寧', prompt: '長い指示文です。'.repeat(20), description: '説明', sort_order: 2, created_at: '' },
-  ],
-  create: vi.fn(),
-  update: vi.fn(),
-  remove: vi.fn(),
-  rewrite: vi.fn(),
-}))
+const preset = { id: 17, name: '丁寧', prompt: '長い指示文です。'.repeat(20), description: '説明', sort_order: 2, created_at: '2026-01-01T00:00:00Z' }
+let presets = [preset]
+const api = '/api/speech-tone-presets'
+const clients: QueryClient[] = []
+const routers: ReturnType<typeof createMemoryRouter>[] = []
+let originalVisualViewportDescriptor: PropertyDescriptor | undefined
 
-vi.mock('../../../../api/client', () => ({
-  speechTonePresetsApi: {
-    list: vi.fn(),
-    create: mocks.create,
-    update: mocks.update,
-    delete: mocks.remove,
-    rewrite: mocks.rewrite,
-  },
-}))
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => {
+  cleanup()
+  if (originalVisualViewportDescriptor) {
+    Object.defineProperty(window, 'visualViewport', originalVisualViewportDescriptor)
+    originalVisualViewportDescriptor = undefined
+  } else {
+    Reflect.deleteProperty(window, 'visualViewport')
+  }
+  server.resetHandlers()
+  routers.splice(0).forEach((router) => router.dispose())
+  clients.splice(0).forEach((client) => client.clear())
+})
+afterAll(() => server.close())
+beforeEach(() => {
+  presets = [preset]
+  server.use(http.get(api, () => HttpResponse.json(presets)))
+})
 
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: mocks.presets, isLoading: false }),
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
-  useMutation: ({ mutationFn }: { mutationFn: (...args: never[]) => unknown }) => ({
-    isPending: false,
-    mutate: (...args: never[]) => mutationFn(...args),
-  }),
-}))
+function mountRealTone() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const router = createMemoryRouter([
+    { path: '/settings', element: <SettingsDraftBoundary><SpeechToneSection isExpanded onToggle={() => {}} /></SettingsDraftBoundary> },
+    { path: '/other', element: <p>移動先</p> },
+  ], { initialEntries: ['/settings'] })
+  clients.push(client)
+  routers.push(router)
+  const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  return { ...view, router, client }
+}
+
+async function openEdit() {
+  await screen.findByRole('article', { name: '丁寧' })
+  fireEvent.click(screen.getByTitle('編集'))
+  return screen.getByRole('dialog', { name: '口調プリセット編集' })
+}
 
 describe('SpeechToneSection', () => {
-  beforeEach(() => {
-    mocks.presets.splice(0, mocks.presets.length, {
-      id: 17, name: '丁寧', prompt: '長い指示文です。'.repeat(20), description: '説明', sort_order: 2, created_at: '',
-    })
-    mocks.create.mockReset().mockResolvedValue({})
-    mocks.update.mockReset().mockResolvedValue({})
-    mocks.remove.mockReset().mockResolvedValue({})
-    mocks.rewrite.mockReset()
-  })
-
-  it('shows a responsive labeled card with the full preset details and 44px actions', () => {
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-
-    expect(screen.getByRole('columnheader', { name: 'プリセット名' })).toBeInTheDocument()
+  it('renders preset details and accessible card actions', async () => {
+    mountRealTone()
+    await screen.findByRole('columnheader', { name: 'プリセット名' })
     expect(screen.getByText('丁寧')).toHaveAttribute('data-label', 'プリセット名')
-    expect(screen.getByText(mocks.presets[0].prompt)).toHaveAttribute('data-label', 'プロンプト指示')
-    expect(screen.getAllByText('説明').find((element) => element.tagName === 'TD')).toHaveAttribute('data-label', '説明')
-    expect(screen.getByText('2')).toHaveAttribute('data-label', '順序')
-
-    const edit = screen.getByTitle('編集')
-    const remove = screen.getByTitle('削除')
-    expect(edit).toHaveClass('min-h-11', 'min-w-11')
-    expect(remove).toHaveClass('min-h-11', 'min-w-11')
+    expect(screen.getByText(preset.prompt)).toHaveAttribute('data-label', 'プロンプト指示')
     expect(screen.getByRole('button', { name: /プリセット追加/ })).toHaveClass('min-h-11', 'min-w-11')
+    expect(screen.getByTitle('編集')).toHaveClass('min-h-11', 'min-w-11')
+    expect(screen.getByTitle('削除')).toHaveClass('min-h-11', 'min-w-11')
   })
 
-  it('edits the selected ID, supports modal cancel, and creates a preset', () => {
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
+  it('[REQ-381/AC-8] real draft registration blocks route navigation and Cancel preserves the unsaved modal draft', async () => {
+    let writes = 0
+    server.use(http.put(`${api}/17`, async () => { writes += 1; return HttpResponse.json(preset) }))
+    const { router } = mountRealTone()
+    const dialog = await openEdit()
+    const name = within(dialog).getByDisplayValue('丁寧')
+    fireEvent.change(name, { target: { value: '未保存の口調' } })
 
-    fireEvent.click(screen.getByTitle('編集'))
-    const editModal = screen.getByTestId('speech-tone-preset-modal')
-    expect(within(editModal).getByRole('dialog', { name: '口調プリセット編集' })).toHaveAttribute('aria-modal', 'true')
-    expect(within(editModal).getByDisplayValue('丁寧')).toBeInTheDocument()
-    fireEvent.click(within(editModal).getByRole('button', { name: 'キャンセル' }))
-    expect(screen.queryByTestId('speech-tone-preset-modal')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByTitle('編集'))
-    const modal = screen.getByTestId('speech-tone-preset-modal')
-    fireEvent.click(within(modal).getByRole('button', { name: '保存' }))
-    expect(mocks.update).toHaveBeenCalledWith(17, expect.objectContaining({ name: '丁寧' }))
-
-    fireEvent.click(screen.getByRole('button', { name: /プリセット追加/ }))
-    const createModal = screen.getByTestId('speech-tone-preset-modal')
-    fireEvent.change(within(createModal).getByPlaceholderText('例: ツンデレ風, お嬢様風'), { target: { value: '新規' } })
-    fireEvent.change(within(createModal).getByPlaceholderText(/ツンデレな口調で/), { target: { value: '口調' } })
-    fireEvent.click(within(createModal).getByRole('button', { name: '保存' }))
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ name: '新規', prompt: '口調' }))
+    await act(async () => { await router.navigate('/other') })
+    const confirm = await screen.findByRole('dialog', { name: '未保存の設定' })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'キャンセル' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
+    expect(within(screen.getByRole('dialog', { name: '口調プリセット編集' })).getByDisplayValue('未保存の口調')).toBeInTheDocument()
+    expect(writes).toBe(0)
   })
 
-  it('shows a named sample card and requires inline confirmation to delete the selected ID', () => {
-    const { rerender } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-    expect(screen.getByRole('article', { name: '丁寧' })).toHaveTextContent('説明')
+  it('[REQ-381/AC-8] an untouched empty create form does not block navigation', async () => {
+    const { router } = mountRealTone()
+    fireEvent.click(await screen.findByRole('button', { name: /プリセット追加/ }))
+    expect(screen.getByRole('dialog', { name: '新規口調プリセット作成' })).toBeInTheDocument()
+    await act(async () => { await router.navigate('/other') })
+    await screen.findByText('移動先')
+    expect(router.state.location.pathname).toBe('/other')
+    expect(screen.queryByRole('dialog', { name: '未保存の設定' })).not.toBeInTheDocument()
+  })
+
+  it('[REQ-381/AC-8] successful explicit Save sends normalized real-client payload and closes the modal', async () => {
+    let body: unknown
+    server.use(http.put(`${api}/17`, async ({ request }) => {
+      body = await request.json()
+      return HttpResponse.json({ ...preset, ...(body as object) })
+    }))
+    mountRealTone()
+    const dialog = await openEdit()
+    fireEvent.change(within(dialog).getByDisplayValue('丁寧'), { target: { value: ' 新しい名前 ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '口調プリセット編集' })).not.toBeInTheDocument())
+    expect(body).toEqual({ name: '新しい名前', prompt: preset.prompt, description: '説明', sort_order: 2 })
+  })
+
+  it('[REQ-381/AC-10] modal keeps its common bottom sheet, scroll body, and left Cancel/right Save actions', async () => {
+    mountRealTone()
+    const dialog = await openEdit()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getAllByTestId('modal-sheet-handle')).toHaveLength(1)
+    expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('85dvh')
+    expect(dialog.closest('.fixed.inset-0.z-50')).toBeNull()
+    const form = dialog.querySelector('form')
+    expect((form as HTMLFormElement).style.flexWrap).toBe('nowrap')
+    expect((form as HTMLFormElement).style.minWidth).toBe('0')
+    const cancel = within(dialog).getByRole('button', { name: 'キャンセル' })
+    const save = within(dialog).getByRole('button', { name: '保存' })
+    expect(cancel.parentElement).toBe(save.parentElement)
+    expect(cancel.parentElement).toHaveClass('shrink-0', 'w-full', 'min-w-0')
+    expect((cancel.parentElement as HTMLElement).style.flexWrap).toBe('nowrap')
+    expect((cancel.parentElement as HTMLElement).style.minWidth).toBe('0')
+    expect(cancel).toHaveClass('min-h-11', 'min-w-11')
+    expect(save).toHaveClass('min-h-11', 'min-w-11')
+    expect(cancel.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(dialog.querySelector('form > .overflow-y-auto')).toBeInTheDocument()
+  })
+
+  it('[REQ-381/AC-10] tone sheet follows the visual viewport height and top offset', async () => {
+    originalVisualViewportDescriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    const visualViewport = Object.assign(new EventTarget(), { height: 812, offsetTop: 0 })
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: visualViewport })
+    mountRealTone()
+    fireEvent.click(await screen.findByRole('button', { name: /プリセット追加/ }))
+    const dialog = screen.getByRole('dialog', { name: '新規口調プリセット作成' })
+    const backdrop = dialog.closest('.speech-tone-preset-modal-backdrop')
+    expect(backdrop).not.toBeNull()
+
+    visualViewport.height = 450
+    visualViewport.offsetTop = 362
+    visualViewport.dispatchEvent(new Event('resize'))
+
+    expect(backdrop).toHaveStyle({
+      '--speech-tone-visual-viewport-height': '450px',
+      '--speech-tone-visual-viewport-offset': '362px',
+    })
+    expect(dialog).toHaveStyle({
+      '--speech-tone-visual-viewport-height': '450px',
+      '--speech-tone-modal-max-height': 'min(85dvh, 450px)',
+    })
+
+    visualViewport.height = 667
+    visualViewport.offsetTop = 0
+    visualViewport.dispatchEvent(new Event('resize'))
+    expect(dialog).toHaveStyle({ '--speech-tone-modal-max-height': 'min(85dvh, 667px)' })
+  })
+
+  it('[REQ-381/AC-2] keeps the existing responsive preset card and mobile touch targets', async () => {
+    mountRealTone()
+    await screen.findByRole('article', { name: '丁寧' })
+    const row = screen.getByRole('article', { name: '丁寧' }).closest('tr')
+    expect(row).toHaveClass('block', 'md:table-row')
+    expect(screen.getByTitle('編集')).toHaveClass('min-h-11', 'min-w-11')
+    expect(screen.getByRole('button', { name: '丁寧 をテスト対象にする' })).toHaveClass('touch-manipulation')
+  })
+
+  it('retains the real preview and inline delete confirmation flows', async () => {
+    server.use(
+      http.post(`${api}/rewrite`, async ({ request }) => {
+        const body = await request.json() as { text: string }
+        return HttpResponse.json({ rewritten_text: `${body.text}（変換済み）` })
+      }),
+      http.delete(`${api}/17`, () => {
+        presets = []
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    mountRealTone()
+    const dialog = await openEdit()
+    fireEvent.change(within(dialog).getByLabelText('プレビュー用セリフ'), { target: { value: 'こんにちは' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'プレビュー実行' }))
+    expect(await within(dialog).findByText('こんにちは（変換済み）')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }))
+
     fireEvent.click(screen.getByTitle('削除'))
     expect(screen.getByRole('alertdialog')).toHaveTextContent('丁寧')
-    expect(mocks.remove).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTitle('削除'))
     fireEvent.click(screen.getByRole('button', { name: '削除を確認' }))
-    expect(mocks.remove).toHaveBeenCalledWith(17)
-
-    mocks.presets.splice(0)
-    rerender(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-    expect(screen.getByText('登録されている口調プリセットはありません。')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('article', { name: '丁寧' })).not.toBeInTheDocument())
   })
 
-  it('previews the unsaved input and prompt without saving the preset', async () => {
-    mocks.rewrite.mockResolvedValue({ rewritten_text: 'こんにちは、最新設定です。' })
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-    fireEvent.click(screen.getByTitle('編集'))
-    const modal = screen.getByTestId('speech-tone-preset-modal')
-    fireEvent.change(within(modal).getByLabelText('プレビュー用セリフ'), { target: { value: '最新の入力' } })
-    fireEvent.change(within(modal).getByPlaceholderText(/ツンデレな口調で/), { target: { value: '最新の未保存指示' } })
-    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
-    expect(await within(modal).findByText('こんにちは、最新設定です。')).toBeInTheDocument()
-    expect(mocks.rewrite).toHaveBeenCalledWith(expect.objectContaining({ text: '最新の入力', tone_prompt: '最新の未保存指示', preset_id: 17 }))
-    expect(mocks.update).not.toHaveBeenCalled()
+  it('ignores a stale real preview response after its source draft changes', async () => {
+    let release!: () => void
+    server.use(http.post(`${api}/rewrite`, async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return HttpResponse.json({ rewritten_text: '古いプレビュー' })
+    }))
+    mountRealTone()
+    const dialog = await openEdit()
+    const prompt = within(dialog).getByPlaceholderText(/ツンデレな口調で/)
+    fireEvent.change(within(dialog).getByLabelText('プレビュー用セリフ'), { target: { value: '入力' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'プレビュー実行' }))
+    await waitFor(() => expect(release).toBeDefined())
+    fireEvent.change(prompt, { target: { value: '変更後のプロンプト' } })
+    await act(async () => { release() })
+    await waitFor(() => expect(within(dialog).queryByText('古いプレビュー')).not.toBeInTheDocument())
+    expect(prompt).toHaveValue('変更後のプロンプト')
   })
 
-  it('ignores an older rewrite result after the user changes the draft and preserves input on failure', async () => {
-    let resolveFirst!: (value: { rewritten_text: string }) => void
-    mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
-      .mockResolvedValueOnce({ rewritten_text: '新しい結果' })
-      .mockRejectedValueOnce(new Error('service unavailable'))
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-    fireEvent.click(screen.getByTitle('編集'))
-    const modal = screen.getByTestId('speech-tone-preset-modal')
-    const input = within(modal).getByLabelText('プレビュー用セリフ')
-    fireEvent.change(input, { target: { value: '旧入力' } })
-    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
-    fireEvent.change(input, { target: { value: '最新入力' } })
-    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー中...' }))
-    expect(mocks.rewrite).toHaveBeenCalledTimes(1)
-    resolveFirst({ rewritten_text: '古い結果' })
-    expect(await within(modal).findByDisplayValue('最新入力')).toBeInTheDocument()
-    expect(within(modal).queryByText('古い結果')).not.toBeInTheDocument()
-
-    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
-    expect(await within(modal).findByText('新しい結果')).toBeInTheDocument()
-    fireEvent.change(input, { target: { value: '失敗しても残る入力' } })
-    fireEvent.click(within(modal).getByRole('button', { name: 'プレビュー実行' }))
-    expect(await within(modal).findByRole('alert')).toHaveTextContent('service unavailable')
-    expect(within(modal).getByDisplayValue('失敗しても残る入力')).toBeInTheDocument()
+  it('retains the preset test panel and surfaces its real rewrite failure', async () => {
+    server.use(http.post(`${api}/rewrite`, () => HttpResponse.json({ message: 'service unavailable' }, { status: 503 })))
+    mountRealTone()
+    await screen.findByRole('article', { name: '丁寧' })
+    fireEvent.click(screen.getByRole('button', { name: '丁寧 をテスト対象にする' }))
+    fireEvent.change(screen.getByLabelText('テスト入力'), { target: { value: '入力を保持' } })
+    fireEvent.click(screen.getByRole('button', { name: 'テスト実行' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('service unavailable')
+    expect(screen.getByLabelText('テスト入力')).toHaveValue('入力を保持')
   })
 
-  it('[REQ-365/AC-9] preset modal renders in the common bottom-sheet Modal (single dialog, one handle, max-h-[85dvh], no own overlay)', () => {
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-
-    fireEvent.click(screen.getByTitle('編集'))
-    const wrapper = screen.getByTestId('speech-tone-preset-modal')
-    const dialog = screen.getByRole('dialog', { name: '口調プリセット編集' })
-    expect(screen.getAllByRole('dialog')).toHaveLength(1)
-    expect(screen.getAllByTestId('modal-sheet-handle')).toHaveLength(1)
-    expect(dialog).toHaveAttribute('data-radius-exempt')
-    expect(dialog).toHaveAttribute('aria-label', '口調プリセット編集')
-    expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('85dvh')
-    expect(dialog).toHaveClass('rounded-t-2xl')
-    expect(wrapper.contains(dialog)).toBe(true)
-    expect(dialog.closest('.fixed.inset-0.z-50')).toBeNull()
-
-    fireEvent.click(within(wrapper).getByRole('button', { name: 'キャンセル' }))
-    fireEvent.click(screen.getByRole('button', { name: /プリセット追加/ }))
-    expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '新規口調プリセット作成')
+  it('retains successful preset testing and prevents duplicate real requests while pending', async () => {
+    let release!: () => void
+    let requests = 0
+    server.use(http.post(`${api}/rewrite`, async () => {
+      requests += 1
+      await new Promise<void>((resolve) => { release = resolve })
+      return HttpResponse.json({ rewritten_text: '変換結果' })
+    }))
+    mountRealTone()
+    await screen.findByRole('article', { name: '丁寧' })
+    const run = screen.getByRole('button', { name: 'テスト実行' })
+    expect(run).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '丁寧 をテスト対象にする' }))
+    fireEvent.change(screen.getByLabelText('テスト入力'), { target: { value: 'こんにちは' } })
+    fireEvent.click(run)
+    await waitFor(() => expect(release).toBeDefined())
+    fireEvent.click(run)
+    expect(requests).toBe(1)
+    await act(async () => { release() })
+    expect(await screen.findByLabelText('テスト出力')).toHaveTextContent('変換結果')
   })
 
-  it('[REQ-365/AC-9] preset modal closes via close button and cancel but not via backdrop click', () => {
-    const { container } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-
-    fireEvent.click(screen.getByTitle('編集'))
-    const backdrop = container.ownerDocument.querySelector('.modal-backdrop') as HTMLElement
-    expect(backdrop).not.toBeNull()
-    fireEvent.click(backdrop)
-    expect(screen.getByTestId('speech-tone-preset-modal')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '閉じる' }))
-    expect(screen.queryByTestId('speech-tone-preset-modal')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByTitle('編集'))
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
-    expect(screen.queryByTestId('speech-tone-preset-modal')).not.toBeInTheDocument()
-  })
-
-  it('[REQ-365/AC-9] preset modal keeps save behavior inside the sheet', () => {
-    render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-
-    fireEvent.click(screen.getByTitle('編集'))
-    const dialog = screen.getByRole('dialog', { name: '口調プリセット編集' })
+  it('[REQ-381/AC-8] failed Save keeps the real modal draft and exposes the server error', async () => {
+    server.use(http.put(`${api}/17`, () => HttpResponse.json({ message: '保存失敗' }, { status: 503 })))
+    mountRealTone()
+    const dialog = await openEdit()
+    fireEvent.change(within(dialog).getByDisplayValue('丁寧'), { target: { value: '保持される名前' } })
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
-    expect(mocks.update).toHaveBeenCalledWith(17, expect.objectContaining({ name: '丁寧' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('保存に失敗しました')
+    expect(within(dialog).getByDisplayValue('保持される名前')).toBeInTheDocument()
   })
 
-  describe('test panel', () => {
-    const selectPreset = () => fireEvent.click(screen.getByRole('button', { name: '丁寧 をテスト対象にする' }))
-    const typeInput = (value: string) => fireEvent.change(screen.getByLabelText('テスト入力'), { target: { value } })
-    const runButton = () => screen.getByRole('button', { name: 'テスト実行' })
+  it('[REQ-381/AC-8] deferred Save keeps route Leave disabled and prevents an old acknowledgement from clearing a newer edit', async () => {
+    let release!: () => void
+    let requestStarted!: () => void
+    const started = new Promise<void>((resolve) => { requestStarted = resolve })
+    server.use(http.put(`${api}/17`, async ({ request }) => {
+      await request.json()
+      requestStarted()
+      await new Promise<void>((resolve) => { release = resolve })
+      return HttpResponse.json({ ...preset, name: '送信済みの名前' })
+    }))
+    const { router } = mountRealTone()
+    const dialog = await openEdit()
+    const name = within(dialog).getByDisplayValue('丁寧')
+    fireEvent.change(name, { target: { value: '送信済みの名前' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await started
+    await waitFor(() => expect(name).toBeDisabled())
+    expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeDisabled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '口調プリセット編集' })).toBeInTheDocument()
 
-    it('[REQ-365/AC-6] runs rewrite with the selected preset prompt and shows the output in the test panel', async () => {
-      mocks.rewrite.mockResolvedValue({ rewritten_text: '変換結果です' })
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      expect(screen.getByText('口調プリセットを選択してテスト入力を行ってください。')).toBeInTheDocument()
-      selectPreset()
-      expect(screen.getByRole('button', { name: '丁寧 をテスト対象にする' })).toHaveAttribute('aria-pressed', 'true')
-      typeInput('こんにちは')
-      fireEvent.click(runButton())
-      expect(await screen.findByLabelText('テスト出力')).toHaveTextContent('変換結果です')
-      expect(mocks.rewrite).toHaveBeenCalledTimes(1)
-      expect(mocks.rewrite).toHaveBeenCalledWith({ text: 'こんにちは', tone_prompt: mocks.presets[0].prompt, preset_id: 17 })
-      expect(within(screen.getByTestId('speech-tone-test-panel')).getByLabelText('テスト出力')).toBeInTheDocument()
-    })
+    await act(async () => { await router.navigate('/other') })
+    const confirm = await screen.findByRole('dialog', { name: '未保存の設定' })
+    const leave = within(confirm).getAllByRole('button').find((button) => button.textContent !== 'キャンセル')
+    expect(leave).toBeDefined()
+    expect(leave).toBeDisabled()
+    fireEvent.click(within(confirm).getByRole('button', { name: 'キャンセル' }))
+    expect(router.state.location.pathname).toBe('/settings')
+    expect(within(screen.getByRole('dialog', { name: '口調プリセット編集' })).getByDisplayValue('送信済みの名前')).toBeInTheDocument()
 
-    it('[REQ-365/AC-6] disables テスト実行 until a preset is selected and non-blank input exists', () => {
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      expect(runButton()).toBeDisabled()
-      typeInput('入力')
-      expect(runButton()).toBeDisabled()
-      selectPreset()
-      expect(runButton()).toBeEnabled()
-      typeInput('   ')
-      expect(runButton()).toBeDisabled()
-    })
+    await act(async () => { release() })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '口調プリセット編集' })).not.toBeInTheDocument())
+  })
 
-    it('[REQ-365/AC-6] ignores a stale response after the input or preset changes', async () => {
-      let resolveFirst!: (value: { rewritten_text: string }) => void
-      mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      selectPreset()
-      typeInput('旧入力')
-      fireEvent.click(runButton())
-      typeInput('新入力')
-      await act(async () => { resolveFirst({ rewritten_text: '古い結果' }) })
-      await waitFor(() => expect(runButton()).toBeEnabled())
-      expect(screen.getByLabelText('テスト出力')).not.toHaveTextContent('古い結果')
-      expect(screen.getByLabelText('テスト入力')).toHaveValue('新入力')
-
-      mocks.rewrite.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
-      fireEvent.click(runButton())
-      selectPreset()
-      await act(async () => { resolveFirst({ rewritten_text: '選択変更前の結果' }) })
-      await waitFor(() => expect(runButton()).toBeEnabled())
-      expect(screen.getByLabelText('テスト出力')).not.toHaveTextContent('選択変更前の結果')
-    })
-
-    it('[REQ-365/AC-6] shows an alert and keeps input when rewrite rejects', async () => {
-      mocks.rewrite.mockRejectedValue(new Error('service unavailable'))
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      selectPreset()
-      typeInput('残る入力')
-      fireEvent.click(runButton())
-      expect(await screen.findByRole('alert')).toHaveTextContent('service unavailable')
-      expect(screen.getByLabelText('テスト入力')).toHaveValue('残る入力')
-    })
-
-    it('[REQ-365/AC-6] double click does not send two requests while pending', async () => {
-      let resolveFirst!: (value: { rewritten_text: string }) => void
-      mocks.rewrite.mockImplementation(() => new Promise((resolve) => { resolveFirst = resolve }))
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      selectPreset()
-      typeInput('入力')
-      fireEvent.click(runButton())
-      fireEvent.click(runButton())
-      expect(mocks.rewrite).toHaveBeenCalledTimes(1)
-      await act(async () => { resolveFirst({ rewritten_text: '結果' }) })
-      expect(await screen.findByText('結果')).toBeInTheDocument()
-    })
-
-    it('[REQ-365/AC-6] clears selection when the selected preset is deleted', () => {
-      const { rerender } = render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      selectPreset()
-      typeInput('入力')
-      expect(runButton()).toBeEnabled()
-      mocks.presets.splice(0)
-      rerender(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      expect(runButton()).toBeDisabled()
-      expect(screen.getByText('口調プリセットを選択してテスト入力を行ってください。')).toBeInTheDocument()
-    })
-
-    it('[REQ-365/AC-6] keeps existing CRUD list texts unchanged', () => {
-      render(<SpeechToneSection isExpanded onToggle={vi.fn()} />)
-      const before = [screen.getAllByText('丁寧').length, screen.getAllByText('説明').length]
-      selectPreset()
-      expect([screen.getAllByText('丁寧').length, screen.getAllByText('説明').length]).toEqual(before)
-      expect(before).toEqual([1, 3])
-    })
+  it('creates a preset through the real HTTP client and preserves explicit Save semantics', async () => {
+    let body: unknown
+    server.use(http.post(api, async ({ request }) => {
+      body = await request.json()
+      return HttpResponse.json({ ...preset, id: 18, ...(body as object) })
+    }))
+    mountRealTone()
+    fireEvent.click(await screen.findByRole('button', { name: /プリセット追加/ }))
+    const dialog = screen.getByRole('dialog', { name: '新規口調プリセット作成' })
+    fireEvent.change(within(dialog).getByPlaceholderText('例: ツンデレ風, お嬢様風'), { target: { value: ' 新規 ' } })
+    fireEvent.change(within(dialog).getByPlaceholderText(/ツンデレな口調で/), { target: { value: ' 口調 ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新規口調プリセット作成' })).not.toBeInTheDocument())
+    expect(body).toEqual({ name: '新規', prompt: '口調', sort_order: 0 })
   })
 })

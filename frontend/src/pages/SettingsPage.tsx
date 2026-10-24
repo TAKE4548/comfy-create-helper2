@@ -15,6 +15,8 @@ import { VramGuardSection } from './SettingsPage/components/VramGuardSection'
 import { SettingsTabBar } from './SettingsPage/components/SettingsTabBar'
 import { PageHeader } from '../components/common/PageHeader'
 import { useSettingsTab, type SettingsTabId } from './SettingsPage/hooks/useSettingsTab'
+import { useSettingsMobile } from './SettingsPage/hooks/useSettingsMobile'
+import { useSettingsSwipe } from './SettingsPage/hooks/useSettingsSwipe'
 import './SettingsPage/SettingsResponsive.css'
 
 export { SpeechTonePresetModal }
@@ -76,6 +78,8 @@ function readDetails(): DetailsState {
 
 export function SettingsPage() {
   const { activeTab, selectTab } = useSettingsTab()
+  const isMobile = useSettingsMobile()
+  const swipeHandlers = useSettingsSwipe({ enabled: isMobile, activeTab, onSelect: selectTab })
   useSystemStats()
   const [expandedSections, setExpandedSections] = useState(DEFAULT_SECTIONS)
   const [details, setDetails] = useState(readDetails)
@@ -105,13 +109,13 @@ export function SettingsPage() {
         <div data-testid="settings-card-mapping" className="order-2 min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
         <MappingMasterSection isExpanded={expandedSections.mappingMasters} onToggle={() => toggleSection('mappingMasters')} />
         </div>
-        <div data-testid="settings-card-basemodel" className="order-3 min-w-0 xl:col-start-1 xl:row-start-2">
+        <div data-testid="settings-card-basemodel" className="order-3 min-w-0 settings-density-basemodel xl:col-start-1 xl:row-start-2">
         <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
           <button type="button" onClick={() => toggleSection('baseModels')} className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left font-sans cursor-pointer select-none">
             <div className="flex items-center gap-2"><Layers size={15} className="text-[#7C6FDD]" /><h2 className="text-sm font-semibold text-zinc-300">Base Model Settings</h2><span className="text-xs text-zinc-600">— ベースモデルとチェックポイントの関連付け管理</span></div>
             <ChevronDown size={16} className={`text-zinc-500 transition-transform duration-200 ${expandedSections.baseModels ? 'rotate-180' : ''}`} />
           </button>
-          {expandedSections.baseModels && <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30"><BaseModelSection /></div>}
+          {expandedSections.baseModels && <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface/30 p-3 md:p-5"><BaseModelSection /></div>}
         </section>
         </div>
       </div>,
@@ -146,18 +150,18 @@ export function SettingsPage() {
   ]
 
   return (
-    <div className="req314-settings flex h-full min-w-0 flex-col overflow-hidden">
+    <div data-testid="settings-page-shell" className="req314-settings req381-settings-density-root flex h-full min-w-0 flex-col gap-3 overflow-hidden md:gap-6">
       <PageHeader
         title="Settings"
         icon={Settings}
       />
       <SettingsTabBar activeTab={activeTab} onSelect={selectTab} />
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-5">
+      <div {...swipeHandlers} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] touch-pan-y md:touch-auto md:p-5 md:pb-5">
         <div data-testid="settings-content-container" className="mx-auto w-full max-w-7xl">
         {panels.map(({ id, content }) => {
           const selected = activeTab === id
           return (
-            <div key={id} id={`settings-panel-${id}`} role="tabpanel" aria-labelledby={`settings-tab-${id}`} hidden={!selected} tabIndex={selected ? 0 : -1} className="space-y-6">
+            <div key={id} id={`settings-panel-${id}`} role="tabpanel" aria-labelledby={`settings-tab-${id}`} hidden={!selected} tabIndex={selected ? 0 : -1} className="space-y-3 md:space-y-6">
               {content}
             </div>
           )

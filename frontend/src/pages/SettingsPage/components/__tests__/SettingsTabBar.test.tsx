@@ -11,12 +11,13 @@ const labels = [
 ] as const
 
 describe('SettingsTabBar', () => {
-  it('renders the five tabs with associated panels and a single roving tab stop', () => {
+  it('[REQ-291/AC-1][REQ-381/AC-9] renders the five tabs with associated panels and a single roving tab stop', () => {
     render(<SettingsTabBar activeTab="workflows" onSelect={vi.fn()} />)
     const tabs = screen.getAllByRole('tab')
     const tablist = screen.getByRole('tablist', { name: '設定カテゴリー' })
     expect(tabs).toHaveLength(5)
     expect(tablist).toHaveAttribute('aria-orientation', 'horizontal')
+    expect(tablist).toHaveAttribute('data-settings-swipe-ignore', 'true')
     expect(tablist.className).toContain('overflow-x-auto')
     expect(tablist.className).toContain('md:grid-cols-5')
     expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(labels.map(([, long]) => long))
@@ -61,6 +62,79 @@ describe('SettingsTabBar', () => {
     expect(screen.getByRole('tab', { name: '翻訳' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: '翻訳' })).toHaveAttribute('tabindex', '0')
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('scrolls the active tab into view on initial and external changes without moving focus', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+    const scrolledElements: HTMLElement[] = []
+    const scrollIntoView = vi.fn(function (this: HTMLElement) { scrolledElements.push(this) })
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    const focusOwner = document.createElement('button')
+    document.body.append(focusOwner)
+    focusOwner.focus()
+
+    try {
+      const onSelect = vi.fn()
+      const { rerender } = render(<SettingsTabBar activeTab="system" onSelect={onSelect} />)
+      const systemTab = screen.getByRole('tab', { name: 'システム・一般' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrolledElements[0]).toBe(systemTab)
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(focusOwner).toHaveFocus()
+      expect(systemTab).not.toHaveFocus()
+
+      scrollIntoView.mockClear()
+      rerender(<SettingsTabBar activeTab="translation" onSelect={onSelect} />)
+      const translationTab = screen.getByRole('tab', { name: '翻訳' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrolledElements[1]).toBe(translationTab)
+      expect(focusOwner).toHaveFocus()
+      expect(translationTab).not.toHaveFocus()
+      expect(onSelect).not.toHaveBeenCalled()
+    } finally {
+      focusOwner.remove()
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor)
+      else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+    }
+  })
+
+  it('corrects fractional overflow at the tablist viewport edge without focusing the tab', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    const focusOwner = document.createElement('button')
+    document.body.append(focusOwner)
+    focusOwner.focus()
+
+    try {
+      const onSelect = vi.fn()
+      const { rerender } = render(<SettingsTabBar activeTab="workflows" onSelect={onSelect} />)
+      const tablist = screen.getByRole('tablist', { name: '設定カテゴリー' })
+      const systemTab = screen.getByRole('tab', { name: 'システム・一般' })
+      let scrollLeft = 0
+      Object.defineProperties(tablist, {
+        clientLeft: { configurable: true, value: 0 },
+        clientWidth: { configurable: true, value: 375 },
+        scrollLeft: { configurable: true, get: () => scrollLeft, set: (value: number) => { scrollLeft = value } },
+      })
+      tablist.getBoundingClientRect = () => ({ left: 0, right: 375, width: 375 } as DOMRect)
+      systemTab.getBoundingClientRect = () => ({
+        left: 277 - scrollLeft,
+        right: 375.15625 - scrollLeft,
+        width: 98.15625,
+      } as DOMRect)
+
+      rerender(<SettingsTabBar activeTab="system" onSelect={onSelect} />)
+
+      expect(scrollLeft).toBeGreaterThan(0)
+      expect(systemTab.getBoundingClientRect().right).toBeLessThanOrEqual(375)
+      expect(focusOwner).toHaveFocus()
+      expect(systemTab).not.toHaveFocus()
+      expect(onSelect).not.toHaveBeenCalled()
+    } finally {
+      focusOwner.remove()
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor)
+      else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+    }
   })
 
   it.each([

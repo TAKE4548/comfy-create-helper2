@@ -140,11 +140,11 @@ export function ServiceConnectionCard(): React.JSX.Element {
           const lampState = running === undefined ? '不明' : running ? '稼働中' : '停止中'
           return (
             <li key={service} aria-label={ariaLabel} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-surface-2 p-3">
-              <div className="flex items-center gap-2">
-                <span role="img" aria-label={`死活: ${lampState}`} className={`h-2.5 w-2.5 shrink-0 rounded-full ${lamp}`} />
-                <span className="min-w-0 flex-1 truncate text-sm" title={ariaLabel}>{ariaLabel}</span>
-                <span className="shrink-0 whitespace-nowrap text-xs text-zinc-300">{text}</span>
-                <button type="button" aria-expanded={panel.open} aria-controls={`service-log-${service}`} disabled={!managerAvailable} onClick={() => toggleLog(service)} className="relative min-h-11 min-w-11 touch-manipulation whitespace-nowrap rounded-md px-2 text-xs text-zinc-200 before:absolute before:-inset-2 before:content-[''] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ログ {panel.open ? '▲' : '▼'}</button>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 md:flex md:gap-2">
+                <span role="img" aria-label={`死活: ${lampState}`} className={`row-start-1 col-start-1 h-2.5 w-2.5 shrink-0 rounded-full ${lamp}`} />
+                <span className="col-start-2 row-start-1 min-w-0 break-words text-sm md:flex-1 md:truncate" title={ariaLabel}>{ariaLabel}</span>
+                <span className="col-start-2 row-start-2 min-w-0 break-words text-xs text-zinc-300 md:shrink-0 md:whitespace-nowrap">{text}</span>
+                <button type="button" aria-expanded={panel.open} aria-controls={`service-log-${service}`} disabled={!managerAvailable} onClick={() => toggleLog(service)} className="col-span-2 row-start-3 min-h-[44px] min-w-[44px] w-full touch-manipulation whitespace-nowrap rounded-md px-2 text-xs text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50 md:col-auto md:ml-auto md:w-auto">ログ {panel.open ? '▲' : '▼'}</button>
               </div>
               {panel.open && (
                 <div id={`service-log-${service}`} role="region" aria-label={`${label} のログ`} className="mt-2 space-y-2">

@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef, useId } from 'react'
+import { useState, useEffect, useRef, useId, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wand2, Sliders, ChevronDown, Save, RefreshCw, Check } from 'lucide-react'
 import { llmPromptsApi } from '../../../api/client'
 import type { LlmPrompt } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
+import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
+import { useSettingsCommit } from '../hooks/useSettingsCommit'
+import { useSettingsMobile } from '../hooks/useSettingsMobile'
 import {
   GROUP_PARAMS,
   GROUP_PROMPTS,
@@ -81,6 +84,7 @@ export function LlmSettingsSection({
 }: LlmSettingsSectionProps) {
   const qc = useQueryClient()
   const instanceId = useId()
+  const isMobile = useSettingsMobile()
   const hasGroupedDetails = group === 'prompt' || group === 'dialogue'
   const detailsExpanded = isExpandedPrompts
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -105,8 +109,17 @@ export function LlmSettingsSection({
   const playgroundRequestId = useRef(0)
   const [llmParamsEdits, setLlmParamsEdits] = useState<Record<string, LlmParams>>({})
   const llmParamsEditsRef = useRef(llmParamsEdits)
+  const [rawParamEdits, setRawParamEdits] = useState<Record<string, string>>({})
+  const rawParamEditsRef = useRef(rawParamEdits)
   const dirtyParamsRef = useRef(new Set<string>())
   const savedParamsRef = useRef<Record<string, string>>({})
+  const canceledRangePointersRef = useRef(new Set<string>())
+  const pendingPromptCountsRef = useRef(new Map<string, number>())
+  const failedPromptKeysRef = useRef(new Set<string>())
+  const pendingModelCountRef = useRef(0)
+  const failedModelRef = useRef(false)
+  const syncDraftRegistrationsRef = useRef<() => void>(() => {})
+  const discardDraftsRef = useRef<() => void>(() => {})
 
   const clearSaveFeedback = () => {
     setSaved(null)
@@ -133,15 +146,21 @@ export function LlmSettingsSection({
     mutationFn: (model: string) => llmPromptsApi.updateCurrentModel(model),
     onMutate: () => clearSaveFeedback(),
     onSuccess: (_result, model) => {
+      pendingModelCountRef.current = Math.max(0, pendingModelCountRef.current - 1)
+      failedModelRef.current = false
       qc.invalidateQueries({ queryKey: ['llm-current-model'] })
       if (modelDraftRef.current === model) {
         modelDraftRef.current = model
         setModelDraft(model)
         setSaved('model')
       }
+      syncDraftRegistrationsRef.current()
     },
     onError: (error, model) => {
+      pendingModelCountRef.current = Math.max(0, pendingModelCountRef.current - 1)
+      failedModelRef.current = true
       if (modelDraftRef.current === model) setSaveError(error instanceof Error ? error.message : '保存に失敗しました')
+      syncDraftRegistrationsRef.current()
     },
   })
 
@@ -150,24 +169,116 @@ export function LlmSettingsSection({
       llmPromptsApi.update(key, { content }),
     onMutate: () => clearSaveFeedback(),
     onSuccess: (_, { key, content }) => {
+      const pendingCount = pendingPromptCountsRef.current.get(key) ?? 0
+      if (pendingCount <= 1) pendingPromptCountsRef.current.delete(key)
+      else pendingPromptCountsRef.current.set(key, pendingCount - 1)
+      failedPromptKeysRef.current.delete(key)
       qc.invalidateQueries({ queryKey: ['llm-prompts'] })
       const currentDraft = key in PARAM_LABELS
         ? JSON.stringify(llmParamsEditsRef.current[key] || DEFAULT_PARAMS)
         : editsRef.current[key]
       if (currentDraft === undefined || currentDraft === content) setSaved(key)
+      syncDraftRegistrationsRef.current()
     },
     onError: (error, { key, content }) => {
+      const pendingCount = pendingPromptCountsRef.current.get(key) ?? 0
+      if (pendingCount <= 1) pendingPromptCountsRef.current.delete(key)
+      else pendingPromptCountsRef.current.set(key, pendingCount - 1)
+      failedPromptKeysRef.current.add(key)
       const currentDraft = key in PARAM_LABELS
         ? JSON.stringify(llmParamsEditsRef.current[key] || DEFAULT_PARAMS)
         : editsRef.current[key]
       if (currentDraft === undefined || currentDraft === content) {
         setSaveError(error instanceof Error ? error.message : '保存に失敗しました')
       }
+      syncDraftRegistrationsRef.current()
     },
   })
 
+  const settingsCommit = useSettingsCommit({
+    save: async (key, snapshot) => {
+      pendingPromptCountsRef.current.set(key, (pendingPromptCountsRef.current.get(key) ?? 0) + 1)
+      failedPromptKeysRef.current.delete(key)
+      syncDraftRegistrationsRef.current()
+      await updatePrompt.mutateAsync({ key, content: snapshot })
+    },
+  })
+
+  const draftControls = useMemo(() => ({
+    cancelQueued: () => {},
+    discardLocal: () => discardDraftsRef.current(),
+  }), [])
+  const paramsDraftRegistration = useSettingsDraftRegistration(`${instanceId}:llm-params`, draftControls)
+  const promptDraftRegistration = useSettingsDraftRegistration(`${instanceId}:llm-prompts`, draftControls)
+  const modelDraftRegistration = useSettingsDraftRegistration(`${instanceId}:llm-model`, draftControls)
+
+  const syncDraftRegistrations = () => {
+    const parameterStates = Object.keys(PARAM_LABELS).map((key) => settingsCommit.getState(key))
+    paramsDraftRegistration.update({
+      dirty: parameterStates.some((state) => state.phase === 'dirty' || state.phase === 'invalid' || state.phase === 'error'),
+      invalid: parameterStates.some((state) => state.phase === 'invalid'),
+      failed: parameterStates.some((state) => state.phase === 'error'),
+      queued: false,
+      inFlight: parameterStates.some((state) => state.phase === 'saving'),
+    })
+
+    const findPrompt = (key: string) => prompts?.find((prompt) => prompt.key === key)?.content
+    const promptDirty = Object.entries(editsRef.current).some(([key, content]) => content !== findPrompt(key))
+    const nonParamKeys = (keys: Iterable<string>) => [...keys].filter((key) => !(key in PARAM_LABELS))
+    const pendingPromptCount = nonParamKeys(pendingPromptCountsRef.current.keys())
+      .reduce((total, key) => total + (pendingPromptCountsRef.current.get(key) ?? 0), 0)
+    const promptFailed = nonParamKeys(failedPromptKeysRef.current).length > 0
+    promptDraftRegistration.update({
+      dirty: promptDirty || promptFailed,
+      invalid: false,
+      failed: promptFailed,
+      queued: false,
+      inFlight: pendingPromptCount > 0,
+    })
+
+    const modelDirty = modelDraftRef.current !== null && modelDraftRef.current !== currentModelData?.content
+    modelDraftRegistration.update({
+      dirty: modelDirty || failedModelRef.current,
+      invalid: false,
+      failed: failedModelRef.current,
+      queued: false,
+      inFlight: pendingModelCountRef.current > 0,
+    })
+  }
+  syncDraftRegistrationsRef.current = syncDraftRegistrations
+
+  discardDraftsRef.current = () => {
+    const nextParams: Record<string, LlmParams> = {}
+    for (const key of Object.keys(PARAM_LABELS)) {
+      const content = prompts?.find((prompt) => prompt.key === key)?.content
+      try {
+        nextParams[key] = content ? { ...DEFAULT_PARAMS, ...JSON.parse(content) } : { ...DEFAULT_PARAMS }
+      } catch {
+        nextParams[key] = { ...DEFAULT_PARAMS }
+      }
+    }
+    llmParamsEditsRef.current = nextParams
+    setLlmParamsEdits(nextParams)
+    rawParamEditsRef.current = {}
+    setRawParamEdits({})
+    dirtyParamsRef.current.clear()
+    savedParamsRef.current = {}
+    editsRef.current = {}
+    setEdits({})
+    modelDraftRef.current = currentModelData?.content ?? null
+    setModelDraft(currentModelData?.content ?? null)
+    syncDraftRegistrationsRef.current()
+  }
+
   useEffect(() => {
-    if (modelDraft === null && currentModelData?.content) setModelDraft(currentModelData.content)
+    syncDraftRegistrations()
+  }, [prompts, currentModelData?.content, edits, llmParamsEdits, rawParamEdits, modelDraft, updatePrompt.isPending, updateModelMutation.isPending])
+
+  useEffect(() => {
+    if (modelDraft === null && currentModelData?.content) {
+      modelDraftRef.current = currentModelData.content
+      setModelDraft(currentModelData.content)
+    }
   }, [currentModelData?.content, modelDraft])
 
   useEffect(() => {
@@ -185,6 +296,12 @@ export function LlmSettingsSection({
           ) {
             dirtyParamsRef.current.delete(key)
             delete savedParamsRef.current[key]
+            const nextRaw = { ...rawParamEditsRef.current }
+            for (const rawKey of Object.keys(nextRaw)) {
+              if (rawKey.startsWith(`${key}:`)) delete nextRaw[rawKey]
+            }
+            rawParamEditsRef.current = nextRaw
+            setRawParamEdits(nextRaw)
           } else {
             return
           }
@@ -204,31 +321,119 @@ export function LlmSettingsSection({
         llmParamsEditsRef.current = next
         return next
       })
+      for (const [key, record] of prompts.filter((prompt) => prompt.key in PARAM_LABELS).map((record) => [record.key, record] as const)) {
+        settingsCommit.acceptServer(key, record.content)
+      }
     }
   }, [prompts])
 
   const getContent = (p: LlmPrompt) => edits[p.key] ?? p.content
 
-  const handleParamChange = (key: string, field: keyof LlmParams, val: number) => {
+  const paramRawKey = (key: string, field: keyof LlmParams) => `${key}:${field}`
+
+  const isValidParamRaw = (field: keyof LlmParams, raw: string) => {
+    const definition = PARAM_FIELDS.find((item) => item.key === field)
+    const value = raw.trim() === '' ? Number.NaN : Number(raw)
+    const stepsFromMin = definition ? (value - definition.min) / definition.step : 0
+    const stepValid = definition !== undefined && Math.abs(stepsFromMin - Math.round(stepsFromMin)) < 1e-6
+    return definition !== undefined && Number.isFinite(value) && value >= definition.min && value <= definition.max && stepValid
+  }
+
+  const hasInvalidParamRaw = (key: string) => Object.entries(rawParamEditsRef.current)
+    .filter(([rawKey]) => rawKey.startsWith(`${key}:`))
+    .some(([rawKey, raw]) => !isValidParamRaw(rawKey.slice(key.length + 1) as keyof LlmParams, raw))
+
+  const updateParamValue = (
+    key: string,
+    field: keyof LlmParams,
+    val: number,
+    options: { preserveRaw?: boolean; stage?: boolean } = {},
+  ) => {
     clearSaveFeedback()
     playgroundRequestId.current += 1
     setPlaygroundPending(false)
     setPlaygroundResponse(null)
     setPlaygroundError(null)
     dirtyParamsRef.current.add(key)
-    setLlmParamsEdits((prev) => {
-      const next = { ...prev, [key]: { ...prev[key], [field]: val } }
-      llmParamsEditsRef.current = next
-      return next
-    })
+    const rawKey = paramRawKey(key, field)
+    if (!options.preserveRaw) {
+      const nextRaw = { ...rawParamEditsRef.current, [rawKey]: String(val) }
+      rawParamEditsRef.current = nextRaw
+      setRawParamEdits(nextRaw)
+    }
+    const nextValue = { ...(llmParamsEditsRef.current[key] ?? DEFAULT_PARAMS), [field]: val }
+    const nextParams = { ...llmParamsEditsRef.current, [key]: nextValue }
+    llmParamsEditsRef.current = nextParams
+    setLlmParamsEdits(nextParams)
+    if (options.stage !== false && !hasInvalidParamRaw(key)) settingsCommit.stage(key, JSON.stringify(nextValue))
+    syncDraftRegistrationsRef.current()
+  }
+
+  const handleParamInput = (key: string, field: keyof LlmParams, raw: string) => {
+    const rawKey = paramRawKey(key, field)
+    const nextRaw = { ...rawParamEditsRef.current, [rawKey]: raw }
+    rawParamEditsRef.current = nextRaw
+    setRawParamEdits(nextRaw)
+    const value = raw.trim() === '' ? Number.NaN : Number(raw)
+    if (!isValidParamRaw(field, raw)) {
+      dirtyParamsRef.current.add(key)
+      settingsCommit.stage(key, null)
+      syncDraftRegistrationsRef.current()
+      return
+    }
+    updateParamValue(key, field, value, { preserveRaw: true, stage: !hasInvalidParamRaw(key) })
+  }
+
+  const commitParam = (key: string) => {
+    if (hasInvalidParamRaw(key)) {
+      settingsCommit.stage(key, null)
+      syncDraftRegistrationsRef.current()
+      return
+    }
+    settingsCommit.commit(key)
+    const current = settingsCommit.getState(key)
+    if (current.phase !== 'invalid') {
+      const snapshot = llmParamsEditsRef.current[key]
+      if (snapshot) savedParamsRef.current[key] = JSON.stringify(snapshot)
+    }
+    syncDraftRegistrationsRef.current()
+  }
+
+  const handlePromptEdit = (key: string, content: string) => {
+    clearSaveFeedback()
+    const baseline = prompts?.find((prompt) => prompt.key === key)?.content
+    const nextEdits = { ...editsRef.current }
+    if (content === baseline) delete nextEdits[key]
+    else nextEdits[key] = content
+    editsRef.current = nextEdits
+    setEdits(nextEdits)
+    syncDraftRegistrationsRef.current()
+  }
+
+  const savePrompt = (key: string, content: string) => {
+    pendingPromptCountsRef.current.set(key, (pendingPromptCountsRef.current.get(key) ?? 0) + 1)
+    failedPromptKeysRef.current.delete(key)
+    syncDraftRegistrationsRef.current()
+    updatePrompt.mutate({ key, content })
+  }
+
+  const saveModel = (model: string) => {
+    pendingModelCountRef.current += 1
+    failedModelRef.current = false
+    syncDraftRegistrationsRef.current()
+    updateModelMutation.mutate(model)
   }
 
   const handleSaveParams = (key: string) => {
-    clearSaveFeedback()
-    const params = llmParamsEdits[key] || DEFAULT_PARAMS
-    const content = JSON.stringify(params)
-    savedParamsRef.current[key] = content
-    updatePrompt.mutate({ key, content })
+    if (hasInvalidParamRaw(key)) {
+      settingsCommit.stage(key, null)
+      syncDraftRegistrationsRef.current()
+      return
+    }
+    const snapshot = JSON.stringify(llmParamsEditsRef.current[key] || DEFAULT_PARAMS)
+    dirtyParamsRef.current.add(key)
+    savedParamsRef.current[key] = snapshot
+    savePrompt(key, snapshot)
   }
 
   const allowedPrompts = group ? new Set<string>(GROUP_PROMPTS[group]) : null
@@ -353,7 +558,7 @@ export function LlmSettingsSection({
                     modelDraftRef.current = e.target.value
                     setModelDraft(e.target.value)
                     invalidatePlayground()
-                    updateModelMutation.mutate(e.target.value)
+                    saveModel(e.target.value)
                   }}
                   disabled={updateModelMutation.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
@@ -397,7 +602,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-translation-model-select"
                   value={prompts?.find((p) => p.key === 'translation_model')?.content || ''}
-                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'translation_model', content: e.target.value }) }}
+                  onChange={(e) => savePrompt('translation_model', e.target.value)}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -422,7 +627,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-speech-vlm-model-select"
                   value={prompts?.find((p) => p.key === 'speech_draft_vlm_model')?.content || ''}
-                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'speech_draft_vlm_model', content: e.target.value }) }}
+                  onChange={(e) => savePrompt('speech_draft_vlm_model', e.target.value)}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -447,7 +652,7 @@ export function LlmSettingsSection({
                 <select
                   id="settings-speech-llm-model-select"
                   value={prompts?.find((p) => p.key === 'speech_draft_llm_model')?.content || ''}
-                  onChange={(e) => { clearSaveFeedback(); updatePrompt.mutate({ key: 'speech_draft_llm_model', content: e.target.value }) }}
+                  onChange={(e) => savePrompt('speech_draft_llm_model', e.target.value)}
                   disabled={updatePrompt.isPending}
                   className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-[#7C6FDD]/40 font-sans"
                 >
@@ -486,7 +691,7 @@ export function LlmSettingsSection({
                     const val = parseInt(e.target.value, 10)
                     if (val >= 300 && val <= 2000) {
                       clearSaveFeedback()
-                      updatePrompt.mutate({ key: 'translation_debounce', content: String(val) })
+                      savePrompt('translation_debounce', String(val))
                     }
                   }}
                   disabled={updatePrompt.isPending}
@@ -582,9 +787,7 @@ export function LlmSettingsSection({
                           onChange={(e) => {
                             invalidatePlayground()
                             clearSaveFeedback()
-                            const nextEdits = { ...editsRef.current, [p.key]: e.target.value }
-                            editsRef.current = nextEdits
-                            setEdits(nextEdits)
+                            handlePromptEdit(p.key, e.target.value)
                           }}
                           rows={16}
                           className="w-full bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar"
@@ -599,6 +802,7 @@ export function LlmSettingsSection({
                               delete nextEdits[p.key]
                               editsRef.current = nextEdits
                               setEdits(nextEdits)
+                              syncDraftRegistrationsRef.current()
                             }}
                             disabled={!edits[p.key]}
                             className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors"
@@ -608,7 +812,7 @@ export function LlmSettingsSection({
                           <button
                             id={`prompt-save-${p.key}`}
                             onClick={() =>
-                              updatePrompt.mutate({ key: p.key, content: getContent(p) })
+                              savePrompt(p.key, getContent(p))
                             }
                             disabled={updatePrompt.isPending}
                             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
@@ -641,8 +845,15 @@ export function LlmSettingsSection({
                           min={field.min}
                           max={field.max}
                           step={field.step}
-                          value={pgParams[field.key] ?? DEFAULT_PARAMS[field.key]}
-                          onChange={(e) => pg && handleParamChange(pg, field.key, parseFloat(e.target.value) || 0)}
+                          value={pg ? rawParamEdits[paramRawKey(pg, field.key)] ?? String(pgParams[field.key] ?? DEFAULT_PARAMS[field.key]) : String(DEFAULT_PARAMS[field.key])}
+                          onChange={(e) => pg && handleParamInput(pg, field.key, e.currentTarget.value)}
+                          onBlur={() => pg && isMobile && commitParam(pg)}
+                          onKeyDown={(e) => {
+                            if (isMobile && e.key === 'Enter' && pg) {
+                              e.preventDefault()
+                              commitParam(pg)
+                            }
+                          }}
                           className="min-h-11 w-24 touch-manipulation bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-0.5 text-right text-xs font-mono text-zinc-200 focus:outline-none"
                         />
                       </div>
@@ -652,7 +863,20 @@ export function LlmSettingsSection({
                         max={field.max}
                         step={field.step}
                         value={pgParams[field.key] ?? DEFAULT_PARAMS[field.key]}
-                        onChange={(e) => pg && handleParamChange(pg, field.key, parseFloat(e.target.value))}
+                        onChange={(e) => pg && updateParamValue(pg, field.key, parseFloat(e.currentTarget.value))}
+                        onPointerDown={() => pg && canceledRangePointersRef.current.delete(paramRawKey(pg, field.key))}
+                        onPointerCancel={() => pg && canceledRangePointersRef.current.add(paramRawKey(pg, field.key))}
+                        onPointerUp={() => {
+                          if (!pg) return
+                          canceledRangePointersRef.current.delete(paramRawKey(pg, field.key))
+                          if (isMobile) commitParam(pg)
+                        }}
+                        onKeyUp={() => isMobile && pg && commitParam(pg)}
+                        onBlur={() => {
+                          if (!pg) return
+                          const canceled = canceledRangePointersRef.current.delete(paramRawKey(pg, field.key))
+                          if (isMobile && !canceled) commitParam(pg)
+                        }}
                         className="min-h-11 w-full touch-manipulation accent-[#7C6FDD]"
                       />
                     </div>
@@ -679,9 +903,7 @@ export function LlmSettingsSection({
                           onChange={(e) => {
                             invalidatePlayground()
                             clearSaveFeedback()
-                            const nextEdits = { ...editsRef.current, [selectedPromptKey]: e.target.value }
-                            editsRef.current = nextEdits
-                            setEdits(nextEdits)
+                            handlePromptEdit(selectedPromptKey, e.target.value)
                           }}
                           rows={16}
                           className="w-full min-h-[16rem] bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono resize-y touch-manipulation focus:outline-none focus:border-[#7C6FDD]/40 custom-scrollbar"
@@ -697,6 +919,7 @@ export function LlmSettingsSection({
                               delete nextEdits[selectedPromptKey]
                               editsRef.current = nextEdits
                               setEdits(nextEdits)
+                              syncDraftRegistrationsRef.current()
                             }}
                             disabled={!edits[selectedPromptKey]}
                             className="min-h-11 touch-manipulation text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors"
@@ -706,7 +929,7 @@ export function LlmSettingsSection({
                           <button
                             id={`prompt-save-${selectedPromptKey}`}
                             type="button"
-                            onClick={() => selected && updatePrompt.mutate({ key: selected.key, content: getContent(selected) })}
+                            onClick={() => selected && savePrompt(selected.key, getContent(selected))}
                             disabled={updatePrompt.isPending || !selected}
                             className={`flex min-h-11 touch-manipulation items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                               saved === selectedPromptKey
@@ -731,6 +954,7 @@ export function LlmSettingsSection({
                                 type="button"
                                 onClick={() => handleSaveParams(pg)}
                                 disabled={updatePrompt.isPending}
+                                hidden={isMobile}
                                 className={`flex min-h-11 touch-manipulation items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                                   pgSaved
                                     ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
@@ -877,6 +1101,7 @@ export function LlmSettingsSection({
                           type="button"
                           onClick={() => handleSaveParams(key)}
                           disabled={updatePrompt.isPending}
+                          hidden={isMobile}
                           className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                             isSaved
                               ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
@@ -897,14 +1122,15 @@ export function LlmSettingsSection({
                                 min={field.min}
                                 max={field.max}
                                 step={field.step}
-                                value={params[field.key] ?? DEFAULT_PARAMS[field.key]}
-                                onChange={(e) =>
-                                  handleParamChange(
-                                    key,
-                                    field.key,
-                                    parseFloat(e.target.value) || 0
-                                  )
-                                }
+                                value={rawParamEdits[paramRawKey(key, field.key)] ?? String(params[field.key] ?? DEFAULT_PARAMS[field.key])}
+                                onChange={(e) => handleParamInput(key, field.key, e.currentTarget.value)}
+                                onBlur={() => isMobile && commitParam(key)}
+                                onKeyDown={(e) => {
+                                  if (isMobile && e.key === 'Enter') {
+                                    e.preventDefault()
+                                    commitParam(key)
+                                  }
+                                }}
                                 className="w-16 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-0.5 text-right font-mono text-zinc-200 focus:outline-none"
                               />
                             </div>
@@ -914,9 +1140,18 @@ export function LlmSettingsSection({
                               max={field.max}
                               step={field.step}
                               value={params[field.key] ?? DEFAULT_PARAMS[field.key]}
-                              onChange={(e) =>
-                                handleParamChange(key, field.key, parseFloat(e.target.value))
-                              }
+                              onChange={(e) => updateParamValue(key, field.key, parseFloat(e.currentTarget.value))}
+                              onPointerDown={() => canceledRangePointersRef.current.delete(paramRawKey(key, field.key))}
+                              onPointerCancel={() => canceledRangePointersRef.current.add(paramRawKey(key, field.key))}
+                              onPointerUp={() => {
+                                canceledRangePointersRef.current.delete(paramRawKey(key, field.key))
+                                if (isMobile) commitParam(key)
+                              }}
+                              onKeyUp={() => isMobile && commitParam(key)}
+                              onBlur={() => {
+                                const canceled = canceledRangePointersRef.current.delete(paramRawKey(key, field.key))
+                                if (isMobile && !canceled) commitParam(key)
+                              }}
                               className="w-full accent-[#7C6FDD]"
                             />
                           </div>

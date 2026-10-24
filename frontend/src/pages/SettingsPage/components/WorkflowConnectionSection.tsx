@@ -15,6 +15,7 @@ import { WorkflowDiffReplaceModal } from '../../../components/WorkflowDiffReplac
 import { PresetManagerPanel } from '../../../components/PresetManagerPanel'
 import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../components/SettingsComponents'
 import { ServiceConnectionCard } from './ServiceConnectionCard'
+import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
 
 export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null; mapping_slot_states?: WorkflowSlotStates }
 interface ConfigDraftSession { epoch: number; workflowId: number | null; hydrated: boolean; acknowledgedRevision: number }
@@ -145,6 +146,19 @@ export function WorkflowConnectionSection({
   const [configPreview, setConfigPreview] = useState<ConfigDraft | null>(null)
   const [configError, setConfigError] = useState('')
   const [confirmConfigApply, setConfirmConfigApply] = useState(false)
+  const configDraftRegistration = useSettingsDraftRegistration('workflow-config-import', {
+    cancelQueued: () => {},
+    discardLocal: () => {
+      configDraftRevision.current = configDraftSession.current.acknowledgedRevision
+      setConfigMappings(configWorkflow?.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })) ?? [])
+      setConfigSlotStates(configWorkflow ? hydrateSlotStates(configWorkflow.mapping_slot_states, configWorkflow.mappings, slotDefinitions) : {})
+      setConfigBaseModelId(configWorkflow?.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
+      setConfigText('')
+      setConfigPreview(null)
+      setConfigError('')
+      setConfirmConfigApply(false)
+    },
+  })
 
   const { data: config } = useConfig()
 
@@ -192,6 +206,12 @@ export function WorkflowConnectionSection({
     queryFn: () => stageMastersApi.list() as Promise<StageMaster[]>,
     enabled: group !== 'system',
   })
+
+  useEffect(() => {
+    const session = configDraftSession.current
+    const dirty = (session.hydrated && configDraftRevision.current !== session.acknowledgedRevision) || Boolean(configText || configPreview)
+    configDraftRegistration.update({ dirty, invalid: Boolean(configError) && dirty, failed: configError.startsWith('保存に失敗'), queued: Boolean(configPreview), inFlight: configSaving })
+  }, [configText, configPreview, configError, configSaving, configWorkflowId, configDraftRevision.current])
 
   const slotDefinitions = useMemo<SlotDefinition[]>(() => mappingMasters.flatMap((master: any) => {
     const variants = Array.isArray(master.variants) ? master.variants : []
@@ -263,6 +283,7 @@ export function WorkflowConnectionSection({
         setConfirmConfigApply(false)
         setSaved('workflow-config')
         setConfigError('')
+        configDraftRegistration.clear()
       }
     } catch (err: any) {
       if (latestSnapshot()) {
@@ -534,7 +555,7 @@ export function WorkflowConnectionSection({
         </div>
         )}
         {(group === 'system' || isExpandedLongPress) && (
-          <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-5">
+          <div className="p-3 md:p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-3 md:space-y-5">
             {storageError && <p role="alert" className="text-xs text-red-300">保存に失敗しました: {storageError}（設定は未保存です）</p>}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -551,7 +572,7 @@ export function WorkflowConnectionSection({
                 step="0.1"
                 value={longPressMultiSelect}
                 onChange={(e) => handleLongPressChange('multi-select', parseFloat(e.target.value))}
-                className="w-full accent-[#7C6FDD]"
+                className="min-h-11 w-full touch-manipulation accent-[#7C6FDD]"
               />
               <div className="flex justify-between text-xs text-zinc-600 mt-1">
                 <span>0.1s（敏感）</span>
@@ -573,7 +594,7 @@ export function WorkflowConnectionSection({
                 step="0.1"
                 value={longPressCardMove}
                 onChange={(e) => handleLongPressChange('card-move', parseFloat(e.target.value))}
-                className="w-full accent-[#7C6FDD]"
+                className="min-h-11 w-full touch-manipulation accent-[#7C6FDD]"
               />
               <div className="flex justify-between text-xs text-zinc-600 mt-1">
                 <span>0.1s（敏感）</span>

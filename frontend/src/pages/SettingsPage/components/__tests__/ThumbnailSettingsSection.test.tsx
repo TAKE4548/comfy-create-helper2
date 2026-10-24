@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { ThumbnailSettingsSection } from '../ThumbnailSettingsSection'
 import { LS_KEYS } from '../../../../utils/localStorageKeys'
 
@@ -70,5 +70,28 @@ describe('ThumbnailSettingsSection', () => {
     expect(screen.getAllByRole('alert')[0]).toHaveTextContent('設定は未保存です')
     expect(screen.queryByText('設定を保存しました')).not.toBeInTheDocument()
     vi.restoreAllMocks()
+  })
+
+  it('[REQ-381/AC-7] preserves the selected aspect ratio when mobile localStorage rejects the save', () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: (query: string) => ({ matches: query.includes('max-width'), media: query, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false }) })
+    localStorage.setItem(LS_KEYS.THUMBNAIL_ASPECT_RATIO, '3:4')
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+    render(<ThumbnailSettingsSection />)
+    fireEvent.change(screen.getByTestId('thumbnail-aspect-select'), { target: { value: '1:1' } })
+    expect(screen.getByTestId('aspect-ratio-preview-box')).toHaveStyle({ aspectRatio: '1 / 1' })
+    expect(screen.getByRole('alert')).toHaveTextContent('未保存')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  it('[REQ-381/AC-7] clears the mobile success message after its transient interval', () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: (query: string) => ({ matches: query.includes('max-width'), media: query, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false }) })
+    vi.useFakeTimers()
+    render(<ThumbnailSettingsSection />)
+    fireEvent.change(screen.getByTestId('thumbnail-aspect-select'), { target: { value: '1:1' } })
+    expect(screen.getByRole('status')).toHaveTextContent('設定を保存しました')
+    act(() => { vi.advanceTimersByTime(2000) })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    vi.useRealTimers()
   })
 })

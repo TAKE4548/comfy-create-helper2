@@ -1,11 +1,19 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Image as ImageIcon } from 'lucide-react'
 import { useThumbnailAspectRatio } from '../../../hooks/useThumbnailAspectRatio'
+import { useSettingsMobile } from '../hooks/useSettingsMobile'
 
 export const ThumbnailSettingsSection: React.FC = () => {
   const { presetId, customRatio, presets, aspectRatioStyle, ratioStr, persistenceError, setPreset, setCustomRatio } = useThumbnailAspectRatio()
+  const isMobile = useSettingsMobile()
   const [customInput, setCustomInput] = useState(customRatio)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isMobile || !saveMessage) return
+    const timer = window.setTimeout(() => setSaveMessage(null), 2000)
+    return () => window.clearTimeout(timer)
+  }, [isMobile, saveMessage])
 
   const handlePresetChange = (id: string) => {
     const saved = setPreset(id)
@@ -20,7 +28,7 @@ export const ThumbnailSettingsSection: React.FC = () => {
   }
 
   return (
-    <div className="bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl p-5 shadow-lg space-y-4" data-testid="thumbnail-settings-section">
+    <div className="bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl p-3 md:p-5 shadow-lg space-y-3 md:space-y-4" data-testid="thumbnail-settings-section">
       <div className="flex items-center gap-2.5 pb-3 border-b border-[rgba(255,255,255,0.06)]">
         <ImageIcon className="text-accent-green" size={18} />
         <div>
@@ -35,7 +43,7 @@ export const ThumbnailSettingsSection: React.FC = () => {
         <p role="status" className="text-sm text-emerald-300">{saveMessage}</p>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-6 items-start">
         {/* Preset Selector */}
         <div className="md:col-span-2 space-y-2">
           <label htmlFor="thumbnail-aspect-preset" className="text-xs font-medium text-zinc-300 block">アスペクト比の選択</label>

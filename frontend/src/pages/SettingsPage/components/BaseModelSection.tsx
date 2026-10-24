@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Layers, Plus, Pencil, Trash2, X, RefreshCw } from 'lucide-react'
 import { baseModelsApi, checkpointMappingsApi } from '../../../api/client'
 import type { BaseModel } from '../../../api/types'
 import { Modal } from '../../../components/common/Modal'
+import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
 
 const inputCls = 'w-full min-h-11 min-w-0 bg-surface-2 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C6FDD] focus:border-[#7C6FDD]/40'
 const iconActionCls = 'relative inline-flex touch-manipulation before:absolute before:-inset-2 min-h-11 min-w-11 items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C6FDD]'
@@ -17,8 +18,18 @@ export function BaseModelSection() {
   const [showModelManager, setShowModelManager] = useState(false)
 
   const [mappingForm, setMappingForm] = useState({ checkpoint_name: '', base_model_id: '' })
+  const modelBaseline = useRef({ name: '', description: '' })
+  const mappingBaseline = useRef({ checkpoint_name: '', base_model_id: '' })
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [customCheckpoint, setCustomCheckpoint] = useState(false)
+  const modelDraft = useSettingsDraftRegistration('base-model-form', {
+    cancelQueued: () => {},
+    discardLocal: () => { setShowModelModal(false); setEditingModel(null); setModelForm({ name: '', description: '' }) },
+  })
+  const mappingDraft = useSettingsDraftRegistration('checkpoint-mapping-form', {
+    cancelQueued: () => {},
+    discardLocal: () => { setShowMappingModal(false); setMappingForm({ checkpoint_name: '', base_model_id: '' }) },
+  })
 
   // Queries
   const { data: baseModels, isLoading: isLoadingModels } = useQuery({
@@ -44,6 +55,7 @@ export function BaseModelSection() {
       setShowModelModal(false)
       setShowModelManager(true)
       setModelForm({ name: '', description: '' })
+      modelDraft.clear()
     },
   })
 
@@ -55,6 +67,7 @@ export function BaseModelSection() {
       setShowModelManager(true)
       setEditingModel(null)
       setModelForm({ name: '', description: '' })
+      modelDraft.clear()
     },
   })
 
@@ -72,6 +85,7 @@ export function BaseModelSection() {
       qc.invalidateQueries({ queryKey: ['checkpoint-mappings'] })
       setShowMappingModal(false)
       setMappingForm({ checkpoint_name: '', base_model_id: '' })
+      mappingDraft.clear()
     },
   })
 
@@ -81,6 +95,16 @@ export function BaseModelSection() {
       qc.invalidateQueries({ queryKey: ['checkpoint-mappings'] })
     },
   })
+
+  useEffect(() => {
+    const dirty = showModelModal && (modelForm.name !== modelBaseline.current.name || modelForm.description !== modelBaseline.current.description)
+    modelDraft.update({ dirty, invalid: dirty && !modelForm.name.trim(), failed: createModelMutation.isError || updateModelMutation.isError, queued: false, inFlight: createModelMutation.isPending || updateModelMutation.isPending })
+  }, [showModelModal, modelForm, editingModel, createModelMutation.isError, createModelMutation.isPending, updateModelMutation.isError, updateModelMutation.isPending])
+
+  useEffect(() => {
+    const dirty = showMappingModal && (mappingForm.checkpoint_name !== mappingBaseline.current.checkpoint_name || mappingForm.base_model_id !== mappingBaseline.current.base_model_id)
+    mappingDraft.update({ dirty, invalid: dirty && (!mappingForm.checkpoint_name.trim() || !mappingForm.base_model_id), failed: createMappingMutation.isError, queued: false, inFlight: createMappingMutation.isPending })
+  }, [showMappingModal, mappingForm, createMappingMutation.isError, createMappingMutation.isPending])
 
   // Handlers
   const handleModelSubmit = (e: React.FormEvent) => {
@@ -106,21 +130,44 @@ export function BaseModelSection() {
   const openModelForm = (model: BaseModel | null) => {
     setEditingModel(model)
     setModelForm(model ? { name: model.name, description: model.description || '' } : { name: '', description: '' })
+    modelBaseline.current = model ? { name: model.name, description: model.description || '' } : { name: '', description: '' }
     setShowModelManager(false)
     setShowModelModal(true)
+  }
+
+  const openMappingForm = () => {
+    setMappingForm({ checkpoint_name: '', base_model_id: '' })
+    mappingBaseline.current = { checkpoint_name: '', base_model_id: '' }
+    setShowMappingModal(true)
   }
 
   const closeModelForm = () => {
     setShowModelModal(false)
     setEditingModel(null)
     setShowModelManager(true)
+    modelDraft.clear()
+  }
+  const closeMappingForm = () => {
+    setShowMappingModal(false)
+    setMappingForm({ checkpoint_name: '', base_model_id: '' })
+    mappingDraft.clear()
+  }
+  const updateModelDraft = (next: { name: string; description: string }) => {
+    setModelForm(next)
+    const dirty = next.name !== modelBaseline.current.name || next.description !== modelBaseline.current.description
+    modelDraft.update({ dirty, invalid: dirty && !next.name.trim(), failed: false, queued: false, inFlight: false })
+  }
+  const updateMappingDraft = (next: { checkpoint_name: string; base_model_id: string }) => {
+    setMappingForm(next)
+    const dirty = next.checkpoint_name !== mappingBaseline.current.checkpoint_name || next.base_model_id !== mappingBaseline.current.base_model_id
+    mappingDraft.update({ dirty, invalid: dirty && (!next.checkpoint_name.trim() || !next.base_model_id), failed: false, queued: false, inFlight: false })
   }
 
   return (
     <>
-    <div className="space-y-6">
+    <div className="space-y-3 md:space-y-6">
       {/* Checkpoint Mappings Management */}
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
             <Layers size={13} className="text-[#7C6FDD]" />
@@ -137,7 +184,7 @@ export function BaseModelSection() {
             </button>
             <button
               type="button"
-              onClick={() => setShowMappingModal(true)}
+              onClick={openMappingForm}
               className="flex min-h-11 touch-manipulation items-center gap-1 rounded-lg bg-[#7C6FDD] px-3 hover:bg-[#6d62cc] text-white text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <Plus size={11} />マッピング追加
@@ -209,7 +256,7 @@ export function BaseModelSection() {
         size="lg"
         sheetMaxHeightClass="max-h-[85dvh]"
       >
-        <div className="min-w-0 space-y-4 p-4 sm:p-6">
+        <div className="min-w-0 space-y-3 md:space-y-4 p-3 md:p-4 lg:p-6">
           <div className="flex items-center justify-between gap-2 border-b border-[rgba(255,255,255,0.06)] pb-3">
             <h3 className="text-sm font-semibold text-zinc-200">ベースモデルマスタ管理</h3>
             <div className="flex items-center gap-2">
@@ -291,7 +338,7 @@ export function BaseModelSection() {
         size="sm"
         sheetMaxHeightClass="max-h-[85dvh]"
       >
-        <div className="min-w-0 space-y-4 p-4 sm:p-6">
+        <div className="min-w-0 space-y-3 md:space-y-4 p-3 md:p-4 lg:p-6">
           <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] pb-3">
             <h3 id="base-model-dialog-title" className="text-sm font-semibold text-zinc-200">
               {editingModel ? 'ベースモデル編集' : 'ベースモデル作成'}
@@ -307,7 +354,7 @@ export function BaseModelSection() {
                 type="text"
                 required
                 value={modelForm.name}
-                onChange={(e) => setModelForm({ ...modelForm, name: e.target.value })}
+                onChange={(e) => updateModelDraft({ ...modelForm, name: e.target.value })}
                 className={inputCls}
                 placeholder="モデル名を入力してください"
               />
@@ -316,7 +363,7 @@ export function BaseModelSection() {
               <label className="text-[11px] text-zinc-400 font-medium">説明（任意）</label>
               <textarea
                 value={modelForm.description}
-                onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })}
+                onChange={(e) => updateModelDraft({ ...modelForm, description: e.target.value })}
                 className={`${inputCls} min-h-20 resize-none`}
                 placeholder="モデルの説明を入力してください"
               />
@@ -354,7 +401,7 @@ export function BaseModelSection() {
             <h3 id="checkpoint-mapping-dialog-title" className="text-sm font-semibold text-zinc-200">
               チェックポイントマッピング追加
             </h3>
-            <button onClick={() => setShowMappingModal(false)} className={iconActionCls} aria-label="閉じる">
+            <button onClick={closeMappingForm} className={iconActionCls} aria-label="閉じる">
               <X size={16} />
             </button>
           </div>
@@ -376,7 +423,7 @@ export function BaseModelSection() {
                   type="text"
                   required
                   value={mappingForm.checkpoint_name}
-                  onChange={(e) => setMappingForm({ ...mappingForm, checkpoint_name: e.target.value })}
+                  onChange={(e) => updateMappingDraft({ ...mappingForm, checkpoint_name: e.target.value })}
                   className={inputCls}
                   placeholder="checkpoint_name.safetensors"
                 />
@@ -385,7 +432,7 @@ export function BaseModelSection() {
                   <select
                     required
                     value={mappingForm.checkpoint_name}
-                    onChange={(e) => setMappingForm({ ...mappingForm, checkpoint_name: e.target.value })}
+                    onChange={(e) => updateMappingDraft({ ...mappingForm, checkpoint_name: e.target.value })}
                     className={`${inputCls} flex-1`}
                   >
                     <option value="">チェックポイントを選択...</option>
@@ -411,7 +458,7 @@ export function BaseModelSection() {
               <select
                 required
                 value={mappingForm.base_model_id}
-                onChange={(e) => setMappingForm({ ...mappingForm, base_model_id: e.target.value })}
+                onChange={(e) => updateMappingDraft({ ...mappingForm, base_model_id: e.target.value })}
                 className={inputCls}
               >
                 <option value="">ベースモデルを選択してください...</option>
@@ -424,7 +471,7 @@ export function BaseModelSection() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowMappingModal(false)}
+                onClick={closeMappingForm}
                 className={`${modalActionCls} bg-zinc-800 border border-[rgba(255,255,255,0.08)] hover:bg-zinc-700 text-zinc-300`}
               >
                 キャンセル

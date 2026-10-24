@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ServiceConnectionCard } from '../ServiceConnectionCard'
@@ -53,6 +54,22 @@ afterEach(() => {
 })
 
 describe('ServiceConnectionCard', () => {
+  it('[REQ-381/AC-11] wraps service status before its accessible 44px log action while keeping the desktop row', () => {
+    setup()
+    const row = screen.getByRole('listitem', { name: 'ComfyUI' })
+    const rowLayout = row.querySelector(':scope > div')
+    const serviceTitle = within(row).getByText('ComfyUI')
+    const serviceStatus = within(row).getByText('ComfyUI: 停止中')
+    const logButton = within(row).getByRole('button', { name: /^ログ/ })
+
+    expect(rowLayout).toHaveClass('grid', 'grid-cols-[minmax(0,1fr)_auto]', 'md:flex')
+    expect(serviceTitle).toHaveClass('min-w-0', 'break-words', 'md:truncate')
+    expect(serviceTitle).not.toHaveClass('truncate')
+    expect(serviceStatus).toHaveClass('col-start-2', 'row-start-2', 'break-words', 'md:whitespace-nowrap')
+    expect(logButton).toHaveClass('col-span-2', 'row-start-3', 'min-h-[44px]', 'min-w-[44px]', 'w-full', 'md:w-auto')
+    expect(within(row).getByRole('img', { name: '死活: 停止中' })).toBeInTheDocument()
+  })
+
   it('[REQ-380/AC-2] drains a pre-POST status GET and a fresh post-ACK GET before unlocking', async () => {
     const realManagerApi = (await vi.importActual<typeof import('../../../../api/domains/systemManager')>('../../../../api/domains/systemManager')).systemManagerApi
     const realUseManagerStatus = (await vi.importActual<typeof import('../../../../hooks/useManagerStatus')>('../../../../hooks/useManagerStatus')).useManagerStatus

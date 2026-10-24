@@ -273,6 +273,24 @@ describe('SettingsPage Integration', () => {
       }
     })
 
+    it('[REQ-381/AC-2] applies mobile density only to explicit Settings shell and Base Model wrappers', () => {
+      window.location.hash = '#workflows'
+      renderComponent()
+
+      const shell = screen.getByTestId('settings-page-shell')
+      const content = screen.getByTestId('settings-content-container').parentElement
+      const baseModel = screen.getByTestId('settings-card-basemodel')
+      expect(shell.className).toContain('gap-3')
+      expect(shell.className).toContain('md:gap-6')
+      expect(content?.className).toContain('p-3')
+      expect(content?.className).toContain('md:p-5')
+      expect(content?.className).toContain('touch-pan-y')
+      expect(content?.className).toContain('md:touch-auto')
+      expect(document.getElementById('settings-panel-workflows')?.className).toContain('space-y-3')
+      expect(document.getElementById('settings-panel-workflows')?.className).toContain('md:space-y-6')
+      expect(baseModel.className).toContain('settings-density-basemodel')
+    })
+
     it('[REQ-291/AC-2] retains an open tone preset draft when switching tabs', async () => {
       renderComponent()
       fireEvent.click(await screen.findByText('プリセット追加'))
@@ -344,6 +362,7 @@ describe('SettingsPage Integration', () => {
       await waitFor(() => expect(window.location.hash).toBe('#system'))
       expect(systemStatsSubscription.start).toHaveBeenCalledTimes(1)
       expect(systemStatsSubscription.stop).not.toHaveBeenCalled()
+      act(() => useGenerationStore.getState().setSystemWsConnected(true))
       act(() => useGenerationStore.getState().setSystemStats({
         cpu_pct: 10,
         ram_used_gb: 4,
@@ -647,8 +666,11 @@ describe('SettingsPage Integration', () => {
       fireEvent.click(screen.getByRole('button', { name: 'VRAM安全ガード設定を保存' }))
       await waitFor(() => expect(resolveSave).toBeTypeOf('function'))
       fireEvent.change(input, { target: { value: '6' } })
-      resolveSave({ ...initialVramSettings, vram_min_free_gb: 5 })
-      await waitFor(() => expect(screen.getByText('設定を保存しました')).toBeInTheDocument())
+      await act(async () => {
+        resolveSave({ ...initialVramSettings, vram_min_free_gb: 5 })
+        await Promise.resolve()
+      })
+      expect(screen.queryByText('設定を保存しました')).not.toBeInTheDocument()
       expect(input).toHaveValue(6)
       expect(screen.getByRole('status')).toHaveTextContent('未保存')
     })

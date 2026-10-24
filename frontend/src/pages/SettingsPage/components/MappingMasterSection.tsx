@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Settings,
@@ -43,6 +43,11 @@ import { StageManagerModal } from '../../../components/StageManagerModal'
 import { MappingMasterDeleteModal } from '../../../components/SettingsComponents'
 import { ParamTypeMasterModal } from '../../../components/ParamTypeMasterModal'
 import { ParamTypeMasterManagerModal } from '../../../components/ParamTypeMasterManagerModal'
+import { useSettingsMobile } from '../hooks/useSettingsMobile'
+import { useSettingsDraftRegistration, type SettingsDraftRisk } from '../context/SettingsDraftContext'
+
+const INFO_POPOVER_OPEN_EVENT = 'settings-info-popover-open'
+const MANAGEMENT_MENU_OPEN_EVENT = 'settings-management-menu-open'
 
 export interface MappingMasterSectionProps {
   isExpanded: boolean
@@ -170,6 +175,11 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
 
 export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSectionProps) {
   const qc = useQueryClient()
+  const isMobile = useSettingsMobile()
+  const managementMenuId = `mapping-management-${useId().replace(/:/g, '')}`
+  const managementTriggerRef = useRef<HTMLButtonElement>(null)
+  const managementMenuRef = useRef<HTMLDivElement>(null)
+  const managementItemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [sortedMasters, setSortedMasters] = useState<MappingMasterV2[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
 
@@ -183,6 +193,128 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   const [paramTypeModalMode, setParamTypeModalMode] = useState<'create' | 'edit' | null>(null)
   const [editingParamType, setEditingParamType] = useState<ParamTypeMaster | null>(null)
   const [showParamTypeManager, setShowParamTypeManager] = useState(false)
+  const [showManagementMenu, setShowManagementMenu] = useState(false)
+
+  const draftRiskRef = useRef<SettingsDraftRisk>({
+    dirty: false,
+    invalid: false,
+    failed: false,
+    queued: false,
+    inFlight: false,
+  })
+  const draftMutationRef = useRef({ pending: 0, failed: false, session: 0 })
+  const draftSessionRef = useRef(0)
+  const draftRegistrationRef = useRef<{
+    update: (risk: SettingsDraftRisk) => void
+    clear: () => void
+  } | null>(null)
+
+  const publishDraftRisk = (patch: Partial<SettingsDraftRisk> = {}) => {
+    draftRiskRef.current = {
+      ...draftRiskRef.current,
+      ...patch,
+      inFlight: draftMutationRef.current.pending > 0,
+    }
+    draftRegistrationRef.current?.update(draftRiskRef.current)
+  }
+
+  const clearDraftRisk = () => {
+    draftRiskRef.current = {
+      dirty: false,
+      invalid: false,
+      failed: false,
+      queued: false,
+      inFlight: draftMutationRef.current.pending > 0,
+    }
+    draftMutationRef.current.failed = false
+    if (draftMutationRef.current.pending > 0) {
+      draftRegistrationRef.current?.update(draftRiskRef.current)
+    } else {
+      draftRegistrationRef.current?.clear()
+    }
+  }
+
+  const draftRegistration = useSettingsDraftRegistration('mapping-master-form', {
+    cancelQueued: () => {},
+    discardLocal: () => {
+      draftSessionRef.current += 1
+      clearDraftRisk()
+      setShowEditModal(false)
+      setSelectedMaster(null)
+      setParamTypeModalMode(null)
+      setEditingParamType(null)
+      setShowParamTypeManager(false)
+    },
+  })
+  draftRegistrationRef.current = draftRegistration
+
+  const startDraftMutation = () => {
+    draftMutationRef.current.pending += 1
+    draftMutationRef.current.failed = false
+    draftMutationRef.current.session = draftSessionRef.current
+    publishDraftRisk({ dirty: true, failed: false })
+  }
+  const failDraftMutation = () => {
+    if (draftMutationRef.current.session !== draftSessionRef.current) return
+    draftMutationRef.current.failed = true
+    publishDraftRisk({ dirty: true, failed: true })
+  }
+  const settleDraftMutation = () => {
+    draftMutationRef.current.pending = Math.max(0, draftMutationRef.current.pending - 1)
+    if (draftMutationRef.current.pending === 0 && !draftRiskRef.current.dirty && !draftMutationRef.current.failed) {
+      clearDraftRisk()
+      return
+    }
+    publishDraftRisk({ failed: draftMutationRef.current.failed })
+  }
+  const handleDraftInputCapture = (event: React.FormEvent<HTMLDivElement>) => {
+    const target = event.target
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return
+    publishDraftRisk({ dirty: true, invalid: !target.validity.valid })
+  }
+
+  useEffect(() => {
+    if (!showManagementMenu || !isMobile) return
+    window.dispatchEvent(new Event(MANAGEMENT_MENU_OPEN_EVENT))
+    managementItemRefs.current[0]?.focus()
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (managementTriggerRef.current?.contains(target) || managementMenuRef.current?.contains(target)) return
+      setShowManagementMenu(false)
+    }
+    const handleOtherPopover = () => setShowManagementMenu(false)
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener(INFO_POPOVER_OPEN_EVENT, handleOtherPopover)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener(INFO_POPOVER_OPEN_EVENT, handleOtherPopover)
+    }
+  }, [isMobile, showManagementMenu])
+
+  useEffect(() => {
+    if (!isMobile) setShowManagementMenu(false)
+  }, [isMobile])
+
+  const handleManagementMenuKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const itemCount = 2
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown') nextIndex = (index + 1) % itemCount
+    if (event.key === 'ArrowUp') nextIndex = (index - 1 + itemCount) % itemCount
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = itemCount - 1
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setShowManagementMenu(false)
+      managementTriggerRef.current?.focus()
+      return
+    }
+    if (nextIndex !== null) {
+      event.preventDefault()
+      managementItemRefs.current[nextIndex]?.focus()
+    }
+  }
 
   // Queries
   const { data: masters, isLoading: isLoadingMasters } = useQuery({
@@ -223,8 +355,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
 
   const createMaster = useMutation({
     mutationFn: (data: MappingMasterV2Create) => mappingMastersApi.create(data),
+    onMutate: startDraftMutation,
+    onError: failDraftMutation,
+    onSettled: settleDraftMutation,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mapping-masters'] })
+      if (draftMutationRef.current.session !== draftSessionRef.current) return
+      clearDraftRisk()
       setShowEditModal(false)
       setSelectedMaster(null)
     },
@@ -233,8 +370,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   const updateMaster = useMutation({
     mutationFn: ({ id, data }: { id: number; data: MappingMasterV2Update }) =>
       mappingMastersApi.update(id, data),
+    onMutate: startDraftMutation,
+    onError: failDraftMutation,
+    onSettled: settleDraftMutation,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mapping-masters'] })
+      if (draftMutationRef.current.session !== draftSessionRef.current) return
+      clearDraftRisk()
       setShowEditModal(false)
       setSelectedMaster(null)
     },
@@ -258,8 +400,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
 
   const createParamTypeMutation = useMutation({
     mutationFn: paramTypeMastersApi.create,
+    onMutate: startDraftMutation,
+    onError: failDraftMutation,
+    onSettled: settleDraftMutation,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['param-type-masters'] })
+      if (draftMutationRef.current.session !== draftSessionRef.current) return
+      clearDraftRisk()
       setParamTypeModalMode(null)
       setEditingParamType(null)
       setShowParamTypeManager(true)
@@ -269,8 +416,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   const updateParamTypeMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: ParamTypeMasterCreate }) =>
       paramTypeMastersApi.update(id, data),
+    onMutate: startDraftMutation,
+    onError: failDraftMutation,
+    onSettled: settleDraftMutation,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['param-type-masters'] })
+      if (draftMutationRef.current.session !== draftSessionRef.current) return
+      clearDraftRisk()
       setParamTypeModalMode(null)
       setEditingParamType(null)
       setShowParamTypeManager(true)
@@ -309,11 +461,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   }
 
   const handleOpenCreateModal = () => {
+    draftSessionRef.current += 1
     setSelectedMaster(null)
     setShowEditModal(true)
   }
 
   const handleOpenEditModal = (mm: MappingMasterV2) => {
+    draftSessionRef.current += 1
     setSelectedMaster(mm)
     setShowEditModal(true)
   }
@@ -341,36 +495,99 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
       <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
         <div
           onClick={onToggle}
-          className="w-full flex items-center justify-between px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none"
+          className="w-full flex flex-col gap-2 px-4 py-3.5 bg-surface hover:bg-white/5 transition-colors text-left cursor-pointer select-none md:flex-row md:items-center md:justify-between"
         >
           <div className="flex items-center gap-2">
             <Settings size={15} className="text-[#7C6FDD]" />
             <h2 className="text-sm font-semibold text-zinc-300">Node Mapping Masters</h2>
             <span className="text-xs text-zinc-600">— 編集ノードのマッピングマスタ設定</span>
           </div>
-          <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => setShowStageModal(true)}
-              className="flex items-center gap-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 font-medium transition-colors"
-            >
-              <Layers size={13} /> ステージ管理
-            </button>
-            <button
-              type="button"
-              aria-haspopup="dialog"
-              onClick={() => setShowParamTypeManager(true)}
-              className="flex items-center gap-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 font-medium transition-colors"
-            >
-              カスタム型マスタ
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenCreateModal}
-              className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all"
-            >
-              <Plus size={12} /> Add Master
-            </button>
+          <div className="flex items-center justify-between gap-2 md:justify-end md:gap-3" onClick={(e) => e.stopPropagation()}>
+            {isMobile ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-[#7C6FDD] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#6d62cc] touch-manipulation"
+                >
+                  <Plus size={12} /> Add Master
+                </button>
+                <div className="relative">
+                  <button
+                    ref={managementTriggerRef}
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={showManagementMenu}
+                    aria-controls={managementMenuId}
+                    onClick={() => setShowManagementMenu((open) => !open)}
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs font-medium text-zinc-200 touch-manipulation"
+                  >
+                    管理 ⋯
+                  </button>
+                  {showManagementMenu && (
+                    <div
+                      ref={managementMenuRef}
+                      id={managementMenuId}
+                      role="menu"
+                      aria-label="Mapping master管理"
+                      className="absolute right-0 top-full z-30 mt-1 min-w-48 rounded-lg border border-zinc-700 bg-zinc-900 p-1 shadow-xl"
+                    >
+                      <button
+                        ref={(node) => { managementItemRefs.current[0] = node }}
+                        type="button"
+                        role="menuitem"
+                        onKeyDown={(event) => handleManagementMenuKeyDown(event, 0)}
+                        onClick={() => {
+                          setShowManagementMenu(false)
+                          setShowStageModal(true)
+                        }}
+                        className="flex min-h-11 w-full items-center rounded px-3 text-left text-sm text-zinc-200 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+                      >
+                        <Layers size={14} className="mr-2" /> ステージ管理
+                      </button>
+                      <button
+                        ref={(node) => { managementItemRefs.current[1] = node }}
+                        type="button"
+                        role="menuitem"
+                        onKeyDown={(event) => handleManagementMenuKeyDown(event, 1)}
+                        onClick={() => {
+                          setShowManagementMenu(false)
+                          setShowParamTypeManager(true)
+                        }}
+                        className="flex min-h-11 w-full items-center rounded px-3 text-left text-sm text-zinc-200 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+                      >
+                        カスタム型マスタ
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowStageModal(true)}
+                  className="flex items-center gap-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 font-medium transition-colors"
+                >
+                  <Layers size={13} /> ステージ管理
+                </button>
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={() => setShowParamTypeManager(true)}
+                  className="flex items-center gap-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg border border-zinc-700 font-medium transition-colors"
+                >
+                  カスタム型マスタ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="flex items-center gap-1 text-xs bg-[#7C6FDD] text-white px-3 py-1.5 rounded-lg font-medium hover:bg-[#6d62cc] transition-all"
+                >
+                  <Plus size={12} /> Add Master
+                </button>
+              </>
+            )}
             <ChevronDown
               size={16}
               className={`text-zinc-500 transition-transform duration-200 ${
@@ -460,19 +677,23 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
 
       {/* Mapping Master Edit Modal */}
       {showEditModal && (
-        <MappingMasterEditModal
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false)
-            setSelectedMaster(null)
-          }}
-          master={selectedMaster}
-          groups={groups}
-          stages={stages}
-          paramTypeMasters={paramTypeMasters}
-          onSave={handleSaveMaster}
-          isPending={createMaster.isPending || updateMaster.isPending}
-        />
+        <div onChangeCapture={handleDraftInputCapture}>
+          <MappingMasterEditModal
+            isOpen={showEditModal}
+            onClose={() => {
+              draftSessionRef.current += 1
+              clearDraftRisk()
+              setShowEditModal(false)
+              setSelectedMaster(null)
+            }}
+            master={selectedMaster}
+            groups={groups}
+            stages={stages}
+            paramTypeMasters={paramTypeMasters}
+            onSave={handleSaveMaster}
+            isPending={createMaster.isPending || updateMaster.isPending}
+          />
+        </div>
       )}
 
       {/* Stage Manager Modal */}
@@ -506,11 +727,13 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
         items={paramTypeMasters}
         onClose={() => setShowParamTypeManager(false)}
         onCreate={() => {
+          draftSessionRef.current += 1
           setShowParamTypeManager(false)
           setEditingParamType(null)
           setParamTypeModalMode('create')
         }}
         onEdit={(item) => {
+          draftSessionRef.current += 1
           setShowParamTypeManager(false)
           setEditingParamType(item)
           setParamTypeModalMode('edit')
@@ -520,23 +743,31 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
 
       {/* Param Type Master Modal */}
       {paramTypeModalMode && (
-        <ParamTypeMasterModal
-          mode={paramTypeModalMode}
-          initial={editingParamType ?? undefined}
-          isPending={createParamTypeMutation.isPending || updateParamTypeMutation.isPending}
-          onClose={() => {
-            setParamTypeModalMode(null)
-            setEditingParamType(null)
-            setShowParamTypeManager(true)
-          }}
-          onSubmit={async (data) => {
-            if (paramTypeModalMode === 'create') {
-              await createParamTypeMutation.mutateAsync(data)
-            } else if (editingParamType) {
-              await updateParamTypeMutation.mutateAsync({ id: editingParamType.id, data })
-            }
-          }}
-        />
+        <div onChangeCapture={handleDraftInputCapture}>
+          <ParamTypeMasterModal
+            mode={paramTypeModalMode}
+            initial={editingParamType ?? undefined}
+            isPending={createParamTypeMutation.isPending || updateParamTypeMutation.isPending}
+            onClose={() => {
+              draftSessionRef.current += 1
+              clearDraftRisk()
+              setParamTypeModalMode(null)
+              setEditingParamType(null)
+              setShowParamTypeManager(true)
+            }}
+            onSubmit={async (data) => {
+              try {
+                if (paramTypeModalMode === 'create') {
+                  await createParamTypeMutation.mutateAsync(data)
+                } else if (editingParamType) {
+                  await updateParamTypeMutation.mutateAsync({ id: editingParamType.id, data })
+                }
+              } catch {
+                // onError records the failed draft and keeps route protection active.
+              }
+            }}
+          />
+        </div>
       )}
     </>
   )

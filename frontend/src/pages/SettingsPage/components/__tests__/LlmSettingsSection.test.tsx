@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmSettingsGroup } from '../LlmSettingsSection'
+import { server } from '../../../../test/mocks/server'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
@@ -42,6 +44,41 @@ function mount(group?: LlmSettingsGroup, footer?: React.ReactNode, expanded = fa
   return { ...view, client }
 }
 
+async function loadTransportBackedComponent() {
+  vi.doUnmock('../../../../api/client')
+  vi.resetModules()
+  return (await import('../LlmSettingsSection')).LlmSettingsSection
+}
+
+function mountTransportBacked(Component: typeof LlmSettingsSection, group?: LlmSettingsGroup) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const view = render(<QueryClientProvider client={client}><Component {...props(group)} isExpandedModel isExpandedPrompts isExpandedParams /></QueryClientProvider>)
+  return { ...view, client }
+}
+
+function installLlmTransport() {
+  const serverRecords = records.map((record) => ({ ...record }))
+  const writes: Array<{ key: string; content: string }> = []
+  server.use(
+    http.get('/api/llm-prompts', () => HttpResponse.json(serverRecords.map((record) => ({ ...record })))),
+    http.get('/api/llm-prompts/models', () => HttpResponse.json(['model-a', 'model-b'])),
+    http.get('/api/llm-prompts/current-model', () => HttpResponse.json({ id: 0, key: 'llm_current_model', content: 'model-a', description: null, updated_at: '2026-01-01T00:00:00Z' })),
+    http.put('/api/llm-prompts/current-model', async ({ request }) => {
+      const body = await request.json() as { model: string }
+      return HttpResponse.json({ id: 0, key: 'llm_current_model', content: body.model, description: null, updated_at: '2026-01-01T00:00:00Z' })
+    }),
+    http.put('/api/llm-prompts/:key', async ({ params, request }) => {
+      const key = String(params.key)
+      const body = await request.json() as { content: string }
+      writes.push({ key, content: body.content })
+      const index = serverRecords.findIndex((record) => record.key === key)
+      if (index >= 0) serverRecords[index] = { ...serverRecords[index], content: body.content }
+      return HttpResponse.json({ id: index, key, content: body.content, description: null, updated_at: '2026-01-01T00:00:00Z' })
+    }),
+  )
+  return writes
+}
+
 const keysIn = (container: HTMLElement, selector: string) =>
   [...container.querySelectorAll<HTMLElement>(selector)].map((node) => node.id.replace(/^(prompt-expand-|prompt-content-|settings-)/, ''))
 const ready = async (container: HTMLElement) =>
@@ -51,7 +88,33 @@ const paramInputs = (container: HTMLElement, heading: string) => {
   return [...(title?.closest('.rounded-xl')?.querySelectorAll<HTMLInputElement>('input[type="number"]') ?? [])]
 }
 
+const originalMatchMedia = window.matchMedia
+function setMobileViewport(matches: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn((media: string) => ({
+      matches,
+      media,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+}
+
 describe('LlmSettingsSection grouped contracts', () => {
+  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+
+  afterAll(() => server.close())
+
+  afterEach(() => {
+    server.resetHandlers()
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia })
+  })
+
   beforeEach(() => {
     api.list.mockReset().mockImplementation(async () => records.map((record) => ({ ...record })))
     api.getModels.mockReset().mockResolvedValue(['model-a', 'model-b'])
@@ -417,5 +480,140 @@ describe('LlmSettingsSection grouped contracts', () => {
       expect(container.querySelector('#prompt-content-scene_generate')).toBeDisabled()
       expect(container.textContent).toContain('このプロンプトはまだ取得されていません。')
     })
+  })
+
+  it('[REQ-381/AC-7] commits valid mobile numeric edits on blur and Enter only once', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const temperature = paramInputs(container, 'プロンプト診断パラメータ設定')[0]
+    fireEvent.change(temperature, { target: { value: '0.8' } })
+    expect(writes).toHaveLength(0)
+    fireEvent.keyDown(temperature, { key: 'Enter' })
+    fireEvent.blur(temperature)
+    await waitFor(() => expect(writes).toEqual([{
+      key: 'llm_params_audit',
+      content: JSON.stringify({ temperature: 0.8, top_p: 1, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+    }]))
+  })
+
+  it('[REQ-381/AC-7] preserves explicit desktop numeric Save', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(false)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const temperature = paramInputs(container, 'プロンプト診断パラメータ設定')[0]
+    fireEvent.change(temperature, { target: { value: '0.8' } })
+    fireEvent.blur(temperature)
+    expect(writes).toHaveLength(0)
+    const save = [...container.querySelectorAll('h3')]
+      .find((node) => node.textContent === 'プロンプト診断パラメータ設定')
+      ?.closest('.rounded-xl')?.querySelector('button')
+    fireEvent.click(save!)
+    await waitFor(() => expect(writes.map(({ key }) => key)).toContain('llm_params_audit'))
+    expect(writes[0]).toEqual({
+      key: 'llm_params_audit',
+      content: JSON.stringify({ temperature: 0.8, top_p: 1, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+    })
+  })
+
+  it('[REQ-381/AC-7] does not commit an empty invalid numeric draft', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const temperature = paramInputs(container, 'プロンプト診断パラメータ設定')[0]
+    fireEvent.change(temperature, { target: { value: '' } })
+    fireEvent.blur(temperature)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(temperature.value).toBe('')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('[REQ-381/AC-7] keeps exact numeric text until blur and sends the parsed number once', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const temperature = paramInputs(container, 'プロンプト診断パラメータ設定')[0]
+    fireEvent.change(temperature, { target: { value: '0.50' } })
+    expect(temperature.value).toBe('0.50')
+    expect(writes).toHaveLength(0)
+    fireEvent.blur(temperature)
+    await waitFor(() => expect(writes).toEqual([{
+      key: 'llm_params_audit',
+      content: JSON.stringify({ temperature: 0.5, top_p: 1, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+    }]))
+  })
+
+  it('[REQ-381/AC-7] blocks the whole resource while any numeric field is invalid', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const [temperature, , topP] = paramInputs(container, 'プロンプト診断パラメータ設定')
+    fireEvent.change(temperature, { target: { value: '' } })
+    fireEvent.change(topP, { target: { value: '0.8' } })
+    fireEvent.blur(topP)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(temperature.value).toBe('')
+    expect(topP.value).toBe('0.8')
+    expect(writes).toHaveLength(0)
+
+    fireEvent.change(temperature, { target: { value: '0.6' } })
+    fireEvent.blur(temperature)
+    await waitFor(() => expect(writes).toEqual([{
+      key: 'llm_params_audit',
+      content: JSON.stringify({ temperature: 0.6, top_p: 0.8, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+    }]))
+  })
+
+  it('[REQ-381/AC-7] commits mobile ranges on pointerup or keyboard release but not pointercancel', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const heading = [...container.querySelectorAll('h3')].find((node) => node.textContent === 'プロンプト診断パラメータ設定')
+    const range = heading?.closest('.rounded-xl')?.querySelector<HTMLInputElement>('input[type="range"]')
+    expect(range).not.toBeNull()
+
+    fireEvent.change(range!, { target: { value: '0.7' } })
+    fireEvent.pointerCancel(range!)
+    fireEvent.blur(range!)
+    expect(writes).toHaveLength(0)
+
+    fireEvent.change(range!, { target: { value: '0.9' } })
+    fireEvent.pointerUp(range!)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0]).toEqual({
+      key: 'llm_params_audit',
+      content: JSON.stringify({ temperature: 0.9, top_p: 1, max_tokens: 1000, presence_penalty: 0, frequency_penalty: 0 }),
+    })
+
+    fireEvent.change(range!, { target: { value: '1.1' } })
+    fireEvent.keyUp(range!, { key: 'ArrowRight' })
+    await waitFor(() => expect(writes).toHaveLength(2))
+  })
+
+  it('[REQ-381/AC-8] keeps prompt drafts explicit-save on mobile', async () => {
+    const writes = installLlmTransport()
+    setMobileViewport(true)
+    const Component = await loadTransportBackedComponent()
+    const { container } = mountTransportBacked(Component, 'prompt')
+    await ready(container)
+    const key = (container.querySelector('#prompt-type-select') as HTMLSelectElement).value
+    const textarea = container.querySelector<HTMLTextAreaElement>(`#prompt-content-${key}`)!
+    fireEvent.change(textarea, { target: { value: 'edited prompt draft' } })
+    fireEvent.blur(textarea)
+    expect(writes).toHaveLength(0)
+    fireEvent.click(container.querySelector(`#prompt-save-${key}`)!)
+    await waitFor(() => expect(writes).toEqual([{ key, content: 'edited prompt draft' }]))
   })
 })

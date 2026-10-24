@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldCheck, ChevronDown, ChevronUp, Save, RefreshCw } from 'lucide-react'
 import { settingsApi, type VramSettings } from '../../../api/client'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 
 import { LS_KEYS } from '../../../utils/localStorageKeys'
+import { useSettingsMobile } from '../hooks/useSettingsMobile'
+import { useSettingsCommit } from '../hooks/useSettingsCommit'
+import { SettingInfoPopover } from './SettingInfoPopover'
+import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
 
 export interface VramGuardSectionProps {
   isExpanded: boolean
@@ -35,9 +39,11 @@ const clampPct = (v: number): number => (Number.isFinite(v) ? Math.min(100, Math
 
 export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps) {
   const qc = useQueryClient()
+  const isMobile = useSettingsMobile()
   const [minFreeGb, setMinFreeGb] = useState<number>(() =>
     readStoredVramLimit(safeGetItem(LS_KEYS.VRAM_GUARD_LIMIT)),
   )
+  const [minFreeGbRaw, setMinFreeGbRaw] = useState(() => String(readStoredVramLimit(safeGetItem(LS_KEYS.VRAM_GUARD_LIMIT))))
   const [guardEnabled, setGuardEnabled] = useState<boolean>(true)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -45,6 +51,28 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
   const draftRef = useRef({ minFreeGb, guardEnabled })
   draftRef.current = { minFreeGb, guardEnabled }
   const dirtyRef = useRef(false)
+  const baselineRef = useRef({ minFreeGb, guardEnabled })
+  const lastValidGbRef = useRef(minFreeGb)
+  const committedRef = useRef({ minFreeGb, guardEnabled })
+  const handledCommitRef = useRef(-1)
+  const commit = useSettingsCommit({
+    save: async (_key, snapshot) => {
+      const values = JSON.parse(snapshot) as { vram_min_free_gb: number; vram_guard_enabled: boolean }
+      await settingsApi.updateVram(values)
+      await qc.invalidateQueries({ queryKey: ['settings-vram'] })
+    },
+  })
+  const draftRegistration = useSettingsDraftRegistration('settings-vram', {
+    cancelQueued: () => commit.stage('settings-vram', null),
+    discardLocal: () => {
+      setMinFreeGb(baselineRef.current.minFreeGb)
+      setMinFreeGbRaw(String(baselineRef.current.minFreeGb))
+      setGuardEnabled(baselineRef.current.guardEnabled)
+      dirtyRef.current = false
+      setHasUnsavedChanges(false)
+      setSaveError(null)
+    },
+  })
 
   // System stats from store
   const systemStats = useGenerationStore((state) => state.systemStats)
@@ -72,48 +100,70 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
     if (vramSettings && !dirtyRef.current) {
       if (typeof vramSettings.vram_min_free_gb === 'number') {
         setMinFreeGb(vramSettings.vram_min_free_gb)
+        setMinFreeGbRaw(String(vramSettings.vram_min_free_gb))
+        lastValidGbRef.current = vramSettings.vram_min_free_gb
       }
       if (typeof vramSettings.vram_guard_enabled === 'boolean') {
         setGuardEnabled(vramSettings.vram_guard_enabled)
       }
+      if (typeof vramSettings.vram_min_free_gb === 'number' && typeof vramSettings.vram_guard_enabled === 'boolean') {
+        baselineRef.current = { minFreeGb: vramSettings.vram_min_free_gb, guardEnabled: vramSettings.vram_guard_enabled }
+        commit.acceptServer('settings-vram', JSON.stringify({ vram_min_free_gb: vramSettings.vram_min_free_gb, vram_guard_enabled: vramSettings.vram_guard_enabled }))
+      }
     }
   }, [vramSettings])
 
-  const updateMutation = useMutation({
-    mutationFn: (data: { vram_min_free_gb: number; vram_guard_enabled?: boolean }) =>
-      settingsApi.updateVram(data),
-    onSuccess: (savedData, submittedData) => {
-      qc.invalidateQueries({ queryKey: ['settings-vram'] })
-      const noNewerEdits = draftRef.current.minFreeGb === submittedData.vram_min_free_gb &&
-        draftRef.current.guardEnabled === submittedData.vram_guard_enabled
-      if (savedData && noNewerEdits) {
-        setMinFreeGb(savedData.vram_min_free_gb)
-        setGuardEnabled(savedData.vram_guard_enabled)
+  useEffect(() => {
+    const state = commit.getState('settings-vram')
+    const rawValue = Number(minFreeGbRaw)
+    const rawValid = minFreeGbRaw.trim() !== '' && Number.isFinite(rawValue) && rawValue >= VRAM_LIMIT_MIN && rawValue <= VRAM_LIMIT_MAX
+    if (state.phase === 'saved' && handledCommitRef.current !== state.revision) {
+      handledCommitRef.current = state.revision
+      baselineRef.current = committedRef.current
+      setToastMessage('設定を保存しました')
+      setTimeout(() => setToastMessage(null), 2000)
+      if (rawValid) {
         dirtyRef.current = false
         setHasUnsavedChanges(false)
-      } else if (noNewerEdits) {
-        dirtyRef.current = false
-        setHasUnsavedChanges(false)
+        draftRegistration.clear()
+      } else {
+        dirtyRef.current = true
+        setHasUnsavedChanges(true)
       }
       setSaveError(null)
-      setToastMessage('設定を保存しました')
-      setTimeout(() => setToastMessage(null), 3000)
-    },
-    onError: (error) => {
-      setSaveError(error instanceof Error ? error.message : String(error))
+    } else if (state.phase === 'error' && handledCommitRef.current !== state.revision) {
+      handledCommitRef.current = state.revision
+      setSaveError(state.error ?? '保存に失敗しました')
       setToastMessage(null)
       dirtyRef.current = true
       setHasUnsavedChanges(true)
-    },
+    }
+    draftRegistration.update({ dirty: dirtyRef.current || state.phase === 'dirty' || state.phase === 'saving', invalid: !rawValid, failed: state.phase === 'error', queued: state.phase === 'dirty', inFlight: state.phase === 'saving' })
   })
 
+  const commitCurrent = () => {
+    const rawValue = Number(minFreeGbRaw)
+    if (minFreeGbRaw.trim() === '' || !Number.isFinite(rawValue) || rawValue < VRAM_LIMIT_MIN || rawValue > VRAM_LIMIT_MAX) {
+      commit.stage('settings-vram', null)
+      setHasUnsavedChanges(true)
+      dirtyRef.current = true
+      return
+    }
+    const values = { vram_min_free_gb: rawValue, vram_guard_enabled: guardEnabled }
+    committedRef.current = { minFreeGb: rawValue, guardEnabled }
+    commit.stage('settings-vram', JSON.stringify(values))
+    commit.commit('settings-vram')
+  }
+
   const handleSave = () => {
+    if (Number(minFreeGbRaw) < VRAM_LIMIT_MIN || Number(minFreeGbRaw) > VRAM_LIMIT_MAX || !Number.isFinite(Number(minFreeGbRaw)) || minFreeGbRaw.trim() === '') {
+      setHasUnsavedChanges(true)
+      dirtyRef.current = true
+      return
+    }
     setSaveError(null)
     setToastMessage(null)
-    updateMutation.mutate({
-      vram_min_free_gb: minFreeGb,
-      vram_guard_enabled: guardEnabled,
-    })
+    commitCurrent()
   }
 
   const updateDraft = (next: { minFreeGb?: number; guardEnabled?: boolean }) => {
@@ -121,8 +171,39 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
     setHasUnsavedChanges(true)
     setSaveError(null)
     setToastMessage(null)
-    if (next.minFreeGb !== undefined) setMinFreeGb(next.minFreeGb)
-    if (next.guardEnabled !== undefined) setGuardEnabled(next.guardEnabled)
+    if (next.minFreeGb !== undefined) {
+      setMinFreeGb(next.minFreeGb)
+      setMinFreeGbRaw(String(next.minFreeGb))
+      lastValidGbRef.current = next.minFreeGb
+      const values = { vram_min_free_gb: next.minFreeGb, vram_guard_enabled: next.guardEnabled ?? guardEnabled }
+      commit.stage('settings-vram', JSON.stringify(values))
+    }
+    if (next.guardEnabled !== undefined) {
+      setGuardEnabled(next.guardEnabled)
+      const values = { vram_min_free_gb: lastValidGbRef.current, vram_guard_enabled: next.guardEnabled }
+      committedRef.current = { minFreeGb: lastValidGbRef.current, guardEnabled: next.guardEnabled }
+      commit.stage('settings-vram', JSON.stringify(values))
+      commit.commit('settings-vram')
+    }
+  }
+
+  const updateRawThreshold = (raw: string) => {
+    setMinFreeGbRaw(raw)
+    dirtyRef.current = true
+    setHasUnsavedChanges(true)
+    setSaveError(null)
+    setToastMessage(null)
+    const value = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(value) || value < VRAM_LIMIT_MIN || value > VRAM_LIMIT_MAX) {
+      commit.stage('settings-vram', null)
+      draftRegistration.update({ dirty: true, invalid: true, failed: false, queued: false, inFlight: false })
+      return
+    }
+    lastValidGbRef.current = value
+    setMinFreeGb(value)
+    const values = { vram_min_free_gb: value, vram_guard_enabled: guardEnabled }
+    commit.stage('settings-vram', JSON.stringify(values))
+    draftRegistration.update({ dirty: true, invalid: false, failed: false, queued: true, inFlight: false })
   }
 
   // Calculate current free VRAM: prefer systemStats, then vramSettings, then null
@@ -169,7 +250,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
       </button>
 
       {isExpanded && (
-        <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-4 font-sans">
+        <div className="p-3 md:p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-3 md:space-y-4 font-sans">
           {isLoading ? (
             <div className="flex items-center gap-2 text-zinc-500 text-xs py-4">
               <RefreshCw size={14} className="animate-spin" />
@@ -195,13 +276,14 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   <button
                     type="button"
                     onClick={handleSave}
-                    disabled={updateMutation.isPending}
+                    disabled={commit.getState('settings-vram').phase === 'saving'}
+                    hidden={isMobile}
                     aria-label="VRAM安全ガード設定を保存"
                     title="VRAM安全ガード設定を保存"
                     className="flex items-center gap-1.5 text-xs px-3.5 py-1.5 rounded-lg font-medium bg-[#7C6FDD] text-white hover:bg-[#6d62cc] disabled:opacity-50 transition-all cursor-pointer"
                   >
                     <Save size={13} />
-                    <span>{updateMutation.isPending ? '保存中...' : '保存'}</span>
+                    <span>{commit.getState('settings-vram').phase === 'saving' ? '保存中...' : '保存'}</span>
                   </button>
                 </div>
               </div>
@@ -287,25 +369,21 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
               <div className="space-y-3 min-w-0">
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs">
-                  <label htmlFor="vram-min-free-input" className="text-zinc-300 font-medium">
-                    最小必要空き容量 (vram_min_free_gb)
-                  </label>
+                  <SettingInfoPopover label="VRAM閾値の説明"><div><label htmlFor="vram-min-free-input" className="text-zinc-300 font-medium">最小必要空き容量 (vram_min_free_gb)</label><p className="max-w-prose text-[11px] text-zinc-500">生成開始前に必要とする空きVRAMです。使用可能なVRAMがこの値を下回る場合、VRAM安全ガードが生成を止めます。</p></div></SettingInfoPopover>
                   <div className="flex items-center gap-1.5">
                     <input
                       id="vram-min-free-input"
+                      aria-label="最小必要空き容量 (vram_min_free_gb)"
                       type="number"
                       min={2.0}
                       max={14.0}
                       step={0.5}
-                      value={minFreeGb}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        if (!isNaN(val)) {
-                          updateDraft({ minFreeGb: val })
-                        }
-                      }}
+                      value={minFreeGbRaw}
+                      onChange={(e) => updateRawThreshold(e.target.value)}
+                      onBlur={() => { if (isMobile) commitCurrent() }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && isMobile) commitCurrent() }}
                       inputMode="decimal"
-                      className="w-20 min-h-11 bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2 py-1 text-right font-mono text-xs text-zinc-100 focus:outline-none focus:border-[#7C6FDD]"
+                      className="w-24 min-h-11 touch-manipulation bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-lg px-2 py-1 text-right font-mono text-xs text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C6FDD]"
                       style={{ touchAction: 'manipulation' }}
                     />
                     <span className="text-xs text-zinc-400">GB</span>
@@ -319,6 +397,10 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   step={0.5}
                   value={minFreeGb}
                   onChange={(e) => updateDraft({ minFreeGb: parseFloat(e.target.value) })}
+                  onPointerUp={() => { if (isMobile) commitCurrent() }}
+                  onKeyUp={() => { if (isMobile) commitCurrent() }}
+                  onBlur={() => { if (isMobile) commitCurrent() }}
+                  onPointerCancel={(event) => event.preventDefault()}
                   aria-label="最小必要空き容量スライダー"
                   className="w-full h-11 bg-transparent accent-[#7C6FDD] cursor-pointer"
                   style={{ touchAction: 'pan-y' }}

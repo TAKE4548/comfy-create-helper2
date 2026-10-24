@@ -17,6 +17,10 @@ import type { LlmPrompt, TranslateTestResponse } from '../../../api/types'
 import { LlmSettingsSection } from './LlmSettingsSection'
 import { TranslationPreviewCard } from './TranslationPreviewCard'
 import { DictionaryPanel } from './DictionaryPanel'
+import { useSettingsMobile } from '../hooks/useSettingsMobile'
+import { useSettingsCommit } from '../hooks/useSettingsCommit'
+import { SettingInfoPopover } from './SettingInfoPopover'
+import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
 
 type TranslationProvider = 'google_cloud' | 'deepl' | 'llm' | 'fugumt'
 
@@ -30,6 +34,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   onToggle,
 }) => {
   const qc = useQueryClient()
+  const isMobile = useSettingsMobile()
 
   const { data: prompts, isLoading: isLoadingPrompts, dataUpdatedAt: promptsDataUpdatedAt } = useQuery<LlmPrompt[]>({
     queryKey: ['llm-prompts'],
@@ -50,6 +55,19 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
   const [credentialsDirty, setCredentialsDirty] = useState(false)
   const [translationExpanded, setTranslationExpanded] = useState(false)
   const [debounceDraft, setDebounceDraft] = useState<number | null>(null)
+  const debounceCommit = useSettingsCommit({ save: async (key, snapshot) => { await llmPromptsApi.update(key, { content: snapshot }); await qc.invalidateQueries({ queryKey: ['llm-prompts'] }) } })
+  const draftRegistration = useSettingsDraftRegistration('translation_debounce', { cancelQueued: () => debounceCommit.stage('translation_debounce', null), discardLocal: () => { setDebounceDraft(null); setSaveError(null) } })
+  const providerDraftRegistration = useSettingsDraftRegistration('translation-provider-form', {
+    cancelQueued: () => {},
+    discardLocal: () => {
+      setProvider(savedProvider ?? 'google_cloud')
+      setApiKey(savedCredentials?.apiKey ?? '')
+      setApiUrl(savedCredentials?.apiUrl ?? '')
+      setProviderDirty(false)
+      setCredentialsDirty(false)
+      setSaveError(null)
+    },
+  })
   const savedSnapshotRef = useRef<{ provider: TranslationProvider; apiKey: string; apiUrl: string; after: number } | null>(null)
   const providerRef = useRef<HTMLInputElement>(null)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -156,6 +174,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
         after: qc.getQueryState(['llm-prompts'])?.dataUpdatedAt ?? Date.now(),
       }
       setSavedProvider(submitted.provider)
+      providerDraftRegistration.clear()
       setProviderDirty(provider !== submitted.provider)
       if (submitted.provider === 'google_cloud' || submitted.provider === 'deepl') {
         setSavedCredentials({ apiKey: submitted.apiKey, apiUrl: submitted.apiUrl })
@@ -234,16 +253,37 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
       (apiKey !== savedCredentials.apiKey || apiUrl !== savedCredentials.apiUrl))))
   const previewEnabled = !configDirty && !saveSettingsMutation.isPending && !saveSettingsMutation.isError
 
-  const handleDebounceChange = async (value: number) => {
+  useEffect(() => {
+    const formDirty = savedProvider !== null && configDirty
+    providerDraftRegistration.update({ dirty: formDirty, invalid: formDirty && authProvider && !apiKey.trim(), failed: saveSettingsMutation.isError, queued: false, inFlight: saveSettingsMutation.isPending })
+  }, [configDirty, savedProvider, authProvider, apiKey, saveSettingsMutation.isError, saveSettingsMutation.isPending])
+
+  const handleDebounceChange = (value: number) => {
     const validated = Math.min(2000, Math.max(300, Math.round(value / 50) * 50))
     setDebounceDraft(validated)
-    try {
-      await llmPromptsApi.update('translation_debounce', { content: String(validated) })
-      qc.invalidateQueries({ queryKey: ['llm-prompts'] })
-    } catch {
-      setDebounceDraft(null)
-    }
+    setSaveError(null)
+    debounceCommit.stage('translation_debounce', String(validated))
+    draftRegistration.update({ dirty: true, invalid: false, failed: false, queued: true, inFlight: false })
+    if (!isMobile) debounceCommit.commit('translation_debounce')
   }
+
+  useEffect(() => {
+    const serverValue = prompts?.find((prompt) => prompt.key === 'translation_debounce')?.content
+    if (serverValue && debounceDraft === null) debounceCommit.acceptServer('translation_debounce', serverValue)
+  }, [promptsDataUpdatedAt])
+
+  useEffect(() => {
+    const state = debounceCommit.getState('translation_debounce')
+    if (state.phase === 'saved') {
+      draftRegistration.clear()
+      const timer = window.setTimeout(() => setDebounceDraft(null), 2000)
+      return () => window.clearTimeout(timer)
+    }
+    if (state.phase === 'error') {
+      setSaveError('翻訳入力待ち時間を保存できませんでした（設定は未保存です）')
+      draftRegistration.update({ dirty: true, invalid: false, failed: true, queued: false, inFlight: false })
+    }
+  })
 
   return (
     <section className="border border-[rgba(255,255,255,0.06)] bg-surface-2/20 rounded-xl overflow-hidden">
@@ -274,7 +314,7 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
       </button>
 
       {isExpanded && (
-        <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-5">
+        <div className="p-3 md:p-4 border-t border-[rgba(255,255,255,0.06)] bg-surface/30 space-y-3 md:space-y-5">
           {isLoadingPrompts ? (
             <div className="flex items-center gap-2 text-zinc-600 text-sm py-4">
               <RefreshCw size={14} className="animate-spin" />
@@ -480,10 +520,12 @@ export const TranslationSettingsSection: React.FC<TranslationSettingsSectionProp
 
               <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-surface-2/30 p-3">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="translation-debounce" className="text-xs text-zinc-300">翻訳入力待ち時間</label>
+                  <SettingInfoPopover label="翻訳入力待ち時間の説明"><label htmlFor="translation-debounce" className="text-xs text-zinc-300">翻訳入力待ち時間</label><p className="text-[11px] text-zinc-500">入力が止まってから翻訳を開始するまでの待ち時間です。</p></SettingInfoPopover>
                   <span>{debounceMs}ms</span>
                 </div>
-                <input id="translation-debounce" type="range" min={300} max={2000} step={50} value={debounceMs} onChange={(event) => void handleDebounceChange(Number(event.target.value))} className="w-full" />
+                <input id="translation-debounce" type="range" min={300} max={2000} step={50} value={debounceMs} onChange={(event) => handleDebounceChange(Number(event.target.value))} onPointerUp={() => { if (isMobile) debounceCommit.commit('translation_debounce') }} onKeyUp={() => { if (isMobile) debounceCommit.commit('translation_debounce') }} onBlur={() => { if (isMobile) debounceCommit.commit('translation_debounce') }} onPointerCancel={(event) => event.preventDefault()} className="min-h-11 w-full touch-manipulation" />
+                {debounceCommit.getState('translation_debounce').phase === 'saved' && <p role="status" className="text-[11px] text-emerald-300">設定を保存しました</p>}
+                {debounceCommit.getState('translation_debounce').phase === 'error' && <button type="button" onClick={() => debounceCommit.retry('translation_debounce')} className="min-h-11 touch-manipulation rounded border border-red-500/40 px-3 text-[11px] text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C6FDD]">再試行</button>}
               </div>
 
               {/* Action Buttons: Save & Test */}

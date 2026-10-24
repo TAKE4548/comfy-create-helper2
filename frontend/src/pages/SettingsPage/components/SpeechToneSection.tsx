@@ -1,15 +1,21 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Wand2, Plus, Pencil, Trash2, RefreshCw, ChevronDown, X, FlaskConical } from 'lucide-react'
 import { speechTonePresetsApi } from '../../../api/client'
 import type { SpeechTonePreset, SpeechTonePresetCreate, SpeechTonePresetUpdate } from '../../../api/types'
 import { STALE_TIMES } from '../../../constants/staleTimes'
 import { Modal } from '../../../components/common/Modal'
+import {
+  useSettingsDraftRegistration,
+  type SettingsDraftControls,
+  type SettingsDraftRisk,
+} from '../context/SettingsDraftContext'
 
 export interface SpeechTonePresetModalProps {
   mode: 'create' | 'edit'
   initial?: SpeechTonePreset | null
   isPending: boolean
+  mutationError?: unknown
   onClose: () => void
   onSubmit: (data: SpeechTonePresetCreate) => void
 }
@@ -18,6 +24,7 @@ export function SpeechTonePresetModal({
   mode,
   initial,
   isPending,
+  mutationError,
   onClose,
   onSubmit,
 }: SpeechTonePresetModalProps) {
@@ -32,6 +39,59 @@ export function SpeechTonePresetModal({
   const [isPreviewing, setIsPreviewing] = useState(false)
   const revision = useRef(0)
   const requestPending = useRef(false)
+
+  useLayoutEffect(() => {
+    const visualViewport = window.visualViewport
+    const backdrop = document.querySelector<HTMLElement>('.speech-tone-preset-modal-backdrop')
+    const dialog = document.querySelector<HTMLElement>('.speech-tone-preset-modal-dialog')
+    if (!visualViewport || !backdrop || !dialog) return
+
+    const syncViewport = () => {
+      const height = `${visualViewport.height}px`
+      const offset = `${visualViewport.offsetTop}px`
+      const maxHeight = `min(85dvh, ${height})`
+      backdrop.style.setProperty('--speech-tone-visual-viewport-height', height)
+      backdrop.style.setProperty('--speech-tone-visual-viewport-offset', offset)
+      dialog.style.setProperty('--speech-tone-visual-viewport-height', height)
+      dialog.style.setProperty('--speech-tone-modal-max-height', maxHeight)
+    }
+
+    syncViewport()
+    visualViewport.addEventListener('resize', syncViewport)
+    visualViewport.addEventListener('scroll', syncViewport)
+    window.addEventListener('resize', syncViewport)
+    return () => {
+      visualViewport.removeEventListener('resize', syncViewport)
+      visualViewport.removeEventListener('scroll', syncViewport)
+      window.removeEventListener('resize', syncViewport)
+      backdrop.style.removeProperty('--speech-tone-visual-viewport-height')
+      backdrop.style.removeProperty('--speech-tone-visual-viewport-offset')
+      dialog.style.removeProperty('--speech-tone-visual-viewport-height')
+      dialog.style.removeProperty('--speech-tone-modal-max-height')
+    }
+  }, [])
+  const controls: SettingsDraftControls = {
+    cancelQueued: () => {},
+    discardLocal: onClose,
+  }
+  const { update: updateDraftRisk, clear: clearDraftRisk } = useSettingsDraftRegistration(
+    `speech-tone:${mode}:${initial?.id ?? 'new'}`,
+    controls,
+  )
+  const dirty = name !== (initial?.name || '') || prompt !== (initial?.prompt || '') ||
+    description !== (initial?.description || '') || sortOrder !== (initial?.sort_order ?? 0)
+  const publishRisk = (overrides: Partial<SettingsDraftRisk> = {}) => updateDraftRisk({
+    dirty,
+    invalid: dirty && (!name.trim() || !prompt.trim()),
+    failed: mutationError != null,
+    queued: false,
+    inFlight: isPending,
+    ...overrides,
+  })
+
+  useEffect(() => {
+    publishRisk()
+  }, [dirty, name, prompt, description, sortOrder, isPending, mutationError])
 
   useEffect(() => () => { revision.current += 1 }, [])
 
@@ -60,7 +120,11 @@ export function SpeechTonePresetModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !prompt.trim()) return
+    if (!name.trim() || !prompt.trim()) {
+      publishRisk({ invalid: dirty })
+      return
+    }
+    publishRisk({ inFlight: true, failed: false })
     onSubmit({
       name: name.trim(),
       prompt: prompt.trim(),
@@ -74,7 +138,9 @@ export function SpeechTonePresetModal({
     <div data-testid="speech-tone-preset-modal">
       <Modal
         isOpen
-        onClose={onClose}
+        onClose={() => { if (!isPending) onClose() }}
+        className="speech-tone-preset-modal-backdrop h-[var(--speech-tone-visual-viewport-height,100dvh)] translate-y-[var(--speech-tone-visual-viewport-offset,0px)] md:h-auto md:translate-y-0"
+        dialogClassName="speech-tone-preset-modal-dialog !max-h-[var(--speech-tone-modal-max-height,85dvh)] md:!max-h-[90dvh] lg:!max-h-full"
         size="lg"
         ariaLabel={title}
         closeOnBackdropClick={false}
@@ -86,7 +152,8 @@ export function SpeechTonePresetModal({
           </h3>
           <button
             type="button"
-            onClick={onClose}
+            disabled={isPending}
+            onClick={() => { clearDraftRisk(); onClose() }}
             className="min-h-11 min-w-11 inline-flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1"
             aria-label="閉じる"
           >
@@ -94,8 +161,13 @@ export function SpeechTonePresetModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
+        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1" style={{ flexWrap: 'nowrap', minWidth: 0 }}>
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3.5 px-4 md:px-5 py-4">
+            {mutationError != null && (
+              <p role="alert" className="break-words text-xs text-red-400">
+                保存に失敗しました: {mutationError instanceof Error ? mutationError.message : String(mutationError)}
+              </p>
+            )}
             <div>
               <label className="block text-xs font-medium text-zinc-300 mb-1">
                 プリセット名 <span className="text-red-400">*</span>
@@ -103,8 +175,9 @@ export function SpeechTonePresetModal({
               <input
                 type="text"
                 required
+                disabled={isPending}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); publishRisk({ dirty: true }) }}
                 placeholder="例: ツンデレ風, お嬢様風"
                 className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
               />
@@ -117,8 +190,9 @@ export function SpeechTonePresetModal({
               <textarea
                 required
                 rows={3}
+                disabled={isPending}
                 value={prompt}
-                onChange={(e) => { invalidatePreview(); setPrompt(e.target.value) }}
+                onChange={(e) => { invalidatePreview(); setPrompt(e.target.value); publishRisk({ dirty: true }) }}
                 placeholder="例: ツンデレな口調で。「べ、別に〜じゃないんだからね！」のような言い回しに変換してください。"
                 className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
               />
@@ -136,8 +210,9 @@ export function SpeechTonePresetModal({
               <label className="block text-xs font-medium text-zinc-300 mb-1">説明（任意）</label>
               <input
                 type="text"
+                disabled={isPending}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => { setDescription(e.target.value); publishRisk({ dirty: true }) }}
                 placeholder="例: キャラクターAの標準的な口調"
                 className="min-h-11 w-full bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
               />
@@ -147,17 +222,19 @@ export function SpeechTonePresetModal({
               <label className="block text-xs font-medium text-zinc-300 mb-1">表示順 (sort_order)</label>
               <input
                 type="number"
+                disabled={isPending}
                 value={sortOrder}
-                onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) => { setSortOrder(parseInt(e.target.value, 10) || 0); publishRisk({ dirty: true }) }}
                 className="min-h-11 w-28 bg-[#1F1F25] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-purple-500"
               />
             </div>
           </div>
 
-          <div className="shrink-0 flex justify-end gap-2 px-4 md:px-5 py-3 border-t border-[rgba(255,255,255,0.06)]">
+          <div className="shrink-0 w-full min-w-0 flex flex-nowrap justify-end gap-2 px-4 md:px-5 py-3 border-t border-[rgba(255,255,255,0.06)]" style={{ flexWrap: 'nowrap', minWidth: 0 }}>
             <button
               type="button"
-              onClick={onClose}
+              disabled={isPending}
+              onClick={() => { clearDraftRisk(); onClose() }}
               className="min-h-11 min-w-11 px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
             >
               キャンセル
@@ -420,6 +497,7 @@ export function SpeechToneSection({ isExpanded, onToggle }: SpeechToneSectionPro
           mode={tonePresetModalMode}
           initial={editingTonePreset}
           isPending={createTonePresetMutation.isPending || updateTonePresetMutation.isPending}
+          mutationError={tonePresetModalMode === 'create' ? createTonePresetMutation.error : updateTonePresetMutation.error}
           onClose={() => {
             setTonePresetModalMode(null)
             setEditingTonePreset(null)

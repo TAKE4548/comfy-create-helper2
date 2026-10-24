@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Languages, MessageCircle, MessageSquare, Settings, Workflow } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -19,6 +19,24 @@ const TABS: ReadonlyArray<{ id: SettingsTabId; label: string; shortLabel: string
 
 export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): React.JSX.Element {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  useEffect(() => {
+    const activeIndex = TABS.findIndex((tab) => tab.id === activeTab)
+    const activeButton = tabRefs.current[activeIndex]
+    activeButton?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    const tablist = activeButton?.closest<HTMLElement>('[role="tablist"]')
+    if (!activeButton || !tablist) return
+
+    const tablistRect = tablist.getBoundingClientRect()
+    const visibleLeft = tablistRect.left + tablist.clientLeft
+    const visibleRight = visibleLeft + tablist.clientWidth
+    const buttonRect = activeButton.getBoundingClientRect()
+    if (buttonRect.left < visibleLeft) {
+      tablist.scrollLeft -= visibleLeft - buttonRect.left + 0.5
+    } else if (buttonRect.right > visibleRight) {
+      tablist.scrollLeft += buttonRect.right - visibleRight + 0.5
+    }
+  }, [activeTab])
 
   const selectAndFocus = (index: number) => {
     const tab = TABS[index]
@@ -42,7 +60,7 @@ export function SettingsTabBar({ activeTab, onSelect }: SettingsTabBarProps): Re
 
   return (
     <div className="relative">
-      <div role="tablist" aria-label="設定カテゴリー" aria-orientation="horizontal" className="flex snap-x snap-mandatory overflow-x-auto md:grid md:grid-cols-5">
+      <div role="tablist" aria-label="設定カテゴリー" aria-orientation="horizontal" data-settings-swipe-ignore="true" className="flex min-w-0 snap-x snap-mandatory overflow-x-auto pr-px md:pr-0 md:grid md:grid-cols-5">
         {TABS.map((tab, index) => {
           const selected = activeTab === tab.id
           return (
