@@ -26,9 +26,10 @@ Prompt Surgeon システムを起動・運用する際、以下の3つのサー�
 │  │  server_status.py   │      │       server-manager.ps1       │ │
 │  │  Python ネイティブ   │      │    OS 実行プリミティブ専用      │ │
 │  │  監視エンジン        │      │  ・プロセス起動・停止          │ │
-│  │  ・socket のみ使用   │      │  ・タイムアウト保護 (REQ-257)  │ │
+│  │  ・FE/BEはsocket確認 │      │  ・タイムアウト保護 (REQ-257)  │ │
+│  │  ・Comfy queueはHTTP │      │  ・ComfyUI状態はunknown分離   │ │
 │  │  ・外部 PS/WSL 不要  │      │  ・Vite EPERM 対策            │ │
-│  │  ・<1ms 応答         │      │  ・WSL2 Bridge 保護           │ │
+│  │  ・queue HTTP最大2秒 │      │  ・WSL2 Bridge 保護           │ │
 │  └─────────┬───────────┘      └────────────────────────────────┘ │
 │            │ import                                                │
 │  ┌─────────▼───────────┐                                          │
@@ -116,7 +117,7 @@ LAN 内のPCやスマートフォンから通常の生成アプリを使う場�
 ブラウザから直感的に操作できる軽量Webサーバーです。マルチスレッド対応（`ThreadedTCPServer`）により、サービスの起動・再起動処理中であってもステータスの自動取得（ポーリング）がブロックされずにスムーズに動作します。
 
 > [!NOTE]
-> **REQ-246 高速ポーリング**: `/api/status` は Python ネイティブ監視エンジン（`server_status.py`）に委譲するため、従来の PowerShell サブプロセス起動（〜数百ms）から **TCP socket チェックのみ（<5ms）** に高速化されました。ポーリング間隔中のブロッキングや応答遅延が解消されています。
+> **REQ-246 高速ポーリング**: `/api/status` は Python ネイティブ監視エンジン（`server_status.py`）に委譲します。FE/BEの死活はTCP socketで確認し、ComfyUIがLISTENしている場合は実行状態把握のため、既存設定ポートへ時間上限付きHTTP `GET /queue`を追加します（最大2秒）。queue取得失敗や不正応答はComfyUI状態だけを`unknown`とし、FE/BEの死活判定には波及させません。
 
 1. **`tools/server-manager/start_web_manager.bat`** を実行します。
 2. 自動的にブラウザで `http://localhost:8899` が開きます。
@@ -124,6 +125,7 @@ LAN 内のPCやスマートフォンから通常の生成アプリを使う場�
    - リアルタイム稼働状況（5秒間隔自動更新、LISTEN/BUNDLED/STOPPEDバッジ）
    - 全体起動・停止・再起動ボタン
    - 各サービス（ComfyUI, Backend, Frontend）ごとの個別起動・停止・再起動
+   - ComfyUI行の「メモリ解放」要求。LISTENかつqueueが既知のidle（running/pendingがともに0）で、他操作中・要求中でない場合だけ有効です。理由と結果は行内に表示されます。Managerはプロセス全体のaction lockを保持し、直前にqueueをキャッシュなしで再確認します。複数ブラウザータブ間もManager側lockで直列化し、競合要求は未送信拒否します。
    - 連打防止ロック：アクション実行中は画面上の全操作ボタンが一時的に無効化（disabled）され、二重送信やレースコンディションを防止
    - 同一 LAN 内アクセス：ヘッダー部に `LAN: http://<LAN-IP>:8899` バッジを表示。`tools/server-manager/allow_firewall_8899.bat` を実行（管理者権限）して Windows Defender ファイアウォールを開放することで、LAN 内の他端末（スマホやタブレット）からブラウザで一元管理可能
    - `config.json` のオンライン閲覧・編集・即時保存
@@ -132,6 +134,33 @@ LAN 内のPCやスマートフォンから通常の生成アプリを使う場�
      - 2秒ごとの自動更新、最新ログへの自動追従（スクロール位置が上部の場合は追従を維持）、表示行数（100 / 200 / 500行）の切り替え、今すぐ更新ボタンを完備
 
 通常のサービス管理はメインアプリ（`http://<PCホスト名>:8000`）の設定ページにあるsystem欄を利用します。この欄は、同じホスト名のポート `8899` にあるWeb Managerの `/api/status`、`/api/action`、`/api/logs` を直接利用します。メインアプリのポート `8000` が停止してsystem欄へアクセスできない場合に限り、PCブラウザーから `http://<PCホスト名>:8899` を開いて既存のWeb Manager画面で起動・停止・ログ確認を行います。通常の生成・進捗受信には端末から `8188` を開放する必要はありません。
+
+#### ComfyUIのメモリ解放要求
+
+Settingsのsystem欄とWeb Manager DashboardにはComfyUI向け「メモリ解放」操作があります。SettingsとDashboardは同じManager APIへ次のJSONをPOSTします。停止・生成中・queue待機中・状態不明・別のManager操作中は操作できません。
+
+```http
+POST http://<現在のホスト名>:8899/api/action
+Content-Type: application/json
+
+{"action":"free-memory","service":"comfy"}
+```
+
+Managerは全操作共通のプロセス内lockを取得し、ComfyUIがLISTENしていることと、キャッシュなしの`GET /queue`が既知のidle（`queue_running`と`queue_pending`が両方空）であることを確認してから、設定済みComfyUIポートのloopbackへ一度だけ`POST /free`（`{"unload_models":true,"free_memory":true}`）を送ります。GET `/queue`確認とPOST `/free`の間に外部クライアントが新しいpromptを投入する競合は非原子的であり、完全な外部排他は保証されません。
+
+Managerの応答`status=ok`、`outcome=accepted`はComfyUIが解放要求を受け付けたことを示すだけで、GPUメモリが物理的に解放済みであることを示しません。VRAMは通常WebSocketの`SYSTEM_STATS`（2.5秒周期）で同期し、既存Backend monitorの2.5秒周期と合わせて通常5秒以内に新しい監視値へ追従します。WebSocket切断中はSettings側の2.5秒周期GETへ切り替わり、取得失敗時は更新失敗または古い測定値であることを示します。解放後の次回生成ではモデル再ロード待ちが発生する場合があります。操作受付後のボタンは、fresh status GETが`execution_state=idle`かつqueue running/pendingが0/0と確認するまで非活性のままです。上流拒否（`request_sent=false`を伴う409/503等）と、timeout・切断による未確認応答を区別します。未確認の場合は状態・VRAMのGET再取得だけを行い、操作POSTを再送しません。
+
+外部ツールがComfyUIネイティブAPIを直接使う場合は、Managerのguardやaction lockを通らないため、呼出し元がqueueの両方の配列を検証してidleを確認してください。例では失敗時に停止し、配列が欠けている・idleでない場合はPOSTしません。
+
+```powershell
+$base = 'http://127.0.0.1:8188'
+$queue = Invoke-RestMethod -Method Get -Uri "$base/queue" -TimeoutSec 2
+if ($queue.queue_running -isnot [System.Array] -or $queue.queue_pending -isnot [System.Array]) { throw 'Queue state is unknown; request not sent.' }
+if ($queue.queue_running.Count -ne 0 -or $queue.queue_pending.Count -ne 0) { throw 'ComfyUI is busy; request not sent.' }
+Invoke-WebRequest -Method Post -Uri "$base/free" -ContentType 'application/json' -Body '{"unload_models":true,"free_memory":true}' -TimeoutSec 5
+```
+
+この例のnative `/free`応答は空本文HTTP 200の場合があります。外部ツールでは要求を再送せず、応答後のVRAMは監視値で確認してください。外部連携にはComfyUIの`8188`へ到達できる実行環境が必要ですが、通常のLANブラウザー/スマートフォンに`8188`を開放する要件ではありません。
 
 管理対象BEを管理者権限で起動している場合は、Managerも管理者権限で起動する必要があります。通常権限のManagerでは管理者権限のBEを停止できません。BE再起動は旧ポートの停止確認後に起動し、停止未確認・起動待ち失敗は非zero結果を返します。旧プロセスのLISTENを新プロセスの成功として扱いません。Managerの起動処理はstdout/stderrを通常一時ファイルへ収集し、長寿命子プロセスのPIPE EOF待ちを避けます。
 

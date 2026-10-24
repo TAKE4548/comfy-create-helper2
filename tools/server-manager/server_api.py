@@ -16,6 +16,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from typing import BinaryIO, Optional
 import server_status
+import comfy_memory
 
 # pythonw.exe などの非コンソール環境下での NoneType クラッシュを防止
 if sys.stdout is None:
@@ -28,7 +29,7 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 PS_SCRIPT = SCRIPT_DIR / "server-manager.ps1"
 LOGS_DIR = SCRIPT_DIR / "logs"
 PORT = 8899
-_ALLOWED_ACTIONS = {"status", "start", "stop", "restart", "reboot-service"}
+_ALLOWED_ACTIONS = {"status", "start", "stop", "restart", "reboot-service", "free-memory"}
 _ALLOWED_ACTION_SERVICES = {"", "all", "backend", "be", "frontend", "fe", "comfy", "wsl"}
 
 # ロガー初期化 (5MB, 5世代, UTF-8)
@@ -291,6 +292,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     button:hover:not(:disabled) { background: #1d4ed8; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .memory-action { min-width: 44px; min-height: 44px; touch-action: manipulation; }
+    .memory-reason, .memory-result { font-size: 0.8rem; overflow-wrap: anywhere; }
     button.btn-danger { background: #dc2626; }
     button.btn-danger:hover:not(:disabled) { background: #b91c1c; }
     button.btn-secondary { background: #475569; }
@@ -428,6 +431,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <script>
     const serviceGrid = document.getElementById('service-grid');
+    let isActionPending = false;
+    let latestStatusSnapshot = null;
+    let memoryActionFeedback = null;
     const logOutput = document.getElementById('log-output');
     const configEditor = document.getElementById('config-editor');
     const lanUrlSpan = document.getElementById('lan-url');
@@ -507,6 +513,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function renderServices(status) {
+      latestStatusSnapshot = status;
       serviceGrid.innerHTML = '';
       for (const [key, s] of Object.entries(status)) {
         if (!['fe', 'be', 'comfy'].includes(key) || !s || typeof s !== 'object') continue;
@@ -538,6 +545,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           `;
         }
 
+        const memoryControl = key === 'comfy' ? `
+          <p class="memory-reason">キューが空で、Manager操作中でない場合に要求を送信します。</p>
+          <button class="btn-secondary memory-action" data-memory-action="true" onclick="triggerAction('free-memory', 'comfy')">ComfyUIメモリ解放を要求</button>
+          <p class="memory-result" role="status" aria-live="polite">${s.execution_state === 'idle' ? 'キュー: idle' : `キュー状態: ${s.execution_state || 'unknown'}`}</p>
+        ` : '';
         card.innerHTML = `
           <h2>
             <span>${s.name}</span>
@@ -548,13 +560,34 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           ${s.error ? `<p style="color: var(--warning); font-size: 0.8rem;">⚠️ ${s.error}</p>` : ''}
           <div class="btn-group">
             ${actionButtons}
+            ${memoryControl}
           </div>
         `;
         serviceGrid.appendChild(card);
+        if (key === 'comfy' && memoryActionFeedback !== null) {
+          card.querySelector('.memory-result').textContent = memoryActionFeedback;
+        }
       }
+      updateMemoryActionState();
+    }
+
+    function setMemoryActionFeedback(message) {
+      memoryActionFeedback = message;
+      document.querySelectorAll('.memory-result').forEach(el => { el.textContent = message; });
+    }
+
+    function updateMemoryActionState() {
+      const comfy = latestStatusSnapshot && latestStatusSnapshot.comfy;
+      const inProgress = latestStatusSnapshot && latestStatusSnapshot.action_in_progress;
+      const allowed = !!comfy && comfy.status === 'LISTEN' && comfy.execution_state === 'idle'
+        && comfy.queue_running === 0 && comfy.queue_pending === 0 && !isActionPending && !inProgress;
+      document.querySelectorAll('[data-memory-action="true"]').forEach(button => { button.disabled = !allowed; });
     }
 
     async function triggerAction(action, service = '') {
+      if (action === 'free-memory' && isActionPending) return;
+      if (action === 'free-memory') isActionPending = true;
+      updateMemoryActionState();
       setControlsDisabled(true);
       actionLogContent = `Action '${action}' ${service ? `for service '${service}' ` : ''}executing...`;
       if (activeService === 'manager') {
@@ -567,7 +600,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           body: JSON.stringify({ action, service })
         });
         const data = await res.json();
-        actionLogContent = data.output || `Action '${action}' completed.`;
+        if (action === 'free-memory') {
+          actionLogContent = res.ok && data.status === 'ok' && data.outcome === 'accepted'
+            ? '解放要求を受け付けました。空き容量は監視値で確認してください。'
+            : data.outcome === 'unconfirmed' ? '要求結果を確認できません。操作POSTは再送しません。'
+              : `要求は受け付けられませんでした: ${data.error || data.code || res.status}`;
+          setMemoryActionFeedback(actionLogContent);
+        } else {
+          actionLogContent = data.output || `Action '${action}' completed.`;
+        }
         if (activeService === 'manager') {
           logOutput.textContent = actionLogContent;
         }
@@ -577,11 +618,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
       } catch (err) {
         actionLogContent = "Error executing action: " + err;
+        if (action === 'free-memory') {
+          setMemoryActionFeedback('要求結果を確認できません。操作POSTは再送しません。');
+        }
         if (activeService === 'manager') {
           logOutput.textContent = actionLogContent;
         }
       } finally {
+        if (action === 'free-memory') isActionPending = false;
         setControlsDisabled(false);
+        updateMemoryActionState();
       }
     }
 
@@ -782,6 +828,11 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": "Unknown service"}, status=400)
                 return
             service = service.lower()
+            if action == "free-memory" and service != "comfy":
+                self._send_json({"status": "error", "action": action, "code": "WRONG_TARGET",
+                                 "error": "free-memory is available only for ComfyUI",
+                                 "request_sent": False}, status=400)
+                return
             cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(PS_SCRIPT), "-Action", action]
             if action in ["start", "restart", "reboot-service"]:
                 cmd.append("-Background")
@@ -800,7 +851,11 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
             global _active_action
             with _action_lock:
                 if _active_action is not None:
-                    self._send_json({"status": "error", "action": action, "error": "Another action is in progress"}, status=409)
+                    busy_response = {"status": "error", "action": action,
+                                     "error": "Another action is in progress"}
+                    if action == "free-memory":
+                        busy_response.update({"code": "ACTION_BUSY", "request_sent": False})
+                    self._send_json(busy_response, status=409)
                     return
                 _active_action = {"service": service or "all", "action": action}
             with _status_lock:
@@ -809,23 +864,56 @@ class ManagerHandler(http.server.BaseHTTPRequestHandler):
             response_data: dict[str, object]
             response_status = 200
             try:
-                with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
-                    res = subprocess.run(
-                        cmd,
-                        stdout=stdout_file,
-                        stderr=stderr_file,
-                        creationflags=CREATE_NO_WINDOW,
-                        timeout=timeout,
-                    )
-                    output = _read_action_output_snapshot(stdout_file) + _read_action_output_snapshot(stderr_file)
-                succeeded = res.returncode == 0
-                response_data = {
-                    "status": "ok" if succeeded else "error",
-                    "action": action,
-                    "output": output,
-                    **({} if succeeded else {"returncode": res.returncode})
-                }
-                response_status = 200 if succeeded else 502
+                if action == "free-memory":
+                    port = server_status._load_ports(CONFIG_FILE)["wsl"]
+                    if not check_port_listening(port):
+                        response_data = {"status": "error", "action": action, "code": "COMFY_STOPPED",
+                                         "error": "ComfyUI is stopped", "request_sent": False}
+                        response_status = 503
+                    else:
+                        execution = comfy_memory.get_comfy_execution_state(port)
+                        state = execution.get("execution_state")
+                        if state in {"executing", "queued"}:
+                            response_data = {"status": "error", "action": action, "code": "COMFY_BUSY",
+                                             "error": "ComfyUI has queued or executing work",
+                                             "request_sent": False}
+                            response_status = 409
+                        elif state != "idle":
+                            response_data = {"status": "error", "action": action, "code": "COMFY_UNKNOWN",
+                                             "error": "ComfyUI queue state is unknown",
+                                             "request_sent": False}
+                            response_status = 503
+                        else:
+                            try:
+                                comfy_memory.request_comfy_memory_free(port)
+                                response_data = {"status": "ok", "action": action, "outcome": "accepted"}
+                            except comfy_memory.ComfyHTTPError as exc:
+                                response_data = {"status": "error", "action": action,
+                                                 "code": "COMFY_HTTP_ERROR",
+                                                 "error": f"ComfyUI returned HTTP {exc.status}"}
+                                response_status = 502
+                            except comfy_memory.ComfyTransportError as exc:
+                                response_data = {"status": "timeout", "action": action,
+                                                 "outcome": "unconfirmed", "error": str(exc)}
+                                response_status = 504
+                else:
+                    with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
+                        res = subprocess.run(
+                            cmd,
+                            stdout=stdout_file,
+                            stderr=stderr_file,
+                            creationflags=CREATE_NO_WINDOW,
+                            timeout=timeout,
+                        )
+                        output = _read_action_output_snapshot(stdout_file) + _read_action_output_snapshot(stderr_file)
+                    succeeded = res.returncode == 0
+                    response_data = {
+                        "status": "ok" if succeeded else "error",
+                        "action": action,
+                        "output": output,
+                        **({} if succeeded else {"returncode": res.returncode})
+                    }
+                    response_status = 200 if succeeded else 502
             except subprocess.TimeoutExpired:
                 response_data = {
                     "status": "timeout",

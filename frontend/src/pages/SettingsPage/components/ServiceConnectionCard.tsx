@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ManagerActionOutcomeUnknownError, systemManagerApi } from '../../../api/domains/systemManager'
 import type { ManagerServiceName, ManagedServiceName } from '../../../api/domains/systemManager'
 import { useConfig } from '../../../hooks/useConfig'
@@ -19,6 +20,7 @@ function serviceLabel(service: string): string {
 }
 
 export function ServiceConnectionCard(): React.JSX.Element {
+  const queryClient = useQueryClient()
   const { data: config } = useConfig()
   const { status, available, refetch } = useManagerStatus()
   const [actionPending, setActionPending] = useState<string | null>(null)
@@ -29,6 +31,38 @@ export function ServiceConnectionCard(): React.JSX.Element {
 
   const managerAvailable = available && status !== null
   const busy = actionPending !== null || status?.action_in_progress != null
+  const comfy = managerAvailable ? status.comfy : undefined
+  const freeMemoryEnabled = Boolean(managerAvailable && !busy && !busyRef.current && comfy?.status === 'LISTEN' &&
+    comfy.execution_state === 'idle' && comfy.queue_running === 0 && comfy.queue_pending === 0)
+  const freeMemoryReason = !managerAvailable ? 'Manager状態を確認できません。' : busy ? '別のサービス操作中です。' :
+    comfy?.status !== 'LISTEN' ? 'ComfyUIが停止中または状態不明です。' :
+    comfy.execution_state === 'executing' ? 'ComfyUIで生成中です。' :
+    comfy.execution_state === 'queued' || comfy.queue_running !== 0 || comfy.queue_pending !== 0 ? 'ComfyUIのキューが空ではありません。' :
+    !freeMemoryEnabled ? 'ComfyUIの実行状態が不明です。' : ''
+
+  const runFreeMemory = async (): Promise<void> => {
+    if (!freeMemoryEnabled || busyRef.current) return
+    busyRef.current = true
+    setActionPending('comfy:free-memory')
+    setActionMessage('解放要求を送信中')
+    try {
+      await systemManagerApi.freeMemory()
+      setActionMessage('解放要求を受け付けました。空き容量は監視値で確認してください')
+      await queryClient.invalidateQueries({ queryKey: ['settings-vram'] })
+    } catch (error) {
+      setActionMessage(error instanceof ManagerActionOutcomeUnknownError
+        ? '解放要求の結果を確認できません。状態を再取得します。操作は再送しません。'
+        : `解放要求に失敗しました: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      try {
+        await refetch()
+        await refetch()
+      } finally {
+        busyRef.current = false
+        setActionPending(null)
+      }
+    }
+  }
 
   const runAction = async (action: 'start' | 'stop' | 'restart', service: ManagedServiceName): Promise<void> => {
     if (!managerAvailable || busyRef.current || busy) return
@@ -136,7 +170,9 @@ export function ServiceConnectionCard(): React.JSX.Element {
         <button type="button" onClick={() => setConfirmAction({ action: 'stop', service: 'comfy' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを停止</button>
         <button type="button" onClick={() => setConfirmAction({ action: 'restart', service: 'comfy' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIを再起動</button>
         <button type="button" onClick={() => setConfirmAction({ action: 'restart', service: 'backend' })} disabled={!managerAvailable || busy} className="min-h-[44px] rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">Backendを再起動</button>
+        <button type="button" onClick={() => void runFreeMemory()} disabled={!freeMemoryEnabled} className="min-h-[44px] touch-manipulation rounded-md border border-[rgba(255,255,255,0.12)] px-4 py-2 text-sm hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50">ComfyUIのメモリ解放</button>
       </div>
+      {!freeMemoryEnabled && <p className="break-words text-sm text-zinc-400">{freeMemoryReason}</p>}
       {confirmAction && <div role="alertdialog" aria-label="サービス操作の確認" className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>{serviceLabel(confirmAction.service)}を{confirmAction.action === 'stop' ? '停止' : '再起動'}します。対象サービスを一時的に利用できなくなります。</p><div className="flex gap-2"><button type="button" onClick={() => setConfirmAction(null)} className="min-h-[44px] rounded px-3">キャンセル</button><button type="button" onClick={() => { const pending = confirmAction; setConfirmAction(null); void runAction(pending.action, pending.service) }} disabled={!managerAvailable || busy} className="min-h-[44px] rounded bg-amber-500/20 px-3">確認して実行</button></div></div>}
       <p role="status" aria-live="polite" className="text-sm text-zinc-200">{actionMessage}</p>
       <p className="text-sm text-zinc-400">Backend再起動中はポート8000の復帰を待ち、復帰後にこのページを手動で再読み込みしてください。復帰中も読み込み済みの画面を保ったまま、<a className="underline" href={emergencyUrl} target="_blank" rel="noreferrer">Managerの緊急画面（8899）</a>を利用できます。</p>

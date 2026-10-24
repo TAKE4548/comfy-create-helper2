@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 import socket
 import json
 import sys
+import comfy_memory
 
 # デフォルト設定ファイルパス
 CONFIG_DEFAULT_PATH = Path(__file__).resolve().parent / "config.json"
@@ -106,6 +107,12 @@ def get_server_status(
     # ComfyUI
     comfy_running = check_port_listening(wsl_port)
     comfy_status = "LISTEN" if comfy_running else "STOPPED"
+    execution = (
+        comfy_memory.get_comfy_execution_state(wsl_port)
+        if comfy_running
+        else {"execution_state": "unknown", "queue_running": None, "queue_pending": None,
+              "execution_error": "ComfyUI is stopped"}
+    )
 
     return {
         "fe": {
@@ -128,6 +135,7 @@ def get_server_status(
             "running": comfy_running,
             "status": comfy_status,
             "pids": [],
+            **execution,
         },
     }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as fc from 'fast-check'
 import { systemManagerApi, ManagerActionOutcomeUnknownError } from '../systemManager'
 
 const jsonResponse = (body: unknown, status = 200): Response => ({
@@ -14,6 +15,42 @@ const logsPayload = (service: string, lines: number | string[], content: string)
 afterEach(() => vi.unstubAllGlobals())
 
 describe('systemManagerApi', () => {
+  it('[REQ-380/AC-1] posts the fixed free-memory Manager request and accepts only explicit acknowledgement', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: 'ok', action: 'free-memory', outcome: 'accepted' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(systemManagerApi.freeMemory()).resolves.toMatchObject({ outcome: 'accepted' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toContain(':8899/api/action')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'free-memory', service: 'comfy' })
+  })
+
+  it('[REQ-380/AC-1] classifies a validated unsent denial and an unconfirmed gateway response separately', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: 'error', action: 'free-memory', request_sent: false, code: 'ACTION_BUSY', error: 'busy' }, 409))
+      .mockResolvedValueOnce(jsonResponse({ status: 'error', action: 'free-memory', request_sent: 'false', code: 'ACTION_BUSY', error: 'busy' }, 503)))
+    await expect(systemManagerApi.freeMemory()).rejects.toThrow('busy')
+    await expect(systemManagerApi.freeMemory()).rejects.toBeInstanceOf(ManagerActionOutcomeUnknownError)
+  })
+
+  it('[REQ-380/AC-1] keeps invalid Comfy execution metadata fail-closed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      fe: { running: true, status: 'running' }, be: { running: true, status: 'running' },
+      comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: -1, queue_pending: 0 },
+    })))
+    const status = await systemManagerApi.status()
+    expect(status.comfy.execution_state).toBe('unknown')
+  })
+
+  it('[REQ-380/AC-1] PBT: invalid queue counts never preserve an idle execution state', async () => {
+    await fc.assert(fc.asyncProperty(fc.integer({ max: -1 }), async (invalidCount) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+        fe: { running: true, status: 'running' }, be: { running: true, status: 'running' },
+        comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: invalidCount, queue_pending: 0 },
+      })))
+      const status = await systemManagerApi.status()
+      expect(status.comfy.execution_state).toBe('unknown')
+    }), { numRuns: 40 })
+  })
   it.each(['backend', 'frontend', 'comfy', 'manager'] as const)('decodes numeric log line count for %s', async (service) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(logsPayload(service, 12, 'line one\nline two'))))
     await expect(systemManagerApi.logs(service)).resolves.toEqual({

@@ -82,7 +82,8 @@
       "frontend",
       "scripts",
       "tests",
-      "docs"
+      "docs",
+      "tools/server-manager"
     ],
     "root_files": [
       "README.md",
@@ -96,7 +97,8 @@
       "frontend/dist/",
       "frontend/test-results/",
       "frontend/playwright-report/",
-      "frontend/coverage/"
+      "frontend/coverage/",
+      "tools/server-manager/logs/"
     ],
     "excluded_paths": [],
     "dependency_file": null

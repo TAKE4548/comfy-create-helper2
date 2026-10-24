@@ -1,4 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { resolve } from 'node:path';
 
 const MASTERS = [
   {
@@ -23,6 +25,54 @@ const MASTERS = [
 ];
 const MASTER_CARD = '.settings-mobile-card:has(.settings-mobile-card__target-node)';
 const VRAM = { vram_min_free_gb: 4, vram_guard_enabled: true, vram_free_gb: 8, vram_total_gb: 12 };
+
+let managerProcess: ChildProcessWithoutNullStreams;
+let managerUrl = '';
+let managerControlUrl = '';
+let managerOutput = '';
+
+async function startManagerSandbox(): Promise<void> {
+  managerProcess = spawn(resolve(process.cwd(), '../backend/.venv/Scripts/python.exe'),
+    [resolve(process.cwd(), '../tests/support/server_manager_sandbox.py')],
+    { cwd: resolve(process.cwd(), '..'), stdio: 'pipe' });
+  await new Promise<void>((resolveReady, reject) => {
+    const timer = setTimeout(() => reject(new Error('Manager sandbox startup timed out: ' + managerOutput)), 10000);
+    managerProcess.stdout.on('data', (chunk: Buffer) => {
+      managerOutput += chunk.toString('utf8');
+      const line = managerOutput.split(/\r?\n/)[0];
+      if (line.startsWith('{')) {
+        clearTimeout(timer);
+        try {
+          const value = JSON.parse(line) as { manager_url: string; control_url: string };
+          managerUrl = value.manager_url;
+          managerControlUrl = value.control_url;
+          resolveReady();
+        } catch (error) { reject(error); }
+      }
+    });
+    managerProcess.stderr.on('data', (chunk: Buffer) => { managerOutput += chunk.toString('utf8'); });
+    managerProcess.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error('Manager sandbox exited before startup (' + code + '): ' + managerOutput));
+    });
+  });
+}
+
+async function setManagerState(value: object): Promise<void> {
+  const response = await fetch(managerControlUrl + '/control/state', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  });
+  if (!response.ok) throw new Error('Manager sandbox state returned ' + response.status);
+}
+
+test.beforeAll(async () => { await startManagerSandbox(); });
+test.afterAll(async () => {
+  if (managerProcess && managerProcess.exitCode === null) {
+    await fetch(managerControlUrl + '/control/shutdown', { method: 'POST', body: '{}' });
+    await new Promise<void>((resolveExit) => managerProcess.once('exit', () => resolveExit()));
+  }
+});
+
 
 // Stub only backend API calls (pathname starts with /api/); never Vite module requests like /src/api/*.
 async function stubApi(page: Page): Promise<void> {
@@ -55,6 +105,37 @@ async function box(loc: Locator) {
 }
 
 test.describe('Settings responsive E2E', () => {
+  test('[REQ-380/AC-1] 375/767/768/1280px: memory action stays visible and reachable', async ({ page }) => {
+    test.setTimeout(30_000);
+    await setManagerState({ running: [], pending: [], free_delay: 0, free_status: 200, queue_mode: 'normal', comfy_stopped: false });
+    await stubApi(page);
+    await page.route(
+      (url) => url.hostname === 'localhost' && url.port === '8899' && url.pathname.startsWith('/api/'),
+      async (route) => {
+        const originalUrl = new URL(route.request().url());
+        const destination = new URL(originalUrl.pathname + originalUrl.search, managerUrl);
+        const response = await route.fetch({ url: destination.href });
+        await route.fulfill({ response });
+      },
+    );
+    for (const width of [375, 767, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/settings#system');
+      await expect(page.locator('#settings-panel-system')).toBeVisible();
+      const button = page.getByRole('button', { name: 'ComfyUIのメモリ解放', exact: true });
+      await expect(button).toBeVisible();
+      const bounds = await button.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.width).toBeGreaterThanOrEqual(44);
+      expect(bounds!.height).toBeGreaterThanOrEqual(44);
+      if (width === 375) {
+        await button.focus();
+        await page.keyboard.press('Enter');
+        await expect(page.getByRole('status').filter({ hasText: /受け付けました/ })).toBeVisible();
+      }
+    }
+  });
+
   test('[REQ-365/AC-1] 1280px: dual pane', async ({ page }) => {
     await openSettings(page, 1280);
     // Wait for deterministic readiness (mapping master rows rendered) and for the layout to stop moving,

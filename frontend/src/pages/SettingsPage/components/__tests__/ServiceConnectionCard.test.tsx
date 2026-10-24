@@ -8,16 +8,24 @@ import { useManagerStatus } from '../../../../hooks/useManagerStatus'
 import type { ManagerStatus } from '../../../../api/domains/systemManager'
 
 vi.mock('../../../../api/client', () => ({ configApi: { get: vi.fn() } }))
-vi.mock('../../../../api/domains/systemManager', () => ({
-  ManagerActionOutcomeUnknownError: class ManagerActionOutcomeUnknownError extends Error {
-    readonly outcome = 'unconfirmed'
-  },
-  systemManagerApi: { status: vi.fn(), action: vi.fn(), logs: vi.fn() },
-}))
-vi.mock('../../../../hooks/useManagerStatus', () => ({ useManagerStatus: vi.fn() }))
+vi.mock('../../../../api/domains/systemManager', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../api/domains/systemManager')>()
+  return {
+    ManagerActionOutcomeUnknownError: class ManagerActionOutcomeUnknownError extends Error {
+      readonly outcome = 'unconfirmed'
+    },
+    systemManagerApi: { status: vi.fn(), action: vi.fn(), freeMemory: vi.fn(), logs: vi.fn() },
+    __realSystemManagerApi: actual.systemManagerApi,
+  }
+})
+vi.mock('../../../../hooks/useManagerStatus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../hooks/useManagerStatus')>()
+  return { useManagerStatus: vi.fn(), __realUseManagerStatus: actual.useManagerStatus }
+})
 
 const mockedConfig = vi.mocked(configApi.get)
 const mockedAction = vi.mocked(systemManagerApi.action)
+const mockedFreeMemory = vi.mocked(systemManagerApi.freeMemory)
 const mockedLogs = vi.mocked(systemManagerApi.logs)
 const mockedManager = vi.mocked(useManagerStatus)
 
@@ -27,6 +35,8 @@ const readyStatus: ManagerStatus = {
   comfy: { running: false, status: 'stopped' },
   action_in_progress: null,
 }
+
+const jsonResponse = (body: unknown): Response => ({ ok: true, status: 200, json: async () => body } as Response)
 
 function setup(managerStatus: ManagerStatus | null = readyStatus, available = true) {
   const refetch = vi.fn().mockResolvedValue(undefined)
@@ -38,10 +48,81 @@ function setup(managerStatus: ManagerStatus | null = readyStatus, available = tr
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.clearAllMocks()
 })
 
 describe('ServiceConnectionCard', () => {
+  it('[REQ-380/AC-2] drains a pre-POST status GET and a fresh post-ACK GET before unlocking', async () => {
+    const realManagerApi = (await vi.importActual<typeof import('../../../../api/domains/systemManager')>('../../../../api/domains/systemManager')).systemManagerApi
+    const realUseManagerStatus = (await vi.importActual<typeof import('../../../../hooks/useManagerStatus')>('../../../../hooks/useManagerStatus')).useManagerStatus
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const idlePayload = {
+      fe: { running: true, status: 'running' }, be: { running: true, status: 'running' },
+      comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 0 },
+      action_in_progress: null,
+    }
+    let resolveStale!: (response: Response) => void
+    let resolveFresh!: (response: Response) => void
+    const staleGet = new Promise<Response>((resolve) => { resolveStale = resolve })
+    const freshGet = new Promise<Response>((resolve) => { resolveFresh = resolve })
+    let statusGets = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return Promise.resolve(jsonResponse({ status: 'ok', action: 'free-memory', outcome: 'accepted' }))
+      statusGets += 1
+      if (statusGets === 1) return Promise.resolve(jsonResponse(idlePayload))
+      if (statusGets === 2) return staleGet
+      if (statusGets === 3) return freshGet
+      return Promise.resolve(jsonResponse(idlePayload))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    mockedManager.mockImplementation(realUseManagerStatus)
+    vi.mocked(systemManagerApi.status).mockImplementation(realManagerApi.status)
+    mockedFreeMemory.mockImplementation(realManagerApi.freeMemory)
+    mockedConfig.mockResolvedValue({ comfy_url: 'http://comfy-config:8188' } as Awaited<ReturnType<typeof configApi.get>>)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ServiceConnectionCard /></QueryClientProvider>)
+    const button = await screen.findByRole('button', { name: 'ComfyUIのメモリ解放' })
+    await waitFor(() => expect(button).toBeEnabled())
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    await waitFor(() => expect(statusGets).toBe(2))
+    fireEvent.click(button)
+    await screen.findByText('解放要求を受け付けました。空き容量は監視値で確認してください')
+    expect(button).toBeDisabled()
+
+    await act(async () => { resolveStale(jsonResponse(idlePayload)); await staleGet })
+    await waitFor(() => expect(statusGets).toBe(3))
+    expect(button).toBeDisabled()
+
+    await act(async () => { resolveFresh(jsonResponse(idlePayload)); await freshGet })
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(statusGets).toBe(3)
+  })
+
+  it('[REQ-380/AC-2] gates free-memory on known idle Comfy status, sends once, acknowledges, and refetches', async () => {
+    const { refetch } = setup({ ...readyStatus, comfy: { running: true, status: 'LISTEN', execution_state: 'idle', queue_running: 0, queue_pending: 0 } })
+    mockedFreeMemory.mockResolvedValue({ status: 'ok', action: 'free-memory', outcome: 'accepted' })
+    const button = screen.getByRole('button', { name: 'ComfyUIのメモリ解放' })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    fireEvent.click(button)
+    await waitFor(() => expect(mockedFreeMemory).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('解放要求を受け付けました。空き容量は監視値で確認してください')).toBeInTheDocument()
+    expect(refetch).toHaveBeenCalledTimes(2)
+    expect(systemManagerApi.freeMemory).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['executing', { execution_state: 'executing', queue_running: 0, queue_pending: 0 }],
+    ['queued', { execution_state: 'queued', queue_running: 0, queue_pending: 1 }],
+    ['unknown', { execution_state: 'unknown', queue_running: 0, queue_pending: 0 }],
+  ] as const)('[REQ-380/AC-2] disables free-memory for %s Comfy state with an adjacent reason', (_label, extra) => {
+    setup({ ...readyStatus, comfy: { running: true, status: 'LISTEN', ...extra } })
+    expect(screen.getByRole('button', { name: 'ComfyUIのメモリ解放' })).toBeDisabled()
+    expect(screen.getByText(/ComfyUIで生成中|キューが空ではありません|実行状態が不明/)).toBeInTheDocument()
+  })
   it('shows current Manager service state and the backend-owned Comfy URL read-only', async () => {
     setup()
     expect(screen.getByRole('listitem', { name: 'Supervisor' })).toHaveTextContent('接続中')

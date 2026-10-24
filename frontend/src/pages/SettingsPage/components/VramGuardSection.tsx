@@ -48,11 +48,16 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
 
   // System stats from store
   const systemStats = useGenerationStore((state) => state.systemStats)
+  const systemWsConnected = useGenerationStore((state) => state.systemWsConnected)
 
   // Query server vram settings
-  const { data: vramSettings, isLoading } = useQuery<VramSettings>({
+  const { data: vramSettings, isLoading, isError: vramQueryError } = useQuery<VramSettings>({
     queryKey: ['settings-vram'],
     queryFn: () => settingsApi.getVram(),
+    enabled: isExpanded && !systemWsConnected,
+    refetchInterval: isExpanded && !systemWsConnected ? 2500 : false,
+    refetchIntervalInBackground: false,
+    retry: false,
   })
 
   useEffect(() => {
@@ -121,15 +126,14 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
   }
 
   // Calculate current free VRAM: prefer systemStats, then vramSettings, then null
-  const currentFreeGb =
-    systemStats?.vram_total_gb != null && systemStats?.vram_used_gb != null
+  const currentFreeGb = systemWsConnected && systemStats?.vram_total_gb != null && systemStats?.vram_used_gb != null
       ? Math.max(0, +(systemStats.vram_total_gb - systemStats.vram_used_gb).toFixed(2))
       : vramSettings?.vram_free_gb != null
       ? +vramSettings.vram_free_gb.toFixed(2)
       : null
 
   const totalGb =
-    systemStats?.vram_total_gb != null
+    systemWsConnected && systemStats?.vram_total_gb != null
       ? +systemStats.vram_total_gb.toFixed(2)
       : vramSettings?.vram_total_gb != null
       ? +vramSettings.vram_total_gb.toFixed(2)
@@ -215,7 +219,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="text-zinc-400 font-medium">現在の空きVRAM:</span>
                     <span className="font-mono text-zinc-200 font-semibold">
-                      {currentFreeGb != null ? `${currentFreeGb.toFixed(1)} GB` : '取得中...'}
+                    {currentFreeGb != null ? `${currentFreeGb.toFixed(1)} GB` : 'VRAM情報を更新できません'}
                     </span>
                     {totalGb != null && (
                       <span className="text-zinc-500 text-[11px]">/ 全体 {totalGb.toFixed(1)} GB</span>
@@ -241,6 +245,7 @@ export function VramGuardSection({ isExpanded, onToggle }: VramGuardSectionProps
                     )}
                   </div>
                 </div>
+                {vramQueryError && <p role="status" className="break-words text-sm text-amber-300">{currentFreeGb != null ? 'VRAM情報を更新できません。表示値は直前の測定値です。' : 'VRAM情報を更新できません。'}</p>}
 
                 {/* Progress bar gauge */}
                 {totalGb != null && totalGb > 0 && currentFreeGb != null && (

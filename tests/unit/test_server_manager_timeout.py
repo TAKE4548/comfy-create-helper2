@@ -7,6 +7,10 @@ import stat
 import shutil
 import threading
 import time
+import hashlib
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch, MagicMock
 import pytest
 import sys
@@ -18,6 +22,168 @@ if str(SM_DIR) not in sys.path:
     sys.path.insert(0, str(SM_DIR))
 
 import server_api
+
+
+@pytest.mark.parametrize("queue_body,native_status,expected_status,expected_outcome,free_count", [
+    (b'{"queue_running":[],"queue_pending":[]}', 200, 200, "accepted", 1),
+    (b'{"queue_running":[],"queue_pending":[]}', 404, 502, None, 1),
+    (b'{"queue_running":[],"queue_pending":[]}', 500, 502, None, 1),
+    (b'{"queue_running":[],"queue_pending":[]}', 302, 502, None, 1),
+    (b'{"queue_running":[{}],"queue_pending":[]}', 200, 409, None, 0),
+    (b'{"queue_running":[],"queue_pending":[{}]}', 200, 409, None, 0),
+    (b'{"queue_running":[],"queue_pending":null}', 200, 503, None, 0),
+], ids=["[REQ-380/AC-2]-idle-empty-200", "[REQ-380/AC-2]-native-404", "[REQ-380/AC-2]-native-500",
+        "[REQ-380/AC-2]-native-redirect", "[REQ-380/AC-2]-executing", "[REQ-380/AC-2]-queued", "[REQ-380/AC-2]-unknown"])
+def test_req380_free_memory_manager_http_sandbox(tmp_path, monkeypatch, queue_body,
+                                                 native_status, expected_status, expected_outcome, free_count):
+    class ComfyHandler(BaseHTTPRequestHandler):
+        free_calls = 0
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(queue_body)
+
+        def do_POST(self):
+            type(self).free_calls += 1
+            assert self.path == "/free"
+            assert json.loads(self.rfile.read(int(self.headers["Content-Length"]))) == {
+                "unload_models": True, "free_memory": True}
+            self.send_response(native_status)
+            if native_status == 302:
+                self.send_header("Location", "http://127.0.0.1:1/redirect-target")
+            self.end_headers()  # Native ComfyUI may return an empty body.
+
+        def log_message(self, *_args):
+            pass
+
+    comfy = ThreadingHTTPServer(("127.0.0.1", 0), ComfyHandler)
+    comfy_thread = threading.Thread(target=comfy.serve_forever, daemon=True)
+    comfy_thread.start()
+    production_config = server_api.CONFIG_FILE
+    before = hashlib.sha256(production_config.read_bytes()).hexdigest()
+    test_config = tmp_path / "manager-test-config.json"
+    test_config.write_text(json.dumps({"wsl": {"port": comfy.server_address[1]}}), encoding="utf-8")
+    assert test_config.resolve() != production_config.resolve()
+    monkeypatch.setattr(server_api, "CONFIG_FILE", test_config)
+    manager = ThreadingHTTPServer(("127.0.0.1", 0), server_api.ManagerHandler)
+    manager_thread = threading.Thread(target=manager.serve_forever, daemon=True)
+    manager_thread.start()
+    try:
+        assert server_api.check_port_listening(comfy.server_address[1])
+        assert server_api.check_port_listening(manager.server_address[1])
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{manager.server_address[1]}/api/action",
+            data=json.dumps({"action": "free-memory", "service": "comfy"}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with patch.object(server_api.subprocess, "run", side_effect=AssertionError(
+                "free-memory must not invoke subprocesses")):
+            try:
+                response = urllib.request.urlopen(request, timeout=5)
+                status = response.status
+                payload = json.loads(response.read())
+            except urllib.error.HTTPError as exc:
+                status = exc.code
+                payload = json.loads(exc.read())
+        assert status == expected_status
+        assert payload.get("outcome") == expected_outcome
+        assert ComfyHandler.free_calls == free_count
+        if status in {409, 503}:
+            assert payload.get("request_sent") is False
+        assert server_api.check_port_listening(comfy.server_address[1])
+        assert server_api.check_port_listening(manager.server_address[1])
+    finally:
+        manager.shutdown()
+        manager.server_close()
+        manager_thread.join()
+        comfy.shutdown()
+        comfy.server_close()
+        comfy_thread.join()
+    assert hashlib.sha256(production_config.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize("_case", [pytest.param(None, id="[REQ-380/AC-2]-wrong-target")])
+def test_REQ_380_free_memory_wrong_target_and_process_lock(monkeypatch, _case):
+    handler = server_api.ManagerHandler.__new__(server_api.ManagerHandler)
+    handler.path = "/api/action"
+    handler.headers = {"Content-Length": "47"}
+    payloads = []
+    handler._send_json = lambda data, status=200: payloads.append((data, status))
+    handler.rfile = __import__("io").BytesIO(b'{"action":"free-memory","service":"backend"}')
+    handler.do_POST()
+    assert payloads[0][1] == 400
+    assert payloads[0][0]["request_sent"] is False
+    assert "free-memory" in server_api.HTML_TEMPLATE
+    assert "解放要求を受け付けました" in server_api.HTML_TEMPLATE
+
+
+@pytest.mark.parametrize("_case", [pytest.param(None, id="[REQ-380/AC-2]-cross-client-lock")])
+def test_REQ_380_two_manager_clients_share_action_lock(tmp_path, monkeypatch, _case):
+    started = threading.Event()
+    release = threading.Event()
+
+    class ComfyHandler(BaseHTTPRequestHandler):
+        free_calls = 0
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"queue_running":[],"queue_pending":[]}')
+
+        def do_POST(self):
+            type(self).free_calls += 1
+            started.set()
+            release.wait(3)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    comfy = ThreadingHTTPServer(("127.0.0.1", 0), ComfyHandler)
+    comfy_thread = threading.Thread(target=comfy.serve_forever, daemon=True)
+    comfy_thread.start()
+    production_config = server_api.CONFIG_FILE
+    test_config = tmp_path / "manager-lock-test-config.json"
+    test_config.write_text(json.dumps({"wsl": {"port": comfy.server_address[1]}}), encoding="utf-8")
+    assert test_config.resolve() != production_config.resolve()
+    monkeypatch.setattr(server_api, "CONFIG_FILE", test_config)
+    manager = ThreadingHTTPServer(("127.0.0.1", 0), server_api.ManagerHandler)
+    manager_thread = threading.Thread(target=manager.serve_forever, daemon=True)
+    manager_thread.start()
+    endpoint = f"http://127.0.0.1:{manager.server_address[1]}/api/action"
+    body = json.dumps({"action": "free-memory", "service": "comfy"}).encode()
+    responses = []
+
+    def first_client():
+        request = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            responses.append((response.status, json.loads(response.read())))
+
+    thread = threading.Thread(target=first_client)
+    thread.start()
+    try:
+        assert started.wait(2)
+        second_request = urllib.request.Request(endpoint, data=body,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with pytest.raises(urllib.error.HTTPError) as rejected:
+            urllib.request.urlopen(second_request, timeout=2)
+        payload = json.loads(rejected.value.read())
+        assert rejected.value.code == 409
+        assert payload["code"] == "ACTION_BUSY"
+        assert payload["request_sent"] is False
+        release.set()
+        thread.join(5)
+        assert responses[0][0] == 200 and responses[0][1]["outcome"] == "accepted"
+        assert ComfyHandler.free_calls == 1
+    finally:
+        release.set()
+        manager.shutdown()
+        manager.server_close()
+        manager_thread.join()
+        comfy.shutdown()
+        comfy.server_close()
+        comfy_thread.join()
 
 
 def test_check_port_listening():

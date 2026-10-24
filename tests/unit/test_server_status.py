@@ -4,6 +4,7 @@ Unit tests for tools/server-manager/server_status.py (REQ-246)
 """
 
 import socket
+import json
 import sys
 import threading
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from hypothesis import given, settings, strategies as st
 
 # Add tools/server-manager to sys.path
 SM_DIR = Path(__file__).resolve().parent.parent.parent / "tools" / "server-manager"
@@ -103,7 +105,9 @@ def test_get_server_status_bundled(tmp_path):
             return True   # comfy is up
         return False
 
-    with patch.object(server_status, "check_port_listening", side_effect=fake_check):
+    with patch.object(server_status, "check_port_listening", side_effect=fake_check), \
+            patch.object(server_status.comfy_memory, "get_comfy_execution_state", return_value={
+                "execution_state": "idle", "queue_running": 0, "queue_pending": 0}):
         result = server_status.get_server_status(dist_index_path=dist_index)
 
     assert result["fe"]["status"] == "BUNDLED"
@@ -135,7 +139,9 @@ def test_get_server_status_dev():
 
     non_existent = Path("/non/existent/index.html")
 
-    with patch.object(server_status, "check_port_listening", side_effect=fake_check):
+    with patch.object(server_status, "check_port_listening", side_effect=fake_check), \
+            patch.object(server_status.comfy_memory, "get_comfy_execution_state", return_value={
+                "execution_state": "unknown", "queue_running": None, "queue_pending": None}):
         with patch.object(server_status, "is_frontend_bundled", return_value=False):
             result = server_status.get_server_status(dist_index_path=non_existent)
 
@@ -144,6 +150,121 @@ def test_get_server_status_dev():
     assert result["fe"]["name"] == "React FE (Dev: 5173)"
     assert result["comfy"]["status"] == "STOPPED"
     assert result["comfy"]["running"] is False
+    assert result["comfy"]["execution_state"] == "unknown"
+
+
+@pytest.mark.parametrize("body,state,running,pending", [
+    (b'{"queue_running":[],"queue_pending":[]}', "idle", 0, 0),
+    (b'{"queue_running":[{}],"queue_pending":[]}', "executing", 1, 0),
+    (b'{"queue_running":[],"queue_pending":[{}]}', "queued", 0, 1),
+], ids=["[REQ-380/AC-1]-idle", "[REQ-380/AC-1]-executing", "[REQ-380/AC-1]-queued"])
+def test_req380_queue_transport_local_http(body, state, running, pending):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class QueueHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
+    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])
+    finally:
+        listener.shutdown()
+        listener.server_close()
+        thread.join()
+    assert result["execution_state"] == state
+    assert result["queue_running"] == running
+    assert result["queue_pending"] == pending
+
+
+@pytest.mark.parametrize("body", [b"[]", b"{}", b"not-json"],
+                         ids=["[REQ-380/AC-1]-wrong-shape", "[REQ-380/AC-1]-missing-arrays", "[REQ-380/AC-1]-malformed"])
+def test_req380_bad_queue_fails_closed(body):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class QueueHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
+    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])
+    finally:
+        listener.shutdown()
+        listener.server_close()
+        thread.join()
+    assert result["execution_state"] == "unknown"
+    assert result["queue_running"] is None and result["queue_pending"] is None
+    assert result["execution_error"]
+
+
+def test_REQ_380_status_keeps_fe_be_and_numeric_queue_counts(tmp_path, monkeypatch):
+    config = tmp_path / "manager-config.json"
+    config.write_text('{"frontend":{"port":5173},"backend":{"port":8000},"wsl":{"port":8188}}',
+                      encoding="utf-8")
+    monkeypatch.setattr(server_status, "check_port_listening", lambda _port, timeout=0.5: True)
+    monkeypatch.setattr(server_status, "is_frontend_bundled", lambda _path=None: False)
+    monkeypatch.setattr(server_status.comfy_memory, "get_comfy_execution_state", lambda _port: {
+        "execution_state": "queued", "queue_running": 0, "queue_pending": 2})
+    result = server_status.get_server_status(config_path=config)
+    assert result["fe"]["running"] is True and result["be"]["running"] is True
+    assert result["comfy"]["execution_state"] == "queued"
+    assert result["comfy"]["queue_running"] == 0 and result["comfy"]["queue_pending"] == 2
+
+
+_json_leaf = st.none() | st.booleans() | st.integers() | st.text(max_size=8)
+_json_value = st.recursive(
+    _json_leaf,
+    lambda children: st.lists(children, max_size=3)
+    | st.dictionaries(st.text(max_size=6), children, max_size=3),
+    max_leaves=8,
+)
+
+
+@settings(max_examples=8, deadline=None)
+@given(running=st.lists(_json_value, max_size=3), pending=st.lists(_json_value, max_size=3))
+@pytest.mark.parametrize("_case", [pytest.param(None, id="[REQ-380/AC-1]-recursive-json")])
+def test_REQ_380_recursive_queue_envelopes_fail_closed_only_when_busy(running, pending, _case):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    body = json.dumps({"queue_running": running, "queue_pending": pending, "unrelated": {"ignored": True}}).encode()
+
+    class QueueHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
+    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])
+    finally:
+        listener.shutdown()
+        listener.server_close()
+        thread.join()
+    expected = "executing" if running else "queued" if pending else "idle"
+    assert result["execution_state"] == expected
+    assert result["queue_running"] == len(running)
+    assert result["queue_pending"] == len(pending)
 
 
 # ---------------------------------------------------------------------------

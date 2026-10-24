@@ -6,6 +6,7 @@ tags:
   - REQ-334
   - REQ-347
   - REQ-365
+  - REQ-380
 related_paths:
   - docs/backlog/pbi/active/REQ-314.md
   - docs/backlog/task/archive/REQ-334-T10.md
@@ -14,6 +15,9 @@ related_paths:
   - docs/design/REQ-347.md
   - docs/backlog/pbi/active/REQ-365.md
   - docs/design/REQ-365.md
+  - docs/design/REQ-380.md
+  - docs/design/REQ-380-test-plan.md
+  - docs/design/REQ-380-implementation-plan.md
   - frontend/src/pages/SettingsPage/components/VramGuardSection.tsx
   - frontend/src/components/ParamTypeMasterManagerModal.tsx
   - frontend/src/components/MappingMasterEditModal.tsx
@@ -33,10 +37,10 @@ related_paths:
 # Prompt Surgeon — Settings ページ仕様書 (SPEC_SETTINGS)
 
 **バージョン**: 3.0
-**最終更新**: 2026-10-15
+**最終更新**: 2026-10-24
 **実装ファイル**: `frontend/src/pages/SettingsPage.tsx`（`SettingsPage/components/*` 分割構成）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-365テスト計画](../design/REQ-365-test-plan.md) / [REQ-380設計](../design/REQ-380.md)
 
 ---
 
@@ -89,6 +93,10 @@ related_paths:
 
 systemタブは接続状態、VRAM、表示と操作の3論理カードで構成する。日常的なサービス管理はこのsystem欄から行い、管理リクエストは閲覧中ページと同じホスト名のポート `8899` にあるWeb Managerへ送る（例: `http://<現在のホスト名>:8899/api/status`、`/api/action`、`/api/logs`）。ポート `8899` は設定ページを配信する `8000` と別オリジンである。Web Manager API固有のブラウザーOrigin許可範囲は[運用ガイド](server_manager_guide.md)に定め、バックエンドAPI一般のCORS規則には拡張しない。`8000` が停止して設定ページを開けない場合は、PCのブラウザーから既存のWeb Manager画面 `http://<PCホスト名>:8899` を直接開いて管理する。接続状態は読み取り専用のバックエンド設定 `COMFY_URL` を反映し、フロントエンドからComfyUI URLを変更する項目は追加しない。既存API、store、環境設定の境界は維持し、これら以外の新しいAPIや設定保存契約を導入しない。
 
+ComfyUI行では、Web Managerの状態に `execution_state`（`idle` / `executing` / `queued` / `unknown`）とqueue件数を表示し、「メモリ解放」はTCP接続がLISTEN、状態が既知の`idle`、queueがrunning/pendingとも0、他のManager操作がなく、要求中でない場合だけ有効にする。Managerは全操作共通lockを取得した後、キャッシュを使わずqueueを再確認してからComfyUIの`/free`へ一度だけ送信する。停止・生成中・queue待機中・状態不明・Manager操作中・応答確認中は操作不可とし、理由を行内に示す。
+
+成功表示は「解放要求を受け付けました。空き容量は監視値で確認してください」とし、物理VRAM解放の完了を意味しない。ComfyUIの/free受付は非同期であり、直後は以前の測定値が残る場合がある。次の生成ではモデル再ロード待ちが生じることがある。受付後の「メモリ解放」操作は、fresh status GETで`execution_state=idle`かつqueue running/pendingが0/0と確認するまで非活性に保つ。VRAMは通常WebSocketの`SYSTEM_STATS`（2.5秒周期）で同期し、既存Backend monitorの2.5秒周期と合わせて通常5秒以内に新しい監視値へ追従する。WebSocket切断中は表示中のVRAM欄が`GET /api/settings/vram`を2.5秒間隔で再取得し、失敗時は更新できない旨と古い測定値であることを示す。queue確認と/freeの間に外部クライアントが新しいpromptを送る競合は完全には排除できない。timeout、HTTP 504、通信断、応答不明時は「要求結果未確認」と表示し、Manager状態とVRAMを再取得するが同じPOSTは再送しない。未保存の閾値draftは状態・VRAMの再取得や非同期応答で上書きせず、保存済み値と区別して保持する。
+
 systemタブのサービス管理は、Supervisor / Backend / ComfyUI（および存在する場合はFrontend）の行ごとに死活ランプと「ログ ▼」を持ち、ログは該当行の直下にインライン展開する（既存の「ログ本文は初期状態で折り畳む」規定と整合し、状態・ログ取得7秒／サービス操作120秒の待機予算は維持する）。VRAMガードは1024px（lg）以上で左=メーター（黄色の閾値縦線と閾値タグ）、右=閾値スライダーの2ペイン、未満は縦積みとし、スライダー操作はクライアントStateで即時に線とタグへ反映する（HTTP/WS負荷なし）。メーターの色は、空き容量が閾値未満で赤、閾値+1.0GB未満で黄とする。サムネイル比率は1行のドロップダウンで選択する。
 
 ### 3-1. 設定ページのレスポンシブ動作
@@ -97,7 +105,7 @@ Workflow/Mapping設定では `WorkflowConnectionSection` 内の `AdaptiveWorkflo
 
 wire slotのrole名およびparameter/select名は既存の契約どおり表示する。簡潔化するのはstage group見出しだけとし、slot名をgroup表示名へ置き換えない。表示整理に伴うDB、API、schemaの変更は行わない。
 
-状態・ログ取得は7秒、サービス操作は120秒の待機予算を使う。操作timeout・504・応答不明は「要求結果未確認」と表示して状態を再取得し、再送しない。running表示だけで再起動成功と断定しない。ログAPIの`lines`は総行数number、本文は`content`であり、FEは表示用配列へ正規化する。Managerのbusyと各サービスの稼働状態は区別する。
+状態・ログ取得は7秒、サービス操作は120秒の待機予算を使う。操作timeout・504・応答不明は「要求結果未確認」と表示して状態を再取得し、再送しない。running表示だけで再起動成功と断定しない。メモリ解放の成功応答は要求受付であり、物理解放完了を示さない。ログAPIの`lines`は総行数number、本文は`content`であり、FEは表示用配列へ正規化する。Managerのbusyと各サービスの稼働状態は区別する。
 
 画面幅768px未満ではタブバーを横スクロール可能にし、スナップ位置をタブ単位にする。タブを画面幅へ均等縮小せず、選択タブが見える状態を保つ。設定カードは狭い画面で縦積みにし、操作対象は44px以上とする。AppShellのbottom nav（<768px）、tablet rail（768–1023px）、desktop sidebar（>=1024px）は[SPEC_COMMON.md](./SPEC_COMMON.md)の共通境界に従う。
 

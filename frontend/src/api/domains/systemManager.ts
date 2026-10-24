@@ -1,6 +1,7 @@
 export type ManagerServiceName = 'backend' | 'frontend' | 'comfy' | 'manager'
 export type ManagedServiceName = 'backend' | 'comfy' | 'frontend' | 'fe'
-export type ManagerActionName = 'start' | 'stop' | 'restart'
+export type ManagerActionName = 'start' | 'stop' | 'restart' | 'free-memory'
+export type ManagerExecutionState = 'idle' | 'executing' | 'queued' | 'unknown'
 
 export interface ManagerProcessStatus {
   running: boolean
@@ -8,10 +9,17 @@ export interface ManagerProcessStatus {
   [key: string]: unknown
 }
 
+export interface ManagerComfyStatus extends ManagerProcessStatus {
+  execution_state?: ManagerExecutionState
+  queue_running?: number | null
+  queue_pending?: number | null
+  execution_error?: string
+}
+
 export interface ManagerStatus {
   fe: ManagerProcessStatus
   be: ManagerProcessStatus
-  comfy: ManagerProcessStatus
+  comfy: ManagerComfyStatus
   action_in_progress?: { service: string; action: string } | null
 }
 
@@ -20,6 +28,7 @@ export interface ManagerActionResult {
   action: string
   output?: unknown
   error?: unknown
+  outcome?: 'accepted' | 'unconfirmed'
 }
 
 export interface ManagerLogs {
@@ -77,7 +86,16 @@ function decodeStatus(value: unknown): ManagerStatus {
       (!isRecord(action) || typeof action.service !== 'string' || typeof action.action !== 'string')) {
     throw new Error('Invalid manager action status')
   }
-  return value as unknown as ManagerStatus
+  const comfy = value.comfy
+  const state = comfy.execution_state
+  const validState = state === 'idle' || state === 'executing' || state === 'queued' || state === 'unknown'
+  const validCount = (count: unknown): count is number | null => count === null || Number.isInteger(count) && (count as number) >= 0
+  const validCounts = (comfy.queue_running === undefined || validCount(comfy.queue_running)) &&
+    (comfy.queue_pending === undefined || validCount(comfy.queue_pending))
+  const validError = comfy.execution_error === undefined || typeof comfy.execution_error === 'string'
+  const validExecution = (state === undefined || validState) && validCounts && validError
+  const normalizedComfy = validExecution ? comfy : { ...comfy, execution_state: 'unknown' }
+  return { ...(value as unknown as ManagerStatus), comfy: normalizedComfy as ManagerComfyStatus }
 }
 
 function decodeActionResult(value: unknown): ManagerActionResult {
@@ -85,11 +103,14 @@ function decodeActionResult(value: unknown): ManagerActionResult {
       typeof value.action !== 'string') {
     throw new Error('Invalid manager action response')
   }
+  if (value.outcome !== undefined && value.outcome !== 'accepted' && value.outcome !== 'unconfirmed') {
+    throw new Error('Invalid manager action outcome')
+  }
   const result = value as unknown as ManagerActionResult
   if (result.status === 'timeout') {
     throw new ManagerActionOutcomeUnknownError('Manager action timeout; outcome is unconfirmed')
   }
-  if (result.status !== 'ok') {
+    if (result.status !== 'ok') {
     const detail = typeof result.error === 'string' ? `: ${result.error}` : ''
     throw new Error(`Manager action ${result.status}${detail}`)
   }
@@ -147,6 +168,42 @@ export const systemManagerApi = {
       if (error instanceof ManagerRequestTimeoutError ||
           error instanceof ManagerHttpError && (error.status === 503 || error.status === 504) ||
           error instanceof TypeError) {
+        throw new ManagerActionOutcomeUnknownError(error.message)
+      }
+      throw error
+    }
+  },
+
+  freeMemory: async (): Promise<ManagerActionResult> => {
+    try {
+      let response: Response
+      try {
+        response = await fetch(`${managerBaseUrl()}/api/action`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'free-memory', service: 'comfy' }),
+          signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
+        })
+      } catch (error) {
+        if (error instanceof Error && error.name === 'TimeoutError') throw new ManagerRequestTimeoutError(ACTION_REQUEST_TIMEOUT_MS)
+        throw error
+      }
+      let value: unknown
+      try { value = await response.json() } catch { throw new ManagerActionOutcomeUnknownError('Free-memory response body is unavailable') }
+      if (!response.ok) {
+        if ((response.status === 409 || response.status === 503) && isRecord(value) &&
+            value.status === 'error' && value.action === 'free-memory' && value.request_sent === false &&
+            typeof value.code === 'string' && typeof value.error === 'string') {
+          throw new Error(value.error)
+        }
+        throw new ManagerActionOutcomeUnknownError(`Manager action HTTP ${response.status}; outcome is unconfirmed`)
+      }
+      const result = decodeActionResult(value)
+      if (result.action !== 'free-memory' || result.status !== 'ok' || result.outcome !== 'accepted') {
+        throw new Error('Invalid free-memory acceptance response')
+      }
+      return result
+    } catch (error) {
+      if (error instanceof ManagerRequestTimeoutError || error instanceof ManagerHttpError && (error.status === 503 || error.status === 504) || error instanceof TypeError) {
         throw new ManagerActionOutcomeUnknownError(error.message)
       }
       throw error
