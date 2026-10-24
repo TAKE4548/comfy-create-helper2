@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.schemas.generation import BatchRequest, CancelRequest, CancelTarget, JobStatus
+from app.schemas.generation import BatchRequest, CancelRequest, CancelTarget, JobStatus, ReleaseRequest
 from app.services.generation_service import GenerationService
 
 
@@ -34,7 +34,7 @@ class MemoryRepository:
                 job["normal_group_id"]
                 for job in self.jobs.values()
                 if job["scope"] == "normal"
-                and job["status"] not in {"succeeded", "failed", "cancelled"}
+                and job["status"] in {"queued", "submitting", "running"}
                 and job["normal_group_id"] is not None
             ),
             None,
@@ -73,6 +73,22 @@ class MemoryRepository:
     def find_request(self, request_id: str) -> dict[str, Any] | None:
         return self.request_results.get(request_id)
 
+    def release_unconfirmed(self, job_id: str, release: dict[str, Any]) -> dict[str, Any] | None:
+        job = self.jobs.get(job_id)
+        if job is None or job["status"] != "unconfirmed":
+            return None
+        job.update(status="released", release=release)
+        self.revision += 1
+        return job
+
+    def annotate_late_identity(self, job_id: str, prompt_id: str) -> dict[str, Any] | None:
+        job = self.jobs.get(job_id)
+        if job is None or job["status"] != "released" or job.get("prompt_id") is not None:
+            return None
+        job.update(prompt_id=prompt_id, release={**job["release"], "late_prompt_id": prompt_id})
+        self.revision += 1
+        return job
+
     def snapshot(self) -> dict[str, Any]:
         if self.fail_snapshot:
             raise RuntimeError("snapshot unavailable")
@@ -84,7 +100,7 @@ class MemoryRepository:
                 (
                     job["normal_group_id"]
                     for job in self.jobs.values()
-                    if job["scope"] == "normal" and job["status"] not in {"succeeded", "failed", "cancelled"}
+                    if job["scope"] == "normal" and job["status"] in {"queued", "submitting", "running"}
                 ),
                 None,
             ),
@@ -1413,3 +1429,651 @@ async def test_progress_event_multiple_jobs_without_prompt_id_dropped() -> None:
 
 
 
+
+
+ALL_JOB_STATUSES: list[JobStatus] = ["queued", "submitting", "running", "succeeded", "failed", "cancelled", "unconfirmed", "released"]
+
+
+def _service(repository: MemoryRepository, bridge: FakeBridge, **kwargs: Any) -> GenerationService:
+    return GenerationService(
+        repository,
+        bridge,
+        clock=lambda: "2026-10-10T00:00:00Z",
+        vram_status=kwargs.get("vram_status", lambda: {}),
+        publish=kwargs.get("publish"),
+    )
+
+
+async def _restart(repository: MemoryRepository, bridge: FakeBridge, **kwargs: Any) -> GenerationService:
+    service = _service(repository, bridge, **kwargs)
+    await service.start()
+    return service
+
+
+async def _wait_until(predicate: Any, timeout: float = 3.5) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition was not reached in time")
+        await asyncio.sleep(0.05)
+
+
+def _seed_unconfirmed(repository: MemoryRepository, job_id: str, prompt_id: str | None = None) -> None:
+    repository.transition(
+        job_id,
+        "unconfirmed",
+        prompt_id=prompt_id,
+        failure={"reason": "upstream submission outcome is unknown", "outcome": "unconfirmed"},
+        finished_at="2026-10-10T00:00:00Z",
+    )
+
+
+class _FlakyUnconfirmedRepository(MemoryRepository):
+    """Persistence fault injection: the Nth transition to unconfirmed raises once."""
+
+    def __init__(self, fail_on_unconfirmed_call: int) -> None:
+        super().__init__()
+        self.unconfirmed_calls = 0
+        self.fail_on_unconfirmed_call = fail_on_unconfirmed_call
+
+    def transition(self, job_id: str, status: JobStatus, **fields: Any) -> dict[str, Any]:
+        if status == "unconfirmed":
+            self.unconfirmed_calls += 1
+            if self.unconfirmed_calls == self.fail_on_unconfirmed_call:
+                raise RuntimeError("temporary commit failure")
+        return super().transition(job_id, status, **fields)
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_unconfirmed_job_keeps_failure_reason_and_is_not_queued_in_snapshot() -> None:
+    """[REQ-335/AC-1] A lost upstream POST stays unconfirmed with its reason and is never resubmitted."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    bridge.submit_error = TimeoutError("upstream response lost")
+    service = _service(repository, bridge)
+    accepted = await service.accept(_payload())
+    job_id = accepted["job_ids"][0]
+    await service.start()
+    await _wait_until(lambda: repository.jobs[job_id]["status"] == "unconfirmed")
+    await service.stop()
+    assert repository.jobs[job_id]["failure"]["outcome"] == "unconfirmed"
+    assert len(bridge.submissions) == 1
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+async def test_single_cancel_of_unconfirmed_without_prompt_id_is_unconfirmed_not_already_terminal() -> None:
+    """[REQ-335/AC-2] Cancelling an unconfirmed job without prompt_id reports unconfirmed and calls nothing upstream."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id)
+    result = await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    assert result.items[0].outcome == "unconfirmed"
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+async def test_single_cancel_of_unconfirmed_with_pending_prompt_follows_confirmed_cancel_flow() -> None:
+    """[REQ-335/AC-2] An unconfirmed job whose prompt is still pending follows the confirmed cancel flow."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    bridge.pending = [{"prompt_id": "p-1", "client_id": "server"}]
+    result = await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    assert result.items[0].outcome == "cancelled"
+    assert repository.jobs[job_id]["status"] == "cancelled"
+    assert bridge.deleted == [["p-1"]]
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+async def test_single_cancel_of_unconfirmed_absent_from_queue_stays_unconfirmed() -> None:
+    """[REQ-335/AC-2] Absence from the queue does not confirm cancellation of an unconfirmed job."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    result = await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    assert result.items[0].outcome == "unconfirmed"
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+    assert bridge.deleted == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+async def test_cancel_queued_and_cancel_unsubmitted_never_report_already_terminal_for_unconfirmed() -> None:
+    """[REQ-335/AC-2] cancel_queued and cancel_unsubmitted report unconfirmed, never already_terminal."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id)
+    unsubmitted = await service.cancel_unsubmitted(job_id)
+    queued = await service.cancel_queued(job_id)
+    assert unsubmitted.outcome == "unconfirmed"
+    assert queued.outcome == "unconfirmed"
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+@pytest.mark.parametrize(("scope", "mode"), [("all", "queued"), ("all", "all"), ("normal", "queued"), ("normal", "all")])
+async def test_bulk_cancel_reports_leftover_unconfirmed_items_per_scope(
+    scope: Literal["all", "normal"], mode: Literal["queued", "all"]
+) -> None:
+    """[REQ-335/AC-2] Bulk cancel lists leftover unconfirmed items within its scope only."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    normal_id = (await service.accept(_payload(scope="normal")))["job_ids"][0]
+    studio_id = (await service.accept(_payload(scope="studio", project_id=1)))["job_ids"][0]
+    _seed_unconfirmed(repository, normal_id)
+    _seed_unconfirmed(repository, studio_id)
+    result = await service.cancel_operation(CancelRequest(scope=scope, mode=mode))
+    reported = {item.job_id for item in result.items if item.outcome == "unconfirmed"}
+    assert normal_id in reported
+    assert (studio_id in reported) == (scope == "all")
+    assert repository.jobs[studio_id]["status"] == "unconfirmed"
+    assert repository.jobs[normal_id]["status"] == "unconfirmed"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+async def test_cancel_of_released_record_is_not_cancelled_and_calls_nothing_upstream() -> None:
+    """[REQ-335/AC-3] A released record is reported not_cancelled and no upstream call is made."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    repository.transition(job_id, "released")
+    result = await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    assert result.items[0].outcome == "not_cancelled"
+    assert repository.jobs[job_id]["status"] == "released"
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+@pytest.mark.parametrize(("upstream", "expected"), [("running", "running"), ("pending", "queued"), ("success", "succeeded"), ("error", "failed")])
+async def test_reconcile_adopts_upstream_state_for_unconfirmed_with_prompt_id(upstream: str, expected: str) -> None:
+    """[REQ-335/AC-5] Reconcile moves an unconfirmed job with prompt_id to the upstream-confirmed state."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    if upstream == "running":
+        bridge.running = [{"prompt_id": "p-1", "client_id": "server"}]
+    elif upstream == "pending":
+        bridge.pending = [{"prompt_id": "p-1", "client_id": "server"}]
+    elif upstream == "success":
+        bridge.history_by_prompt["p-1"] = {
+            "status": {"completed": True, "status_str": "success", "messages": [["execution_success", {}]]},
+            "outputs": {},
+        }
+    else:
+        bridge.history_by_prompt["p-1"] = {
+            "status": {"completed": True, "status_str": "error", "messages": [["execution_error", {}]]},
+            "outputs": {},
+        }
+    await service.reconcile()
+    job = repository.jobs[job_id]
+    assert job["status"] == expected
+    if expected in {"running", "queued"}:
+        assert job["failure"] is None and job["finished_at"] is None
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+async def test_reconcile_unconfirmed_without_conclusion_is_noop_without_revision_churn() -> None:
+    """[REQ-335/AC-5] An unconfirmed job with no new conclusion causes no revision bump or publish."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[Any] = []
+    service = _service(repository, bridge, publish=received.append)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    bridge.history_by_prompt["p-1"] = {
+        "status": {"completed": True, "status_str": "error", "messages": [["execution_interrupted", {}]]},
+        "outputs": {},
+    }
+    await service.reconcile()  # flush the seeded state once; the baseline is then steady
+    revision = repository.revision
+    published = len(received)
+    for _ in range(3):
+        await service.reconcile()
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+    assert repository.revision == revision
+    assert len(received) == published
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+async def test_event_for_unconfirmed_with_prompt_id_resumes_running() -> None:
+    """[REQ-335/AC-5] An execution_start event for an unconfirmed job with prompt_id resumes it to running."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    await service.on_event({"type": "execution_start", "prompt_id": "p-1", "data": {}})
+    assert repository.jobs[job_id]["status"] == "running"
+    assert repository.jobs[job_id]["failure"] is None
+    assert repository.jobs[job_id]["finished_at"] is None
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_new_generation_completes_while_unconfirmed_exists_without_resubmission() -> None:
+    """[REQ-335/AC-4] A new generation is submitted once while an older unconfirmed job remains untouched."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    old_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, old_id)
+    await service.start()
+    await service.accept(_payload())
+    await _wait_until(lambda: len(bridge.submissions) == 1)
+    await asyncio.sleep(0.1)
+    await service.stop()
+    assert len(bridge.submissions) == 1
+    assert repository.jobs[old_id]["status"] == "unconfirmed"
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_single_cancel_of_unconfirmed_never_touches_unrelated_jobs() -> None:
+    """[REQ-335/AC-4] Cancelling an unconfirmed job leaves unrelated queued jobs and upstream untouched."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    unrelated_id = (await service.accept(_payload()))["job_ids"][0]
+    target_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, target_id)
+    await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=target_id)))
+    assert repository.jobs[unrelated_id]["status"] == "queued"
+    assert repository.jobs[target_id]["status"] == "unconfirmed"
+    assert bridge.deleted == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_startup_recovery_converts_orphaned_queued_and_submitting_without_prompt_id_to_unconfirmed() -> None:
+    """[REQ-335/AC-1] After restart, orphaned queued/submitting rows without prompt_id become unconfirmed, never resent."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    seed = _service(repository, bridge)
+    queued_id = (await seed.accept(_payload()))["job_ids"][0]
+    submitting_id = (await seed.accept(_payload()))["job_ids"][0]
+    repository.transition(submitting_id, "submitting")
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.3)
+    await restarted.stop()
+    for job_id, status in ((queued_id, "queued"), (submitting_id, "submitting")):
+        job = repository.jobs[job_id]
+        assert job["status"] == "unconfirmed"
+        assert job["failure"] == {"reason": GenerationService._RECOVERY_REASONS[status], "outcome": "unconfirmed"}
+        assert job["prompt_id"] is None
+    assert bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+@getattr(pytest.mark, "AC-4")
+@pytest.mark.parametrize("prompt_id", [None, "p-1"])
+@pytest.mark.parametrize("status", ALL_JOB_STATUSES)
+async def test_startup_recovery_touches_only_orphaned_submissions_exhaustive(status: JobStatus, prompt_id: str | None) -> None:
+    """[REQ-335/AC-1][REQ-335/AC-4] Only queued/submitting rows without prompt_id are recovered; all others are unchanged."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    seed = _service(repository, bridge)
+    job_id = (await seed.accept(_payload()))["job_ids"][0]
+    repository.transition(job_id, status, prompt_id=prompt_id)
+    before = dict(repository.jobs[job_id])
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.1)
+    await restarted.stop()
+    after = repository.jobs[job_id]
+    if status in {"queued", "submitting"} and prompt_id is None:
+        assert after["status"] == "unconfirmed"
+    else:
+        assert after == before
+    assert bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_startup_recovery_leaves_genuinely_pending_job_unconverted() -> None:
+    """[REQ-335/AC-4] A job accepted in this process (in _pending) is not converted by startup recovery."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    bridge.submit_started = asyncio.Event()
+    bridge.submit_gate = asyncio.Event()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    await service.start()
+    await asyncio.wait_for(bridge.submit_started.wait(), timeout=2)
+    assert repository.jobs[job_id]["status"] == "submitting"
+    assert len(bridge.submissions) == 1
+    await service.stop()
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_startup_recovery_is_idempotent_and_does_not_churn_revision() -> None:
+    """[REQ-335/AC-1] Repeated starts convert once; later starts neither bump revision nor publish."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    received: list[Any] = []
+    seed = _service(repository, bridge)
+    job_id = (await seed.accept(_payload()))["job_ids"][0]
+    service = _service(repository, bridge, publish=received.append)
+    await service.start()
+    await asyncio.sleep(0.1)
+    await service.stop()
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+    revision = repository.revision
+    published = len(received)
+    await service.start()
+    await service.start()
+    await asyncio.sleep(0.1)
+    await service.stop()
+    assert repository.revision == revision
+    assert len(received) == published
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_startup_recovery_runs_without_upstream_even_when_comfyui_is_down() -> None:
+    """[REQ-335/AC-1] Recovery completes without any upstream call even when ComfyUI queue reads fail."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    bridge.queue_error = RuntimeError("comfyui down")
+    seed = _service(repository, bridge)
+    job_id = (await seed.accept(_payload()))["job_ids"][0]
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.1)
+    await restarted.stop()
+    assert repository.jobs[job_id]["status"] == "unconfirmed"
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0 and bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_startup_recovery_failure_is_nonfatal_and_retried_by_worker() -> None:
+    """[REQ-335/AC-1] A failing commit does not fail start(); the worker retries and converts only the remaining row."""
+    repository = _FlakyUnconfirmedRepository(fail_on_unconfirmed_call=2)
+    bridge = FakeBridge()
+    seed = _service(repository, bridge)
+    first_id = (await seed.accept(_payload()))["job_ids"][0]
+    second_id = (await seed.accept(_payload()))["job_ids"][0]
+    restarted = await _restart(repository, bridge)
+    await _wait_until(
+        lambda: repository.jobs[first_id]["status"] == "unconfirmed"
+        and repository.jobs[second_id]["status"] == "unconfirmed"
+    )
+    await restarted.stop()
+    assert repository.unconfirmed_calls == 3
+    assert repository.jobs[first_id]["failure"]["outcome"] == "unconfirmed"
+    assert repository.jobs[second_id]["failure"]["outcome"] == "unconfirmed"
+    assert bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_same_process_restart_keeps_genuinely_pending_jobs_and_submits_once() -> None:
+    """[REQ-335/AC-4] Stop/start in the same process keeps vram-blocked pending jobs and submits them once."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    status = {"vram_guard_enabled": True, "vram_free_gb": 1.0, "vram_min_free_gb": 2.0}
+    service = _service(repository, bridge, vram_status=lambda: status)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    await service.start()
+    await asyncio.sleep(0.1)
+    await service.stop()
+    await service.start()
+    await asyncio.sleep(0.1)
+    assert repository.jobs[job_id]["status"] == "queued"
+    assert bridge.submissions == []
+    status["vram_free_gb"] = 2.5
+    await _wait_until(lambda: len(bridge.submissions) == 1)
+    await asyncio.sleep(0.1)
+    await service.stop()
+    assert len(bridge.submissions) == 1
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_new_generation_after_startup_recovery_opens_new_group_and_submits_once() -> None:
+    """[REQ-335/AC-4] After recovery, a new generation opens a new normal group and is submitted once."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    seed = _service(repository, bridge)
+    old_id = (await seed.accept(_payload()))["job_ids"][0]
+    old_group = repository.jobs[old_id]["normal_group_id"]
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.1)
+    new_id = (await restarted.accept(_payload()))["job_ids"][0]
+    await _wait_until(lambda: len(bridge.submissions) == 1)
+    await asyncio.sleep(0.1)
+    await restarted.stop()
+    assert repository.jobs[old_id]["status"] == "unconfirmed"
+    assert repository.jobs[new_id]["normal_group_id"] != old_group
+    assert len(bridge.submissions) == 1
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_request_replay_after_startup_recovery_does_not_requeue_or_resubmit() -> None:
+    """[REQ-335/AC-4] Replaying the same request after recovery returns the same jobs and submits nothing."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    payload = _payload()
+    seed = _service(repository, bridge)
+    first = await seed.accept(payload)
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.1)
+    replay = await restarted.accept(payload)
+    await asyncio.sleep(0.1)
+    await restarted.stop()
+    assert replay["job_ids"] == first["job_ids"]
+    assert repository.jobs[first["job_ids"][0]]["status"] == "unconfirmed"
+    assert bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+async def test_cancel_of_startup_recovered_unconfirmed_reports_unconfirmed_without_upstream_calls() -> None:
+    """[REQ-335/AC-2] Cancelling a startup-recovered unconfirmed job reports unconfirmed with no upstream calls."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    seed = _service(repository, bridge)
+    job_id = (await seed.accept(_payload()))["job_ids"][0]
+    restarted = await _restart(repository, bridge)
+    await asyncio.sleep(0.1)
+    result = await restarted.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=job_id)))
+    await restarted.stop()
+    assert result.items[0].outcome == "unconfirmed"
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0 and bridge.submissions == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+async def test_release_makes_no_upstream_calls_and_publishes_once() -> None:
+    """[REQ-335/AC-3] Releasing a prompt-less unconfirmed record makes no upstream call and publishes once."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    published: list[dict[str, Any]] = []
+
+    async def record(snapshot: dict[str, Any]) -> None:
+        published.append(snapshot)
+
+    service = _service(repository, bridge, publish=record)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id)
+    published.clear()
+    submissions_before = list(bridge.submissions)
+    operation = await service.release_unconfirmed(ReleaseRequest(job_ids=[job_id]))
+    item = operation.items[0]
+    assert item.outcome == "released"
+    assert item.upstream_check == "skipped_no_identity"
+    assert repository.jobs[job_id]["status"] == "released"
+    assert bridge.submissions == submissions_before
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0 and bridge.interrupt_all_calls == 0
+    assert len(published) == 1
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+async def test_release_only_affects_unconfirmed_and_reports_each_item() -> None:
+    """[REQ-335/AC-3] A mixed release request reports each item's outcome and leaves non-unconfirmed rows unchanged."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    queued = (await service.accept(_payload()))["job_ids"][0]
+    running = (await service.accept(_payload()))["job_ids"][0]
+    succeeded = (await service.accept(_payload()))["job_ids"][0]
+    cancelled = (await service.accept(_payload()))["job_ids"][0]
+    already = (await service.accept(_payload()))["job_ids"][0]
+    unconfirmed = (await service.accept(_payload()))["job_ids"][0]
+    repository.transition(running, "running")
+    repository.transition(succeeded, "succeeded")
+    repository.transition(cancelled, "cancelled")
+    repository.transition(already, "released")
+    _seed_unconfirmed(repository, unconfirmed)
+    before = {job_id: repository.jobs[job_id]["status"] for job_id in (queued, running, succeeded, cancelled, already)}
+    operation = await service.release_unconfirmed(
+        ReleaseRequest(job_ids=[queued, running, succeeded, cancelled, already, "missing-job", unconfirmed])
+    )
+    assert [item.outcome for item in operation.items] == [
+        "not_released", "not_released", "not_released", "not_released", "already_released", "rejected", "released",
+    ]
+    for job_id, status in before.items():
+        assert repository.jobs[job_id]["status"] == status
+    assert repository.jobs[unconfirmed]["status"] == "released"
+    assert bridge.submissions == [] and bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_cancel_or_release_of_unconfirmed_never_touches_unrelated_jobs() -> None:
+    """[REQ-335/AC-4] Releasing or cancelling an unconfirmed record leaves queued/running jobs and upstream calls unchanged."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    queued = (await service.accept(_payload()))["job_ids"][0]
+    running = (await service.accept(_payload()))["job_ids"][0]
+    repository.transition(running, "running")
+    released_target = (await service.accept(_payload()))["job_ids"][0]
+    cancel_target = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, released_target)
+    _seed_unconfirmed(repository, cancel_target)
+    submissions_before = list(bridge.submissions)
+    await service.release_unconfirmed(ReleaseRequest(job_ids=[released_target]))
+    await service.cancel_operation(CancelRequest(mode="single", target=CancelTarget(job_id=cancel_target)))
+    assert repository.jobs[queued]["status"] == "queued"
+    assert repository.jobs[running]["status"] == "running"
+    assert repository.jobs[released_target]["status"] == "released"
+    assert bridge.submissions == submissions_before
+    assert bridge.deleted == [] and bridge.interrupts == [] and bridge.clears == 0 and bridge.interrupt_all_calls == 0
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+@pytest.mark.parametrize(
+    ("upstream", "outcome", "status", "check"),
+    [
+        ("running", "not_released", "running", None),
+        ("pending", "not_released", "queued", None),
+        ("success", "not_released", "succeeded", None),
+        ("absent", "released", "released", "not_found"),
+        ("error", "released", "released", "unavailable"),
+    ],
+)
+async def test_release_with_prompt_id_checks_upstream_and_refuses_when_active(
+    upstream: str, outcome: str, status: str, check: str | None
+) -> None:
+    """[REQ-335/AC-5] A release with prompt_id re-checks upstream once and refuses when upstream became active."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    _seed_unconfirmed(repository, job_id, prompt_id="p-1")
+    if upstream == "running":
+        bridge.running = [{"prompt_id": "p-1", "client_id": "server"}]
+    elif upstream == "pending":
+        bridge.pending = [{"prompt_id": "p-1", "client_id": "server"}]
+    elif upstream == "success":
+        bridge.history_by_prompt["p-1"] = {
+            "status": {"completed": True, "status_str": "success", "messages": [["execution_success", {}]]},
+            "outputs": {},
+        }
+    elif upstream == "error":
+        bridge.queue_error = RuntimeError("comfyui down")
+    operation = await service.release_unconfirmed(ReleaseRequest(job_ids=[job_id]))
+    item = operation.items[0]
+    assert item.outcome == outcome
+    assert item.status == status
+    assert repository.jobs[job_id]["status"] == status
+    if check is not None:
+        assert item.upstream_check == check
+    assert bridge.submissions == [] and bridge.deleted == [] and bridge.interrupts == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+async def test_late_binding_after_release_annotates_identity_without_changing_status() -> None:
+    """[REQ-335/AC-5] A late prompt binding after release annotates prompt_id and late_prompt_id without changing status."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    # Binding-pending state: upstream accepted but local prompt binding commit failed (no prompt_id persisted yet).
+    _seed_unconfirmed(repository, job_id)
+    service._binding_retry[job_id] = "late-p"
+    await service.release_unconfirmed(ReleaseRequest(job_ids=[job_id]))
+    assert repository.jobs[job_id]["status"] == "released"
+    submissions_before = list(bridge.submissions)
+    service._retry_prompt_bindings()
+    job = repository.jobs[job_id]
+    assert job["status"] == "released"
+    assert job["prompt_id"] == "late-p"
+    assert job["release"]["late_prompt_id"] == "late-p"
+    assert job["release"]["reason"] == "user_release"
+    assert bridge.submissions == submissions_before
+    assert job_id not in service._binding_retry

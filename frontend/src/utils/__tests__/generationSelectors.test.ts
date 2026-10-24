@@ -1,6 +1,11 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { GenerationSnapshot, JobView, Scope } from '../generationSelectors'
-import { selectProgress, selectWait } from '../generationSelectors'
+import { selectProgress, selectReleasedJobs, selectUnconfirmedJobs, selectWait } from '../generationSelectors'
+
+const ALL_STATUSES: JobView['status'][] = [
+  'queued', 'submitting', 'running', 'succeeded', 'failed', 'cancelled', 'unconfirmed', 'released',
+]
 
 const job = (
   id: string,
@@ -153,7 +158,7 @@ describe('selectWait', () => {
     expect(selectWait(runningTarget, 'studio', null, 'current')).toBeNull()
   })
 
-  it('counts queued, submitting, running, and unconfirmed blockers but ignores terminal rows', () => {
+  it('[REQ-335/AC-1] counts queued, submitting and running blockers but ignores terminal, unconfirmed and released rows', () => {
     const state = snapshot([
       job('target', 'normal', 'queued'),
       job('running', 'normal', 'running', { session_id: 'session-b' }),
@@ -162,8 +167,80 @@ describe('selectWait', () => {
       job('failed', 'normal', 'failed', { session_id: 'session-b' }),
       job('succeeded', 'normal', 'succeeded', { session_id: 'session-b' }),
       job('cancelled', 'normal', 'cancelled', { session_id: 'session-b' }),
-      job('unconfirmed', 'normal', 'unconfirmed', { session_id: 'session-b' })
+      job('unconfirmed', 'normal', 'unconfirmed', { session_id: 'session-b' }),
+      job('released', 'normal', 'released', { session_id: 'session-b' })
     ])
-    expect(selectWait(state, 'normal', 'session-a')).toEqual({ kind: 'session', remaining: 4, label: '別セッションの通常生成' })
+    expect(selectWait(state, 'normal', 'session-a')).toEqual({ kind: 'session', remaining: 3, label: '別セッションの通常生成' })
+  })
+
+  it('[REQ-335/AC-1] excludes unconfirmed and released from normal N, F and wait counts', () => {
+    const state = snapshot([
+      job('succeeded', 'normal', 'succeeded'),
+      job('unconfirmed', 'normal', 'unconfirmed'),
+      job('released', 'normal', 'released'),
+      job('queued', 'normal', 'queued')
+    ])
+    expect(selectProgress(state, 'normal', null)).toMatchObject({ finished: 1, total: 2 })
+    expect(selectProgress(snapshot([job('only-unconfirmed', 'normal', 'unconfirmed')]), 'normal', null)).toMatchObject({ total: 0, idle: true })
+    const studio = snapshot([
+      job('succeeded', 'studio', 'succeeded', { batch_id: 'batch-x' }),
+      job('released', 'studio', 'released', { batch_id: 'batch-x' }),
+      job('unconfirmed', 'studio', 'unconfirmed', { batch_id: 'batch-x' })
+    ])
+    expect(selectProgress(studio, 'studio', null, 'batch-x')).toMatchObject({ finished: 1, total: 2 })
+  })
+
+  it('[REQ-335/AC-1] selectUnconfirmedJobs returns out-of-group rows and honours the session filter', () => {
+    const state = snapshot([
+      job('old-group-a', 'normal', 'unconfirmed', { normal_group_id: 'older-group', session_id: 'session-a' }),
+      job('current-b', 'normal', 'unconfirmed', { session_id: 'session-b' }),
+      job('current-a', 'normal', 'unconfirmed', { session_id: 'session-a' }),
+      job('queued', 'normal', 'queued')
+    ])
+    expect(selectUnconfirmedJobs(state).map((item) => item.job_id)).toEqual(['old-group-a', 'current-b', 'current-a'])
+    expect(selectUnconfirmedJobs(state, 'session-a').map((item) => item.job_id)).toEqual(['old-group-a', 'current-a'])
+  })
+
+  it('[REQ-335/AC-1] selectReleasedJobs sorts newest first and applies the limit', () => {
+    const released = (id: string, at: string, session = 'session-a') => job(id, 'normal', 'released', {
+      session_id: session,
+      release: { released_at: at, released_by_session: null, reason: 'user_release', upstream_check: 'not_found', late_prompt_id: null },
+    })
+    const state = snapshot([
+      released('r-old', '2026-10-20T00:00:00Z'),
+      released('r-new', '2026-10-24T00:00:00Z'),
+      released('r-other', '2026-10-25T00:00:00Z', 'session-b'),
+      released('r-mid', '2026-10-22T00:00:00Z'),
+    ])
+    expect(selectReleasedJobs(state, null, 2).map((item) => item.job_id)).toEqual(['r-other', 'r-new'])
+    expect(selectReleasedJobs(state, 'session-a').map((item) => item.job_id)).toEqual(['r-new', 'r-mid', 'r-old'])
+  })
+
+  it('[REQ-335/AC-4] unconfirmed rows never count as blockers for another scope wait', () => {
+    const onlyUnconfirmed = snapshot([
+      job('studio-target', 'studio', 'queued', { batch_id: 'current' }),
+      job('normal-unconfirmed', 'normal', 'unconfirmed'),
+    ])
+    expect(selectWait(onlyUnconfirmed, 'studio', null, 'current')).toBeNull()
+
+    const withRunning = snapshot([
+      job('studio-target', 'studio', 'queued', { batch_id: 'current' }),
+      job('normal-running', 'normal', 'running'),
+      job('normal-unconfirmed', 'normal', 'unconfirmed'),
+      job('normal-queued', 'normal', 'queued'),
+    ])
+    expect(selectWait(withRunning, 'studio', null, 'current')).toEqual({ kind: 'scope', remaining: 2, label: '通常生成' })
+  })
+
+  it('[REQ-335/AC-1] property: progress invariants hold for arbitrary status multisets', () => {
+    fc.assert(fc.property(fc.array(fc.constantFrom(...ALL_STATUSES), { maxLength: 30 }), (statuses) => {
+      const state = snapshot(statuses.map((status, index) => job(`j${index}`, 'normal', status)))
+      const progress = selectProgress(state, 'normal', null)
+      expect(progress.fraction).toBeGreaterThanOrEqual(0)
+      expect(progress.fraction).toBeLessThanOrEqual(1)
+      expect(progress.finished).toBeLessThanOrEqual(progress.total)
+      expect(progress.total).toBe(statuses.filter((status) => status !== 'cancelled' && status !== 'released' && status !== 'unconfirmed').length)
+      if (progress.total === 0) expect(progress.idle).toBe(true)
+    }), { numRuns: 100 })
   })
 })

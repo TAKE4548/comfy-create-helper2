@@ -511,3 +511,27 @@ describe('connectionSlice - server generation state', () => {
 })
 
 
+describe('REQ-335 unconfirmed generation state', () => {
+  beforeEach(() => {
+    _resetWebSocketForTesting()
+    localStorage.clear()
+    useGenerationStore.setState({ isGenerating: false, currentPromptId: null, activeBatch: null, isBatchSubmitting: false, selectedImg: null, previewAutoFollow: true })
+  })
+
+  it('[REQ-335/AC-1] unconfirmed-only snapshot yields isGenerating=false and no active prompt', () => {
+    const unconfirmed = job({ job_id: 'u-1', prompt_id: null, status: 'unconfirmed', node: null, started_at: null })
+    expect(useGenerationStore.getState().applyGenerationSnapshot(snapshot(1, [unconfirmed], 'unc-epoch'), { running: [], pending: [] })).toBe(true)
+    expect(useGenerationStore.getState().isGenerating).toBe(false)
+    expect(useGenerationStore.getState().currentPromptId).toBeNull()
+  })
+
+  it('[REQ-335/AC-3] transition to released raises neither failure toast nor auto-follow image', () => {
+    const running = job({ job_id: 'r-1', prompt_id: 'prompt-r', status: 'running', node: null })
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(1, [running], 'rel-epoch'), { running: [], pending: [] })
+    const toast = vi.spyOn(useGenerationStore.getState(), 'setErrorToast')
+    const selectedBefore = useGenerationStore.getState().selectedImg
+    useGenerationStore.getState().applyGenerationSnapshot(snapshot(2, [job({ job_id: 'r-1', prompt_id: 'prompt-r', status: 'released', node: null, outputs: [], failure: null, finished_at: '2026-10-10T00:02:00Z' })], 'rel-epoch'), { running: [], pending: [] })
+    expect(toast).not.toHaveBeenCalled()
+    expect(useGenerationStore.getState().selectedImg).toBe(selectedBefore)
+  })
+})

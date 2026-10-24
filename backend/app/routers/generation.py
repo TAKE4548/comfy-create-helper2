@@ -22,6 +22,8 @@ from app.schemas.generation import (
     ErrorDetail,
     ErrorEnvelope,
     ImageView,
+    ReleaseOperation,
+    ReleaseRequest,
     RequestLookup,
     StateSnapshot,
     UpstreamQueueView,
@@ -199,6 +201,18 @@ async def cancel_generations(payload: CancelRequest, request: Request, service: 
     except Exception:
         logger.exception("Generation cancellation operation failed")
         return _error_response(503, "generation_cancel_unavailable", "Generation cancellation is unconfirmed", outcome="unconfirmed")
+
+
+@router.post("/release", response_model=ReleaseOperation)
+async def release_generations(payload: ReleaseRequest, request: Request, service: GenerationService = Depends(_service)) -> Response:
+    try:
+        result = await service.release_unconfirmed(payload)
+        return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
+    except HTTPException as exc:
+        return _http_error(exc, request)
+    except Exception:
+        logger.exception("Generation release operation failed")
+        return _error_response(503, "generation_release_unavailable", "Generation release could not be completed", outcome="unconfirmed")
 
 
 @router.get("/upstream-queue", response_model=UpstreamQueueView)

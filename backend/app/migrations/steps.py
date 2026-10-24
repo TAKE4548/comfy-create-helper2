@@ -815,6 +815,15 @@ def step_031_cleanup_orphaned_workflow_mappings(conn: Connection, inspector: Ins
         logger.info(f"Migrated: Step 031 cleaned up {deleted_count} orphaned workflow mappings.")
 
 
+def step_032_generation_jobs_release_json(conn: Connection, inspector: Inspector) -> None:
+    if "generation_jobs" not in inspector.get_table_names():
+        return
+    columns = [c["name"] for c in inspector.get_columns("generation_jobs")]
+    if "release_json" not in columns:
+        conn.execute(sa.text("ALTER TABLE generation_jobs ADD COLUMN release_json TEXT"))
+        logger.info("Migrated: Added 'release_json' column to 'generation_jobs' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -835,4 +844,5 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("029", "workflow_mapping_v2_normalization", step_029_workflow_mapping_v2_normalization),
     MigrationStep("030", "mapping_slot_states", step_030_mapping_slot_states),
     MigrationStep("031", "cleanup_orphaned_workflow_mappings", step_031_cleanup_orphaned_workflow_mappings),
+    MigrationStep("032", "generation_jobs_release_json", step_032_generation_jobs_release_json),
 ]

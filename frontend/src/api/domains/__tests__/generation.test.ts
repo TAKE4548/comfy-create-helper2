@@ -169,6 +169,56 @@ describe('generationApi', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('[REQ-335/AC-1] decodes released status and optional release record, rejecting unknown statuses', () => {
+    const withRelease = {
+      ...snapshot,
+      jobs: [{
+        ...snapshot.jobs[0],
+        status: 'released',
+        release: {
+          released_at: '2026-10-25T00:00:00Z',
+          released_by_session: 'session-1',
+          reason: 'user_release',
+          upstream_check: 'not_found',
+          late_prompt_id: null,
+        },
+      }],
+    }
+    const withoutRelease = { ...snapshot, jobs: [{ ...snapshot.jobs[0], status: 'released' }] }
+    expect(decodeGenerationSnapshot(withRelease).jobs[0].status).toBe('released')
+    expect(decodeGenerationSnapshot(withoutRelease).jobs[0].status).toBe('released')
+    const badUpstream = { ...snapshot, jobs: [{ ...snapshot.jobs[0], status: 'released', release: { ...withRelease.jobs[0].release, upstream_check: 'bogus' } }] }
+    expect(() => decodeGenerationSnapshot(badUpstream)).toThrow('Invalid generation state response')
+    const unknown = { ...snapshot, jobs: [{ ...snapshot.jobs[0], status: 'archived' }] }
+    expect(() => decodeGenerationSnapshot(unknown)).toThrow('Invalid generation state response')
+  })
+
+  it('[REQ-335/AC-3] releaseJobs posts explicit job_ids and decodes ReleaseOperation', async () => {
+    const operation = {
+      items: [{ job_id: 'a', prompt_id: 'p', status: 'released', outcome: 'released', message: 'ok', upstream_check: 'not_found' }],
+      epoch: 'epoch-1',
+      revision: 9,
+    }
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(operation))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(generationApi.releaseJobs({ job_ids: ['a', 'b'], session_id: 's' })).resolves.toEqual(operation)
+    expect(fetchMock).toHaveBeenCalledWith('/api/generation/release', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ job_ids: ['a', 'b'], session_id: 's' }),
+    }))
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ epoch: 'epoch-1', revision: 9 }))
+    await expect(generationApi.releaseJobs({ job_ids: ['a'] })).rejects.toThrow('Invalid release operation response')
+
+    const failing = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', failing)
+    await expect(generationApi.releaseJobs({ job_ids: ['a'] })).rejects.toMatchObject({
+      status: 0,
+      detail: { outcome: 'unconfirmed' },
+    })
+    expect(failing).toHaveBeenCalledTimes(1)
+  })
+
   it('supports scoped cancellation separately from selected single-job cancellation', async () => {
     const operation: CancelOperation = {
       scope: 'normal',

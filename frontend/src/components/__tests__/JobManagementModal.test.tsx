@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { JobManagementModal } from '../JobManagementModal'
 import { generationApi } from '../../api/domains/generation'
 import { cleanupAllTestState } from '../../test/utils'
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     cancelAllJobs: vi.fn(),
     generationSnapshot: { jobs: [] as any[] },
     fetchQueue: vi.fn(),
+    releaseUnconfirmed: vi.fn(),
   },
 }))
 
@@ -42,6 +43,16 @@ const confirmedOperation = (scope: 'all' | 'normal', mode: 'queued' | 'all' = 'a
   epoch: 'epoch-1',
   revision: 2,
 })
+
+const HOSTILE = '<img src=x onerror="window.__rt12=1"><script>window.__rt12=1</script>&lt;b&gt;'
+const LONG_REASON = 'R'.repeat(4000)   // no whitespace: must wrap via overflow-wrap:anywhere
+const LONG_EXCERPT = 'E'.repeat(4000)
+const LONG_ID = `prompt-${'x'.repeat(300)}`
+
+const expectNoInjectedMarkup = (root: HTMLElement) => {
+  expect(root.querySelector('img, script, iframe, object, [onerror], [onload]')).toBeNull()
+  expect((window as unknown as { __rt12?: number }).__rt12).toBeUndefined()
+}
 
 describe('JobManagementModal', () => {
   const onClose = vi.fn()
@@ -355,5 +366,163 @@ describe('JobManagementModal', () => {
     expect(screen.getByRole('dialog', { name: '取消確認' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('一括取消範囲'), { target: { value: 'normal' } })
     expect(screen.queryByRole('dialog', { name: '取消確認' })).not.toBeInTheDocument()
+  })
+
+  it('[REQ-335/AC-1] shows 状態未確認 section separately from 待機中 and never labels it 待機中', () => {
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.filterOwnSession = true
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-u', prompt_id: null, status: 'unconfirmed', session_id: 'session-a', set_name: 'Portrait', failure: { reason: '投入結果を確認できません', outcome: 'unconfirmed' }, release: null },
+      { job_id: 'job-other', prompt_id: null, status: 'unconfirmed', session_id: 'session-b', failure: { reason: 'OTHER-SESSION-REASON', outcome: 'unconfirmed' }, release: null },
+    ] }
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    expect(screen.getByText('待機中のキュー (0)')).toBeInTheDocument()
+    expect(screen.getByText('状態未確認の記録 (1)')).toBeInTheDocument()
+    const row = screen.getByTestId('unconfirmed-job-row')
+    expect(row.textContent).not.toContain('待機中')
+    expect(row).toHaveTextContent('投入結果を確認できません')
+    expect(screen.queryByText(/OTHER-SESSION-REASON/)).not.toBeInTheDocument()
+  })
+
+  it('[REQ-335/AC-2] single cancel of an unconfirmed row shows the unconfirmed message and keeps the row', async () => {
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-u', prompt_id: 'prompt-u', status: 'unconfirmed', session_id: 'session-a', failure: { reason: 'timeout', outcome: 'unconfirmed' }, release: null },
+    ] }
+    mocks.state.cancelJob.mockResolvedValue({ job_id: 'job-u', prompt_id: 'prompt-u', status: 'unconfirmed', outcome: 'unconfirmed', message: 'still unknown' })
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '取消を試行' }))
+
+    await waitFor(() => expect(screen.getByText(/取消を確認できません（状態未確認のままです）/)).toBeInTheDocument())
+    expect(screen.getByTestId('unconfirmed-job-row')).toBeInTheDocument()
+  })
+
+  it('[REQ-335/AC-2] bulk result with unconfirmed leftovers keeps the modal open with confirmed/unconfirmed counts', async () => {
+    mocks.state.clearPendingQueue.mockResolvedValue({
+      ...confirmedOperation('all', 'queued'),
+      message: 'partial',
+      items: [
+        { job_id: 'j1', prompt_id: 'p1', status: 'cancelled', outcome: 'cancelled', message: 'cancelled' },
+        { job_id: 'j2', prompt_id: 'p2', status: 'unconfirmed', outcome: 'unconfirmed', message: 'timeout' },
+      ],
+      upstream_clear: 'unconfirmed',
+    })
+    render(<JobManagementModal isOpen onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: 'キューのみクリア' }))
+    fireEvent.click(screen.getByRole('button', { name: '確認してキューのみクリア' }))
+
+    await waitFor(() => expect(screen.getByText(/確認済み: 1件、未確認: 2件/)).toBeInTheDocument())
+    expect(screen.getByText(/状態未確認の記録」欄から解除できます/)).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-335/AC-3] release requires confirmation that states it is not an upstream cancellation and reports per-item outcome', async () => {
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-u', prompt_id: 'prompt-u', status: 'unconfirmed', session_id: 'session-a', failure: { reason: 'timeout', outcome: 'unconfirmed' }, release: null },
+      { job_id: 'job-r', prompt_id: 'prompt-r', status: 'released', session_id: 'session-a', failure: null, release: { released_at: '2026-10-25T00:00:00Z', released_by_session: 'session-a', reason: 'user_release', upstream_check: 'not_checked', late_prompt_id: null } },
+    ] }
+    mocks.state.releaseUnconfirmed.mockResolvedValue({
+      items: [
+        { job_id: 'job-u', prompt_id: 'prompt-u', status: 'released', outcome: 'released', message: 'ok' },
+        { job_id: 'job-x', prompt_id: 'prompt-x', status: 'unconfirmed', outcome: 'not_released', message: 'state changed' },
+      ],
+    })
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '記録を解除' }))
+    expect(screen.getByRole('dialog', { name: '解除確認' })).toHaveTextContent('ComfyUI側の取消ではありません')
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }))
+    expect(screen.queryByRole('dialog', { name: '解除確認' })).not.toBeInTheDocument()
+    expect(mocks.state.releaseUnconfirmed).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '記録を解除' }))
+    fireEvent.click(screen.getByRole('button', { name: '確認して解除' }))
+
+    await waitFor(() => expect(screen.getByText(/解除しました: 1件（上流の取消確認ではありません）/)).toBeInTheDocument())
+    expect(screen.getByText(/解除できなかった記録: 1件/)).toBeInTheDocument()
+    expect(mocks.state.releaseUnconfirmed).toHaveBeenCalledTimes(1)
+    expect(mocks.state.releaseUnconfirmed).toHaveBeenCalledWith(['job-u'])
+    expect(screen.getByText('解除済みの記録 (1)')).toBeInTheDocument()
+    expect(screen.getByText(/prompt-r · 解除済み（上流の取消確認ではありません）/)).toBeInTheDocument()
+  })
+
+  it('[REQ-335/AC-1] RT-12 renders hostile HTML-like reason, set name, excerpt and ids as literal escaped text', () => {
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-x', prompt_id: HOSTILE, status: 'unconfirmed', session_id: 'session-a',
+        set_name: HOSTILE, prompt_excerpt: HOSTILE, failure: { reason: HOSTILE, outcome: 'unconfirmed' }, release: null },
+    ] }
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'ジョブ管理' })
+    const row = screen.getByTestId('unconfirmed-job-row')
+    expectNoInjectedMarkup(dialog)
+    expect(row.textContent).toContain(HOSTILE)          // shown as literal text, not parsed as markup
+    expect(row.textContent).not.toContain('待機中')
+    expect(screen.getByText('状態未確認の記録 (1)')).toBeInTheDocument()
+  })
+
+  it('[REQ-335/AC-1] RT-12 keeps very long unbroken reason, excerpt and ids wrapped or truncated inside width-bounded rows', () => {
+    // jsdom has no layout engine: assert the wrap/truncate class contract, not measured overflow.
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-long', prompt_id: LONG_ID, status: 'unconfirmed', session_id: 'session-a',
+        set_name: null, prompt_excerpt: LONG_EXCERPT, failure: { reason: LONG_REASON, outcome: 'unconfirmed' }, release: null },
+      { job_id: 'job-rel', prompt_id: `released-${LONG_ID}`, status: 'released', session_id: 'session-a', failure: null,
+        release: { released_at: '2026-10-25T00:00:00Z', released_by_session: 'session-a', reason: 'user_release', upstream_check: 'not_checked', late_prompt_id: null } },
+    ] }
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    const row = screen.getByTestId('unconfirmed-job-row')
+    expect(row).toHaveClass('min-w-0')
+    for (const text of [LONG_REASON, LONG_EXCERPT]) {
+      const el = within(row).getByText(text)
+      expect(el).toHaveClass('break-words', '[overflow-wrap:anywhere]')
+      expect(el).not.toHaveClass('truncate')               // important text is wrapped, never cut
+    }
+    expect(within(row).getByText(LONG_ID)).toHaveClass('min-w-0', 'flex-1', 'truncate')
+    expect(row.parentElement).toHaveClass('overflow-y-auto', 'overscroll-contain')
+    expect(screen.getByText(new RegExp(`released-${LONG_ID}`))).toHaveClass('min-w-0', 'break-words')
+  })
+
+  it('[REQ-335/AC-3] RT-12 keeps the release dialog and result messages escaped and non-echoing for hostile ids and upstream messages', async () => {
+    mocks.state.queueRunning = []
+    mocks.state.queuePending = []
+    mocks.state.generationSnapshot = { jobs: [
+      { job_id: 'job-x', prompt_id: HOSTILE, status: 'unconfirmed', session_id: 'session-a',
+        failure: { reason: HOSTILE, outcome: 'unconfirmed' }, release: null },
+    ] }
+    mocks.state.cancelJob.mockResolvedValue({ job_id: 'job-x', prompt_id: HOSTILE, status: 'unconfirmed', outcome: 'unconfirmed', message: `${HOSTILE}${LONG_REASON}` })
+    mocks.state.releaseUnconfirmed.mockResolvedValue({
+      items: [{ job_id: 'job-x', prompt_id: HOSTILE, status: 'released', outcome: 'released', message: HOSTILE }],
+    })
+    render(<JobManagementModal isOpen onClose={onClose} />)
+    const modal = screen.getByRole('dialog', { name: 'ジョブ管理' })
+
+    fireEvent.click(screen.getByRole('button', { name: '取消を試行' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('取消を確認できません（状態未確認のままです）'))
+    expect(screen.getByRole('status').textContent).toContain(HOSTILE)
+    expect(screen.getByRole('status')).toHaveClass('break-words', '[overflow-wrap:anywhere]')
+    expectNoInjectedMarkup(modal)
+
+    fireEvent.click(screen.getByRole('button', { name: '記録を解除' }))
+    const confirm = screen.getByRole('dialog', { name: '解除確認' })
+    expect(confirm).toHaveTextContent('ComfyUI側の取消ではありません')
+    expect(confirm.textContent).not.toContain('<img')        // count only: user-supplied text is never echoed
+    expectNoInjectedMarkup(modal)
+
+    fireEvent.click(screen.getByRole('button', { name: '確認して解除' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('解除しました: 1件（上流の取消確認ではありません）'))
+    expect(mocks.state.releaseUnconfirmed).toHaveBeenCalledWith(['job-x'])
+    expect(screen.getByRole('status').textContent).not.toContain('<img')
+    expectNoInjectedMarkup(modal)
   })
 })

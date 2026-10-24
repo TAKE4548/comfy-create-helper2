@@ -164,6 +164,40 @@ describe('E2E Automated Verification: REQ-207 5大シナリオ統合検証', () 
   })
 
   // ─────────────────────────────────────────────────────────────
+  it('[REQ-335/AC-4] new generation proceeds while an unconfirmed record exists and queued clear does not touch it', async () => {
+    const ws = await initializeSharedWs()
+    useGenerationStore.setState({ previewAutoFollow: true, selectedImg: null })
+    const { unmount } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: null }), { wrapper })
+
+    const unconfirmed = makeJob({ job_id: '00000000-0000-4000-8000-000000000021', prompt_id: null, status: 'unconfirmed', node: null })
+    publishSnapshot(ws, makeSnapshot(1, [unconfirmed]))
+    expect(useGenerationStore.getState().isGenerating).toBe(false)
+
+    const newRunning = makeJob({ job_id: '00000000-0000-4000-8000-000000000022', prompt_id: 'prompt-new' })
+    publishSnapshot(ws, makeSnapshot(2, [unconfirmed, newRunning]))
+    expect(useGenerationStore.getState().isGenerating).toBe(true)
+
+    const imageUrl = '/api/comfy/view?filename=new.png&subfolder=&type=output&t=prompt-new'
+    const completed = makeJob({
+      job_id: '00000000-0000-4000-8000-000000000022', prompt_id: 'prompt-new',
+      status: 'succeeded', finished_at: '2026-10-10T00:00:03.000Z', node: null,
+      outputs: [{ node_id: 'node-ksampler', index: 0, view_url: imageUrl,
+        thumbnail_url: '/api/generation/thumbnail/00000000-0000-4000-8000-000000000022/0', availability: 'present' }],
+    })
+    publishSnapshot(ws, makeSnapshot(3, [unconfirmed, completed]))
+    await waitFor(() => expect(useGenerationStore.getState().selectedImg).toBe(imageUrl))
+
+    vi.spyOn(generationApi, 'cancel').mockResolvedValue({
+      mode: 'queued', scope: 'all', message: 'accepted', items: [], upstream_clear: 'confirmed', upstream_interrupt: 'confirmed', epoch: 'req207-epoch', revision: 4,
+    } as any)
+    currentSnapshot = makeSnapshot(4, [unconfirmed, completed])
+    await useGenerationStore.getState().clearPendingQueue()
+    const stillUnconfirmed = useGenerationStore.getState().generationSnapshot?.jobs.find((job) => job.job_id === unconfirmed.job_id)
+    expect(stillUnconfirmed?.status).toBe('unconfirmed')
+    unmount()
+  })
+
+  // ─────────────────────────────────────────────────────────────
   // シナリオ 2: ジョブ中断・キュー消去 & AbortController 制御
   // ─────────────────────────────────────────────────────────────
   it('Scenario 2: Confirmed cancellation of a job, queued jobs, and all jobs', async () => {
@@ -195,7 +229,7 @@ describe('E2E Automated Verification: REQ-207 5大シナリオ統合検証', () 
     })
     vi.spyOn(generationApi, 'cancel').mockImplementation(async request => {
       currentSnapshot = makeSnapshot(currentSnapshot.revision + 1, currentSnapshot.jobs.map(item =>
-        request.mode === 'all' || (request.mode === 'queued' && ['queued', 'submitting', 'unconfirmed'].includes(item.status))
+        request.mode === 'all' || (request.mode === 'queued' && ['queued', 'submitting'].includes(item.status))
           ? { ...item, status: 'cancelled', finished_at: '2026-10-10T00:02:00.000Z' }
           : item))
       return { scope: request.scope ?? 'all', mode: request.mode, message: 'cancelled', items: [],

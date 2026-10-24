@@ -5,6 +5,8 @@ from uuid import uuid4
 import pytest
 import sqlalchemy as sa
 from fastapi import HTTPException
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
@@ -561,3 +563,166 @@ def test_prompt_metadata_retention_protects_active_jobs_without_changing_snapsho
         assert db.query(GenerationJob).filter_by(job_id="active-job").count() == 1
         assert db.query(Snapshot).filter_by(image_path="snapshot.png").count() == 1
         db.rollback()
+
+
+RELEASE_AT = "2026-10-25T00:00:00Z"
+
+
+def _release_payload(**overrides):
+    payload = {
+        "released_at": RELEASE_AT,
+        "released_by_session": "session-a",
+        "reason": "user_release",
+        "upstream_check": "not_found",
+        "late_prompt_id": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+def test_unconfirmed_does_not_hold_normal_group_open(session_factory):
+    """[REQ-335/AC-4] An unconfirmed normal job must not keep the normal group open for new acceptance."""
+    repository = GenerationRepository(session_factory)
+    first = repository.accept_batch(make_request(count=1))
+    repository.transition(first["job_ids"][0], "unconfirmed", failure={"reason": "lost", "outcome": "unconfirmed"})
+    second = repository.accept_batch(make_request(count=1))
+
+    with session_factory() as db:
+        old_group = db.query(GenerationJob).filter_by(job_id=first["job_ids"][0]).one().normal_group_id
+        new_group = db.query(GenerationJob).filter_by(job_id=second["job_ids"][0]).one().normal_group_id
+    assert new_group != old_group
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_release_unconfirmed_is_compare_and_set_and_idempotent(session_factory):
+    """[REQ-335/AC-3] release_unconfirmed is a CAS unconfirmed -> released, bumps revision once, keeps failure."""
+    repository = GenerationRepository(session_factory)
+    unconfirmed = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    succeeded = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    failure = {"reason": "lost", "outcome": "unconfirmed"}
+    repository.transition(unconfirmed, "unconfirmed", failure=failure)
+    repository.transition(succeeded, "succeeded")
+    revision_before = repository.snapshot()["revision"]
+
+    view = repository.release_unconfirmed(unconfirmed, _release_payload())
+    assert view is not None
+    assert view["status"] == "released"
+    assert view["failure"] == failure
+    assert view["release"] == _release_payload()
+    assert repository.snapshot()["revision"] == revision_before + 1
+
+    assert repository.release_unconfirmed(unconfirmed, _release_payload()) is None
+    assert repository.snapshot()["revision"] == revision_before + 1
+    succeeded_view = repository.transition(succeeded, "failed")
+    assert succeeded_view["status"] == "succeeded"
+    with session_factory() as db:
+        assert db.query(GenerationJob).filter_by(job_id=succeeded).one().release_json is None
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_released_is_terminal_and_survives_prune_with_independent_cap(session_factory, monkeypatch):
+    """[REQ-335/AC-3] released rows are terminal and pruned only by their own cap, never by the normal terminal cap."""
+    monkeypatch.setattr(generation_repository, "_RELEASED_LIMIT", 3)
+    repository = GenerationRepository(session_factory)
+    job_ids = []
+    for _ in range(5):
+        job_id = repository.accept_batch(make_request(count=1))["job_ids"][0]
+        repository.transition(job_id, "unconfirmed", failure={"reason": "lost", "outcome": "unconfirmed"})
+        job_ids.append(job_id)
+    for index, job_id in enumerate(job_ids):
+        repository.release_unconfirmed(job_id, _release_payload(released_at=f"2026-10-25T00:00:0{index}Z"))
+    assert repository.transition(job_ids[-1], "failed")["status"] == "released"
+
+    repository.prune_terminal()
+
+    with session_factory() as db:
+        remaining = {row.job_id for row in db.query(GenerationJob).filter_by(status="released")}
+    assert remaining == set(job_ids[-3:])
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-5")
+def test_annotate_late_identity_keeps_released_status(session_factory):
+    """[REQ-335/AC-5] A late prompt_id is attached to a released row without changing its status."""
+    repository = GenerationRepository(session_factory)
+    target = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    other = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    repository.transition(other, "running", prompt_id="prompt-other")
+    repository.transition(target, "unconfirmed", failure={"reason": "lost", "outcome": "unconfirmed"})
+    repository.release_unconfirmed(target, _release_payload())
+
+    assert repository.annotate_late_identity(target, "prompt-other") is None
+    with session_factory() as db:
+        assert db.query(GenerationJob).filter_by(job_id=target).one().prompt_id is None
+
+    view = repository.annotate_late_identity(target, "prompt-late")
+    assert view is not None
+    assert view["status"] == "released"
+    assert view["prompt_id"] == "prompt-late"
+    assert view["release"]["late_prompt_id"] == "prompt-late"
+    assert repository.annotate_late_identity(other, "prompt-late-2") is None
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_job_view_tolerates_malformed_release_json(session_factory):
+    """[REQ-335/AC-3] A malformed release_json is read as release=None instead of failing the snapshot."""
+    repository = GenerationRepository(session_factory)
+    job_id = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    with session_factory() as db:
+        job = db.get(GenerationJob, job_id)
+        job.status = "released"
+        job.release_json = "{not-json"
+        db.commit()
+
+    job_view = next(job for job in repository.snapshot()["jobs"] if job["job_id"] == job_id)
+    assert job_view["status"] == "released"
+    assert job_view["release"] is None
+
+
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=40, deadline=None)
+@given(
+    actions=st.lists(
+        st.tuples(st.integers(min_value=0, max_value=2), st.sampled_from(["unconfirmed", "release", "succeeded", "running"])),
+        max_size=12,
+    ),
+)
+def test_property_release_and_transitions_preserve_non_unconfirmed_rows(session_factory, actions):
+    """[REQ-335/AC-3] Random transitions keep terminal rows unchanged, release idempotently, and keep revision monotonic."""
+    repository = GenerationRepository(session_factory)
+    job_ids = repository.accept_batch(make_request(count=3))["job_ids"]
+    last_revision = repository.snapshot()["revision"]
+
+    def row_state():
+        with session_factory() as db:
+            return {
+                row.job_id: (row.status, row.release_json, row.graph_json)
+                for row in db.query(GenerationJob).filter(GenerationJob.job_id.in_(job_ids))
+            }
+
+    for index, action in actions:
+        job_id = job_ids[index]
+        before = row_state()
+        if action == "release":
+            result = repository.release_unconfirmed(job_id, _release_payload())
+            assert (result is not None) == (before[job_id][0] == "unconfirmed")
+        elif action == "unconfirmed":
+            repository.transition(job_id, "unconfirmed", failure={"reason": "lost", "outcome": "unconfirmed"})
+        else:
+            repository.transition(job_id, action)
+        after = row_state()
+        for other_id, (status, release_json, _graph) in before.items():
+            if status in ("succeeded", "failed", "cancelled", "released"):
+                assert after[other_id][0] == status
+                assert after[other_id][1] == release_json
+        revision = repository.snapshot()["revision"]
+        assert revision >= last_revision
+        last_revision = revision

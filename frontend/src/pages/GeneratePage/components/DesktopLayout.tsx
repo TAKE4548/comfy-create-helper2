@@ -22,7 +22,7 @@ import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 import { useSystemStats } from '../../../hooks/useSystemStats'
-import { selectProgress, selectWait } from '../../../utils/generationSelectors'
+import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 import { useMappingStageGroups } from '../../../hooks/useMappingStageGroups'
 import StageInputGroup from '../../../components/StageInputGroup'
 
@@ -246,7 +246,8 @@ export const DesktopLayout = ({
     ? generationSnapshot.jobs.filter((job) => job.scope === 'normal' && job.normal_group_id === generationSnapshot.normal_group_id && (normalSessionId === null || job.session_id === normalSessionId))
     : []
   const normalRunningJob = normalJobs.find((job) => job.status === 'running')
-  const normalUnfinished = normalJobs.some((job) => ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
+  const normalUnfinished = normalJobs.some((job) => isActiveJobStatus(job.status))
+  const unconfirmedCount = generationSnapshot ? selectUnconfirmedJobs(generationSnapshot, normalSessionId).length : 0
   const normalWait = generationSnapshot && normalUnfinished && !normalRunningJob
     ? selectWait(generationSnapshot, 'normal', normalSessionId)
     : null
@@ -726,9 +727,11 @@ export const DesktopLayout = ({
 
       {/* Action Bar */}
       <div id="desktop-action-bar" className="sticky bottom-0 z-30 flex-shrink-0 border-t border-[rgba(255,255,255,0.06)] bg-surface px-4 py-3 flex items-center gap-2">
-        <button id="queue-open-btn" type="button" onClick={() => setIsJobModalOpen(true)} aria-label="ジョブキュー一覧・管理を開く" title="ジョブキュー一覧・管理を開く"
+        <button id="queue-open-btn" type="button" onClick={() => setIsJobModalOpen(true)}
+          aria-label={unconfirmedCount > 0 ? `ジョブキュー一覧・管理を開く（状態未確認 ${unconfirmedCount}件）` : 'ジョブキュー一覧・管理を開く'} title="ジョブキュー一覧・管理を開く"
           className="min-h-11 px-3 rounded-xl border border-[rgba(255,255,255,0.1)] text-[11px] font-mono text-zinc-300 hover:bg-white/5 transition-colors">
           Queue: {actionQueueCount}
+          {unconfirmedCount > 0 && <span data-testid="unconfirmed-count-chip" className="ml-2 shrink-0 whitespace-nowrap font-sans font-semibold text-amber-300">状態未確認 {unconfirmedCount}件</span>}
         </button>
         <button id="generate-btn" type="button" onClick={handleGenerateSets} disabled={!selectedWorkflowId || !isConnected || !workflow}
           className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all glow-green active:scale-95">

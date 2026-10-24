@@ -125,7 +125,7 @@ def test_orm_model_matches_persisted_contract():
         "session_id", "scope", "batch_id", "normal_group_id", "project_id",
         "set_name", "status", "graph_json", "metadata_json", "outputs_json",
         "node_json", "accepted_at", "started_at", "finished_at", "failure_json",
-        "cancel_requested",
+        "release_json", "cancel_requested",
     }
     assert table.c.job_id.primary_key
     assert table.c.prompt_id.unique
@@ -135,3 +135,34 @@ def test_orm_model_matches_persisted_contract():
         and {column.name for column in constraint.columns} == {"request_id", "item_index"}
         for constraint in table.constraints
     )
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_step_032_adds_release_json_idempotently_and_preserves_rows():
+    """[REQ-335/AC-3] step_032 adds release_json to an existing 027 table, idempotently, keeping rows."""
+    from app.migrations.steps import step_032_generation_jobs_release_json
+
+    assert [step.step_id for step in ALL_MIGRATION_STEPS].count("032") == 1
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        apply_generation_jobs_migration(engine)
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO generation_jobs "
+                "(job_id, request_id, item_index, payload_hash, session_id, scope, batch_id, "
+                "metadata_json, outputs_json) "
+                "VALUES ('job-keep', 'req-keep', 0, 'hash', 'session', 'normal', 'batch', '{}', '[]')"
+            ))
+        with engine.begin() as conn:
+            step_032_generation_jobs_release_json(conn, sa.inspect(conn))
+        with engine.begin() as conn:
+            step_032_generation_jobs_release_json(conn, sa.inspect(conn))
+
+        columns = [c["name"] for c in sa.inspect(engine).get_columns("generation_jobs")]
+        assert columns.count("release_json") == 1
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("SELECT job_id FROM generation_jobs")).scalar_one() == "job-keep"
+            assert conn.execute(sa.text("SELECT release_json FROM generation_jobs")).scalar_one() is None
+    finally:
+        engine.dispose()

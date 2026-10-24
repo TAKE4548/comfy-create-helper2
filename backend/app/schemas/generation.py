@@ -8,8 +8,10 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 Scope = Literal["normal", "studio"]
 JobStatus = Literal[
-    "queued", "submitting", "running", "succeeded", "failed", "cancelled", "unconfirmed"
+    "queued", "submitting", "running", "succeeded", "failed", "cancelled", "unconfirmed", "released"
 ]
+ReleaseUpstreamCheck = Literal["skipped_no_identity", "not_found", "unavailable"]
+ReleaseOutcome = Literal["released", "already_released", "not_released", "rejected"]
 CancelMode = Literal["single", "queued", "all"]
 CancelScope = Literal["all", "normal"]
 ActionOutcome = Literal["confirmed", "unconfirmed", "failed", "not_requested", "skipped"]
@@ -84,6 +86,16 @@ class FailureView(_ContractModel):
     outcome: Literal["failed", "unconfirmed"]
 
 
+class ReleaseView(_ContractModel):
+    released_at: str
+    released_by_session: str | None
+    reason: Literal["user_release"]
+    upstream_check: ReleaseUpstreamCheck
+    late_prompt_id: str | None
+
+    _validate_released_at = field_validator("released_at")(_utc_timestamp)
+
+
 class JobView(_ContractModel):
     job_id: str
     request_id: str
@@ -102,9 +114,39 @@ class JobView(_ContractModel):
     preview_url: str | None = None
     set_name: str | None = None
     prompt_excerpt: str | None = None
+    release: ReleaseView | None = None
 
     _validate_started_at = field_validator("started_at")(_utc_timestamp)
     _validate_finished_at = field_validator("finished_at")(_utc_timestamp)
+
+
+class ReleaseRequest(_ContractModel):
+    job_ids: list[str]
+    session_id: str | None = None
+
+    @field_validator("job_ids")
+    @classmethod
+    def validate_job_ids(cls, value: list[str]) -> list[str]:
+        if not 1 <= len(value) <= 50:
+            raise ValueError("job_ids must contain 1 to 50 ids")
+        if len(set(value)) != len(value):
+            raise ValueError("job_ids must not contain duplicates")
+        return value
+
+
+class ReleaseResult(_ContractModel):
+    job_id: str | None
+    prompt_id: str | None
+    status: JobStatus | None
+    outcome: ReleaseOutcome
+    message: str
+    upstream_check: ReleaseUpstreamCheck | None = None
+
+
+class ReleaseOperation(_ContractModel):
+    items: list[ReleaseResult]
+    epoch: str
+    revision: int
 
 
 class BatchView(_ContractModel):

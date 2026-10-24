@@ -8,6 +8,7 @@ export type JobStatus =
   | 'failed'
   | 'cancelled'
   | 'unconfirmed'
+  | 'released'
 
 export interface GenerationItem {
   graph: Record<string, unknown>
@@ -48,6 +49,13 @@ export interface JobView {
     availability: 'present' | 'missing' | 'unknown'
   }>
   failure: { reason: string; outcome: 'failed' | 'unconfirmed' } | null
+  release?: {
+    released_at: string
+    released_by_session: string | null
+    reason: 'user_release'
+    upstream_check: 'skipped_no_identity' | 'not_found' | 'unavailable'
+    late_prompt_id: string | null
+  } | null
 }
 
 export interface GenerationSnapshot {
@@ -68,7 +76,12 @@ export type GenerationEnvelope = {
   data: GenerationSnapshot
 }
 
-const UNFINISHED_STATUSES = new Set<JobStatus>(['queued', 'submitting', 'running', 'unconfirmed'])
+// unconfirmed は active でも終了でもない第3の状態。待機/進捗の母数に混ぜず別集合で扱う。
+const ACTIVE_STATUSES = new Set<JobStatus>(['queued', 'submitting', 'running'])
+
+export function isActiveJobStatus(status: JobStatus): boolean {
+  return ACTIVE_STATUSES.has(status)
+}
 
 function currentNormalGroupJobs(snapshot: GenerationSnapshot): JobView[] {
   if (snapshot.normal_group_id === null) return []
@@ -108,8 +121,8 @@ export function selectProgress(
 ): { finished: number; total: number; fraction: number; idle: boolean } {
   const jobs = selectedJobs(snapshot, scope, sessionId, batchId)
   const countForTotal = scope === 'studio'
-    ? jobs
-    : jobs.filter((job) => job.status !== 'cancelled')
+    ? jobs.filter((job) => job.status !== 'released')
+    : jobs.filter((job) => job.status !== 'cancelled' && job.status !== 'released' && job.status !== 'unconfirmed')
   const finished = jobs.filter((job) => job.status === 'succeeded' || job.status === 'failed').length
   const total = countForTotal.length
   if (total === 0) return { finished, total, fraction: 0, idle: true }
@@ -118,7 +131,7 @@ export function selectProgress(
 }
 
 function unfinished(jobs: JobView[]): JobView[] {
-  return jobs.filter((job) => UNFINISHED_STATUSES.has(job.status))
+  return jobs.filter((job) => ACTIVE_STATUSES.has(job.status))
 }
 
 function hasRunning(jobs: JobView[]): boolean {
@@ -182,4 +195,18 @@ export function selectWait(
   }
 
   return null
+}
+
+/** 全scope・全groupの状態未確認ジョブ。sessionId を渡すとそのsessionのみ。古い順。 */
+export function selectUnconfirmedJobs(snapshot: GenerationSnapshot, sessionId: string | null = null): JobView[] {
+  return snapshot.jobs.filter((job) => job.status === 'unconfirmed' && (sessionId === null || job.session_id === sessionId))
+}
+
+/** 解除済み記録。released_at の新しい順で limit 件（既定10）。 */
+export function selectReleasedJobs(snapshot: GenerationSnapshot, sessionId: string | null = null, limit = 10): JobView[] {
+  const at = (job: JobView) => Date.parse(job.release?.released_at ?? '') || 0
+  return snapshot.jobs
+    .filter((job) => job.status === 'released' && (sessionId === null || job.session_id === sessionId))
+    .sort((a, b) => at(b) - at(a))
+    .slice(0, limit)
 }

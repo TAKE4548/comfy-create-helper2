@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGenerationStore, _resetWebSocketForTesting } from '../../useGenerationStore';
+import { projectQueue } from '../../slices/jobQueueSlice';
 import { comfyApi, promptMetadataApi } from '../../../api/client';
 import { generationApi } from '../../../api/domains/generation';
 import { GenerationApiError } from '../../../api/domains/generation';
@@ -18,6 +19,7 @@ vi.mock('../../../api/domains/generation', async (importOriginal) => {
     getUpstreamQueue: vi.fn().mockResolvedValue({ running: [], pending: [] }),
     cancelJob: vi.fn().mockResolvedValue({ job_id: 'mock-prompt-id', prompt_id: null, status: 'cancelled', outcome: 'cancelled', message: 'cancelled' }),
     cancel: vi.fn().mockResolvedValue({ mode: 'all', scope: 'all', message: 'accepted', items: [], upstream_clear: 'confirmed', upstream_interrupt: 'confirmed', epoch: 'epoch-1', revision: 1 }),
+    releaseJobs: vi.fn().mockResolvedValue({ items: [], epoch: 'epoch-1', revision: 1 }),
     },
   };
 });
@@ -29,6 +31,7 @@ const resetGenerationApiMocks = () => {
   vi.mocked(generationApi.getUpstreamQueue).mockReset().mockResolvedValue({ running: [], pending: [] });
   vi.mocked(generationApi.cancelJob).mockReset().mockResolvedValue({ job_id: 'mock-prompt-id', prompt_id: null, status: 'cancelled', outcome: 'cancelled', message: 'cancelled' });
   vi.mocked(generationApi.cancel).mockReset().mockResolvedValue({ mode: 'all', scope: 'all', message: 'accepted', items: [], upstream_clear: 'confirmed', upstream_interrupt: 'confirmed', epoch: 'epoch-1', revision: 1 });
+  vi.mocked(generationApi.releaseJobs).mockReset().mockResolvedValue({ items: [], epoch: 'epoch-1', revision: 1 });
 };
 
 vi.mock('../../../api/client', () => {
@@ -1591,5 +1594,105 @@ describe('REQ-333 T16 session identity and retry-safe acceptance', () => {
     expect(localStorage.getItem(LS_KEYS.SELECTED_IMG)).toBe(clickedWhilePending);
     expect(storedSelectionWrite).not.toHaveBeenCalledWith(LS_KEYS.SELECTED_IMG, expect.any(String));
     storedSelectionWrite.mockRestore();
+  });
+});
+
+describe('REQ-335 unconfirmed projection and release', () => {
+  const makeJob = (overrides: Record<string, unknown>): any => ({
+    job_id: 'job-x', request_id: 'req-x', prompt_id: null, session_id: 'other', scope: 'normal',
+    batch_id: 'batch-x', normal_group_id: 'group-x', project_id: null, status: 'queued',
+    started_at: null, finished_at: null, node: null, outputs: [], failure: null, preview_url: null,
+    ...overrides,
+  });
+  const makeSnap = (jobs: any[], revision = 1, epoch = 'epoch-1'): any => ({
+    version: 1, epoch, revision, normal_group_id: null, jobs, batches: [],
+    upstream: { http_ready: true, ws_connected: true, failure_since: null },
+  });
+
+  beforeEach(() => {
+    _resetWebSocketForTesting();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    resetGenerationApiMocks();
+    useGenerationStore.setState({
+      generationSnapshot: null,
+      isGenerating: false, currentPromptId: null, activeBatch: null,
+      queueRunning: [], queuePending: [], filterOwnSession: false, batchImages: [], comfyHistoryImages: [],
+    });
+  });
+
+  it('[REQ-335/AC-1] projectQueue does not place unconfirmed jobs in queuePending and exposes upstream items of unconfirmed prompts', () => {
+    const snap = makeSnap([makeJob({ job_id: 'u-1', prompt_id: 'p-1', status: 'unconfirmed' })]);
+    const upstream: any = { running: [], pending: [{ prompt_id: 'p-1', client_id: null }] };
+    const projected = projectQueue(snap, upstream);
+    expect(projected.pending.map((row: any) => row[1])).toEqual(['p-1']);
+    expect(projected.pending.some((row: any) => row[1] === 'u-1')).toBe(false);
+  });
+
+  it('[REQ-335/AC-1] projectQueue treats released jobs like unconfirmed for projection', () => {
+    const snap = makeSnap([makeJob({ job_id: 'r-1', prompt_id: 'p-r', status: 'released' })]);
+    const upstream: any = { running: [], pending: [{ prompt_id: 'p-r', client_id: null }] };
+    const projected = projectQueue(snap, upstream);
+    expect(projected.pending.map((row: any) => row[1])).toEqual(['p-r']);
+  });
+
+  it('[REQ-335/AC-2] cancelJob propagates unconfirmed outcome without treating it as success', async () => {
+    const snap = makeSnap([makeJob({ job_id: 'u-2', prompt_id: 'p-2', status: 'unconfirmed' })]);
+    useGenerationStore.setState({ generationSnapshot: snap });
+    vi.mocked(generationApi.cancelJob).mockResolvedValueOnce({ job_id: 'u-2', prompt_id: 'p-2', status: 'unconfirmed', outcome: 'unconfirmed', message: 'unknown' } as any);
+    vi.mocked(generationApi.getState).mockResolvedValueOnce(snap);
+    const result = await useGenerationStore.getState().cancelJob('u-2');
+    expect(result.outcome).toBe('unconfirmed');
+    const after = useGenerationStore.getState().generationSnapshot;
+    expect(after?.jobs.find((job) => job.job_id === 'u-2')?.status).toBe('unconfirmed');
+  });
+
+  it('[REQ-335/AC-3] releaseUnconfirmed sends only given ids then refetches state', async () => {
+    vi.mocked(generationApi.getState).mockClear();
+    await useGenerationStore.getState().releaseUnconfirmed(['a', 'a', 'b']);
+    expect(generationApi.releaseJobs).toHaveBeenCalledTimes(1);
+    expect(generationApi.releaseJobs).toHaveBeenCalledWith({ job_ids: ['a', 'b'], session_id: useGenerationStore.getState().clientId });
+    expect(generationApi.getState).toHaveBeenCalledTimes(1);
+  });
+
+  it('[REQ-335/AC-3] releaseUnconfirmed with empty ids does not call the API', async () => {
+    await useGenerationStore.getState().releaseUnconfirmed([]);
+    expect(generationApi.releaseJobs).not.toHaveBeenCalled();
+  });
+
+  it('[REQ-335/AC-3] releaseUnconfirmed splits 51 ids into two requests', async () => {
+    const ids = Array.from({ length: 51 }, (_, i) => `id-${i}`);
+    await useGenerationStore.getState().releaseUnconfirmed(ids);
+    expect(generationApi.releaseJobs).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(generationApi.releaseJobs).mock.calls[0][0].job_ids).toHaveLength(50);
+    expect(vi.mocked(generationApi.releaseJobs).mock.calls[1][0].job_ids).toHaveLength(1);
+  });
+
+  it('[REQ-335/AC-4] fetchQueue does not keep activeBatch open for an unconfirmed item', async () => {
+    useGenerationStore.setState({
+      isGenerating: true, isBatchSubmitting: false,
+      activeBatch: [
+        { promptId: 'ok', setName: 'Set 1', status: 'pending' },
+        { promptId: 'unc', setName: 'Set 2', status: 'pending' },
+      ],
+    });
+    vi.mocked(generationApi.getState).mockResolvedValueOnce(makeSnap([
+      makeJob({ job_id: 'ok', prompt_id: 'ok', status: 'succeeded' }),
+      makeJob({ job_id: 'unc', status: 'unconfirmed' }),
+    ], 1, 'ac4-epoch'));
+    await useGenerationStore.getState().fetchQueue();
+    expect(useGenerationStore.getState().activeBatch).toBeNull();
+    expect(useGenerationStore.getState().isGenerating).toBe(false);
+  });
+
+  it('[REQ-335/AC-5] unconfirmed that gains a prompt_id and becomes running moves to the running queue', async () => {
+    vi.mocked(generationApi.getState)
+      .mockResolvedValueOnce(makeSnap([makeJob({ job_id: 'u-5', prompt_id: null, status: 'unconfirmed' })], 1, 'ac5-epoch'))
+      .mockResolvedValueOnce(makeSnap([makeJob({ job_id: 'u-5', prompt_id: 'p-5', status: 'running' })], 2, 'ac5-epoch'));
+    await useGenerationStore.getState().fetchQueue();
+    await useGenerationStore.getState().fetchQueue();
+    const state = useGenerationStore.getState();
+    expect(state.queueRunning.map((row: any) => row[2].prompt_id)).toContain('p-5');
+    expect(state.queuePending).toEqual([]);
   });
 });

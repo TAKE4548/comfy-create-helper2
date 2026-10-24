@@ -7,6 +7,7 @@ import type {
   CancelResult,
   CancelScope,
   GenerationSnapshot,
+  ReleaseOperation,
   UpstreamQueueView,
 } from '../api/domains/generation'
 
@@ -183,6 +184,7 @@ export interface JobQueueActions {
   cancelJob: (id: string) => Promise<CancelResult>;
   clearPendingQueue: (scope?: CancelScope) => Promise<CancelOperation>;
   cancelAllJobs: (scope?: CancelScope) => Promise<CancelOperation>;
+  releaseUnconfirmed: (jobIds: string[]) => Promise<ReleaseOperation>;
   fetchHistory: (options?: { preserveSelection?: boolean }) => Promise<void>;
   fetchQueue: () => Promise<void>;
 }

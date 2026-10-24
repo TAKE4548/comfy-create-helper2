@@ -465,3 +465,133 @@ def test_generation_websocket_sends_atomic_initial_snapshot_and_keeps_system_sta
             assert client.post("/__test__/system-stats").json() == {"status": "sent"}
             stats = json.loads(websocket.receive_text())
             assert stats == {"type": "SYSTEM_STATS", "data": {"cpu_pct": 1.0}}
+
+
+def _seed_orphaned_submissions(service: GenerationService) -> tuple[str, str]:
+    """Simulates rows left behind by a process that stopped before submission: queued and submitting, no prompt_id."""
+    queued_id = service.repository.accept_batch(BatchRequest.model_validate(_batch()))["job_ids"][0]
+    submitting_id = service.repository.accept_batch(BatchRequest.model_validate(_batch()))["job_ids"][0]
+    service.repository.transition(submitting_id, "submitting")
+    return queued_id, submitting_id
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+async def test_released_unconfirmed_survives_backend_restart_without_resubmission(tmp_path: Path) -> None:
+    """[REQ-335/AC-3] A released unconfirmed record stays released after a backend restart and is never resubmitted."""
+    upstream = LocalUpstream()
+    upstream.prompt_error = httpx.ConnectError("comfy down")
+    app, _service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            job_id = (await client.post("/api/generation/batches", json=_batch())).json()["job_ids"][0]
+            await _eventually_state(client, job_id, "unconfirmed")
+            released = (await client.post("/api/generation/release", json={"job_ids": [job_id]})).json()
+            assert released["items"][0]["outcome"] == "released"
+    calls_before_restart = len(upstream.prompt_calls)
+
+    app, _service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await _eventually_state(client, job_id, "released")
+            await asyncio.sleep(0.3)
+            state = (await client.get("/api/generation/state")).json()
+            job = next(item for item in state["jobs"] if item["job_id"] == job_id)
+            assert job["status"] == "released"
+            assert job["release"]["reason"] == "user_release"
+    assert len(upstream.prompt_calls) == calls_before_restart
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-1")
+async def test_restart_converts_orphaned_submissions_to_unconfirmed_and_never_resubmits(tmp_path: Path) -> None:
+    """[REQ-335/AC-1] Startup recovery converts orphaned queued/submitting rows to unconfirmed, idempotently, without upstream POST."""
+    upstream = LocalUpstream()
+    upstream.queue_error = httpx.ConnectError("comfy stopped")
+    app, service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    queued_id, submitting_id = _seed_orphaned_submissions(service)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            queued = await _eventually_state(client, queued_id, "unconfirmed")
+            submitting = await _eventually_state(client, submitting_id, "unconfirmed")
+            assert queued["failure"]["reason"] == GenerationService._RECOVERY_REASONS["queued"]
+            assert submitting["failure"]["reason"] == GenerationService._RECOVERY_REASONS["submitting"]
+            revision = (await client.get("/api/generation/state")).json()["revision"]
+    assert upstream.prompt_calls == []
+
+    app, _service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await _eventually_state(client, queued_id, "unconfirmed")
+            state = (await client.get("/api/generation/state")).json()
+            statuses = {item["job_id"]: item["status"] for item in state["jobs"]}
+            assert statuses[queued_id] == "unconfirmed" and statuses[submitting_id] == "unconfirmed"
+            assert state["revision"] == revision
+    assert upstream.prompt_calls == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+async def test_recovered_unconfirmed_can_be_released_and_stays_released_after_restart(tmp_path: Path) -> None:
+    """[REQ-335/AC-3] A recovered unconfirmed record is released with skipped_no_identity and stays released after restart."""
+    upstream = LocalUpstream()
+    upstream.queue_error = httpx.ConnectError("comfy stopped")
+    app, service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    queued_id, _submitting_id = _seed_orphaned_submissions(service)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await _eventually_state(client, queued_id, "unconfirmed")
+            body = (await client.post("/api/generation/release", json={"job_ids": [queued_id]})).json()
+            assert body["items"][0]["outcome"] == "released"
+            assert body["items"][0]["upstream_check"] == "skipped_no_identity"
+
+    app, _service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await _eventually_state(client, queued_id, "released")
+            await asyncio.sleep(0.3)
+            state = (await client.get("/api/generation/state")).json()
+            job = next(item for item in state["jobs"] if item["job_id"] == queued_id)
+            assert job["status"] == "released"
+            assert job["release"]["reason"] == "user_release"
+    assert upstream.prompt_calls == []
+
+
+@pytest.mark.asyncio
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-4")
+async def test_new_generation_completes_after_comfy_outage_with_unconfirmed_present(tmp_path: Path) -> None:
+    """[REQ-335/AC-4] After a ComfyUI outage leaves an unconfirmed record, a new generation is submitted once and completes."""
+    upstream = LocalUpstream()
+    upstream.prompt_error = httpx.ConnectError("comfy down")
+    app, service, _bridge, _sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            old_id = (await client.post("/api/generation/batches", json=_batch())).json()["job_ids"][0]
+            await _eventually_state(client, old_id, "unconfirmed")
+            upstream.prompt_error = None
+            new_id = (await client.post("/api/generation/batches", json=_batch())).json()["job_ids"][0]
+            new_job: dict[str, Any] = {}
+            for _ in range(150):
+                state = (await client.get("/api/generation/state")).json()
+                new_job = next(item for item in state["jobs"] if item["job_id"] == new_id)
+                if new_job["prompt_id"] is not None:
+                    break
+                await asyncio.sleep(0.02)
+            assert new_job["prompt_id"] is not None
+            new_prompt_id = new_job["prompt_id"]
+            assert len(upstream.prompt_calls) == 2
+            upstream.history[new_prompt_id] = {
+                "outputs": {},
+                "status": {"completed": True, "status_str": "success", "messages": []},
+            }
+            await service.on_event({"type": "execution_start", "data": {"prompt_id": new_prompt_id}})
+            await service.on_event({"type": "execution_success", "data": {"prompt_id": new_prompt_id}})
+            await _eventually_state(client, new_id, "succeeded")
+            state = (await client.get("/api/generation/state")).json()
+            old_job = next(item for item in state["jobs"] if item["job_id"] == old_id)
+            assert old_job["status"] == "unconfirmed"
+    assert len(upstream.prompt_calls) == 2

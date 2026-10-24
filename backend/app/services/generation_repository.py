@@ -7,6 +7,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting, GenerationJob
@@ -20,9 +21,11 @@ from app.schemas.generation import BatchRequest, JobStatus
 
 _REVISION_KEY = "generation_revision"
 _NORMAL_GROUP_KEY = "generation_normal_group_id"
-_ACTIVE_STATUSES = ("queued", "submitting", "running", "unconfirmed")
-_TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
+_ACTIVE_STATUSES = ("queued", "submitting", "running")  # unconfirmed は normal group を開いたままにしない
+_TERMINAL_STATUSES = ("succeeded", "failed", "cancelled", "released")
+_PRUNABLE_STATUSES = ("succeeded", "failed", "cancelled")
 _TERMINAL_LIMIT = 1000
+_RELEASED_LIMIT = 1000
 
 
 def _json_dump(value: Any) -> str:
@@ -120,6 +123,17 @@ def _prompt_excerpt(metadata_json: str) -> str | None:
     return excerpt[:160] or None
 
 
+def _load_release(raw: str | None) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    keys = {"released_at", "released_by_session", "reason", "upstream_check", "late_prompt_id"}
+    return value if isinstance(value, dict) and set(value) == keys else None
+
+
 def _job_view(job: GenerationJob) -> dict[str, Any]:
     return {
         "job_id": job.job_id,
@@ -139,6 +153,7 @@ def _job_view(job: GenerationJob) -> dict[str, Any]:
         "preview_url": None,
         "set_name": job.set_name,
         "prompt_excerpt": _prompt_excerpt(job.metadata_json),
+        "release": _load_release(job.release_json),
     }
 
 
@@ -367,16 +382,78 @@ class GenerationRepository:
         finally:
             db.close()
 
+    def release_unconfirmed(self, job_id: str, release: dict[str, Any]) -> dict[str, Any] | None:
+        """Compare-and-set unconfirmed -> released. Returns the view, or None when the row is not unconfirmed."""
+        db = self._session_factory()
+        try:
+            updated = (
+                db.query(GenerationJob)
+                .filter(GenerationJob.job_id == job_id, GenerationJob.status == "unconfirmed")
+                .update(
+                    {"status": "released", "release_json": _json_dump(release), "graph_json": None},
+                    synchronize_session=False,
+                )
+            )
+            if updated != 1:
+                db.rollback()
+                return None
+            _increment_revision(db)
+            db.flush()
+            db.expire_all()
+            job = db.get(GenerationJob, job_id)
+            assert job is not None
+            view = _job_view(job)
+            db.commit()
+            return view
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def annotate_late_identity(self, job_id: str, prompt_id: str) -> dict[str, Any] | None:
+        """Attach a late upstream prompt_id to a released row without changing its status."""
+        db = self._session_factory()
+        try:
+            job = db.get(GenerationJob, job_id)
+            if job is None or job.status != "released" or job.prompt_id is not None:
+                db.rollback()
+                return None
+            release = _load_release(job.release_json)
+            if release is None:
+                db.rollback()
+                return None
+            release["late_prompt_id"] = prompt_id
+            job.prompt_id = prompt_id
+            job.release_json = _json_dump(release)
+            _persist_frozen_prompt_metadata(db, job, prompt_id)
+            _increment_revision(db)
+            db.flush()
+            view = _job_view(job)
+            db.commit()
+            return view
+        except IntegrityError:  # prompt_id が別行で使用済み: 状態を変えない
+            db.rollback()
+            return None
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def prune_terminal(self) -> None:
         db = self._session_factory()
         try:
             terminal_jobs = (
                 db.query(GenerationJob)
-                .filter(GenerationJob.status.in_(_TERMINAL_STATUSES))
+                .filter(GenerationJob.status.in_(_PRUNABLE_STATUSES))
                 .order_by(GenerationJob.finished_at.asc(), GenerationJob.accepted_at.asc(), GenerationJob.job_id.asc())
                 .all()
             )
             stale_jobs = terminal_jobs[:-_TERMINAL_LIMIT]
+            released = db.query(GenerationJob).filter(GenerationJob.status == "released").all()
+            released.sort(key=lambda j: ((_load_release(j.release_json) or {}).get("released_at", ""), j.job_id))
+            stale_jobs += released[:-_RELEASED_LIMIT] if len(released) > _RELEASED_LIMIT else []
             if not stale_jobs:
                 db.rollback()
                 return

@@ -20,7 +20,7 @@ import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { MobileImageSheet } from './MobileImageSheet'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import { useSystemStats } from '../../../hooks/useSystemStats'
-import { selectProgress, selectWait } from '../../../utils/generationSelectors'
+import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
 
@@ -258,7 +258,8 @@ export const MobileLayout = ({
     ? generationSnapshot.jobs.filter((job) => job.scope === 'normal' && job.normal_group_id === generationSnapshot.normal_group_id && (normalSessionId === null || job.session_id === normalSessionId))
     : []
   const normalRunningJob = normalJobs.find((job) => job.status === 'running')
-  const normalUnfinished = normalJobs.some((job) => ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
+  const normalUnfinished = normalJobs.some((job) => isActiveJobStatus(job.status))
+  const unconfirmedCount = generationSnapshot ? selectUnconfirmedJobs(generationSnapshot, normalSessionId).length : 0
   const normalWait = generationSnapshot && normalUnfinished && !normalRunningJob
     ? selectWait(generationSnapshot, 'normal', normalSessionId)
     : null
@@ -875,9 +876,12 @@ export const MobileLayout = ({
           <Camera size={15} />
         </button>
         <button id="queue-management-btn-mobile" type="button" onClick={() => setIsJobModalOpen(true)}
-          aria-label={`キュー管理: ${(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}件`}
+          aria-label={`キュー管理: ${(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}件` + (unconfirmedCount > 0 ? ` / 状態未確認 ${unconfirmedCount}件` : '')}
           className="min-h-[44px] min-w-[44px] flex items-center justify-center px-2 py-2 rounded-xl border border-[rgba(255,255,255,0.1)] text-zinc-300 text-xs font-medium hover:bg-white/5 transition-all">
-          Queue {(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}
+          <span className="flex flex-col items-center leading-tight">
+            <span>Queue {(generationSnapshot ? Boolean(normalWait?.kind === 'session') : isOtherSessionGenerating) ? allQueueCount : totalQueueCount}</span>
+            {unconfirmedCount > 0 && <span data-testid="unconfirmed-count-chip" className="whitespace-nowrap text-[11px] font-semibold text-amber-300">状態未確認 {unconfirmedCount}</span>}
+          </span>
         </button>
       </div>
 

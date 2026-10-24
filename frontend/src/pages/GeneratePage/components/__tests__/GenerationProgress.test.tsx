@@ -303,5 +303,34 @@ describe('REQ-333 progress bars use managed snapshots on desktop and mobile', ()
     expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
     expect(mobile.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
   })
+
+  it('[REQ-335/AC-1] unconfirmed-only normal group is not shown as waiting or in progress and the queue button shows the unconfirmed count', () => {
+    setManagedState(snapshot([job({ job_id: 'unconfirmed-1', status: 'unconfirmed', prompt_id: null })]))
+    const { desktop, mobile } = renderBoth(makeState())
+
+    expect(screen.queryByText('準備中...')).toBeNull()
+    expect(screen.queryByText('実行中: Studio 待機中 (1)')).toBeNull()
+    expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style') ?? '').not.toContain('100%')
+    const chips = screen.getAllByTestId('unconfirmed-count-chip')
+    expect(chips).toHaveLength(2)
+    expect(chips[0]).toHaveTextContent('状態未確認 1件')
+    expect(chips[1]).toHaveTextContent('状態未確認 1')
+    expect(desktop.container.querySelector('#queue-open-btn')).toHaveAttribute('aria-label', 'ジョブキュー一覧・管理を開く（状態未確認 1件）')
+    expect(mobile.container.querySelector('#queue-management-btn-mobile')).toHaveAttribute('aria-label', expect.stringContaining('状態未確認 1件'))
+  })
+
+  it('[REQ-335/AC-1] completed jobs plus an unconfirmed job still show 完了 with the unconfirmed chip', () => {
+    const jobs = [
+      job({ job_id: 'job-1', status: 'succeeded' }),
+      job({ job_id: 'unconfirmed-1', status: 'unconfirmed', prompt_id: null }),
+    ]
+    setManagedState(snapshot(jobs), { previewImage: null })
+    const { desktop, mobile } = renderBoth(makeState({ isGeneratingHere: true, selectedImg: '/outputs/job-1.png', displayImages: ['/outputs/job-1.png'] }))
+
+    expect(desktop.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(mobile.container.querySelector('.bg-accent-green')?.getAttribute('style')).toContain('100%')
+    expect(screen.getAllByText('完了').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('unconfirmed-count-chip')).toHaveLength(2)
+  })
 })
 

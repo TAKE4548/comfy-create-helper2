@@ -178,7 +178,7 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
     )
 
     const ownActive = snapshot.jobs.filter((job) => job.session_id === clientId &&
-      ['queued', 'submitting', 'running', 'unconfirmed'].includes(job.status))
+      ['queued', 'submitting', 'running'].includes(job.status))
     const activeJob = ownActive.find((job) => job.status === 'running') ?? ownActive[0] ?? null
     const runningJob = activeJob?.status === 'running' ? activeJob : null
     const node = runningJob?.node ?? null
@@ -222,10 +222,13 @@ export const createConnectionSlice: StateCreator<GenerationState, [], [], Connec
           if (!job) return item
           const status = job.status === 'running' ? 'generating' as const :
             job.status === 'succeeded' ? 'completed' as const :
-              job.status === 'failed' || job.status === 'cancelled' ? 'failed' as const : 'pending' as const
+              job.status === 'failed' || job.status === 'cancelled' || job.status === 'released' ? 'failed' as const : 'pending' as const
           return { ...item, status }
         })
-        const unfinished = updatedBatch.some((item) => item.status === 'pending' || item.status === 'generating')
+        const unfinished = updatedBatch.some((item, index) => {
+          if (batchJobs[index]?.status === 'unconfirmed') return false
+          return item.status === 'pending' || item.status === 'generating'
+        })
         batchState = { activeBatch: unfinished ? updatedBatch : null, isBatchSubmitting: unfinished ? get().isBatchSubmitting : false }
       }
     }

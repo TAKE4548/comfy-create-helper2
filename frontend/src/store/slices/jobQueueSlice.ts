@@ -2,7 +2,7 @@ import { StateCreator } from 'zustand'
 import { comfyApi } from '../../api/client'
 import { generationApi } from '../../api/domains/generation'
 import { GenerationApiError } from '../../api/domains/generation'
-import type { BatchAccepted, BatchRequest, CancelResult, GenerationSnapshot, UpstreamQueueView, CancelScope } from '../../api/domains/generation'
+import type { BatchAccepted, BatchRequest, CancelResult, GenerationSnapshot, UpstreamQueueView, CancelScope, ReleaseOperation } from '../../api/domains/generation'
 import { LS_KEYS } from '../../utils/localStorageKeys'
 import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions, BatchJob } from '../types'
 import { comfyWsService } from '../services/comfyWebSocketService'
@@ -39,8 +39,15 @@ async function submitBatchWithLookup(payload: BatchRequest, signal?: AbortSignal
 export function projectQueue(snapshot: GenerationSnapshot, upstream: UpstreamQueueView): { running: any[]; pending: any[] } {
   const managed = (job: GenerationSnapshot['jobs'][number]) => [0, job.job_id, job, { client_id: job.session_id }, []] as any
   const running = snapshot.jobs.filter((job) => job.status === 'running').map(managed)
-  const pending = snapshot.jobs.filter((job) => ['queued', 'submitting', 'unconfirmed'].includes(job.status)).map(managed)
-  const seen = new Set(snapshot.jobs.map((job) => job.prompt_id).filter(Boolean))
+  // unconfirmed は待機ではない。専用集合(selectUnconfirmedJobs)で表示する。
+  const pending = snapshot.jobs.filter((job) => ['queued', 'submitting'].includes(job.status)).map(managed)
+  // 状態未確認/解除済みの prompt_id は seen に入れない: 上流に実在すれば外部項目として可視になる。
+  const seen = new Set(
+    snapshot.jobs
+      .filter((job) => job.status !== 'unconfirmed' && job.status !== 'released')
+      .map((job) => job.prompt_id)
+      .filter(Boolean)
+  )
   for (const item of upstream.running) {
     if (seen.has(item.prompt_id)) continue
     running.push([0, item.prompt_id, {}, { client_id: item.client_id ?? undefined }, []])
@@ -345,10 +352,14 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
             const job = jobs.get(item.promptId)
             if (!job) return item
             const status: BatchJob['status'] = job.status === 'running' ? 'generating' :
-              job.status === 'succeeded' ? 'completed' : job.status === 'failed' || job.status === 'cancelled' ? 'failed' : 'pending'
+              job.status === 'succeeded' ? 'completed' :
+              job.status === 'failed' || job.status === 'cancelled' || job.status === 'released' ? 'failed' : 'pending'
             return { ...item, status }
           })
-          const unfinished = updated.some((item) => item.status === 'pending' || item.status === 'generating')
+          const unfinished = updated.some((item) => {
+            if (jobs.get(item.promptId)?.status === 'unconfirmed') return false // 結果不明は未完了に数えない
+            return item.status === 'pending' || item.status === 'generating'
+          })
           set({ activeBatch: unfinished ? updated : null, isGenerating: unfinished })
         }
       } catch (error) {
@@ -379,6 +390,21 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       const operation = await generationApi.cancel({ mode: 'queued', scope })
       await get().fetchQueue()
       return operation
+    },
+
+    releaseUnconfirmed: async (jobIds: string[]) => {
+      // 上流の取消/中断は行わない。submission の abort もしない（解除は記録のみ）。
+      const ids = Array.from(new Set(jobIds)).filter((id) => id.length > 0)
+      const snapshot = get().generationSnapshot
+      const merged: ReleaseOperation = { items: [], epoch: snapshot?.epoch ?? '', revision: snapshot?.revision ?? 0 }
+      for (let index = 0; index < ids.length; index += 50) {
+        const operation = await generationApi.releaseJobs({ job_ids: ids.slice(index, index + 50), session_id: get().clientId })
+        merged.items.push(...operation.items)
+        merged.epoch = operation.epoch
+        merged.revision = operation.revision
+      }
+      await get().fetchQueue()
+      return merged
     },
 
     cancelAllJobs: async (scope: CancelScope = 'all') => {

@@ -3576,6 +3576,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/generation/release:
+    post:
+      tags:
+      - generation
+      summary: Release Generations
+      description: Release unconfirmed records only. No upstream cancel, interrupt, or resubmission is performed.
+      operationId: release_generations_api_generation_release_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseRequest'
+      responses:
+        '200':
+          description: Per-item release results (items may be not_released or rejected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseOperation'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: Release could not be completed (outcome=unconfirmed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/generation/upstream-queue:
     get:
       tags:
@@ -4770,6 +4802,7 @@ components:
             - failed
             - cancelled
             - unconfirmed
+            - released
           - type: 'null'
           title: Status
         outcome:
@@ -5470,6 +5503,137 @@ components:
       - thumbnail_url
       - availability
       title: ImageView
+    ReleaseOperation:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ReleaseResult'
+          type: array
+          title: Items
+        epoch:
+          type: string
+          title: Epoch
+        revision:
+          type: integer
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      - epoch
+      - revision
+      title: ReleaseOperation
+    ReleaseRequest:
+      properties:
+        job_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          minItems: 1
+          uniqueItems: true
+          title: Job Ids
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+      additionalProperties: false
+      type: object
+      required:
+      - job_ids
+      title: ReleaseRequest
+    ReleaseResult:
+      properties:
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+        prompt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Id
+        status:
+          anyOf:
+          - type: string
+            enum:
+            - queued
+            - submitting
+            - running
+            - succeeded
+            - failed
+            - cancelled
+            - unconfirmed
+            - released
+          - type: 'null'
+          title: Status
+        outcome:
+          type: string
+          enum:
+          - released
+          - already_released
+          - not_released
+          - rejected
+          title: Outcome
+        message:
+          type: string
+          title: Message
+        upstream_check:
+          anyOf:
+          - type: string
+            enum:
+            - skipped_no_identity
+            - not_found
+            - unavailable
+          - type: 'null'
+          title: Upstream Check
+      additionalProperties: false
+      type: object
+      required:
+      - job_id
+      - prompt_id
+      - status
+      - outcome
+      - message
+      title: ReleaseResult
+    ReleaseView:
+      properties:
+        released_at:
+          type: string
+          title: Released At
+        released_by_session:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Released By Session
+        reason:
+          type: string
+          enum:
+          - user_release
+          title: Reason
+        upstream_check:
+          type: string
+          enum:
+          - skipped_no_identity
+          - not_found
+          - unavailable
+          title: Upstream Check
+        late_prompt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Late Prompt Id
+      additionalProperties: false
+      type: object
+      required:
+      - released_at
+      - released_by_session
+      - reason
+      - upstream_check
+      - late_prompt_id
+      title: ReleaseView
     ResidualHistoryItem:
       type: object
       required:
@@ -5594,6 +5758,7 @@ components:
           - failed
           - cancelled
           - unconfirmed
+          - released
           title: Status
         started_at:
           anyOf:
@@ -5633,6 +5798,11 @@ components:
           - type: string
           - type: 'null'
           title: Prompt Excerpt
+        release:
+          anyOf:
+          - $ref: '#/components/schemas/ReleaseView'
+          - type: 'null'
+          title: Release
       additionalProperties: false
       type: object
       required:

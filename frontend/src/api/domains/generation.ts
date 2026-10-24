@@ -1,7 +1,27 @@
 import { BASE_URL } from '../core/base'
 
 export type Scope = 'normal' | 'studio'
-export type JobStatus = 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unconfirmed'
+export type JobStatus = 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unconfirmed' | 'released'
+
+export type ReleaseUpstreamCheck = 'skipped_no_identity' | 'not_found' | 'unavailable'
+export interface ReleaseView {
+  released_at: string
+  released_by_session: string | null
+  reason: 'user_release'
+  upstream_check: ReleaseUpstreamCheck
+  late_prompt_id: string | null
+}
+
+export interface ReleaseRequest { job_ids: string[]; session_id?: string }
+export interface ReleaseResult {
+  job_id: string | null
+  prompt_id: string | null
+  status: JobStatus | null
+  outcome: 'released' | 'already_released' | 'not_released' | 'rejected'
+  message: string
+  upstream_check: ReleaseUpstreamCheck | null
+}
+export interface ReleaseOperation { items: ReleaseResult[]; epoch: string; revision: number }
 
 export interface GenerationItem {
   graph: Record<string, unknown>
@@ -43,6 +63,7 @@ export interface JobView {
     availability: 'present' | 'missing' | 'unknown'
   }>
   failure: { reason: string; outcome: 'failed' | 'unconfirmed' } | null
+  release?: ReleaseView | null
 }
 
 export interface GenerationSnapshot {
@@ -160,7 +181,16 @@ function isScope(value: unknown): value is Scope {
 
 function isJobStatus(value: unknown): value is JobStatus {
   return value === 'queued' || value === 'submitting' || value === 'running' ||
-    value === 'succeeded' || value === 'failed' || value === 'cancelled' || value === 'unconfirmed'
+    value === 'succeeded' || value === 'failed' || value === 'cancelled' || value === 'unconfirmed' ||
+    value === 'released'
+}
+
+function isReleaseView(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  return hasRequiredKeys(value, ['released_at', 'released_by_session', 'reason', 'upstream_check', 'late_prompt_id']) &&
+    isString(value.released_at) && isNullableString(value.released_by_session) && value.reason === 'user_release' &&
+    (value.upstream_check === 'skipped_no_identity' || value.upstream_check === 'not_found' || value.upstream_check === 'unavailable') &&
+    isNullableString(value.late_prompt_id)
 }
 
 function isNodeView(value: unknown): boolean {
@@ -194,7 +224,7 @@ function isJobView(value: unknown): value is JobView {
     (value.set_name === undefined || isNullableString(value.set_name)) &&
     (value.prompt_excerpt === undefined || isNullableString(value.prompt_excerpt)) &&
     isNodeView(value.node) && Array.isArray(value.outputs) && value.outputs.every(isImageView) &&
-    isFailureView(value.failure)
+    isFailureView(value.failure) && isReleaseView(value.release)
 }
 
 function isBatchView(value: unknown): boolean {
@@ -332,6 +362,18 @@ export function decodeResidualHistoryResponse(value: unknown): ResidualHistoryRe
   return { items, rejected, has_more: value.has_more }
 }
 
+export function decodeReleaseOperation(value: unknown): ReleaseOperation {
+  if (!hasRequiredKeys(value, ['items', 'epoch', 'revision']) || !Array.isArray(value.items) ||
+      !isString(value.epoch) || !isInteger(value.revision) ||
+      !value.items.every((item) => hasRequiredKeys(item, ['job_id', 'prompt_id', 'status', 'outcome', 'message']) &&
+        isNullableString(item.job_id) && isNullableString(item.prompt_id) && (item.status === null || isJobStatus(item.status)) &&
+        (item.outcome === 'released' || item.outcome === 'already_released' || item.outcome === 'not_released' || item.outcome === 'rejected') &&
+        isString(item.message))) {
+    throw new Error('Invalid release operation response')
+  }
+  return value as unknown as ReleaseOperation
+}
+
 export const generationApi = {
   submitBatch: (body: BatchRequest, signal?: AbortSignal): Promise<BatchAccepted> =>
     call('/generation/batches', {
@@ -351,6 +393,8 @@ export const generationApi = {
   },
   cancel: (body: CancelRequest): Promise<CancelOperation> =>
     call('/generation/cancel', { method: 'POST', body: JSON.stringify(body) }),
+  releaseJobs: async (body: ReleaseRequest): Promise<ReleaseOperation> =>
+    decodeReleaseOperation(await call<unknown>('/generation/release', { method: 'POST', body: JSON.stringify(body) })),
   getUpstreamQueue: (): Promise<UpstreamQueueView> => call('/generation/upstream-queue'),
   imageAvailability: (identity: ImageIdentity): Promise<ImageAvailability> => {
     const query = new URLSearchParams({

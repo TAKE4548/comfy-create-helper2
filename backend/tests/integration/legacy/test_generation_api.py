@@ -307,3 +307,60 @@ def test_committed_work_continues_after_request_without_browser_connection(api: 
     assert api["bridge"].submissions
     snapshot = client.get("/api/generation/state").json()
     assert next(job for job in snapshot["jobs"] if job["job_id"] == job_id)["prompt_id"] is not None
+
+
+def _unconfirm(api: dict[str, Any], job_id: str) -> None:
+    api["app"].state.generation_service.repository.transition(
+        job_id,
+        "unconfirmed",
+        failure={"reason": "upstream submission outcome is unknown", "outcome": "unconfirmed"},
+    )
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_release_endpoint_contract_validation_and_typed_503(api: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    """[REQ-335/AC-3] POST /api/generation/release returns ReleaseOperation, validates input, and returns typed 503 on failure."""
+    client = api["client"]
+    repository = api["app"].state.generation_service.repository
+    job_id = client.post("/api/generation/batches", json=_payload()).json()["job_ids"][0]
+    _unconfirm(api, job_id)
+    response = client.post("/api/generation/release", json={"job_ids": [job_id]})
+    assert response.status_code == 200
+    body = response.json()
+    assert {"items", "epoch", "revision"} <= body.keys()
+    assert body["items"][0]["outcome"] == "released"
+    assert body["items"][0]["upstream_check"] == "skipped_no_identity"
+    state = client.get("/api/generation/state").json()
+    job = next(item for item in state["jobs"] if item["job_id"] == job_id)
+    assert job["status"] == "released"
+    assert job["release"]["reason"] == "user_release"
+    assert set(job["release"]) == {"released_at", "released_by_session", "reason", "upstream_check", "late_prompt_id"}
+    _assert_error_envelope(client.post("/api/generation/release", json={"job_ids": []}), 422)
+    _assert_error_envelope(client.post("/api/generation/release", json={"job_ids": [job_id, job_id]}), 422)
+    _assert_error_envelope(client.post("/api/generation/release", json={"job_ids": [f"job-{i}" for i in range(51)]}), 422)
+    assert "/api/generation/release" in api["app"].openapi()["paths"]
+
+    second = client.post("/api/generation/batches", json=_payload()).json()["job_ids"][0]
+    _unconfirm(api, second)
+
+    def failing_release(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(repository, "release_unconfirmed", failing_release)
+    failed = client.post("/api/generation/release", json={"job_ids": [second]})
+    _assert_error_envelope(failed, 503)
+    assert failed.json()["detail"]["code"] == "generation_release_unavailable"
+    assert failed.json()["detail"]["outcome"] == "unconfirmed"
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-2")
+def test_cancel_endpoints_return_202_when_unconfirmed_items_remain(api: dict[str, Any]) -> None:
+    """[REQ-335/AC-2] Bulk cancel returns 202 and reports unconfirmed items when unconfirmed records remain in scope."""
+    client = api["client"]
+    job_id = client.post("/api/generation/batches", json=_payload()).json()["job_ids"][0]
+    _unconfirm(api, job_id)
+    response = client.post("/api/generation/cancel", json={"mode": "queued", "scope": "all"})
+    assert response.status_code == 202
+    assert any(item["outcome"] == "unconfirmed" for item in response.json()["items"])

@@ -21,13 +21,19 @@ from app.schemas.generation import (
     GenerationPort,
     JobStatus,
     JobView,
+    ReleaseOperation,
+    ReleaseOutcome,
+    ReleaseRequest,
+    ReleaseResult,
+    ReleaseUpstreamCheck,
     RepositoryPort,
     StateSnapshot,
     UpstreamQueueView,
 )
 
 logger = logging.getLogger(__name__)
-_TERMINAL: set[str] = {"succeeded", "failed", "cancelled", "unconfirmed"}
+_CONFIRMED_TERMINAL: set[str] = {"succeeded", "failed", "cancelled", "released"}
+_TERMINAL: set[str] = _CONFIRMED_TERMINAL | {"unconfirmed"}  # preview消去(_snapshot/on_preview)専用で残す
 _POLL_SECONDS = 0.2
 _RECONCILE_SECONDS = 2.5
 
@@ -42,6 +48,8 @@ class _PendingJob:
 
 class RequestRepositoryPort(RepositoryPort, Protocol):
     def find_request(self, request_id: str) -> dict[str, Any] | None: ...
+    def release_unconfirmed(self, job_id: str, release: dict[str, Any]) -> dict[str, Any] | None: ...
+    def annotate_late_identity(self, job_id: str, prompt_id: str) -> dict[str, Any] | None: ...
 
 
 class LiveBridgePort(GenerationPort, Protocol):
@@ -88,11 +96,13 @@ class GenerationService:
         self._wire_signature: dict[str, Any] | None = None
         self._last_published_signature: dict[str, Any] | None = None
         self._stopping = False
+        self._recovery_pending = False
 
     async def start(self) -> None:
         if self._worker is not None and not self._worker.done():
             return
         self._stopping = False
+        await self._recover_on_start()
         self._worker = asyncio.create_task(self._run_worker(), name="generation-worker")
         try:
             await self.reconcile()
@@ -144,6 +154,65 @@ class GenerationService:
         )
         return next((item for item in result.items if item.job_id == job_id), self._result(job_id, None, None, "rejected", "job not found"))
 
+    _UNCONFIRMED_NOTE = "unconfirmed record: upstream state could not be confirmed; no cancellation was verified"
+    _RELEASED_NOTE = "released record: no upstream cancellation was performed"
+    _RECOVERY_REASONS: dict[str, str] = {
+        "queued": "service restarted before upstream submission; the request was not sent upstream and is not resubmitted automatically",
+        "submitting": "service restarted during upstream submission; whether upstream accepted it could not be confirmed",
+    }
+
+    def _mark_unconfirmed(self, job: JobView, reason: str) -> None:
+        """unconfirmed -> unconfirmed は no-op（revision/publish を増やさない）。"""
+        if job.status == "unconfirmed":
+            return
+        self.repository.transition(
+            job.job_id, "unconfirmed",
+            failure={"reason": reason, "outcome": "unconfirmed"},
+            finished_at=self._now(),
+        )
+
+    @staticmethod
+    def _resume_fields(job: JobView) -> dict[str, Any]:
+        """unconfirmed から進行状態へ戻る時は未確認の failure/finished_at を消す。"""
+        return {"failure": None, "finished_at": None} if job.status == "unconfirmed" else {}
+
+    def _recover_orphaned_submissions(self) -> int:
+        """同期。self._lock 保持下で呼ぶ。bridge 不使用。冪等（変換済みは対象外）。"""
+        recovered = 0
+        for job in self._snapshot().jobs:
+            if job.status not in self._RECOVERY_REASONS or job.prompt_id is not None:
+                continue
+            if job.job_id in self._pending_ids:  # このプロセスの正規の送信待ち
+                continue
+            self.repository.transition(
+                job.job_id, "unconfirmed",
+                failure={"reason": self._RECOVERY_REASONS[job.status], "outcome": "unconfirmed"},
+                finished_at=self._now(),
+            )
+            recovered += 1
+        return recovered
+
+    async def _recover_on_start(self) -> None:
+        try:
+            async with self._lock:
+                recovered = self._recover_orphaned_submissions()
+            self._recovery_pending = False
+        except Exception:
+            self._recovery_pending = True
+            logger.warning("Startup recovery of orphaned submissions failed; the worker will retry", exc_info=True)
+            return
+        if recovered:
+            await self._publish_snapshot()
+
+    def _unconfirmed_leftovers(self, scope: str, results: list[CancelResult]) -> list[CancelResult]:
+        reported = {item.job_id for item in results if item.job_id is not None}
+        return [
+            self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", self._UNCONFIRMED_NOTE)
+            for job in self._snapshot().jobs
+            if job.status == "unconfirmed" and job.job_id not in reported
+            and (scope == "all" or job.scope == "normal")
+        ]
+
     async def cancel_unsubmitted(self, job_id: str) -> CancelResult:
         """Cancel only a locally queued generation that has never reached upstream."""
         publish = False
@@ -152,8 +221,12 @@ class GenerationService:
             job = self._find_job(state, job_id)
             if job is None:
                 return self._result(job_id, None, None, "rejected", "job not found")
-            if job.status in _TERMINAL:
+            if job.status == "released":
+                return self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", self._RELEASED_NOTE)
+            if job.status in _CONFIRMED_TERMINAL:
                 return self._result(job.job_id, job.prompt_id, job.status, "already_terminal", "job already ended")
+            if job.status == "unconfirmed":
+                return self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", self._UNCONFIRMED_NOTE)
             if job.status != "queued" or job.prompt_id is not None:
                 return self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", "job was already submitted or is no longer locally queued")
             self._drop_pending({job.job_id})
@@ -177,7 +250,9 @@ class GenerationService:
             if job is None:
                 job = next((item for item in state.jobs if item.prompt_id == identifier), None)
             prompt_id = job.prompt_id if job is not None else identifier
-            if job is not None and job.status in _TERMINAL:
+            if job is not None and job.status == "released":
+                return self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", self._RELEASED_NOTE)
+            if job is not None and job.status in _CONFIRMED_TERMINAL:
                 return self._result(job.job_id, job.prompt_id, job.status, "already_terminal", "job already ended")
             if job is not None and job.status == "queued" and job.prompt_id is None:
                 self._drop_pending({job.job_id})
@@ -240,6 +315,8 @@ class GenerationService:
                 results, clear_outcome, interrupt_outcome, message = await self._cancel_global(state, payload.mode)
             else:
                 results, clear_outcome, interrupt_outcome, message = await self._cancel_normal(state, payload.mode)
+            if payload.mode != "single":
+                results = [*results, *self._unconfirmed_leftovers(payload.scope, results)]
             try:
                 updated_state = self._snapshot()
             except Exception:
@@ -258,6 +335,75 @@ class GenerationService:
             )
         await self._publish_snapshot()
         return result
+
+    async def release_unconfirmed(self, payload: ReleaseRequest) -> ReleaseOperation:
+        publish = False
+        async with self._lock:
+            results: list[ReleaseResult] = []
+            for job_id in payload.job_ids:
+                result, changed = await self._release_one(job_id, payload.session_id)
+                results.append(result)
+                publish = publish or changed
+            state = self._snapshot()
+            operation = ReleaseOperation(items=results, epoch=state.epoch, revision=state.revision)
+        if publish:
+            await self._publish_snapshot()
+        return operation
+
+    async def _release_one(self, job_id: str, session_id: str | None) -> tuple[ReleaseResult, bool]:
+        job = self._find_job(self._snapshot(), job_id)
+        if job is None:
+            return self._release_result(None, None, "rejected", "job not found"), False
+        if job.status == "released":
+            previous = job.release.upstream_check if job.release else None
+            return self._release_result(job, job.status, "already_released", "record was already released", previous), False
+        if job.status != "unconfirmed":
+            return self._release_result(job, job.status, "not_released", f"only unconfirmed records can be released (status={job.status})"), False
+        check: ReleaseUpstreamCheck = "skipped_no_identity"
+        changed = False
+        if job.prompt_id is not None:
+            changed = True  # 照合で状態が動く可能性があるため常に publish
+            try:
+                await self._reconcile_locked()
+                check = "not_found"
+            except Exception:
+                logger.warning("Upstream check before release failed for %s", job_id, exc_info=True)
+                check = "unavailable"
+            current = self._find_job(self._snapshot(), job_id)
+            if current is None or current.status != "unconfirmed":
+                status = current.status if current is not None else None
+                return self._release_result(current or job, status, "not_released", "upstream state was confirmed; the record was not released"), True
+        release = {
+            "released_at": self._now(), "released_by_session": session_id,
+            "reason": "user_release", "upstream_check": check, "late_prompt_id": None,
+        }
+        view = self.repository.release_unconfirmed(job.job_id, release)
+        if view is None:
+            return self._release_result(job, job.status, "not_released", "record state changed before release"), changed
+        self._drop_pending({job.job_id})
+        self._frozen_graphs.pop(job.job_id, None)
+        self._vram_wait_started.pop(job.job_id, None)
+        self._vram_warned.discard(job.job_id)
+        self._cancel_requested.discard(job.job_id)
+        self._known_prompt_ids.pop(job.job_id, None)   # _binding_retry は late identity 用に残す
+        return self._release_result(job, "released", "released", "unconfirmed record released by user; upstream was not cancelled", check), True
+
+    @staticmethod
+    def _release_result(
+        job: JobView | None,
+        status: JobStatus | None,
+        outcome: ReleaseOutcome,
+        message: str,
+        check: ReleaseUpstreamCheck | None = None,
+    ) -> ReleaseResult:
+        return ReleaseResult(
+            job_id=job.job_id if job else None,
+            prompt_id=job.prompt_id if job else None,
+            status=status,
+            outcome=outcome,
+            message=message,
+            upstream_check=check,
+        )
 
     async def reconcile(self) -> None:
         async with self._lock:
@@ -285,7 +431,7 @@ class GenerationService:
         async with self._lock:
             state = self._snapshot()
             job = next((candidate for candidate in state.jobs if candidate.prompt_id == prompt_id), None)
-            if job is None or job.status in _TERMINAL:
+            if job is None or job.status in _CONFIRMED_TERMINAL:
                 await self._publish_if_composite_changed()
                 return
             now = self._now()
@@ -299,6 +445,7 @@ class GenerationService:
                     fields: dict[str, Any] = {}
                     if job.status != "running":
                         fields.update(status="running", started_at=job.started_at or now)
+                        fields.update(self._resume_fields(job))
                     progress = event_type == "progress"
                     if node_id is None and progress:
                         if job.node is not None:
@@ -336,12 +483,7 @@ class GenerationService:
                 if job.job_id in self._cancel_requested:
                     self.repository.transition(job.job_id, "cancelled", finished_at=now)
                 else:
-                    self.repository.transition(
-                        job.job_id,
-                        "unconfirmed",
-                        failure={"reason": "upstream execution interrupted without a known cancel request", "outcome": "unconfirmed"},
-                        finished_at=now,
-                    )
+                    self._mark_unconfirmed(job, "upstream execution interrupted without a known cancel request")
                 self._cancel_requested.discard(job.job_id)
                 self._frozen_graphs.pop(job.job_id, None)
             elif event_type == "execution_success":
@@ -380,12 +522,7 @@ class GenerationService:
             if job.job_id in self._cancel_requested:
                 self.repository.transition(job.job_id, "cancelled", finished_at=now)
             else:
-                self.repository.transition(
-                    job.job_id,
-                    "unconfirmed",
-                    failure={"reason": "upstream execution interrupted without a known cancel request", "outcome": "unconfirmed"},
-                    finished_at=now,
-                )
+                self._mark_unconfirmed(job, "upstream execution interrupted without a known cancel request")
             self._cancel_requested.discard(job.job_id)
             self._frozen_graphs.pop(job.job_id, None)
         elif raw_status.get("completed") is True and (
@@ -458,6 +595,13 @@ class GenerationService:
                 loop = asyncio.get_running_loop()
                 self._retry_prompt_bindings()
                 if loop.time() - self._last_reconcile >= _RECONCILE_SECONDS:
+                    if self._recovery_pending:
+                        try:
+                            if self._recover_orphaned_submissions():
+                                await self._publish_snapshot()
+                            self._recovery_pending = False
+                        except Exception:
+                            logger.warning("Retry of startup recovery failed", exc_info=True)
                     try:
                         changed = await self._reconcile_locked()
                         if changed:
@@ -556,7 +700,11 @@ class GenerationService:
     def _retry_prompt_bindings(self) -> None:
         for job_id, prompt_id in list(self._binding_retry.items()):
             try:
-                self.repository.transition(job_id, "submitting", prompt_id=prompt_id, failure=None)
+                current = self._find_job(self._snapshot(), job_id)
+                if current is not None and current.status == "released":
+                    self.repository.annotate_late_identity(job_id, prompt_id)  # None=重複等: 状態不変
+                else:
+                    self.repository.transition(job_id, "submitting", prompt_id=prompt_id, failure=None, finished_at=None)
             except Exception:
                 logger.warning("Prompt binding retry failed for %s; upstream POST will not be repeated", job_id, exc_info=True)
                 continue
@@ -602,7 +750,9 @@ class GenerationService:
                     return [self._result(None, prompt_id, None, "unconfirmed", f"legacy interrupt outcome unknown: {exc}")], "not_requested", "unconfirmed", "legacy interrupt outcome unknown"
                 return [self._result(None, prompt_id, None, "unconfirmed", "legacy interrupt was requested; target outcome requires reconciliation")], "not_requested", "unconfirmed", "legacy interrupt outcome is unconfirmed"
             return [self._result(None, prompt_id, None, "unconfirmed", "legacy prompt is absent from queue but terminal state is unknown")], "not_requested", "unconfirmed", "queue absence does not confirm cancellation"
-        if job.status in _TERMINAL:
+        if job.status == "released":
+            return [self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", self._RELEASED_NOTE)], "not_requested", "not_requested", self._RELEASED_NOTE
+        if job.status in _CONFIRMED_TERMINAL:
             return [self._result(job.job_id, job.prompt_id, job.status, "already_terminal", "job already ended")], "not_requested", "not_requested", "job already ended"
         if job.status == "queued" and job.prompt_id is None:
             self._drop_pending({job.job_id})
@@ -683,7 +833,7 @@ class GenerationService:
         if before is not None:
             for upstream in before.pending:
                 queued_job = jobs_by_prompt.get(upstream.prompt_id)
-                if queued_job is not None and queued_job.status not in _TERMINAL:
+                if queued_job is not None and queued_job.status not in _CONFIRMED_TERMINAL:
                     self._cancel_requested.add(queued_job.job_id)
                 result_targets.append((queued_job.job_id if queued_job else None, upstream.prompt_id))
             if clear_ack_valid and after_clear is not None:
@@ -703,7 +853,7 @@ class GenerationService:
                 running_targets = after_clear.running
             for upstream in running_targets:
                 running_job = jobs_by_prompt.get(upstream.prompt_id)
-                if running_job is not None and running_job.status not in _TERMINAL:
+                if running_job is not None and running_job.status not in _CONFIRMED_TERMINAL:
                     self._cancel_requested.add(running_job.job_id)
                 result_targets.append((running_job.job_id if running_job else None, upstream.prompt_id))
                 interrupt_targets.append(upstream.prompt_id)
@@ -800,7 +950,7 @@ class GenerationService:
             logger.warning("Cancellation reconciliation could not confirm upstream state", exc_info=True)
         state = self._snapshot()
         for job in state.jobs:
-            if job.job_id not in job_ids or job.prompt_id is None or job.status in {"succeeded", "failed", "cancelled"}:
+            if job.job_id not in job_ids or job.prompt_id is None or job.status in {"succeeded", "failed", "cancelled", "released"}:
                 continue
             outcome = await self._history_cancel_outcome(job.prompt_id)
             if outcome == "cancelled":
@@ -808,12 +958,7 @@ class GenerationService:
                     self.repository.transition(job.job_id, "cancelled", finished_at=self._now())
                     self._cancel_requested.discard(job.job_id)
                 else:
-                    self.repository.transition(
-                        job.job_id,
-                        "unconfirmed",
-                        failure={"reason": "execution interrupted outside a known cancel request", "outcome": "unconfirmed"},
-                        finished_at=self._now(),
-                    )
+                    self._mark_unconfirmed(job, "execution interrupted outside a known cancel request")
             elif outcome == "succeeded":
                 record = await self.bridge.history(job.prompt_id)
                 value = record.get(job.prompt_id) if isinstance(record, dict) else None
@@ -916,7 +1061,7 @@ class GenerationService:
         self, job_id: str, prompt_id: str, outcome: str, record: dict[str, Any] | None
     ) -> None:
         current = self._find_job(self._snapshot(), job_id)
-        if current is None or current.status in {"succeeded", "failed", "cancelled"}:
+        if current is None or current.status in {"succeeded", "failed", "cancelled", "released"}:
             return
         if outcome == "cancelled":
             self.repository.transition(job_id, "cancelled", finished_at=self._now())
@@ -958,7 +1103,7 @@ class GenerationService:
         known_normal = {
             prompt_id
             for prompt_id, job in jobs_by_prompt.items()
-            if job.scope == "normal" and job.status not in _TERMINAL
+            if job.scope == "normal" and job.status not in _CONFIRMED_TERMINAL
         }
         pending_normal = [item.prompt_id for item in queue.pending if item.prompt_id in known_normal]
         result_targets: list[tuple[str, str]] = []
@@ -1083,16 +1228,16 @@ class GenerationService:
         changed = False
 
         for prompt_id, job in jobs_by_prompt.items():
-            if job.status in _TERMINAL:
+            if job.status in _CONFIRMED_TERMINAL:
                 continue
             if prompt_id in running:
                 if job.status != "running":
-                    self.repository.transition(job.job_id, "running", started_at=job.started_at or self._now())
+                    self.repository.transition(job.job_id, "running", started_at=job.started_at or self._now(), **self._resume_fields(job))
                     changed = True
                 continue
             if prompt_id in pending:
                 if job.status not in {"queued", "running"}:
-                    self.repository.transition(job.job_id, "queued")
+                    self.repository.transition(job.job_id, "queued", **self._resume_fields(job))
                     changed = True
                 continue
 
@@ -1116,14 +1261,9 @@ class GenerationService:
                 if job.job_id in self._cancel_requested:
                     self.repository.transition(job.job_id, "cancelled", finished_at=self._now())
                     self._cancel_requested.discard(job.job_id)
-                else:
-                    self.repository.transition(
-                        job.job_id,
-                        "unconfirmed",
-                        failure={"reason": "execution interrupted outside a known cancel request", "outcome": "unconfirmed"},
-                        finished_at=self._now(),
-                    )
-                changed = True
+                elif job.status != "unconfirmed":
+                    self._mark_unconfirmed(job, "execution interrupted outside a known cancel request")
+                    changed = True
                 continue
             if "execution_error" in event_names or raw_status.get("status_str") == "error":
                 self.repository.transition(

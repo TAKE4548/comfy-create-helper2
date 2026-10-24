@@ -556,6 +556,7 @@ class GenerationJob(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     failure_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    release_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cancel_requested: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )

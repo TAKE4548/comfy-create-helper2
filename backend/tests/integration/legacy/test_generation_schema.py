@@ -191,3 +191,38 @@ def test_timestamps_require_iso_utc_and_nullable_fields_are_present() -> None:
         JobView.model_validate({**base, "started_at": "2026-10-10T00:00:00"})
     with pytest.raises(ValidationError):
         JobView.model_validate({key: value for key, value in base.items() if key != "prompt_id"})
+
+
+@getattr(pytest.mark, "REQ-335")
+@getattr(pytest.mark, "AC-3")
+def test_release_contract_and_job_status_released() -> None:
+    """[REQ-335/AC-3] released is a JobStatus; release DTOs enforce 1..50 unique ids; JobView.release defaults to None."""
+    from typing import get_args
+
+    from app.schemas.generation import JobStatus, ReleaseRequest, ReleaseView
+
+    assert "released" in get_args(JobStatus)
+    assert ReleaseRequest(job_ids=["a"]).job_ids == ["a"]
+    assert len(ReleaseRequest(job_ids=[f"j{i}" for i in range(50)]).job_ids) == 50
+    with pytest.raises(ValidationError):
+        ReleaseRequest(job_ids=[])
+    with pytest.raises(ValidationError):
+        ReleaseRequest(job_ids=[f"j{i}" for i in range(51)])
+    with pytest.raises(ValidationError):
+        ReleaseRequest(job_ids=["a", "a"])
+    with pytest.raises(ValidationError):
+        ReleaseRequest.model_validate({"job_ids": ["a"], "unexpected": True})
+
+    view = JobView(
+        job_id="j1", request_id="r1", prompt_id=None, session_id="s1", scope="normal", batch_id="b1",
+        normal_group_id=None, project_id=None, status="released", started_at=None, finished_at=None,
+        node=None, outputs=[], failure=None,
+    )
+    assert view.release is None
+    release = ReleaseView(
+        released_at="2026-10-25T00:00:00Z", released_by_session=None, reason="user_release",
+        upstream_check="skipped_no_identity", late_prompt_id=None,
+    )
+    assert JobView.model_validate({**view.model_dump(), "release": release.model_dump()}).release == release
+    with pytest.raises(ValidationError):
+        ReleaseView.model_validate({**release.model_dump(), "extra": 1})

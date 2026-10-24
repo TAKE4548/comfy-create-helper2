@@ -4,6 +4,7 @@ import { useGenerationStore } from '../store/useGenerationStore'
 import { generationApi } from '../api/domains/generation'
 import type { CancelOperation, CancelResult, CancelScope } from '../api/domains/generation'
 import { Modal } from './common/Modal'
+import { selectReleasedJobs, selectUnconfirmedJobs } from '../utils/generationSelectors'
 
 interface JobManagementModalProps {
   isOpen: boolean
@@ -21,6 +22,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     cancelAllJobs,
     generationSnapshot,
     fetchQueue,
+    releaseUnconfirmed,
   } = useGenerationStore()
   const [bulkScope, setBulkScope] = useState<CancelScope>('all')
   const [busy, setBusy] = useState(false)
@@ -41,6 +43,17 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     () => queuePending.filter((job: any) => !filterOwnSession || job[3]?.client_id === clientId),
     [queuePending, filterOwnSession, clientId]
   )
+  const [releaseConfirmation, setReleaseConfirmation] = useState<string[] | null>(null)
+  const sessionFilter = filterOwnSession ? clientId : null
+  const unconfirmedJobs = useMemo(
+    () => (generationSnapshot ? selectUnconfirmedJobs(generationSnapshot, sessionFilter) : []),
+    [generationSnapshot, sessionFilter]
+  )
+  const releasedJobs = useMemo(
+    () => (generationSnapshot ? selectReleasedJobs(generationSnapshot, sessionFilter, 10) : []),
+    [generationSnapshot, sessionFilter]
+  )
+
 
   const clearReservation = () => {
     if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
@@ -53,6 +66,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     clearReservation()
     setConfirmation(null)
     setRunningConfirmation(null)
+    setReleaseConfirmation(null)
     onClose()
   }
 
@@ -88,6 +102,35 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
       setBusy(false)
       setRunningConfirmation(null)
     }
+  }
+
+  const cancelUnconfirmed = async (jobId: string) => {
+    if (busyRef.current) return
+    busyRef.current = true; setBusy(true); setResultMessage(null)
+    try {
+      const result = await cancelJob(jobId)
+      setResultMessage(result.outcome === 'cancelled'
+        ? '取消を確認しました。'
+        : `取消を確認できません（状態未確認のままです）: ${result.message}`)
+    } catch (error) {
+      setResultMessage(error instanceof Error ? error.message : '取消結果を確認できませんでした。')
+    } finally { busyRef.current = false; setBusy(false) }
+  }
+
+  const confirmRelease = async () => {
+    const ids = releaseConfirmation
+    setReleaseConfirmation(null)
+    if (!ids || ids.length === 0 || busyRef.current) return
+    busyRef.current = true; setBusy(true); setResultMessage(null)
+    try {
+      const operation = await releaseUnconfirmed(ids)
+      const released = operation.items.filter((item) => item.outcome === 'released' || item.outcome === 'already_released').length
+      const notReleased = operation.items.length - released
+      setResultMessage(`解除しました: ${released}件（上流の取消確認ではありません）` +
+        (notReleased > 0 ? `／解除できなかった記録: ${notReleased}件（状態が更新されたか、状態未確認ではありません）` : ''))
+    } catch (error) {
+      setResultMessage(error instanceof Error ? error.message : '解除結果を確認できませんでした。')
+    } finally { busyRef.current = false; setBusy(false) }
   }
 
   const reserveQueuedCancel = (promptId: string, e: React.MouseEvent) => {
@@ -139,7 +182,9 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
       ? '。保護対象があるため通常実行中の取消を見送りました。全取消完了扱いではありません'
       : ''
     const affectedIds = operation.items.map((item) => item.prompt_id || item.job_id).filter(Boolean).join(', ')
-    setResultMessage(`${operation.message || '一括取消の結果を確認してください。'}（確認済み: ${confirmedCount}件、未確認: ${unresolvedCount}件${affectedIds ? `、対象: ${affectedIds}` : ''}）${skippedReason}`)
+    const hasUnconfirmed = operation.items.some((item) => item.outcome === 'unconfirmed')
+    const releaseHint = hasUnconfirmed ? '。状態未確認の記録は「状態未確認の記録」欄から解除できます' : ''
+    setResultMessage(`${operation.message || '一括取消の結果を確認してください。'}（確認済み: ${confirmedCount}件、未確認: ${unresolvedCount}件${affectedIds ? `、対象: ${affectedIds}` : ''}）${skippedReason}${releaseHint}`)
   }
 
   const requestBulkConfirmation = (mode: 'queued' | 'all') => {
@@ -322,6 +367,58 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                   )
                 })}
               </div>
+            )}
+          </div>
+
+          {/* Unconfirmed records: never labelled as 待機中 */}
+          <div>
+            <h3 className="text-xs font-semibold text-zinc-350 mb-3 flex items-center gap-1.5">
+              <span className="shrink-0 whitespace-nowrap rounded-full border border-amber-500/30 px-1.5 py-0.5 text-[11px] text-amber-300">状態未確認</span>
+              状態未確認の記録 ({unconfirmedJobs.length})
+            </h3>
+            {unconfirmedJobs.length === 0 ? (
+              <div className="bg-surface border border-[rgba(255,255,255,0.04)] rounded-lg p-4 text-center text-xs text-zinc-450 italic">状態未確認の記録はありません</div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto overscroll-contain custom-scrollbar">
+                {unconfirmedJobs.map((job) => (
+                  <div key={job.job_id} data-testid="unconfirmed-job-row" className="flex min-w-0 flex-col gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 whitespace-nowrap rounded-full border border-amber-500/30 px-1.5 py-0.5 text-[11px] font-semibold text-amber-300">状態未確認</span>
+                        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-300">{job.prompt_id ?? job.job_id}</span>
+                      </div>
+                      <div className="break-words text-[11px] text-zinc-400 [overflow-wrap:anywhere]">{job.failure?.reason ?? '上流への投入結果を確認できません'}</div>
+                      {(job.set_name || job.prompt_excerpt) && <div className="break-words text-[11px] text-zinc-400 [overflow-wrap:anywhere]">{job.set_name}{job.set_name && job.prompt_excerpt ? ' · ' : ''}{job.prompt_excerpt}</div>}
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button type="button" disabled={busy} onClick={() => cancelUnconfirmed(job.job_id)} className="min-h-11 min-w-11 touch-manipulation rounded-lg border border-[rgba(255,255,255,0.1)] px-2 text-[11px] text-zinc-200">取消を試行</button>
+                      <button type="button" disabled={busy} onClick={() => setReleaseConfirmation([job.job_id])} className="min-h-11 min-w-11 touch-manipulation rounded-lg border border-amber-500/40 px-2 text-[11px] font-semibold text-amber-300">記録を解除</button>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" disabled={busy} onClick={() => setReleaseConfirmation(unconfirmedJobs.map((job) => job.job_id))} className="min-h-11 w-full touch-manipulation rounded-lg border border-amber-500/40 text-[11px] font-semibold text-amber-300">状態未確認をすべて解除（{unconfirmedJobs.length}件）</button>
+              </div>
+            )}
+            {releaseConfirmation && (
+              <div role="dialog" aria-label="解除確認" className="mt-2 rounded border border-amber-500/30 p-2 text-[11px] text-zinc-200">
+                <p>{releaseConfirmation.length}件の状態未確認の記録を解除します。解除は記録だけが対象で、ComfyUI側の取消ではありません。ComfyUI上の実行有無は確認しません。解除後は待機キューへ戻らず、自動で再送もしません。実行済みの可能性がある場合は履歴を確認してください。</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={confirmRelease} disabled={busy} className="min-h-11 touch-manipulation px-2 text-[11px] font-semibold text-amber-300">確認して解除</button>
+                  <button type="button" onClick={() => setReleaseConfirmation(null)} className="min-h-11 touch-manipulation px-2 text-[11px]">戻る</button>
+                </div>
+              </div>
+            )}
+            {releasedJobs.length > 0 && (
+              <details className="mt-3 text-[11px] text-zinc-400">
+                <summary className="min-h-11 cursor-pointer py-2">解除済みの記録 ({releasedJobs.length})</summary>
+                <ul className="space-y-1">
+                  {releasedJobs.map((job) => (
+                    <li key={job.job_id} className="min-w-0 break-words [overflow-wrap:anywhere]">
+                      {job.prompt_id ?? job.job_id} · 解除済み（上流の取消確認ではありません） · {job.release?.released_at ?? ''}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
         </div>
