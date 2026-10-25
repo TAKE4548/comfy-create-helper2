@@ -80,7 +80,14 @@ const EMPTY_SNAPSHOT = {
 }
 
 // Stub only backend API calls (pathname starts with /api/); never Vite module requests like /src/api/*.
-async function stubApi(page: Page, isEmpty = false): Promise<void> {
+async function stubApi(page: Page, isEmpty = false): Promise<string[]> {
+  const wsUrls: string[] = []
+  // Sever the app WebSocket: page.route does not intercept WebSockets, and the Vite proxy would
+  // forward /api/ws to a live backend whose snapshot overrides the HTTP stub (REQ-395).
+  await page.routeWebSocket((url) => url.pathname === '/api/ws', (ws) => {
+    wsUrls.push(ws.url())
+  })
+
   await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
     const req = route.request()
     const path = new URL(req.url()).pathname.replace(/^\/api/, '')
@@ -107,6 +114,7 @@ async function stubApi(page: Page, isEmpty = false): Promise<void> {
       body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
     })
   })
+  return wsUrls
 }
 
 async function openGenerate(
@@ -114,7 +122,7 @@ async function openGenerate(
   width: number,
   height: number,
   isEmpty = false
-): Promise<void> {
+): Promise<string[]> {
   await page.addInitScript(({ empty }) => {
     localStorage.clear()
     localStorage.setItem('prompt-surgeon-workflow-id', '1')
@@ -135,10 +143,11 @@ async function openGenerate(
       indexedDB.deleteDatabase('REACT_QUERY_OFFLINE_CACHE')
     } catch {}
   }, { empty: isEmpty })
-  await stubApi(page, isEmpty)
+  const wsUrls = await stubApi(page, isEmpty)
   await page.setViewportSize({ width, height })
   await page.goto('/')
   await expect(page.locator('#workflow-actions-btn')).toBeVisible()
+  return wsUrls
 }
 
 test.describe('Mobile Generate Gallery, Bottom Sheet, Fullscreen Viewer & PC Non-regression', () => {
@@ -289,6 +298,18 @@ test.describe('Mobile Generate Gallery, Bottom Sheet, Fullscreen Viewer & PC Non
       await expect(
         historyPanel.locator('text=No history images found for this session.')
       ).toBeVisible()
+    })
+
+    test('[REQ-395/AC-3] Mobile 375px: app WebSocket /api/ws is served by the stub and never reaches the backend', async ({
+      page,
+    }) => {
+      const wsUrls = await openGenerate(page, 375, 667)
+
+      // The app opens /api/ws on load; routeWebSocket must capture it (no connectToServer, so no backend).
+      await expect.poll(() => wsUrls.length).toBeGreaterThan(0)
+      for (const url of wsUrls) {
+        expect(new URL(url).pathname).toBe('/api/ws')
+      }
     })
   })
 
