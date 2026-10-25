@@ -1,14 +1,17 @@
 """Database-backed repository for accepted and observed generation jobs."""
 
+import copy
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models import AppSetting, GenerationJob
 from app.routers.prompt_metadata import (
@@ -26,6 +29,11 @@ _TERMINAL_STATUSES = ("succeeded", "failed", "cancelled", "released")
 _PRUNABLE_STATUSES = ("succeeded", "failed", "cancelled")
 _TERMINAL_LIMIT = 1000
 _RELEASED_LIMIT = 1000
+_SNAPSHOT_STATUSES_ACTIVE = ("queued", "submitting", "running", "unconfirmed")
+_SNAPSHOT_RECENT_BATCHES = 20
+_SNAPSHOT_RELEASED_PER_SESSION = 10
+_EXCERPT_MEMO_LIMIT = 4096
+_MISSING: Any = object()
 
 
 def _json_dump(value: Any) -> str:
@@ -134,7 +142,18 @@ def _load_release(raw: str | None) -> dict[str, Any] | None:
     return value if isinstance(value, dict) and set(value) == keys else None
 
 
-def _job_view(job: GenerationJob) -> dict[str, Any]:
+def _released_at_expr():
+    return case(
+        (
+            func.json_valid(GenerationJob.release_json) == 1,
+            func.json_extract(GenerationJob.release_json, "$.released_at"),
+        ),
+        else_=None,
+    )
+
+
+def _job_view(job: GenerationJob, prompt_excerpt: Any = _MISSING) -> dict[str, Any]:
+    excerpt = _prompt_excerpt(job.metadata_json) if prompt_excerpt is _MISSING else prompt_excerpt
     return {
         "job_id": job.job_id,
         "request_id": job.request_id,
@@ -152,7 +171,7 @@ def _job_view(job: GenerationJob) -> dict[str, Any]:
         "failure": json.loads(job.failure_json) if job.failure_json is not None else None,
         "preview_url": None,
         "set_name": job.set_name,
-        "prompt_excerpt": _prompt_excerpt(job.metadata_json),
+        "prompt_excerpt": excerpt,
         "release": _load_release(job.release_json),
     }
 
@@ -202,6 +221,9 @@ class GenerationRepository:
     def __init__(self, session_factory: Callable[[], Session], epoch: str | None = None):
         self._session_factory = session_factory
         self.epoch = epoch or str(uuid4())
+        self._snapshot_cache: tuple[tuple[int, str | None], dict[str, Any]] | None = None
+        self._excerpt_memo: dict[tuple[str, str | None], str | None] = {}
+        self._cache_lock = threading.Lock()
 
     def accept_batch(self, payload: BatchRequest) -> dict[str, Any]:
         canonical_payload = payload.model_dump(mode="json")
@@ -289,20 +311,26 @@ class GenerationRepository:
     def snapshot(self) -> dict[str, Any]:
         db = self._session_factory()
         try:
-            jobs = db.query(GenerationJob).order_by(
-                GenerationJob.accepted_at.asc(), GenerationJob.item_index.asc()
-            ).all()
             revision = int(_setting_value(db, _REVISION_KEY, "0"))
             normal_group_id = _setting_value(db, _NORMAL_GROUP_KEY, "") or None
+            key = (revision, normal_group_id)
+            with self._cache_lock:
+                cached = self._snapshot_cache
+            if cached is not None and cached[0] == key:
+                db.rollback()
+                return copy.deepcopy(cached[1])
+
+            jobs = self._snapshot_window_jobs(db, normal_group_id)
+            excerpts = self._excerpts_for(db, jobs)
             batches_by_id: dict[str, dict[str, Any]] = {}
-            job_views = [_job_view(job) for job in jobs]
+            job_views = [_job_view(job, excerpts[job.job_id]) for job in jobs]
             for job in jobs:
                 batches_by_id.setdefault(job.batch_id, {
                     "batch_id": job.batch_id,
                     "scope": job.scope,
                     "project_id": job.project_id,
                 })
-            return {
+            snapshot: dict[str, Any] = {
                 "version": 1,
                 "epoch": self.epoch,
                 "revision": revision,
@@ -315,6 +343,91 @@ class GenerationRepository:
                     "failure_since": None,
                 },
             }
+            with self._cache_lock:
+                self._snapshot_cache = (key, snapshot)
+            return copy.deepcopy(snapshot)
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=503, detail="Generation state is unavailable") from exc
+        finally:
+            db.close()
+
+    def _snapshot_window_jobs(self, db: Session, normal_group_id: str | None) -> list[GenerationJob]:
+        active_batches = select(GenerationJob.batch_id).where(
+            GenerationJob.status.in_(_SNAPSHOT_STATUSES_ACTIVE)
+        )
+        recent_batches = (
+            select(GenerationJob.batch_id)
+            .group_by(GenerationJob.batch_id)
+            .order_by(func.max(GenerationJob.accepted_at).desc())
+            .limit(_SNAPSHOT_RECENT_BATCHES)
+        )
+        ranked_released = select(
+            GenerationJob.job_id.label("job_id"),
+            func.row_number().over(
+                partition_by=GenerationJob.session_id,
+                order_by=(_released_at_expr().desc(), GenerationJob.job_id.desc()),
+            ).label("rn"),
+        ).where(GenerationJob.status == "released").subquery()
+        released_top = select(ranked_released.c.job_id).where(
+            ranked_released.c.rn <= _SNAPSHOT_RELEASED_PER_SESSION
+        )
+        conditions: list[Any] = [
+            GenerationJob.status.in_(_SNAPSHOT_STATUSES_ACTIVE),
+            GenerationJob.batch_id.in_(active_batches),
+            GenerationJob.batch_id.in_(recent_batches),
+            GenerationJob.job_id.in_(released_top),
+        ]
+        if normal_group_id is not None:
+            conditions.append(GenerationJob.normal_group_id == normal_group_id)
+        return (
+            db.query(GenerationJob)
+            .options(defer(GenerationJob.metadata_json))
+            .filter(or_(*conditions))
+            .order_by(GenerationJob.accepted_at.asc(), GenerationJob.item_index.asc())
+            .all()
+        )
+
+    def _excerpts_for(self, db: Session, jobs: list[GenerationJob]) -> dict[str, str | None]:
+        result: dict[str, str | None] = {}
+        missing: dict[str, str | None] = {}
+        with self._cache_lock:
+            for job in jobs:
+                memo_key = (job.job_id, job.prompt_id)
+                if memo_key in self._excerpt_memo:
+                    result[job.job_id] = self._excerpt_memo[memo_key]
+                else:
+                    missing[job.job_id] = job.prompt_id
+        if missing:
+            rows = db.execute(
+                select(GenerationJob.job_id, GenerationJob.metadata_json)
+                .where(GenerationJob.job_id.in_(list(missing)))
+            ).all()
+            with self._cache_lock:
+                for job_id, metadata_json in rows:
+                    excerpt = _prompt_excerpt(metadata_json)
+                    result[job_id] = excerpt
+                    self._excerpt_memo[(job_id, missing[job_id])] = excerpt
+                while len(self._excerpt_memo) > _EXCERPT_MEMO_LIMIT:
+                    self._excerpt_memo.pop(next(iter(self._excerpt_memo)))
+        return result
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        db = self._session_factory()
+        try:
+            job = db.get(GenerationJob, job_id)
+            return _job_view(job) if job is not None else None
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=503, detail="Generation state is unavailable") from exc
+        finally:
+            db.close()
+
+    def find_job_by_prompt(self, prompt_id: str) -> dict[str, Any] | None:
+        db = self._session_factory()
+        try:
+            job = db.query(GenerationJob).filter(GenerationJob.prompt_id == prompt_id).first()
+            return _job_view(job) if job is not None else None
         except Exception as exc:
             db.rollback()
             raise HTTPException(status_code=503, detail="Generation state is unavailable") from exc

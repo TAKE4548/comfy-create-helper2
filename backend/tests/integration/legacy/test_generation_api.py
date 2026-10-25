@@ -194,11 +194,34 @@ def test_generation_endpoints_use_real_repository_service_and_typed_errors(api: 
 
 
 def test_generation_state_read_failure_returns_typed_503_without_partial_state(api: dict[str, Any]) -> None:
-    from app.models import GenerationJob
+    from app.models import AppSetting, GenerationJob
 
-    models.Base.metadata.tables[GenerationJob.__tablename__].drop(bind=api["engine"])
+    for model in (GenerationJob, AppSetting):
+        models.Base.metadata.tables[model.__tablename__].drop(bind=api["engine"])
     response = api["client"].get("/api/generation/state")
     _assert_error_envelope(response, 503)
+    assert response.json()["detail"]["code"] == "generation_state_unavailable"
+    assert "jobs" not in response.json()
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+def test_req387_ac1_state_is_typed_503_when_key_read_fails_with_warm_snapshot_cache(api: dict[str, Any]) -> None:
+    """[REQ-387/AC-1] A failing revision/normal_group_id read gives a typed 503 even when a snapshot is cached."""
+    from app.models import AppSetting
+
+    client = api["client"]
+    assert client.post("/api/generation/batches", json=_payload()).status_code == 202
+    warm = client.get("/api/generation/state")
+    assert warm.status_code == 200
+    assert client.get("/api/generation/state").json() == warm.json()
+
+    models.Base.metadata.tables[AppSetting.__tablename__].drop(bind=api["engine"])
+    response = client.get("/api/generation/state")
+
+    _assert_error_envelope(response, 503)
+    assert response.json()["detail"]["code"] == "generation_state_unavailable"
+    assert "jobs" not in response.json()
 
 
 def test_upstream_queue_failure_is_typed_503(api: dict[str, Any]) -> None:
@@ -276,6 +299,55 @@ def test_preview_is_binary_and_availability_uses_upstream_image_identity(api: di
     assert result.status_code == 200
     assert result.json()[0]["availability"] == "present"
     assert observed == [("out.png", "folder/one", "output")]
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-4")
+def test_req387_ac4_out_of_window_terminal_job_keeps_preview_and_availability_results(
+    api: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[REQ-387/AC-4] A terminal job outside the snapshot window still resolves preview/availability; unknown IDs are 404."""
+    from app.routers import comfy
+
+    client = api["client"]
+    repository = api["app"].state.generation_repository
+    old_job_id = client.post("/api/generation/batches", json=_payload()).json()["job_ids"][0]
+    repository.transition(old_job_id, "submitting", prompt_id="old-prompt")
+    repository.transition(
+        old_job_id,
+        "succeeded",
+        outputs=[{
+            "node_id": "8",
+            "index": 0,
+            "view_url": "/api/comfy/view?filename=old.png&subfolder=&type=output&t=old-prompt",
+            "thumbnail_url": "/api/comfy/thumbnail?filename=old.png&subfolder=&type=output",
+            "availability": "unknown",
+        }],
+    )
+    for _ in range(21):
+        assert client.post("/api/generation/batches", json=_payload()).status_code == 202
+    window_ids = {job["job_id"] for job in client.get("/api/generation/state").json()["jobs"]}
+    assert old_job_id not in window_ids
+
+    missing_preview = client.get(f"/api/generation/preview/{old_job_id}")
+    _assert_error_envelope(missing_preview, 404)
+    assert missing_preview.json()["detail"]["code"] == "preview_not_found"
+    api["bridge"].preview["old-prompt"] = (b"old-frame", "image/png")
+    found_preview = client.get(f"/api/generation/preview/{old_job_id}")
+    assert found_preview.status_code == 200 and found_preview.content == b"old-frame"
+
+    async def probe(filename: str, subfolder: str = "", image_type: str = "output") -> ImageAvailability:
+        return ImageAvailability(availability="present")
+
+    monkeypatch.setattr(comfy, "probe_image_availability", probe)
+    availability = client.get(f"/api/generation/images/{old_job_id}/availability")
+    assert availability.status_code == 200
+    assert [item["availability"] for item in availability.json()] == ["present"]
+
+    for path in ("/api/generation/preview/missing-job", "/api/generation/images/missing-job/availability"):
+        unknown = client.get(path)
+        _assert_error_envelope(unknown, 404)
+        assert unknown.json()["detail"]["code"] == "job_not_found"
 
 
 def test_lifespan_owns_bridge_worker_with_zero_browser_connections(api: dict[str, Any]) -> None:

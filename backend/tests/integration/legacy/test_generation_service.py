@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Literal
 from uuid import uuid4
 
 import pytest
 
 from app.schemas.generation import BatchRequest, CancelRequest, CancelTarget, JobStatus, ReleaseRequest
-from app.services.generation_service import GenerationService
+from app.services.generation_service import GenerationService, _should_log_reconcile_failure
 
 
 class MemoryRepository:
@@ -21,6 +22,16 @@ class MemoryRepository:
         self.fail_snapshot_after_accept = False
         self.accept_error: Exception | None = None
         self.fail_prompt_bind_once = False
+        self.hidden_job_ids: set[str] = set()
+        self.snapshot_calls = 0
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        job = self.jobs.get(job_id)
+        return dict(job) if job is not None else None
+
+    def find_job_by_prompt(self, prompt_id: str) -> dict[str, Any] | None:
+        job = next((item for item in self.jobs.values() if item["prompt_id"] == prompt_id), None)
+        return dict(job) if job is not None else None
 
     def accept_batch(self, payload: BatchRequest) -> dict[str, Any]:
         if self.accept_error:
@@ -90,6 +101,7 @@ class MemoryRepository:
         return job
 
     def snapshot(self) -> dict[str, Any]:
+        self.snapshot_calls += 1
         if self.fail_snapshot:
             raise RuntimeError("snapshot unavailable")
         return {
@@ -104,7 +116,7 @@ class MemoryRepository:
                 ),
                 None,
             ),
-            "jobs": list(self.jobs.values()),
+            "jobs": [job for job in self.jobs.values() if job["job_id"] not in self.hidden_job_ids],
             "batches": list(self.batches.values()),
             "upstream": {"http_ready": True, "ws_connected": True, "failure_since": None},
         }
@@ -2077,3 +2089,155 @@ async def test_late_binding_after_release_annotates_identity_without_changing_st
     assert job["release"]["reason"] == "user_release"
     assert bridge.submissions == submissions_before
     assert job_id not in service._binding_retry
+
+
+@pytest.mark.asyncio
+async def test_req387_ac2_preview_frame_reads_snapshot_once_and_advances_revision() -> None:
+    """[REQ-387/AC-2] One preview frame reads the snapshot at most three times, advances the wire revision, and publishes once."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    published: list[dict[str, Any]] = []
+    service = GenerationService(repository, bridge, clock=lambda: "2026-10-10T00:00:00Z", vram_status=lambda: {}, publish=published.append)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    repository.transition(job_id, "running", prompt_id="prompt-req387")
+    before_revision = service.snapshot()["revision"]
+    published.clear()
+    calls_before = repository.snapshot_calls
+
+    await service.on_preview("prompt-req387", b"frame", "image/png")
+
+    assert repository.snapshot_calls - calls_before <= 3
+    assert len(published) == 1
+    assert published[0]["revision"] > before_revision
+    assert published[0]["jobs"][0]["preview_url"] == f"/api/generation/preview/{job_id}?revision=1"
+
+
+async def _ac4_result(op: str, *, hidden: bool) -> tuple[str | None, str | None, str]:
+    """Run one operation on a job that is outside the delivery window when hidden."""
+    scenarios: dict[str, tuple[JobStatus, str | None]] = {
+        "cancel_unsubmitted_queued": ("queued", None),
+        "cancel_unsubmitted_failed": ("failed", None),
+        "cancel_queued_by_job_id": ("failed", None),
+        "cancel_queued_by_prompt_id": ("failed", "p-req387"),
+        "cancel_single_by_job_id_released": ("released", None),
+        "cancel_single_by_prompt_id": ("failed", "p-req387"),
+        "release_released": ("released", None),
+    }
+    status, prompt_id = scenarios[op]
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = _service(repository, bridge)
+    job_id = (await service.accept(_payload()))["job_ids"][0]
+    if status != "queued":
+        repository.transition(job_id, status, prompt_id=prompt_id, finished_at="2026-10-10T00:00:01Z")
+    if hidden:
+        repository.hidden_job_ids.add(job_id)
+    if op.startswith("cancel_unsubmitted"):
+        cancel_outcome = await service.cancel_unsubmitted(job_id)
+        return cancel_outcome.outcome, cancel_outcome.status, cancel_outcome.message
+    if op.startswith("cancel_queued"):
+        queued_outcome = await service.cancel_queued(job_id if op.endswith("job_id") else "p-req387")
+        return queued_outcome.outcome, queued_outcome.status, queued_outcome.message
+    if op.startswith("cancel_single"):
+        target = CancelTarget(job_id=job_id) if op.endswith("job_id_released") else CancelTarget(prompt_id="p-req387")
+        single = (await service.cancel_operation(CancelRequest(mode="single", target=target))).items[0]
+        return single.outcome, single.status, single.message
+    release = (await service.release_unconfirmed(ReleaseRequest(job_ids=[job_id]))).items[0]
+    return release.outcome, release.status, release.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("cancel_unsubmitted_queued", "cancelled"),
+        ("cancel_unsubmitted_failed", "already_terminal"),
+        ("cancel_queued_by_job_id", "already_terminal"),
+        ("cancel_queued_by_prompt_id", "already_terminal"),
+        ("cancel_single_by_job_id_released", "not_cancelled"),
+        ("cancel_single_by_prompt_id", "already_terminal"),
+        ("release_released", "already_released"),
+    ],
+)
+async def test_req387_ac4_cancel_and_release_for_out_of_window_jobs_keep_results(op: str, expected: str) -> None:
+    """[REQ-387/AC-4] Out-of-window jobs resolve by id or prompt and give the same result as in-window jobs."""
+    in_window = await _ac4_result(op, hidden=False)
+    out_of_window = await _ac4_result(op, hidden=True)
+    assert in_window[0] == expected
+    assert out_of_window == in_window
+
+
+@pytest.mark.asyncio
+async def test_req387_ac4_unknown_job_is_rejected_as_not_found() -> None:
+    """[REQ-387/AC-4] An unknown job id is rejected with 'job not found' for cancel and release."""
+    repository = MemoryRepository()
+    service = _service(repository, FakeBridge())
+    cancelled = await service.cancel_unsubmitted("missing-req387")
+    released = (await service.release_unconfirmed(ReleaseRequest(job_ids=["missing-req387"]))).items[0]
+    assert (cancelled.outcome, cancelled.message) == ("rejected", "job not found")
+    assert (released.outcome, released.message) == ("rejected", "job not found")
+
+
+def test_req387_ac6_reconcile_failure_log_schedule_is_bounded() -> None:
+    """[REQ-387/AC-6] Reconcile failure counts that are logged at WARNING level are exactly the backoff points."""
+    logged = {count for count in range(1, 501) if _should_log_reconcile_failure(count)}
+    assert logged == {1, 24, 48, 96, 192, 432}
+
+
+async def _force_reconcile_until(service: GenerationService, predicate: Any) -> None:
+    deadline = asyncio.get_running_loop().time() + 10.0
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("reconcile condition was not reached in time")
+        service._last_reconcile = 0.0
+        service._wake.set()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_req387_ac6_reconcile_failure_logs_once_then_backoff_and_recovery(caplog: pytest.LogCaptureFixture) -> None:
+    """[REQ-387/AC-6] Repeated reconcile failures warn once with a traceback, then one recovery INFO is logged."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    caplog.set_level(logging.DEBUG, logger="app.services.generation_service")
+    service = await _restart(repository, bridge)
+    bridge.queue_error = RuntimeError("upstream queue unavailable")
+    try:
+        await _force_reconcile_until(service, lambda: service._reconcile_failures >= 3)
+        failure_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "reconciliation" in r.getMessage()]
+        assert len(failure_warnings) == 1
+        assert failure_warnings[0].exc_info is not None
+
+        bridge.queue_error = None
+        await _force_reconcile_until(service, lambda: service._reconcile_failures == 0)
+        recovered = [r for r in caplog.records if r.levelno == logging.INFO and "recovered after" in r.getMessage()]
+        assert len(recovered) == 1
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req387_ac6_five_consecutive_connect_errors_log_one_warning_and_one_recovery(caplog: pytest.LogCaptureFixture) -> None:
+    """[REQ-387/AC-6] Five or more consecutive ConnectError failures log one traceback WARNING and one recovery INFO."""
+    import httpx
+
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    caplog.set_level(logging.DEBUG, logger="app.services.generation_service")
+    service = await _restart(repository, bridge)
+    bridge.queue_error = httpx.ConnectError("comfyui connection refused")
+    try:
+        await _force_reconcile_until(service, lambda: service._reconcile_failures >= 5)
+        failures_before_recovery = service._reconcile_failures
+        assert 5 <= failures_before_recovery < 24
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "reconciliation" in r.getMessage()]
+        assert len(warnings) == 1 and warnings[0].exc_info is not None
+        assert warnings[0].exc_info[0] is httpx.ConnectError
+
+        bridge.queue_error = None
+        await _force_reconcile_until(service, lambda: service._reconcile_failures == 0)
+        recovered = [r for r in caplog.records if r.levelno == logging.INFO and "recovered after" in r.getMessage()]
+        assert len(recovered) == 1
+        assert recovered[0].getMessage() == f"Generation reconciliation recovered after {failures_before_recovery} failures"
+    finally:
+        await service.stop()

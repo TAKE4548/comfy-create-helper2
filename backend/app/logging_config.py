@@ -70,3 +70,5 @@ def setup_logging(log_dir: Path, log_level: str = "INFO", retention_days: int = 
 
     # Mute overly verbose third-party loggers if necessary
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

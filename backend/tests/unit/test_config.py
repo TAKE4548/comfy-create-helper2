@@ -1,6 +1,10 @@
 """Unit tests for Settings configuration (isolated parsing & property tests)."""
+import logging
 from pathlib import Path
+from sqlalchemy import create_engine, text
 from app.config import Settings
+from app.database import configure_sqlite_pragmas
+from app.logging_config import setup_logging
 
 
 def test_settings_default_values_and_types() -> None:
@@ -54,3 +58,40 @@ def test_settings_snapshot_path_resolves(tmp_path: Path) -> None:
     assert isinstance(path, Path)
     assert path == target_dir
     assert path.is_dir()
+
+
+def test_req387_ac7_sqlite_file_engine_uses_wal_and_busy_timeout(tmp_path: Path) -> None:
+    """[REQ-387/AC-7] SQLite file engine gets WAL journal mode and busy_timeout=5000 on connect."""
+    engine = create_engine(f"sqlite:///{tmp_path / 't.db'}")
+    configure_sqlite_pragmas(engine)
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(text("PRAGMA journal_mode")).scalar() == "wal"
+            assert conn.execute(text("PRAGMA busy_timeout")).scalar() == 5000
+    finally:
+        engine.dispose()
+
+    memory_engine = create_engine("sqlite:///:memory:")
+    configure_sqlite_pragmas(memory_engine)
+    try:
+        with memory_engine.connect() as conn:
+            assert conn.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        memory_engine.dispose()
+
+
+def test_req387_ac7_httpx_logger_is_warning_after_setup_logging(tmp_path: Path) -> None:
+    """[REQ-387/AC-7] setup_logging raises httpx and httpcore loggers to WARNING."""
+    root = logging.getLogger()
+    saved_handlers = list(root.handlers)
+    saved_level = root.level
+    try:
+        setup_logging(tmp_path, "INFO", 1)
+        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger("httpcore").level == logging.WARNING
+    finally:
+        for handler in list(root.handlers):
+            if handler not in saved_handlers:
+                handler.close()
+        root.handlers = saved_handlers
+        root.setLevel(saved_level)

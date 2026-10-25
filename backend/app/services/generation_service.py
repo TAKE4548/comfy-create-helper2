@@ -32,6 +32,17 @@ from app.schemas.generation import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _should_log_reconcile_failure(count: int) -> bool:
+    """Return True for the failure counts that are logged at WARNING level.
+
+    Counts are at ~2.5 s intervals: 1st failure, then roughly 60 s, 120 s, 240 s,
+    480 s, and every 10 minutes after that.
+    """
+    if count == 1 or count in {24, 48, 96, 192}:
+        return True
+    return count > 192 and (count - 192) % 240 == 0
 _CONFIRMED_TERMINAL: set[str] = {"succeeded", "failed", "cancelled", "released"}
 _TERMINAL: set[str] = _CONFIRMED_TERMINAL | {"unconfirmed"}  # preview消去(_snapshot/on_preview)専用で残す
 _POLL_SECONDS = 0.2
@@ -50,6 +61,8 @@ class RequestRepositoryPort(RepositoryPort, Protocol):
     def find_request(self, request_id: str) -> dict[str, Any] | None: ...
     def release_unconfirmed(self, job_id: str, release: dict[str, Any]) -> dict[str, Any] | None: ...
     def annotate_late_identity(self, job_id: str, prompt_id: str) -> dict[str, Any] | None: ...
+    def get_job(self, job_id: str) -> dict[str, Any] | None: ...
+    def find_job_by_prompt(self, prompt_id: str) -> dict[str, Any] | None: ...
 
 
 class LiveBridgePort(GenerationPort, Protocol):
@@ -88,6 +101,7 @@ class GenerationService:
         self._vram_warned: set[str] = set()
         self._cancel_requested: set[str] = set()
         self._last_reconcile = 0.0
+        self._reconcile_failures = 0
         # The repository revision tracks committed database writes.  The wire
         # revision also covers ephemeral state such as the live bridge health
         # overlay, so it is maintained here without writing on snapshot reads.
@@ -248,7 +262,7 @@ class GenerationService:
             state = self._snapshot()
             job = self._find_job(state, identifier)
             if job is None:
-                job = next((item for item in state.jobs if item.prompt_id == identifier), None)
+                job = self._find_job_by_prompt(state, identifier)
             prompt_id = job.prompt_id if job is not None else identifier
             if job is not None and job.status == "released":
                 return self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", self._RELEASED_NOTE)
@@ -551,7 +565,8 @@ class GenerationService:
             # The job URL changes only after a frame arrives; unrelated state
             # revisions leave this per-job token untouched.
             self._preview_revisions[job.job_id] = self._preview_revisions.get(job.job_id, 0) + 1
-            self._advance_wire_revision()
+            # Re-read once so the wire signature includes the new preview URL.
+            self._advance_wire_revision(self._snapshot())
         await self._publish_snapshot()
 
     async def _verified_event_prompt(self) -> str | None:
@@ -604,10 +619,21 @@ class GenerationService:
                             logger.warning("Retry of startup recovery failed", exc_info=True)
                     try:
                         changed = await self._reconcile_locked()
+                    except Exception:
+                        self._reconcile_failures += 1
+                        count = self._reconcile_failures
+                        if not _should_log_reconcile_failure(count):
+                            logger.debug("Generation reconciliation failed", exc_info=True)
+                        elif count == 1:
+                            logger.warning("Generation reconciliation failed", exc_info=True)
+                        else:
+                            logger.warning("Generation reconciliation still failing (%d consecutive)", count)
+                    else:
+                        if self._reconcile_failures:
+                            logger.info("Generation reconciliation recovered after %d failures", self._reconcile_failures)
+                            self._reconcile_failures = 0
                         if changed:
                             await self._publish_snapshot()
-                    except Exception:
-                        logger.warning("Generation reconciliation failed", exc_info=True)
                 if not self._pending:
                     continue
                 item = self._pending[0]
@@ -715,11 +741,10 @@ class GenerationService:
     ) -> tuple[list[CancelResult], ActionOutcome, ActionOutcome, str]:
         assert payload.target is not None
         target = payload.target
-        job = next(
-            (candidate for candidate in state.jobs if candidate.job_id == target.job_id)
+        job = (
+            self._find_job(state, target.job_id)
             if target.job_id is not None
-            else (candidate for candidate in state.jobs if candidate.prompt_id == target.prompt_id),
-            None,
+            else self._find_job_by_prompt(state, target.prompt_id)
         )
         if job is None:
             prompt_id = target.prompt_id
@@ -980,11 +1005,27 @@ class GenerationService:
                 self._cancel_requested.discard(job.job_id)
         return self._snapshot()
 
-    @staticmethod
-    def _find_job(state: StateSnapshot, job_id: str | None) -> JobView | None:
+    def find_job(self, job_id: str) -> JobView | None:
+        return self._find_job(self._snapshot(), job_id)
+
+    def _find_job(self, state: StateSnapshot, job_id: str | None) -> JobView | None:
         if job_id is None:
             return None
-        return next((job for job in state.jobs if job.job_id == job_id), None)
+        job = next((item for item in state.jobs if item.job_id == job_id), None)
+        if job is not None:
+            return job
+        # Jobs outside the bounded delivery window are still addressable by id.
+        row = self.repository.get_job(job_id)
+        return JobView.model_validate(row) if row is not None else None
+
+    def _find_job_by_prompt(self, state: StateSnapshot, prompt_id: str | None) -> JobView | None:
+        if prompt_id is None:
+            return None
+        job = next((item for item in state.jobs if item.prompt_id == prompt_id), None)
+        if job is not None:
+            return job
+        row = self.repository.find_job_by_prompt(prompt_id)
+        return JobView.model_validate(row) if row is not None else None
 
     async def _history_cancel_outcome(self, prompt_id: str) -> str | None:
         try:
@@ -1403,9 +1444,10 @@ class GenerationService:
         data.pop("revision", None)
         return data
 
-    def _advance_wire_revision(self) -> None:
+    def _advance_wire_revision(self, state: StateSnapshot | None = None) -> None:
         """Advance an ephemeral wire-only refresh token, without repository writes."""
-        state = self._snapshot()
+        if state is None:
+            state = self._snapshot()
         self._wire_revision = max(self._wire_revision, state.revision) + 1
         signature_data = state.model_dump(mode="json")
         signature_data.pop("revision", None)

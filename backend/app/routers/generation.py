@@ -228,8 +228,7 @@ async def get_upstream_queue(service: GenerationService = Depends(_service)) -> 
 @router.get("/preview/{job_id}", response_class=Response)
 async def get_preview(job_id: str, service: GenerationService = Depends(_service)) -> Response:
     try:
-        snapshot = StateSnapshot.model_validate(service.snapshot())
-        job = next((item for item in snapshot.jobs if item.job_id == job_id), None)
+        job = service.find_job(job_id)
         if job is None:
             return _error_response(404, "job_not_found", "Generation job was not found", job_id=job_id)
         if job.prompt_id is None:
@@ -247,8 +246,7 @@ async def get_preview(job_id: str, service: GenerationService = Depends(_service
 @router.get("/images/{job_id}/availability", response_model=list[ImageView])
 async def get_image_availability(job_id: str, service: GenerationService = Depends(_service)) -> Response:
     try:
-        snapshot = StateSnapshot.model_validate(service.snapshot())
-        job = next((item for item in snapshot.jobs if item.job_id == job_id), None)
+        job = service.find_job(job_id)
         if job is None:
             return _error_response(404, "job_not_found", "Generation job was not found", job_id=job_id)
         from app.routers.comfy import probe_image_availability

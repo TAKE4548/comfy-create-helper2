@@ -195,6 +195,18 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
 - **ジョブ割り込み / キャンセル**:
   - 生成要求は `POST /api/generation/batches` でメインAPI（8000番）へ送信する。`BatchRequest` は `request_id`、既存の利用者session identity、scope（`normal` / `studio`）、凍結itemsを持ち、Studioではproject IDを持つ。フロントエンドはワークフロー・graph・パラメータ・適用アセットを要求ごとに凍結し、受付DB transactionのcommit後に返る `202 Accepted` を受付完了とする。上流ComfyUIへの送信と専用 `client_id` はバックエンドが管理し、利用者の `session_id` と混同しない。上流POSTの結果が不明な場合は `unconfirmed` とし、自動再送しない。
   - ブラウザーは共有WebSocket `/api/ws` からGenerationのsnapshot/eventを受け取る。snapshotは `epoch` / `revision` と全状態を一体で扱い、古いrevisionやepochを現在状態へ部分mergeしない。WebSocket再接続中もAPI上のジョブ受付はバックエンドが処理し、ブラウザー接続断を理由に受付済ジョブを取り消さない。
+  - **snapshot の配信窓**: snapshot（WS配信と `GET /api/generation/state`）の `jobs` は、次の和集合の job 全件とする。「全状態」とはこの配信窓の全状態を指し、一体性（epoch/revision と部分 merge 禁止）は維持する。
+    - 非終端job（queued / submitting / running / unconfirmed）全件
+    - 非終端jobを1件以上含む batch の全job
+    - 現在の `normal_group_id` に属する全job
+    - 直近20個の batch（受付時刻の新しい順）の全job
+    - session ごとに直近10件の解除済み（released）job
+  - **配信窓の補足**: 窓に含まれる batch と現在の `normal_group_id` の group は、単位ごとに欠けず含まれる。したがって、窓内の通常生成 group と Studio batch の N/F、および session ごとの解除済み直近10件の表示は、全件時と同じになる。窓の外にある batch と group は含まれないことがある。現在の `normal_group_id` が空のとき、「現在の `normal_group_id` に属する job」の条件は対象なしとする。`batches` は窓内 job の batch だけを含む。
+  - **窓外 job の扱い**: 取消・記録解除・プレビュー取得・画像 availability などの job 単位操作は、配信窓に含まれない job も job_id / prompt_id で照会して従来どおり判定する（終端済みは already_terminal 等、存在しなければ not found）。
+  - **非機能制約**: バックエンドは Generation 状態の取得で、イベントループを全件 DB 読込・全件 JSON 解析で占有してはならない。状態取得は revision と現在の `normal_group_id` が変わらない限り再計算しない。プレビューフレーム受信時は generation_jobs の全件再読込を行わない。状態取得（revision と現在の `normal_group_id` の読込を含む）が失敗した場合、`GET /api/generation/state` は型付きの 503 を返し、部分的な状態を返さない。
+  - **上流不通時のログ**: ComfyUI 不通で reconcile が連続して失敗する間、詳細な例外（stack trace）付きの記録は失敗開始時の1回に限り、その後は間隔を空けた要約記録とする。回復時に回復した旨を1回記録する。
+  - **SQLite 接続設定**: バックエンドの SQLite 接続は WAL モードと busy_timeout（5秒）を設定する。WAL の `-wal` / `-shm` ファイルは DB 本体と一体のデータであり、キャッシュとして削除しない。
+  - **保持方針**: DB 上の終端 job 記録の保持上限（REQ-333 の 1000件方針）は変えない。配信窓は DB の保持件数と独立に有界である。
   - 通常生成の `normal_group_id` は通常生成のまとまりを示し、session IDやStudioのproject IDとは別である。履歴の「自セッションのみ」は表示対象を切り替えるだけで、全体キャンセルの範囲を狭めない。他sessionの待機表示はこのfilterが有効な場合に限る。異なるscopeの待機jobがある場合は別scopeの待機を優先し、scopeを併記する。
   - 通常生成の進捗母数 `N` は取消済み・解除済み・状態未確認のjobを除外し、完了数 `F` は成功・失敗の合計とする。失敗は通知したうえで進捗上の完了として扱う。取消後のNと進捗率は残存jobから再計算する。状態未確認の件数は進捗と別に『状態未確認 n件』として表示し、待機中・実行中・準備中と同じ表示にしない。
   - Studio Step 1の各生成batchは独立したrequest/batchとして扱い、通常生成のgroupや他Studio batchへ合算しない。各batchの `N` はそのrequestの対象数、`F` は成功・失敗の合計とし、失敗は通知して完了として進める。キャンセルjobは進捗母数から除外し、batch停止後は停止済みとして表示する。解除済みjobは `N` から除外する（状態未確認はStudioの `N` に残る）。project scopeを示す場合はproject名を併記できる。Studioのstep遷移自体は本節の対象外。

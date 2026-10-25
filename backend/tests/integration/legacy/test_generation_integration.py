@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -14,7 +17,7 @@ from websockets.asyncio.server import serve as websocket_serve
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from PIL import Image
 from unittest.mock import MagicMock, patch
@@ -22,7 +25,7 @@ import io
 import urllib.parse
 
 from app.database import Base
-from app.models import PromptMetadata, Snapshot, Workflow
+from app.models import AppSetting, GenerationJob, PromptMetadata, Snapshot, Workflow
 from app.routers.generation import router as generation_api_router
 from app.routers.ws import manager as ws_manager, router as ws_api_router
 from app.schemas.generation import BatchRequest
@@ -595,3 +598,233 @@ async def test_new_generation_completes_after_comfy_outage_with_unconfirmed_pres
             old_job = next(item for item in state["jobs"] if item["job_id"] == old_id)
             assert old_job["status"] == "unconfirmed"
     assert len(upstream.prompt_calls) == 2
+
+
+_TERMINAL_JOB_COUNT = 1000
+_PREVIEW_FRAME_COUNT = 30
+_PREVIEW_FRAME_GAP = 0.03
+_PREVIEW_HEAD = b"\x00\x00\x00\x01\x00\x00\x00\x02"
+_CANCEL_OUTCOMES = {"cancelled", "not_cancelled", "already_terminal", "unconfirmed", "rejected"}
+
+
+def _seed_terminal_jobs(sessions: Any, count: int = _TERMINAL_JOB_COUNT) -> None:
+    base = datetime(2026, 1, 1)
+    with sessions() as db:
+        db.add(AppSetting(key="generation_revision", value="1"))
+        for index in range(count):
+            batch_number, item_index = divmod(index, 3)
+            metadata = {
+                "workflow_id": 1,
+                "param_values": {
+                    "__prompt_surgeon_metadata_v1": json.dumps(
+                        {"version": 1, "fields": [{"name": f"f{i}", "value": i} for i in range(20)]}
+                    ),
+                    "pad": "x" * 26000,
+                },
+            }
+            db.add(GenerationJob(
+                job_id=f"seed-job-{index}",
+                request_id=f"seed-request-{batch_number}",
+                item_index=item_index,
+                payload_hash=f"seed-hash-{index}",
+                prompt_id=f"seed-prompt-{index}",
+                session_id="seed-session",
+                scope="normal",
+                batch_id=f"seed-batch-{batch_number}",
+                status="succeeded",
+                metadata_json=json.dumps(metadata),
+                accepted_at=base + timedelta(seconds=index),
+                finished_at=base + timedelta(seconds=index, milliseconds=500),
+            ))
+        db.commit()
+
+
+async def _wait_prompt_id(client: AsyncClient, job_id: str, timeout: float = 3.0) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        state = (await client.get("/api/generation/state")).json()
+        job = next((item for item in state["jobs"] if item["job_id"] == job_id), None)
+        if job is not None and job["prompt_id"] is not None:
+            return str(job["prompt_id"])
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} never received a prompt_id")
+
+
+async def _wait_preview(bridge: ComfyGenerationBridge, prompt_id: str, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and bridge.get_preview(prompt_id) is None:
+        await asyncio.sleep(0.01)
+    assert bridge.get_preview(prompt_id) is not None, "first preview frame never reached the bridge cache"
+
+
+async def _measure_loop_lag(stop: asyncio.Event, lags: list[float]) -> None:
+    loop = asyncio.get_running_loop()
+    expected = loop.time() + 0.01
+    while not stop.is_set():
+        await asyncio.sleep(0.01)
+        now = loop.time()
+        lags.append(max(0.0, now - expected))
+        expected = now + 0.01
+
+
+@asynccontextmanager
+async def _running_scenario_with_terminal_jobs(
+    tmp_path: Path, upstream: LocalUpstream | None = None,
+) -> AsyncIterator[SimpleNamespace]:
+    upstream = upstream if upstream is not None else LocalUpstream()
+    active_socket: list[Any] = []
+    connected = asyncio.Event()
+
+    async def upstream_ws(websocket: Any) -> None:
+        active_socket.append(websocket)
+        connected.set()
+        await websocket.wait_closed()
+
+    async with websocket_serve(upstream_ws, "127.0.0.1", 0) as server:
+        upstream_socket = next(iter(server.sockets))
+        ws_port = upstream_socket.getsockname()[1]
+        app, _service, bridge, sessions = _integration_app(
+            tmp_path, upstream, bridge_url=f"http://127.0.0.1:{ws_port}", start_bridge=True,
+        )
+        _seed_terminal_jobs(sessions)
+        async with app.router.lifespan_context(app):
+            await asyncio.wait_for(connected.wait(), timeout=2)
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                accepted = (await client.post("/api/generation/batches", json=_batch())).json()
+                job_id = accepted["job_ids"][0]
+                prompt_id = await _wait_prompt_id(client, job_id)
+                assert prompt_id == "prompt-1"
+                await active_socket[0].send(json.dumps({"type": "execution_start", "data": {"prompt_id": prompt_id}}))
+                await _eventually_state(client, job_id, "running")
+                upstream.running = [[1, prompt_id, {}, {"client_id": "backend-integration"}, []]]
+
+                async def stream_frames() -> None:
+                    for index in range(_PREVIEW_FRAME_COUNT):
+                        await active_socket[0].send(_PREVIEW_HEAD + f"frame-{index}".encode())
+                        await asyncio.sleep(_PREVIEW_FRAME_GAP)
+
+                yield SimpleNamespace(
+                    client=client, upstream=upstream, bridge=bridge, sessions=sessions,
+                    job_id=job_id, prompt_id=prompt_id, stream_frames=stream_frames,
+                )
+
+
+@pytest.mark.asyncio
+async def test_req387_ac3_event_loop_lag_and_preview_latency_with_1000_terminal_jobs(tmp_path: Path) -> None:
+    """[REQ-387/AC-3] 1000件の終端jobがある状態でプレビューを連続受信しても、ループ遅延とAPI応答が閾値内に収まる."""
+    async with _running_scenario_with_terminal_jobs(tmp_path) as scenario:
+        client = scenario.client
+        lags: list[float] = []
+        stop = asyncio.Event()
+        tick = asyncio.create_task(_measure_loop_lag(stop, lags))
+        frames = asyncio.create_task(scenario.stream_frames())
+        await _wait_preview(scenario.bridge, scenario.prompt_id)
+        preview_durations: list[float] = []
+        preview_statuses: list[int] = []
+        preview_types: list[str] = []
+        state_counts: list[int] = []
+        queue_statuses: list[int] = []
+        for _ in range(10):
+            state = await client.get("/api/generation/state")
+            assert state.status_code == 200
+            state_counts.append(len(state.json()["jobs"]))
+            started = time.perf_counter()
+            preview = await client.get(f"/api/generation/preview/{scenario.job_id}")
+            preview_durations.append(time.perf_counter() - started)
+            preview_statuses.append(preview.status_code)
+            preview_types.append(preview.headers.get("content-type", ""))
+            queue_statuses.append((await client.get("/api/generation/upstream-queue")).status_code)
+            await asyncio.sleep(0.03)
+        await frames
+        stop.set()
+        await tick
+        max_lag = max(lags)
+        max_preview = max(preview_durations)
+        print(f"[REQ-387/AC-3] max_loop_lag_ms={max_lag * 1000:.1f} max_preview_ms={max_preview * 1000:.1f} max_state_jobs={max(state_counts)} lag_samples={len(lags)}")
+        assert lags, "loop lag tick never ran"
+        assert max_lag <= 0.150, f"event loop lag {max_lag * 1000:.1f}ms exceeds 150ms"
+        assert max_preview <= 0.300, f"preview latency {max_preview * 1000:.1f}ms exceeds 300ms"
+        assert preview_statuses == [200] * 10, preview_statuses
+        assert preview_types == ["image/png"] * 10, preview_types
+        assert queue_statuses == [200] * 10, queue_statuses
+        assert max(state_counts) <= 1 + 20 * 3, f"state returned {max(state_counts)} jobs"
+
+
+@pytest.mark.asyncio
+async def test_req387_ac2_preview_frames_do_not_reload_generation_jobs(tmp_path: Path) -> None:
+    """[REQ-387/AC-2] プレビューフレームの連続受信区間で generation_jobs の SELECT がフレーム数に比例して増えない."""
+    async with _running_scenario_with_terminal_jobs(tmp_path) as scenario:
+        client = scenario.client
+        bind = scenario.sessions.kw["bind"]
+        statements: list[str] = []
+
+        def count_jobs_select(conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool) -> None:
+            normalized = " ".join(statement.split()).upper()
+            if normalized.startswith("SELECT") and " FROM GENERATION_JOBS" in normalized:
+                statements.append(normalized)
+
+        def read_revision() -> str | None:
+            with scenario.sessions() as db:
+                row = db.get(AppSetting, "generation_revision")
+                return row.value if row is not None else None
+
+        frames = asyncio.create_task(scenario.stream_frames())
+        await _wait_preview(scenario.bridge, scenario.prompt_id)
+        event.listen(bind, "before_cursor_execute", count_jobs_select)
+        revisions = [read_revision()]
+        try:
+            for _ in range(10):
+                assert (await client.get("/api/generation/state")).status_code == 200
+                assert (await client.get(f"/api/generation/preview/{scenario.job_id}")).status_code == 200
+                revisions.append(read_revision())
+                await asyncio.sleep(0.03)
+            await frames
+        finally:
+            event.remove(bind, "before_cursor_execute", count_jobs_select)
+        revision_changes = sum(1 for before, after in zip(revisions, revisions[1:]) if before != after)
+        print(f"[REQ-387/AC-2] generation_jobs_selects={len(statements)} revision_changes={revision_changes} frames={_PREVIEW_FRAME_COUNT}")
+        assert len(statements) <= revision_changes + 2, f"{len(statements)} generation_jobs SELECTs for {revision_changes} revision changes"
+
+
+class _InterruptingUpstream(LocalUpstream):
+    """Comfy mock whose /interrupt stops the running prompt and records execution_interrupted history."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/interrupt" and request.method == "POST":
+            self.calls.append((request.method, request.url.path))
+            for row in self.running:
+                prompt_id = str(row[1])
+                self.history[prompt_id] = {
+                    "outputs": {},
+                    "status": {"completed": False, "status_str": "error", "messages": [["execution_interrupted", {"prompt_id": prompt_id}]]},
+                }
+            self.running = []
+            return httpx.Response(200, json={})
+        return super().__call__(request)
+
+
+@pytest.mark.asyncio
+async def test_req387_ac4_cancel_returns_within_budget_while_previews_stream(tmp_path: Path) -> None:
+    """[REQ-387/AC-4] プレビュー受信中でも単件・一括の取消が2秒以内に既知の outcome で応答する."""
+    async with _running_scenario_with_terminal_jobs(tmp_path, upstream=_InterruptingUpstream()) as scenario:
+        client = scenario.client
+        frames = asyncio.create_task(scenario.stream_frames())
+        await _wait_preview(scenario.bridge, scenario.prompt_id)
+        started = time.perf_counter()
+        single = await client.post(
+            "/api/generation/cancel",
+            json={"scope": "all", "mode": "single", "target": {"job_id": scenario.job_id}},
+        )
+        single_elapsed = time.perf_counter() - started
+        started = time.perf_counter()
+        bulk = await client.post("/api/generation/cancel", json={"scope": "normal", "mode": "all"})
+        bulk_elapsed = time.perf_counter() - started
+        await frames
+        print(f"[REQ-387/AC-4] single_cancel_s={single_elapsed:.3f} status={single.status_code} bulk_cancel_s={bulk_elapsed:.3f} status={bulk.status_code}")
+        assert single.status_code == 200, single.text
+        single_outcomes = {item["outcome"] for item in single.json()["items"]}
+        assert single_outcomes and single_outcomes <= _CANCEL_OUTCOMES, single.json()
+        assert single_elapsed <= 2.0, f"single cancel took {single_elapsed:.3f}s"
+        assert bulk.status_code == 200, bulk.text
+        assert {item["outcome"] for item in bulk.json()["items"]} <= _CANCEL_OUTCOMES, bulk.json()
+        assert bulk_elapsed <= 2.0, f"bulk cancel took {bulk_elapsed:.3f}s"

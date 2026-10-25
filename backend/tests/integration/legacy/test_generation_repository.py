@@ -1,4 +1,6 @@
 import json
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -7,6 +9,7 @@ import sqlalchemy as sa
 from fastapi import HTTPException
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from sqlalchemy import event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
@@ -726,3 +729,339 @@ def test_property_release_and_transitions_preserve_non_unconfirmed_rows(session_
         revision = repository.snapshot()["revision"]
         assert revision >= last_revision
         last_revision = revision
+
+
+_REQ387_BASE = datetime(2026, 10, 25, 0, 0, 0)
+_REQ387_TERMINAL = ("succeeded", "failed", "cancelled", "released")
+
+
+def _req387_insert(db, job_id, batch_id, index, *, status="succeeded", session_id="session-a",
+                   group=None, release=None, metadata_json="{}", prompt_id=None):
+    db.add(GenerationJob(
+        job_id=job_id, request_id=f"request-{job_id}", item_index=0, payload_hash="hash",
+        prompt_id=prompt_id, session_id=session_id, scope="normal", batch_id=batch_id,
+        normal_group_id=group, status=status,
+        graph_json=None if status in _REQ387_TERMINAL else "{}",
+        metadata_json=metadata_json, outputs_json="[]", release_json=release,
+        accepted_at=_REQ387_BASE + timedelta(seconds=index),
+    ))
+
+
+def _req387_reference(rows, current_group):
+    """Window definition computed over every row (test oracle)."""
+    terminal = set(_REQ387_TERMINAL)
+    nonterminal_batches = {r.batch_id for r in rows if r.status not in terminal}
+    batch_max: dict[str, datetime] = {}
+    for r in rows:
+        batch_max[r.batch_id] = max(batch_max.get(r.batch_id, r.accepted_at), r.accepted_at)
+    recent_batches = set(sorted(batch_max, key=lambda b: batch_max[b], reverse=True)[:20])
+    released_top: set[str] = set()
+    per_session: dict[str, list] = defaultdict(list)
+    for r in rows:
+        if r.status == "released":
+            per_session[r.session_id].append(r)
+    for items in per_session.values():
+        def rank(r):
+            released_at = (json.loads(r.release_json) or {}).get("released_at") if r.release_json else None
+            return (released_at is not None, released_at or "", r.job_id)
+        items.sort(key=rank, reverse=True)
+        released_top |= {r.job_id for r in items[:10]}
+    expected = {
+        r.job_id for r in rows
+        if r.status not in terminal
+        or r.batch_id in nonterminal_batches
+        or (current_group is not None and r.normal_group_id == current_group)
+        or r.batch_id in recent_batches
+        or r.job_id in released_top
+    }
+    return expected, nonterminal_batches, recent_batches
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+def test_req387_ac1_snapshot_window_contains_active_group_recent_batches_and_released_top10(session_factory):
+    """[REQ-387/AC-1] The snapshot window keeps the active group, non-terminal batches, latest 20 batches and released top 10 per session."""
+    index_of: dict[str, int] = {}
+    with session_factory() as db:
+        db.add(AppSetting(key="generation_normal_group_id", value="group-now"))
+        jobs_spec = [
+            ("job-old-active", "batch-old-active", -10, "running", None),
+            ("job-group-old", "batch-group-old", -5, "succeeded", "group-now"),
+            ("job-unc", "batch-unc", -30, "unconfirmed", None),
+        ]
+        for i in range(25):
+            jobs_spec.append((f"job-{i:02d}", f"batch-{i:02d}", i, "succeeded", None))
+        for job_id, batch_id, index, status, group in jobs_spec:
+            index_of[job_id] = index
+            _req387_insert(db, job_id, batch_id, index, status=status, group=group)
+        offset = 0
+        for session_id in ("session-a", "session-b"):
+            for r in range(12):
+                job_id = f"rel-{session_id[-1]}-{r:02d}"
+                index = -100 + offset
+                offset += 1
+                index_of[job_id] = index
+                if session_id == "session-a" and r == 0:
+                    release = json.dumps({k: v for k, v in _release_payload().items() if k != "released_at"})
+                else:
+                    release = json.dumps(_release_payload(
+                        released_at=f"2026-10-25T00:00:{r:02d}Z", released_by_session=session_id,
+                    ))
+                _req387_insert(db, job_id, f"batch-{job_id}", index, status="released",
+                               session_id=session_id, release=release)
+        db.commit()
+
+    repository = GenerationRepository(session_factory)
+    snapshot = repository.snapshot()
+
+    expected_jobs = {"job-old-active", "job-group-old", "job-unc"}
+    expected_jobs |= {f"job-{i:02d}" for i in range(5, 25)}
+    expected_jobs |= {f"rel-{s}-{r:02d}" for s in ("a", "b") for r in range(2, 12)}
+    assert {job["job_id"] for job in snapshot["jobs"]} == expected_jobs
+    assert [job["job_id"] for job in snapshot["jobs"]] == sorted(expected_jobs, key=index_of.get)
+    expected_batches = {f"batch-{i:02d}" for i in range(5, 25)} | {"batch-old-active", "batch-group-old", "batch-unc"}
+    expected_batches |= {f"batch-rel-{s}-{r:02d}" for s in ("a", "b") for r in range(2, 12)}
+    assert {batch["batch_id"] for batch in snapshot["batches"]} == expected_batches
+    assert snapshot["normal_group_id"] == "group-now"
+    assert StateSnapshot.model_validate(snapshot).model_dump(mode="json") == snapshot
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-8")
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=50, deadline=None)
+@given(
+    batch_groups=st.lists(st.sampled_from([None, "G1", "G2"]), min_size=25, max_size=25),
+    current_group=st.sampled_from([None, "G1", "G2"]),
+    jobs=st.lists(
+        st.tuples(
+            st.integers(min_value=0, max_value=24),
+            st.sampled_from(["queued", "submitting", "running", "unconfirmed", "succeeded", "failed", "cancelled", "released"]),
+            st.sampled_from(["s1", "s2"]),
+            st.one_of(st.none(), st.integers(min_value=0, max_value=20)),
+        ),
+        max_size=60,
+    ),
+)
+def test_req387_ac8_window_progress_matches_full_snapshot(session_factory, batch_groups, current_group, jobs):
+    """[REQ-387/AC-8] Window results match the full-table definition for group, batch, unconfirmed and released top-10 sets."""
+    with session_factory() as db:
+        db.query(GenerationJob).delete()
+        db.query(AppSetting).delete()
+        if current_group is not None:
+            db.add(AppSetting(key="generation_normal_group_id", value=current_group))
+        for index, (batch, status, session_id, released_index) in enumerate(jobs):
+            release = None
+            if status == "released":
+                if released_index is None:
+                    release = json.dumps({k: v for k, v in _release_payload().items() if k != "released_at"})
+                else:
+                    release = json.dumps(_release_payload(
+                        released_at=f"2026-10-25T00:00:{released_index:02d}Z", released_by_session=session_id,
+                    ))
+            _req387_insert(
+                db, f"job-{index:03d}", f"b-{batch:02d}", index, status=status,
+                session_id=session_id, group=batch_groups[batch], release=release,
+            )
+        db.commit()
+
+    repository = GenerationRepository(session_factory)
+    snapshot = repository.snapshot()
+    with session_factory() as db:
+        rows = db.query(GenerationJob).all()
+        full_batch_jobs: dict[str, set[str]] = defaultdict(set)
+        for r in rows:
+            full_batch_jobs[r.batch_id].add(r.job_id)
+    expected, nonterminal_batches, recent_batches = _req387_reference(rows, current_group)
+
+    window = snapshot["jobs"]
+    assert {job["job_id"] for job in window} == expected
+    if current_group is not None:
+        assert {j["job_id"] for j in window if j["normal_group_id"] == current_group} == {
+            r.job_id for r in rows if r.normal_group_id == current_group
+        }
+    window_batch_jobs: dict[str, set[str]] = defaultdict(set)
+    for job in window:
+        window_batch_jobs[job["batch_id"]].add(job["job_id"])
+    for batch_id in set(window_batch_jobs) & (nonterminal_batches | recent_batches):
+        assert window_batch_jobs[batch_id] == full_batch_jobs[batch_id]
+    assert {j["job_id"] for j in window if j["status"] == "unconfirmed"} == {
+        r.job_id for r in rows if r.status == "unconfirmed"
+    }
+    for session_id in ("s1", "s2"):
+        expected_session = {r.job_id for r in rows if r.status == "released" and r.session_id == session_id and r.job_id in expected}
+        window_session = {j["job_id"] for j in window if j["status"] == "released" and j["session_id"] == session_id}
+        assert window_session == expected_session
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+def test_req387_ac1_snapshot_cache_hit_skips_job_rows_and_every_write_invalidates(session_factory):
+    """[REQ-387/AC-1] A cache hit issues no generation_jobs SELECT, and every write path invalidates the cached snapshot."""
+    engine = session_factory.kw["bind"]
+    repository = GenerationRepository(session_factory)
+
+    def assert_matches_fresh():
+        fresh = GenerationRepository(session_factory, epoch=repository.epoch).snapshot()
+        assert repository.snapshot() == fresh
+
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        seen.append(statement)
+
+    # Old terminal rows so that prune_terminal actually deletes (more than the 1000 cap).
+    with session_factory() as db:
+        for index in range(1001):
+            _req387_insert(db, f"old-{index:04d}", f"old-batch-{index:04d}", index - 2000)
+        db.commit()
+    unconfirmed_id, running_id = repository.accept_batch(make_request(count=2))["job_ids"]
+    repository.transition(running_id, "running")
+    repository.snapshot()
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        first = repository.snapshot()
+        seen.clear()
+        second = repository.snapshot()
+        assert first == second
+        assert not [s for s in seen if s.lstrip().upper().startswith("SELECT") and "generation_jobs" in s]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    revision = repository.snapshot()["revision"]
+    repository.transition(unconfirmed_id, "unconfirmed", failure={"reason": "lost", "outcome": "unconfirmed"})
+    assert repository.snapshot()["revision"] > revision
+    assert_matches_fresh()
+
+    repository.release_unconfirmed(unconfirmed_id, _release_payload())
+    assert_matches_fresh()
+    assert next(j for j in repository.snapshot()["jobs"] if j["job_id"] == unconfirmed_id)["status"] == "released"
+
+    repository.annotate_late_identity(unconfirmed_id, "prompt-late")
+    assert_matches_fresh()
+    assert next(j for j in repository.snapshot()["jobs"] if j["job_id"] == unconfirmed_id)["prompt_id"] == "prompt-late"
+
+    repository.accept_batch(make_request(count=1))
+    assert_matches_fresh()
+
+    repository.prune_terminal()
+    assert_matches_fresh()
+
+    other = GenerationRepository(session_factory, epoch=repository.epoch)
+    other.transition(running_id, "succeeded", finished_at=datetime.now(timezone.utc))
+    assert_matches_fresh()
+    assert next(j for j in repository.snapshot()["jobs"] if j["job_id"] == running_id)["status"] == "succeeded"
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-8")
+def test_req387_ac8_snapshot_time_budget_with_1000_terminal_jobs(session_factory):
+    """[REQ-387/AC-8] With 1000 terminal jobs of ~27KB metadata, a cache miss is <= 150ms, a hit <= 10ms, and the window stays bounded."""
+    prompt_record = {
+        "version": 1,
+        "fields": [{
+            "input_type": "textarea", "recorded": True, "status": "submitted",
+            "role": "positive", "display_name": "prompt", "value": "masterpiece",
+        }],
+        "padding": "p" * 26_000,
+    }
+    metadata_json = json.dumps({
+        "workflow_id": 4,
+        "param_values": {"__prompt_surgeon_metadata_v1": json.dumps(prompt_record)},
+        "applied_assets": None,
+        "set_name": "bench",
+    }, ensure_ascii=False)
+    assert 26_000 < len(metadata_json) < 30_000
+    with session_factory() as db:
+        for index in range(1000):
+            _req387_insert(db, f"term-{index:04d}", f"batch-{index:04d}", index,
+                           metadata_json=metadata_json, prompt_id=f"prompt-{index:04d}")
+        db.add(AppSetting(key="generation_normal_group_id", value="group-run"))
+        _req387_insert(db, "job-running", "batch-running", 5000, status="running", group="group-run")
+        db.commit()
+
+    repository = GenerationRepository(session_factory)
+    repository.snapshot()
+    repository.transition("job-running", "running")  # write bumps revision, so the next call is a miss
+
+    start = time.perf_counter()
+    miss = repository.snapshot()
+    miss_ms = (time.perf_counter() - start) * 1000
+
+    hit_times = []
+    for _ in range(3):
+        start = time.perf_counter()
+        repository.snapshot()
+        hit_times.append((time.perf_counter() - start) * 1000)
+
+    assert miss_ms <= 150, f"cache miss took {miss_ms:.1f}ms"
+    assert min(hit_times) <= 10, f"cache hit took {min(hit_times):.1f}ms"
+    assert len(miss["jobs"]) <= 1 + 20
+    assert any(j["job_id"] == "job-running" for j in miss["jobs"])
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+def test_req387_ac1_get_job_and_find_job_by_prompt_read_out_of_window_rows(session_factory):
+    """[REQ-387/AC-1] get_job and find_job_by_prompt return terminal rows outside the window and None for unknown IDs."""
+    repository = GenerationRepository(session_factory)
+    old = repository.accept_batch(make_request(count=1))["job_ids"][0]
+    repository.transition(old, "running", prompt_id="prompt-old")
+    repository.transition(old, "succeeded", finished_at=datetime.now(timezone.utc))
+    for _ in range(21):
+        repository.accept_batch(make_request(count=1))
+
+    assert old not in {job["job_id"] for job in repository.snapshot()["jobs"]}
+    by_id = repository.get_job(old)
+    by_prompt = repository.find_job_by_prompt("prompt-old")
+    assert by_id is not None and by_id["job_id"] == old and by_id["status"] == "succeeded"
+    assert by_prompt == by_id
+    assert repository.get_job("missing-job") is None
+    assert repository.find_job_by_prompt("missing-prompt") is None
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+@pytest.mark.parametrize("stored_group", [None, ""], ids=["setting-absent", "setting-empty"])
+def test_req387_ac1_snapshot_with_empty_normal_group_id_has_no_group_condition(session_factory, stored_group):
+    """[REQ-387/AC-1] An absent or empty normal_group_id adds no group condition and snapshot() does not raise."""
+    with session_factory() as db:
+        if stored_group is not None:
+            db.add(AppSetting(key="generation_normal_group_id", value=stored_group))
+        _req387_insert(db, "job-running", "batch-running", -50, status="running")
+        _req387_insert(db, "job-empty-group", "batch-empty-group", -1, group="")
+        for i in range(22):
+            _req387_insert(db, f"job-{i:02d}", f"batch-{i:02d}", i)
+        db.commit()
+
+    snapshot = GenerationRepository(session_factory).snapshot()
+
+    assert snapshot["normal_group_id"] is None
+    assert [job["job_id"] for job in snapshot["jobs"]] == ["job-running"] + [f"job-{i:02d}" for i in range(2, 22)]
+    assert StateSnapshot.model_validate(snapshot).model_dump(mode="json") == snapshot
+
+
+@getattr(pytest.mark, "REQ-387")
+@getattr(pytest.mark, "AC-1")
+def test_req387_ac1_released_ranking_survives_invalid_release_json_and_falls_back_to_job_id_desc(session_factory):
+    """[REQ-387/AC-1] Invalid or non-object release_json ranks last (job_id DESC) without failing the snapshot query."""
+    invalid_forms = [
+        "{not-json", "not json at all", "", "[1, 2]", "null", '{"released_at": null}',
+        "{", "[]", '"text"', "123",
+    ]
+    with session_factory() as db:
+        for i in range(4):
+            release = json.dumps(_release_payload(released_at=f"2026-10-25T00:00:{i:02d}Z"))
+            _req387_insert(db, f"rel-a{i}", f"batch-rel-a{i}", -100 + i, status="released", release=release)
+        for i, form in enumerate(invalid_forms):
+            _req387_insert(db, f"rel-i{i:02d}", f"batch-rel-i{i:02d}", -50 + i, status="released", release=form)
+        for i in range(20):
+            _req387_insert(db, f"fill-{i:02d}", f"batch-fill-{i:02d}", i)
+        db.commit()
+
+    snapshot = GenerationRepository(session_factory).snapshot()
+
+    released_ids = {job["job_id"] for job in snapshot["jobs"] if job["status"] == "released"}
+    expected = {f"rel-a{i}" for i in range(4)} | {f"rel-i{i:02d}" for i in range(4, 10)}
+    assert released_ids == expected
+    assert StateSnapshot.model_validate(snapshot).model_dump(mode="json") == snapshot
