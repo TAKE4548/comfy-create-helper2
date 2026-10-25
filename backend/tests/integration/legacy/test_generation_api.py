@@ -436,3 +436,23 @@ def test_cancel_endpoints_return_202_when_unconfirmed_items_remain(api: dict[str
     response = client.post("/api/generation/cancel", json={"mode": "queued", "scope": "all"})
     assert response.status_code == 202
     assert any(item["outcome"] == "unconfirmed" for item in response.json()["items"])
+
+
+def test_req401_ac2_single_cancel_updates_db_status_to_unconfirmed(api: dict[str, Any]) -> None:
+    """[REQ-401/AC-2] Single cancel on a job missing from upstream queue returns 202 unconfirmed and updates DB status to unconfirmed."""
+    accepted = api["client"].post("/api/generation/batches", json=_payload()).json()
+    job_id = accepted["job_ids"][0]
+    repository = api["app"].state.generation_repository
+    repository.transition(job_id, "submitting", prompt_id="route-req401-prompt")
+    api["bridge"].running.clear()
+    api["bridge"].pending.clear()
+
+    regular = api["client"].post(f"/api/generation/jobs/{job_id}/cancel")
+    assert regular.status_code == 202
+    assert regular.json()["outcome"] == "unconfirmed"
+
+    # DB snapshot must reflect unconfirmed status
+    snapshot = repository.snapshot()
+    job = next((j for j in snapshot["jobs"] if j["job_id"] == job_id), None)
+    assert job is not None
+    assert job["status"] == "unconfirmed"

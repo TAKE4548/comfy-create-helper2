@@ -283,39 +283,57 @@ class GenerationService:
                 try:
                     queue = UpstreamQueueView.model_validate(await self.bridge.queue())
                 except Exception as exc:
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "unconfirmed", f"queue state unavailable: {exc}")
-                if any(item.prompt_id == prompt_id for item in queue.running):
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "not_cancelled", "job has already started")
-                if not any(item.prompt_id == prompt_id for item in queue.pending):
-                    if job is not None and job.status == "running":
-                        return self._result(job.job_id, prompt_id, job.status, "not_cancelled", "job is no longer pending")
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "unconfirmed", "job is absent from pending queue; cancellation is unconfirmed")
-                try:
-                    ack = await self.bridge.delete_queue([prompt_id])
-                    refreshed = UpstreamQueueView.model_validate(await self.bridge.queue())
-                except Exception as exc:
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "unconfirmed", f"queue deletion unconfirmed: {exc}")
-                if any(item.prompt_id == prompt_id for item in refreshed.running):
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "not_cancelled", "job started while cancellation was being confirmed")
-                outcome, record = await self._pending_removal_outcome(
-                    prompt_id, refreshed, self._valid_cancel_ack(ack, "delete", [prompt_id])
-                )
-                if outcome is None:
-                    return self._result(job.job_id if job else None, prompt_id, job.status if job else None, "unconfirmed", "queue removal or history confirmation is unavailable")
-                if job is None:
-                    result = self._result(None, prompt_id, None, "cancelled" if outcome == "cancelled" else "already_terminal", "legacy pending prompt removal confirmed")
+                    if job is not None and job.status not in _CONFIRMED_TERMINAL:
+                        self._mark_unconfirmed(job, f"queue state unavailable: {exc}")
+                        publish = True
+                    result = self._result(job.job_id if job else None, prompt_id, "unconfirmed" if (job and job.status not in _CONFIRMED_TERMINAL) else (job.status if job else None), "unconfirmed", f"queue state unavailable: {exc}")
                 else:
-                    self._apply_cancel_history_outcome(job.job_id, prompt_id, outcome, record)
-                    current = self._find_job(self._snapshot(), job.job_id)
-                    if current is not None and current.status == "running":
-                        return self._result(job.job_id, prompt_id, current.status, "not_cancelled", "job started while cancellation was being confirmed")
-                    publish = current is not None and current.status != job.status
-                    if current is not None and current.status == "cancelled":
-                        result = self._result(job.job_id, prompt_id, "cancelled", "cancelled", "pending queue removal confirmed")
-                    elif current is not None and current.status in {"succeeded", "failed"}:
-                        result = self._result(job.job_id, prompt_id, current.status, "already_terminal", "terminal history was preserved")
+                    if any(item.prompt_id == prompt_id for item in queue.running):
+                        result = self._result(job.job_id if job else None, prompt_id, job.status if job else None, "not_cancelled", "job has already started")
+                    elif not any(item.prompt_id == prompt_id for item in queue.pending):
+                        if job is not None and job.status == "running":
+                            result = self._result(job.job_id, prompt_id, job.status, "not_cancelled", "job is no longer pending")
+                        else:
+                            if job is not None and job.status not in _CONFIRMED_TERMINAL:
+                                self._mark_unconfirmed(job, "job is absent from pending queue; cancellation is unconfirmed")
+                                publish = True
+                            result = self._result(job.job_id if job else None, prompt_id, "unconfirmed" if (job and job.status not in _CONFIRMED_TERMINAL) else (job.status if job else None), "unconfirmed", "job is absent from pending queue; cancellation is unconfirmed")
                     else:
-                        return self._result(job.job_id, prompt_id, job.status, "unconfirmed", "queue removal did not confirm a terminal outcome")
+                        try:
+                            ack = await self.bridge.delete_queue([prompt_id])
+                            refreshed = UpstreamQueueView.model_validate(await self.bridge.queue())
+                        except Exception as exc:
+                            if job is not None and job.status not in _CONFIRMED_TERMINAL:
+                                self._mark_unconfirmed(job, f"queue deletion unconfirmed: {exc}")
+                                publish = True
+                            result = self._result(job.job_id if job else None, prompt_id, "unconfirmed" if (job and job.status not in _CONFIRMED_TERMINAL) else (job.status if job else None), "unconfirmed", f"queue deletion unconfirmed: {exc}")
+                        else:
+                            if any(item.prompt_id == prompt_id for item in refreshed.running):
+                                result = self._result(job.job_id if job else None, prompt_id, job.status if job else None, "not_cancelled", "job started while cancellation was being confirmed")
+                            else:
+                                outcome, record = await self._pending_removal_outcome(
+                                    prompt_id, refreshed, self._valid_cancel_ack(ack, "delete", [prompt_id])
+                                )
+                                if outcome is None:
+                                    if job is not None and job.status not in _CONFIRMED_TERMINAL:
+                                        self._mark_unconfirmed(job, "queue removal or history confirmation is unavailable")
+                                        publish = True
+                                    result = self._result(job.job_id if job else None, prompt_id, "unconfirmed" if (job and job.status not in _CONFIRMED_TERMINAL) else (job.status if job else None), "unconfirmed", "queue removal or history confirmation is unavailable")
+                                elif job is None:
+                                    result = self._result(None, prompt_id, None, "cancelled" if outcome == "cancelled" else "already_terminal", "legacy pending prompt removal confirmed")
+                                else:
+                                    self._apply_cancel_history_outcome(job.job_id, prompt_id, outcome, record)
+                                    current = self._find_job(self._snapshot(), job.job_id)
+                                    if current is not None and current.status == "running":
+                                        result = self._result(job.job_id, prompt_id, current.status, "not_cancelled", "job started while cancellation was being confirmed")
+                                    else:
+                                        publish = current is not None and current.status != job.status
+                                        if current is not None and current.status == "cancelled":
+                                            result = self._result(job.job_id, prompt_id, "cancelled", "cancelled", "pending queue removal confirmed")
+                                        elif current is not None and current.status in {"succeeded", "failed"}:
+                                            result = self._result(job.job_id, prompt_id, current.status, "already_terminal", "terminal history was preserved")
+                                        else:
+                                            result = self._result(job.job_id, prompt_id, job.status, "unconfirmed", "queue removal did not confirm a terminal outcome")
         if publish:
             await self._publish_snapshot()
         return result
@@ -430,6 +448,8 @@ class GenerationService:
         data = event.get("data")
         if not isinstance(event_type, str) or not isinstance(data, dict):
             return
+        if event_type == "status":
+            self._wake.set()
         prompt_id = event.get("prompt_id")
         if not isinstance(prompt_id, str):
             prompt_id = data.get("prompt_id")
@@ -788,14 +808,16 @@ class GenerationService:
         try:
             queue = UpstreamQueueView.model_validate(await self.bridge.queue())
         except Exception as exc:
-            return [self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", f"queue state unavailable: {exc}")], "not_requested", "unconfirmed", "queue state unavailable"
+            self._mark_unconfirmed(job, f"queue state unavailable: {exc}")
+            return [self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", f"queue state unavailable: {exc}")], "not_requested", "unconfirmed", "queue state unavailable"
         if any(item.prompt_id == job.prompt_id for item in queue.pending):
             try:
                 self._cancel_requested.add(job.job_id)
                 ack = await self.bridge.delete_queue([job.prompt_id])
                 refreshed = UpstreamQueueView.model_validate(await self.bridge.queue())
             except Exception as exc:
-                return [self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", f"queue deletion unconfirmed: {exc}")], "unconfirmed", "not_requested", "queue deletion unconfirmed"
+                self._mark_unconfirmed(job, f"queue deletion unconfirmed: {exc}")
+                return [self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", f"queue deletion unconfirmed: {exc}")], "unconfirmed", "not_requested", "queue deletion unconfirmed"
             outcome, record = await self._pending_removal_outcome(
                 job.prompt_id, refreshed, self._valid_cancel_ack(ack, "delete", [job.prompt_id])
             )
@@ -815,7 +837,8 @@ class GenerationService:
             try:
                 await self.bridge.interrupt(job.prompt_id)
             except Exception as exc:
-                return [self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", f"interrupt outcome unknown: {exc}")], "not_requested", "unconfirmed", "interrupt outcome unknown"
+                self._mark_unconfirmed(job, f"interrupt outcome unknown: {exc}")
+                return [self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", f"interrupt outcome unknown: {exc}")], "not_requested", "unconfirmed", "interrupt outcome unknown"
             changed = await self._reconcile_cancel_state({job.job_id})
             current = self._find_job(changed, job.job_id)
             if current is not None and current.status == "cancelled":
@@ -823,7 +846,8 @@ class GenerationService:
             if current is not None and current.status in {"succeeded", "failed"}:
                 return [self._result(job.job_id, job.prompt_id, current.status, "already_terminal", "job completed before cancellation was confirmed")], "not_requested", "unconfirmed", "job was already terminal"
             return [self._result(job.job_id, job.prompt_id, current.status if current else job.status, "unconfirmed", "interrupt was acknowledged but cancellation is not confirmed")], "not_requested", "unconfirmed", "interrupt target outcome is unconfirmed"
-        return [self._result(job.job_id, job.prompt_id, job.status, "unconfirmed", "job is absent from queue but terminal state is unknown")], "not_requested", "unconfirmed", "queue absence does not confirm cancellation"
+        self._mark_unconfirmed(job, "job is absent from queue but terminal state is unknown")
+        return [self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", "job is absent from queue but terminal state is unknown")], "not_requested", "unconfirmed", "queue absence does not confirm cancellation"
 
     async def _cancel_global(
         self, state: StateSnapshot, mode: str
@@ -889,6 +913,18 @@ class GenerationService:
             except Exception as exc:
                 interrupt_outcome = "unconfirmed"
                 message = f"queue clear completed or partially completed; interrupt outcome unknown: {exc}"
+        accounted_prompts = {prompt_id for _, prompt_id in result_targets if prompt_id is not None}
+        target_statuses = {"queued", "submitting", "running"} if mode == "all" else {"queued", "submitting"}
+        missing_active = [
+            job for job in state.jobs
+            if job.prompt_id is not None
+            and job.status in target_statuses
+            and job.prompt_id not in accounted_prompts
+        ]
+        for job in missing_active:
+            self._mark_unconfirmed(job, "job missing from upstream queue during global cancel")
+            self._cancel_requested.discard(job.job_id)
+            results.append(self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", "job was missing from upstream queue during bulk cancellation"))
         try:
             final_queue = UpstreamQueueView.model_validate(await self.bridge.queue())
         except Exception as exc:
@@ -1139,6 +1175,11 @@ class GenerationService:
         try:
             queue = UpstreamQueueView.model_validate(await self.bridge.queue())
         except Exception as exc:
+            for job in state.jobs:
+                if job.scope == "normal" and job.status not in _CONFIRMED_TERMINAL and job.prompt_id is not None:
+                    self._mark_unconfirmed(job, f"queue state unavailable: {exc}")
+                    self._cancel_requested.discard(job.job_id)
+                    results.append(self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", f"queue state unavailable: {exc}"))
             return results, "failed", "skipped" if mode == "all" else "not_requested", f"queue state unavailable: {exc}; upstream interrupt skipped"
         jobs_by_prompt = {job.prompt_id: job for job in state.jobs if job.prompt_id is not None}
         known_normal = {
@@ -1146,6 +1187,16 @@ class GenerationService:
             for prompt_id, job in jobs_by_prompt.items()
             if job.scope == "normal" and job.status not in _CONFIRMED_TERMINAL
         }
+        missing_normal_queued = [
+            job for job in state.jobs
+            if job.scope == "normal" and job.status in {"queued", "submitting"} and job.prompt_id is not None
+            and job.prompt_id not in {item.prompt_id for item in queue.pending}
+            and job.prompt_id not in {item.prompt_id for item in queue.running}
+        ]
+        for job in missing_normal_queued:
+            self._mark_unconfirmed(job, "normal queued job missing from upstream queue during cancel")
+            self._cancel_requested.discard(job.job_id)
+            results.append(self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", "normal job was missing from upstream queue during bulk cancellation"))
         pending_normal = [item.prompt_id for item in queue.pending if item.prompt_id in known_normal]
         result_targets: list[tuple[str, str]] = []
         pending_proof_ids: set[str] = set()
@@ -1188,8 +1239,8 @@ class GenerationService:
                 interrupt_outcome = "skipped"
                 message = "通常実行中を維持しました。Studioまたは未分類jobを保護するため実行中断を見送りました"
                 for upstream in latest_protected:
-                    job = jobs_by_prompt.get(upstream.prompt_id)
-                    results.append(self._result(job.job_id if job else None, upstream.prompt_id, job.status if job else None, "not_cancelled", "Studio or unclassified upstream work was protected"))
+                    protected_job = jobs_by_prompt.get(upstream.prompt_id)
+                    results.append(self._result(protected_job.job_id if protected_job else None, upstream.prompt_id, protected_job.status if protected_job else None, "not_cancelled", "Studio or unclassified upstream work was protected"))
                 if queue_uncertain:
                     message = "queue state unavailable after deleting normal jobs; interrupt skipped to protect Studio and unclassified work"
             else:
@@ -1223,7 +1274,10 @@ class GenerationService:
                     if stale_running:
                         interrupt_outcome = "skipped"
                         message = "通常実行中jobを上流queueで確認できず中断を見送りました"
-                        results.extend(self._result(job.job_id, job.prompt_id, job.status, "not_cancelled", "running target was not present in the upstream queue") for job in stale_running)
+                        for job in stale_running:
+                            self._mark_unconfirmed(job, "job missing from upstream queue during normal cancel")
+                            self._cancel_requested.discard(job.job_id)
+                            results.append(self._result(job.job_id, job.prompt_id, "unconfirmed", "unconfirmed", "normal job was missing from upstream queue during bulk cancellation"))
         try:
             final_queue = UpstreamQueueView.model_validate(await self.bridge.queue())
         except Exception:
@@ -1289,6 +1343,11 @@ class GenerationService:
                 continue
             record = history.get(prompt_id) if isinstance(history, dict) else None
             if not isinstance(record, dict):
+                if job.status == "submitting":
+                    continue
+                self._mark_unconfirmed(job, "upstream execution completed or lost without recorded history")
+                self._cancel_requested.discard(job.job_id)
+                changed = True
                 continue
             raw_status = record.get("status")
             raw_status = raw_status if isinstance(raw_status, dict) else {}

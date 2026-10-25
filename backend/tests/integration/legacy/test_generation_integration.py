@@ -828,3 +828,133 @@ async def test_req387_ac4_cancel_returns_within_budget_while_previews_stream(tmp
         assert bulk.status_code == 200, bulk.text
         assert {item["outcome"] for item in bulk.json()["items"]} <= _CANCEL_OUTCOMES, bulk.json()
         assert bulk_elapsed <= 2.0, f"bulk cancel took {bulk_elapsed:.3f}s"
+
+
+@pytest.mark.asyncio
+async def test_req401_ac1_integration_reconcile_upstream_lost_job_releases_normal_group(tmp_path: Path) -> None:
+    """[REQ-401/AC-1] When an active normal job with prompt_id is lost from upstream, reconcile marks it unconfirmed and normal group closes in real DB."""
+    upstream = LocalUpstream()
+    app, service, bridge, sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            batch1 = _batch(scope="normal")
+            res1 = await client.post("/api/generation/batches", json=batch1)
+            assert res1.status_code == 202
+            job_id1 = res1.json()["job_ids"][0]
+
+            await asyncio.sleep(0.15)
+            state = (await client.get("/api/generation/state")).json()
+            group1 = state.get("normal_group_id")
+            assert group1 is not None
+            job1 = next(j for j in state["jobs"] if j["job_id"] == job_id1)
+            prompt_id1 = job1["prompt_id"]
+            assert prompt_id1 is not None
+
+            # Confirm running upstream first
+            upstream.running = [[1, prompt_id1, {}, {"client_id": "backend-integration"}, []]]
+            await service.reconcile()
+
+            # Simulate upstream losing the job (restart/crash)
+            upstream.running.clear()
+            upstream.pending.clear()
+            upstream.history.clear()
+
+            # Trigger reconcile
+            await service.reconcile()
+
+            # Verify DB state via API
+            state_after = (await client.get("/api/generation/state")).json()
+            job_view = next((j for j in state_after["jobs"] if j["job_id"] == job_id1), None)
+            assert job_view is not None
+            assert job_view["status"] == "unconfirmed"
+
+            # Next normal batch gets a new group because previous active normal group is closed
+            batch2 = _batch(scope="normal")
+            res2 = await client.post("/api/generation/batches", json=batch2)
+            assert res2.status_code == 202
+            group2 = (await client.get("/api/generation/state")).json().get("normal_group_id")
+            assert group2 is not None
+            assert group2 != group1
+
+
+@pytest.mark.asyncio
+async def test_req401_ac3_integration_bulk_cancel_transitions_upstream_lost_jobs_to_unconfirmed(tmp_path: Path) -> None:
+    """[REQ-401/AC-3] Bulk cancellation marks upstream-lost active jobs as unconfirmed in DB and returns HTTP 202 with unconfirmed items."""
+    upstream = LocalUpstream()
+    app, service, bridge, sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            res1 = await client.post("/api/generation/batches", json=_batch(scope="normal"))
+            res2 = await client.post("/api/generation/batches", json=_batch(scope="normal"))
+            assert res1.status_code == 202 and res2.status_code == 202
+            job1 = res1.json()["job_ids"][0]
+            job2 = res2.json()["job_ids"][0]
+
+            await asyncio.sleep(0.15)
+
+            # ComfyUI is wiped
+            upstream.running.clear()
+            upstream.pending.clear()
+            upstream.history.clear()
+
+            # Bulk cancel normal
+            cancel_res = await client.post("/api/generation/cancel", json={"scope": "normal", "mode": "all"})
+            assert cancel_res.status_code == 202
+            items = cancel_res.json()["items"]
+            item_map = {item["job_id"]: item for item in items if item.get("job_id")}
+            assert job1 in item_map
+            assert item_map[job1]["outcome"] == "unconfirmed"
+            assert job2 in item_map
+            assert item_map[job2]["outcome"] == "unconfirmed"
+
+            # DB snapshot confirms unconfirmed
+            state = (await client.get("/api/generation/state")).json()
+            jobs_by_id = {j["job_id"]: j for j in state["jobs"]}
+            assert jobs_by_id[job1]["status"] == "unconfirmed"
+            assert jobs_by_id[job2]["status"] == "unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_req401_ac4_integration_released_unconfirmed_job_is_cleared(tmp_path: Path) -> None:
+    """[REQ-401/AC-4] A job transitioned to unconfirmed via upstream loss can be released via POST /api/generation/release."""
+    upstream = LocalUpstream()
+    app, service, bridge, sessions = _integration_app(tmp_path, upstream)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            res = await client.post("/api/generation/batches", json=_batch(scope="normal"))
+            job_id = res.json()["job_ids"][0]
+            await asyncio.sleep(0.15)
+            state = (await client.get("/api/generation/state")).json()
+            job = next(j for j in state["jobs"] if j["job_id"] == job_id)
+            prompt_id = job["prompt_id"]
+            assert prompt_id is not None
+
+            # Confirm running upstream first
+            upstream.running = [[1, prompt_id, {}, {"client_id": "backend-integration"}, []]]
+            await service.reconcile()
+
+            # Upstream lost
+            upstream.running.clear()
+            upstream.pending.clear()
+            upstream.history.clear()
+
+            # Reconcile marks unconfirmed
+            await service.reconcile()
+            state = (await client.get("/api/generation/state")).json()
+            assert next(j for j in state["jobs"] if j["job_id"] == job_id)["status"] == "unconfirmed"
+
+            # Release
+            release_res = await client.post(
+                "/api/generation/release",
+                json={"job_ids": [job_id], "session_id": "test-session"},
+            )
+            assert release_res.status_code == 200
+            release_items = release_res.json()["items"]
+            assert len(release_items) == 1
+            assert release_items[0]["outcome"] == "released"
+
+            state_after = (await client.get("/api/generation/state")).json()
+            job_after = next((j for j in state_after["jobs"] if j["job_id"] == job_id), None)
+            assert job_after is not None
+            assert job_after["status"] == "released"
+

@@ -1770,6 +1770,10 @@ async def test_startup_recovery_touches_only_orphaned_submissions_exhaustive(sta
     after = repository.jobs[job_id]
     if status in {"queued", "submitting"} and prompt_id is None:
         assert after["status"] == "unconfirmed"
+    elif status in {"queued", "running"} and prompt_id is not None:
+        # REQ-401: Upstream queue and history are empty in FakeBridge, so reconcile marks them unconfirmed
+        assert after["status"] == "unconfirmed"
+        assert after["failure"]["reason"] == "upstream execution completed or lost without recorded history"
     else:
         assert after == before
     assert bridge.submissions == []
@@ -2241,3 +2245,162 @@ async def test_req387_ac6_five_consecutive_connect_errors_log_one_warning_and_on
         assert recovered[0].getMessage() == f"Generation reconciliation recovered after {failures_before_recovery} failures"
     finally:
         await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req401_ac1_reconcile_upstream_lost_job_transitions_to_unconfirmed_and_closes_normal_group() -> None:
+    """[REQ-401/AC-1] When a prompt_id-bound active job is absent from upstream queue and history is empty, reconcile marks it unconfirmed and normal group closes."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = await _restart(repository, bridge)
+    try:
+        accepted = await service.accept(_payload(count=1, scope="normal"))
+        job_id = accepted["job_ids"][0]
+        first_group = repository.snapshot()["normal_group_id"]
+        assert first_group is not None
+
+        # Simulate job submitted upstream with prompt_id
+        prompt_id = "upstream-lost-prompt-1"
+        repository.transition(job_id, "running", prompt_id=prompt_id)
+
+        # Upstream queue is empty and history is empty (ComfyUI restarted/lost)
+        bridge.running.clear()
+        bridge.pending.clear()
+        bridge.history_by_prompt.clear()
+
+        # Force reconcile
+        await service.reconcile()
+
+        # Job must be transitioned to unconfirmed
+        job = repository.get_job(job_id)
+        assert job is not None
+        assert job["status"] == "unconfirmed"
+        assert job["failure"] is not None
+        assert job["failure"]["outcome"] == "unconfirmed"
+
+        # Normal group must now be closed (None)
+        assert repository.snapshot()["normal_group_id"] is None
+
+        # Next normal batch must receive a new normal_group_id
+        next_accepted = await service.accept(_payload(count=1, scope="normal"))
+        next_group = repository.snapshot()["normal_group_id"]
+        assert next_group is not None
+        assert next_group != first_group
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req401_ac2_single_and_queued_cancel_when_upstream_lost_transitions_to_unconfirmed() -> None:
+    """[REQ-401/AC-2] When a prompt_id-bound job is cancelled while absent from upstream queue, outcome is unconfirmed and DB status is updated to unconfirmed."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = await _restart(repository, bridge)
+    try:
+        # Case 1: cancel_queued on upstream missing prompt
+        accepted = await service.accept(_payload(count=1, scope="normal"))
+        job_id1 = accepted["job_ids"][0]
+        repository.transition(job_id1, "queued", prompt_id="lost-queued-prompt")
+        bridge.pending.clear()
+
+        cancel_queued_res = await service.cancel_queued(job_id1)
+        assert cancel_queued_res.outcome == "unconfirmed"
+        job_view1 = repository.get_job(job_id1)
+        assert job_view1 is not None and job_view1["status"] == "unconfirmed"
+
+        # Case 2: _cancel_single on upstream missing running prompt
+        accepted2 = await service.accept(_payload(count=1, scope="normal"))
+        job_id2 = accepted2["job_ids"][0]
+        repository.transition(job_id2, "running", prompt_id="lost-running-prompt")
+        bridge.running.clear()
+        bridge.pending.clear()
+
+        cancel_single_res = await service.cancel_operation(
+            CancelRequest(scope="all", mode="single", target=CancelTarget(job_id=job_id2))
+        )
+        assert cancel_single_res.items[0].outcome == "unconfirmed"
+        job_view2 = repository.get_job(job_id2)
+        assert job_view2 is not None and job_view2["status"] == "unconfirmed"
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req401_ac4_unconfirmed_transitioned_job_can_be_released() -> None:
+    """[REQ-401/AC-4] A job transitioned to unconfirmed via upstream loss can be released to status released."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = await _restart(repository, bridge)
+    try:
+        accepted = await service.accept(_payload(count=1, scope="normal"))
+        job_id = accepted["job_ids"][0]
+        repository.transition(job_id, "running", prompt_id="lost-to-release-prompt")
+        bridge.running.clear()
+        bridge.pending.clear()
+        bridge.history_by_prompt.clear()
+
+        # Reconcile marks unconfirmed
+        await service.reconcile()
+        unconfirmed_view = repository.get_job(job_id)
+        assert unconfirmed_view is not None and unconfirmed_view["status"] == "unconfirmed"
+
+        # Release operation
+        release_res = await service.release_unconfirmed(
+            ReleaseRequest(job_ids=[job_id], session_id="test-session")
+        )
+        assert len(release_res.items) == 1
+        assert release_res.items[0].outcome == "released"
+        released_view = repository.get_job(job_id)
+        assert released_view is not None and released_view["status"] == "released"
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req401_ac3_bulk_cancel_normal_with_stale_running_job_transitions_to_unconfirmed() -> None:
+    """[REQ-401/AC-3] When a normal job has prompt_id and running status in DB but upstream queue is empty, bulk cancel marks it unconfirmed."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = await _restart(repository, bridge)
+    try:
+        accepted = await service.accept(_payload(count=1, scope="normal"))
+        job_id = accepted["job_ids"][0]
+        repository.transition(job_id, "running", prompt_id="stale-running-prompt")
+        bridge.running.clear()
+        bridge.pending.clear()
+        bridge.history_by_prompt.clear()
+
+        res = await service.cancel_operation(CancelRequest(scope="normal", mode="all"))
+        assert len(res.items) == 1
+        assert res.items[0].job_id == job_id
+        assert res.items[0].outcome == "unconfirmed"
+        job_view = repository.get_job(job_id)
+        assert job_view is not None and job_view["status"] == "unconfirmed"
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_req401_ac3_bulk_cancel_global_with_upstream_lost_jobs_transitions_to_unconfirmed() -> None:
+    """[REQ-401/AC-3] When a job has prompt_id and running status in DB but upstream queue is empty, global cancel marks it unconfirmed."""
+    repository = MemoryRepository()
+    bridge = FakeBridge()
+    service = await _restart(repository, bridge)
+    try:
+        accepted = await service.accept(_payload(count=1, scope="normal"))
+        job_id = accepted["job_ids"][0]
+        repository.transition(job_id, "running", prompt_id="stale-global-prompt")
+        bridge.running.clear()
+        bridge.pending.clear()
+        bridge.history_by_prompt.clear()
+
+        res = await service.cancel_operation(CancelRequest(scope="all", mode="all"))
+        assert len(res.items) == 1
+        assert res.items[0].job_id == job_id
+        assert res.items[0].outcome == "unconfirmed"
+        job_view = repository.get_job(job_id)
+        assert job_view is not None and job_view["status"] == "unconfirmed"
+    finally:
+        await service.stop()
+
+

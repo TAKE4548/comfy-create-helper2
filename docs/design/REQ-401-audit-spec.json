@@ -1,0 +1,42 @@
+{
+  "audit_kind": "design",
+  "pbi_id": "REQ-401",
+  "ac_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5"
+  ],
+  "authorities": [
+    {
+      "role": "pbi",
+      "priority": 1,
+      "path": "docs/backlog/pbi/active/REQ-401.md"
+    }
+  ],
+  "targets": [
+    {
+      "path": "docs/design/REQ-401.md",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/design/REQ-401-test-plan.md",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T1.md",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T2.md",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T3.md",
+      "unit": "design-section"
+    }
+  ],
+  "out_of_scope": [],
+  "missing_inputs": []
+}

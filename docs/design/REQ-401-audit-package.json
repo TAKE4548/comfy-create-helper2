@@ -1,0 +1,53 @@
+{
+  "ac_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5"
+  ],
+  "audit_kind": "design",
+  "authorities": [
+    {
+      "path": "docs/backlog/pbi/active/REQ-401.md",
+      "priority": 1,
+      "role": "pbi",
+      "sha256": "c6ba4c245ffe1f5f3cd073ed2b685694928280de14e853d77336a3387040ca5d"
+    }
+  ],
+  "missing_inputs": [],
+  "out_of_scope": [],
+  "pbi_id": "REQ-401",
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "docs/design/REQ-401.md",
+      "sha256": "775360ce04fcca2eaf5925b78f4d773316be76fe5384b5fab669bb8ea3ee9d0e",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/design/REQ-401-test-plan.md",
+      "sha256": "a1838da72a034815b93ef6cabc25561f4d38534b29abf36859bbf91086a2836b",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T1.md",
+      "sha256": "dc87bf7be839e1b4909c76c518c2eb65cad72e79085adcda3125422dffb8ffa6",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T2.md",
+      "sha256": "ba44c1802a82fca330c1ba49a601c7e6c73caa687e22748891b2573d423aa0c3",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-401-T3.md",
+      "sha256": "466998223e2a0faf388521163e41b38a5a77e86212fd1d0463311b1df57b4596",
+      "unit": "design-section"
+    }
+  ],
+  "versions": {
+    "output_schema": 2,
+    "package_builder": 1
+  }
+}
