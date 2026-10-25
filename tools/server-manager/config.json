@@ -2,7 +2,7 @@
   "wsl": {
     "distro": "",
     "project_dir": "~/comfy",
-    "venv_activate": ".venv/bin/activate",
+    "venv_activate": "../rocm10-test/bin/activate",
     "comfy_dir": "ComfyUI",
     "env_vars": {
       "PYTORCH_HIP_ALLOC_CONF": "garbage_collection_threshold:0.8,max_split_size_mb:512"
