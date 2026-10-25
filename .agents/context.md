@@ -19,7 +19,7 @@ This file defines repository-specific variables used by the AntiGravity agent sy
 - Backend Unit Tests: `backend\.venv\Scripts\python -m pytest backend/tests/unit`
 - Frontend Unit Tests: `cd frontend; npx vitest run src/utils src/components/**/__tests__`
 
-### Gate 2: Full Integration Test Suite (状態遷移・API・DB統合 / ~30秒)
+### Gate 2: Full Integration Test Suite (状態遷移・API・DB統合 / BE並列 中央値 29.4秒 / FE全体 中央値 111.7秒。予算は SPEC §8)
 - Frontend Full Suite: `cd frontend; npm test` (局所実行: `npx vitest run <path_to_test>`)
 - Backend Full Suite (Parallel): `backend\.venv\Scripts\python -m pytest -n auto` (逐次: `backend\.venv\Scripts\python -m pytest`)
 - Single Backend Test (TDD): `backend\.venv\Scripts\python -m pytest <path_to_test>`

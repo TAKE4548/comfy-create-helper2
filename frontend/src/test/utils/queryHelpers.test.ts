@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { createTestQueryClient, clearTestQueryClient } from './queryHelpers';
 
@@ -25,5 +26,9 @@ describe('queryHelpers (AC-6)', () => {
 
     clearTestQueryClient(client);
     expect(client.getQueryData(['cached-key'])).toBeUndefined();
+  });
+  it('[REQ-394/AC-1] node-environment files run without a DOM', () => {
+    expect(typeof document).toBe('undefined');
+    expect(typeof window).toBe('undefined');
   });
 });

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { parseAspectRatio, ASPECT_RATIO_PRESETS, DEFAULT_ASPECT_RATIO_ID } from '../aspectRatio'
 

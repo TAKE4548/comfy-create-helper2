@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { snapshotsApi } from '../client'
 import type { SnapshotTriggerAssociation } from '../types'

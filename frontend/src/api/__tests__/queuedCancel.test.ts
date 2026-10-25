@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeGenerationSnapshot, generationApi, type GenerationSnapshot } from '../domains/generation'
 

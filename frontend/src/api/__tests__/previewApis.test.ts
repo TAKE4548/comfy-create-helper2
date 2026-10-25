@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { llmPromptsApi, translateApi } from '../domains/translation'
 import { snapshotsApi } from '../domains/snapshots'

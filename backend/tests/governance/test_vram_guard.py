@@ -1,6 +1,7 @@
 """E2E and Integration Tests for VRAM Guard (REQ-260)."""
 import asyncio
 import json
+import time
 import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
@@ -114,17 +115,20 @@ class TestVramGuardAPI:
     def test_ws_broadcast_includes_vram_fields(self):
         """[REQ-260/AC-4] Verify /api/ws includes vram_free_gb, vram_safe, and vram_min_free_gb in SYSTEM_STATS."""
         resource_monitor.update_threshold(6.0, True)
+        assert type(resource_monitor).INTERVAL == 2.5, "[REQ-394/AC-4] production INTERVAL must stay 2.5 before shortening"
         with patch.object(
             resource_monitor,
             "_get_gpu_stats",
             new_callable=AsyncMock,
             return_value=(15.0, 8.0, 16.0, 50.0),
-        ):
+        ), patch.object(resource_monitor, "INTERVAL", 0.05):
             with TestClient(app) as client:
                 with client.websocket_connect("/api/ws") as ws:
+                    started = time.monotonic()
                     msg = json.loads(ws.receive_text())
                     while msg.get("type") != "SYSTEM_STATS":
                         msg = json.loads(ws.receive_text())
+                    assert time.monotonic() - started < 2.0, "[REQ-394/AC-4] SYSTEM_STATS waited for the production INTERVAL"
                     assert msg["type"] == "SYSTEM_STATS"
                     stats = msg["data"]
                     assert "vram_free_gb" in stats

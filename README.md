@@ -84,7 +84,7 @@ mypy backend
 .venv\Scripts\python -m pytest backend/tests/unit
 ```
 
-### Gate 2: 統合テストスイート (~30秒)
+### Gate 2: 統合テストスイート (BE並列 中央値 29.4秒 / FE全体 中央値 111.7秒。予算は SPEC §8)
 APIルーター、SQLAlchemy (SAVEPOINT インメモリDB自動ロールバック)、Zustand/React Query 結合状態の網羅検証を行います。
 ```bash
 # Frontend 統合

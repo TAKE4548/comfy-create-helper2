@@ -326,22 +326,24 @@ class TestComfyProxyAPI(unittest.TestCase):
                 mock_get.assert_called_once()
 
     def test_prune_disk_cache_if_needed(self):
-        """4,000件超過時に古い順にファイルが削除されて 3,600件まで間引かれること。"""
+        """4,000件超過時に古い順にファイルが削除されて 3,600件まで間引かれること（定数を縮小して同じ論理を検証、REQ-394）。"""
         import tempfile
         from pathlib import Path
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        self.assertEqual(comfy_router._DISK_CACHE_MAX_FILES, 4000)
+        self.assertEqual(comfy_router._DISK_CACHE_TARGET_FILES, 3600)
+        with patch.object(comfy_router, "_DISK_CACHE_MAX_FILES", 40), \
+                patch.object(comfy_router, "_DISK_CACHE_TARGET_FILES", 36), \
+                tempfile.TemporaryDirectory() as tmpdir:
             disk_dir = Path(tmpdir)
-            # 4,001件の .webp ファイルを作成
-            total = 4001
+            total = 41  # one over the (scaled) limit
             for i in range(total):
-                f = disk_dir / f"thumb_{i:05d}.webp"
-                f.write_bytes(b"dummy")
+                (disk_dir / f"thumb_{i:05d}.webp").write_bytes(b"dummy")
 
             comfy_router._prune_disk_cache_if_needed(disk_dir)
 
             remaining = list(disk_dir.glob("*.webp"))
-            self.assertLessEqual(len(remaining), comfy_router._DISK_CACHE_TARGET_FILES)
+            self.assertEqual(len(remaining), 36)
 
     @patch("httpx.AsyncClient.get")
     def test_comfy_view_cache_hit_zero_probe_req362_ac1(self, mock_get):

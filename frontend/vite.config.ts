@@ -66,6 +66,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     pool: 'forks',
+    // REQ-394: keep isolate:true. isolate:false hung the run (cross-file state leak, endless refetch
+    // logging) and vmThreads/vmForks break msw/location. Files that need no DOM opt in to the node
+    // environment with a "// @vitest-environment node" first line; everything else stays on jsdom.
+    poolOptions: { forks: { isolate: true } },
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },

@@ -171,7 +171,7 @@ def test_req380_queue_transport_local_http(body, state, running, pending):
             pass
 
     listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
-    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread = threading.Thread(target=listener.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])
@@ -199,7 +199,7 @@ def test_req380_bad_queue_fails_closed(body):
             pass
 
     listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
-    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread = threading.Thread(target=listener.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])
@@ -253,7 +253,7 @@ def test_REQ_380_recursive_queue_envelopes_fail_closed_only_when_busy(running, p
             pass
 
     listener = ThreadingHTTPServer(("127.0.0.1", 0), QueueHandler)
-    thread = threading.Thread(target=listener.serve_forever, daemon=True)
+    thread = threading.Thread(target=listener.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         result = server_status.comfy_memory.get_comfy_execution_state(listener.server_address[1])

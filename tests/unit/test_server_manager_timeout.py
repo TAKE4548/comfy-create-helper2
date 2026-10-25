@@ -58,7 +58,7 @@ def test_req380_free_memory_manager_http_sandbox(tmp_path, monkeypatch, queue_bo
             pass
 
     comfy = ThreadingHTTPServer(("127.0.0.1", 0), ComfyHandler)
-    comfy_thread = threading.Thread(target=comfy.serve_forever, daemon=True)
+    comfy_thread = threading.Thread(target=comfy.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     comfy_thread.start()
     production_config = server_api.CONFIG_FILE
     before = hashlib.sha256(production_config.read_bytes()).hexdigest()
@@ -67,7 +67,7 @@ def test_req380_free_memory_manager_http_sandbox(tmp_path, monkeypatch, queue_bo
     assert test_config.resolve() != production_config.resolve()
     monkeypatch.setattr(server_api, "CONFIG_FILE", test_config)
     manager = ThreadingHTTPServer(("127.0.0.1", 0), server_api.ManagerHandler)
-    manager_thread = threading.Thread(target=manager.serve_forever, daemon=True)
+    manager_thread = threading.Thread(target=manager.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     manager_thread.start()
     try:
         assert server_api.check_port_listening(comfy.server_address[1])
@@ -141,7 +141,7 @@ def test_REQ_380_two_manager_clients_share_action_lock(tmp_path, monkeypatch, _c
             pass
 
     comfy = ThreadingHTTPServer(("127.0.0.1", 0), ComfyHandler)
-    comfy_thread = threading.Thread(target=comfy.serve_forever, daemon=True)
+    comfy_thread = threading.Thread(target=comfy.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     comfy_thread.start()
     production_config = server_api.CONFIG_FILE
     test_config = tmp_path / "manager-lock-test-config.json"
@@ -149,7 +149,7 @@ def test_REQ_380_two_manager_clients_share_action_lock(tmp_path, monkeypatch, _c
     assert test_config.resolve() != production_config.resolve()
     monkeypatch.setattr(server_api, "CONFIG_FILE", test_config)
     manager = ThreadingHTTPServer(("127.0.0.1", 0), server_api.ManagerHandler)
-    manager_thread = threading.Thread(target=manager.serve_forever, daemon=True)
+    manager_thread = threading.Thread(target=manager.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     manager_thread.start()
     endpoint = f"http://127.0.0.1:{manager.server_address[1]}/api/action"
     body = json.dumps({"action": "free-memory", "service": "comfy"}).encode()

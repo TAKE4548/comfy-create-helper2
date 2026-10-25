@@ -62,4 +62,8 @@ describe('storeHelpers (AC-6)', () => {
 
     MockWebSocketController.uninstall();
   });
+  it('[REQ-394/AC-1] files without a docblock keep the jsdom default', () => {
+    expect(typeof document).toBe('object');
+    expect(typeof window).toBe('object');
+  });
 });

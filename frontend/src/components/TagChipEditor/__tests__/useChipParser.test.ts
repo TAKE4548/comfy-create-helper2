@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { parseToChips, chipsToString, splitTags, parseTagWeight, formatTagWeight, adjustWeight, useChipParser } from '../useChipParser';
 

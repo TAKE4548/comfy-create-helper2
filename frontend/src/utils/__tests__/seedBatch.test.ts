@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import type { Workflow, WorkflowMapping } from '../../api/types'

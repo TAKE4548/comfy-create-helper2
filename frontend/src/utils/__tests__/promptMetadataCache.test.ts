@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { LS_KEYS } from '../localStorageKeys'
 import { LOCAL_METADATA_CACHE_LIMIT, prunePromptMetadataCache } from '../promptMetadataCache'

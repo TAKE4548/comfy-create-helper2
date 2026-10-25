@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sceneSpeechApi } from '../client'
 import type { SceneDraftRequest, SceneDraftResponse } from '../types'

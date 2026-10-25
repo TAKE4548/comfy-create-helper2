@@ -179,13 +179,16 @@ describe('REQ-332 API cache storage integration', () => {
   })
 
   it('[REQ-332/AC-2] updates workflows with an exact 4 MiB UTF-16 byte-equivalent payload', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const persister = makePersister(idb, () => now)
     const beforeLocal = values(localStorage)
     const beforeSession = values(sessionStorage)
     const first = new QueryClient()
     first.setQueryData(['workflows'], [{ id: 1, json: 'before' }])
     first.setQueryData(['workflow-presets'], [{ id: 4, name: 'stale preset' }])
-    await persister.persistClient(persisted(first, now))
+    const write1 = persister.persistClient(persisted(first, now))
+    await vi.advanceTimersByTimeAsync(1000)
+    await write1
     await persister.restoreClient()
 
     const updated = new QueryClient()
@@ -193,7 +196,9 @@ describe('REQ-332 API cache storage integration', () => {
     expect(json.length * 2).toBe(4 * 1024 * 1024)
     updated.setQueryData(['workflows'], [{ id: 1, json }])
     updated.setQueryData(['workflow-presets'], [{ id: 4, name: 'server latest preset' }])
-    await persister.persistClient(persisted(updated, now))
+    const write2 = persister.persistClient(persisted(updated, now))
+    await vi.advanceTimersByTimeAsync(1000)
+    await write2
     const restored = await persister.restoreClient()
     const localAfter = values(localStorage)
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { Workflow, WorkflowMapping } from '../../api/types'
 import { buildGenerationRecord, PROMPT_RECORD_KEY, type CaptureAssetInput } from '../generationRecord'

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ClientRect, DroppableContainer, UniqueIdentifier } from '@dnd-kit/core';
 import {

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import sys
+import time
 from types import SimpleNamespace
 from typing import cast
 import pytest
@@ -12,9 +13,18 @@ from fastapi.testclient import TestClient
 from app.main import app
 import app.routers.ws as ws_router
 from app.routers.ws import ConnectionManager
+from app.services.resource_monitor import ResourceMonitorService
+
+
+@pytest.fixture(autouse=True)
+def fast_monitor_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[REQ-394/AC-4] Shorten the SYSTEM_STATS loop wait (production 2.5 s); assertions are unchanged."""
+    assert ResourceMonitorService.INTERVAL == 2.5, "[REQ-394/AC-4] production INTERVAL must stay 2.5 before shortening"
+    monkeypatch.setattr(ResourceMonitorService, "INTERVAL", 0.05)
 
 
 def _receive_until(ws, message_type: str) -> dict:
+    started = time.monotonic()
     for _ in range(5):
         msg = json.loads(ws.receive_text())
         if msg.get("type") == "GENERATION_SNAPSHOT":
@@ -24,6 +34,8 @@ def _receive_until(ws, message_type: str) -> dict:
             assert msg.get("revision") == msg["data"].get("revision")
             assert msg["data"].get("version") == 1
         if msg.get("type") == message_type:
+            if message_type == "SYSTEM_STATS":
+                assert time.monotonic() - started < 2.0, "[REQ-394/AC-4] SYSTEM_STATS waited for the production INTERVAL"
             return msg
     raise AssertionError(f"did not receive {message_type}")
 

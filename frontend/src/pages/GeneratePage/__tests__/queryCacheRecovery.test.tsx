@@ -273,11 +273,14 @@ describe('REQ-332 cache recovery integration', () => {
   })
 
   it('AC16/17: clears only the IDB cache and fetches the current workflow after restart', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const idb = new IDBFactory()
     const old = makePersister(idb)
     const client = new QueryClient()
     client.setQueryData(['workflows'], [{ id: 7, name: 'old' }])
-    await old.persistClient(persisted(client))
+    const write1 = old.persistClient(persisted(client))
+    await vi.advanceTimersByTimeAsync(1000)
+    await write1
     await old.restoreClient()
     const localBefore = localStorage.getItem('prompt-surgeon-settings')
     localStorage.setItem('prompt-surgeon-settings', '{"keep":true}')
@@ -289,7 +292,9 @@ describe('REQ-332 cache recovery integration', () => {
     expect(await restarted.restoreClient()).toBeUndefined()
     const server = new QueryClient()
     server.setQueryData(['workflows'], [{ id: 7, name: 'latest' }])
-    await restarted.persistClient(persisted(server))
+    const write2 = restarted.persistClient(persisted(server))
+    await vi.advanceTimersByTimeAsync(1000)
+    await write2
     const saved = await makePersister(restartedIdb).restoreClient()
     const queued = await useGenerationStore.getState().queuePrompt({}, metadata(), { skipQueueFetch: true })
 

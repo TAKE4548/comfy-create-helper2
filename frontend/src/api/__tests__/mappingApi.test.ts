@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from 'vitest'
 import { stageMastersApi } from '../domains/stageMasters'
 import { mappingGroupsApi } from '../domains/mappingGroups'

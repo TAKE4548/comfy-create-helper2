@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashKey } from '@tanstack/query-core'
 import 'fake-indexeddb/auto'
@@ -12,34 +13,44 @@ describe('REQ-332-T2 storage transactions', () => {
       mutations: [],
     },
   })
+  afterEach(() => vi.useRealTimers())
 
   it('round trips only after transaction completion and merges by newest query', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const factory = new IDBFactory()
     const time = Date.now()
     const persister = createIndexedDBPersister({ indexedDB: factory, now: () => time + 2 })
     const first = client(time)
-    await persister.persistClient(first as never)
+    const w1 = persister.persistClient(first as never)
+    await vi.advanceTimersByTimeAsync(1000)
+    await w1
     expect(await persister.restoreClient()).toEqual(first)
     const newer = { ...client(time), clientState: { ...first.clientState, queries: [{ ...first.clientState.queries[0], state: { ...first.clientState.queries[0].state, dataUpdatedAt: time + 1, data: 2 } }] } }
-    await persister.persistClient(newer as never)
+    const w2 = persister.persistClient(newer as never)
+    await vi.advanceTimersByTimeAsync(1000)
+    await w2
     expect((await persister.restoreClient())?.clientState.queries[0].state.data).toBe(2)
     await persister.removeClient()
     expect(await persister.restoreClient()).toBeUndefined()
   })
 
   it('rejects expired clients and invalid busters, hashes, and future query clocks', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const now = Date.now()
     const badHash = { ...client(now), clientState: { ...client(now).clientState, queries: [{ ...client(now).clientState.queries[0], queryHash: 'wrong' }] } }
     const futureQuery = { ...client(now), clientState: { ...client(now).clientState, queries: [{ ...client(now).clientState.queries[0], state: { ...client(now).clientState.queries[0].state, dataUpdatedAt: now + 10 } }] } }
     const cases = [client(now - 600_001), { ...client(now), buster: 'old' }, badHash, futureQuery]
     for (const [i, value] of cases.entries()) {
       const p = createIndexedDBPersister({ indexedDB: new IDBFactory(), now: () => now })
-      await p.persistClient(value as never)
+      const write = p.persistClient(value as never)
+      await vi.advanceTimersByTimeAsync(1000)
+      await write
       expect(await p.restoreClient(), `invalid case ${i}`).toBeUndefined()
     }
   })
 
   it('serializes writes across two connections and filters API-only keys', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const factory = new IDBFactory()
     const time = Date.now()
     const a = createIndexedDBPersister({ indexedDB: factory, now: () => time + 5 })
@@ -48,7 +59,9 @@ describe('REQ-332-T2 storage transactions', () => {
     const filtered = { ...c, clientState: { queries: [...c.clientState.queries, {
       queryHash: hashKey(['snapshots']), queryKey: ['snapshots'], state: { status: 'success', dataUpdatedAt: time, data: 'private' },
     }, { queryHash: hashKey(['pending']), queryKey: ['pending'], state: { status: 'pending', dataUpdatedAt: 0 } }], mutations: [{ state: {} }] } }
-    await Promise.all([a.persistClient(c as never), b.persistClient(filtered as never)])
+    const writes = Promise.all([a.persistClient(c as never), b.persistClient(filtered as never)])
+    await vi.advanceTimersByTimeAsync(1000)
+    await writes
     const restored = await a.restoreClient()
     expect(restored?.clientState.queries.map(q => q.queryHash)).toContain(hashKey(['q']))
     expect(restored?.clientState.queries.map(q => q.queryHash)).not.toContain(hashKey(['snapshots']))
@@ -63,12 +76,15 @@ describe('REQ-332-T2 storage transactions', () => {
   })
 
   it('synchronously prunes only the API cache key at construction', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const values = new Map([['prompt-surgeon-rq-cache', 'legacy'], ['metadata', 'keep'], ['session', 'keep'], ['unrelated', 'keep']])
     const removed: string[] = []
     const p = createIndexedDBPersister({ indexedDB: new IDBFactory(), storage: { removeItem: k => { removed.push(k); values.delete(k) } } })
     expect(removed).toEqual(['prompt-surgeon-rq-cache'])
     expect([...values]).toEqual([['metadata', 'keep'], ['session', 'keep'], ['unrelated', 'keep']])
-    await p.persistClient(client() as never)
+    const write = p.persistClient(client() as never)
+    await vi.advanceTimersByTimeAsync(1000)
+    await write
     expect(removed).toEqual(['prompt-surgeon-rq-cache'])
     expect([...values]).toEqual([['metadata', 'keep'], ['session', 'keep'], ['unrelated', 'keep']])
   })
