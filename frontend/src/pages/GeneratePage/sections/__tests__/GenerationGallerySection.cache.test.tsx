@@ -143,3 +143,163 @@ describe('GenerationGallerySection REQ-372', () => {
     expect(onOpenModalPreview).not.toHaveBeenCalled()
   })
 })
+
+describe('GenerationGallerySection REQ-383', () => {
+  it('[REQ-383/AC-1] does not render sort order toggle button in desktop history toolbar', () => {
+    const c = controller()
+    gallery(c, {}, false)
+    expect(screen.queryByText('新しい順')).not.toBeInTheDocument()
+    expect(screen.queryByText('古い順')).not.toBeInTheDocument()
+  })
+
+  it('[REQ-383/AC-7] triggers onCenterPreviewImage and selects image on normal thumbnail click', () => {
+    const handleItemClick = vi.fn()
+    const setSelectedImg = vi.fn()
+    const onCenterPreviewImage = vi.fn()
+
+    const { result } = renderHook(() =>
+      useGalleryInteraction({
+        isMobile: false,
+        selectedImg: null,
+        setSelectedImg,
+        onCenterPreviewImage,
+        multiSelect: {
+          isMultiSelectMode: false,
+          selectedIds: new Set(),
+          handleItemClick,
+          getLongPressHandlers: () => ({} as any),
+        } as any,
+      })
+    )
+
+    const fakeEvent = {
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as React.MouseEvent
+
+    result.current.handleThumbnailClick(url, 0, fakeEvent)
+
+    expect(setSelectedImg).toHaveBeenCalledWith(url)
+    expect(onCenterPreviewImage).toHaveBeenCalledWith(url)
+  })
+
+  it('[REQ-383/AC-8] does not trigger preview center scroll when clicking thumbnail in multi-select mode or with modifier keys', () => {
+    const handleItemClick = vi.fn()
+    const setSelectedImg = vi.fn()
+    const onCenterPreviewImage = vi.fn()
+
+    // 1. In multi-select mode without modifiers
+    const { result: multiSelectHook } = renderHook(() =>
+      useGalleryInteraction({
+        isMobile: false,
+        selectedImg: null,
+        setSelectedImg,
+        onCenterPreviewImage,
+        multiSelect: {
+          isMultiSelectMode: true,
+          selectedIds: new Set([url]),
+          handleItemClick,
+          getLongPressHandlers: () => ({} as any),
+        } as any,
+      })
+    )
+
+    multiSelectHook.current.handleThumbnailClick(url, 0, {
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as React.MouseEvent)
+
+    expect(handleItemClick).toHaveBeenCalled()
+    expect(setSelectedImg).not.toHaveBeenCalled()
+    expect(onCenterPreviewImage).not.toHaveBeenCalled()
+
+    // 2. In normal mode with ctrlKey
+    handleItemClick.mockClear()
+    setSelectedImg.mockClear()
+    onCenterPreviewImage.mockClear()
+
+    const { result: ctrlKeyHook } = renderHook(() =>
+      useGalleryInteraction({
+        isMobile: false,
+        selectedImg: null,
+        setSelectedImg,
+        onCenterPreviewImage,
+        multiSelect: {
+          isMultiSelectMode: false,
+          selectedIds: new Set(),
+          handleItemClick,
+          getLongPressHandlers: () => ({} as any),
+        } as any,
+      })
+    )
+
+    ctrlKeyHook.current.handleThumbnailClick(url, 0, {
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+    } as React.MouseEvent)
+
+    expect(handleItemClick).toHaveBeenCalled()
+    expect(setSelectedImg).not.toHaveBeenCalled()
+    expect(onCenterPreviewImage).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-383/AC-13] preserves multi-select checkboxes, bulk save, clear selection, and snapshots tab operations', () => {
+    const c = controller()
+    const selectAll = vi.fn()
+    const clearSelection = vi.fn()
+    const setIsSaveModalOpen = vi.fn()
+    const exitMultiSelectMode = vi.fn()
+    const setThumbnailTab = vi.fn()
+    const handleToggleAutoFollow = vi.fn()
+    const setFilterOwnSession = vi.fn()
+
+    const { rerender } = gallery(
+      c,
+      {
+        isMultiSelectMode: true,
+        selectedIds: new Set([url]),
+        selectAll,
+        clearSelection,
+        setIsSaveModalOpen,
+        exitMultiSelectMode,
+        isSelected: (img: string) => img === url,
+        setThumbnailTab,
+        handleToggleAutoFollow,
+        setFilterOwnSession,
+      },
+      false
+    )
+
+    // Checkboxes and multi-select bar rendered
+    expect(screen.getByText('1枚選択中')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('すべて選択'))
+    expect(selectAll).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByText('選択解除'))
+    expect(clearSelection).toHaveBeenCalledOnce()
+
+    const saveBtn = screen.getByRole('button', { name: '選択した 1 枚を保存' })
+    expect(saveBtn).toBeInTheDocument()
+    fireEvent.click(saveBtn)
+    expect(setIsSaveModalOpen).toHaveBeenCalledWith(true)
+
+    // Tab switching to snapshots
+    const snapshotsTabBtn = screen.getByRole('button', { name: 'スナップショット (Snapshots)' })
+    fireEvent.click(snapshotsTabBtn)
+    expect(setThumbnailTab).toHaveBeenCalledWith('snapshots')
+
+    // Preserves previewAutoFollow and session filter toggles
+    const autoFollowBtn = document.getElementById('preview-autofollow-toggle-desktop')
+    expect(autoFollowBtn).not.toBeNull()
+    fireEvent.click(autoFollowBtn!)
+    expect(handleToggleAutoFollow).toHaveBeenCalledOnce()
+
+    const sessionFilter = document.getElementById('session-filter-toggle')
+    expect(sessionFilter).not.toBeNull()
+    fireEvent.click(sessionFilter!)
+    expect(setFilterOwnSession).toHaveBeenCalled()
+  })
+})
+

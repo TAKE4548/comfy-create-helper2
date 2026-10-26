@@ -329,4 +329,49 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
       Rough_Positive_Prompt: 'rough edited',
     })
   })
+
+  it('[REQ-383/AC-12] clicking tile in desktop preview invokes onOpenModal', () => {
+    const state = createMockState()
+    state.displayImages = ['img-1', 'img-2']
+    state.selectedImg = 'img-1'
+    const { container } = renderWithQueryClient(<DesktopLayout state={state as any} />)
+
+    const btn = container.querySelector('[aria-label="画像 img-1 を開く"]') as HTMLButtonElement
+    expect(btn).not.toBeNull()
+    fireEvent.click(btn)
+
+    expect(state.setSelectedImg).toHaveBeenCalledWith('img-1')
+    expect(state.handleOpenModalPreview).toHaveBeenCalled()
+  })
+
+  it('[REQ-383/AC-13] preserves history bulk actions and snapshot tab switching in desktop layout', () => {
+    const state = createMockState()
+    state.displayImages = ['img-1', 'img-2']
+    state.showStrip = true
+    state.isMultiSelectMode = true
+    state.selectedIds = new Set(['img-1'])
+
+    const { container } = renderWithQueryClient(<DesktopLayout state={state as any} />)
+
+    // Expand history
+    const historyToggle = container.querySelector('[data-generate-reel-history-toggle="true"]') as HTMLButtonElement
+    expect(historyToggle).not.toBeNull()
+    fireEvent.click(historyToggle)
+
+    // Verify history pane is visible
+    const historyPane = container.querySelector('[data-generate-reel-history-pane="true"]')
+    expect(historyPane).not.toBeNull()
+
+    // Test snapshot tab switching
+    const snapshotsTab = screen.getByRole('button', { name: /スナップショット/ })
+    fireEvent.click(snapshotsTab)
+    expect(state.setThumbnailTab).toHaveBeenCalledWith('snapshots')
+
+    // Test save snapshot button in action bar
+    const saveBtn = container.querySelector('#save-snapshot-btn') as HTMLButtonElement
+    expect(saveBtn).not.toBeNull()
+    expect(saveBtn.disabled).toBe(false)
+    fireEvent.click(saveBtn)
+    expect(state.setIsSaveModalOpen).toHaveBeenCalledWith(true)
+  })
 })

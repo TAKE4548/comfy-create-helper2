@@ -1,10 +1,10 @@
 # Prompt Surgeon — Generate ページ仕様書 (SPEC_GENERATE)
 
-**バージョン**: 2.8
-**最終更新**: 2026-10-16
+**バージョン**: 2.9
+**最終更新**: 2026-10-26
 **実装ファイル**: `frontend/src/pages/GeneratePage.tsx`（モジュール分割完了済み）
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [SPEC_COMMON.md](./SPEC_COMMON.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-347設計](../design/REQ-347.md) / [REQ-347-T10正本同期](../backlog/task/active/REQ-347-T10.md) / [REQ-344設計](../design/REQ-344.md) / [REQ-344検証計画](../design/REQ-344-test-plan.md) / [REQ-344最小差分検証記録](../design/REQ-344-minimal-verification.md) / [REQ-354稼働検証記録](../design/REQ-354-verification.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-383設計](../design/REQ-383.md) / [REQ-383検証計画](../design/REQ-383-test-plan.md)
 
 ---
 
@@ -19,6 +19,13 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 
 画面最上部グローバルヘッダー + 全幅プリセットタブバー + 入力左ペイン/プレビュー右ペイン構成。幅800pxでは入力ペイン330pxを確保し、右側の永続ActionBarとプレビューを維持する。
 
+デスクトップ右カラム（画面幅768px以上）の閲覧モデルは以下の3階層として定義される（REQ-383）：
+1. **メインプレビュー**: 直近結果の連続横スクロールリール閲覧・比較（`GenerateParallelPreview`）
+2. **履歴**: 大量結果の俯瞰・ジャンプ・複数選択（`GenerationGallerySection`）
+3. **詳細表示**: 単一画像の拡大確認・メタ情報照会（`HistoryModalPreview`）
+
+メインプレビューと履歴は、最新画像を先頭（`index 0`）とする同一の時系列画像列に対する縮尺・密度の異なる2つの操作ビューであり、単一の共有状態（`previewAutoFollow` / `filterOwnSession`）に基づき双方向に即時連動・同期する。また、デスクトップ表示でのメインプレビュー横スクロールおよび履歴の開閉・選択操作中に、`document.body` に横スクロールバー（`overflow-x`）を発生させない不変条件を維持する（AC-14）。
+
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │ [Global Header] タイトル / ワークフロー選択 / Anima / Settings  │
@@ -26,8 +33,8 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 │ [Preset Tabs Bar] プリセットタブ一覧（全幅・横スクロール）      │
 ├──────────────────────────────┬─────────────────────────────────┤
 │  左カラム（入力・設定）        │  右カラム（プレビュー・履歴）    │
-│  - ツールバー: プリセット名   │  - メインプレビュー              │
-│    Undo/Redo, Add Set, 管理 │  - 履歴サムネイルストリップ      │
+│  - ツールバー: プリセット名   │  - メインプレビュー（連続リール）│
+│    Undo/Redo, Add Set, 管理 │  - 履歴サムネイル（最新-first）  │
 │  - LLM Audit パネル          │  - スナップショット              │
 │  - Prompt 入力（stage group）  │  - 生成コントロール              │
 │  - 翻訳 / シーン生成ボタン   │  - 永続ActionBar                 │
@@ -175,16 +182,34 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
 
 - 生成中: WebSocket 経由の進捗バー表示。PC・モバイルの進捗率文字は整数へ丸め、バー幅の計算精度は維持する。進捗通知だけでpreview URLを合成せず、実画像URLの受信時だけ更新する。
 - 完了後: 高解像度画像表示（ダウンロード、スナップショット保存）。
-- **プレビュー自動追従 / 固定トグル (REQ-264, REQ-372)**:
-  - デスクトップサムネイルヘッダー（`DesktopLayout`）、モバイル履歴ツールバー（`GenerationGallerySection`、`#preview-autofollow-toggle-mobile`）、モバイル画像シート（`MobileImageSheet`）、および全画面モーダルプレビュー（`HistoryModalPreview`）において、ワンタップで「自動追従（Auto-Follow）」と「固定（Lock）」を切り替え可能。
-  - **自動追従**: 自セッションの生成完了時に、プレビュー表示およびフォーカスモーダルが自動的に最新の生成画像へ切り替わる（デフォルト: 有効）。完了原画を選ぶ時はその完了job自身の旧プレビューだけを解除し、後続jobが画像未受信でも旧frameで原画を覆わない。後続jobの実frameを受信済みならそのframeを維持し、進捗だけで消さない。
-- **固定**: 新規生成が完了しても、現在閲覧している画像の表示を維持（REQ-240 と同様の閲覧コンテキスト保護）。
+- **プレビュー自動追従 / 固定トグル (REQ-264, REQ-372, REQ-383)**:
+  - プレビュー右上共有ツールバー（`DesktopLayout`、`data-testid="generate-reel-toolbar"`）、履歴ペイン（`GenerationGallerySection`、`#preview-autofollow-toggle-desktop` / `#preview-autofollow-toggle-mobile`）、モバイル画像シート（`MobileImageSheet`）、および全画面モーダルプレビュー（`HistoryModalPreview`）において、ワンタップで「自動追従（Auto-Follow）」と「固定（Lock）」を切り替え可能。プレビュー上部と履歴ペインは単一の共有状態（`previewAutoFollow`）として即時双方向同期する（AC-10）。
+  - **自動追従**: 自セッションの生成完了時に、プレビュー表示およびフォーカスモーダルが自動的に最新の生成画像へ切り替わり、メインプレビューリールでは最新画像（`index 0`）を水平中央へスクロール移動・中央表示する（デフォルト: 有効）。完了原画を選ぶ時はその完了job自身の旧プレビューだけを解除し、後続jobが画像未受信でも旧frameで原画を覆わない。後続jobの実frameを受信済みならそのframeを維持し、進捗だけで消さない。
+- **固定**: 新規生成が完了しても、現在閲覧している画像の表示を維持（REQ-240 と同様の閲覧コンテキスト保護）。過去画像の閲覧中または固定時は、新着画像が先頭に追加されてもスクロールアンカーを補正し、視覚的なジャンプを防止する。
 - **即時ジャンプ**: 固定状態から自動追従を ON に切り替えた際、即座に最新画像へ表示がジャンプ。
   - 設定値は `localStorage` (`prompt-surgeon-preview-auto-follow`) に永続化される。
 
-- **プレビュー分割と並列結果閲覧 (REQ-334, REQ-339, REQ-362)**:
+- **プレビュー分割と連続横スクロールリール閲覧 (REQ-334, REQ-339, REQ-362, REQ-383)**:
   - `DesktopLayout`の分割比率はドラッグ操作で変更し、保存した比率を次回表示時に復元する。比率サイクル操作で最大状態の次を選ぶと開始比率に戻す。幅800pxでは左入力ペインを330pxとし、右側にプレビューと生成アクションを残す。
-  - `GenerateParallelPreview`はプレビューコンテナの利用可能高さに合わせて全画像の高さを揃え、各画像本来のアスペクト比に応じた幅を計算した上で、利用可能横幅に収まる最大枚数を動的に1行配置する（REQ-339）。画像本来のアスペクト比を保持して歪みやレターボックス/ピラーボックスを排除し、横長・正方形・縦長画像が混在する場合でも空きスペースの許す限り自動的に並列表示する。単一画像が横幅を超える場合は高さを自動縮小して全景を収める。表示ページ数は矢印ボタンや左右キーで切り替え、端では進行方向をclampする。選択とlive previewは既存のGenerate状態へ反映し、入力/ダイアログ内のキー操作を親の画像ナビゲーションへ重複伝播させない。
+  - **連続横スクロールリール化 (AC-1)**:
+    旧来のページ送り式（利用可能横幅に収まる枚数ごとのページ分割・矢印切替）を廃止し、最新画像を論理上の先頭（`index 0`、左端）として右方向へ進むほど過去画像となる最新-first固定の連続横スクロールリール（`GenerateParallelPreview`）を導入。ソート順を反転する操作は表示しない。
+  - **初期中央配置と端部余白 (AC-2)**:
+    初期表示時（`scrollLeft = 0`）は端部スクロール余白により最新画像（先頭、`index 0`）の中心をプレビュー領域の水平中央に配置する。先頭（最新）および末尾（最古）のいずれの端点画像も、画像自体の表示幅を圧縮せずにプレビュー水平中央へ吸着・配置できる端部スクロール余白（先頭 `marginLeft` / 末尾 `marginRight`）を確保する。
+  - **ホイール慣性スクロールと停止時中央吸着 (AC-3)**:
+    マウスホイール（縦ホイール入力から横移動インパルスへの変換）およびトラックパッドの横入力による連続横スクロールをサポート。連続入力時でも不要な振動や入力相殺による急停止を起こさず滑らかに減衰し、減衰停止後に最も中心に近い画像がプレビュー水平中央へ吸着する（※モック検証時の初期参考基準値: 縦ホイール係数 `0.38`、横係数 `0.28`、減衰率 `0.89`、停止閾値 `0.35`）。
+  - **混在アスペクト比維持と領域内表示 (AC-4)**:
+    縦長・正方形・横長（2:1等）の画像が混在する場合でも、各画像の元アスペクト比を維持して均一な基準高（プレビュー有効高ベース）に揃え、横長画像には最大幅上限（viewport幅の約 `0.86` 倍基準等）を設けて高さを比例調整することで、画像やタイルがプレビュー領域を上下・左右にはみ出さず、細長い空枠や枠内での極端な縮小を防止する。
+  - **プレビュー右上共有ツールバーと端点ジャンプ (AC-5, AC-6, AC-10, AC-11)**:
+    プレビュー右上に時系列方向と一致させた順序で `← 最新へ`、`最古へ →`、`最新追従`、`自セッション`、`履歴` を整列配置する。
+    - `← 最新へ`（AC-5）: ユーザーが過去画像側へスクロール移動している状態（目安閾値 `scrollLeft >= 72px` 等）で動的に表示し、押下契機で即座に進行中のスクロール慣性を停止して最新画像（`index 0`）をプレビュー水平中央へ移動・中央表示する。
+    - `最古へ →`（AC-6）: 履歴に複数画像がある状態で常時利用可能とし、押下契機で即座に進行中のスクロール慣性を停止して最古画像（末尾）をプレビュー水平中央へ移動・表示する（単一画像時は disabled）。
+    - `最新追従`（AC-10）: 履歴を開かずに通常プレビュー上部から直接操作可能とし、履歴ペイン側のトグルと単一の共有状態（`previewAutoFollow`）として双方向に即時連動・同期する。
+    - `自セッション`（AC-11）: 履歴を開かずに通常プレビュー上部から直接操作可能とし、履歴ペイン側のトグルと単一の共有状態（`filterOwnSession`）として双方向に即時連動・同期して表示対象画像群へ反映する。
+    - `履歴`（AC-9）: 履歴ペイン（`GenerationGallerySection`）の展開・折りたたみをトグル操作する。
+  - **詳細プレビューモーダル連携 (AC-12)**:
+    リール内の各画像タイルをクリックした際、進行中の慣性を即座に停止して対象画像を選択し、既存の詳細プレビューモーダル（`HistoryModalPreview.tsx`）を起動して拡大確認・メタ情報照会・追従トグル・Close操作を提供する。
+  - **キーボードナビゲーション**:
+    リールフォーカス時の `Home`（進行中慣性を停止し最新画像を水平中央表示）、`End`（進行中慣性を停止し最古画像を水平中央表示）、`ArrowLeft` / `ArrowRight`（進行中慣性を停止し隣接/横方向スクロール移動）をサポート。入力/ダイアログ内のキー操作を親の画像ナビゲーションへ重複伝播させない。
   - **プログレッシブプレビュー表示と三位一体キャッシュ高速化 (REQ-362)**:
     - `GenerateParallelPreview`でフルサイズWebP（`/api/comfy/view`）をロード中、キャッシュ済みサムネイルWebP（`/api/comfy/thumbnail`）をプレースホルダーとして先行描画し、ロード完了時にフェード切り替えを行う。フルサイズ画像ロード失敗時はサムネイル表示をフォールバックとして維持する。
     - **完全ゼロプローブ配信**: `/api/comfy/thumbnail` および `/api/comfy/view` は、メモリまたはローカルディスクキャッシュ（`db/thumbnail_cache/`, `db/full_cache/`）ヒット時にComfyUI本体への存在確認（HEAD通信）を一切行わず、5ms以内で即座に返却する。
@@ -216,7 +241,7 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
   - 正常完了を確認できた場合だけ一括操作を完了扱いにしてモーダルを閉じる。部分成功、未確認、protected jobによる割り込みskippedは確認済み・未確認の結果を表示してモーダルを維持する。処理後も状態未確認のまま残る記録は未確認の項目として必ず報告し、完了扱いにしない。キャンセルを失敗toastとして重複通知しない。
   - 再起動後に孤立した送信待ち（prompt_id 未確定の queued/submitting）は、待機として表示せず『状態未確認』の記録として表示する（自動再送しない）。
   - ジョブ管理は「状態未確認の記録」を待機キューと別の欄で表示し、各行に「取消を試行」と「記録を解除」を、欄に「状態未確認をすべて解除」を提供する。上流 ComfyUI クラッシュ・再起動後の reconcile または取消操作によって `unconfirmed` に遷移した記録は、本欄から直ちに手動解除（`/api/generation/release`）可能となり、待機・実行中・未確認の全表示から安全に除去できる。解除は確認ダイアログで『記録のみが対象でComfyUI側の取消ではない』『実行有無を確認しない』『待機へ戻らず自動再送しない』ことを示してから実行し、解除結果は解除できた件数と解除できなかった件数を分けて示す。解除済みの記録は同欄の折りたたみで直近10件を確認できる。Generate画面のQueueボタンには状態未確認の件数を併記する。
-- キーボードナビ: `←` / `→` キーでサムネイル切替。
+- キーボードナビ: `←` / `→` キーでサムネイル切替（リールフォーカス時は `ArrowLeft` / `ArrowRight` による横スクロール移動）。
 - Generateページの`Ctrl+Enter`はダイアログが開いていないときだけ生成を1回実行する。翻訳ダイアログは同じキーを親へ伝播させず、二重実行しない。`S` / `Space`は実際のプレビューにフォーカスがある場合だけsave/open操作に使い、入力欄の編集キー・IME変換・repeat・dialog内・`defaultPrevented`イベントは予約操作として横取りしない。
 
 #### Generate通信・Manager復旧境界
@@ -249,10 +274,13 @@ ComfyUI と連携した画像生成実行時のハードウェアリソース（
 
 ### 2-11. サムネイルストリップ
 
-- 表示対象: `filterOwnSession`（自セッション）/ 全履歴切替。
+- 表示対象: `filterOwnSession`（自セッション）/ 全履歴切替。プレビュー上部共有ツールバーの「自セッション」ボタンと単一の共有状態（`filterOwnSession`）として即時双方向同期（AC-11）。
 - タブ: `history`（生成履歴）/ `snapshots`（保存済みスナップショット）。
-- 表示順: 「新しい順（降順）」「古い順（昇順）」切替。
-- 複数選択一括保存: `Ctrl/Shift/長押し` で複数選択し、一括でスナップショットとしてアルバム保存可能。
+- 表示順: 最新-first固定（`index 0` が最新画像、右方向・下方向へ過去画像）。メインプレビューリールと同一の論理時系列順序に固定され、ソート順切替UIは廃止（AC-1）。
+- **通常クリック時の双方向同期 (AC-7)**: 履歴展開時、通常モード（単一選択）で任意の履歴サムネイルをクリックした際、対象画像を選択状態にするとともにメインプレビューの進行中慣性を停止し、該当画像へスクロール移動してプレビュー水平中央に表示する。
+- **複数選択時のスクロール抑止 (AC-8)**: 複数選択モード中（または `Ctrl` / `Meta` / `Shift` 等の複数選択修飾キー押下時）に履歴サムネイルをクリックして選択／解除する場合は、選択状態のみを更新しメインプレビューのスクロール位置を移動・ジャンプさせない。
+- **履歴ローカルClose導線 (AC-9)**: 履歴展開時、プレビューと履歴の境界バーに `⌄ 履歴を閉じる` ボタンを配置し、押下により履歴ペインが閉じてメインプレビューの表示領域が履歴展開前の通常表示高へ復帰する（プレビュー右上の `履歴` ボタンとも状態同期）。
+- 複数選択一括保存: `Ctrl/Shift/長押し` で複数選択し、一括でスナップショットとしてアルバム保存可能。選択解除も可能（AC-13）。
 - 履歴画像URLは同一originの `/view` 表現へ正規化し、`filename` / `subfolder` / `type` / `t` を保持する。一覧には既存thumbnailを使い、main/拡大表示には同一originのview URLを使う。旧hostと新hostの同一画像はfilename・subfolder・type identityで重複表示しない。`t` はURL/cache bust用で画像identityには含めない。
 - 試行履歴の表示可否はPrompt Surgeonバックエンドが自立保持するWebPキャッシュ（最新200件フルサイズ・サムネイル）およびSQLiteメタデータを正本（SSoT）とする。Gallery rowのthumbnail描画時を含め、上流ComfyUIへの原画存在確認プローブ（HEAD/GET availability probe）は一切行わない（ゼロプローブ）。上流ComfyUI側の一時ファイル削除や404発生にかかわらず、BEキャッシュが存在する試行画像はギャラリー履歴から除外されることなく安定して表示・再利用される。明示再試行は同じthumbnail URLで行い、再試行操作は画像行の選択に伝播しない。保存Snapshot branchには適用しない。
 - persisted queryの復元完了後、有効な非空の表示済みhistoryをbaselineとして、document reload epochごとに一度だけBE差分同期を行う。baselineが空なら要求しない。reloadで全件GETやhistory(200)の再取得、表示query全置換を行わず、BEが保持する未表示候補だけを既存表示へ追加する。既存項目のURL・相対順・選択・metadataは維持する。照合・追加はfilename/subfolder/type identityで行い、同一画像の重複を作らない。
@@ -447,7 +475,9 @@ frontend/src/store/
 
 ## 6-2. 履歴プレビューモーダル (`HistoryModalPreview.tsx`)
 
-- スナップショット未保存の画像であっても、URL の `t` パラメータからメタデータを照会し、`<Info />` ボタンより生成時パラメータ（アスペクト比、サンプラー、スケジューラー、ステップ数、CFG、シード値、プロンプト）の確認パネルを表示可能。
+- メインプレビュー（`GenerateParallelPreview`）のリール内画像タイルをクリックした際、本詳細プレビューモーダルが起動し、3階層閲覧モデルの「詳細表示」として機能する（AC-12）。
+- 単一画像の拡大確認、およびスナップショット未保存の画像であっても URL の `t` パラメータからメタデータを照会し、`<Info />` ボタンより生成時パラメータ（アスペクト比、サンプラー、スケジューラー、ステップ数、CFG、シード値、プロンプト）の確認パネルを表示可能。
+- `Escape` キー押下または閉じるボタン操作により、モーダルが閉じてメインプレビューへ安全に復帰可能（AC-12）。
 - **追従/固定トグルボタン (REQ-264)**:
   - ヘッダー右側（Close ボタン左隣）にトグルボタンを配置。
   - 自動追従時は `Play` アイコン（アクセントグリーン）、固定時は `Pause` アイコン（ニュートラルグレー）で現在の状態を直感的に視認可能。
@@ -469,28 +499,30 @@ frontend/src/store/
 ```
 pages/GeneratePage/
   components/
-    DesktopLayout.tsx          — PC/タブレット用 2カラムレイアウト（配置特化）
-    MobileLayout.tsx           — モバイル用シングルカラムレイアウト（配置特化）
-    AuditPanel.tsx             — LLM 診断パネル
-    ParamPanel.tsx             — パラメータ入力フォーム群
-    AddAssetModal.tsx          — LoRA/TagSet 追加モーダル
-    AppliedAssetChips.tsx      — 適用アセットチップ一覧
-    PromptTranslationModal.tsx — プロンプト日英翻訳
-    SettingsPopover.tsx        — ComfyUI 接続設定
+    DesktopLayout.tsx           — PC/タブレット用 2カラムレイアウト（配置特化）
+    MobileLayout.tsx            — モバイル用シングルカラムレイアウト（配置特化）
+    GenerateParallelPreview.tsx — 連続横スクロールリールプレビュー・端点ジャンプ・共有コントロール（REQ-383）
+    AuditPanel.tsx              — LLM 診断パネル
+    ParamPanel.tsx              — パラメータ入力フォーム群
+    AddAssetModal.tsx           — LoRA/TagSet 追加モーダル
+    AppliedAssetChips.tsx       — 適用アセットチップ一覧
+    PromptTranslationModal.tsx  — プロンプト日英翻訳
+    SettingsPopover.tsx         — ComfyUI 接続設定
   sections/
-    GenerateModalsOverlay.tsx   — 共通モーダル群・トースト通知の集約オーバーレイ（REQ-282）
-    SetTabsBar.tsx              — プリセットタブ一覧・追加・Undo/Redo制御バー（REQ-282）
-    GenerationGallerySection.tsx — 生成画像・履歴・スナップショットギャラリー & 追従制御（REQ-282）
+    GenerateModalsOverlay.tsx    — 共通モーダル群・トースト通知の集約オーバーレイ（REQ-282）
+    SetTabsBar.tsx               — プリセットタブ一覧・追加・Undo/Redo制御バー（REQ-282）
+    GenerationGallerySection.tsx — 生成画像・履歴・スナップショットギャラリー & 追従制御（REQ-282, REQ-383）
   hooks/
-    useGeneratePageState.ts    — Generate ページの全体状態統合
-    useGenerateAction.ts       — 生成キュー投入・バッチ処理
-    usePresetState.ts          — プリセット CRUD・一括操作
-    useWorkflowManagement.ts   — ワークフロー選択・複製・管理
-    useWorkflowParams.ts       — パラメータ初期化・キャッシュ
-    usePromptTranslation.ts    — 翻訳 API 連携
-    useSceneGenerator.ts       — シーン生成 API 連携
-    useSnapshotActions.ts      — スナップショット保存
-    useImageNavigation.ts      — キーボード・画像切替
+    useGeneratePageState.ts     — Generate ページの全体状態統合
+    useGenerateAction.ts        — 生成キュー投入・バッチ処理
+    usePresetState.ts           — プリセット CRUD・一括操作
+    useWorkflowManagement.ts    — ワークフロー選択・複製・管理
+    useWorkflowParams.ts        — パラメータ初期化・キャッシュ
+    usePromptTranslation.ts     — 翻訳 API 連携
+    useSceneGenerator.ts        — シーン生成 API 連携
+    useSnapshotActions.ts       — スナップショット保存
+    useImageNavigation.ts       — キーボード・画像切替
+    useGalleryInteraction.ts    — ギャラリー選択・双方向同期・スクロール連携（REQ-383）
 ```
 
 ---

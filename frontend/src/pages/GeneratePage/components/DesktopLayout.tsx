@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, memo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Plus, ChevronRight, ChevronDown, X, Undo2, Redo2, Library,
-  ImageOff, Camera, Loader2, AlertTriangle
+  Camera, Loader2, AlertTriangle
 } from 'lucide-react'
 import { ResizableSplitLayout } from '../../../components/layout/ResizableSplitLayout'
-import { GenerateParallelPreview } from './GenerateParallelPreview'
+import { GenerateParallelPreview, type GenerateParallelPreviewCenterRequest } from './GenerateParallelPreview'
 import { LS_KEYS } from '../../../utils/localStorageKeys'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
 import { PageHeader } from '../../../components/common/PageHeader'
@@ -137,6 +137,10 @@ export const DesktopLayout = ({
     allQueueCount,
     totalQueueCount,
     showStrip, invalidMappings, textMappings, paramMappings,
+    previewAutoFollow: statePreviewAutoFollow,
+    handleToggleAutoFollow: stateHandleToggleAutoFollow,
+    filterOwnSession: stateFilterOwnSession,
+    setFilterOwnSession: stateSetFilterOwnSession,
     
     // handlers
     handleLoadSnapshot,
@@ -175,7 +179,16 @@ export const DesktopLayout = ({
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
   const generationSnapshot = useGenerationStore((state) => state.generationSnapshot)
   const generationSyncIssue = useGenerationStore((state) => state.generationSyncIssue)
-  const filterOwnSession = useGenerationStore((state) => state.filterOwnSession)
+  const storeFilterOwnSession = useGenerationStore((state) => state.filterOwnSession)
+  const storeSetFilterOwnSession = useGenerationStore((state) => state.setFilterOwnSession)
+  const storePreviewAutoFollow = useGenerationStore((state) => state.previewAutoFollow)
+  const storeTogglePreviewAutoFollow = useGenerationStore((state) => state.togglePreviewAutoFollow)
+
+  const filterOwnSession = stateFilterOwnSession ?? storeFilterOwnSession ?? false
+  const setFilterOwnSession = stateSetFilterOwnSession ?? storeSetFilterOwnSession
+  const previewAutoFollow = statePreviewAutoFollow ?? storePreviewAutoFollow ?? false
+  const handleToggleAutoFollow = stateHandleToggleAutoFollow ?? storeTogglePreviewAutoFollow
+
   const generationClientId = useGenerationStore((state) => state.clientId)
   const currentNode = useGenerationStore((state) => state.currentNode)
   const generationStartTime = useGenerationStore((state) => state.generationStartTime)
@@ -199,10 +212,17 @@ export const DesktopLayout = ({
     setPromptChips(role, chips)
   }, [setPromptChips])
 
-
   const [isBypassSettingsOpen, setIsBypassSettingsOpen] = useState(false)
   const [isParamSyncSettingsOpen, setIsParamSyncSettingsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false)
+  const [centerRequest, setCenterRequest] = useState<GenerateParallelPreviewCenterRequest | null>(null)
+
+  const handleCenterPreviewImage = useCallback((img: string) => {
+    setSelectedImg(img)
+    setCenterRequest((prev) => ({ image: img, seq: (prev?.seq ?? 0) + 1 }))
+  }, [setSelectedImg])
 
   const gallery = useGalleryInteraction({
     isMobile: false,
@@ -221,6 +241,7 @@ export const DesktopLayout = ({
       getLongPressHandlers,
     },
     onLoadSnapshot: handleLoadSnapshot,
+    onCenterPreviewImage: handleCenterPreviewImage,
   })
 
   useEffect(() => {
@@ -670,58 +691,80 @@ export const DesktopLayout = ({
   const previewImages = previewImage
     ? [previewImage]
     : effectiveImages
-  const previewContent = previewImages.length > 0 ? (
+  const previewContent = (
     <GenerateParallelPreview
       images={previewImages}
       selectedImage={previewImage || selectedImg}
       onSelect={setSelectedImg}
       onOpen={handleOpenModalPreview}
+      previewAutoFollow={previewAutoFollow}
+      onToggleAutoFollow={handleToggleAutoFollow}
+      filterOwnSession={filterOwnSession}
+      onToggleFilterOwnSession={setFilterOwnSession}
+      isHistoryExpanded={isHistoryExpanded}
+      onToggleHistoryExpanded={() => setIsHistoryExpanded((prev) => !prev)}
+      isMultiSelectMode={isMultiSelectMode}
+      centerRequest={centerRequest}
     />
-  ) : (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-600">
-      {isGeneratingHere ? <Loader2 size={40} className="animate-spin text-accent-green" /> : <ImageOff size={40} strokeWidth={1} />}
-      <p className="text-sm">{isGeneratingHere ? 'Generating...' : 'No image yet'}</p>
+  )
+
+  const renderMainPreviewSection = () => (
+    <div className="w-full h-full relative overflow-hidden flex flex-col min-h-0 min-w-0 flex-1">
+      {/* Main Preview */}
+      <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none min-h-0 min-w-0" tabIndex={0}>
+        {previewImages.length === 0 && isGeneratingHere ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-600">
+            <Loader2 size={40} className="animate-spin text-accent-green" />
+            <p className="text-sm">Generating...</p>
+          </div>
+        ) : (
+          previewContent
+        )}
+        {/* Status bar */}
+        <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
+          {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
+          {renderStatusBar()}
+        </div>
+      </div>
     </div>
   )
 
   const rightPane = (
-    <div className="w-full h-full flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 relative overflow-hidden">
-        {showStrip ? (
+    <div className="w-full h-full flex flex-col overflow-hidden min-h-0 min-w-0">
+      <div className="flex-1 min-h-0 relative overflow-hidden min-w-0">
+        {showStrip && isHistoryExpanded ? (
           <ResizableSplitLayout
             direction="vertical"
             storageKey={LS_KEYS.LAYOUT_PREVIEW_SPLIT}
             initialSize={550}
             minSize={250}
-            first={
-              <div className="w-full h-full relative overflow-hidden flex flex-col">
-                {/* Main Preview */}
-                <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none" tabIndex={0}>
-                  {previewContent}
-                  {/* Status bar */}
-                  <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
-                    {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
-                    {renderStatusBar()}
-                  </div>
+            first={renderMainPreviewSection()}
+            second={
+              <div className="w-full h-full flex flex-col min-h-0 min-w-0 overflow-hidden">
+                <div className="flex-shrink-0 flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-surface px-3 py-1.5 z-10">
+                  <button
+                    type="button"
+                    data-generate-reel-history-close="true"
+                    aria-label="履歴ペインを閉じる"
+                    onClick={() => setIsHistoryExpanded(false)}
+                    className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 cursor-pointer"
+                  >
+                    ⌄ 履歴を閉じる
+                  </button>
+                </div>
+                <div data-generate-reel-history-pane="true" className="flex-1 min-h-0 min-w-0 overflow-hidden">
+                  <GenerationGallerySection
+                    state={state}
+                    gallery={gallery}
+                    isMobile={false}
+                    onCenterPreviewImage={handleCenterPreviewImage}
+                  />
                 </div>
               </div>
             }
-            second={
-              <GenerationGallerySection state={state} gallery={gallery} isMobile={false} />
-            }
           />
         ) : (
-          <div className="w-full h-full relative overflow-hidden flex flex-col">
-            {/* Main Preview */}
-            <div className="flex-1 relative overflow-hidden bg-grid flex items-center justify-center outline-none" tabIndex={0}>
-              {previewContent}
-              {/* Status bar */}
-              <div className="absolute bottom-0 left-0 right-0 z-20 bg-surface/80 backdrop-blur-md border-t border-[rgba(255,255,255,0.06)] px-4 py-2.5 flex flex-col gap-2">
-                {generationSyncIssue && <div role="status" className="text-[10px] text-amber-300">生成状態を同期できません: {generationSyncIssue.message}</div>}
-                {renderStatusBar()}
-              </div>
-            </div>
-          </div>
+          renderMainPreviewSection()
         )}
       </div>
 

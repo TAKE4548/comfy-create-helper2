@@ -11,6 +11,28 @@ const WORKFLOW = {
 }
 const VRAM = { vram_min_free_gb: 4, vram_guard_enabled: true, vram_free_gb: 8, vram_total_gb: 12 }
 
+const MOCK_OUTPUT_SPECS = [
+  { filename: 'img1.png', w: 1000, h: 1000 },
+  { filename: 'img2.png', w: 1600, h: 900 },
+  { filename: 'img3.png', w: 800, h: 1200 },
+  { filename: 'img4.png', w: 1200, h: 800 },
+  { filename: 'img5.png', w: 600, h: 1200 },
+  { filename: 'img6.png', w: 1500, h: 750 },
+  { filename: 'img7.png', w: 1000, h: 1000 },
+  { filename: 'img8.png', w: 900, h: 1600 },
+]
+
+const MOCK_OUTPUTS = MOCK_OUTPUT_SPECS.map((spec, i) => ({
+  node_id: '9',
+  index: i,
+  filename: spec.filename,
+  subfolder: '',
+  type: 'output',
+  view_url: `/view?filename=${spec.filename}`,
+  thumbnail_url: `/view?filename=${spec.filename}`,
+  availability: 'present',
+}))
+
 const MOCK_SNAPSHOT = {
   version: 1,
   epoch: 'epoch-1',
@@ -30,38 +52,7 @@ const MOCK_SNAPSHOT = {
       started_at: '2026-01-01T00:00:00Z',
       finished_at: '2026-01-01T00:00:01Z',
       node: null,
-      outputs: [
-        {
-          node_id: '9',
-          index: 0,
-          filename: 'img1.png',
-          subfolder: '',
-          type: 'output',
-          view_url: 'http://localhost:8188/view?filename=img1.png',
-          thumbnail_url: 'http://localhost:8188/view?filename=img1.png',
-          availability: 'present',
-        },
-        {
-          node_id: '9',
-          index: 1,
-          filename: 'img2.png',
-          subfolder: '',
-          type: 'output',
-          view_url: 'http://localhost:8188/view?filename=img2.png',
-          thumbnail_url: 'http://localhost:8188/view?filename=img2.png',
-          availability: 'present',
-        },
-        {
-          node_id: '9',
-          index: 2,
-          filename: 'img3.png',
-          subfolder: '',
-          type: 'output',
-          view_url: 'http://localhost:8188/view?filename=img3.png',
-          thumbnail_url: 'http://localhost:8188/view?filename=img3.png',
-          availability: 'present',
-        },
-      ],
+      outputs: MOCK_OUTPUTS,
       failure: null,
     },
   ],
@@ -108,10 +99,15 @@ async function stubApi(page: Page, isEmpty = false): Promise<string[]> {
 
   // Mock ComfyUI /view requests for generated images
   await page.route((url) => url.pathname === '/view', async (route) => {
+    const filename = new URL(route.request().url()).searchParams.get('filename') ?? ''
+    const match = MOCK_OUTPUT_SPECS.find((s) => s.filename === filename)
+    const w = match ? match.w : 100
+    const h = match ? match.h : 100
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#27272a"/><text x="10" y="30" fill="#fff" font-size="20">${filename}</text></svg>`
     await route.fulfill({
       status: 200,
-      contentType: 'image/png',
-      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+      contentType: 'image/svg+xml',
+      body: svg,
     })
   })
   return wsUrls
@@ -123,26 +119,19 @@ async function openGenerate(
   height: number,
   isEmpty = false
 ): Promise<string[]> {
-  await page.addInitScript(({ empty }) => {
+  await page.addInitScript(({ empty, images }) => {
     localStorage.clear()
     localStorage.setItem('prompt-surgeon-workflow-id', '1')
     localStorage.setItem('prompt-surgeon-client-id', 'test-session')
     localStorage.setItem('prompt-surgeon-filter-own', empty ? 'true' : 'false')
     if (!empty) {
-      localStorage.setItem(
-        'prompt-surgeon-batch-images',
-        JSON.stringify([
-          'http://localhost:8188/view?filename=img1.png',
-          'http://localhost:8188/view?filename=img2.png',
-          'http://localhost:8188/view?filename=img3.png',
-        ])
-      )
-      localStorage.setItem('prompt-surgeon-selected-img', 'http://localhost:8188/view?filename=img1.png')
+      localStorage.setItem('prompt-surgeon-batch-images', JSON.stringify(images))
+      localStorage.setItem('prompt-surgeon-selected-img', images[0] ?? '')
     }
     try {
       indexedDB.deleteDatabase('REACT_QUERY_OFFLINE_CACHE')
     } catch {}
-  }, { empty: isEmpty })
+  }, { empty: isEmpty, images: MOCK_OUTPUTS.map((o) => o.view_url) })
   const wsUrls = await stubApi(page, isEmpty)
   await page.setViewportSize({ width, height })
   await page.goto('/')
@@ -326,6 +315,281 @@ test.describe('Mobile Generate Gallery, Bottom Sheet, Fullscreen Viewer & PC Non
       // Also mobile-main-preview should NOT exist on desktop
       const mobilePreview = page.locator('[data-testid="mobile-main-preview"]')
       await expect(mobilePreview).toHaveCount(0)
+    })
+
+    test('[REQ-383/AC-1..3] Desktop: continuous horizontal reel, initial center alignment with edge margins, and wheel inertia snap', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const reel = page.locator('[data-testid="generate-reel-viewport"]')
+      await expect(reel).toBeVisible()
+
+      const tiles = reel.locator('[data-generate-reel-tile="true"]')
+      await expect(tiles).toHaveCount(8)
+
+      // Initial alignment: scrollLeft is 0, first tile is centered
+      const initialMetrics = await reel.evaluate((el) => {
+        const first = el.querySelector<HTMLElement>('[data-generate-reel-tile="true"]')!
+        const viewportCenter = el.scrollLeft + el.clientWidth / 2
+        const firstCenter = first.offsetLeft + first.offsetWidth / 2
+        return {
+          scrollLeft: el.scrollLeft,
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          centerDiff: Math.abs(firstCenter - viewportCenter),
+        }
+      })
+      expect(initialMetrics.scrollLeft).toBe(0)
+      expect(initialMetrics.scrollWidth).toBeGreaterThan(initialMetrics.clientWidth)
+      expect(initialMetrics.centerDiff).toBeLessThanOrEqual(4)
+
+      // Reel toolbar has no reverse sort UI
+      const sortControl = page.locator('[data-generate-reel-sort-control="true"]')
+      await expect(sortControl).toHaveCount(0)
+
+      // Wheel scroll with inertia
+      await reel.hover()
+      await page.mouse.wheel(0, 300)
+      await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(50)
+
+      // Snap nearest tile to center after inertia completes
+      await expect.poll(async () => reel.evaluate((el) => {
+        const viewportCenter = el.scrollLeft + el.clientWidth / 2
+        const tileEls = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+        return Math.min(...tileEls.map((tile) => Math.abs(tile.offsetLeft + tile.offsetWidth / 2 - viewportCenter)))
+      }), { timeout: 3000 }).toBeLessThanOrEqual(4)
+    })
+
+    test('[REQ-383/AC-4] Desktop: mixed aspect ratios maintain native proportions without distortion or container overflow', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const reel = page.locator('[data-generate-reel-proposal="true"]')
+      await expect(reel).toBeVisible()
+
+      await page.waitForTimeout(500)
+
+      const tileMetrics = await reel.evaluate((el) => {
+        const bounds = el.getBoundingClientRect()
+        const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+        return tiles.map((tile) => {
+          const rect = tile.getBoundingClientRect()
+          return {
+            width: rect.width,
+            height: rect.height,
+            containerWidth: bounds.width,
+            containerHeight: bounds.height,
+          }
+        })
+      })
+
+      expect(tileMetrics.length).toBe(8)
+      for (const tm of tileMetrics) {
+        expect(tm.width).toBeLessThanOrEqual(tm.containerWidth + 1)
+        expect(tm.height).toBeLessThanOrEqual(tm.containerHeight + 1)
+      }
+      const widths = tileMetrics.map((tm) => Math.round(tm.width))
+      const uniqueWidths = new Set(widths)
+      expect(uniqueWidths.size).toBeGreaterThanOrEqual(3)
+    })
+
+    test('[REQ-383/AC-5..6] Desktop: latest and oldest jump buttons cancel inertia and center target tiles', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const reel = page.locator('[data-testid="generate-reel-viewport"]')
+      await expect(reel).toBeVisible()
+
+      // Scroll past threshold so latest button becomes visible
+      await reel.hover()
+      await page.mouse.wheel(0, 400)
+      await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeGreaterThan(80)
+
+      // Jump to oldest (last tile)
+      const oldestBtn = page.locator('[data-generate-reel-oldest="true"]')
+      await expect(oldestBtn).toBeVisible()
+      await oldestBtn.click()
+
+      await expect.poll(async () => reel.evaluate((el) => {
+        const tiles = Array.from(el.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]'))
+        const last = tiles[tiles.length - 1]
+        const viewportCenter = el.scrollLeft + el.clientWidth / 2
+        return Math.abs(last.offsetLeft + last.offsetWidth / 2 - viewportCenter)
+      }), { timeout: 3000 }).toBeLessThanOrEqual(4)
+
+      // Jump back to latest (first tile)
+      const latestBtn = page.locator('[data-generate-reel-latest="true"]')
+      await expect(latestBtn).toBeVisible()
+      await latestBtn.click()
+
+      await expect.poll(() => reel.evaluate((el) => el.scrollLeft)).toBeLessThanOrEqual(4)
+    })
+
+    test('[REQ-383/AC-7..8] Desktop: history thumbnail click centers preview in normal mode, suppressed in multi-select mode', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const reel = page.locator('[data-testid="generate-reel-viewport"]')
+      await expect(reel).toBeVisible()
+
+      // Open history pane
+      const toggle = page.locator('[data-generate-reel-history-toggle="true"]')
+      await toggle.click()
+      await expect(page.locator('[data-generate-reel-history-pane="true"]')).toBeVisible()
+
+      // Click history thumbnail #thumb-3 in normal mode -> centers tile 3
+      const thumb3 = page.locator('#thumb-3')
+      await expect(thumb3).toBeVisible()
+      await thumb3.click()
+
+      await expect.poll(async () => reel.evaluate((el) => {
+        const tile3 = el.querySelector<HTMLElement>('[data-generate-reel-tile="true"][data-index="3"]')
+        if (!tile3) return 999
+        const viewportCenter = el.scrollLeft + el.clientWidth / 2
+        return Math.abs(tile3.offsetLeft + tile3.offsetWidth / 2 - viewportCenter)
+      }), { timeout: 3000 }).toBeLessThanOrEqual(4)
+
+      // Enter multi-select mode via Ctrl click on thumbnail #thumb-2
+      const scrollBefore = await reel.evaluate((el) => el.scrollLeft)
+      const thumb2 = page.locator('#thumb-2')
+      await thumb2.click({ modifiers: ['Control'] })
+
+      // Multi-select mode is now active
+      await expect(page.locator('text=枚選択中')).toBeVisible()
+
+      // Click thumbnail #thumb-1 in multi-select mode -> scrollLeft does NOT change
+      const thumb1 = page.locator('#thumb-1')
+      await thumb1.click()
+      const scrollAfter = await reel.evaluate((el) => el.scrollLeft)
+      expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThanOrEqual(2)
+    })
+
+    test('[REQ-383/AC-9] Desktop: boundary close bar collapses history and restores preview to full height', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const preview = page.locator('[data-testid="generate-parallel-preview"]')
+      await expect(preview).toBeVisible()
+
+      // Open history pane
+      const toggle = page.locator('[data-generate-reel-history-toggle="true"]')
+      await toggle.click()
+      await expect(page.locator('[data-generate-reel-history-pane="true"]')).toBeVisible()
+
+      const closeBtn = page.locator('[data-generate-reel-history-close="true"]')
+      await expect(closeBtn).toBeVisible()
+      await expect(closeBtn).toContainText('履歴を閉じる')
+
+      const initialHeight = await preview.evaluate((el) => el.clientHeight)
+
+      // Click boundary close button
+      await closeBtn.click()
+
+      // History pane collapses and is unmounted
+      await expect(page.locator('[data-generate-reel-history-pane="true"]')).toHaveCount(0)
+      await expect(closeBtn).toHaveCount(0)
+
+      // Preview restores to full right pane height
+      const restoredHeight = await preview.evaluate((el) => el.clientHeight)
+      expect(restoredHeight).toBeGreaterThan(initialHeight + 50)
+    })
+
+    test('[REQ-383/AC-10..11] Desktop: auto-follow and session filter bidirectional sync between reel toolbar and history pane', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+
+      const autoFollow = page.locator('[data-generate-reel-auto-follow="true"]')
+      const sessionFilter = page.locator('[data-generate-reel-session-filter="true"]')
+      await expect(autoFollow).toBeVisible()
+      await expect(sessionFilter).toBeVisible()
+
+      // Toggle auto-follow
+      const followBefore = await autoFollow.getAttribute('aria-pressed')
+      await autoFollow.click()
+      await expect(autoFollow).toHaveAttribute('aria-pressed', followBefore === 'true' ? 'false' : 'true')
+
+      // Toggle session filter
+      const filterBefore = await sessionFilter.getAttribute('aria-pressed')
+      await sessionFilter.click()
+      await expect(sessionFilter).toHaveAttribute('aria-pressed', filterBefore === 'true' ? 'false' : 'true')
+    })
+
+    test('[REQ-383/AC-12] Desktop: tile click opens HistoryModalPreview and Escape closes it', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+      const reel = page.locator('[data-testid="generate-reel-viewport"]')
+      await expect(reel).toBeVisible()
+
+      // Click first tile to open modal
+      const firstTileBtn = reel.locator('[data-generate-reel-tile="true"]').first().locator('button')
+      await firstTileBtn.click()
+
+      const modalBackdrop = page.locator('.modal-backdrop.flex.flex-col')
+      await expect(modalBackdrop).toBeVisible()
+
+      // Press Escape to close modal
+      await page.keyboard.press('Escape')
+      await expect(modalBackdrop).toHaveCount(0)
+    })
+
+    test('[REQ-383/AC-13] Desktop: preserves history bulk actions and snapshot tab switching in desktop history pane', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+
+      // Open history pane
+      await page.locator('[data-generate-reel-history-toggle="true"]').click()
+      const historyPane = page.locator('[data-generate-reel-history-pane="true"]')
+      await expect(historyPane).toBeVisible()
+
+      // Switch to Snapshots tab
+      const snapshotsTab = historyPane.locator('button', { hasText: 'スナップショット' })
+      await snapshotsTab.click()
+      await expect(historyPane.locator('text=No snapshots available for this workflow.')).toBeVisible()
+
+      // Switch back to History tab
+      const historyTab = historyPane.locator('button', { hasText: '履歴' })
+      await historyTab.click()
+      await expect(historyPane.locator('#thumb-0')).toBeVisible()
+
+      // Enter multi-select via Ctrl+click and verify bulk select/deselect
+      await historyPane.locator('#thumb-0').click({ modifiers: ['Control'] })
+      await expect(historyPane.locator('text=すべて選択')).toBeVisible()
+      await historyPane.locator('text=すべて選択').click()
+      await expect(historyPane.locator('text=8枚選択中')).toBeVisible()
+
+      await historyPane.locator('text=選択解除').click()
+      await expect(historyPane.locator('text=0枚選択中')).toBeVisible()
+
+      // Exit multi-select
+      await historyPane.locator('[aria-label="選択モード終了"]').click()
+      await expect(historyPane.locator('text=0枚選択中')).toHaveCount(0)
+    })
+
+    test('[REQ-383/AC-14] Desktop: document.body does not overflow horizontally during reel interactions', async ({
+      page,
+    }) => {
+      await openGenerate(page, 1280, 800)
+
+      const widths = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1)
+
+      // Scroll reel and check again
+      const reel = page.locator('[data-testid="generate-reel-viewport"]')
+      await reel.hover()
+      await page.mouse.wheel(0, 300)
+      await page.waitForTimeout(200)
+
+      const widthsAfter = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(widthsAfter.scroll).toBeLessThanOrEqual(widthsAfter.client + 1)
     })
   })
 })

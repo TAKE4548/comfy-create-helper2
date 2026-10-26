@@ -531,8 +531,8 @@ export function useGenerateDisplayState({
   }, [comfyHistoryImages, batchImages])
 
   const sortedDisplayImages = useMemo(() => {
-    return sortOrder === 'desc' ? displayImages : [...displayImages].reverse()
-  }, [displayImages, sortOrder])
+    return displayImages
+  }, [displayImages])
 
   const getSetNameForImage = (imgUrl: string) => {
     return promptToSetMapCache.getSetNameForUrl(imgUrl)
@@ -597,18 +597,8 @@ export function useGenerateDisplayState({
     return (queueRunning?.filter(filterJob).length || 0) + (queuePending?.filter(filterJob).length || 0)
   }, [queueRunning, queuePending, filterOwnSession, clientId, allQueueCount])
 
-  // MultiSelect selection tracking
-  useEffect(() => {
-    if (isMultiSelectMode && selectedIds.size > 0) {
-      const idsArray = Array.from(selectedIds)
-      const lastUrl = idsArray[idsArray.length - 1]
-      if (lastUrl && sortedDisplayImages.includes(lastUrl) && !unavailableImages.has(imageIdentity(lastUrl))) {
-        if (lastUrl !== selectedImg) {
-          setSelectedImg(lastUrl)
-        }
-      }
-    }
-  }, [selectedIds, isMultiSelectMode, sortedDisplayImages, selectedImg, setSelectedImg, unavailableImages])
+  // MultiSelect selection tracking (REQ-383: Suppressed to prevent preview jumping during multi-selection)
+
 
   // Visibility / focus refresh
   useEffect(() => {
@@ -684,7 +674,7 @@ export function useGenerateDisplayState({
     const nextFollow = !previewAutoFollow
     togglePreviewAutoFollow()
     if (nextFollow && sortedDisplayImages.length > 0) {
-      const latestIdx = sortOrder === 'desc' ? 0 : sortedDisplayImages.length - 1
+      const latestIdx = 0
       const latestUrl = sortedDisplayImages[latestIdx]
       if (latestUrl) {
         setSelectedImg(latestUrl)
@@ -694,7 +684,7 @@ export function useGenerateDisplayState({
         }
       }
     }
-  }, [previewAutoFollow, togglePreviewAutoFollow, sortedDisplayImages, sortOrder, setSelectedImg, isModalPreviewOpen])
+  }, [previewAutoFollow, togglePreviewAutoFollow, sortedDisplayImages, setSelectedImg, isModalPreviewOpen])
 
   const handleOpenModalPreview = () => {
     const currentImg = previewImage || selectedImg

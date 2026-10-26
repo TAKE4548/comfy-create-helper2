@@ -46,6 +46,134 @@ function setElementSize(element: HTMLElement, width: number, height: number) {
   act(() => window.dispatchEvent(new Event('resize')))
 }
 
+function createDefaultMockState(trialAvailability: any) {
+  return {
+    trialAvailability,
+    isConnected: true,
+    isGenerating: false,
+    progress: 0,
+    previewImage: null,
+    activeClientId: 'client-1',
+    clientId: 'client-1',
+    filterOwnSession: false,
+    setFilterOwnSession: vi.fn(),
+    selectedWorkflowId: 1,
+    setSelectedWorkflowId: vi.fn(),
+    paramValues: {},
+    setParamValues: vi.fn(),
+    batchSize: 1,
+    setBatchSize: vi.fn(),
+    seedMode: 'random',
+    setSeedMode: vi.fn(),
+    seed: 12345,
+    setSeed: vi.fn(),
+    selectedImg: 'img-res',
+    setSelectedImg: vi.fn(),
+    comfyHistoryImages: [],
+    appliedAssets: {},
+    addAppliedAsset: vi.fn(),
+    toggleAppliedAsset: vi.fn(),
+    removeAppliedAsset: vi.fn(),
+    activeBatch: null,
+    sets: [{ id: 'set-1', name: 'Preset Alpha', checked: true }],
+    activeSetId: 'set-1',
+    removeSet: vi.fn(),
+    toggleSetChecked: vi.fn(),
+    setActiveSetId: vi.fn(),
+    openPresetIds: ['set-1'],
+    undo: vi.fn(),
+    redo: vi.fn(),
+    canUndo: false,
+    canRedo: false,
+    activePromptTab: 'Main_Positive_Prompt',
+    setActivePromptTab: vi.fn(),
+    setRescanOpen: vi.fn(),
+    selectedMasters: {},
+    setSelectedMasters: vi.fn(),
+    openAddAssetRole: null,
+    setOpenAddAssetRole: vi.fn(),
+    isSettingsOpen: false,
+    setIsSettingsOpen: vi.fn(),
+    localComfyUrl: 'http://localhost:8188',
+    setLocalComfyUrl: vi.fn(),
+    setComfyUrl: vi.fn(),
+    thumbnailTab: 'history',
+    setThumbnailTab: vi.fn(),
+    setModalPreviewIndex: vi.fn(),
+    setIsModalPreviewOpen: vi.fn(),
+    setIsJobModalOpen: vi.fn(),
+    sortOrder: 'desc',
+    setSortOrder: vi.fn(),
+    setIsPresetManagerOpen: vi.fn(),
+    handleLoadPreset: vi.fn(),
+    handleSelectPresetTab: vi.fn(),
+    baseModels: [],
+    updateWorkflowBaseModelMutation: { mutate: vi.fn() },
+    setWorkflowManageMode: vi.fn(),
+    workflows: [{ id: 1, name: 'Workflow A', target_base_model_id: 'sdxl' }],
+    workflow: { id: 1, name: 'Workflow A', target_base_model_id: 'sdxl', json_body: '{}', mappings: [] },
+    mappingMasters: [],
+    loras: [],
+    paramTypeMasters: [],
+    tagSets: [],
+    presets: [],
+    comfyObjectInfo: null,
+    sortedDisplayImages: [],
+    getSetNameForImage: vi.fn(),
+    sortedSnapshots: [],
+    isMultiSelectMode: false,
+    selectedIds: new Set<string>(),
+    handleItemClick: vi.fn(),
+    getLongPressHandlers: vi.fn(() => ({})),
+    isSelected: vi.fn(() => false),
+    exitMultiSelectMode: vi.fn(),
+    selectAll: vi.fn(),
+    clearSelection: vi.fn(),
+    setIsSaveModalOpen: vi.fn(),
+    auditOpen: false,
+    setAuditOpen: vi.fn(),
+    auditIntent: '',
+    setAuditIntent: vi.fn(),
+    auditTypes: [],
+    setAuditTypes: vi.fn(),
+    auditResult: null,
+    auditStatus: 'idle',
+    runAudit: { mutate: vi.fn() },
+    dragOver: false,
+    handleFileSelect: vi.fn(),
+    handleDragOver: vi.fn(),
+    handleDragLeave: vi.fn(),
+    handleDrop: vi.fn(),
+    isGeneratingHere: false,
+    isOtherSessionGenerating: false,
+    generationStartTime: null,
+    etaText: '未取得',
+    actionQueueCount: 0,
+    allQueueCount: 0,
+    totalQueueCount: 0,
+    showStrip: true,
+    invalidMappings: [],
+    textMappings: [],
+    paramMappings: [],
+    handleLoadSnapshot: vi.fn(),
+    handleUpdateMapping: vi.fn(),
+    handleGenerateSets: vi.fn(),
+    handleOpenModalPreview: vi.fn(),
+    getIsRoleCollapsed: vi.fn(() => false),
+    setRoleCollapsed: vi.fn(),
+    displayImages: ['img-res'],
+    renderStatusBar: () => null,
+    generationSyncIssue: null,
+    isAnimaMode: false,
+    setIsAnimaMode: vi.fn(),
+    promptTranslation: {},
+    saveDefaultParamsMutation: { isPending: false },
+    updateWorkflowMutation: { mutate: vi.fn() },
+    handleSaveDefaultParams: vi.fn(),
+    handleResetDefaultParams: vi.fn(),
+  }
+}
+
 describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Header Resource Monitor', () => {
   beforeEach(() => {
     cleanupAllTestState()
@@ -86,33 +214,9 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
       />
     )
     const root = container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
-    // At container height 600px:
-    // img-wide width = 600 * (16/9) = ~1066.7px
-    // img-square width = 600 * 1.0 = 600px
-    // img-tall width = 600 * (2/3) = 400px
-
-    // At width 1200px: img-wide takes ~1067px, + 12px + 600px = 1679px > 1200px.
-    // Only 1 image (img-wide) fits in page 0.
     setElementSize(root, 1200, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(1)
-
-    // With 1800px width: 1067 + 12 + 600 = 1679 <= 1800 < 2091. Two images fit!
-    setElementSize(root, 1800, 600)
-    const twoImages = root.querySelectorAll('img')
-    expect(twoImages).toHaveLength(2)
-
-    // Both cards should share the same height (600px)
-    const card1 = twoImages[0].closest('.rounded-lg') as HTMLElement
-    const card2 = twoImages[1].closest('.rounded-lg') as HTMLElement
-    expect(card1.style.height).toBe('600px')
-    expect(card2.style.height).toBe('600px')
-    // Card 1 width reflects 16:9 (~1067px), Card 2 reflects 1:1 (600px)
-    expect(parseFloat(card1.style.width)).toBeCloseTo(600 * (16 / 9), 0)
-    expect(parseFloat(card2.style.width)).toBeCloseTo(600, 0)
-
-    // With 2200px width: 1067 + 12 + 600 + 12 + 400 = 2091 <= 2200. All 3 images fit!
-    setElementSize(root, 2200, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(3)
+    const tiles = container.querySelectorAll('[data-generate-reel-tile="true"]')
+    expect(tiles).toHaveLength(3)
   })
 
   it('AC-4: recalculates visible items dynamically upon resizing the container', () => {
@@ -128,29 +232,16 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
       />
     )
     const root = container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
-
-    // Height 600, Width 811 -> 1 image (each 2:3 card is 400px wide, 400*2+12 = 812)
-    setElementSize(root, 811, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(1)
-
-    // Expand width to 812 -> 2 images
-    setElementSize(root, 812, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
-
-    // Expand width to 1224 -> 3 images
-    setElementSize(root, 1224, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(3)
-
-    // Contract width back to 812 -> shrinks back to 2 images
-    setElementSize(root, 812, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
+    setElementSize(root, 800, 600)
+    const tiles = container.querySelectorAll('[data-generate-reel-tile="true"]')
+    expect(tiles).toHaveLength(4)
   })
 
-  it('AC-5 & AC-8: allows paginating overflow items and selecting cards cleanly', () => {
+  it('AC-5 & AC-8: allows selecting cards cleanly in continuous reel', () => {
     const images = ['a', 'b', 'c', 'd']
     const aspectRatios = { a: 1.0, b: 1.0, c: 1.0, d: 1.0 }
     const onSelect = vi.fn()
-    const { container, rerender } = render(
+    const { container } = render(
       <GenerateParallelPreview
         images={images}
         selectedImage="a"
@@ -159,166 +250,152 @@ describe('REQ-339 E2E Integration: Dynamic Aspect-Ratio Agnostic Preview & Heade
         aspectRatios={aspectRatios}
       />
     )
-    const root = container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
-    // At H=500, W=1100: two 1:1 images take 500*2 + 12 = 1012px <= 1100px.
-    setElementSize(root, 1100, 500)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
-    expect(Array.from(root.querySelectorAll('img')).map(img => img.getAttribute('src'))).toEqual(['a', 'b'])
+    const tiles = container.querySelectorAll('[data-generate-reel-tile="true"]')
+    expect(tiles).toHaveLength(4)
 
-    // Next page
-    const nextBtn = root.querySelector('[aria-label="次の画像ページ"]') as HTMLElement
-    expect(nextBtn).toBeInTheDocument()
-    fireEvent.click(nextBtn)
+    const btnC = container.querySelector('[aria-label="画像 c を開く"]') as HTMLButtonElement
+    expect(btnC).not.toBeNull()
+    fireEvent.click(btnC)
     expect(onSelect).toHaveBeenCalledWith('c')
+  })
 
-    // Rerender with 'c' selected -> page 2 displays ['c', 'd']
-    rerender(
-      <GenerateParallelPreview
-        images={images}
-        selectedImage="c"
-        onSelect={onSelect}
-        onOpen={vi.fn()}
-        aspectRatios={aspectRatios}
-      />
-    )
-    expect(Array.from(root.querySelectorAll('img')).map(img => img.getAttribute('src'))).toEqual(['c', 'd'])
+  it('[REQ-383/AC-7] centers main preview when clicking history thumbnail in normal mode', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
+    const setSelectedImg = vi.fn()
+    const state = {
+      ...createDefaultMockState(trialAvailability),
+      displayImages: ['img-0', 'img-1', 'img-2'],
+      sortedDisplayImages: ['img-0', 'img-1', 'img-2'],
+      selectedImg: 'img-0',
+      showStrip: true,
+      setSelectedImg,
+    }
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state as any} />)
 
-    // Click 'd' to select
-    const btnD = root.querySelector('[aria-label="画像 d を開く"]') as HTMLElement
-    fireEvent.click(btnD)
-    expect(onSelect).toHaveBeenLastCalledWith('d')
+    // Expand history
+    const historyToggle = container.querySelector('[data-generate-reel-history-toggle="true"]') as HTMLButtonElement
+    expect(historyToggle).not.toBeNull()
+    fireEvent.click(historyToggle)
+
+    // History thumbnail clicked in normal mode
+    const thumb1 = container.querySelector('#thumb-1') as HTMLButtonElement
+    expect(thumb1).not.toBeNull()
+    fireEvent.click(thumb1)
+
+    // setSelectedImg called with img-1
+    expect(setSelectedImg).toHaveBeenCalledWith('img-1')
+  })
+
+  it('[REQ-383/AC-8] keeps scrollLeft unchanged during multi-select thumbnail clicks', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
+    const handleItemClick = vi.fn()
+    const setSelectedImg = vi.fn()
+    const state = {
+      ...createDefaultMockState(trialAvailability),
+      displayImages: ['img-0', 'img-1', 'img-2'],
+      sortedDisplayImages: ['img-0', 'img-1', 'img-2'],
+      selectedImg: 'img-0',
+      showStrip: true,
+      isMultiSelectMode: true,
+      handleItemClick,
+      setSelectedImg,
+    }
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state as any} />)
+
+    // Expand history
+    const historyToggle = container.querySelector('[data-generate-reel-history-toggle="true"]') as HTMLButtonElement
+    fireEvent.click(historyToggle)
+
+    const thumb1 = container.querySelector('#thumb-1') as HTMLButtonElement
+    expect(thumb1).not.toBeNull()
+    fireEvent.click(thumb1)
+
+    // handleItemClick called, but setSelectedImg NOT called (scroll unaffected)
+    expect(handleItemClick).toHaveBeenCalledWith('img-1', expect.anything())
+    expect(setSelectedImg).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-383/AC-9] boundary close button collapses history and restores height', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
+    const state = {
+      ...createDefaultMockState(trialAvailability),
+      displayImages: ['img-0', 'img-1'],
+      showStrip: true,
+    }
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state as any} />)
+
+    // Initially history is collapsed
+    expect(container.querySelector('[data-generate-reel-history-pane="true"]')).toBeNull()
+
+    // Expand history via preview toolbar
+    const historyToggle = container.querySelector('[data-generate-reel-history-toggle="true"]') as HTMLButtonElement
+    fireEvent.click(historyToggle)
+
+    // History pane & boundary close button are now visible
+    const historyPane = container.querySelector('[data-generate-reel-history-pane="true"]')
+    const closeBtn = container.querySelector('[data-generate-reel-history-close="true"]') as HTMLButtonElement
+    expect(historyPane).not.toBeNull()
+    expect(closeBtn).not.toBeNull()
+
+    // Click local close button
+    fireEvent.click(closeBtn)
+
+    // History pane is closed and unmounted, preview takes full height
+    expect(container.querySelector('[data-generate-reel-history-pane="true"]')).toBeNull()
+    expect(container.querySelector('[data-generate-reel-history-close="true"]')).toBeNull()
+    expect(container.querySelector('.bg-grid')).not.toBeNull()
+  })
+
+  it('[REQ-383/AC-10] bidirectional auto-follow sync between reel toolbar and history pane', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
+    const handleToggleAutoFollow = vi.fn()
+    const state = {
+      ...createDefaultMockState(trialAvailability),
+      displayImages: ['img-0', 'img-1'],
+      showStrip: true,
+      previewAutoFollow: false,
+      handleToggleAutoFollow,
+    }
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state as any} />)
+
+    const autoFollowBtn = container.querySelector('[data-generate-reel-auto-follow="true"]') as HTMLButtonElement
+    expect(autoFollowBtn).not.toBeNull()
+    expect(autoFollowBtn.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(autoFollowBtn)
+    expect(handleToggleAutoFollow).toHaveBeenCalled()
+  })
+
+  it('[REQ-383/AC-11] bidirectional session filter sync between reel toolbar and history pane', () => {
+    const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
+    trialAvailabilityControllers.push(trialAvailability)
+    const setFilterOwnSession = vi.fn()
+    const state = {
+      ...createDefaultMockState(trialAvailability),
+      displayImages: ['img-0', 'img-1'],
+      showStrip: true,
+      filterOwnSession: false,
+      setFilterOwnSession,
+    }
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state as any} />)
+
+    const sessionFilterBtn = container.querySelector('[data-generate-reel-session-filter="true"]') as HTMLButtonElement
+    expect(sessionFilterBtn).not.toBeNull()
+    expect(sessionFilterBtn.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(sessionFilterBtn)
+    expect(setFilterOwnSession).toHaveBeenCalledWith(true)
   })
 
   it('AC-6 & AC-7: relocates resource monitor to desktop global header with zero preview occlusion', () => {
     const trialAvailability = createTrialAvailabilityController(async () => ({ availability: 'present' }))
     trialAvailabilityControllers.push(trialAvailability)
-    const mockState: any = {
-      trialAvailability,
-      isConnected: true,
-      isGenerating: false,
-      progress: 0,
-      previewImage: null,
-      activeClientId: 'client-1',
-      clientId: 'client-1',
-      filterOwnSession: false,
-      setFilterOwnSession: vi.fn(),
-      selectedWorkflowId: 1,
-      setSelectedWorkflowId: vi.fn(),
-      paramValues: {},
-      setParamValues: vi.fn(),
-      batchSize: 1,
-      setBatchSize: vi.fn(),
-      seedMode: 'random',
-      setSeedMode: vi.fn(),
-      seed: 12345,
-      setSeed: vi.fn(),
-      selectedImg: 'img-res',
-      setSelectedImg: vi.fn(),
-      comfyHistoryImages: [],
-      appliedAssets: {},
-      addAppliedAsset: vi.fn(),
-      toggleAppliedAsset: vi.fn(),
-      removeAppliedAsset: vi.fn(),
-      activeBatch: null,
-      sets: [{ id: 'set-1', name: 'Preset Alpha', checked: true }],
-      activeSetId: 'set-1',
-      removeSet: vi.fn(),
-      toggleSetChecked: vi.fn(),
-      setActiveSetId: vi.fn(),
-      openPresetIds: ['set-1'],
-      undo: vi.fn(),
-      redo: vi.fn(),
-      canUndo: false,
-      canRedo: false,
-      activePromptTab: 'Main_Positive_Prompt',
-      setActivePromptTab: vi.fn(),
-      setRescanOpen: vi.fn(),
-      selectedMasters: {},
-      setSelectedMasters: vi.fn(),
-      openAddAssetRole: null,
-      setOpenAddAssetRole: vi.fn(),
-      isSettingsOpen: false,
-      setIsSettingsOpen: vi.fn(),
-      localComfyUrl: 'http://localhost:8188',
-      setLocalComfyUrl: vi.fn(),
-      setComfyUrl: vi.fn(),
-      thumbnailTab: 'images',
-      setThumbnailTab: vi.fn(),
-      setModalPreviewIndex: vi.fn(),
-      setIsModalPreviewOpen: vi.fn(),
-      setIsJobModalOpen: vi.fn(),
-      sortOrder: 'desc',
-      setSortOrder: vi.fn(),
-      setIsPresetManagerOpen: vi.fn(),
-      handleLoadPreset: vi.fn(),
-      handleSelectPresetTab: vi.fn(),
-      baseModels: [],
-      updateWorkflowBaseModelMutation: { mutate: vi.fn() },
-      setWorkflowManageMode: vi.fn(),
-      workflows: [{ id: 1, name: 'Workflow A', target_base_model_id: 'sdxl' }],
-      workflow: { id: 1, name: 'Workflow A', target_base_model_id: 'sdxl', json_body: '{}', mappings: [] },
-      mappingMasters: [],
-      loras: [],
-      paramTypeMasters: [],
-      tagSets: [],
-      presets: [],
-      comfyObjectInfo: null,
-      sortedDisplayImages: [],
-      getSetNameForImage: vi.fn(),
-      sortedSnapshots: [],
-      isMultiSelectMode: false,
-      selectedIds: new Set(),
-      handleItemClick: vi.fn(),
-      getLongPressHandlers: vi.fn(() => ({})),
-      isSelected: vi.fn(() => false),
-      exitMultiSelectMode: vi.fn(),
-      selectAll: vi.fn(),
-      clearSelection: vi.fn(),
-      setIsSaveModalOpen: vi.fn(),
-      auditOpen: false,
-      setAuditOpen: vi.fn(),
-      auditIntent: '',
-      setAuditIntent: vi.fn(),
-      auditTypes: [],
-      setAuditTypes: vi.fn(),
-      auditResult: null,
-      auditStatus: 'idle',
-      runAudit: { mutate: vi.fn() },
-      dragOver: false,
-      handleFileSelect: vi.fn(),
-      handleDragOver: vi.fn(),
-      handleDragLeave: vi.fn(),
-      handleDrop: vi.fn(),
-      isGeneratingHere: false,
-      isOtherSessionGenerating: false,
-      generationStartTime: null,
-      etaText: '未取得',
-      actionQueueCount: 0,
-      allQueueCount: 0,
-      totalQueueCount: 0,
-      showStrip: true,
-      invalidMappings: [],
-      textMappings: [],
-      paramMappings: [],
-      handleLoadSnapshot: vi.fn(),
-      handleUpdateMapping: vi.fn(),
-      handleGenerateSets: vi.fn(),
-      handleOpenModalPreview: vi.fn(),
-      getIsRoleCollapsed: vi.fn(() => false),
-      setRoleCollapsed: vi.fn(),
-      displayImages: ['img-res'],
-      renderStatusBar: () => null,
-      generationSyncIssue: null,
-      isAnimaMode: false,
-      setIsAnimaMode: vi.fn(),
-      promptTranslation: {},
-      saveDefaultParamsMutation: { isPending: false },
-      updateWorkflowMutation: { mutate: vi.fn() },
-      handleSaveDefaultParams: vi.fn(),
-      handleResetDefaultParams: vi.fn(),
-    }
-
-    const { container } = renderGroupedDesktop(<DesktopLayout state={mockState} />)
+    const mockState = createDefaultMockState(trialAvailability)
+    const { container } = renderGroupedDesktop(<DesktopLayout state={mockState as any} />)
 
     // 1. Header contains the resource stats
     const headerTitle = screen.getByText('Generate')

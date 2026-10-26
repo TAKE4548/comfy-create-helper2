@@ -8,120 +8,429 @@ const images = ['img-1', 'img-2', 'img-3', 'img-4', 'img-5', 'img-6']
 function setPreviewSize(container: HTMLElement, width: number, height: number) {
   const root = container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
   vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-    x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON: () => ({})
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    width,
+    height,
+    toJSON: () => ({}),
   } as DOMRect)
+  const reel = container.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+  if (reel) {
+    vi.spyOn(reel, 'clientWidth', 'get').mockReturnValue(width)
+    vi.spyOn(reel, 'clientHeight', 'get').mockReturnValue(height - 40)
+  }
   act(() => window.dispatchEvent(new Event('resize')))
   return root
 }
 
 describe('GenerateParallelPreview', () => {
-  it('fits 2:3 images at two, three, and four columns only when the measured viewport has room', () => {
-    const { container } = render(<GenerateParallelPreview images={images} selectedImage="img-1" onSelect={vi.fn()} onOpen={vi.fn()} />)
-    const root = setPreviewSize(container, 811, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(1)
-    setPreviewSize(container, 812, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
-    setPreviewSize(container, 1224, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(3)
-    setPreviewSize(container, 1636, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(4)
-    expect(root.querySelectorAll('img')).toHaveLength(4)
-  })
-
-  it('anchors pages to the selected image, moves by the visible count, and clamps at both ends', () => {
+  it('[REQ-383/AC-1] renders images in latest-first order (index 0 is newest) without pagination buttons', () => {
     const onSelect = vi.fn()
     const onOpen = vi.fn()
-    const { container, rerender } = render(<GenerateParallelPreview images={images} selectedImage="img-3" onSelect={onSelect} onOpen={onOpen} />)
-    const root = setPreviewSize(container, 812, 600)
-    expect(Array.from(root.querySelectorAll('img')).map((image) => image.getAttribute('src'))).toEqual(['img-3', 'img-4'])
-    expect(root.querySelector('[aria-label="前の画像ページ"] svg')?.getAttribute('aria-hidden')).toBe('true')
-    expect(root.querySelector('[aria-label="次の画像ページ"] svg')?.getAttribute('aria-hidden')).toBe('true')
+    const { container } = render(
+      <GenerateParallelPreview
+        images={['img-newest', 'img-mid', 'img-oldest']}
+        selectedImage="img-newest"
+        onSelect={onSelect}
+        onOpen={onOpen}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
 
-    fireEvent.click(root.querySelector('[aria-label="次の画像ページ"]') as HTMLElement)
-    expect(onSelect).toHaveBeenLastCalledWith('img-5')
-    rerender(<GenerateParallelPreview images={images} selectedImage="img-5" onSelect={onSelect} onOpen={onOpen} />)
-    expect(Array.from(root.querySelectorAll('img')).map((image) => image.getAttribute('src'))).toEqual(['img-5', 'img-6'])
-    fireEvent.click(root.querySelector('[aria-label="次の画像ページ"]') as HTMLElement)
-    expect(onSelect).toHaveBeenCalledTimes(1)
-    fireEvent.click(root.querySelector('[aria-label="前の画像ページ"]') as HTMLElement)
-    expect(onSelect).toHaveBeenLastCalledWith('img-3')
-    rerender(<GenerateParallelPreview images={images} selectedImage="img-1" onSelect={onSelect} onOpen={onOpen} />)
+    // Root proposal marker
+    expect(root.dataset.generateReelProposal).toBe('true')
 
-    onSelect.mockClear()
-    root.focus()
-    fireEvent.keyDown(root, { key: 'ArrowLeft' })
-    expect(onSelect).not.toHaveBeenCalled()
+    // No pagination buttons
+    expect(root.querySelector('[aria-label="前の画像ページ"]')).toBeNull()
+    expect(root.querySelector('[aria-label="次の画像ページ"]')).toBeNull()
+
+    // Indicator
+    const indicator = root.querySelector('[data-testid="parallel-preview-page-indicator"]')
+    expect(indicator?.textContent).toContain('連続プレビュー · 左端が最新 / 右へ過去')
+    expect(indicator?.textContent).toContain('1 / 3 枚')
+
+    // Tiles rendered in chronological order (0 is latest)
+    const tiles = root.querySelectorAll('[data-generate-reel-tile="true"]')
+    expect(tiles).toHaveLength(3)
+    expect(tiles[0].getAttribute('data-index')).toBe('0')
+    expect(tiles[0].querySelector('[data-generate-reel-meta="true"]')?.textContent).toBe('LATEST')
+    expect(tiles[1].getAttribute('data-index')).toBe('1')
+    expect(tiles[1].querySelector('[data-generate-reel-meta="true"]')?.textContent).toBe('−1')
+    expect(tiles[2].getAttribute('data-index')).toBe('2')
+    expect(tiles[2].querySelector('[data-generate-reel-meta="true"]')?.textContent).toBe('−2')
   })
 
-  it('selects and opens the clicked image, and prevents a duplicate global arrow action', async () => {
+  it('[REQ-383/AC-2] applies non-compressing edge margins (marginLeft/marginRight) so first and last tiles can center', () => {
+    const { container } = render(
+      <GenerateParallelPreview
+        images={['img-1', 'img-2', 'img-3']}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 1000, 600)
+    const tiles = root.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]')
+
+    // First tile has marginLeft and no marginRight
+    expect(tiles[0].style.marginLeft).toBeTruthy()
+    expect(parseInt(tiles[0].style.marginLeft, 10)).toBeGreaterThan(0)
+    expect(tiles[0].style.marginRight).toBe('')
+
+    // Middle tile has neither
+    expect(tiles[1].style.marginLeft).toBe('')
+    expect(tiles[1].style.marginRight).toBe('')
+
+    // Last tile has marginRight and no marginLeft
+    expect(tiles[2].style.marginRight).toBeTruthy()
+    expect(parseInt(tiles[2].style.marginRight, 10)).toBeGreaterThan(0)
+    expect(tiles[2].style.marginLeft).toBe('')
+
+    // Single image has both margins to center
+    const { container: singleContainer } = render(
+      <GenerateParallelPreview
+        images={['img-single']}
+        selectedImage="img-single"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    setPreviewSize(singleContainer, 1000, 600)
+    const singleTile = singleContainer.querySelector<HTMLElement>('[data-generate-reel-tile="true"]')
+    expect(singleTile?.style.marginLeft).toBeTruthy()
+    expect(singleTile?.style.marginRight).toBeTruthy()
+  })
+
+  it('[REQ-383/AC-3] accumulates wheel impulse smoothly and snaps nearest tile to center after inertia decay', () => {
     const onSelect = vi.fn()
-    const onOpen = vi.fn()
+    const { container } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const reel = root.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+    expect(reel).toBeTruthy()
+
+    // Test wheel impulse handling
+    const wheelEvent = new WheelEvent('wheel', {
+      deltaX: 120,
+      deltaY: 0,
+      cancelable: true,
+      bubbles: true,
+    })
+    act(() => {
+      reel.dispatchEvent(wheelEvent)
+    })
+    expect(wheelEvent.defaultPrevented).toBe(true)
+
+    // Keyboard navigation (ArrowLeft / ArrowRight / Home / End)
     const globalKey = vi.fn()
     document.addEventListener('keydown', globalKey)
-    const { container } = render(<GenerateParallelPreview images={images} selectedImage="img-1" onSelect={onSelect} onOpen={onOpen} />)
-    const root = setPreviewSize(container, 812, 600)
 
-    fireEvent.click(root.querySelector('[aria-label="画像 img-2 を開く"]') as HTMLElement)
-    expect(onSelect).toHaveBeenCalledWith('img-2')
-    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
-    fireEvent.keyDown(root, { key: 'ArrowRight' })
-    expect(onSelect).toHaveBeenLastCalledWith('img-3')
-    expect(globalKey).not.toHaveBeenCalled()
+    // ArrowRight moves to next tile
+    reel.focus()
+    fireEvent.keyDown(reel, { key: 'ArrowRight' })
+    expect(onSelect).toHaveBeenLastCalledWith('img-2')
+    expect(globalKey).not.toHaveBeenCalled() // stopPropagation check
+
+    // ArrowLeft moves back to first tile
+    fireEvent.keyDown(reel, { key: 'ArrowLeft' })
+    expect(onSelect).toHaveBeenLastCalledWith('img-1')
+
+    // End moves to oldest tile
+    fireEvent.keyDown(reel, { key: 'End' })
+    expect(onSelect).toHaveBeenLastCalledWith('img-6')
+
+    // Home moves to newest tile
+    fireEvent.keyDown(reel, { key: 'Home' })
+    expect(onSelect).toHaveBeenLastCalledWith('img-1')
+
     document.removeEventListener('keydown', globalKey)
   })
 
-  it('adapts visible count dynamically according to aspect ratios (16:9, 1:1, mixed)', () => {
+  it('[REQ-383/AC-4] preserves portrait, square, and 2:1 landscape aspect ratios within viewport bounds', () => {
     const customAR: Record<string, number> = {
-      'img-1': 16 / 9, // Landscape (~1.778, width at H=600 is ~1066.7px)
-      'img-2': 16 / 9,
-      'img-3': 1.0,    // Square (1.0, width at H=600 is 600px)
-      'img-4': 1.0,
-      'img-5': 2 / 3,  // Portrait (0.667, width at H=600 is 400px)
-      'img-6': 2 / 3,
+      'img-port': 2 / 3, // Portrait ~0.667
+      'img-sq': 1.0,    // Square 1.0
+      'img-land': 2.0,   // Landscape 2:1
     }
+    const { container } = render(
+      <GenerateParallelPreview
+        images={['img-port', 'img-sq', 'img-land']}
+        selectedImage="img-port"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        aspectRatios={customAR}
+      />
+    )
+    // Container height 500 -> availableHeight = 500 - 24 = 476. Width 800 -> maxWidth = 800 * 0.86 = 688
+    const root = setPreviewSize(container, 800, 500)
+    const tiles = root.querySelectorAll<HTMLElement>('[data-generate-reel-tile="true"]')
+
+    // 1. Portrait: width = 476 * (2/3) ≈ 317px, height = 476px
+    const portW = parseInt(tiles[0].style.width, 10)
+    const portH = parseInt(tiles[0].style.height, 10)
+    expect(portH).toBe(476)
+    expect(portW).toBe(317)
+    expect(portW / portH).toBeCloseTo(2 / 3, 1)
+
+    // 2. Square: width = 476px, height = 476px
+    const sqW = parseInt(tiles[1].style.width, 10)
+    const sqH = parseInt(tiles[1].style.height, 10)
+    expect(sqW).toBe(476)
+    expect(sqH).toBe(476)
+
+    // 3. 2:1 Landscape: width is constrained by maxWidth (688px), height scales down proportionally
+    const landW = parseInt(tiles[2].style.width, 10)
+    const landH = parseInt(tiles[2].style.height, 10)
+    expect(landW).toBe(688)
+    expect(landH).toBe(344) // 688 / 2 = 344 <= 476
+    expect(landW / landH).toBeCloseTo(2.0, 1)
+  })
+
+  it('[REQ-383/AC-5] shows return-to-latest button when scrolled into history and immediately stops inertia to center newest tile', () => {
+    const onSelect = vi.fn()
+    const { container } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const reel = root.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+    const latestBtn = root.querySelector<HTMLButtonElement>('[data-generate-reel-latest="true"]') as HTMLButtonElement
+    expect(latestBtn).toBeTruthy()
+
+    // Initially scrollLeft is 0 -> latest button is hidden
+    expect(latestBtn.hidden).toBe(true)
+    expect(latestBtn.style.display).toBe('none')
+
+    // User scrolls into history (scrollLeft >= 72)
+    act(() => {
+      reel.scrollLeft = 120
+      fireEvent.scroll(reel)
+    })
+    expect(latestBtn.hidden).toBe(false)
+    expect(latestBtn.style.display).toBe('')
+
+    // Clicking latest button centers index 0 and selects images[0]
+    fireEvent.click(latestBtn)
+    expect(onSelect).toHaveBeenLastCalledWith('img-1')
+    expect(reel.scrollLeft).toBe(0)
+    expect(latestBtn.hidden).toBe(true)
+  })
+
+  it('[REQ-383/AC-6] jump-to-oldest button immediately stops inertia and centers oldest tile', () => {
+    const onSelect = vi.fn()
+    const { container } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const oldestBtn = root.querySelector<HTMLButtonElement>('[data-generate-reel-oldest="true"]') as HTMLButtonElement
+    expect(oldestBtn).toBeTruthy()
+    expect(oldestBtn.disabled).toBe(false)
+
+    fireEvent.click(oldestBtn)
+    expect(onSelect).toHaveBeenLastCalledWith('img-6')
+
+    // Single image disables oldest button
+    const { container: singleContainer } = render(
+      <GenerateParallelPreview
+        images={['img-1']}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    const singleOldestBtn = singleContainer.querySelector<HTMLButtonElement>('[data-generate-reel-oldest="true"]')
+    expect(singleOldestBtn?.disabled).toBe(true)
+  })
+
+  it('[REQ-383/AC-7] centers requested image when centerRequest is received in normal mode', () => {
+    const onSelect = vi.fn()
+    const { container, rerender } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        centerRequest={null}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const reel = root.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+    expect(reel.scrollLeft).toBe(0)
+
+    // External centerRequest arrives for img-3
+    rerender(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        centerRequest={{ image: 'img-3', seq: 1 }}
+      />
+    )
+    expect(reel.scrollLeft).toBeGreaterThan(0)
+  })
+
+  it('[REQ-383/AC-8] does not jump or change scroll when isMultiSelectMode is active despite centerRequest', () => {
+    const onSelect = vi.fn()
+    const { container, rerender } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        isMultiSelectMode={true}
+        centerRequest={null}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const reel = root.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+    const initialScroll = reel.scrollLeft
+
+    // CenterRequest arrives while in multi-select mode
+    rerender(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        isMultiSelectMode={true}
+        centerRequest={{ image: 'img-4', seq: 2 }}
+      />
+    )
+    // Scroll remains stationary
+    expect(reel.scrollLeft).toBe(initialScroll)
+  })
+
+  it('[REQ-383/AC-10] renders auto-follow toggle in reel toolbar and invokes onToggleAutoFollow', () => {
+    const onToggleAutoFollow = vi.fn()
+    const { container, rerender } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        previewAutoFollow={false}
+        onToggleAutoFollow={onToggleAutoFollow}
+      />
+    )
+    const btn = container.querySelector<HTMLButtonElement>('[data-generate-reel-auto-follow="true"]') as HTMLButtonElement
+    expect(btn).toBeTruthy()
+    expect(btn.textContent).toContain('○ 最新追従')
+    expect(btn.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(btn)
+    expect(onToggleAutoFollow).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        previewAutoFollow={true}
+        onToggleAutoFollow={onToggleAutoFollow}
+      />
+    )
+    expect(btn.textContent).toContain('● 最新追従')
+    expect(btn.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('[REQ-383/AC-11] renders session filter toggle in reel toolbar and invokes onToggleFilterOwnSession', () => {
+    const onToggleFilterOwnSession = vi.fn()
+    const { container, rerender } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        filterOwnSession={false}
+        onToggleFilterOwnSession={onToggleFilterOwnSession}
+      />
+    )
+    const btn = container.querySelector<HTMLButtonElement>('[data-generate-reel-session-filter="true"]') as HTMLButtonElement
+    expect(btn).toBeTruthy()
+    expect(btn.textContent).toContain('自セッション')
+    expect(btn.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(btn)
+    expect(onToggleFilterOwnSession).toHaveBeenLastCalledWith(true)
+
+    rerender(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        filterOwnSession={true}
+        onToggleFilterOwnSession={onToggleFilterOwnSession}
+      />
+    )
+    expect(btn.textContent).toContain('✓ 自セッション')
+    expect(btn.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(btn)
+    expect(onToggleFilterOwnSession).toHaveBeenLastCalledWith(false)
+  })
+
+  it('[REQ-383/AC-12] clicking reel tile selects image and calls onOpen for detail modal', async () => {
+    const onSelect = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(
+      <GenerateParallelPreview
+        images={images}
+        selectedImage="img-1"
+        onSelect={onSelect}
+        onOpen={onOpen}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+
+    const targetTileButton = root.querySelector('[aria-label="画像 img-2 を開く"]') as HTMLButtonElement
+    expect(targetTileButton).toBeTruthy()
+
+    fireEvent.click(targetTileButton)
+    expect(onSelect).toHaveBeenCalledWith('img-2')
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it('[REQ-383/AC-14] constrains reel container with min-w-0 and overflow-hidden to prevent body overflow', () => {
     const { container } = render(
       <GenerateParallelPreview
         images={images}
         selectedImage="img-1"
         onSelect={vi.fn()}
         onOpen={vi.fn()}
-        aspectRatios={customAR}
       />
     )
-    // For 16:9 at H=600: 1 image is 1066.7px. Two images need 1066.7*2 + 12 = 2145.4px
-    const root = setPreviewSize(container, 1200, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(1)
+    const root = container.querySelector('[data-testid="generate-parallel-preview"]') as HTMLElement
+    expect(root.className).toContain('min-w-0')
+    expect(root.className).toContain('overflow-hidden')
 
-    // With 2200px width, two 16:9 images fit
-    setPreviewSize(container, 2200, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
+    const reel = container.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+    expect(reel.className).toContain('overflow-x-auto')
+    expect(reel.className).toContain('overflow-y-hidden')
   })
 
-  it('calculates mixed aspect ratios cleanly with uniform height', () => {
-    const mixedImages = ['img-sq', 'img-port1', 'img-port2']
-    const customAR: Record<string, number> = {
-      'img-sq': 1.0,    // 600px
-      'img-port1': 2 / 3, // 400px
-      'img-port2': 2 / 3, // 400px
-    }
-    const { container } = render(
-      <GenerateParallelPreview
-        images={mixedImages}
-        selectedImage="img-sq"
-        onSelect={vi.fn()}
-        onOpen={vi.fn()}
-        aspectRatios={customAR}
-      />
-    )
-    // 600px + 12 + 400px = 1012px -> 2 images fit at 1020px
-    const root = setPreviewSize(container, 1020, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(2)
-
-    // 600px + 12 + 400px + 12 + 400px = 1424px -> all 3 fit at 1430px
-    setPreviewSize(container, 1430, 600)
-    expect(root.querySelectorAll('img')).toHaveLength(3)
-  })
-it('renders progressive thumbnail placeholder first and transitions to full-size WebP [REQ-362/AC-7]', () => {
+  it('renders progressive thumbnail placeholder first and transitions to full-size WebP [REQ-362/AC-7]', () => {
     const viewUrl = '/api/comfy/view?filename=prompt_123.png&subfolder=&type=output'
     const { container } = render(
       <GenerateParallelPreview
@@ -177,4 +486,56 @@ it('renders progressive thumbnail placeholder first and transitions to full-size
     expect(thumbImg).toBeTruthy()
     expect(thumbImg.getAttribute('src')).toContain('/api/comfy/thumbnail?filename=prompt_failed.png')
   })
+
+  it('[REQ-383/RT-1] handles empty images array without NaN or crashing', () => {
+    const { container } = render(
+      <GenerateParallelPreview
+        images={[]}
+        selectedImage={null}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    expect(root.textContent).toContain('画像がありません')
+    expect(root.querySelector('[data-testid="parallel-preview-page-indicator"]')?.textContent).toContain('0 / 0 枚')
+    const oldestBtn = root.querySelector<HTMLButtonElement>('[data-generate-reel-oldest="true"]')
+    expect(oldestBtn?.disabled).toBe(true)
+  })
+
+  it('[REQ-383/RT-4] anchors scroll position on prepended new image when previewAutoFollow is false', () => {
+    const onSelect = vi.fn()
+    const { container, rerender } = render(
+      <GenerateParallelPreview
+        images={['img-2', 'img-3']}
+        selectedImage="img-3"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        previewAutoFollow={false}
+      />
+    )
+    const root = setPreviewSize(container, 800, 600)
+    const reel = root.querySelector('[data-testid="generate-reel-viewport"]') as HTMLElement
+
+    act(() => {
+      reel.scrollLeft = 200
+      fireEvent.scroll(reel)
+    })
+    const scrollBefore = reel.scrollLeft
+
+    // New image prepended at index 0 while auto-follow is false
+    rerender(
+      <GenerateParallelPreview
+        images={['img-1', 'img-2', 'img-3']}
+        selectedImage="img-3"
+        onSelect={onSelect}
+        onOpen={vi.fn()}
+        previewAutoFollow={false}
+      />
+    )
+    // Scroll position is compensated to anchor viewed image
+    expect(reel.scrollLeft).toBeGreaterThanOrEqual(scrollBefore)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
 })
+

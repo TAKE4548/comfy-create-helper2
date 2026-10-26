@@ -239,7 +239,7 @@ describe('useGeneratePageState', () => {
     expect(mockStore.setAppliedAssets).toHaveBeenCalled()
   })
 
-  it('should integrate with useMultiSelect state and synchronize preview image', () => {
+  it('should integrate with useMultiSelect state without synchronizing preview image on modifier click (REQ-383/AC-8)', () => {
     const wrapper = createWrapper()
     const { result } = renderHook(() => useGeneratePageState(), { wrapper })
 
@@ -252,7 +252,7 @@ describe('useGeneratePageState', () => {
 
     expect(result.current.isMultiSelectMode).toBe(true)
     expect(result.current.isSelected('image2.png')).toBe(true)
-    expect(mockStore.setSelectedImg).toHaveBeenCalledWith('image2.png')
+    expect(mockStore.setSelectedImg).not.toHaveBeenCalled()
   })
 
   it('should handle preset creation, update, and deletion mutations', async () => {

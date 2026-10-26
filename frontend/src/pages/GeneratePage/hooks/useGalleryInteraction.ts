@@ -9,6 +9,7 @@ export interface UseGalleryInteractionOptions {
   multiSelect: UseMultiSelectReturn<string>
   onOpenModalPreview?: (index: number) => void
   onLoadSnapshot?: (snapshotId: number) => void
+  onCenterPreviewImage?: (img: string) => void
 }
 
 export interface ThumbnailItemProps {
@@ -29,6 +30,7 @@ export interface UseGalleryInteractionReturn {
   setHoverPreviewImg: (img: string | null) => void
   scrollContainerRef: React.RefObject<HTMLDivElement>
   handleWheelScroll: (e: React.WheelEvent<HTMLDivElement>) => void
+  onCenterPreviewImage?: (img: string) => void
 }
 
 export function useGalleryInteraction({
@@ -38,6 +40,7 @@ export function useGalleryInteraction({
   multiSelect,
   onOpenModalPreview,
   onLoadSnapshot,
+  onCenterPreviewImage,
 }: UseGalleryInteractionOptions): UseGalleryInteractionReturn {
   const [hoverPreviewImg, setHoverPreviewImg] = useState<string | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -52,12 +55,13 @@ export function useGalleryInteraction({
         !event.shiftKey
       ) {
         setSelectedImg(img)
+        onCenterPreviewImage?.(img)
         if (isMobile && onOpenModalPreview) {
           onOpenModalPreview(index)
         }
       }
     },
-    [multiSelect, setSelectedImg, isMobile, onOpenModalPreview]
+    [multiSelect, setSelectedImg, isMobile, onOpenModalPreview, onCenterPreviewImage]
   )
 
   const getThumbnailItemProps = useCallback(
@@ -104,5 +108,7 @@ export function useGalleryInteraction({
     setHoverPreviewImg,
     scrollContainerRef,
     handleWheelScroll,
+    onCenterPreviewImage,
   }
 }
+

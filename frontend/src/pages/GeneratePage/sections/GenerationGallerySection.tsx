@@ -12,12 +12,14 @@ export interface GenerationGallerySectionProps {
   state: StateProps
   gallery: ReturnType<typeof useGalleryInteraction>
   isMobile?: boolean
+  onCenterPreviewImage?: (img: string) => void
 }
 
 export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> = ({
   state,
   gallery,
   isMobile = false,
+  onCenterPreviewImage,
 }) => {
   const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(() => new Set())
   const [retryVersions, setRetryVersions] = useState<Map<string, number>>(() => new Map())
@@ -27,8 +29,6 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
   const {
     thumbnailTab,
     setThumbnailTab,
-    sortOrder,
-    setSortOrder,
     previewAutoFollow,
     handleToggleAutoFollow,
     filterOwnSession,
@@ -136,24 +136,6 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
         ))}
       </div>
       <div className={isMobile ? 'flex items-center gap-2' : 'flex items-center gap-3'}>
-        <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.08)] bg-zinc-950/20">
-          {(['desc', 'asc'] as const).map((order) => (
-            <button
-              key={order}
-              type="button"
-              onClick={() => setSortOrder(order)}
-              className={`px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors ${
-                sortOrder === order
-                  ? 'bg-surface-2 text-zinc-200'
-                  : isMobile
-                  ? 'text-zinc-500 hover:text-zinc-300'
-                  : 'text-zinc-500 hover:text-zinc-350'
-              }`}
-            >
-              {order === 'desc' ? '新しい順' : '古い順'}
-            </button>
-          ))}
-        </div>
         {handleToggleAutoFollow && (
           <button
             type="button"
@@ -326,6 +308,18 @@ export const GenerationGallerySection: React.FC<GenerationGallerySectionProps> =
                   type="button"
                   id={isMobile ? `thumb-mobile-${i}` : `thumb-${i}`}
                   {...(canInteract ? itemProps : {})}
+                  onClick={
+                    canInteract
+                      ? (e) => {
+                          itemProps.onClick(e)
+                          if (onCenterPreviewImage && !gallery.onCenterPreviewImage) {
+                            if (!isMultiSelectMode && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                              onCenterPreviewImage(img)
+                            }
+                          }
+                        }
+                      : undefined
+                  }
                   disabled={!canInteract}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={

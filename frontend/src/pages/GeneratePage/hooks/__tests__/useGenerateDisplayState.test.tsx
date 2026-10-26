@@ -537,4 +537,46 @@ describe('useGenerateDisplayState', () => {
       expect(result.current.displayImages).toContain('/view?filename=missing.png&subfolder=tests&type=temp')
     })
   })
+
+  describe('REQ-383: fixed history order and preview jumping suppression', () => {
+    it('[REQ-383/AC-1] keeps sortedDisplayImages fixed to newest-first order', () => {
+      useGenerationStore.setState({
+        comfyHistoryImages: ['img-1.png', 'img-2.png', 'img-3.png'],
+        batchImages: [],
+        filterOwnSession: false,
+      })
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      expect(result.current.sortedDisplayImages).toEqual(['img-1.png', 'img-2.png', 'img-3.png'])
+
+      act(() => {
+        result.current.setSortOrder('asc')
+      })
+
+      // Even if sortOrder changes to 'asc', sortedDisplayImages must remain newest-first
+      expect(result.current.sortedDisplayImages).toEqual(['img-1.png', 'img-2.png', 'img-3.png'])
+    })
+
+    it('[REQ-383/AC-8] does not overwrite selectedImg when selecting items in multi-select mode', () => {
+      useGenerationStore.setState({
+        comfyHistoryImages: ['img-1.png', 'img-2.png'],
+        batchImages: [],
+        selectedImg: 'img-1.png',
+        filterOwnSession: false,
+      })
+      const { result } = renderHook(() => useGenerateDisplayState({ selectedWorkflowId: 1 }), { wrapper })
+
+      expect(useGenerationStore.getState().selectedImg).toBe('img-1.png')
+
+      act(() => {
+        result.current.handleItemClick('img-2.png', { ctrlKey: true, metaKey: false, shiftKey: false } as React.MouseEvent)
+      })
+
+      expect(result.current.isMultiSelectMode).toBe(true)
+      expect(result.current.selectedIds.has('img-2.png')).toBe(true)
+      // selectedImg must NOT be overwritten by multi-selection
+      expect(useGenerationStore.getState().setSelectedImg).not.toHaveBeenCalledWith('img-2.png')
+    })
+  })
 })
+
