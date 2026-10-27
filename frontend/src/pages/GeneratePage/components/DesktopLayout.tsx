@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
-  Zap, Plus, ChevronRight, ChevronDown, X, Undo2, Redo2, Library,
+  Zap, Plus, ChevronRight, ChevronDown, Undo2, Redo2, Library,
   Camera, Loader2, AlertTriangle
 } from 'lucide-react'
 import { ResizableSplitLayout } from '../../../components/layout/ResizableSplitLayout'
@@ -25,58 +25,9 @@ import { useSystemStats } from '../../../hooks/useSystemStats'
 import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 import { useMappingStageGroups } from '../../../hooks/useMappingStageGroups'
 import StageInputGroup from '../../../components/StageInputGroup'
-
-
-interface SetTabItemProps {
-  id: string | number
-  name: string
-  checked: boolean
-  isActive: boolean
-  onClick: () => void
-  onToggleCheck: () => void
-  onRemove: () => void
-}
-
-const SetTabItem = memo(function SetTabItem({
-  name,
-  checked,
-  isActive,
-  onClick,
-  onToggleCheck,
-  onRemove,
-}: SetTabItemProps) {
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
-        isActive
-          ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
-          : 'bg-surface-2 border-[rgba(255,255,255,0.04)] hover:bg-white/5 border-transparent text-zinc-400'
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggleCheck}
-        onClick={(e) => e.stopPropagation()}
-        className="w-3.5 h-3.5 rounded border-zinc-800 accent-accent-green cursor-pointer"
-      />
-      <span className="truncate max-w-[140px]">{name}</span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove()
-        }}
-        className="text-zinc-500 hover:text-red-400 ml-1"
-        title="タブを閉じる (DBからは削除されません)"
-        aria-label="タブを閉じる (DBからは削除されません)"
-      >
-        <X aria-hidden="true" size={12} />
-      </button>
-    </div>
-  )
-})
+import { PresetTabItem } from './PresetTabItem'
+import { PresetTabCloseMenu, type PresetTabCloseCounts } from './PresetTabCloseMenu'
+import { createPresetTabClosePlan, type PresetTabCloseMode } from '../../../store/presetTabClose'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -154,6 +105,8 @@ export const DesktopLayout = ({
     setIsSaveModalOpen,
     updateWorkflowMutation,
     handleSelectPresetTab,
+    handleClosePresetTabs,
+    isPresetTabsClosing,
     saveDefaultParamsMutation,
     isAnimaMode,
     setIsAnimaMode,
@@ -165,6 +118,19 @@ export const DesktopLayout = ({
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
   const [copySourceId, setCopySourceId] = useState<string | number>('default')
+  const [menu, setMenu] = useState<{ id: string | number; name: string; anchor: HTMLElement; ignoreReleaseClick: boolean } | null>(null)
+  const [menuRestore, setMenuRestore] = useState<HTMLElement | null>(null)
+  const menuInput = { selectedWorkflowId, sets, openPresetIds, activeSetId }
+  const menuCounts: PresetTabCloseCounts = { others: 0, left: 0, right: 0 }
+  if (menu) {
+    for (const mode of ['others', 'left', 'right'] as const) menuCounts[mode] = createPresetTabClosePlan(menuInput, menu.id, mode)?.targetIds.length ?? 0
+  }
+  const closeTabsFromMenu = async (mode: PresetTabCloseMode) => {
+    if (!menu || isPresetTabsClosing) return
+    const triggerId = menu.id
+    setMenu(null)
+    await handleClosePresetTabs(triggerId, mode)
+  }
   const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
   const [isTabletViewport, setIsTabletViewport] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth >= 768 && window.innerWidth < 1024,
@@ -875,11 +841,12 @@ export const DesktopLayout = ({
         <div id="desktop-preset-tabs-bar" className="flex items-center border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40 px-5 py-2 w-full overflow-hidden flex-shrink-0 relative z-10">
           <div className="flex items-center gap-2 overflow-x-auto w-full py-1 scrollbar-thin">
             {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-              <SetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onClick={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} />
+              <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
             ))}
           </div>
         </div>
       )}
+      <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
 
       {/* Dual-Pane Content Area */}
       <div className="flex-1 min-h-0 relative w-full overflow-hidden">

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { useAppLifecycleSync } from '../../../hooks/useAppLifecycleSync'
 import {
-  Library, Loader2, Redo2, Plus, Undo2, X,
+  Library, Loader2, Redo2, Plus, Undo2,
   ChevronRight, ChevronDown, Zap, Camera, AlertTriangle
 } from 'lucide-react'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
@@ -23,6 +23,9 @@ import { useSystemStats } from '../../../hooks/useSystemStats'
 import { isActiveJobStatus, selectProgress, selectUnconfirmedJobs, selectWait } from '../../../utils/generationSelectors'
 
 import { useGalleryInteraction } from '../hooks/useGalleryInteraction'
+import { PresetTabItem } from './PresetTabItem'
+import { PresetTabCloseMenu, type PresetTabCloseCounts } from './PresetTabCloseMenu'
+import { createPresetTabClosePlan, type PresetTabCloseMode } from '../../../store/presetTabClose'
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -54,6 +57,8 @@ export const MobileLayout = ({
     setIsJobModalOpen,
     setIsPresetManagerOpen,
     handleSelectPresetTab,
+    handleClosePresetTabs,
+    isPresetTabsClosing,
     baseModels,
     updateWorkflowBaseModelMutation,
     setWorkflowManageMode,
@@ -105,6 +110,17 @@ export const MobileLayout = ({
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
   const [copySourceId, setCopySourceId] = useState<string | number>('default')
+  const [menu, setMenu] = useState<{ id: string | number; name: string; anchor: HTMLElement; ignoreReleaseClick: boolean } | null>(null)
+  const [menuRestore, setMenuRestore] = useState<HTMLElement | null>(null)
+  const menuInput = { selectedWorkflowId, sets, openPresetIds, activeSetId }
+  const menuCounts: PresetTabCloseCounts = { others: 0, left: 0, right: 0 }
+  if (menu) for (const mode of ['others', 'left', 'right'] as const) menuCounts[mode] = createPresetTabClosePlan(menuInput, menu.id, mode)?.targetIds.length ?? 0
+  const closeTabsFromMenu = async (mode: PresetTabCloseMode) => {
+    if (!menu || isPresetTabsClosing) return
+    const triggerId = menu.id
+    setMenu(null)
+    await handleClosePresetTabs(triggerId, mode)
+  }
   const [saveAsTagSetRole, setSaveAsTagSetRole] = useState<string | null>(null)
 
   const nodeProgress = useGenerationStore((state) => state.nodeProgress)
@@ -659,18 +675,7 @@ export const MobileLayout = ({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none flex-1">
               {sets.filter((s) => (openPresetIds || []).map(String).includes(String(s.id))).map((s) => (
-                <div key={s.id} onClick={() => {
-                  handleSelectPresetTab(s.id)
-                }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex-shrink-0 ${
-                    String(s.id) === String(activeSetId)
-                      ? 'bg-accent-green/10 border-accent-green/40 text-accent-green font-bold'
-                      : 'bg-surface-2 border-[rgba(255,255,255,0.04)] text-zinc-400'
-                  }`}>
-                  <input type="checkbox" checked={s.checked} onChange={() => toggleSetChecked(s.id)} onClick={(e) => e.stopPropagation()} className="w-3 h-3 rounded accent-accent-green cursor-pointer" />
-                  <span className="truncate max-w-[70px]">{s.name}</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSet(s.id) }} className="inline-flex min-h-11 min-w-11 items-center justify-center text-zinc-500 hover:text-red-400 ml-0.5" title="タブを閉じる (DBからは削除されません)" aria-label={`${s.name}のタブを閉じる`}><X size={14} aria-hidden="true" /></button>
-                </div>
+                <PresetTabItem key={s.id} id={s.id} name={s.name} checked={s.checked} isActive={String(s.id) === String(activeSetId)} onSelect={() => handleSelectPresetTab(s.id)} onToggleCheck={() => toggleSetChecked(s.id)} onRemove={() => removeSet(s.id)} pending={isPresetTabsClosing} onOpenMenu={(anchor, fromLongPress) => { setMenuRestore(anchor); setMenu({ id: s.id, name: s.name, anchor, ignoreReleaseClick: !!fromLongPress }) }} />
               ))}
             </div>
             <button type="button" id="add-set-btn-mobile" onClick={() => {
@@ -685,6 +690,7 @@ export const MobileLayout = ({
           </div>
         </div>
       )}
+      <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
 
       {/* Mobile Prompt Tabs */}
       {textMappings.length > 0 && (

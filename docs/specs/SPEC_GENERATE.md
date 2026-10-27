@@ -128,9 +128,13 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
     - 単一セット利用時（`existingSets.length === 1`）の `activeSetId` 未確定時フォールバックをメイン Effect にも統一適用し、未保存セット全体の再初期化を抑止。
     - 下流の `useGenerateAction.ts` からは過剰な対症療法的フォールバックをクリーンアップし、ストアが保持する最新の `GenerationSet` をシンプルかつ決定論的に ComfyUI 投入ペイロードへ注入する単一責任パイプラインを確立。
   - **Multi-Set タブ切り替えとメモリ内キャッシュ保護 (REQ-255, REQ-281)**:
-    - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleSelectPresetTab` の先頭で `flushAutoSave` を同期実行し、進行中のデバウンスタイマーを即時キャンセルして未保存ドラフトをサーバーへ確実にフラッシュ永続化する。
+    - Multi-Set タブバーで別プリセットのタブをクリックした際、`handleSelectPresetTab` の先頭で `flushAutoSave` を同期実行する。進行中のデバウンスタイマーを即時キャンセルし、最新ドラフトをメモリへ反映して保存要求を開始する。既存の切替契約はPUTのACK待機を意味しない。
     - 切替先プリセットが他端末で更新されている場合（`updated_at` の進み）、自端末で未編集（Clean）ならサーバー最新版を自動ロードし、編集中の未保存状態（Dirty）なら即座に競合解消モーダルを表示する。
     - 全プリセットの更新タイムスタンプ（`presetUpdatedAtRef`）をバックグラウンドポーリング時にも継続追跡し、非アクティブなプリセットに対する他端末更新の検知脱落を根絶。
+  - **プリセットタブ一括クローズ ([REQ-402](../design/REQ-402.md))**:
+    - `PresetTabItem` は通常の選択・単件クローズを維持し、各タブの `PresetTabCloseMenu` は右クリック、タブ名領域の500ms長押し、または ellipsis の通常タップから開く。いずれの入口も同じメニューと対象集合を使い、メニュー表示だけでは選択・入力値を変更しない。画面幅767px以下では下部シート、768px以上ではデスクトップメニューを表示する。portalによりナビゲーション等より上の重なり順で表示し、長押し後の解放クリックは一度だけ無視する。
+    - 基準タブCに対する「左のタブをすべて閉じる」は表示順で左にある全タブ（例: A B）のみ、「右のタブをすべて閉じる」は右にある全タブ（例: D E）のみ、「他のタブを閉じる」は基準タブ以外（例: A B D E）を対象とする。対象集合は現在開いているタブ（`sets` のうち `openPresetIds` に含まれるもの）から作り、画面外の開いたタブも含む。閉じているプリセットは対象にしない。基準タブCは常に残し、targetが空になる操作は無効とする。
+    - 一括クローズは各対象の最新ドラフト保存ACKを待ち、全targetが安全な場合にだけタブを閉じる。保存失敗、409、通信断、部分的なサーバー保存成功を含む失敗では、全タブとdraftを保持し、失敗原因を表示して既存の復旧経路へ移る。503や通信断では返された実際のエラー理由を示し、同じ一括クローズ操作を再試行できることを案内する。409では既存の競合モーダルが原因と解決選択肢（サーバー最新版を採用、この端末の編集で上書き、別名で両方保存）を示す。成功したサーバー保存をロールバックしない。active tabが残る場合は維持し、閉じる場合は基準タブをactiveにする。閉じる操作はタブを非表示にするだけでプリセットを削除せず、管理画面から再表示できる。open/active状態は再訪時に復元する。メニューは外側クリックまたはEscapeで閉じ、通常のselect/check/単件close/横scrollを維持する。
   - **未保存ガード (`isDirty`)**:
     - ローカル編集がない状態（`!isDirty`）で他端末による更新（`updated_at` の進み）を受信した場合は、`currentStore.loadPresetData` によりUIおよびストアを即時自動同期。
     - ローカルに未保存の編集がある状態（`isDirty`）で他端末の更新を受信した場合、ローカルドラフトを勝手に上書きせず、競合状態へ移行。
@@ -168,6 +172,7 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
       - `hooks/usePresetAutoSave.ts`: 1,000ms デバウンスタイマー、プロパティ順序非依存等価判定（`isStateEqual` / `isRecordEqual`）、およびジョブ投入直前の同期的インメモリ即時反映（`flushAutoSave`）。
       - `hooks/usePresetStoreSync.ts`: Multi-Setタブ切り替え時の直前タブ先行フラッシュ、5秒間隔ポーリングによる他端末更新検知、およびSSoT同期。
       - `hooks/presetStateUtils.ts`: 共通型定義（`HistoryState`, `PresetConflictData`, `UpdatePresetArgs`）およびタイムスタンプ正規化・差分判定。
+    - プリセットタブ一括クローズは `pages/GeneratePage/components/PresetTabItem.tsx` / `PresetTabCloseMenu.tsx` がタブ項目・メニュー表示を担当し、`frontend/src/store/presetTabClose.ts` が閉じる対象とactive tabの選定を担当する。`PresetTabItem` と `PresetTabCloseMenu` は `DesktopLayout` / `MobileLayout` から描画される。ACK待ちの一括処理は通常の `flushAutoSave` に対する保証追加ではなく、当該操作専用の保存完了barrierである（REQ-402）。
 
 ### 2-7. ノードバイパス設定 (`BypassSettingsModal.tsx`)
 
@@ -433,7 +438,7 @@ frontend/src/store/
    - `currentActiveSetId` が `null` または未設定の場合、あるいはアクティブセットではないセットに対しては画面の入力値（`currentParamValues` や画面の `batchSize`/`seed`）を強制上書き・マージせず、各セット自身の保持パラメータ（`setItem.paramValues` 等）を忠実に尊重して投入する。
    - チェック状態のセット数やセット総数に応じた安易なフォールバック（別セットへの画面値誤爆）を完全に遮断し、セット間の独立性を担保する。
 3. **インメモリ先行同期 (`multiSetSlice` / `usePresetState`)**:
-   - オートセーブ（`flushAutoSave`）実行時、バックエンドへの非同期 PUT 完了を待たず即座にインメモリの activeSet を最新 `currentState` で更新し、ストア内の整合性を維持する。
+   - オートセーブ（`flushAutoSave`）実行時、バックエンドへの非同期 PUT 完了を待たず即座にインメモリの activeSet を最新 `currentState` で更新し、ストア内の整合性を維持する。タブ切替時の既存同期flushもデバウンスタイマー取消・最新draftのメモリ反映・保存要求開始までを保証し、PUT ACKを待つものではない。生成直前には同じ即時メモリ反映により最新状態をpayloadへ渡す。プリセットタブ一括クローズだけは全targetの保存ACKを待つ専用barrierを使い、失敗時は全タブ/draftを保持する（REQ-402）。
    - `multiSetSlice.updateActiveSet` においても、`activeSetId` が `null` の場合は安全にガードされ、他セットへの不要な上書きを防ぐ。
 
 ### 5-4. 生成前他プロセスVRAM競合防止と待機通知 (REQ-260)
@@ -501,6 +506,8 @@ pages/GeneratePage/
   components/
     DesktopLayout.tsx           — PC/タブレット用 2カラムレイアウト（配置特化）
     MobileLayout.tsx            — モバイル用シングルカラムレイアウト（配置特化）
+    PresetTabItem.tsx            — 個別タブの選択・単件クローズ（REQ-402）
+    PresetTabCloseMenu.tsx       — 右クリック・長押し・ellipsisから開く一括クローズメニュー（REQ-402）
     GenerateParallelPreview.tsx — 連続横スクロールリールプレビュー・端点ジャンプ・共有コントロール（REQ-383）
     AuditPanel.tsx              — LLM 診断パネル
     ParamPanel.tsx              — パラメータ入力フォーム群

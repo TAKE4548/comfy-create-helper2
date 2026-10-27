@@ -232,6 +232,7 @@ export interface MultiSetActions {
   setSets: (sets: GenerationSet[]) => void;
   openPreset: (id: string | number) => void;
   closePreset: (id: string | number) => void;
+  applyPresetTabClose: (plan: import('./presetTabClose').PresetTabClosePlan) => boolean;
 }
 
 export interface BypassState {

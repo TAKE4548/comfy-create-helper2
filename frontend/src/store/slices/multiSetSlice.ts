@@ -4,6 +4,7 @@ import { LS_KEYS } from '../../utils/localStorageKeys'
 import { addAssetToPrompt, removeAssetFromPrompt } from '../../utils/promptUtils'
 import { parseToChips, chipsToString as parseChipsToString, type TagChip } from '../../components/TagChipEditor/useChipParser'
 import type { GenerationState, MultiSetState, MultiSetActions, GenerationSet, AppliedAsset } from '../types'
+import type { PresetTabClosePlan } from '../presetTabClose'
 
 export const areChipsEqual = (a?: TagChip[], b?: TagChip[]): boolean => {
   if (a === b) return true
@@ -523,5 +524,43 @@ export const createMultiSetSlice: StateCreator<GenerationState, [], [], MultiSet
       set({ openPresetIds: next })
       localStorage.setItem(`prompt-surgeon-open-presets-${activeWfId}`, JSON.stringify(next))
     },
+
+    applyPresetTabClose: (plan: PresetTabClosePlan) => {
+      const current = get()
+      const openIds = new Set(current.openPresetIds.map(String))
+      const ordered = current.sets.filter((item) => openIds.has(String(item.id))).map((item) => item.id)
+      if (current.selectedWorkflowId !== plan.workflowId || String(current.activeSetId) !== String(plan.activeSetId) ||
+        ordered.length !== plan.orderedOpenIds.length || ordered.some((id, index) => String(id) !== String(plan.orderedOpenIds[index]))) return false
+      const targets = new Set(plan.targetIds.map(String))
+      const openPresetIds = ordered.filter((id) => !targets.has(String(id)))
+      const sets = current.sets.map((item) => String(item.id) === String(current.activeSetId) ? {
+        ...item, paramValues: { ...current.paramValues }, appliedAssets: structuredClone(current.appliedAssets),
+        promptChips: structuredClone(current.promptChips), batchSize: current.batchSize, seedMode: current.seedMode, seed: current.seed,
+      } : item)
+      const active = sets.find((item) => String(item.id) === String(plan.nextActiveId))
+      if (!active || !openPresetIds.some((id) => String(id) === String(plan.nextActiveId))) return false
+      const openKey = `prompt-surgeon-open-presets-${plan.workflowId}`
+      const activeKey = LS_KEYS.ACTIVE_SET_PREFIX + plan.workflowId
+      let oldOpen: string | null = null
+      let oldActive: string | null = null
+      try {
+        oldOpen = localStorage.getItem(openKey)
+        oldActive = localStorage.getItem(activeKey)
+        localStorage.setItem(openKey, JSON.stringify(openPresetIds))
+        localStorage.setItem(activeKey, String(plan.nextActiveId))
+      } catch {
+        try {
+          oldOpen === null ? localStorage.removeItem(openKey) : localStorage.setItem(openKey, oldOpen)
+          oldActive === null ? localStorage.removeItem(activeKey) : localStorage.setItem(activeKey, oldActive)
+        } catch { /* Best effort rollback; memory remains unchanged. */ }
+        current.setErrorToast({ message: 'タブ状態を保存できませんでした。', type: 'error' })
+        return false
+      }
+      set({ sets, openPresetIds, activeSetId: plan.nextActiveId, paramValues: { ...active.paramValues },
+        appliedAssets: structuredClone(active.appliedAssets), promptChips: structuredClone(active.promptChips || {}),
+        batchSize: active.batchSize, seedMode: active.seedMode, seed: active.seed })
+      return true
+    },
+
   }
 }

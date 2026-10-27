@@ -167,7 +167,7 @@ export function usePresetStoreSync({
             seedMode: currentStore.seedMode,
             seed: currentStore.seed,
           }
-          isDirty = lastSaved ? !isStateEqual(lastSaved, currentLocalState) : false
+          isDirty = !lastSaved || !isStateEqual(lastSaved, currentLocalState)
         } else if (existing) {
           const existingState: HistoryState = {
             paramValues: existing.paramValues,
@@ -176,7 +176,7 @@ export function usePresetStoreSync({
             seedMode: existing.seedMode,
             seed: existing.seed,
           }
-          isDirty = lastSaved ? !isStateEqual(lastSaved, existingState) : false
+          isDirty = !lastSaved || !isStateEqual(lastSaved, existingState)
         }
 
         if (isDirty) {
@@ -237,6 +237,15 @@ export function usePresetStoreSync({
           checked: existing?.checked ?? (checkedPresets === null ? true : checkedPresets.includes(p.id)),
         }
       })
+      const mappedById = new Map(mappedSets.map((item) => [String(item.id), item]))
+      const existingIds = new Set(existingSets.map((item) => String(item.id)))
+      mappedSets = [
+        ...existingSets.flatMap((item) => {
+          const mapped = mappedById.get(String(item.id))
+          return mapped ? [mapped] : []
+        }),
+        ...mappedSets.filter((item) => !existingIds.has(String(item.id))),
+      ]
     }
 
     const isSetsChanged =

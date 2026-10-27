@@ -19,6 +19,7 @@ export interface UsePresetAutoSaveProps {
 export interface UsePresetAutoSaveReturn {
   flushAutoSave: () => void
   clearTimer: () => void
+  suppressAutomaticRetry: (id: string | number, state: HistoryState) => void
 }
 
 export function usePresetAutoSave({
@@ -34,6 +35,7 @@ export function usePresetAutoSave({
   onRecordHistory,
 }: UsePresetAutoSaveProps): UsePresetAutoSaveReturn {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suppressedAutomaticRetryRef = useRef<{ id: string | number; state: HistoryState } | null>(null)
 
   const clearTimer = useCallback(() => {
     if (autoSaveTimerRef.current) {
@@ -41,6 +43,11 @@ export function usePresetAutoSave({
       autoSaveTimerRef.current = null
     }
   }, [])
+
+  const suppressAutomaticRetry = useCallback((id: string | number, state: HistoryState) => {
+    suppressedAutomaticRetryRef.current = { id, state: structuredClone(state) }
+    clearTimer()
+  }, [clearTimer])
 
   const flushAutoSave = useCallback(() => {
     clearTimer()
@@ -53,7 +60,7 @@ export function usePresetAutoSave({
     const activePreset = currentPresets?.find((p) => String(p.id) === String(targetActiveId))
     if (!activePreset) return
 
-    const stateToSave: HistoryState = currentStore
+    const stateToSave: HistoryState = structuredClone(currentStore
       ? {
           paramValues: currentStore.paramValues,
           appliedAssets: currentStore.appliedAssets,
@@ -61,7 +68,7 @@ export function usePresetAutoSave({
           seedMode: currentStore.seedMode,
           seed: currentStore.seed,
         }
-      : currentState
+      : currentState)
 
     // 【AC-2 遵守】ジョブ投入・タブ切替直前にインメモリ上の sets を同期的即時反映
     currentStore?.updateActiveSet?.(stateToSave)
@@ -73,8 +80,6 @@ export function usePresetAutoSave({
     if (currentLastSaved && onRecordHistory) {
       onRecordHistory(targetActiveId, currentLastSaved)
     }
-
-    lastSavedStateRef.current[targetActiveId] = stateToSave
 
     onPerformUpdatePreset({
       id: activePreset.id,
@@ -95,6 +100,13 @@ export function usePresetAutoSave({
     const activePreset = currentPresets?.find((p) => String(p.id) === String(activeSetId))
     if (!activePreset) return
 
+    const suppressedRetry = suppressedAutomaticRetryRef.current
+    if (suppressedRetry && String(suppressedRetry.id) === String(activeSetId) && isStateEqual(suppressedRetry.state, currentState)) {
+      clearTimer()
+      return
+    }
+    if (suppressedRetry) suppressedAutomaticRetryRef.current = null
+
     const lastSaved = lastSavedStateRef.current[activeSetId]
     if (lastSaved && isStateEqual(lastSaved, currentState)) return
 
@@ -107,5 +119,5 @@ export function usePresetAutoSave({
     return clearTimer
   }, [currentState, activeSetId, selectedWorkflowId, isInitialSyncRef, presetsRef, presets, lastSavedStateRef, clearTimer, flushAutoSave])
 
-  return { flushAutoSave, clearTimer }
+  return { flushAutoSave, clearTimer, suppressAutomaticRetry }
 }

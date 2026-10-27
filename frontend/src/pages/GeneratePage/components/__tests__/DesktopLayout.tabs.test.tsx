@@ -145,6 +145,8 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
       setIsPresetManagerOpen: vi.fn(),
       handleLoadPreset: vi.fn(),
       handleSelectPresetTab: vi.fn(),
+      handleClosePresetTabs: vi.fn().mockResolvedValue(true),
+      isPresetTabsClosing: false,
       baseModels: [],
       updateWorkflowBaseModelMutation: { mutate: vi.fn() },
       setWorkflowManageMode: vi.fn(),
@@ -323,7 +325,7 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
 
     // 1) Select tab
-    const betaTab = screen.getByText('Preset Beta').closest('div')
+    const betaTab = screen.getByRole('button', { name: 'Preset Betaを選択' })
     expect(betaTab).toBeInTheDocument()
     if (betaTab) {
       fireEvent.click(betaTab)
@@ -337,12 +339,10 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
     expect(state.toggleSetChecked).toHaveBeenCalledWith('set-2')
 
     // 3) Remove tab (close button)
-    const closeButtons = container.querySelectorAll('#desktop-preset-tabs-bar button')
-    expect(closeButtons.length).toBe(3)
-    expect(closeButtons[0]).toHaveAttribute('title', 'タブを閉じる (DBからは削除されません)')
-    expect(closeButtons[0]).toHaveAttribute('aria-label', 'タブを閉じる (DBからは削除されません)')
-    expect(closeButtons[0].querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
-    fireEvent.click(closeButtons[0])
+    const closeButton = screen.getByRole('button', { name: 'Preset Alphaのタブを閉じる' })
+    expect(closeButton).toHaveAttribute('title', 'タブを閉じる (DBからは削除されません)')
+    expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.click(closeButton)
     expect(state.removeSet).toHaveBeenCalledWith('set-1')
 
     // 4) Undo / Redo in left pane toolbar
@@ -365,6 +365,21 @@ describe('DesktopLayout - Global Header, Full-Width Preset Tabs Bar, and Left Pa
       fireEvent.click(redoBtn)
       expect(state.redo).toHaveBeenCalledWith('set-1')
     }
+  })
+
+  it('[REQ-402/AC-1] context-open-preserves-state and tap-menu', ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-402/AC-1', 'REQ-402/AC-13'], layer: 'unit', caseId: 'context-open-preserves-state' })
+    const state = createMockState()
+    const { container } = renderGroupedDesktop(<DesktopLayout state={state} />)
+    const trigger = screen.getByRole('button', { name: 'Preset Gammaのタブ操作' })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toHaveTextContent('Preset Gamma')
+    expect(state.handleSelectPresetTab).not.toHaveBeenCalled()
+    expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
+    expect(screen.getByRole('menuitem', { name: '右のタブをすべて閉じる' })).toBeDisabled()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('#desktop-preset-tabs-bar [data-preset-id]')).toHaveLength(3)
   })
 
   // 5. Red Team Boundary Cases

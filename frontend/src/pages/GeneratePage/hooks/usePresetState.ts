@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowPresetsApi } from '../../../api/client'
 import type { Workflow, WorkflowPreset } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import type { AppliedAsset } from '../../../store/useGenerationStore'
+import { createPresetTabClosePlan, type PresetTabCloseMode, type PresetId, type PresetTabClosePlan } from '../../../store/presetTabClose'
 import { getInitialParams, healLegacyParamKeys } from './useWorkflowParams'
 import { parseToChips, TagChip } from '../../../components/TagChipEditor/useChipParser'
 import {
@@ -25,6 +26,15 @@ import type { BulkEditPayload } from '../../../components/ProfileBulkEditModal'
 // Re-exports for backward compatibility
 export { isRecordEqual, normalizeTimestamp, isTimestampDifferent, isStateEqual }
 export type { HistoryState, PresetConflictData, UpdatePresetArgs }
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
 
 export interface UsePresetStateProps {
   selectedWorkflowId: number | null
@@ -68,7 +78,23 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
   const isInitialSyncRef = useRef(false)
   const prevWorkflowIdRef = useRef<number | null>(null)
   const presetUpdatedAtRef = useRef<Record<number, string>>({})
-  const pendingSaveArgsRef = useRef<UpdatePresetArgs | null>(null)
+  type QueuedUpdatePresetArgs = UpdatePresetArgs & { workflow_id?: number; generation_id?: number }
+  const saveQueueRef = useRef<Array<{ args: QueuedUpdatePresetArgs; resolve: () => void; reject: (error: unknown) => void; fingerprint: string }>>([])
+  const saveQueueRunningRef = useRef(false)
+  const saveDedupeRef = useRef(new Map<string, Promise<void>>())
+  const inFlightPresetRequestsRef = useRef(new Set<Promise<unknown>>())
+  const closeGenerationRef = useRef(0)
+  const closePendingRef = useRef(false)
+  const bulkApplyingRef = useRef(false)
+  const [isPresetTabsClosing, setIsPresetTabsClosing] = useState(false)
+  const lifecycleGenerationRef = useRef(0)
+  useEffect(() => {
+    lifecycleGenerationRef.current += 1
+    closeGenerationRef.current += 1
+    closePendingRef.current = false
+    setIsPresetTabsClosing(false)
+    return () => { lifecycleGenerationRef.current += 1; closeGenerationRef.current += 1; closePendingRef.current = false }
+  }, [selectedWorkflowId])
 
   // ── Queries ──
   const { data: presets } = useQuery({
@@ -98,8 +124,9 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       batchSize?: number
       seedMode?: 'random' | 'fixed'
       seed?: number
-    }) =>
-      workflowPresetsApi.create({
+    }) => {
+      if (closePendingRef.current) throw new Error('プリセットタブを保存中です。')
+      return workflowPresetsApi.create({
         workflow_id: selectedWorkflowId!,
         name,
         param_values: pv !== undefined ? pv : paramValues,
@@ -107,7 +134,8 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         batch_size: bs !== undefined ? bs : batchSize,
         seed_mode: sm !== undefined ? sm : seedMode,
         seed: sd !== undefined ? sd : seed,
-      }),
+      })
+    },
     onSuccess: (newPreset) => {
       autoSave.clearTimer()
       if (newPreset?.id && selectedWorkflowId) {
@@ -143,7 +171,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
   })
 
   const updatePresetMutation = useMutation({
-    mutationFn: (args: {
+    mutationFn: async (args: {
       id: number
       name: string
       param_values?: Record<string, string>
@@ -152,13 +180,16 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       seed_mode?: string
       seed?: number
       base_updated_at?: string
+      workflow_id?: number
+      generation_id?: number
     }) => {
+      if (closePendingRef.current && args.generation_id === undefined) throw new Error('プリセットタブを保存中です。')
       const currentStore = storeRef.current
       const isActive = String(args.id) === String(currentStore.activeSetId)
       const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(args.id)) : undefined
       const fallbackPreset = !isActive && !targetSet ? (presetsRef.current || presets)?.find((p) => p.id === args.id) : undefined
 
-      return workflowPresetsApi.update(args.id, {
+      const request = workflowPresetsApi.update(args.id, {
         name: args.name,
         param_values: args.param_values !== undefined
           ? args.param_values
@@ -177,30 +208,41 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
           : (isActive ? currentStore.seed : (targetSet?.seed ?? fallbackPreset?.seed)),
         base_updated_at: args.base_updated_at,
       })
+      inFlightPresetRequestsRef.current.add(request)
+      try { return await request } finally { inFlightPresetRequestsRef.current.delete(request) }
     },
-    onSuccess: (updatedPreset, variables) => {
+    onMutate: (variables) => ({ workflowId: variables.workflow_id ?? selectedWorkflowId,
+      generationId: variables.generation_id ?? lifecycleGenerationRef.current }),
+    onSuccess: (updatedPreset, variables, context) => {
+      const workflowId = context?.workflowId ?? variables.workflow_id ?? selectedWorkflowId
       if (updatedPreset?.id) {
-        presetUpdatedAtRef.current[updatedPreset.id] = updatedPreset.updated_at
+        const sameGeneration = workflowId === selectedWorkflowId &&
+          (context?.generationId === undefined || context.generationId === lifecycleGenerationRef.current)
+        if (sameGeneration) presetUpdatedAtRef.current[updatedPreset.id] = updatedPreset.updated_at
         const currentStore = storeRef.current
         const isActive = String(updatedPreset.id) === String(currentStore.activeSetId)
         const targetSet = !isActive ? currentStore.sets.find((s) => String(s.id) === String(updatedPreset.id)) : undefined
 
-        lastSavedStateRef.current[updatedPreset.id] = {
+        if (sameGeneration) lastSavedStateRef.current[updatedPreset.id] = structuredClone({
           paramValues: updatedPreset.param_values ?? (variables.param_values !== undefined ? variables.param_values : (isActive ? currentStore.paramValues : (targetSet?.paramValues || {}))),
           appliedAssets: (updatedPreset.applied_assets ?? (variables.applied_assets !== undefined ? variables.applied_assets : (isActive ? currentStore.appliedAssets : (targetSet?.appliedAssets || {})))) as any,
           batchSize: updatedPreset.batch_size ?? (variables.batch_size !== undefined ? variables.batch_size : (isActive ? currentStore.batchSize : (targetSet?.batchSize ?? 1))),
           seedMode: ((updatedPreset.seed_mode ?? (variables.seed_mode !== undefined ? variables.seed_mode : (isActive ? currentStore.seedMode : (targetSet?.seedMode || 'random')))) as any),
           seed: updatedPreset.seed ?? (variables.seed !== undefined ? variables.seed : (isActive ? currentStore.seed : (targetSet?.seed ?? 42))),
-        }
-        qc.setQueryData<WorkflowPreset[]>(['workflow-presets', selectedWorkflowId], (old) => {
+        })
+        qc.setQueryData<WorkflowPreset[]>(['workflow-presets', workflowId], (old) => {
           if (!old) return old
           return old.map((p) => (p.id === updatedPreset.id ? updatedPreset : p))
         })
       }
     },
-    onError: (err: any, variables) => {
+    onError: (err: any, variables, context) => {
+      const workflowId = context?.workflowId ?? variables.workflow_id ?? selectedWorkflowId
+      const sameGeneration = workflowId === selectedWorkflowId &&
+        (context?.generationId === undefined || context.generationId === lifecycleGenerationRef.current)
       if (err?.message?.includes('409') || err?.status === 409) {
-        qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
+        qc.invalidateQueries({ queryKey: ['workflow-presets', workflowId] })
+        if (!sameGeneration) return
         const serverPreset = (presetsRef.current || presets)?.find((p) => p.id === variables.id)
         if (serverPreset) {
           const currentStore = storeRef.current
@@ -219,62 +261,91 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
             },
           })
         }
-      }
-    },
-    onSettled: () => {
-      if (pendingSaveArgsRef.current) {
-        const nextArgs = pendingSaveArgsRef.current
-        pendingSaveArgsRef.current = null
-        const latestBaseUpdatedAt = presetUpdatedAtRef.current[nextArgs.id] || nextArgs.base_updated_at
-        updatePresetMutation.mutate({
-          ...nextArgs,
-          base_updated_at: latestBaseUpdatedAt,
-        })
+      } else if (sameGeneration) {
+        storeRef.current.setErrorToast?.({ message: err?.message || 'プリセットの保存に失敗しました。', type: 'error' })
       }
     },
   })
 
-  const performUpdatePreset = useCallback((args: UpdatePresetArgs) => {
-    if (updatePresetMutation.isPending) {
-      pendingSaveArgsRef.current = args
-      return
+  const enqueuePresetSave = useCallback((args: UpdatePresetArgs): Promise<void> => {
+    const snapshot: QueuedUpdatePresetArgs = structuredClone({ ...args, workflow_id: selectedWorkflowId ?? undefined, generation_id: lifecycleGenerationRef.current })
+    const fingerprint = `${snapshot.id}:${stableSerialize(snapshot)}`
+    const existing = saveDedupeRef.current.get(fingerprint)
+    if (existing) return existing
+    let resolve!: () => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+    saveDedupeRef.current.set(fingerprint, promise)
+    saveQueueRef.current.push({ args: snapshot, resolve, reject, fingerprint })
+    const pump = async () => {
+      if (saveQueueRunningRef.current) return
+      saveQueueRunningRef.current = true
+      try {
+        while (saveQueueRef.current.length) {
+          const entry = saveQueueRef.current[0]
+          try {
+            const base = presetUpdatedAtRef.current[entry.args.id] || entry.args.base_updated_at
+            await updatePresetMutation.mutateAsync({ ...entry.args, base_updated_at: base })
+            entry.resolve()
+            saveQueueRef.current.shift()
+            saveDedupeRef.current.delete(entry.fingerprint)
+          } catch (error) {
+            for (const pending of saveQueueRef.current.splice(0)) {
+              pending.reject(error)
+              saveDedupeRef.current.delete(pending.fingerprint)
+            }
+            break
+          }
+        }
+      } finally { saveQueueRunningRef.current = false }
     }
-    updatePresetMutation.mutate({
-      id: args.id,
-      name: args.name,
-      param_values: args.param_values,
-      applied_assets: args.applied_assets,
-      batch_size: args.batch_size,
-      seed_mode: args.seed_mode,
-      seed: args.seed,
-      base_updated_at: args.base_updated_at,
-    })
-  }, [updatePresetMutation])
+    void pump()
+    return promise
+  }, [updatePresetMutation, selectedWorkflowId])
+
+  const performUpdatePreset = useCallback((args: UpdatePresetArgs) => {
+    void enqueuePresetSave(args).catch(() => { /* The conflict handler owns user-visible save failures. */ })
+  }, [enqueuePresetSave])
 
   const deletePresetMutation = useMutation({
-    mutationFn: (id: number) => workflowPresetsApi.delete(id),
+    mutationFn: (id: number) => {
+      if (closePendingRef.current) throw new Error('プリセットタブを保存中です。')
+      return workflowPresetsApi.delete(id)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
   })
 
   const bulkDeletePresetsMutation = useMutation({
-    mutationFn: (ids: number[]) => workflowPresetsApi.bulkDelete(ids),
+    mutationFn: (ids: number[]) => {
+      if (closePendingRef.current) throw new Error('プリセットタブを保存中です。')
+      return workflowPresetsApi.bulkDelete(ids)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
   })
 
   const renamePresetMutation = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) => workflowPresetsApi.update(id, { name }),
+    mutationFn: ({ id, name }: { id: number; name: string }) => {
+      if (closePendingRef.current) throw new Error('プリセットタブを保存中です。')
+      return workflowPresetsApi.update(id, { name })
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
   })
 
   const reorderPresetsMutation = useMutation({
-    mutationFn: (ordered_ids: number[]) => workflowPresetsApi.reorder(ordered_ids),
-    onSuccess: () => {
+    mutationFn: (ordered_ids: number[]) => {
+      if (closePendingRef.current) throw new Error('プリセットタブを保存中です。')
+      return workflowPresetsApi.reorder(ordered_ids)
+    },
+    onSuccess: (_result, orderedIds) => {
+      const sets = storeRef.current.sets || []
+      const rank = new Map(orderedIds.map((id, index) => [String(id), index]))
+      storeRef.current.setSets?.([...sets].sort((a, b) => (rank.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER) - (rank.get(String(b.id)) ?? Number.MAX_SAFE_INTEGER)))
       qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
     },
   })
@@ -329,7 +400,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
 
   const conflict = usePresetConflict({
     onLoadPreset: handleLoadPreset,
-    onUpdatePreset: (args) => updatePresetMutation.mutate(args),
+    onUpdatePreset: performUpdatePreset,
     onCreatePreset: (name, draft) => {
       createPresetMutation.mutate({
         name,
@@ -442,6 +513,122 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
     isCreatePending: createPresetMutation.isPending,
   })
 
+  const preparePresetTabsClose = useCallback(async (plan: PresetTabClosePlan): Promise<boolean> => {
+    const abort = (message: string) => { setErrorToast?.({ message, type: 'error' }); return false }
+    if (!isInitialSyncRef.current || !selectedWorkflowId) return abort('プリセットの初期同期が完了していません。')
+    if (closePendingRef.current || bulkApplyingRef.current || createPresetMutation.isPending || deletePresetMutation.isPending || bulkDeletePresetsMutation.isPending || renamePresetMutation.isPending || reorderPresetsMutation.isPending) return abort('別のプリセット操作中はタブを閉じられません。')
+    const generation = lifecycleGenerationRef.current
+    const current = useGenerationStore.getState()
+    const visibleIds = current.sets.filter((item) => current.openPresetIds.map(String).includes(String(item.id))).map((item) => item.id)
+    if (current.selectedWorkflowId !== plan.workflowId || plan.workflowId !== selectedWorkflowId ||
+      visibleIds.length !== plan.orderedOpenIds.length || visibleIds.some((id, index) => String(id) !== String(plan.orderedOpenIds[index]))) return abort('タブの並びまたは選択状態が変わりました。もう一度操作してください。')
+    if (conflict.conflictData && plan.targetIds.some((id) => String(id) === String(conflict.conflictData?.serverPreset.id))) return abort('未解決の競合があるためタブを閉じられません。')
+    const snapshots = new Map<string, HistoryState>()
+    const activeBufferSnapshot: HistoryState = structuredClone({ paramValues: current.paramValues, appliedAssets: current.appliedAssets,
+      batchSize: current.batchSize, seedMode: current.seedMode, seed: current.seed })
+    for (const id of plan.targetIds) {
+      const set = current.sets.find((item) => String(item.id) === String(id))
+      const preset = presetsRef.current?.find((item) => String(item.id) === String(id))
+      const baseline = lastSavedStateRef.current[id]
+      if (!set || !preset || !baseline) return abort('対象プリセットまたは保存確認済み状態が見つかりません。')
+      snapshots.set(String(id), structuredClone(String(id) === String(current.activeSetId) ? {
+        paramValues: current.paramValues, appliedAssets: current.appliedAssets, batchSize: current.batchSize,
+        seedMode: current.seedMode, seed: current.seed,
+      } : {
+        paramValues: set.paramValues, appliedAssets: set.appliedAssets, batchSize: set.batchSize,
+        seedMode: set.seedMode, seed: set.seed,
+      }))
+    }
+    closePendingRef.current = true
+    const closeGeneration = ++closeGenerationRef.current
+    setIsPresetTabsClosing(true)
+    let prepared = false
+    let orderChangedDuringClose = false
+    const unsubscribe = useGenerationStore.subscribe((nextState) => {
+      const nextVisible = nextState.sets.filter((item) => nextState.openPresetIds.map(String).includes(String(item.id))).map((item) => String(item.id))
+      const expected = plan.orderedOpenIds.map(String)
+      orderChangedDuringClose ||= nextVisible.length !== expected.length || nextVisible.some((id, index) => id !== expected[index])
+    })
+    try {
+      autoSave.clearTimer()
+      if (current.activeSetId !== null) {
+        current.updateActiveSet({ paramValues: current.paramValues, appliedAssets: current.appliedAssets,
+          promptChips: current.promptChips, batchSize: current.batchSize, seedMode: current.seedMode, seed: current.seed })
+      }
+      await Promise.all([...Array.from(saveDedupeRef.current.values()), ...Array.from(inFlightPresetRequestsRef.current)])
+      if (generation !== lifecycleGenerationRef.current || closeGeneration !== closeGenerationRef.current) return false
+      for (const id of plan.targetIds) {
+        if (generation !== lifecycleGenerationRef.current || closeGeneration !== closeGenerationRef.current) return false
+        const state = snapshots.get(String(id))!
+        const baseline = lastSavedStateRef.current[id]
+        if (!isStateEqual(state, baseline)) {
+          const preset = presetsRef.current!.find((item) => String(item.id) === String(id))!
+          await enqueuePresetSave({ id: preset.id, name: preset.name, param_values: state.paramValues,
+            applied_assets: state.appliedAssets, batch_size: state.batchSize, seed_mode: state.seedMode,
+            seed: state.seed, base_updated_at: presetUpdatedAtRef.current[preset.id] || preset.updated_at })
+          if (generation !== lifecycleGenerationRef.current || closeGeneration !== closeGenerationRef.current) return false
+        }
+      }
+      await Promise.all([...Array.from(saveDedupeRef.current.values()), ...Array.from(inFlightPresetRequestsRef.current)])
+      if (generation !== lifecycleGenerationRef.current || closeGeneration !== closeGenerationRef.current) return false
+      const latest = useGenerationStore.getState()
+      if (generation !== lifecycleGenerationRef.current || closeGeneration !== closeGenerationRef.current ||
+        latest.selectedWorkflowId !== plan.workflowId || String(latest.activeSetId) !== String(plan.activeSetId)) return abort('保存中にworkflowまたは選択タブが変わりました。もう一度操作してください。')
+      const latestVisible = latest.sets.filter((item) => latest.openPresetIds.map(String).includes(String(item.id))).map((item) => item.id)
+      if (orderChangedDuringClose || latestVisible.length !== plan.orderedOpenIds.length || latestVisible.some((id, index) => String(id) !== String(plan.orderedOpenIds[index]))) return abort('保存中にタブの並びが変わりました。もう一度操作してください。')
+      for (const [id, snapshot] of snapshots) {
+        const live = latest.sets.find((item) => String(item.id) === id)
+        const now: HistoryState | undefined = live ? (String(id) === String(latest.activeSetId) ? {
+          paramValues: latest.paramValues, appliedAssets: latest.appliedAssets, batchSize: latest.batchSize,
+          seedMode: latest.seedMode, seed: latest.seed,
+        } : { paramValues: live.paramValues, appliedAssets: live.appliedAssets, batchSize: live.batchSize,
+          seedMode: live.seedMode, seed: live.seed }) : undefined
+        if (!now || !isStateEqual(snapshot, now)) return abort('保存中にプリセット内容が編集されました。もう一度操作してください。')
+      }
+      const activeAfter: HistoryState = { paramValues: latest.paramValues, appliedAssets: latest.appliedAssets,
+        batchSize: latest.batchSize, seedMode: latest.seedMode, seed: latest.seed }
+      if (!isStateEqual(activeBufferSnapshot, activeAfter)) return abort('保存中にエディター内容が編集されました。もう一度操作してください。')
+      prepared = true
+      return true
+    } catch (error) {
+      if (generation === lifecycleGenerationRef.current && closeGeneration === closeGenerationRef.current) {
+        const cause = error instanceof Error ? error.message : String(error)
+        const isConflict = /\b409\b/.test(cause)
+        const failedEditor = useGenerationStore.getState()
+        const activeEditorWasTarget = plan.targetIds.some((id) => String(id) === String(failedEditor.activeSetId))
+        if (activeEditorWasTarget && failedEditor.activeSetId !== null && failedEditor.activeSetId !== undefined) {
+          autoSave.suppressAutomaticRetry(failedEditor.activeSetId, {
+            paramValues: failedEditor.paramValues, appliedAssets: failedEditor.appliedAssets,
+            batchSize: failedEditor.batchSize, seedMode: failedEditor.seedMode, seed: failedEditor.seed,
+          })
+        }
+        setErrorToast?.({ message: isConflict
+          ? `${cause} 競合を解決してから再操作してください。`
+          : `${cause} 下書きは保持されています。もう一度タブを閉じて保存を再試行してください。`, type: 'error' })
+      }
+      return false
+    } finally {
+      unsubscribe()
+      if (!prepared && closeGeneration === closeGenerationRef.current) {
+        closePendingRef.current = false
+        setIsPresetTabsClosing(false)
+      }
+    }
+  }, [selectedWorkflowId, presetsRef, lastSavedStateRef, presetUpdatedAtRef, createPresetMutation.isPending,
+    deletePresetMutation.isPending, renamePresetMutation.isPending, reorderPresetsMutation.isPending,
+    conflict.conflictData, autoSave, enqueuePresetSave, setErrorToast])
+
+  const handleClosePresetTabs = useCallback(async (triggerId: PresetId, mode: PresetTabCloseMode): Promise<boolean> => {
+    if (closePendingRef.current) return false
+    const plan = createPresetTabClosePlan(useGenerationStore.getState(), triggerId, mode)
+    if (!plan || !(await preparePresetTabsClose(plan))) return false
+    try { return useGenerationStore.getState().applyPresetTabClose(plan) }
+    finally {
+      closePendingRef.current = false
+      setIsPresetTabsClosing(false)
+    }
+  }, [preparePresetTabsClose])
+
   // ── Bulk Operations State ──
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false)
@@ -472,6 +659,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
     const targetIds = payload.targetPresetIds && payload.targetPresetIds.length > 0 ? payload.targetPresetIds : bulkTargetIds
     if (!latestPresets || targetIds.length === 0) return
     setIsBulkApplying(true)
+    bulkApplyingRef.current = true
     try {
       const selectedPresets = latestPresets.filter((p) => targetIds.includes(p.id))
       const updatedResults = await Promise.all(
@@ -568,6 +756,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       })
       throw err
     } finally {
+      bulkApplyingRef.current = false
       setIsBulkApplying(false)
     }
   }
@@ -581,7 +770,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
       const baseUpdatedAt = presetUpdatedAtRef.current[id]
 
       if (isActive) {
-        updatePresetMutation.mutate({
+        performUpdatePreset({
           id,
           name,
           param_values: currentStore.paramValues,
@@ -592,7 +781,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
           base_updated_at: baseUpdatedAt,
         })
       } else if (targetSet) {
-        updatePresetMutation.mutate({
+        performUpdatePreset({
           id,
           name,
           param_values: targetSet.paramValues,
@@ -604,7 +793,7 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
         })
       } else {
         const fallbackPreset = (presetsRef.current || presets)?.find((p) => p.id === id)
-        updatePresetMutation.mutate({
+        performUpdatePreset({
           id,
           name,
           param_values: fallbackPreset?.param_values,
@@ -650,6 +839,8 @@ export function usePresetState({ selectedWorkflowId, workflow }: UsePresetStateP
     handleCreatePreset,
     handleUpdatePreset,
     handleDeletePreset,
+    handleClosePresetTabs,
+    isPresetTabsClosing,
     handleLoadPreset,
     handleSelectPresetTab: storeSync.handleSelectPresetTab,
     isPresetOpen,

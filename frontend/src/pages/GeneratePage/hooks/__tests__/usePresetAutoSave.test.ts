@@ -58,7 +58,8 @@ describe('usePresetAutoSave', () => {
     vi.restoreAllMocks()
   })
 
-  it('triggers auto save after 1000ms debounce when state changes', () => {
+  it('triggers auto save after 1000ms debounce when state changes', ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-402/AC-7'], layer: 'unit', caseId: 'autosave-baseline-awaits-ack' })
     const presetsRef = { current: initialPresets }
     const isInitialSyncRef = { current: true }
     const lastSavedStateRef = {
@@ -113,7 +114,7 @@ describe('usePresetAutoSave', () => {
       seed: 123,
       base_updated_at: '2026-09-01T00:00:00Z',
     })
-    expect(lastSavedStateRef.current[1]).toEqual(mockCurrentState)
+    expect(lastSavedStateRef.current[1]).toEqual({ paramValues: { prompt: 'cat' }, appliedAssets: {}, batchSize: 1, seedMode: 'random', seed: 123 })
   })
 
   it('does not trigger auto save if isInitialSyncRef is false', () => {
@@ -181,7 +182,8 @@ describe('usePresetAutoSave', () => {
     expect(onPerformUpdatePresetMock).not.toHaveBeenCalled()
   })
 
-  it('synchronously executes flushAutoSave and immediately calls updateActiveSet (AC-2)', () => {
+  it('synchronously executes flushAutoSave and immediately calls updateActiveSet (AC-2)', ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-402/AC-7'], layer: 'unit', caseId: 'autosave-flush-waits-for-ack' })
     const presetsRef = { current: initialPresets }
     const isInitialSyncRef = { current: true }
     const lastSavedStateRef = {
@@ -222,6 +224,6 @@ describe('usePresetAutoSave', () => {
     // AC-2: In-memory store should be updated synchronously
     expect(updateActiveSetMock).toHaveBeenCalledWith(mockCurrentState)
     expect(onPerformUpdatePresetMock).toHaveBeenCalledTimes(1)
-    expect(lastSavedStateRef.current[1]).toEqual(mockCurrentState)
+    expect(lastSavedStateRef.current[1]).toEqual({ paramValues: { prompt: 'cat' }, appliedAssets: {}, batchSize: 1, seedMode: 'random', seed: 123 })
   })
 })

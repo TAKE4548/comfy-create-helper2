@@ -97,6 +97,8 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       setIsPresetManagerOpen: vi.fn(),
       handleLoadPreset: vi.fn(),
       handleSelectPresetTab: vi.fn(),
+      handleClosePresetTabs: vi.fn().mockResolvedValue(true),
+      isPresetTabsClosing: false,
       baseModels: [],
       updateWorkflowBaseModelMutation: { mutate: vi.fn() },
       setWorkflowManageMode: vi.fn(),
@@ -413,10 +415,29 @@ describe('MobileLayout - TagChipEditor Integration', () => {
 
     render(<MobileLayout state={state} />)
 
-    const tab2 = screen.getByText('Set 102')
+    const tab2 = screen.getByRole('button', { name: 'Set 102を選択' })
     fireEvent.click(tab2)
 
     expect(handleSelectPresetTabMock).toHaveBeenCalledWith('102')
+  })
+
+  it('[REQ-402/AC-5] no-target-disabled and tap-menu does not select tab', ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-402/AC-5', 'REQ-402/AC-13'], layer: 'unit', caseId: 'no-target-disabled' })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+    const select = vi.fn()
+    const state = createMockState({
+      selectedWorkflowId: 1,
+      sets: [{ id: 101, name: 'Only tab', checked: true }],
+      openPresetIds: [101], activeSetId: 101, handleSelectPresetTab: select,
+    })
+    render(<MobileLayout state={state} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Only tabのタブ操作' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Only tab')
+    expect(screen.getByRole('button', { name: '他のタブを閉じる' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '左のタブをすべて閉じる' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '右のタブをすべて閉じる' })).toBeDisabled()
+    expect(select).not.toHaveBeenCalled()
+    expect(state.handleClosePresetTabs).not.toHaveBeenCalled()
   })
 
   it('renders PageHeader with Generate title, ResourceHoverMonitor, and mobile actions row', () => {
