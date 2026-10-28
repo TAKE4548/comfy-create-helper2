@@ -1,11 +1,18 @@
 import { memo } from 'react'
 import { X } from 'lucide-react'
-import { BypassSettingsModal } from '../../../components/BypassSettingsModal'
-import { ParamSyncModal } from '../../../components/ParamSyncModal'
-import { PromptTranslationModal } from '../components/PromptTranslationModal'
-import { SaveAsTagSetModal } from '../components/SaveAsTagSetModal'
+import { LazyModalHost } from '../../../components/common/LazyBoundary'
 import { generateNextProfileName } from '../../../utils/profileUtils'
 import type { useGeneratePageState } from '../hooks/useGeneratePageState'
+
+// Module-level loaders: each modal chunk is fetched only when its host first needs it.
+const loadBypassSettingsModal = () =>
+  import('../../../components/BypassSettingsModal').then((m) => ({ default: m.BypassSettingsModal }))
+const loadParamSyncModal = () =>
+  import('../../../components/ParamSyncModal').then((m) => ({ default: m.ParamSyncModal }))
+const loadPromptTranslationModal = () =>
+  import('../components/PromptTranslationModal').then((m) => ({ default: m.PromptTranslationModal }))
+const loadSaveAsTagSetModal = () =>
+  import('../components/SaveAsTagSetModal').then((m) => ({ default: m.SaveAsTagSetModal }))
 
 type StateProps = ReturnType<typeof useGeneratePageState>
 
@@ -127,18 +134,28 @@ export const GenerateModalsOverlay = memo(function GenerateModalsOverlay({
         </div>
       )}
 
-      {isBypassSettingsOpen && (
-        <BypassSettingsModal 
-          onClose={() => setIsBypassSettingsOpen(false)} 
-          workflowJson={workflow?.json_body}
-        />
-      )}
+      <LazyModalHost
+        mode="while-open"
+        isOpen={isBypassSettingsOpen}
+        load={loadBypassSettingsModal}
+        label="バイパス設定"
+        onClose={() => setIsBypassSettingsOpen(false)}
+        modalProps={{
+          onClose: () => setIsBypassSettingsOpen(false),
+          workflowJson: workflow?.json_body,
+        }}
+      />
 
-      {isParamSyncSettingsOpen && (
-        <ParamSyncModal
-          onClose={() => setIsParamSyncSettingsOpen(false)}
-        />
-      )}
+      <LazyModalHost
+        mode="while-open"
+        isOpen={isParamSyncSettingsOpen}
+        load={loadParamSyncModal}
+        label="パラメータ同期設定"
+        onClose={() => setIsParamSyncSettingsOpen(false)}
+        modalProps={{
+          onClose: () => setIsParamSyncSettingsOpen(false),
+        }}
+      />
 
       {errorToast && (
         <div
@@ -159,34 +176,45 @@ export const GenerateModalsOverlay = memo(function GenerateModalsOverlay({
       )}
 
       {promptTranslation && (
-        <PromptTranslationModal
+        <LazyModalHost
+          mode="latch"
           isOpen={promptTranslation.isOpen}
+          load={loadPromptTranslationModal}
+          label="プロンプト翻訳"
           onClose={promptTranslation.closeTranslation}
-          roleDisplayName={
-            textMappings.find((m) => m.role === promptTranslation.activeRole)?.display_name ||
-            promptTranslation.activeRole ||
-            'プロンプト'
-          }
-          mode={promptTranslation.mode}
-          onModeChange={promptTranslation.setMode}
-          sourceText={promptTranslation.sourceText}
-          onSourceTextChange={promptTranslation.setSourceText}
-          translatedText={promptTranslation.translatedText}
-          meta={promptTranslation.meta}
-          isTranslating={promptTranslation.isTranslating}
-          error={promptTranslation.error}
-          onTranslate={promptTranslation.executeTranslate}
-          onApply={promptTranslation.applyToPrompt}
+          modalProps={{
+            isOpen: promptTranslation.isOpen,
+            onClose: promptTranslation.closeTranslation,
+            roleDisplayName:
+              textMappings.find((m) => m.role === promptTranslation.activeRole)?.display_name ||
+              promptTranslation.activeRole ||
+              'プロンプト',
+            mode: promptTranslation.mode,
+            onModeChange: promptTranslation.setMode,
+            sourceText: promptTranslation.sourceText,
+            onSourceTextChange: promptTranslation.setSourceText,
+            translatedText: promptTranslation.translatedText,
+            meta: promptTranslation.meta,
+            isTranslating: promptTranslation.isTranslating,
+            error: promptTranslation.error,
+            onTranslate: promptTranslation.executeTranslate,
+            onApply: promptTranslation.applyToPrompt,
+          }}
         />
       )}
 
-      {saveAsTagSetRole && (
-        <SaveAsTagSetModal
-          role={saveAsTagSetRole}
-          promptText={paramValues[saveAsTagSetRole] ?? ''}
-          onClose={() => setSaveAsTagSetRole(null)}
-        />
-      )}
+      <LazyModalHost
+        mode="while-open"
+        isOpen={!!saveAsTagSetRole}
+        load={loadSaveAsTagSetModal}
+        label="タグセット保存"
+        onClose={() => setSaveAsTagSetRole(null)}
+        modalProps={{
+          role: saveAsTagSetRole ?? '',
+          promptText: saveAsTagSetRole ? (paramValues[saveAsTagSetRole] ?? '') : '',
+          onClose: () => setSaveAsTagSetRole(null),
+        }}
+      />
     </>
   )
 })

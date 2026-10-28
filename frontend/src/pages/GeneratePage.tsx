@@ -3,18 +3,20 @@ import { X, AlertTriangle, Loader2 } from 'lucide-react'
 import { useGeneratePageState } from './GeneratePage/hooks/useGeneratePageState'
 import { DesktopLayout } from './GeneratePage/components/DesktopLayout'
 import { MobileLayout } from './GeneratePage/components/MobileLayout'
-import { ProfileBulkEditModal } from '../components/ProfileBulkEditModal'
-
-import { RescanModal } from '../components/RescanModal'
-import { UploadWorkflowModal } from '../components/UploadWorkflowModal'
-import { WorkflowManageModal } from '../components/WorkflowManageModal'
-import { PresetManagerPanel } from '../components/PresetManagerPanel'
-import { HistoryModalPreview } from '../components/HistoryModalPreview'
-import { JobManagementModal } from '../components/JobManagementModal'
-import { AddSnapshotToAlbumModal } from '../components/AddSnapshotToAlbumModal'
-import { SceneGeneratorModal } from '../components/SceneGeneratorModal'
-import { PresetConflictModal } from '../components/PresetConflictModal'
+import { LazyModalHost } from '../components/common/LazyBoundary'
 import { LS_KEYS } from '../utils/localStorageKeys'
+
+// [REQ-309] Modal/panel chunks are loaded through LazyModalHost on first open (or on first mount for latch modals).
+const loadProfileBulkEditModal = () => import('../components/ProfileBulkEditModal').then((m) => ({ default: m.ProfileBulkEditModal }))
+const loadRescanModal = () => import('../components/RescanModal').then((m) => ({ default: m.RescanModal }))
+const loadUploadWorkflowModal = () => import('../components/UploadWorkflowModal').then((m) => ({ default: m.UploadWorkflowModal }))
+const loadWorkflowManageModal = () => import('../components/WorkflowManageModal').then((m) => ({ default: m.WorkflowManageModal }))
+const loadPresetManagerPanel = () => import('../components/PresetManagerPanel').then((m) => ({ default: m.PresetManagerPanel }))
+const loadHistoryModalPreview = () => import('../components/HistoryModalPreview').then((m) => ({ default: m.HistoryModalPreview }))
+const loadJobManagementModal = () => import('../components/JobManagementModal').then((m) => ({ default: m.JobManagementModal }))
+const loadAddSnapshotToAlbumModal = () => import('../components/AddSnapshotToAlbumModal').then((m) => ({ default: m.AddSnapshotToAlbumModal }))
+const loadSceneGeneratorModal = () => import('../components/SceneGeneratorModal').then((m) => ({ default: m.SceneGeneratorModal }))
+const loadPresetConflictModal = () => import('../components/PresetConflictModal').then((m) => ({ default: m.PresetConflictModal }))
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -101,35 +103,60 @@ export function GeneratePage() {
       </GeneratePageErrorBoundary>
 
       {/* Modals & Overlays */}
-      {rescanOpen && workflow && (
-        <RescanModal workflowId={selectedWorkflowId!} workflowJson={workflow.json_body} existingMappings={rawWorkflow?.mappings ?? workflow.mappings} onClose={() => setRescanOpen(false)}
-          onSaved={() => { qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] }); setRescanOpen(false) }} />
-      )}
-      {uploadModalOpen && uploadedJson && (
-        <UploadWorkflowModal initialName={uploadedFileName} workflowJson={uploadedJson}
-          onClose={() => { setUploadModalOpen(false) }}
-          onSaved={(newWorkflowId) => { qc.invalidateQueries({ queryKey: ['workflows'] }); setSelectedWorkflowId(newWorkflowId) }} />
-      )}
-      <AddSnapshotToAlbumModal
-        isOpen={isSaveModalOpen}
-        onClose={() => setIsSaveModalOpen(false)}
-        onConfirm={(data) => {
-          const urls = isMultiSelectMode
-            ? [...selectedIds].filter(Boolean)
-            : (selectedImg ? [selectedImg] : [])
-          saveSnapshot.mutate({ ...data, imagePaths: urls }, {
-            onSuccess: () => {
-              if (isMultiSelectMode) {
-                exitMultiSelectMode()
-              }
-            }
-          })
+      <LazyModalHost
+        mode="while-open"
+        isOpen={rescanOpen && !!workflow}
+        load={loadRescanModal}
+        label="ワークフロー再スキャン"
+        onClose={() => setRescanOpen(false)}
+        modalProps={{
+          workflowId: selectedWorkflowId!,
+          workflowJson: workflow?.json_body ?? {},
+          existingMappings: rawWorkflow?.mappings ?? workflow?.mappings ?? [],
+          onClose: () => setRescanOpen(false),
+          onSaved: () => { qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] }); setRescanOpen(false) },
         }}
-        isPending={saveSnapshot.isPending}
-        title="スナップショットを保存"
-        confirmText="保存"
-        allowNone={true}
-        storageKey={LS_KEYS.LAST_SAVE_ALBUM_ID_GENERATE}
+      />
+      <LazyModalHost
+        mode="while-open"
+        isOpen={uploadModalOpen && !!uploadedJson}
+        load={loadUploadWorkflowModal}
+        label="ワークフロー追加"
+        onClose={() => setUploadModalOpen(false)}
+        modalProps={{
+          initialName: uploadedFileName,
+          workflowJson: uploadedJson ?? {},
+          onClose: () => { setUploadModalOpen(false) },
+          onSaved: (newWorkflowId) => { qc.invalidateQueries({ queryKey: ['workflows'] }); setSelectedWorkflowId(newWorkflowId) },
+        }}
+      />
+      <LazyModalHost
+        mode="latch"
+        isOpen={isSaveModalOpen}
+        load={loadAddSnapshotToAlbumModal}
+        label="スナップショット保存"
+        onClose={() => setIsSaveModalOpen(false)}
+        modalProps={{
+          isOpen: isSaveModalOpen,
+          onClose: () => setIsSaveModalOpen(false),
+          onConfirm: (data) => {
+            const urls = isMultiSelectMode
+              ? [...selectedIds].filter(Boolean)
+              : (selectedImg ? [selectedImg] : [])
+            saveSnapshot.mutate({ ...data, imagePaths: urls }, {
+              onSuccess: () => {
+                if (isMultiSelectMode) {
+                  exitMultiSelectMode()
+                }
+              }
+            })
+          },
+          isPending: saveSnapshot.isPending,
+          title: 'スナップショットを保存',
+          confirmText: '保存',
+          allowNone: true,
+          storageKey: LS_KEYS.LAST_SAVE_ALBUM_ID_GENERATE,
+        }}
       />
       {selectedLoraForModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
@@ -185,21 +212,26 @@ export function GeneratePage() {
           </div>
         </div>
       )}
-      {workflowManageMode && selectedWorkflowId && (
-        <WorkflowManageModal
-          mode={workflowManageMode}
-          currentName={workflows?.find((w) => w.id === selectedWorkflowId)?.name || ''}
-          onSubmit={async (newName) => {
+      <LazyModalHost
+        mode="while-open"
+        isOpen={!!workflowManageMode && !!selectedWorkflowId}
+        load={loadWorkflowManageModal}
+        label="ワークフロー管理"
+        onClose={() => setWorkflowManageMode(null)}
+        modalProps={{
+          mode: workflowManageMode ?? 'rename',
+          currentName: workflows?.find((w) => w.id === selectedWorkflowId)?.name || '',
+          onSubmit: async (newName: string) => {
             if (workflowManageMode === 'rename') {
-              await renameWorkflowMutation.mutateAsync({ id: selectedWorkflowId, name: newName })
+              await renameWorkflowMutation.mutateAsync({ id: selectedWorkflowId!, name: newName })
             } else {
-              await copyWorkflowMutation.mutateAsync({ id: selectedWorkflowId, name: newName })
+              await copyWorkflowMutation.mutateAsync({ id: selectedWorkflowId!, name: newName })
             }
-          }}
-          onClose={() => setWorkflowManageMode(null)}
-          isPending={renameWorkflowMutation.isPending || copyWorkflowMutation.isPending}
-        />
-      )}
+          },
+          onClose: () => setWorkflowManageMode(null),
+          isPending: renameWorkflowMutation.isPending || copyWorkflowMutation.isPending,
+        }}
+      />
       {isPresetManagerOpen && selectedWorkflowId && (
         <div 
           data-testid="preset-manager-overlay"
@@ -218,59 +250,92 @@ export function GeneratePage() {
               <X size={18} />
             </button>
             <h3 className="text-base font-semibold text-zinc-100 mb-3 shrink-0">プリセット管理</h3>
-            <PresetManagerPanel
-              presets={presets || []}
-              onRename={async (id, name) => {
-                await renamePresetMutation.mutateAsync({ id, name })
-              }}
-              onReorder={async (ordered_ids) => {
-                await reorderPresetsMutation.mutateAsync(ordered_ids)
-              }}
-              isPending={renamePresetMutation.isPending || reorderPresetsMutation.isPending}
-              sets={sets}
-              activeSetId={activeSetId}
-              openPresetIds={openPresetIds}
-              onToggleCheck={(id) => toggleSetChecked(id)}
-              onDelete={(id) => handleDeletePreset(id)}
-              onOpenAsTab={(id) => {
-                handleSelectPresetTab(id)
-              }}
-              onCloseTab={(id) => removeSet(id)}
-              onSaveOverwrite={(id, name) => handleUpdatePreset(id, name)}
-              onSaveAsNew={(name) => handleCreatePreset(name)}
-              onOpenSceneGenerator={() => {
-                setIsPresetManagerOpen(false)
-                setIsSceneGeneratorOpen(true)
-              }}
-              onBulkDelete={(selectedIds) => {
-                handleBulkDeleteRequest(selectedIds)
-              }}
-              onBulkEdit={(selectedIds) => {
-                handleBulkEditRequest(selectedIds)
+            <LazyModalHost
+              mode="while-open"
+              isOpen={true}
+              load={loadPresetManagerPanel}
+              label="プリセット管理"
+              onClose={() => setIsPresetManagerOpen(false)}
+              modalProps={{
+                presets: presets || [],
+                onRename: async (id: number, name: string) => {
+                  await renamePresetMutation.mutateAsync({ id, name })
+                },
+                onReorder: async (ordered_ids: number[]) => {
+                  await reorderPresetsMutation.mutateAsync(ordered_ids)
+                },
+                isPending: renamePresetMutation.isPending || reorderPresetsMutation.isPending,
+                sets,
+                activeSetId,
+                openPresetIds,
+                onToggleCheck: (id) => toggleSetChecked(id),
+                onDelete: (id) => handleDeletePreset(id),
+                onOpenAsTab: (id) => {
+                  handleSelectPresetTab(id)
+                },
+                onCloseTab: (id) => removeSet(id),
+                onSaveOverwrite: (id: number, name: string) => handleUpdatePreset(id, name),
+                onSaveAsNew: (name: string) => handleCreatePreset(name),
+                onOpenSceneGenerator: () => {
+                  setIsPresetManagerOpen(false)
+                  setIsSceneGeneratorOpen(true)
+                },
+                onBulkDelete: (selectedIds: number[]) => {
+                  handleBulkDeleteRequest(selectedIds)
+                },
+                onBulkEdit: (selectedIds: number[]) => {
+                  handleBulkEditRequest(selectedIds)
+                },
               }}
             />
           </div>
         </div>
       )}
-      <HistoryModalPreview isOpen={isModalPreviewOpen} onClose={() => setIsModalPreviewOpen(false)}
-        images={sortedDisplayImages} currentIndex={modalPreviewIndex} onChangeIndex={setModalPreviewIndex} snapshotIds={snapshotIdsForDisplay}
-        previewAutoFollow={previewAutoFollow} onToggleAutoFollow={handleToggleAutoFollow} />
-      <JobManagementModal isOpen={isJobModalOpen} onClose={() => setIsJobModalOpen(false)} />
-      {isSceneGeneratorOpen && selectedWorkflowId && (
-        <SceneGeneratorModal
-          isOpen={isSceneGeneratorOpen}
-          onClose={() => setIsSceneGeneratorOpen(false)}
-          workflow={workflow}
-          workflowId={selectedWorkflowId}
-          baseParamValues={paramValues}
-          textMappings={textMappings}
-          presets={presets || []}
-          onSaved={() => {
+      <LazyModalHost
+        mode="latch"
+        isOpen={isModalPreviewOpen}
+        load={loadHistoryModalPreview}
+        label="履歴プレビュー"
+        onClose={() => setIsModalPreviewOpen(false)}
+        modalProps={{
+          isOpen: isModalPreviewOpen,
+          onClose: () => setIsModalPreviewOpen(false),
+          images: sortedDisplayImages,
+          currentIndex: modalPreviewIndex,
+          onChangeIndex: setModalPreviewIndex,
+          snapshotIds: snapshotIdsForDisplay,
+          previewAutoFollow,
+          onToggleAutoFollow: handleToggleAutoFollow,
+        }}
+      />
+      <LazyModalHost
+        mode="latch"
+        isOpen={isJobModalOpen}
+        load={loadJobManagementModal}
+        label="ジョブ管理"
+        onClose={() => setIsJobModalOpen(false)}
+        modalProps={{ isOpen: isJobModalOpen, onClose: () => setIsJobModalOpen(false) }}
+      />
+      <LazyModalHost
+        mode="while-open"
+        isOpen={isSceneGeneratorOpen && !!selectedWorkflowId}
+        load={loadSceneGeneratorModal}
+        label="シーン生成"
+        onClose={() => setIsSceneGeneratorOpen(false)}
+        modalProps={{
+          isOpen: true,
+          onClose: () => setIsSceneGeneratorOpen(false),
+          workflow,
+          workflowId: selectedWorkflowId!,
+          baseParamValues: paramValues,
+          textMappings,
+          presets: presets || [],
+          onSaved: () => {
             qc.invalidateQueries({ queryKey: ['workflow-presets', selectedWorkflowId] })
             setIsSceneGeneratorOpen(false)
-          }}
-        />
-      )}
+          },
+        }}
+      />
 
       {/* Bulk Delete Confirmation Dialog */}
       {isBulkDeleteConfirmOpen && (
@@ -306,37 +371,51 @@ export function GeneratePage() {
       )}
 
       {/* Bulk Edit Modal */}
-      <ProfileBulkEditModal
+      <LazyModalHost
+        mode="latch"
         isOpen={isBulkEditOpen}
+        load={loadProfileBulkEditModal}
+        label="プロフィール一括編集"
         onClose={() => setIsBulkEditOpen(false)}
-        selectedPresets={(presets ?? []).filter(p => bulkTargetIds.includes(p.id))}
-        mappingMasters={workflow?.mappings?.map(m => ({
-          id: m.master_id ?? 0,
-          role: m.role ?? '',
-          expected_class_types: null,
-          param_name: m.param_name ?? '',
-          input_type: (m.input_type ?? 'textarea') as any,
-          display_name: m.display_name ?? m.role ?? '',
-          title_patterns: null,
-          sort_order: 0,
-        })) ?? []}
-        paramTypeMasters={state.paramTypeMasters}
-        comfyObjectInfo={state.comfyObjectInfo}
-        loras={loras ?? []}
-        tagSets={tagSets ?? []}
-        onApply={handleBulkEditApply}
-        isApplying={isBulkApplying}
-        activeBaseModelId={workflow?.target_base_model_id ?? null}
+        modalProps={{
+          isOpen: isBulkEditOpen,
+          onClose: () => setIsBulkEditOpen(false),
+          selectedPresets: (presets ?? []).filter(p => bulkTargetIds.includes(p.id)),
+          mappingMasters: workflow?.mappings?.map(m => ({
+            id: m.master_id ?? 0,
+            role: m.role ?? '',
+            expected_class_types: null,
+            param_name: m.param_name ?? '',
+            input_type: (m.input_type ?? 'textarea') as any,
+            display_name: m.display_name ?? m.role ?? '',
+            title_patterns: null,
+            sort_order: 0,
+          })) ?? [],
+          paramTypeMasters: state.paramTypeMasters,
+          comfyObjectInfo: state.comfyObjectInfo,
+          loras: loras ?? [],
+          tagSets: tagSets ?? [],
+          onApply: handleBulkEditApply,
+          isApplying: isBulkApplying,
+          activeBaseModelId: workflow?.target_base_model_id ?? null,
+        }}
       />
 
       {/* Preset Conflict Modal */}
-      <PresetConflictModal
+      <LazyModalHost
+        mode="latch"
         isOpen={!!state.conflictData}
-        conflictData={state.conflictData}
+        load={loadPresetConflictModal}
+        label="プリセット競合確認"
         onClose={() => state.setConflictData(null)}
-        onUseServer={state.handleResolveConflictUseServer}
-        onOverwriteServer={state.handleResolveConflictOverwrite}
-        onSaveAsNew={state.handleResolveConflictSaveAsNew}
+        modalProps={{
+          isOpen: !!state.conflictData,
+          conflictData: state.conflictData,
+          onClose: () => state.setConflictData(null),
+          onUseServer: state.handleResolveConflictUseServer,
+          onOverwriteServer: state.handleResolveConflictOverwrite,
+          onSaveAsNew: state.handleResolveConflictSaveAsNew,
+        }}
       />
     </>
   )

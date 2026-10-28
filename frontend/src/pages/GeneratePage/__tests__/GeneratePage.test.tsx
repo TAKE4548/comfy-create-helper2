@@ -14,6 +14,7 @@ import {
 import { useGenerationStore } from '../../../store/useGenerationStore';
 import { workflowsApi, workflowPresetsApi, mappingMastersApi } from '../../../api/client';
 import { stageMastersApi } from '../../../api/domains/stageMasters';
+import { LS_KEYS } from '../../../utils/localStorageKeys';
 
 vi.mock('../../../api/client', () => ({
   workflowsApi: {
@@ -50,6 +51,12 @@ vi.mock('../../../api/client', () => ({
     list: vi.fn().mockResolvedValue([]),
   },
   lorasApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+  albumsApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+  loraCategoriesApi: {
     list: vi.fn().mockResolvedValue([]),
   },
   tagSetsApi: {
@@ -93,6 +100,39 @@ vi.mock('../../../api/domains/workflows', () => ({
     list: vi.fn().mockResolvedValue([]),
   },
 }));
+
+// [REQ-309] Module-level probe: counts evaluations of the 10 lazily hosted modal modules,
+// and allows a gate (pending promise) or a failure to be injected before a fresh import.
+const lazyModalProbe = vi.hoisted(() => {
+  const probe = {
+    evaluations: {} as Record<string, number>,
+    gates: {} as Record<string, Promise<void>>,
+    failures: {} as Record<string, Error>,
+  };
+  const countedModule = (name: string) => async (importOriginal: () => Promise<Record<string, unknown>>) => {
+    probe.evaluations[name] = (probe.evaluations[name] ?? 0) + 1;
+    const gate = probe.gates[name];
+    if (gate) await gate;
+    const failure = probe.failures[name];
+    if (failure) {
+      // Fail when the loader reads the export (a rejected chunk load), not inside the factory,
+      // so vitest's mocker does not report the injected error as an unhandled module error.
+      return new Proxy({}, { get: (_target, key) => { if (key === 'then') return undefined; throw failure; } });
+    }
+    return importOriginal();
+  };
+  return { probe, countedModule };
+});
+vi.mock('../../../components/ProfileBulkEditModal', (importOriginal) => lazyModalProbe.countedModule('ProfileBulkEditModal')(importOriginal));
+vi.mock('../../../components/RescanModal', (importOriginal) => lazyModalProbe.countedModule('RescanModal')(importOriginal));
+vi.mock('../../../components/UploadWorkflowModal', (importOriginal) => lazyModalProbe.countedModule('UploadWorkflowModal')(importOriginal));
+vi.mock('../../../components/WorkflowManageModal', (importOriginal) => lazyModalProbe.countedModule('WorkflowManageModal')(importOriginal));
+vi.mock('../../../components/PresetManagerPanel', (importOriginal) => lazyModalProbe.countedModule('PresetManagerPanel')(importOriginal));
+vi.mock('../../../components/HistoryModalPreview', (importOriginal) => lazyModalProbe.countedModule('HistoryModalPreview')(importOriginal));
+vi.mock('../../../components/JobManagementModal', (importOriginal) => lazyModalProbe.countedModule('JobManagementModal')(importOriginal));
+vi.mock('../../../components/AddSnapshotToAlbumModal', (importOriginal) => lazyModalProbe.countedModule('AddSnapshotToAlbumModal')(importOriginal));
+vi.mock('../../../components/SceneGeneratorModal', (importOriginal) => lazyModalProbe.countedModule('SceneGeneratorModal')(importOriginal));
+vi.mock('../../../components/PresetConflictModal', (importOriginal) => lazyModalProbe.countedModule('PresetConflictModal')(importOriginal));
 
 const stages = [
   { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: [], previous_suffixes: [], is_builtin: true, is_active: true, sort_order: 0 },
@@ -351,8 +391,8 @@ describe('GeneratePage Component & State Integration', () => {
 
       const presetItems = screen.getAllByText('Preset Alpha');
       fireEvent.click(presetItems[presetItems.length - 1]);
-      expect(screen.getByText('プリセット管理')).toBeInTheDocument();
-      expect(screen.getByText('Preset Beta')).toBeInTheDocument();
+      expect(await screen.findByText('プリセット管理')).toBeInTheDocument();
+      expect(await screen.findByText('Preset Beta')).toBeInTheDocument();
     });
 
     it('[REQ-186/AC-2] allows closing tabs directly from preset manager modal', async () => {
@@ -464,7 +504,7 @@ describe('GeneratePage Component & State Integration', () => {
     const overlay = await screen.findByTestId('preset-manager-overlay');
     expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'items-end', 'md:items-center');
 
-    const modal = screen.getByTestId('preset-manager-modal');
+    const modal = await screen.findByTestId('preset-manager-modal');
     expect(modal).toHaveClass('max-h-[75dvh]', 'rounded-t-2xl', 'md:rounded-xl', 'flex', 'flex-col');
 
     // ListChecks / bulk mode button must be preserved
@@ -472,7 +512,7 @@ describe('GeneratePage Component & State Integration', () => {
     expect(bulkBtn).not.toBeNull();
 
     // Fixed bottom dock contains all check/uncheck and save buttons
-    const dock = screen.getByTestId('preset-manager-dock');
+    const dock = await screen.findByTestId('preset-manager-dock');
     expect(dock).toHaveClass('shrink-0');
     expect(dock.querySelector('#preset-check-all-btn')).not.toBeNull();
     expect(dock.querySelector('#preset-uncheck-all-btn')).not.toBeNull();
@@ -606,4 +646,289 @@ describe('GeneratePage Stage Groups & Visual Integration (REQ-347)', () => {
     expect(vi.mocked(mappingMastersApi.list)).not.toHaveBeenCalled();
   });
 
+});
+
+describe('GeneratePage lazy modal hosts (REQ-309)', () => {
+  // Fresh module registry per render so the lazily loaded modal modules and their
+  // React.lazy caches (module-level loader constants) start from a closed state.
+  const LAZY_MODAL_MODULES = [
+    ['../../../components/ProfileBulkEditModal', 'ProfileBulkEditModal'],
+    ['../../../components/RescanModal', 'RescanModal'],
+    ['../../../components/UploadWorkflowModal', 'UploadWorkflowModal'],
+    ['../../../components/WorkflowManageModal', 'WorkflowManageModal'],
+    ['../../../components/PresetManagerPanel', 'PresetManagerPanel'],
+    ['../../../components/HistoryModalPreview', 'HistoryModalPreview'],
+    ['../../../components/JobManagementModal', 'JobManagementModal'],
+    ['../../../components/AddSnapshotToAlbumModal', 'AddSnapshotToAlbumModal'],
+    ['../../../components/SceneGeneratorModal', 'SceneGeneratorModal'],
+    ['../../../components/PresetConflictModal', 'PresetConflictModal'],
+  ] as const;
+
+  async function mountFreshGeneratePage(options: { checkpoint?: boolean } = {}) {
+    // vi.mock factories run once per registry; re-register the counted factories so that
+    // the fresh graph's dynamic imports re-evaluate them and observe the current gate/failure.
+    for (const [path, name] of LAZY_MODAL_MODULES) {
+      vi.doMock(path, (importOriginal: () => Promise<Record<string, unknown>>) => lazyModalProbe.countedModule(name)(importOriginal));
+    }
+    vi.resetModules();
+    const [{ GeneratePage: FreshGeneratePage }, testUtils, freshStore, freshApi, freshGeneration] = await Promise.all([
+      import('../../GeneratePage'),
+      import('../../../test/utils'),
+      import('../../../store/useGenerationStore'),
+      import('../../../api/client'),
+      import('../../../api/domains/generation'),
+    ]);
+    const checkpointMappings = options.checkpoint
+      ? [{ id: 31, master_id: 99, node_id: '4', role: 'Checkpoint_Name', param_name: 'ckpt_name', input_type: 'select', display_name: 'Checkpoint' }]
+      : [];
+    vi.mocked(freshApi.workflowsApi.get).mockResolvedValue({
+      id: 1,
+      name: 'Standard Workflow',
+      json_body: {
+        '1': { inputs: { text: 'A' } },
+        '2': { inputs: { text: 'B' } },
+        '3': { inputs: { seed: 123 } },
+        ...(options.checkpoint ? { '4': { inputs: { ckpt_name: 'unlisted.safetensors' } } } : {}),
+      },
+      mappings: [...textMappings, ...paramMappings, ...checkpointMappings],
+    } as never);
+    testUtils.resetTestStore({
+      clientId: 'test-client',
+      isConnected: true,
+      isGenerating: false,
+      progress: null,
+      generationSnapshot: null,
+      previewImage: null,
+      activeClientId: null,
+      filterOwnSession: false,
+      selectedWorkflowId: 1,
+      paramValues: { Sampler_Seed: '12345' },
+      batchSize: 1,
+      seedMode: 'fixed',
+      seed: 12345,
+      batchImages: [],
+      selectedImg: null,
+      comfyHistoryImages: [],
+      appliedAssets: {},
+      comfyUrl: 'http://localhost:8188',
+      queueRunning: [],
+      queuePending: [],
+      sets: [
+        { id: '1', name: 'Set 1', checked: true, batchSize: 1, paramValues: {}, seedMode: 'fixed', seed: 12345, appliedAssets: {} },
+      ],
+      activeSetId: '1',
+      activeBatch: null,
+    } as never);
+    // Must follow resetTestStore, which would otherwise clear roleTextModes.
+    freshStore.useGenerationStore.setState({
+      roleTextModes: { Main_Positive_Prompt: true, Rough_Positive_Prompt: true },
+    } as any);
+    const qc = testUtils.createTestQueryClient();
+    qc.setDefaultOptions({ queries: { retry: false, staleTime: Infinity } });
+    // 共通前提（isolation-safe）: preset 一覧を固定する。空の一覧だと usePresetStoreSync が 'Set 1' を作り続けるため。
+    const presetFixture = [{ id: 101, workflow_id: 1, name: 'Set 1', param_values: {} }];
+    vi.mocked(freshApi.workflowPresetsApi.list).mockResolvedValue(presetFixture as never);
+    localStorage.removeItem('prompt-surgeon-checked-presets-1');
+    localStorage.removeItem(`${LS_KEYS.ACTIVE_SET_PREFIX}1`);
+    qc.setQueryData(['workflow-presets', 1], presetFixture);
+    qc.setQueryData(['comfy-lora-models'], []);
+    qc.setQueryData(['tag-sets'], []);
+    qc.setQueryData(['loras'], options.checkpoint
+      ? [
+          { id: 501, model_name: 'base.safetensors', description: null, file_path: 'checkpoints/base.safetensors', target_base_model_ids: [], category_id: null },
+          { id: 502, model_name: 'target.safetensors', description: null, file_path: 'checkpoints/target.safetensors', target_base_model_ids: [], category_id: null },
+        ] as never
+      : []);
+    qc.setQueryData(['stage-masters'], stages);
+    qc.setQueryData(['mapping-masters'], masters);
+    const view = render(
+      <QueryClientProvider client={qc}>
+        <FreshGeneratePage />
+      </QueryClientProvider>
+    );
+    return { ...view, freshGeneration, freshStore };
+  }
+
+  const promptInput = (container: HTMLElement) =>
+    container.querySelector<HTMLTextAreaElement>('#desktop-prompt-scroll #prompt-Main_Positive_Prompt textarea')!;
+
+  beforeEach(() => {
+    setupNetworkGuard();
+    MockWebSocketController.install();
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
+    window.dispatchEvent(new Event('resize'));
+    lazyModalProbe.probe.evaluations = {};
+    lazyModalProbe.probe.gates = {};
+    lazyModalProbe.probe.failures = {};
+  });
+
+  afterEach(() => {
+    teardownNetworkGuard();
+    MockWebSocketController.uninstall();
+  });
+
+  it('[REQ-309/AC-1] closed-modals-not-loaded: initial render evaluates none of the 10 modal modules', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-1'], layer: 'integration', caseId: 'closed-modals-not-loaded' });
+    const { container } = await mountFreshGeneratePage();
+    await waitFor(() => {
+      expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument();
+    });
+    expect(lazyModalProbe.probe.evaluations).toEqual({});
+  });
+
+  it('[REQ-309/AC-3] lazy-modal-open-close-keeps-prompt: prompt value survives opening and closing the job modal', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-3'], layer: 'integration', caseId: 'lazy-modal-open-close-keeps-prompt' });
+    const { container } = await mountFreshGeneratePage();
+    await waitFor(() => {
+      expect(container.querySelector('#prompt-Main_Positive_Prompt textarea')).toBeInTheDocument();
+    });
+    fireEvent.change(promptInput(container), { target: { value: 'keep this prompt' } });
+
+    fireEvent.click(container.querySelector('#queue-open-btn')!);
+    await screen.findByRole('dialog', { name: 'ジョブ管理' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'ジョブ管理' })).not.toBeInTheDocument();
+    });
+
+    expect(promptInput(container).value).toBe('keep this prompt');
+  });
+
+  it('[REQ-309/AC-3] modal-open-close-while-loading: fallback shows while the chunk is pending and no duplicate mounts after it resolves', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-3'], layer: 'integration', caseId: 'modal-open-close-while-loading' });
+    // Target: PresetManagerPanel (while-open). The outer overlay is static, so its × button
+    // and backdrop remain active while the inner host's chunk is pending.
+    let release!: () => void;
+    lazyModalProbe.probe.gates.PresetManagerPanel = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { container } = await mountFreshGeneratePage();
+    await waitFor(() => {
+      expect(container.querySelector('#manage-presets-btn')).toBeInTheDocument();
+    });
+
+    // 1. Open while the chunk is pending.
+    fireEvent.click(container.querySelector('#manage-presets-btn')!);
+    expect(await screen.findByText('プリセット管理を読み込み中…')).toBeInTheDocument();
+    expect(screen.getByTestId('preset-manager-overlay')).toBeInTheDocument();
+    expect(lazyModalProbe.probe.evaluations.PresetManagerPanel).toBe(1);
+
+    // 2. Close with the overlay's × button while loading.
+    fireEvent.click(screen.getByText('プリセット管理').parentElement!.querySelector('button')!);
+
+    // 3. Overlay and fallback are gone.
+    await waitFor(() => {
+      expect(screen.queryByTestId('preset-manager-overlay')).not.toBeInTheDocument();
+      expect(screen.queryByText('プリセット管理を読み込み中…')).not.toBeInTheDocument();
+    });
+
+    // 4. Resolve outside act, then let follow-up microtasks/macrotasks run.
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('preset-manager-dock')).not.toBeInTheDocument();
+    expect(screen.queryByText('プリセット管理を読み込み中…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // 5. Reopen: the loaded module is reused (no re-evaluation) and exactly one overlay/dock mounts.
+    fireEvent.click(container.querySelector('#manage-presets-btn')!);
+    await screen.findByTestId('preset-manager-dock');
+    expect(screen.getAllByTestId('preset-manager-overlay')).toHaveLength(1);
+    expect(screen.getAllByTestId('preset-manager-dock')).toHaveLength(1);
+    expect(lazyModalProbe.probe.evaluations.PresetManagerPanel).toBe(1);
+  }, 20000);
+
+  it('[REQ-309/AC-3] modal-load-failure-keeps-prompt: chunk failure shows a local alert and keeps the prompt and Generate screen', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-3'], layer: 'integration', caseId: 'modal-load-failure-keeps-prompt' });
+    lazyModalProbe.probe.failures.JobManagementModal = new Error('Failed to fetch dynamically imported module');
+    const { container } = await mountFreshGeneratePage();
+    await waitFor(() => {
+      expect(container.querySelector('#prompt-Main_Positive_Prompt textarea')).toBeInTheDocument();
+    });
+    fireEvent.change(promptInput(container), { target: { value: 'survive failure' } });
+
+    fireEvent.click(container.querySelector('#queue-open-btn')!);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('ジョブ管理を読み込めませんでした');
+    // Only the local modal boundary's alert may appear; the page-level GeneratePageErrorBoundary must not replace the screen.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(promptInput(container).value).toBe('survive failure');
+    expect(container.querySelector('#generate-btn')).toBeInTheDocument();
+  });
+
+  it('[REQ-309/AC-3] latch-modal-state-lifetime-preserved: AddSnapshotToAlbumModal resets per open; JobManagementModal clears confirmation on close', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-3'], layer: 'integration', caseId: 'latch-modal-state-lifetime-preserved' });
+    localStorage.removeItem(LS_KEYS.LAST_SAVE_ALBUM_ID_GENERATE);
+    const { container, freshStore } = await mountFreshGeneratePage();
+    await waitFor(() => {
+      expect(container.querySelector('#save-snapshot-btn')).toBeInTheDocument();
+    });
+    // Select an image so that the snapshot button is enabled.
+    act(() => {
+      freshStore.useGenerationStore.setState({ selectedImg: '/fixture/a.png' } as never);
+    });
+
+    // AddSnapshotToAlbumModal: open, edit album selection, cancel, reopen -> state reset.
+    fireEvent.click(container.querySelector('#save-snapshot-btn')!);
+    await screen.findByRole('dialog', { name: 'スナップショットを保存' });
+    expect(container.querySelector('#album-selector-trigger')).toHaveTextContent('アルバムを選択しない (None)');
+    fireEvent.click(container.querySelector('#album-selector-trigger')!);
+    fireEvent.click(screen.getByText('新規アルバム作成 (Create New Album)'));
+    expect(container.querySelector('#album-selector-trigger')).toHaveTextContent('新規アルバム作成 (Create New Album)');
+    fireEvent.change(container.querySelector('#new-album-name-field')!, { target: { value: 'tmp' } });
+    fireEvent.click(container.querySelector('#cancel-add-album-modal-btn')!);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'スナップショットを保存' })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(container.querySelector('#save-snapshot-btn')!);
+    await screen.findByRole('dialog', { name: 'スナップショットを保存' });
+    expect(container.querySelector('#album-selector-trigger')).toHaveTextContent('アルバムを選択しない (None)');
+    expect(container.querySelector('#new-album-name-field')).toBeNull();
+    expect(lazyModalProbe.probe.evaluations.AddSnapshotToAlbumModal).toBe(1);
+    fireEvent.click(container.querySelector('#cancel-add-album-modal-btn')!);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'スナップショットを保存' })).not.toBeInTheDocument();
+    });
+
+    // JobManagementModal: open, open confirmation, Escape, reopen -> no confirmation.
+    fireEvent.click(container.querySelector('#queue-open-btn')!);
+    await screen.findByRole('dialog', { name: 'ジョブ管理' }, { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'キューのみクリア' }));
+    expect(await screen.findByRole('dialog', { name: '取消確認' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '取消確認' })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(container.querySelector('#queue-open-btn')!);
+    await screen.findByRole('dialog', { name: 'ジョブ管理' }, { timeout: 5000 });
+    expect(screen.queryByRole('dialog', { name: '取消確認' })).toBeNull();
+    expect(lazyModalProbe.probe.evaluations.JobManagementModal).toBe(1);
+  }, 20000);
+
+  it('[REQ-309/AC-4] selected-checkpoint-submitted-after-lazy-load: the checkpoint chosen in the UI is the ckpt_name sent to the batch API', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['REQ-309/AC-4'], layer: 'integration', caseId: 'selected-checkpoint-submitted-after-lazy-load' });
+    const { container, freshGeneration } = await mountFreshGeneratePage({ checkpoint: true });
+    await waitFor(() => {
+      expect(container.querySelector('#generate-btn')).toBeInTheDocument();
+    });
+
+    // Select a checkpoint from the select-type parameter.
+    fireEvent.click(await screen.findByText('Select option…'));
+    fireEvent.click(screen.getByText('target.safetensors'));
+    await waitFor(() => {
+      expect(screen.queryByText('Select option…')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('target.safetensors')).toBeInTheDocument();
+
+    const submit = vi.spyOn(freshGeneration.generationApi, 'submitBatch').mockResolvedValue({ batch_id: 'b1', job_ids: [], epoch: 'e1', revision: 1 } as never);
+    await waitFor(() => expect(container.querySelector('#generate-btn')).toBeEnabled());
+    fireEvent.click(container.querySelector('#generate-btn')!);
+
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const body = submit.mock.calls[0][0] as any;
+    expect(body.items[0].graph['4'].inputs.ckpt_name).toBe('target.safetensors');
+    expect(body.items[0].param_values.Checkpoint_Name).toBe('target.safetensors');
+    submit.mockRestore();
+  });
 });

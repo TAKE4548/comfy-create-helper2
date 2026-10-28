@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
-import { QueryClient, useIsRestoring, useQuery, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, hashKey, useIsRestoring, useQuery, useQueryClient } from '@tanstack/react-query'
 import 'fake-indexeddb/auto'
 import { API_CACHE_BUSTER, API_CACHE_MAX_AGE, createIndexedDBPersister } from '../utils/queryCachePersister'
 
@@ -12,12 +12,15 @@ const api = vi.hoisted(() => ({
   update: vi.fn(async (_id: number, value: { name: string }) => { api.name = value.name }),
 }))
 
+const lazyGate = vi.hoisted(() => ({ generate: undefined as Promise<void> | undefined }))
 vi.mock('../api/client', () => ({ workflowsApi: { list: api.list, update: api.update } }))
 vi.mock('../components/layout/AppShell', async () => {
-  const { Outlet } = await import('react-router-dom')
-  return { AppShell: () => <Outlet /> }
+  const { Outlet, Link } = await import('react-router-dom')
+  return { AppShell: () => <><Link to="/loras">LoRAs</Link><Outlet /></> }
 })
 vi.mock('../pages/GeneratePage', async () => {
+  // Resolves immediately unless a case holds the gate to keep this lazy chunk pending.
+  await lazyGate.generate
   const { useMutation, useQuery, useQueryClient } = await import('@tanstack/react-query')
   const { workflowsApi } = await import('../api/client')
   const { useIsRestoring } = await import('@tanstack/react-query')
@@ -37,7 +40,7 @@ vi.mock('../pages/GeneratePage', async () => {
     </>
   } }
 })
-vi.mock('../pages/LoRAsPage', () => ({ LoRAsPage: () => null }))
+vi.mock('../pages/LoRAsPage', () => ({ LoRAsPage: () => <RestoredWorkflow /> }))
 vi.mock('../pages/TagsPage', () => ({ TagsPage: () => null }))
 vi.mock('../pages/HistoryPage', () => ({ HistoryPage: () => null }))
 vi.mock('../pages/SettingsPage', () => ({ SettingsPage: () => null }))
@@ -61,7 +64,12 @@ beforeAll(async () => {
   localStorage.setItem('session-token', 'keep')
   App = (await import('../App')).default
 })
-afterEach(cleanup)
+afterEach(async () => {
+  cleanup()
+  // Isolate cases from each other: each case seeds or creates its own persisted state.
+  window.history.replaceState({}, '', '/')
+  await createIndexedDBPersister().removeClient()
+})
 
 describe('App IndexedDB query persistence', () => {
   it('updates, persists, and restores eligible queries while excluding private and failed queries', async () => {
@@ -93,6 +101,48 @@ describe('App IndexedDB query persistence', () => {
     </PersistQueryClientProvider>)
     await waitFor(() => expect(screen.getByTestId('restored').textContent).toBe('after'))
   })
+
+  it('[REQ-309/AC-5] restore-completes-while-lazy-chunk-pending', async ({ task }) => {
+    Object.assign(task.meta, { acIds: ['AC-5'], layer: 'integration', caseId: 'restore-completes-while-lazy-chunk-pending' })
+    // Self-contained seed: this case must not rely on the preceding case's IndexedDB writes.
+    const RESTORED_NAME = 'restored-while-chunk-pending'
+    const persister = createIndexedDBPersister()
+    await persister.removeClient()
+    const now = Date.now()
+    const seeded = persister.persistClient({
+      buster: API_CACHE_BUSTER,
+      timestamp: now,
+      clientState: {
+        mutations: [],
+        queries: [{
+          queryKey: ['workflows'],
+          queryHash: hashKey(['workflows']),
+          state: {
+            data: [{ id: 7, name: RESTORED_NAME }], dataUpdateCount: 1, dataUpdatedAt: now,
+            error: null, errorUpdateCount: 0, errorUpdatedAt: 0, fetchFailureCount: 0, fetchFailureReason: null,
+            fetchMeta: null, isInvalidated: false, status: 'success', fetchStatus: 'idle',
+          },
+        }],
+      },
+    })
+    await persister.restoreClient() // flushes the pending seed write immediately
+    await seeded
+
+    let release!: () => void
+    lazyGate.generate = new Promise<void>((resolve) => { release = resolve })
+    try {
+      window.history.replaceState({}, '', '/')
+      vi.resetModules()
+      const FreshApp = (await import('../App')).default
+      render(<FreshApp />)
+      expect(await screen.findByRole('status')).toBeTruthy()
+      fireEvent.click(screen.getByRole('link', { name: 'LoRAs' }))
+      await waitFor(() => expect(screen.getByTestId('restored').textContent).toBe(RESTORED_NAME), { timeout: 3000 })
+    } finally {
+      release()
+      lazyGate.generate = undefined
+    }
+  }, 15000)
 })
 
 function RestoredWorkflow() {

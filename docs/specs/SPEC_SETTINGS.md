@@ -133,6 +133,8 @@ autosave中も編集中draftを保持し、空欄・非有限数・不正値・�
 
 確認中もinFlight保存は継続するが、1件でもinFlightがあればLeaveは無効にする。完了しても自動離脱せず、利用者が改めてLeaveを選ぶ。Cancelは現在URL・画面・draft・queueを保ち、保存やretryを起動しない。inFlightがないときの明示Leaveだけが未送信queueを同期取消し、local draftを破棄してproceedを1回実行する。過去の成功保存はrollbackせず、timeout等で結果不明の要求がserver側で取り消されたとは保証しない。reload／close／別document移動はリスクがある場合だけnative `beforeunload`確認を登録する。文言はbrowser依存で非同期flushの完了を保証せず、モバイルOSの強制終了は保護対象としない。修飾click／新規tabは元のSettingsとdraftを保持する。
 
+`/settings` route 要素は、静的な `SettingsDraftBoundary` の内側で Settings 本体を遅延読込する（`/settings` の leaf route だけを囲む）。blocker と `beforeunload` の判定フックは静的な boundary に載るため、Settings chunk の取得前から mount されている。ただし判定対象の draft は、Settings 本体の各 section が registry へ登録した後にのみ存在する。chunk 取得中は登録がないため risk は空として扱われ、離脱の block も `beforeunload` 確認も発生しない。block 条件・`cancelQueued`／`discardLocal` の契約は変更しない。
+
 Translationの辞書照合は大文字小文字を区別するリテラル一致で、長い一致から一度だけ置換する。置換結果を再走査して連鎖変換せず、元の入力を破壊しない。キャッシュは元の入力・設定に対応する結果として扱い、置換済みテキストを別入力のキーへ流用しない。
 
 Workflow/Mapping設定のJSON import/exportはversion 1形式を使う。importはschema、workflow graph、対象Master IDを適用前に検証し、ファイル内のtarget名と件数をpreviewに表示する。preview表示だけではDBを変更せず、利用者の明示確認後に既存workflow update APIを一度だけ呼ぶ。`default_applied_assets`を省略したimportは既存値を保ち、明示`null`は関連付けを解除する。無効な入力ではpreviewの適用操作を許可しない。

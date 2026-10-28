@@ -245,7 +245,7 @@
 
 - 画面幅768px未満では画面下部に高さ54pxのナビゲーションを固定し、safe-area insetを加味する。
 - アイコン ＋ ラベルテキスト（Generate / Studio / LoRAs / Tags / History / Settings）を表示
-- 全ページで同一のルーティング（`/`, `/studio`, `/loras`, `/tags`, `/history`, `/settings`）を共有
+- 全ページで同一のルーティング（`/`, `/studio`, `/loras`, `/tags`, `/history`, `/settings`）を共有。各 route は遅延読込だが、URL・ナビ構成・初期表示は変更しない
 - ボトムナビは幅768px未満のみ表示する。ページ最下部の操作要素が隠れないよう下部余白を確保する。固定ボトムナビは高さ `54px + env(safe-area-inset-bottom)`、AppShellの`main`は同値の`pb-[calc(54px+env(safe-area-inset-bottom))]`（`md:pb-0`）を持つ。CSS変数 `--bottom-nav-height` は定義しない。Settingsは `pb-[calc(6rem+env(safe-area-inset-bottom))]`（768px以上で `md:pb-5`）を追加する。これは §1-5 の Double Padding 防止の既知の例外で、スクロール領域最終の操作要素をナビ上に確保するためSettingsに限り許容する。タブレットrail（768–1023px）とデスクトップsidebar（1024px以上）ではこの下部余白を適用しない。
 - ナビの直上に固定する要素（§5-6の一括操作ドック）は、上記のナビの高さとセーフエリアに追従して配置する。本節は新しい高さの値やCSS変数を定義せず、そのドックを導入するまでの下部余白は上記のとおりとする（導入状況は§1-6-2に従う）。
 

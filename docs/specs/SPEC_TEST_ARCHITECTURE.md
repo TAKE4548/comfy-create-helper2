@@ -84,6 +84,8 @@ frontend/e2e/                        # 【Gate 3: E2E Playwright】実ブラウ�
   stickyHeader.spec.ts               # sticky追従・実スクロール (Desktop & Mobile)
 ```
 
+`frontend/e2e/prod/` は本番バンドル専用の E2E で、`playwright.prod.config.ts` で収集する。既定の Gate 3 `playwright.config.ts` は `testIgnore: ['**/prod/**']` により対象外とする。圧縮なしの静的サーバ（`e2e/prod/support/serveDist.mjs`。バックエンドの SPA 配信と同じく非圧縮）で配信した本番 build を対象に、初回 JS 転送量・chunk 構成・全 route・chunk 取得失敗を検証する。
+
 ### 5.2 Backend
 
 ```

@@ -106,7 +106,7 @@ comfy-create-helper2/
   │   │   │   ├─ slices/          # connection, jobQueue, multiSet, bypass, paramSync
   │   │   │   ├─ services/        # comfyWebSocketService
   │   │   │   └─ useGenerationStore.ts
-  │   │   └─ App.tsx              # ルーティング定義
+  │   │   └─ App.tsx              # ルーティング定義 (各ページは遅延読込)
   │   ├─ package.json
   │   └─ vite.config.ts
   ├─ backend/                     # FastAPI（Python）
@@ -161,12 +161,15 @@ comfy-create-helper2/
 | ページ | ルート | ファイル | 詳細仕様 |
 |---|---|---|---|
 | Generate | `/` (PC / モバイル共通) | `pages/GeneratePage.tsx` | [SPEC_GENERATE.md](./SPEC_GENERATE.md) |
+| Dataset Studio | `/studio` | `pages/DatasetStudioPage/index.tsx` | [SPEC_DATASET_STUDIO.md](./SPEC_DATASET_STUDIO.md) |
 | History | `/history` | `pages/HistoryPage.tsx` | [SPEC_HISTORY.md](./SPEC_HISTORY.md) |
 | LoRAs | `/loras` | `pages/LoRAsPage.tsx` | [SPEC_LORAS.md](./SPEC_LORAS.md) |
 | Tags | `/tags` | `pages/TagsPage.tsx` | [SPEC_TAGS.md](./SPEC_TAGS.md) |
 | Settings | `/settings` | `pages/SettingsPage.tsx` | [SPEC_SETTINGS.md](./SPEC_SETTINGS.md) |
 
 ※ スマホ（画面幅 767px 以下）では、同一ルート `/` の中で `GeneratePage` が自動的に `MobileLayout` コンポーネントを描画します。
+
+6 画面（`/`, `/studio`, `/loras`, `/tags`, `/history`, `/settings`）はすべて route 単位の遅延読込（`React.lazy` + `Suspense`）です。初期表示 route で他画面のコードを取得せず、訪問時に取得します。`AppShell`・Data Router・`errorElement`・`PersistQueryClientProvider` は静的です。chunk 取得失敗は route の `errorElement`（受け取った error を再 throw する）を経て、既存の `GlobalErrorBoundary` に到達します。
 
 ---
 
@@ -185,22 +188,22 @@ comfy-create-helper2/
 | `lora_base_models` | LoRA × BaseModel 中間テーブル | `lora_id` (`CASCADE`), `base_model_id` (`CASCADE`) |
 | `tagset_base_models` | TagSet × BaseModel 中間テーブル | `tag_set_id` (`CASCADE`), `base_model_id` (`CASCADE`) |
 | `snapshots` | スナップショット | `source_snapshot_id` -> `snapshots.id` (**`SET NULL`** 親削除時も派生画像は独立保持) |
-| `snapshot_loras` | スナップショット × LoRA | `snapshot_id` (`CASCADE`), `lora_id` (`SET NULL`) |
-| `snapshot_tag_sets` | スナップショット × TagSet | `snapshot_id` (`CASCADE`), `tag_set_id` (`SET NULL`) |
-| `albums` | アルバム（グループ） | `name` 定義 |
-| `album_items` | アルバム × スナップショット | `album_id` (`CASCADE`), `snapshot_id` (`CASCADE`), `sequence_order` 順序保持 |
-| `loras` | LoRA モデルマスタ | `category_id` -> `lora_categories.id` (`SET NULL`), `sort_order` 順序 |
-| `lora_trigger_word_sets` | LoRA トリガーワードセット | `lora_id` -> `loras.id` (`CASCADE`) |
-| `tag_sets` | タグセットマスタ | `category_id` -> `tagset_categories.id` (`SET NULL`), `sort_order` 順序 |
-| `tag_subsets` | タグセット内サブセット | `tag_set_id` -> `tag_sets.id` (`CASCADE`) |
+| `snapshot_loras` | スナップショット × LoRA 中間テーブル（適用強度 `strength`・`role` を保持） | `snapshot_id` (`CASCADE`), `lora_id` (`SET NULL`) |
+| `snapshot_tag_sets` | スナップショット × TagSet 中間テーブル（`role` を保持） | `snapshot_id` (`CASCADE`), `tag_set_id` (`SET NULL`) |
+| `albums` | アルバム（スナップショットグループ） | `name` 定義 |
+| `album_items` | アルバム × スナップショット（表示順序） | `album_id` (`CASCADE`), `snapshot_id` (`CASCADE`), `sequence_order` 順序保持 |
+| `loras` | LoRA モデルマスタ（メタ情報、ファイルパス、推奨強度、サムネイル） | `category_id` -> `lora_categories.id` (`SET NULL`), `sort_order` 順序 |
+| `lora_trigger_word_sets` | LoRA トリガーワードセット（名前・単語配列） | `lora_id` -> `loras.id` (`CASCADE`) |
+| `tag_sets` | タグセットマスタ（名称、タグ配列、サムネイル） | `category_id` -> `tagset_categories.id` (`SET NULL`), `sort_order` 順序 |
+| `tag_subsets` | タグセット内サブセット（バリエーションタググループ） | `tag_set_id` -> `tag_sets.id` (`CASCADE`) |
 | `lora_categories` | LoRA カテゴリマスタ | 削除時: 該当 LoRA の `category_id` を `null` に更新 |
 | `tagset_categories` | タグセットカテゴリマスタ | 削除時: 該当 TagSet の `category_id` を `null` に更新 |
-| `workflow_presets` | ワークフロープリセット | `workflow_id` -> `workflows.id` (`CASCADE`), `sort_order` 順序 |
-| `bypass_profiles` | ノードバイパス設定プロファイル | `workflow_id` -> `workflows.id` (`CASCADE`) |
-| `param_sync_groups` | パラメータ同期グループ | `workflow_id` -> `workflows.id` (`CASCADE`) |
-| `llm_prompts` | LLM システムプロンプト・設定 | `key` 主キー一意制約 |
-| `speech_bubble_presets` | セリフ装飾プリセット | `name` 一意 |
-| `speech_tone_presets` | セリフ口調変換プリセット | `sort_order` 順序 |
+| `workflow_presets` | ワークフロープリセット（パラメータ・アセット・シード設定一式） | `workflow_id` -> `workflows.id` (`CASCADE`), `sort_order` 順序 |
+| `bypass_profiles` | ワークフローごとのノードバイパス設定プロファイル | `workflow_id` -> `workflows.id` (`CASCADE`) |
+| `param_sync_groups` | パラメータ同期グループ（Master-Slave 連動） | `workflow_id` -> `workflows.id` (`CASCADE`) |
+| `llm_prompts` | LLM システムプロンプト・設定パラメータ（`key` / `content` / `description`） | `key` 主キー一意制約 |
+| `speech_bubble_presets` | セリフ装飾プリセット（`shape` / `font_family` / `border_color` / `border_width` / `effects_json` / `orientation` 等） | `name` 一意 |
+| `speech_tone_presets` | セリフ口調変換プリセット（ツンデレ、お嬢様、敬語 等の例示口調） | `sort_order` 順序 |
 
 ---
 
@@ -223,6 +226,8 @@ comfy-create-helper2/
   ```
 
 ### 7-2. エンドポイント一覧
+
+FastAPI が提供するエンドポイントの概要。詳細は `backend/openapi.json` を参照。
 
 | リソース | ベースパス | 主な操作 |
 |---|---|---|
@@ -285,106 +290,6 @@ LLM に渡すシステムプロンプトや詳細設定は `llm_prompts` テー�
 | 〜767px | スマホ | シングルカラム縦スクロール（`MobileLayout`、同一ルート `/`） |
 
 設定ページ内の5タブ、横スクロール、カード表示および設定専用の768px/1024px境界は [SPEC_SETTINGS.md](./SPEC_SETTINGS.md) を参照。上表は全画面共通のレスポンシブ概要。
-
----
-
-## 10. 設定・環境変数
-
-バックエンド `.env` で管理:
-
-```env
-DATABASE_URL=sqlite:///./prompt_surgeon.db
-COMFY_URL=http://localhost:8188
-LLM_BASE_URL=http://localhost:11434/v1   # Ollama
-# LLM_BASE_URL=http://localhost:1234/v1  # LMStudio
-CORS_ORIGINS=http://localhost:5173
-```
-
----
-
-*本ドキュメントは現行の全バックエンド・フロントエンド実装および SSoT 仕様に合わせて改訂された正本です。*
-ップショット × LoRA の中間テーブル（適用強度・role を保持） |
-| `snapshot_tag_sets` | スナップショット × TagSet の中間テーブル（role を保持） |
-| `albums` | アルバム（スナップショットグループ） |
-| `album_items` | アルバム × スナップショット（表示順序 `sequence_order` を保持） |
-| `loras` | LoRA モデル（メタ情報、ファイルパス、推奨強度、サムネイル、sort_order） |
-| `lora_trigger_word_sets` | LoRA トリガーワードセット（名前・単語配列） |
-| `tag_sets` | タグセット（名称、タグ配列、サムネイル、sort_order） |
-| `tag_subsets` | タグセット内のサブセット（バリエーションタググループ） |
-| `lora_categories` | LoRA カテゴリマスタ |
-| `tagset_categories` | タグセットカテゴリマスタ |
-| `workflow_presets` | ワークフロープリセット（パラメータ・アセット・シード設定一式） |
-| `bypass_profiles` | ワークフローごとのノードバイパス設定プロファイル |
-| `param_sync_groups` | パラメータ同期グループ（Master-Slave 連動） |
-| `llm_prompts` | LLM システムプロンプト・設定パラメータ（key / content / description） |
-| `speech_bubble_presets` | セリフ装飾プリセット（shape / font / border / effects_json / orientation 等） |
-| `speech_tone_presets` | セリフ口調変換プリセット（ツンデレ、お嬢様、敬語等） |
-
----
-
-## 7. API 概要
-
-FastAPI が提供するエンドポイントの概要。詳細は `backend/openapi.json` を参照。
-
-| リソース | ベースパス | 主な操作 |
-|---|---|---|
-| ワークフロー | `/api/workflows` | 一覧・取得・登録・更新・削除・複製 (`/copy`)・JSONスキャン (`/scan`) |
-| ノードマッピングマスタ | `/api/mapping-masters` | 一覧・登録・更新・削除・並び替え (`/reorder`) |
-| パラメータ型マスタ | `/api/param-type-masters` | 一覧・登録・更新・削除 |
-| ベースモデル | `/api/base-models` | 一覧・登録・更新・削除 |
-| チェックポイントマッピング | `/api/checkpoint-mappings` | 一覧・登録・削除 |
-| バイパスプロファイル | `/api/workflows/{id}/bypass-profiles` | 一覧・登録・更新・削除 |
-| パラメータ同期グループ | `/api/workflows/{id}/param-sync-groups` | 一覧・登録・更新・削除 |
-| ワークフロープリセット | `/api/presets` | 一覧・登録・更新・削除・並び替え (`/reorder`)・一括削除 (`/bulk`) |
-| スナップショット | `/api/snapshots` | 一覧・取得・登録・削除・更新・アップロード・ダウンロード・フキダシ自動検出 (`/detect-bubble`) |
-| アルバム | `/api/albums` | 一覧・取得・登録・更新・削除・並び替え (`/reorder`, `/{id}/order`)・アイテム一括削除 (`/{id}/items/delete`) |
-| LoRA | `/api/loras` | 一覧・登録・更新・削除・並び替え (`/reorder`)・ComfyUIモデル一覧取得 (`/comfy-models`) |
-| トリガーワードセット | `/api/loras/{id}/trigger-word-sets` | 一覧・登録・更新・削除 |
-| タグセット | `/api/tag-sets` | 一覧・登録・更新・削除・並び替え (`/reorder`) |
-| カテゴリ（LoRA） | `/api/lora-categories` | 一覧・登録・更新・削除 |
-| カテゴリ（TagSet） | `/api/tagset-categories` | 一覧・登録・更新・削除 |
-| LLM プロンプト & 設定 | `/api/llm-prompts` | 一覧・更新・モデル一覧取得 (`/models`)・現在モデル取得/更新 (`/current-model`)・シーン生成 (`/scene-generate`)・スピーチ下書き (`/speech-draft`) |
-| LLM 監査実行 | `/api/audit` | プロンプト診断実行（POST） |
-| プロンプト翻訳 | `/api/translate` | プロンプト翻訳 (`/prompt`)・接続テスト (`/test`)・統計 (`/stats`)・キャッシュクリア (`/clear-cache`)。Danbooru辞書即時引き＋FuguMT文単位フォールバックによりハイブリッド和訳対応 |
-| セリフ口調プリセット | `/api/speech-tone-presets` | 一覧・登録・更新・削除・口調書き換え実行 (`/rewrite`) |
-| フキダシ装飾プリセット | `/api/speech-bubble-presets` | 一覧・登録・更新・削除 |
-| 漫画化一括バッチ | `/api/speech-batch` | ジョブ登録 (`/jobs`)・アクティブジョブ取得 (`/jobs/active`)・詳細取得・キャンセル・再試行 |
-| フォント管理 | `/api/fonts` | 利用可能フォント一覧取得・フォントファイル配信 |
-| ComfyUI プロキシ | `/api/comfy` | ノード情報 (`/object_info`)・キュー投入 (`/prompt`)・キュー確認 (`/queue`)・割り込み (`/interrupt`)・履歴 (`/history`)・チェックポイント一覧 (`/checkpoints`) |
-| アプリケーション設定 | `/api/config` | ComfyUI URL 取得 |
-
----
-
-## 8. LLM 支援機能
-
-### システムプロンプト & パラメータ管理
-
-LLM に渡すシステムプロンプトや詳細設定は `llm_prompts` テーブルで一元管理される。
-
-| key | 用途 |
-|---|---|
-| `audit_interference` | 干渉タグ診断（SDXL/汎用）|
-| `audit_interference_anima` | 干渉タグ診断（Anima/自然言語対応モデル）|
-| `audit_vocabulary` | 語彙サジェスト（SDXL/汎用）|
-| `audit_physical` | 物理・構図整合性チェック |
-| `scene_generate` | シーン自動生成（シチュエーション文から各ロールへのプロンプト自動分解）|
-| `scene_generate_anima` | シーン自動生成（Anima向け自然言語記述）|
-| `translation_ja_to_en` | プロンプト翻訳（日 → 英）|
-| `translation_en_to_ja` | プロンプト翻訳（英 → 日）|
-| `speech_rewrite_system_prompt` | セリフ口調書き換え用プロンプト |
-| `speech_draft_llm_prompt` | 画像とプロンプトからのセリフ下書き生成 |
-| `bubble_detection_params` | フキダシ自動検出画像処理パラメータ |
-| `llm_params_audit` / `llm_params_scene_generate` / `llm_params_translation` | 各機能別の LLM パラメータ（Temperature, MaxTokens 等） |
-
----
-
-## 9. レスポンシブ設計
-
-| 幅 | 対象 | レイアウト |
-|---|---|---|
-| 1024px〜 | PC / デスクトップ | 2カラム（左: 入力パネル群 / 右: プレビュー・履歴・生成コントロール） |
-| 768px〜1023px | タブレット | 2カラム最適化 |
-| 〜767px | スマホ | シングルカラム縦スクロール（`MobileLayout`、同一ルート `/`） |
 
 ---
 

@@ -532,6 +532,16 @@ pages/GeneratePage/
     useGalleryInteraction.ts    — ギャラリー選択・双方向同期・スクロール連携（REQ-383）
 ```
 
+### 7-1. モーダルの読込条件
+
+Generate 配下のモーダル・パネルは `components/common/LazyBoundary.tsx` の `LazyModalHost` で読み込む。chunk は各ホストが初めて必要になった時点で取得する。
+
+- **常時 mount 型（`mode="latch"`）**: 初回に開くまで取得せず、初回オープン後は閉じても mount を維持する（内部 state の寿命は従来どおり）。対象は `AddSnapshotToAlbumModal`・`HistoryModalPreview`・`JobManagementModal`・`ProfileBulkEditModal`・`PresetConflictModal`・`PromptTranslationModal`。
+- **条件 render 型（`mode="while-open"`）**: 開いている間だけ取得・mount し、閉じると unmount する。対象は `RescanModal`・`UploadWorkflowModal`・`WorkflowManageModal`・`PresetManagerPanel`（親の表示条件の内側）・`SceneGeneratorModal`・`BypassSettingsModal`・`ParamSyncModal`・`SaveAsTagSetModal`。
+- **読込中**: 開いている間だけ、モーダル名を付けた局所の読込表示（`role="status"`）を出す。閉じている間は何も出さない。
+- **取得失敗**: chunk 取得失敗だけを局所で処理し、`role="alert"` の局所エラー（「{モーダル名}を読み込めませんでした。ページを再読み込みすると回復する場合があります。」と「閉じる」「ページを再読み込み」）を表示する。ページ全体・入力済みプロンプトは失われない。chunk 取得失敗以外の描画例外は局所で握らず、外側へ再 throw する。
+- `DesktopLayout`／`MobileLayout` は遅延化しない。コピー作成ダイアログと通知（トースト）は静的に描画する。
+
 ---
 
 *本ドキュメントは現行の GeneratePage 実装に準拠した正本です。*
