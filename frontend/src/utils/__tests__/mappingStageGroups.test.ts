@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { groupMappingsByStage } from '../mappingStageGroups'
+import { buildParamSyncCandidates, groupMappingsByStage } from '../mappingStageGroups'
 
 const stages = [
   { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
@@ -82,5 +82,76 @@ describe('groupMappingsByStage', () => {
 
     expect(groups.map(group => group.stageId)).toEqual([1, 2])
     expect(groups.map(group => group.stageName)).toEqual(['Stage', 'Stage'])
+  })
+})
+
+describe('buildParamSyncCandidates', () => {
+  const syncStages = [
+    { ...stages[0] },
+    { ...stages[1] },
+    { id: 3, key: 'detail', name: 'Detail', suffix: '_detail', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 3 },
+  ]
+  const variant = (id: number, master_id: number, stage_id: number, computed_role: string) => ({
+    id, master_id, stage_id, stage_key: syncStages[stage_id - 1].key, stage_name: syncStages[stage_id - 1].name,
+    stage_suffix: '', custom_role_override: null, computed_role, extra_title_patterns: null, is_enabled: true,
+  })
+  const syncMaster = (id: number, base_key: string, input_type: string, variants: ReturnType<typeof variant>[]) => ({
+    id, group_id: null, base_key, name: base_key, param_name: base_key, input_type,
+    expected_class_types: null, base_title_patterns: null, sort_order: id, variants,
+  })
+  const syncMasters = [
+    syncMaster(10, 'Sampler_Steps', 'int', [
+      variant(201, 10, 1, 'Sampler_Steps'), variant(202, 10, 2, 'Sampler_Steps_Rough'), variant(203, 10, 3, 'Sampler_Steps_Detail'),
+    ]),
+    syncMaster(20, 'Other_Steps', 'int', [variant(301, 20, 1, 'Other_Steps'), variant(302, 20, 2, 'Other_Steps_Rough')]),
+    syncMaster(30, 'Sampler_CFG', 'float', [variant(401, 30, 1, 'Sampler_CFG')]),
+  ]
+  const sm = (id: number, master_id: number, variant_id: number | null, role: string | null, input_type: string | null, display_name: string | null) => ({
+    id, master_id, node_id: `n${id}`, variant_id, role, param_name: 'x', input_type, display_name,
+  })
+  const mainSteps = sm(1, 10, 201, 'Sampler_Steps', 'int', 'Steps')
+  const roughSteps = sm(2, 10, 202, 'Sampler_Steps_Rough', 'int', 'Steps')
+  const detailSteps = sm(3, 10, 203, 'Sampler_Steps_Detail', 'int', 'Steps')
+  const roughOther = sm(4, 20, 302, 'Other_Steps_Rough', 'int', 'OtherSteps')
+  const mainCfg = sm(5, 30, 401, 'Sampler_CFG', 'float', 'CFG')
+
+  it('[REQ-351/AC-1] builds stage-qualified candidates for every mapped role in stage order', () => {
+    const result = buildParamSyncCandidates([detailSteps, mainCfg, roughOther, roughSteps, mainSteps], syncMasters, syncStages)
+
+    expect(result).toEqual([
+      { role: 'Sampler_CFG', stageName: 'Main', displayName: 'CFG', inputType: 'float' },
+      { role: 'Sampler_Steps', stageName: 'Main', displayName: 'Steps', inputType: 'int' },
+      { role: 'Other_Steps_Rough', stageName: 'Rough', displayName: 'OtherSteps', inputType: 'int' },
+      { role: 'Sampler_Steps_Rough', stageName: 'Rough', displayName: 'Steps', inputType: 'int' },
+      { role: 'Sampler_Steps_Detail', stageName: 'Detail', displayName: 'Steps', inputType: 'int' },
+    ])
+  })
+
+  it('[REQ-351/AC-1] dedupes duplicate roles and skips null roles without mutating inputs', () => {
+    const duplicate = sm(6, 10, 202, 'Sampler_Steps_Rough', 'int', 'Steps dup')
+    const nullRole = sm(7, 10, 201, null, 'int', 'No role')
+    const emptyRole = sm(8, 10, 201, '', 'int', 'Empty role')
+    const blankName = sm(9, 20, 302, 'Other_Steps_Rough', 'int', '')
+    const input = [mainSteps, nullRole, roughSteps, duplicate, emptyRole, blankName]
+    const snapshot = JSON.parse(JSON.stringify(input))
+    const mastersSnapshot = JSON.parse(JSON.stringify(syncMasters))
+
+    const result = buildParamSyncCandidates(input, syncMasters, syncStages)
+
+    expect(result.map(c => c.role)).toEqual(['Sampler_Steps', 'Sampler_Steps_Rough', 'Other_Steps_Rough'])
+    expect(result[1].displayName).toBe('Steps')
+    expect(result[2].displayName).toBeNull()
+    expect(input).toEqual(snapshot)
+    expect(syncMasters).toEqual(mastersSnapshot)
+  })
+
+  it('[REQ-351/AC-1] leaves stageName null when a mapping cannot be resolved to a stage', () => {
+    const orphan = sm(10, 99, null, 'Legacy_Role', 'int', 'Legacy')
+    const unknownVariant = sm(11, 10, 999, 'Ghost_Role', 'int', 'Ghost')
+    const result = buildParamSyncCandidates([orphan, unknownVariant, mainSteps], syncMasters, syncStages)
+
+    expect(result.find(c => c.role === 'Legacy_Role')).toEqual({ role: 'Legacy_Role', stageName: null, displayName: 'Legacy', inputType: 'int' })
+    expect(result.find(c => c.role === 'Ghost_Role')?.stageName).toBeNull()
+    expect(result.find(c => c.role === 'Sampler_Steps')?.stageName).toBe('Main')
   })
 })

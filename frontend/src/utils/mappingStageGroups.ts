@@ -148,3 +148,34 @@ export function groupMappingsByStage(
     })
     .map(({ group }) => group)
 }
+
+export interface ParamSyncCandidate {
+  role: string
+  stageName: string | null
+  displayName: string | null
+  inputType: string | null
+}
+
+/** Lists parameter-sync candidates (one per role) in stage-group order with their resolved stage names. */
+export function buildParamSyncCandidates(
+  mappings: readonly WorkflowMapping[],
+  masters: readonly (MappingMaster | MappingMasterV2)[],
+  stages: readonly StageMaster[],
+): ParamSyncCandidate[] {
+  const seen = new Set<string>()
+  const candidates: ParamSyncCandidate[] = []
+  for (const group of groupMappingsByStage(mappings, masters, stages)) {
+    for (const mapping of group.mappings) {
+      const role = mapping.role
+      if (!role || seen.has(role)) continue
+      seen.add(role)
+      candidates.push({
+        role,
+        stageName: group.stageId !== undefined ? group.stageName : null,
+        displayName: mapping.display_name ? mapping.display_name : null,
+        inputType: mapping.input_type ?? null,
+      })
+    }
+  }
+  return candidates
+}

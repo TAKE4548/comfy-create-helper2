@@ -143,3 +143,38 @@ class TestParamSyncGroupsAPI(unittest.TestCase):
 
         response_bad = self.client.delete("/api/param-sync-groups/9999")
         assert response_bad.status_code == 404
+
+    def test_stage_qualified_roles_round_trip(self):
+        """[REQ-351/AC-6] Stage-qualified computed roles persist and reload unchanged."""
+        payload = {
+            "name": "Steps Sync",
+            "master_role": "Sampler_Steps",
+            "slave_roles": ["Sampler_Steps_Rough", "Other_Steps_Rough"],
+            "is_enabled": True,
+        }
+        list_url = f"/api/workflows/{self.workflow.id}/param-sync-groups"
+        created = self.client.post(list_url, json=payload)
+        assert created.status_code == 201
+        group_id = created.json()["id"]
+
+        listed = self.client.get(list_url)
+        assert listed.status_code == 200
+        groups = [g for g in listed.json() if g["id"] == group_id]
+        assert len(groups) == 1
+        assert groups[0]["master_role"] == "Sampler_Steps"
+        assert groups[0]["slave_roles"] == ["Sampler_Steps_Rough", "Other_Steps_Rough"]
+
+        updated = self.client.put(
+            f"/api/param-sync-groups/{group_id}",
+            json={"slave_roles": ["Sampler_Steps_Rough"]},
+        )
+        assert updated.status_code == 200
+
+        relisted = self.client.get(list_url)
+        assert relisted.status_code == 200
+        groups = [g for g in relisted.json() if g["id"] == group_id]
+        assert len(groups) == 1
+        assert groups[0]["slave_roles"] == ["Sampler_Steps_Rough"]
+        assert groups[0]["master_role"] == "Sampler_Steps"
+        assert groups[0]["name"] == "Steps Sync"
+        assert groups[0]["is_enabled"] is True

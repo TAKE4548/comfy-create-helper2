@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ParamSyncModal } from '../ParamSyncModal'
 import { useGenerationStore } from '../../store/useGenerationStore'
 import { mappingMastersApi, workflowsApi } from '../../api/client'
+import { stageMastersApi } from '../../api/domains/stageMasters'
 import type { MappingMaster, Workflow, ParamSyncGroup } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
@@ -11,6 +12,12 @@ vi.mock('../../api/client', () => ({
   },
   workflowsApi: {
     get: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/domains/stageMasters', () => ({
+  stageMastersApi: {
+    list: vi.fn(),
   },
 }))
 
@@ -66,6 +73,7 @@ describe('ParamSyncModal Component', () => {
 
     vi.mocked(mappingMastersApi.list).mockResolvedValue([...MOCK_MAPPING_MASTERS])
     vi.mocked(workflowsApi.get).mockResolvedValue({ ...MOCK_ACTIVE_WORKFLOW })
+    vi.mocked(stageMastersApi.list).mockResolvedValue([])
   })
 
   it('mounts, fetches masters/workflow, and closes on Escape key', async () => {
@@ -169,5 +177,159 @@ describe('ParamSyncModal Component', () => {
 
     expect(window.confirm).toHaveBeenCalled()
     expect(deleteParamSyncGroupMock).toHaveBeenCalledWith(101)
+  })
+})
+
+describe('REQ-351 stage-qualified candidates', () => {
+  const stage = (id: number, key: string, name: string) => ({
+    id, key, name, suffix: '', search_keywords: null, previous_suffixes: null,
+    is_builtin: true, is_active: true, sort_order: id,
+  })
+  const STAGES = [stage(1, 'main', 'Main'), stage(2, 'rough', 'Rough'), stage(3, 'detail', 'Detail')]
+  const variant = (id: number, master_id: number, stage_id: number, computed_role: string) => ({
+    id, master_id, stage_id, stage_key: STAGES[stage_id - 1].key, stage_name: STAGES[stage_id - 1].name,
+    stage_suffix: '', custom_role_override: null, computed_role, extra_title_patterns: null, is_enabled: true,
+  })
+  const master = (id: number, base_key: string, input_type: string, variants: ReturnType<typeof variant>[]) => ({
+    id, group_id: null, base_key, name: base_key, param_name: base_key, input_type,
+    expected_class_types: null, base_title_patterns: null, sort_order: id, variants,
+  })
+  const V2_MASTERS = [
+    master(10, 'Sampler_Steps', 'int', [variant(201, 10, 1, 'Sampler_Steps'), variant(202, 10, 2, 'Sampler_Steps_Rough'), variant(203, 10, 3, 'Sampler_Steps_Detail')]),
+    master(20, 'Other_Steps', 'int', [variant(301, 20, 1, 'Other_Steps'), variant(302, 20, 2, 'Other_Steps_Rough')]),
+    master(30, 'Sampler_CFG', 'float', [variant(401, 30, 1, 'Sampler_CFG')]),
+  ]
+  const wm = (id: number, master_id: number, variant_id: number, role: string, input_type: string, display_name: string) => ({
+    id, master_id, node_id: `n${id}`, variant_id, role, param_name: 'x', input_type, display_name,
+  })
+  const WORKFLOW = {
+    id: 1,
+    name: 'Staged Workflow',
+    json_body: {},
+    created_at: '2026-01-01T00:00:00Z',
+    target_base_model_id: null,
+    mappings: [
+      wm(1, 10, 201, 'Sampler_Steps', 'int', 'Steps'),
+      wm(2, 10, 202, 'Sampler_Steps_Rough', 'int', 'Steps'),
+      wm(3, 10, 203, 'Sampler_Steps_Detail', 'int', 'Steps'),
+      wm(4, 20, 302, 'Other_Steps_Rough', 'int', 'OtherSteps'),
+      wm(5, 30, 401, 'Sampler_CFG', 'float', 'CFG'),
+    ],
+  }
+  const group = (overrides: Partial<ParamSyncGroup> = {}): ParamSyncGroup => ({
+    id: 201, workflow_id: 1, name: 'Steps Sync', master_role: 'Sampler_Steps', slave_roles: [],
+    is_enabled: true, created_at: '2026-01-01T00:00:00Z', ...overrides,
+  })
+  const updateMock = vi.fn()
+
+  const openGroup = async () => {
+    const view = render(<ParamSyncModal onClose={vi.fn()} />)
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalled())
+    fireEvent.click(screen.getByText('Steps Sync'))
+    return view
+  }
+  const labelOf = (checkbox: HTMLElement) => checkbox.closest('label')!.querySelector('.truncate')!.textContent
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    updateMock.mockResolvedValue(undefined)
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      paramSyncGroups: [group()],
+      fetchParamSyncGroups: vi.fn(),
+      createParamSyncGroup: vi.fn(),
+      updateParamSyncGroup: updateMock,
+      deleteParamSyncGroup: vi.fn(),
+      toggleParamSyncGroup: vi.fn(),
+    })
+    vi.mocked(mappingMastersApi.list).mockResolvedValue(V2_MASTERS as never)
+    vi.mocked(workflowsApi.get).mockResolvedValue(WORKFLOW as never)
+    vi.mocked(stageMastersApi.list).mockResolvedValue(STAGES as never)
+  })
+
+  it('[REQ-351/AC-1] shows same-role other stages and same-type other roles with stage names as sub candidates', async () => {
+    await openGroup()
+
+    const boxes = await screen.findAllByRole('checkbox')
+    await waitFor(() => expect(screen.getAllByRole('checkbox').map(labelOf)).toEqual(['Rough / Steps', 'Rough / OtherSteps', 'Detail / Steps']))
+    expect(boxes.length).toBeGreaterThan(0)
+  })
+
+  it('[REQ-351/AC-2] excludes the representative Main/Steps itself from sub candidates', async () => {
+    await openGroup()
+
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    expect(screen.getAllByRole('checkbox').map(labelOf)).not.toContain('Main / Steps')
+    expect(screen.queryByText('Role: Sampler_Steps')).not.toBeInTheDocument()
+  })
+
+  it('[REQ-351/AC-4] lets the same-type other role Rough/OtherSteps be selected as a sync target', async () => {
+    await openGroup()
+
+    const target = (await screen.findByText('Rough / OtherSteps')).closest('label')!
+    fireEvent.click(within(target).getByRole('checkbox'))
+
+    expect(updateMock).toHaveBeenCalledWith(201, { slave_roles: ['Other_Steps_Rough'] })
+  })
+
+  it('[REQ-351/AC-1] keeps different input types out of sub candidates', async () => {
+    await openGroup()
+
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    expect(screen.queryByText('Role: Sampler_CFG')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('checkbox').map(labelOf)).not.toContain('Main / CFG')
+  })
+
+  it('[REQ-351/AC-6] restores saved stage-qualified sync targets as checked when the modal is reopened', async () => {
+    useGenerationStore.setState({
+      paramSyncGroups: [group({ slave_roles: ['Sampler_Steps_Rough', 'Other_Steps_Rough'] })],
+    })
+    const first = await openGroup()
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    first.unmount()
+
+    await openGroup()
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
+    expect(boxes.filter(b => b.checked).map(labelOf)).toEqual(['Rough / Steps', 'Rough / OtherSteps'])
+    expect(boxes.find(b => labelOf(b) === 'Detail / Steps')!.checked).toBe(false)
+  })
+
+  it('[REQ-351/AC-6] keeps stage-qualified sync targets when the representative changes to a same-type role', async () => {
+    useGenerationStore.setState({
+      paramSyncGroups: [group({ slave_roles: ['Sampler_Steps_Rough', 'Sampler_Steps_Detail'] })],
+    })
+    await openGroup()
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Sampler_Steps_Detail' } })
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith(201, {
+        master_role: 'Sampler_Steps_Detail',
+        slave_roles: ['Sampler_Steps_Rough'],
+      })
+    })
+  })
+
+  it('[REQ-351/AC-1] keeps candidates when stage master loading fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(stageMastersApi.list).mockRejectedValue(new Error('stage load failed'))
+    await openGroup()
+
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    expect(screen.getAllByRole('checkbox').map(labelOf).sort()).toEqual(['Detail / Steps', 'Rough / OtherSteps', 'Rough / Steps'])
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it('[REQ-351/AC-1] keeps candidates by workflow input_type when mapping master loading fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(mappingMastersApi.list).mockRejectedValue(new Error('master load failed'))
+    await openGroup()
+
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })

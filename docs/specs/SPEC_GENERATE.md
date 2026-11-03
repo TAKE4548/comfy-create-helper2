@@ -182,6 +182,14 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
 ### 2-8. パラメータ同期グループ (`ParamSyncModal.tsx`)
 
 - マスターロール（例: `Sampler_Steps`）の値変更時に、スレーブロール（例: `FDetailer_Steps`）の値を自動連動・同期。
+- 同期の単位はワークフロー mapping の `role`（REQ-336 のロール×ステージ。バリアントがある mapping は `computed_role`）とする。代表（マスター）と同期先は role 文字列で保存する。
+- 代表の選択肢は、ワークフロー mapping の role をステージ順に並べた一覧とする。同じ role 文字列は1候補にまとめ、代表自身は同期先候補に出さない。同期先候補は代表と同じ `input_type` の role に限り（代表と同じマスターの別ステージのバリアントを含む）、異なる `input_type` の role は設定画面で同期先として選択できない。同じ role 文字列になる複数ステージ（例: `custom_role_override` による重複）は、最初に現れたステージ名の1候補にまとまり、ステージ別に個別同期できない。
+- 候補ラベルは、ステージを解決できる場合 `{stageName} / {displayName}`、解決できない mapping は displayName のみとする。候補の2行目に `Role: {role}` を表示する。代表の選択肢は `{label} ({role})` とする。候補の並びは stage 順とする。
+- 型判定（`input_type`）は、候補 mapping の `input_type` を優先する。ない場合はマスター一覧の role に対応する `input_type` で補う。どちらもない role は型不明として、設定画面の同期先候補に出さない。
+- 表示名は、mapping の `display_name`、マスター一覧の `display_name`、role の順に採用する。
+- 同期は生成時に、送信する実効値へ適用する（`applyParamSync`）。ストアの入力値（`paramValues`）は書き換えない。同期先に選んでいない項目、および解除した同期先は代表の変更に追従せず、自身の入力値（ストアの値）を使う。無効グループ（`is_enabled: false`）は適用しない。`input_type` が seed の role を含むグループは本経路では適用せず、REQ-353 の専用経路で扱う。
+- 保存した代表と同期先は、同じワークフローで ParamSync を再表示したときに復元される。ステージ付き role は保存・再取得で往復し、API・スキーマは変更しない。
+- 自己参照の禁止以外の競合・循環規則は従来どおりとし、本変更では追加しない。
 
 ### 2-9. メインプレビュー & キュー管理
 

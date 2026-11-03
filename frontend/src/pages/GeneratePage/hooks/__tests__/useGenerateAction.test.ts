@@ -1778,4 +1778,76 @@ describe('useGenerateAction', () => {
       });
     });
   });
+
+  describe('REQ-351 stage-qualified param sync', () => {
+    const stageWorkflow: Workflow = {
+      id: 351,
+      name: 'Stage Sync Workflow',
+      created_at: '',
+      json_body: {
+        '1': { inputs: { steps: 1 } },
+        '2': { inputs: { steps: 1 } },
+        '3': { inputs: { steps: 1 } },
+        '4': { inputs: { steps: 1 } },
+      },
+      mappings: [
+        { id: 1, master_id: 10, node_id: '1', variant_id: 201, role: 'Sampler_Steps', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+        { id: 2, master_id: 10, node_id: '2', variant_id: 202, role: 'Sampler_Steps_Rough', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+        { id: 3, master_id: 10, node_id: '3', variant_id: 203, role: 'Sampler_Steps_Detail', param_name: 'steps', input_type: 'int', display_name: 'Steps' },
+        { id: 4, master_id: 20, node_id: '4', variant_id: 302, role: 'Other_Steps_Rough', param_name: 'steps', input_type: 'int', display_name: 'OtherSteps' },
+      ],
+    } as Workflow;
+
+    const makeGroup = (slave_roles: string[], is_enabled = true) => ({
+      id: 1,
+      workflow_id: 351,
+      name: 'steps-sync',
+      master_role: 'Sampler_Steps',
+      slave_roles,
+      is_enabled,
+      created_at: '',
+    });
+
+    const stepsOf = (callIndex: number) => {
+      const graph = mockStore.queuePrompt.mock.calls[callIndex][0];
+      return [1, 2, 3, 4].map((n) => Number(graph[String(n)].inputs.steps));
+    };
+
+    it('[REQ-351/AC-3] syncs only the selected Rough stage and keeps Detail at its own value', async () => {
+      mockStore.paramValues = { Sampler_Steps: '50', Sampler_Steps_Rough: '30', Sampler_Steps_Detail: '40', Other_Steps_Rough: '10' };
+      mockStore.paramSyncGroups = [makeGroup(['Sampler_Steps_Rough'])];
+      await useGenerateAction(stageWorkflow).handleGenerate();
+      expect(stepsOf(0)).toEqual([50, 50, 40, 10]);
+    });
+
+    it('[REQ-351/AC-4] syncs the same-type other role Rough/OtherSteps to the representative value', async () => {
+      mockStore.paramValues = { Sampler_Steps: '60', Sampler_Steps_Rough: '30', Sampler_Steps_Detail: '40', Other_Steps_Rough: '10' };
+      mockStore.paramSyncGroups = [makeGroup(['Other_Steps_Rough'])];
+      await useGenerateAction(stageWorkflow).handleGenerate();
+      expect(stepsOf(0)).toEqual([60, 30, 40, 60]);
+    });
+
+    it('[REQ-351/AC-5] stops syncing an unselected Detail stage and keeps its value at release', async () => {
+      mockStore.paramValues = { Sampler_Steps: '60', Sampler_Steps_Rough: '30', Sampler_Steps_Detail: '40', Other_Steps_Rough: '10' };
+      mockStore.paramSyncGroups = [makeGroup(['Sampler_Steps_Rough', 'Sampler_Steps_Detail'])];
+      await useGenerateAction(stageWorkflow).handleGenerate();
+      expect(stepsOf(0)).toEqual([60, 60, 60, 10]);
+      expect(mockStore.paramValues.Sampler_Steps_Detail).toBe('40');
+      expect(mockStore.paramValues.Sampler_Steps_Rough).toBe('30');
+
+      mockStore.paramSyncGroups = [makeGroup(['Sampler_Steps_Rough'])];
+      mockStore.paramValues = { ...mockStore.paramValues, Sampler_Steps: '70' };
+      await useGenerateAction(stageWorkflow).handleGenerate();
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2);
+      expect(stepsOf(1)).toEqual([70, 70, 40, 10]);
+      expect(mockStore.paramValues.Sampler_Steps_Detail).toBe('40');
+    });
+
+    it('[REQ-351/AC-3] does not sync stage-qualified targets when the group is disabled', async () => {
+      mockStore.paramValues = { Sampler_Steps: '50', Sampler_Steps_Rough: '30', Sampler_Steps_Detail: '40', Other_Steps_Rough: '10' };
+      mockStore.paramSyncGroups = [makeGroup(['Sampler_Steps_Rough', 'Sampler_Steps_Detail'], false)];
+      await useGenerateAction(stageWorkflow).handleGenerate();
+      expect(stepsOf(0)).toEqual([50, 30, 40, 10]);
+    });
+  });
 });

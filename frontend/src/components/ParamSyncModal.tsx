@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Edit2, Trash2, Check, Save, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useGenerationStore } from '../store/useGenerationStore';
 import { mappingMastersApi, workflowsApi } from '../api/client';
+import { stageMastersApi } from '../api/domains/stageMasters';
 import type { MappingMaster, Workflow } from '../api/types';
+import { buildParamSyncCandidates } from '../utils/mappingStageGroups';
+import type { MappingMasterV2, StageMaster } from '../utils/mappingStageGroups';
 
 export interface ParamSyncModalProps {
   onClose: () => void;
@@ -21,6 +24,7 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
 
   const [mappingMasters, setMappingMasters] = useState<MappingMaster[]>([]);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
+  const [stages, setStages] = useState<StageMaster[]>([]);
 
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -42,6 +46,9 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
     }
     mappingMastersApi.list().then((masters: any) => {
       setMappingMasters(masters);
+    }).catch(console.error);
+    stageMastersApi.list(true).then((list) => {
+      setStages(list);
     }).catch(console.error);
   }, [selectedWorkflowId, fetchParamSyncGroups]);
 
@@ -85,15 +92,29 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
 
   // Selected master role details
   const currentMasterRole = activeGroup?.master_role || newMasterRole;
-  const currentMasterMaster = roleMasterMap.get(currentMasterRole);
-  const masterInputType = currentMasterMaster?.input_type;
 
-  // Available slave candidate roles: mapped in workflow, not master, same input_type
-  const slaveCandidateRoles = workflowMappedRoles.filter((role) => {
-    if (role === currentMasterRole) return false;
-    const m = roleMasterMap.get(role);
-    if (!m || !masterInputType) return false;
-    return m.input_type === masterInputType;
+  // Stage-qualified candidates (one per mapped role, in stage order)
+  const candidates = buildParamSyncCandidates(
+    activeWorkflow?.mappings ?? [],
+    mappingMasters as unknown as readonly (MappingMaster | MappingMasterV2)[],
+    stages,
+  );
+  const candidateByRole = new Map(candidates.map((c) => [c.role, c]));
+  const resolveType = (role: string): string | null =>
+    candidateByRole.get(role)?.inputType ?? roleMasterMap.get(role)?.input_type ?? null;
+  const resolveName = (role: string): string =>
+    candidateByRole.get(role)?.displayName ?? roleMasterMap.get(role)?.display_name ?? role;
+  const candidateLabel = (role: string): string => {
+    const stageName = candidateByRole.get(role)?.stageName;
+    return stageName ? `${stageName} / ${resolveName(role)}` : resolveName(role);
+  };
+  const masterInputType = resolveType(currentMasterRole);
+
+  // Available slave candidates: mapped in workflow, not master, same input_type
+  const slaveCandidates = candidates.filter((c) => {
+    if (c.role === currentMasterRole) return false;
+    const type = resolveType(c.role);
+    return type !== null && masterInputType !== null && type === masterInputType;
   });
 
   const handleCreateGroup = async (e: React.FormEvent) => {
@@ -144,13 +165,11 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
 
   const handleMasterChange = async (newMaster: string) => {
     if (!activeGroup) return;
-    const newMasterMaster = roleMasterMap.get(newMaster);
-    const newType = newMasterMaster?.input_type;
+    const newType = resolveType(newMaster);
     // Filter slave roles to only those matching new input_type
-    const validSlaves = activeGroup.slave_roles.filter((r) => {
-      const m = roleMasterMap.get(r);
-      return m && m.input_type === newType && r !== newMaster;
-    });
+    const validSlaves = activeGroup.slave_roles.filter(
+      (r) => r !== newMaster && newType !== null && resolveType(r) === newType,
+    );
     await updateParamSyncGroup(activeGroup.id, {
       master_role: newMaster,
       slave_roles: validSlaves,
@@ -215,9 +234,9 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
                     onChange={(e) => setNewMasterRole(e.target.value)}
                     className="flex-1 px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:outline-none"
                   >
-                    {workflowMappedRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {roleMasterMap.get(role)?.display_name || role} ({role})
+                    {candidates.map((c) => (
+                      <option key={c.role} value={c.role}>
+                        {candidateLabel(c.role)} ({c.role})
                       </option>
                     ))}
                   </select>
@@ -353,9 +372,9 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
                     onChange={(e) => handleMasterChange(e.target.value)}
                     className="w-full px-2.5 py-1.5 text-sm bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-100 focus:outline-none"
                   >
-                    {workflowMappedRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {roleMasterMap.get(role)?.display_name || role} ({role})
+                    {candidates.map((c) => (
+                      <option key={c.role} value={c.role}>
+                        {candidateLabel(c.role)} ({c.role})
                       </option>
                     ))}
                   </select>
@@ -372,15 +391,14 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
                     Slave Roles (同期先項目 - 型一致のみ)
                   </span>
                   <div className="flex-1 overflow-y-auto space-y-1 pr-1 min-h-0">
-                    {slaveCandidateRoles.length === 0 ? (
+                    {slaveCandidates.length === 0 ? (
                       <div className="text-xs text-zinc-500 text-center py-6">
                         No matching parameters found with same input type ({masterInputType}).
                       </div>
                     ) : (
-                      slaveCandidateRoles.map((role) => {
+                      slaveCandidates.map(({ role }) => {
                         const isSlave = activeGroup.slave_roles.includes(role);
-                        const masterObj = roleMasterMap.get(role);
-                        const dispName = masterObj?.display_name || role;
+                        const dispName = candidateLabel(role);
 
                         return (
                           <label
@@ -401,7 +419,7 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
                               <div className="text-sm font-medium truncate">
                                 {dispName}
                               </div>
-                              <div className="text-[10px] text-zinc-500 truncate">
+                              <div className="text-[11px] text-zinc-500 truncate">
                                 Role: {role}
                               </div>
                             </div>
