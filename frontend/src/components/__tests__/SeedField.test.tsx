@@ -28,4 +28,16 @@ describe('SeedField', () => {
     render(<SeedField mapping={mapping} paramValues={{ Sampler_Seed: '1', [SEED_MODES_KEY]: '{' }} onChange={vi.fn()} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Seed mode metadata is invalid JSON')
   })
+
+  it('[REQ-414/AC-2] renders large integer seed values without error and keeps input enabled', () => {
+    const { rerender } = render(<SeedField mapping={mapping} paramValues={{ Sampler_Seed: '1052824982390234' }} onChange={vi.fn()} />)
+    const input = screen.getByRole('spinbutton', { name: 'Seedの値' })
+    expect(input).toHaveValue(1052824982390234)
+    expect(input).not.toBeDisabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    rerender(<SeedField mapping={mapping} paramValues={{ Sampler_Seed: '9007199254740991' }} onChange={vi.fn()} />)
+    expect(screen.getByRole('spinbutton', { name: 'Seedの値' })).toHaveValue(9007199254740991)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

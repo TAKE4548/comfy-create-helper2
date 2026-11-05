@@ -60,7 +60,7 @@ describe('prepareSeedBatch', () => {
   it('[REQ-350/AC-5] validates the whole batch before drawing or returning partial results', () => {
     const a = mapping('a')
     const draw = vi.fn(() => 1)
-    expect(() => prepareSeedBatch({ workflow: workflow(a), paramValues: values(['a', '4294967295']), batchSize: 2, randomUint32: draw })).toThrow(/a/)
+    expect(() => prepareSeedBatch({ workflow: workflow(a), paramValues: values(['a', '9007199254740991']), batchSize: 2, randomUint32: draw })).toThrow(/a/)
     expect(draw).not.toHaveBeenCalled()
   })
 
@@ -78,6 +78,32 @@ describe('prepareSeedBatch', () => {
     const a = mapping('a')
     const params = setSeedModeForMapping(a, values(['a', '1']), 'random')
     expect(() => prepareSeedBatch({ workflow: workflow(a), paramValues: params, batchSize: 1, randomUint32: () => -1 })).toThrow(/random/i)
+    expect(() => prepareSeedBatch({ workflow: workflow(a), paramValues: params, batchSize: 1, randomUint32: () => 9007199254740992 })).toThrow(/random/i)
+  })
+
+  it('[REQ-414/AC-3] increments large fixed seeds sequentially across batch items', () => {
+    const a = mapping('main_seed')
+    const params = values(['main_seed', '1052824982390234'])
+    const result = prepareSeedBatch({ workflow: workflow(a), paramValues: params, batchSize: 3 })
+    expect(result.map(item => item.seedsBySlot['master:1:variant:1'])).toEqual([
+      1052824982390234,
+      1052824982390235,
+      1052824982390236,
+    ])
+    expect(result[2].actualParamValues.main_seed).toBe('1052824982390236')
+  })
+
+  it('[REQ-414/AC-4] generates random seeds within ComfyUI random range [0, 1125899906842624] by default', () => {
+    const a = mapping('main_seed')
+    let params = values(['main_seed', '0'])
+    params = setSeedModeForMapping(a, params, 'random')
+    const result = prepareSeedBatch({ workflow: workflow(a), paramValues: params, batchSize: 5 })
+    for (const item of result) {
+      const seed = item.seedsBySlot['master:1:variant:1']
+      expect(seed).toBeGreaterThanOrEqual(0)
+      expect(seed).toBeLessThanOrEqual(1125899906842624)
+      expect(Number.isSafeInteger(seed)).toBe(true)
+    }
   })
 
   it('[REQ-353/AC-1] rejects graph-reference seed inputs and missing node/role mappings', () => {

@@ -1,6 +1,6 @@
 import type { Workflow, WorkflowMapping, ParamSyncGroup } from '../api/types'
 import {
-  UINT32_MAX, readSeedSettings, resolveSeedSyncRoots, seedSlotKey,
+  MAX_SAFE_SEED, COMFY_RANDOM_SEED_MAX, readSeedSettings, resolveSeedSyncRoots, seedSlotKey,
 } from './seedModel'
 import { resolveSeedInputKey } from './seedInputResolver'
 
@@ -71,11 +71,11 @@ function preparePlan(options: PrepareSeedBatchOptions) {
   }
   for (const [rootSlot, root] of rootTargets) {
     const setting = readSeedSettings(root.mapping, options.paramValues)
-    if (!Number.isFinite(setting.seed) || !Number.isInteger(setting.seed) || setting.seed < 0 || setting.seed > UINT32_MAX) {
-      throw new Error(`${root.label}: seed must be an unsigned 32-bit integer`)
+    if (!Number.isFinite(setting.seed) || !Number.isInteger(setting.seed) || setting.seed < 0 || setting.seed > MAX_SAFE_SEED) {
+      throw new Error(`${root.label}: seed must be a safe unsigned integer`)
     }
-    if (setting.mode === 'fixed' && setting.seed + options.batchSize - 1 > UINT32_MAX) {
-      throw new Error(`${root.label}: fixed seed batch exceeds ${UINT32_MAX}`)
+    if (setting.mode === 'fixed' && setting.seed + options.batchSize - 1 > MAX_SAFE_SEED) {
+      throw new Error(`${root.label}: fixed seed batch exceeds ${MAX_SAFE_SEED}`)
     }
     settings.set(rootSlot, setting)
   }
@@ -91,7 +91,7 @@ export function validateSeedBatch(options: PrepareSeedBatchOptions): void {
 export function prepareSeedBatch(options: PrepareSeedBatchOptions): ResolvedSeedItem[] {
   const plan = preparePlan(options)
   if (!plan.targets.length) return Array.from({ length: Math.max(0, options.batchSize) }, () => ({ seedsBySlot: {}, actualParamValues: { ...options.paramValues } }))
-  const randomUint32 = options.randomUint32 ?? (() => Math.floor(Math.random() * 2 ** 32))
+  const randomUint32 = options.randomUint32 ?? (() => Math.floor(Math.random() * (COMFY_RANDOM_SEED_MAX + 1)))
   const slotsForRoot = new Map<string, string[]>()
   for (const target of plan.targets) {
     const rootSlot = plan.roots[target.slot] ?? target.slot
@@ -104,8 +104,8 @@ export function prepareSeedBatch(options: PrepareSeedBatchOptions): ResolvedSeed
     for (const root of plan.rootTargets) {
       const setting = plan.settings.get(root.slot)!
       const value = setting.mode === 'fixed' ? setting.seed + index : randomUint32()
-      if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > UINT32_MAX) {
-        throw new Error(`${root.label}: random seed must be an unsigned 32-bit integer`)
+      if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > MAX_SAFE_SEED) {
+        throw new Error(`${root.label}: random seed must be a safe unsigned integer`)
       }
       for (const slot of slotsForRoot.get(root.slot) ?? []) seedsBySlot[slot] = value
     }

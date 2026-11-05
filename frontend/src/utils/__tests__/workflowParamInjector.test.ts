@@ -381,7 +381,7 @@ describe('workflowParamInjector', () => {
         resolvedSeeds: {},
       })).toThrow(/resolved seed/i)
 
-      const invalidValues = ['-1', '4294967296', '1.5', 'nope']
+      const invalidValues = ['-1', '1.5', 'nope']
       for (const seed of invalidValues) {
         expect(() => injectWorkflowParams({
           workflow: dedicatedWorkflow,

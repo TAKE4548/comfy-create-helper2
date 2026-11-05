@@ -4,7 +4,7 @@ import { useGenerateAction } from '../useGenerateAction'
 import { useGenerationStore } from '../../../../store/useGenerationStore'
 import type { Workflow } from '../../../../api/types'
 import { PROMPT_RECORD_KEY } from '../../../../utils/generationRecord'
-import { setSeedModeForMapping } from '../../../../utils/seedModel'
+import { setSeedModeForMapping, MAX_SAFE_SEED, COMFY_RANDOM_SEED_MAX } from '../../../../utils/seedModel'
 import * as seedBatchModule from '../../../../utils/seedBatch'
 
 const realPrepareSeedBatch = seedBatchModule.prepareSeedBatch
@@ -168,7 +168,7 @@ describe('useGenerateAction dedicated seed submission', () => {
   })
 
   it('validates every checked set before changing submission state or sending any item', async () => {
-    const overflow = setSeedModeForMapping(seedMapping, { Sampler_Seed: '4294967295' }, 'fixed')
+    const overflow = setSeedModeForMapping(seedMapping, { Sampler_Seed: String(MAX_SAFE_SEED) }, 'fixed')
     store.sets = [
       { id: 'a', name: 'First', checked: true, batchSize: 1, paramValues: setSeedModeForMapping(seedMapping, { Sampler_Seed: '5' }, 'fixed') },
       { id: 'b', name: 'Overflow set', checked: true, batchSize: 2, paramValues: overflow },
@@ -209,7 +209,8 @@ describe('useGenerateAction dedicated seed submission', () => {
     expect(random).toHaveBeenCalledTimes(2)
     random.mockRestore()
     const items = store.submitGenerationBatch.mock.calls[0][0].items
-    expect(items.map((item: any) => [item.graph['3'].inputs.seed, item.graph['4'].inputs.seed])).toEqual([[1073741824, 1073741824], [1073741824, 1073741824]])
+    const expectedRandomSeed = Math.floor(0.25 * (COMFY_RANDOM_SEED_MAX + 1))
+    expect(items.map((item: any) => [item.graph['3'].inputs.seed, item.graph['4'].inputs.seed])).toEqual([[expectedRandomSeed, expectedRandomSeed], [expectedRandomSeed, expectedRandomSeed]])
     expect(items[0].param_values.Other_Seed).toBe(items[0].param_values.Sampler_Seed)
   })
 

@@ -11,7 +11,7 @@ import { useGenerateAction } from '../hooks/useGenerateAction'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { createJobQueueSlice } from '../../../store/slices/jobQueueSlice'
 import { PROMPT_RECORD_KEY } from '../../../utils/generationRecord'
-import { SEED_MODES_KEY, setSeedModeForMapping } from '../../../utils/seedModel'
+import { SEED_MODES_KEY, setSeedModeForMapping, COMFY_RANDOM_SEED_MAX } from '../../../utils/seedModel'
 import { cleanupAllTestState } from '../../../test/utils'
 
 vi.mock('../../../hooks/useComfyNodeTypes', () => ({
@@ -175,9 +175,9 @@ describe('dedicated seed integrated acceptance path', () => {
   it('uses random mode per item and keeps desktop and mobile seed controls equivalent', async () => {
     store.batchSize = 3
     const random = vi.spyOn(Math, 'random')
-      .mockReturnValueOnce(11 / 2 ** 32)
-      .mockReturnValueOnce(22 / 2 ** 32)
-      .mockReturnValueOnce(33 / 2 ** 32)
+      .mockReturnValueOnce(11 / (COMFY_RANDOM_SEED_MAX + 1))
+      .mockReturnValueOnce(22 / (COMFY_RANDOM_SEED_MAX + 1))
+      .mockReturnValueOnce(33 / (COMFY_RANDOM_SEED_MAX + 1))
     const { rerender } = render(<SeedGenerationHarness />)
     saveSeedMaster()
     fireEvent.click(screen.getAllByRole('button', { name: 'ランダムにする' })[0])
@@ -215,13 +215,21 @@ describe('dedicated seed integrated acceptance path', () => {
     random.mockRestore()
   })
 
-  it('rejects a two-item fixed batch that would overflow UINT32_MAX without submitting', async () => {
+  it('rejects a two-item fixed batch that would overflow MAX_SAFE_SEED without submitting', async () => {
     store.batchSize = 2
-    store.paramValues = { ...makeParamValues(), Sampler_Seed: '4294967295' }
+    store.paramValues = { ...makeParamValues(), Sampler_Seed: '9007199254740991' }
     await useGenerateAction(workflow).handleGenerate()
     expect(store.submitGenerationBatch).not.toHaveBeenCalled()
     expect(store.setActiveBatch).not.toHaveBeenCalled()
     expect(store.setErrorToast).toHaveBeenCalled()
+  })
+
+  it('[REQ-414/AC-3] submits large integer seeds (> UINT32_MAX) successfully in fixed batch', async () => {
+    store.batchSize = 2
+    store.paramValues = { ...makeParamValues(), Sampler_Seed: '1052824982390234' }
+    await useGenerateAction(workflow).handleGenerate()
+    expect(store.setErrorToast).not.toHaveBeenCalled()
+    expect(store.submitGenerationBatch).toHaveBeenCalled()
   })
 
   it('rejects corrupt seed metadata before request submission and preserves the active batch', async () => {

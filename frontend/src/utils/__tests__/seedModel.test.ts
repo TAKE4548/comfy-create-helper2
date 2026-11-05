@@ -10,6 +10,8 @@ import {
   validateSeedMappings,
   SEED_MODES_KEY,
   UINT32_MAX,
+  MAX_SAFE_SEED,
+  COMFY_RANDOM_SEED_MAX,
 } from '../seedModel'
 
 const mapping = (overrides: Partial<WorkflowMapping> = {}): WorkflowMapping => ({
@@ -60,15 +62,23 @@ describe('seedModel', () => {
   })
 
   it.each([
-    ['', 'empty'], ['-1', 'negative'], ['1.2', 'decimal'], ['1e2', 'exponent'], ['NaN', 'NaN'], ['Infinity', 'Infinity'], ['4294967296', 'overflow'],
-  ])('rejects invalid seed input %s', (raw) => {
+    ['', 'empty'], ['-1', 'negative'], ['1.2', 'decimal'], ['1e2', 'exponent'], ['NaN', 'NaN'], ['Infinity', 'Infinity'],
+  ])('[REQ-414/AC-5] rejects invalid seed input %s', (raw) => {
     expect(() => parseSeedValue(raw, 'Main Seed')).toThrow('Main Seed')
   })
 
-  it('accepts uint32 boundaries and rejects unsafe integers', () => {
+  it('[REQ-414/AC-1] parses safe integers up to MAX_SAFE_SEED, ComfyUI large seeds, and uint32 boundaries', () => {
     expect(parseSeedValue('0', 'Seed')).toBe(0)
     expect(parseSeedValue(String(UINT32_MAX), 'Seed')).toBe(UINT32_MAX)
-    expect(() => parseSeedValue('9007199254740992', 'Seed')).toThrow()
+    expect(parseSeedValue('4294967296', 'Seed')).toBe(4294967296)
+    expect(parseSeedValue('1052824982390234', 'Seed')).toBe(1052824982390234)
+    expect(parseSeedValue(String(COMFY_RANDOM_SEED_MAX), 'Seed')).toBe(COMFY_RANDOM_SEED_MAX)
+    expect(parseSeedValue(String(MAX_SAFE_SEED), 'Seed')).toBe(MAX_SAFE_SEED)
+  })
+
+  it('[REQ-414/AC-1] folds seeds exceeding MAX_SAFE_SEED into safe integer range via modulo', () => {
+    expect(parseSeedValue('9007199254740992', 'Seed')).toBe(1)
+    expect(parseSeedValue('18446744073709551615', 'Seed')).toBe(2047)
   })
 
   it.each([

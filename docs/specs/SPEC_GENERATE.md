@@ -106,7 +106,7 @@ ComfyUI ワークフローを選択し、プロンプト・パラメータを編
 - **固定パラメータ**: Batch Size（枚数入力）、Seed（🎲 Shuffle / 🔒 Fixed）。
 - **専用Seed欄**: `seed` mappingはslotごとに固定値またはランダムを選ぶ。Seed値はrole別に保存し、モードはmaster/variantの安定slot単位で保存する。legacy global Seedとは別のSSoTであり、専用欄の値をglobal Seedへ同期・上書きしない。legacy global Seed欄と専用欄が同じworkflowにあっても、それぞれ独立して扱う。自動移行は行わない。
 - **専用Seedの実入力解決 (REQ-353)**: `GET /api/workflows/{workflow_id}` の `WorkflowRead.mappings` はmappingごとにeffective master metadataを返す。master metadataはworkflow mappingのdirect `master_id`を優先し、未設定の場合は`variant.master`を使う。`param_name`をprimary、nullableな`fallback_param_names`を登録順のaliasとして扱う（省略/null/空配列はaliasなし）。現在のnode inputsに存在する最初のown keyへ値を適用する。専用Seedで未登録の`value`、`noise_seed`等を推測したり、新しい入力keyを作成したりしない。primary/fallbackのいずれも存在しない場合は生成要求全体をComfyUI送信前に説明付きで拒否する。既存keyが配線（graph reference）なら他aliasへ切り替えず拒否する。初期値、バッチ検証、graph注入、生成履歴は同じ解決規則を使い、履歴値は送信graphの解決済みkeyから取得する。`value`入力を使うmappingはprimaryまたはfallbackとして明示登録する。legacy非seed global Seedおよび非seed一般parameterの既存処理は維持する。API schemaの同期・稼働比較とE2E証拠は[REQ-354稼働検証記録](../design/REQ-354-verification.md)を参照する。
-- 固定値は10進整数 `0..4294967295`。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について `Math.floor(Math.random() * 2**32)` で生成する（重複を許す）。
+- 固定値は10進整数で、JavaScript安全整数範囲（`0..Number.MAX_SAFE_INTEGER` = `9007199254740991`）を許容する（REQ-414）。ワークフロー取り込み時にこれを超える64bit大整数値がノードに存在した場合は、安全にフォールド（modulo）して安全整数として正規化する。バッチでは0始まりのindexを加算し、全件が範囲内か投入前に検証する。1件でもoverflowがあれば要求全体を拒否し、部分投入しない。ランダム値は各項目について ComfyUI WebUI 標準互換の範囲（`0..1125899906842624` = `2^50`）で生成する（重複を許す）。
 - 同期対象Seedは同期親の確定実値を子へ共有し、子側で再抽選・再加算しない。モードmetadataの欠落・破損・未知形式、およびgraph参照Seedは専用Seedとして曖昧に解釈せず、投入前に拒否する。snapshot復元は保存済みSeed値とmodeを固定値として扱い、復元時にランダム化しない。
 
 stage groupは入力欄の表示だけを整理する。role、`promptChips`、ParamSync、Seed値・modeおよび各入力値の既存保存・同期契約は変更しない。未マッピングのrole/fieldを生成入力欄へ追加する候補範囲の拡張はREQ-348の対象とする。
@@ -423,7 +423,7 @@ frontend/src/store/
 1. `paramValues` → input_type に応じた型変換・ノード入力代入
 2. LoRA スタックノードの動的展開・余剰キークリア
 3. バイパス対象ノードのバイパス処理
-4. legacy global Seedの従来処理と、専用`seed` mappingの確定処理を分離する。専用Seedはslotごとに値/modeを解決し、固定時はbase + 0始まりbatch index、ランダム時は各jobの32bit値を生成する。同期親子は親の実値を共有する。専用Seedは全バッチの範囲・metadata・対応graphを検証し、全件が有効な場合だけ投入する（境界外や曖昧な設定は要求全体を事前拒否）。
+4. legacy global Seedの従来処理と、専用`seed` mappingの確定処理を分離する。専用Seedはslotごとに値/modeを解決し、固定時はbase + 0始まりbatch index、ランダム時は各jobのComfyUI互換安全乱数値（`0..1125899906842624`）を生成する（REQ-414）。同期親子は親の実値を共有する。専用Seedは全バッチの範囲（`0..Number.MAX_SAFE_INTEGER`）・metadata・対応graphを検証し、全件が有効な場合だけ投入する（境界外や曖昧な設定は要求全体を事前拒否）。
    - 実入力名は`param_name`、続いて登録済み`fallback_param_names`の順に既存own inputから解決する。seed mappingでは暗黙の`value` fallbackや未登録keyの追加をしない。解決不能または選択keyがgraph referenceの場合は、ComfyUIへのPOST前に要求全体を拒否する。初期表示と履歴記録もこの解決済みkeyを使う。
 
 ### 5-2. 生成前バイパス処理およびスキーマ整合性保証 (REQ-230)

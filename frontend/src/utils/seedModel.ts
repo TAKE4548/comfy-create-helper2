@@ -4,6 +4,8 @@ export type SeedMode = 'random' | 'fixed'
 export interface SeedSettings { mode: SeedMode; seed: number }
 export const SEED_MODES_KEY = '__seed_modes_v1'
 export const UINT32_MAX = 4294967295
+export const MAX_SAFE_SEED = Number.MAX_SAFE_INTEGER
+export const COMFY_RANDOM_SEED_MAX = 1125899906842624
 
 interface SeedModeDocument {
   version: 1
@@ -28,9 +30,15 @@ function parseModeDocument(raw: string | undefined): SeedModeDocument | undefine
 
 export function parseSeedValue(raw: string, label: string): number {
   if (!/^[0-9]+$/.test(raw)) throw new Error(`${label} must be an unsigned integer`)
-  const value = Number(raw)
-  if (!Number.isSafeInteger(value) || value < 0 || value > UINT32_MAX) {
-    throw new Error(`${label} must be between 0 and ${UINT32_MAX}`)
+  let value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < 0) {
+    try {
+      const b = BigInt(raw)
+      if (b < 0n) throw new Error()
+      value = Number(b % BigInt(MAX_SAFE_SEED))
+    } catch {
+      throw new Error(`${label} must be between 0 and ${MAX_SAFE_SEED}`)
+    }
   }
   return value
 }

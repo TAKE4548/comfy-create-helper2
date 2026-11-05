@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import type { WorkflowMapping } from '../api/types'
 import { Lock, Shuffle } from 'lucide-react'
-import { readSeedSettings, setSeedModeForMapping, UINT32_MAX } from '../utils/seedModel'
+import { readSeedSettings, setSeedModeForMapping, MAX_SAFE_SEED } from '../utils/seedModel'
 
 export interface SeedFieldProps {
   mapping: WorkflowMapping
@@ -45,7 +45,7 @@ export function SeedField({ mapping, paramValues, onChange, mobile = false, disa
             {mode === 'random' ? <Shuffle aria-hidden="true" size={mobile ? 12 : 13} /> : <Lock aria-hidden="true" size={mobile ? 12 : 13} />}
           </button>
           <input id={inputId} data-generated-id={generatedId} aria-label={`${mapping.display_name ?? 'Seed'}の値`}
-            type="number" value={value} min={0} max={UINT32_MAX} step={1}
+            type="number" value={value} min={0} max={MAX_SAFE_SEED} step={1}
             disabled={disabled || mode === 'random' || error.startsWith('Seed mode metadata') || error.startsWith('Invalid seed mode')} onChange={event => handleValue(event.target.value)}
             className={`${mobile ? 'w-20' : 'w-24'} bg-surface border border-[rgba(255,255,255,0.08)] rounded px-2 py-1 text-xs text-zinc-200 text-right disabled:opacity-40`} />
         </div>
