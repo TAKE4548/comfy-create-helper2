@@ -3,6 +3,7 @@ export type SlotMapping = {
   node_id: string
   variant_id?: number | null
   role?: string | null
+  input_name?: string
 }
 
 export type SlotDefinition = {

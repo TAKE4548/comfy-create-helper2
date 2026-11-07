@@ -39,11 +39,16 @@ def mapping_setup(db_session: Session):
     db_session.add(workflow)
     db_session.flush()
 
+    rule_set = models.BindingRuleSet(name="test_rule_set")
+    db_session.add(rule_set)
+    db_session.flush()
+
     return {
         "group": group,
         "master_steps": master_steps,
         "master_cfg": master_cfg,
         "workflow": workflow,
+        "rule_set": rule_set,
     }
 
 
@@ -63,11 +68,19 @@ def test_preview_cascade(db_session: Session, mapping_setup):
     db_session.add(stage)
     db_session.flush()
 
-    v1 = models.MappingVariant(master_id=master_steps.id, stage_id=stage.id)
+    rule_set = mapping_setup["rule_set"]
+    v1 = models.MappingVariant(
+        master_id=master_steps.id,
+        stage_id=stage.id,
+        role="steps_rough",
+        binding_rule_set_id=rule_set.id,
+    )
     v2 = models.MappingVariant(
         master_id=master_cfg.id,
         stage_id=stage.id,
+        role="cfg_custom_rough",
         custom_role_override="cfg_custom_rough",
+        binding_rule_set_id=rule_set.id,
     )
     db_session.add_all([v1, v2])
     db_session.flush()
@@ -141,7 +154,13 @@ def test_execute_cascade_rename(db_session: Session, mapping_setup):
     db_session.add(stage)
     db_session.flush()
 
-    v1 = models.MappingVariant(master_id=master_steps.id, stage_id=stage.id)
+    rule_set = mapping_setup["rule_set"]
+    v1 = models.MappingVariant(
+        master_id=master_steps.id,
+        stage_id=stage.id,
+        role="steps_detail",
+        binding_rule_set_id=rule_set.id,
+    )
     db_session.add(v1)
     db_session.flush()
 
@@ -189,6 +208,7 @@ def test_execute_cascade_rename(db_session: Session, mapping_setup):
 
     refreshed_v1 = db_session.get(models.MappingVariant, v1.id)
     assert refreshed_v1 is not None
+    assert refreshed_v1.role == "steps_refiner"
     assert refreshed_v1.computed_role == "steps_refiner"
 
 

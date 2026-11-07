@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.schemas.workflow import parse_fallback_param_names
-from app.services.workflow_scanner import scan_workflow, scan_workflow_variants
+from app.services.workflow_scanner import scan_workflow_variants
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -65,14 +65,26 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
     valid_masters, valid_variants = _load_valid_mapping_refs(db)
     for m in src.mappings:
         if _is_valid_mapping_ref(m.master_id, m.variant_id, valid_masters, valid_variants):
-            db.add(models.WorkflowMapping(workflow_id=new_wf.id, master_id=m.master_id, node_id=m.node_id, variant_id=m.variant_id))
+            db.add(models.WorkflowMapping(
+                workflow_id=new_wf.id,
+                master_id=m.master_id,
+                node_id=m.node_id,
+                variant_id=m.variant_id,
+                input_name=m.input_name or "",
+            ))
     for p in src.presets:
-        db.add(models.WorkflowPreset(
-            workflow_id=new_wf.id, name=p.name,
-            param_values=p.param_values, applied_assets=p.applied_assets,
-            batch_size=p.batch_size, seed_mode=p.seed_mode, seed=p.seed,
+        new_preset = models.WorkflowPreset(
+            workflow_id=new_wf.id,
+            name=p.name,
+            param_values=p.param_values,
+            applied_assets=p.applied_assets,
+            batch_size=p.batch_size,
+            seed_mode=p.seed_mode,
+            seed=p.seed,
             sort_order=p.sort_order,
-        ))
+        )
+        db.add(new_preset)
+            )
     for bp in src.bypass_profiles:
         db.add(models.BypassProfile(
             workflow_id=new_wf.id,
@@ -81,13 +93,15 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
             is_enabled=bp.is_enabled,
         ))
     for sg in src.param_sync_groups:
-        db.add(models.ParamSyncGroup(
+        new_sg = models.ParamSyncGroup(
             workflow_id=new_wf.id,
             name=sg.name,
             master_role=sg.master_role,
             slave_roles=sg.slave_roles,
             is_enabled=sg.is_enabled,
-        ))
+        )
+        db.add(new_sg)
+            )
     db.commit()
     db.refresh(new_wf)
     return new_wf
@@ -112,6 +126,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 id=m.id,
                 master_id=m.master_id,
                 node_id=m.node_id,
+                input_name=m.input_name or "",
                 variant_id=m.variant_id,
                 role=(m.variant.computed_role if m.variant and m.variant.computed_role else (m.master.role if m.master else None)),
                 param_name=m.effective_master.param_name if m.effective_master else (m.master.param_name if m.master else None),
@@ -125,6 +140,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
         ],
     )
     return result
+
 
 
 @router.put("/{workflow_id}", response_model=schemas.WorkflowSummary)
@@ -145,7 +161,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
     if payload.json_body is not None:
         # Backup current workflow state to workflow_history before replacing
         current_mappings = [
-            {"master_id": m.master_id, "node_id": m.node_id, "variant_id": m.variant_id}
+            {"master_id": m.master_id, "node_id": m.node_id, "variant_id": m.variant_id, "input_name": m.input_name or ""}
             for m in wf.mappings
         ]
         history = models.WorkflowHistory(
@@ -184,11 +200,13 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
                     master_id=m.master_id,
                     node_id=m.node_id,
                     variant_id=m.variant_id,
+                    input_name=getattr(m, "input_name", "") or "",
                 ))
 
     db.commit()
     db.refresh(wf)
     return wf
+
 
 
 @router.post("/{workflow_id}/diff-analyze", response_model=schemas.DiffAnalyzeResponse)
@@ -251,6 +269,7 @@ def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 master_id=m_id,
                 node_id=m["node_id"],
                 variant_id=v_id,
+                input_name=m.get("input_name", ""),
             ))
     wf.mapping_slot_states = history.mapping_slot_states or "{}"
     db.delete(history)
@@ -292,6 +311,7 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
                 master_id=m.master_id,
                 node_id=m.node_id,
                 variant_id=m.variant_id,
+                input_name=getattr(m, "input_name", "") or "",
             ))
     db.commit()
     db.refresh(wf)
@@ -310,11 +330,7 @@ def delete_workflow(workflow_id: int, db: Session = Depends(get_db)):
 @router.post("/scan", response_model=schemas.ScanResult)
 def scan_workflow_json(payload: schemas.WorkflowScanRequest, db: Session = Depends(get_db)):
     variants = db.query(models.MappingVariant).order_by(models.MappingVariant.sort_order).all()
-    if variants:
-        result = scan_workflow_variants(payload.json_body, variants)
-    else:
-        masters = db.query(models.MappingMaster).order_by(models.MappingMaster.sort_order).all()
-        result = scan_workflow(payload.json_body, masters)
+    result = scan_workflow_variants(payload.json_body, variants)
 
     from app.services.workflow_scanner import detect_checkpoint_names, estimate_base_model_from_checkpoints
     ckpt_names = detect_checkpoint_names(payload.json_body)
@@ -328,3 +344,4 @@ def scan_workflow_json(payload: schemas.WorkflowScanRequest, db: Session = Depen
         result["unknown_checkpoint_name"] = None
 
     return result
+

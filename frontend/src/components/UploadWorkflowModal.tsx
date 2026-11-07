@@ -46,7 +46,11 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
         paramNames: [master.param_name, ...(v2?.fallback_param_names ?? [])].filter((value): value is string => Boolean(value)),
       }
       const activeVariants = variants.filter(v => v.is_enabled !== false)
-      const slots = activeVariants.length ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' })) : [{ key: `m_${master.id}`, stage: 'Main' }]
+      const slots = activeVariants.length
+        ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' }))
+        : variants.length
+          ? variants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' }))
+          : [{ key: `v_${master.id}`, stage: 'Main' }]
       for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, definition, slot.stage, stages))
     }
     return cache
@@ -56,11 +60,17 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     return rows.flatMap((row) => {
       const masterV2 = 'base_key' in row.master ? row.master : undefined
       const variants = masterV2?.variants ?? []
-      const slots = row.stageSlots?.length ? row.stageSlots : [{
-        slotKey: `m_${row.master.id}`, masterId: row.master.id, node_id: row.node_id,
-        variantId: undefined, enabled: row.enabled, reference_missing: row.reference_missing, stageName: 'Main', stageKey: 'main',
-        candidates: [], recommendedNodeIds: [], status: row.status,
-      }]
+      const slots = row.stageSlots?.length ? row.stageSlots : (
+        variants.length ? variants.map((v) => ({
+          slotKey: `v_${v.id}`, masterId: row.master.id, node_id: row.node_id,
+          variantId: v.id, enabled: row.enabled, reference_missing: row.reference_missing, stageName: v.stage_name || 'Main', stageKey: v.stage_key || 'main',
+          candidates: [], recommendedNodeIds: [], status: row.status,
+        })) : [{
+          slotKey: `v_${row.master.id}`, masterId: row.master.id, node_id: row.node_id,
+          variantId: undefined, enabled: row.enabled, reference_missing: row.reference_missing, stageName: 'Main', stageKey: 'main',
+          candidates: [], recommendedNodeIds: [], status: row.status,
+        }]
+      )
       return slots.map((slot) => {
         const variant = variants.find((item) => item.id === slot.variantId)
         return {
@@ -113,7 +123,16 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
   // ── Save mutation ─────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const mappings = getMappings(rows, [])
+      const rawMappings = getMappings(rows, [])
+      const mappings = rawMappings.map((m) => {
+        const match = scanResult?.matched.find(
+          (item) => (m.variant_id != null && item.variant_id === m.variant_id) || item.master_id === m.master_id
+        )
+        return {
+          ...m,
+          input_name: match?.input_name || '',
+        }
+      })
       const data = {
         name: workflowName.trim(),
         json_body: workflowJson,

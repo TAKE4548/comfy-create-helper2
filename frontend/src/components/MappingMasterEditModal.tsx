@@ -8,6 +8,8 @@ import { WorkflowMappingPreview } from './WorkflowMappingPreview'
 import { WorkflowNodePicker } from './WorkflowNodePicker'
 import { stageMastersApi } from '../api/domains/stageMasters'
 import { mappingGroupsApi } from '../api/domains/mappingGroups'
+import { bindingRulesApi } from '../api/domains/bindingRules'
+import { nodeSelectorsApi } from '../api/domains/nodeSelectors'
 import { useComfyNodeTypes } from '../hooks/useComfyNodeTypes'
 import type {
   MappingMasterV2,
@@ -17,6 +19,10 @@ import type {
   StageMaster,
   ParamTypeMaster,
   MappingVariantUpdateItem,
+  BindingRuleSet,
+  BindingRuleEntry,
+  NodeSelector,
+  NodeSelectorPattern,
 } from '../api/types'
 
 export const COMMON_CLASS_CANDIDATES = [
@@ -35,6 +41,8 @@ export interface MappingMasterEditModalProps {
   groups?: MappingGroupMaster[]
   stages?: StageMaster[]
   paramTypeMasters?: ParamTypeMaster[]
+  bindingRuleSets?: BindingRuleSet[]
+  nodeSelectors?: NodeSelector[]
   onSave: (data: MappingMasterV2Create | MappingMasterV2Update) => Promise<void> | void
   isPending?: boolean
 }
@@ -45,6 +53,10 @@ interface VariantFormItem {
   stage_key: string
   stage_name: string
   stage_suffix: string
+  role?: string
+  computed_role?: string
+  binding_rule_set_id?: number
+  node_selector_id?: number | null
   is_enabled: boolean
   custom_role_override: string
   extra_title_patterns: string[]
@@ -62,6 +74,422 @@ const DEFAULT_INPUT_TYPES = [
   { id: 'boolean', name: 'boolean' },
 ]
 
+export interface DuplicateAndEditButtonProps {
+  onDuplicate: () => void
+  label?: string
+}
+
+export function DuplicateAndEditButton({
+  onDuplicate,
+  label = '複製してこのステージ専用にする',
+}: DuplicateAndEditButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onDuplicate}
+      className="px-2.5 py-1 text-xs bg-amber-600 hover:bg-amber-500 text-white rounded touch-manipulation relative before:absolute before:-inset-2"
+    >
+      {label}
+    </button>
+  )
+}
+
+export interface RuleSetEditorProps {
+  ruleSet: BindingRuleSet | undefined
+  referencedRoles: string[]
+  onDuplicateAndEdit: () => void
+  onAddEntry: (entry: { class_type: string; param_name: string; priority: number }) => void
+  onRemoveEntry: (entryId: number) => void
+  onDeleteRuleSet: () => void
+  deleteError: string | null
+  variants: VariantFormItem[]
+  selectedStageIndex: number
+  onSelectStageIndex: (index: number) => void
+}
+
+export function RuleSetEditor({
+  ruleSet,
+  referencedRoles,
+  onDuplicateAndEdit,
+  onAddEntry,
+  onRemoveEntry,
+  onDeleteRuleSet,
+  deleteError,
+  variants,
+  selectedStageIndex,
+  onSelectStageIndex,
+}: RuleSetEditorProps) {
+  const [newClass, setNewClass] = useState('')
+  const [newParam, setNewParam] = useState('')
+  const [newPriority, setNewPriority] = useState(1)
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newClass.trim() || !newParam.trim()) return
+    onAddEntry({
+      class_type: newClass.trim(),
+      param_name: newParam.trim(),
+      priority: Number(newPriority) || 1,
+    })
+    setNewClass('')
+    setNewParam('')
+  }
+
+  return (
+    <div className="space-y-4">
+      {variants.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="text-[11px] text-zinc-400 shrink-0">対象ステージ:</span>
+          {variants.map((v, idx) => (
+            <button
+              key={v.stage_id}
+              type="button"
+              onClick={() => onSelectStageIndex(idx)}
+              className={`px-2.5 py-1 rounded text-xs shrink-0 whitespace-nowrap touch-manipulation ${
+                idx === selectedStageIndex
+                  ? 'bg-[#7C6FDD] text-white font-medium'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {v.stage_name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+            入力判定ルール (BindingRuleSet)
+          </h3>
+          <p className="text-[11px] text-zinc-500">
+            クラス名とパラメータ名の組で入力スロットを判定します。
+          </p>
+        </div>
+        {ruleSet && (
+          <span className="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+            {ruleSet.name}
+          </span>
+        )}
+      </div>
+
+      {referencedRoles && referencedRoles.length > 1 && (
+        <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-xs text-amber-200">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">⚠️ 共有中の定義 ({referencedRoles.length} 箇所で参照)</span>
+            <DuplicateAndEditButton onDuplicate={onDuplicateAndEdit} />
+          </div>
+          <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+            {referencedRoles.map((r) => (
+              <span key={r} className="px-2 py-0.5 bg-black/40 rounded text-[11px] shrink-0 whitespace-nowrap min-w-0 truncate">
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label className="block text-xs text-zinc-400">判定エントリー一覧</label>
+        <div className="border border-zinc-800 rounded-lg overflow-hidden divide-y divide-zinc-800 bg-zinc-950/60">
+          {(ruleSet?.entries ?? []).map((entry) => (
+            <div key={entry.id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-mono">
+                <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px]">
+                  Priority {entry.priority}
+                </span>
+                <span className="text-zinc-200">{entry.class_type}</span>
+                <span className="text-zinc-500">→</span>
+                <span className="text-[#7C6FDD]">{entry.param_name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemoveEntry(entry.id)}
+                className="text-zinc-500 hover:text-red-400 p-1 touch-manipulation relative before:absolute before:-inset-2"
+                aria-label={`${entry.class_type} エントリーを削除`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          {(!ruleSet || ruleSet.entries.length === 0) && (
+            <div className="p-4 text-center text-xs text-zinc-500">
+              エントリーが登録されていません
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 border border-zinc-800 rounded-lg bg-zinc-900/40 space-y-3">
+        <span className="text-xs font-medium text-zinc-300">新規エントリー追加</span>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <input
+              type="text"
+              placeholder="クラス名 (例: KSampler)"
+              value={newClass}
+              onChange={(e) => setNewClass(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            />
+          </div>
+          <div>
+            <input
+              type="text"
+              placeholder="パラメータ名 (例: seed)"
+              value={newParam}
+              onChange={(e) => setNewParam(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              placeholder="優先度"
+              value={newPriority}
+              onChange={(e) => setNewPriority(Number(e.target.value))}
+              className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!newClass.trim() || !newParam.trim()}
+              className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded touch-manipulation"
+            >
+              追加
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap text-xs text-zinc-400 pt-1">
+          <span className="text-zinc-500 text-[11px]">💡 候補クラス:</span>
+          {COMMON_CLASS_CANDIDATES.map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              onClick={() => setNewClass(candidate)}
+              className="relative before:absolute before:-inset-2 touch-manipulation px-1.5 py-0.5 rounded bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 text-[11px] transition-colors"
+            >
+              + {candidate}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {deleteError && (
+        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs text-red-200">
+          <span>{deleteError}</span>
+        </div>
+      )}
+
+      {ruleSet && (
+        <div className="pt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={onDeleteRuleSet}
+            className="text-xs text-red-400 hover:text-red-300 touch-manipulation"
+          >
+            このRuleSetを削除
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export interface NodeSelectorEditorProps {
+  selector: NodeSelector | undefined
+  referencedRoles: string[]
+  onDuplicateAndEdit: () => void
+  onAddPattern: (pattern: { pattern: string; match_type: string; priority: number }) => void
+  onRemovePattern: (patternId: number) => void
+  onDeleteSelector: () => void
+  deleteError: string | null
+  variants: VariantFormItem[]
+  selectedStageIndex: number
+  onSelectStageIndex: (index: number) => void
+}
+
+export function NodeSelectorEditor({
+  selector,
+  referencedRoles,
+  onDuplicateAndEdit,
+  onAddPattern,
+  onRemovePattern,
+  onDeleteSelector,
+  deleteError,
+  variants,
+  selectedStageIndex,
+  onSelectStageIndex,
+}: NodeSelectorEditorProps) {
+  const [newPattern, setNewPattern] = useState('')
+  const [newMatchType, setNewMatchType] = useState<'exact' | 'contains'>('contains')
+  const [newPriority, setNewPriority] = useState(1)
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newPattern.trim()) return
+    onAddPattern({
+      pattern: newPattern.trim(),
+      match_type: newMatchType,
+      priority: Number(newPriority) || 1,
+    })
+    setNewPattern('')
+  }
+
+  return (
+    <div className="space-y-4">
+      {variants.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="text-[11px] text-zinc-400 shrink-0">対象ステージ:</span>
+          {variants.map((v, idx) => (
+            <button
+              key={v.stage_id}
+              type="button"
+              onClick={() => onSelectStageIndex(idx)}
+              className={`px-2.5 py-1 rounded text-xs shrink-0 whitespace-nowrap touch-manipulation ${
+                idx === selectedStageIndex
+                  ? 'bg-[#7C6FDD] text-white font-medium'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {v.stage_name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+            ノード特定セレクタ (NodeSelector)
+          </h3>
+          <p className="text-[11px] text-zinc-500">
+            タイトルパターンの一致（完全一致 / 部分一致）により特定ステージのノードを特定します。
+          </p>
+        </div>
+        {selector && (
+          <span className="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+            {selector.name}
+          </span>
+        )}
+      </div>
+
+      {referencedRoles && referencedRoles.length > 1 && (
+        <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-lg text-xs text-amber-200">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">⚠️ 共有中の定義 ({referencedRoles.length} 箇所で参照)</span>
+            <DuplicateAndEditButton onDuplicate={onDuplicateAndEdit} />
+          </div>
+          <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+            {referencedRoles.map((r) => (
+              <span key={r} className="px-2 py-0.5 bg-black/40 rounded text-[11px] shrink-0 whitespace-nowrap min-w-0 truncate">
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label className="block text-xs text-zinc-400">特定パターン一覧</label>
+        <div className="border border-zinc-800 rounded-lg overflow-hidden divide-y divide-zinc-800 bg-zinc-950/60">
+          {(selector?.patterns ?? []).map((p) => (
+            <div key={p.id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-mono">
+                <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px]">
+                  Priority {p.priority}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-[#7C6FDD]/20 text-[#7C6FDD] text-[11px]">
+                  {p.match_type}
+                </span>
+                <span className="text-zinc-200">{p.pattern}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemovePattern(p.id)}
+                className="text-zinc-500 hover:text-red-400 p-1 touch-manipulation relative before:absolute before:-inset-2"
+                aria-label={`${p.pattern} パターンを削除`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          {(!selector || selector.patterns.length === 0) && (
+            <div className="p-4 text-center text-xs text-zinc-500">
+              パターンが登録されていません
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 border border-zinc-800 rounded-lg bg-zinc-900/40 space-y-3">
+        <span className="text-xs font-medium text-zinc-300">新規パターン追加</span>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <input
+              type="text"
+              placeholder="パターン (例: positive, upscale)"
+              value={newPattern}
+              onChange={(e) => setNewPattern(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            />
+          </div>
+          <div>
+            <select
+              value={newMatchType}
+              onChange={(e) => setNewMatchType(e.target.value as 'exact' | 'contains')}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            >
+              <option value="contains">contains (部分一致)</option>
+              <option value="exact">exact (完全一致)</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              placeholder="優先度"
+              value={newPriority}
+              onChange={(e) => setNewPriority(Number(e.target.value))}
+              className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-[#7C6FDD]"
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!newPattern.trim()}
+              className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded touch-manipulation"
+            >
+              追加
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {deleteError && (
+        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs text-red-200">
+          <span>{deleteError}</span>
+        </div>
+      )}
+
+      {selector && (
+        <div className="pt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={onDeleteSelector}
+            className="text-xs text-red-400 hover:text-red-300 touch-manipulation"
+          >
+            このNodeSelectorを削除
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const EMPTY_GROUPS: MappingGroupMaster[] = []
+const EMPTY_STAGES: StageMaster[] = []
+const EMPTY_RULE_SETS: BindingRuleSet[] = []
+const EMPTY_SELECTORS: NodeSelector[] = []
+
 export function MappingMasterEditModal({
   isOpen,
   onClose,
@@ -69,23 +497,57 @@ export function MappingMasterEditModal({
   groups: propGroups,
   stages: propStages,
   paramTypeMasters = [],
+  bindingRuleSets: propRuleSets,
+  nodeSelectors: propNodeSelectors,
   onSave,
   isPending = false,
 }: MappingMasterEditModalProps) {
   // Query fallback if props not supplied
-  const { data: fetchedGroups = [] } = useQuery({
+  const { data: fetchedGroups } = useQuery({
     queryKey: ['mapping-groups'],
     queryFn: () => mappingGroupsApi.list(true),
     enabled: isOpen && !propGroups,
   })
-  const { data: fetchedStages = [] } = useQuery({
+  const { data: fetchedStages } = useQuery({
     queryKey: ['stage-masters'],
     queryFn: () => stageMastersApi.list(true),
     enabled: isOpen && !propStages,
   })
+  const { data: fetchedRuleSets } = useQuery({
+    queryKey: ['binding-rules'],
+    queryFn: () => bindingRulesApi.list(),
+    enabled: isOpen && !propRuleSets,
+  })
+  const { data: fetchedNodeSelectors } = useQuery({
+    queryKey: ['node-selectors'],
+    queryFn: () => nodeSelectorsApi.list(),
+    enabled: isOpen && !propNodeSelectors,
+  })
 
-  const groups = propGroups || fetchedGroups
-  const stages = propStages || fetchedStages
+  const groups = propGroups ?? fetchedGroups ?? EMPTY_GROUPS
+  const stages = propStages ?? fetchedStages ?? EMPTY_STAGES
+  const ruleSetsSource = propRuleSets ?? fetchedRuleSets ?? EMPTY_RULE_SETS
+  const nodeSelectorsSource = propNodeSelectors ?? fetchedNodeSelectors ?? EMPTY_SELECTORS
+
+  const [activeTab, setActiveTab] = useState<'master' | 'ruleset' | 'nodeselector'>('master')
+  const [selectedStageIndex, setSelectedStageIndex] = useState(0)
+
+  const [ruleSets, setRuleSets] = useState<BindingRuleSet[]>([])
+  const [nodeSelectorsList, setNodeSelectorsList] = useState<NodeSelector[]>([])
+  const [ruleSetDeleteError, setRuleSetDeleteError] = useState<string | null>(null)
+  const [selectorDeleteError, setSelectorDeleteError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (ruleSetsSource.length > 0) {
+      setRuleSets(ruleSetsSource)
+    }
+  }, [ruleSetsSource])
+
+  useEffect(() => {
+    if (nodeSelectorsSource.length > 0) {
+      setNodeSelectorsList(nodeSelectorsSource)
+    }
+  }, [nodeSelectorsSource])
 
   // Form State
   const [name, setName] = useState('')
@@ -105,6 +567,13 @@ export function MappingMasterEditModal({
   useEffect(() => {
     if (!isOpen) return
 
+    setRuleSetDeleteError(null)
+    setSelectorDeleteError(null)
+    setSelectedStageIndex(0)
+
+    const initialRuleSetId = ruleSetsSource[0]?.id ?? 1
+    const initialSelectorId = nodeSelectorsSource[0]?.id ?? null
+
     if (master) {
       setName(master.name || master.display_name || '')
       setParamName(master.param_name || '')
@@ -117,7 +586,18 @@ export function MappingMasterEditModal({
 
       // Map variants from master and merge with available stages
       const existingVariants = master.variants || []
-      const mergedVariants: VariantFormItem[] = stages.map((st) => {
+      const effectiveStages = stages.length > 0
+        ? stages
+        : existingVariants.length > 0
+          ? existingVariants.map((v) => ({
+              id: v.stage_id,
+              key: v.stage_key,
+              name: v.stage_name,
+              suffix: v.stage_suffix,
+            }))
+          : [{ id: 1, key: 'main', name: 'Main', suffix: '' }]
+
+      const mergedVariants: VariantFormItem[] = effectiveStages.map((st) => {
         const found = existingVariants.find((v) => v.stage_id === st.id || v.stage_key === st.key)
         return {
           id: found?.id,
@@ -125,6 +605,10 @@ export function MappingMasterEditModal({
           stage_key: st.key,
           stage_name: st.name,
           stage_suffix: st.suffix || '',
+          role: found?.role,
+          computed_role: found?.computed_role || `${master.param_name || 'param'}${st.suffix || ''}`,
+          binding_rule_set_id: found?.binding_rule_set_id ?? initialRuleSetId,
+          node_selector_id: found?.node_selector_id ?? initialSelectorId,
           is_enabled: found ? found.is_enabled : true,
           custom_role_override: found?.custom_role_override || '',
           extra_title_patterns: found?.extra_title_patterns || [],
@@ -141,12 +625,19 @@ export function MappingMasterEditModal({
       setClassTypes([])
       setTitlePatterns([])
       setFallbackParams([])
+      const effectiveStages = stages.length > 0
+        ? stages
+        : [{ id: 1, key: 'main', name: 'Main', suffix: '' }]
       setVariants(
-        stages.map((st) => ({
+        effectiveStages.map((st) => ({
           stage_id: st.id,
           stage_key: st.key,
           stage_name: st.name,
           stage_suffix: st.suffix || '',
+          role: `param${st.suffix || ''}`,
+          computed_role: `param${st.suffix || ''}`,
+          binding_rule_set_id: initialRuleSetId,
+          node_selector_id: initialSelectorId,
           is_enabled: true,
           custom_role_override: '',
           extra_title_patterns: [],
@@ -258,6 +749,128 @@ export function MappingMasterEditModal({
     }
   }
 
+  const currentVariant = variants[selectedStageIndex] || variants[0]
+  const currentRuleSet = ruleSets.find((rs) => rs.id === currentVariant?.binding_rule_set_id) || ruleSets[0]
+  const currentRuleSetReferencedRoles = currentRuleSet?.referenced_roles ?? []
+  const currentSelector = nodeSelectorsList.find((ns) => ns.id === currentVariant?.node_selector_id) || nodeSelectorsList[0]
+  const currentSelectorReferencedRoles = currentSelector?.referenced_roles ?? []
+
+  const handleDuplicateRuleSetAndEdit = () => {
+    if (!currentRuleSet) return
+    const stageName = currentVariant?.stage_name || 'このステージ'
+    const currentRole = currentVariant?.role || currentVariant?.computed_role || 'role'
+    const newId = -Date.now()
+    const forked: BindingRuleSet = {
+      id: newId,
+      name: `${currentRuleSet.name} (${stageName}専用)`,
+      entries: currentRuleSet.entries.map((e, idx) => ({ ...e, id: -idx - 1, rule_set_id: newId })),
+      referenced_roles: [currentRole],
+    }
+    setRuleSets((prev) => [...prev, forked])
+    setVariants((prev) =>
+      prev.map((v, idx) => (idx === selectedStageIndex ? { ...v, binding_rule_set_id: newId } : v))
+    )
+  }
+
+  const handleAddRuleSetEntry = (entry: { class_type: string; param_name: string; priority: number }) => {
+    if (!currentRuleSet) return
+    const newEntry: BindingRuleEntry = {
+      id: -Date.now(),
+      rule_set_id: currentRuleSet.id,
+      class_type: entry.class_type,
+      param_name: entry.param_name,
+      priority: entry.priority,
+    }
+    setRuleSets((prev) =>
+      prev.map((rs) => (rs.id === currentRuleSet.id ? { ...rs, entries: [...rs.entries, newEntry] } : rs))
+    )
+  }
+
+  const handleRemoveRuleSetEntry = (entryId: number) => {
+    if (!currentRuleSet) return
+    setRuleSets((prev) =>
+      prev.map((rs) => (rs.id === currentRuleSet.id ? { ...rs, entries: rs.entries.filter((e) => e.id !== entryId) } : rs))
+    )
+  }
+
+  const handleDeleteRuleSet = async () => {
+    if (!currentRuleSet) return
+    setRuleSetDeleteError(null)
+    try {
+      await bindingRulesApi.delete(currentRuleSet.id)
+      setRuleSets((prev) => prev.filter((rs) => rs.id !== currentRuleSet.id))
+    } catch (err: unknown) {
+      const error = err as Error
+      let roles: string[] = currentRuleSet.referenced_roles || []
+      try {
+        const jsonMatch = error.message.match(/\{.*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
+          if (parsed.referenced_roles) roles = parsed.referenced_roles
+        }
+      } catch {}
+      setRuleSetDeleteError(`他のロール（${roles.join(', ')}）で参照されているため削除できません。`)
+    }
+  }
+
+  const handleDuplicateSelectorAndEdit = () => {
+    if (!currentSelector) return
+    const stageName = currentVariant?.stage_name || 'このステージ'
+    const currentRole = currentVariant?.role || currentVariant?.computed_role || 'role'
+    const newId = -Date.now()
+    const forked: NodeSelector = {
+      id: newId,
+      name: `${currentSelector.name} (${stageName}専用)`,
+      patterns: currentSelector.patterns.map((p, idx) => ({ ...p, id: -idx - 1, selector_id: newId })),
+      referenced_roles: [currentRole],
+    }
+    setNodeSelectorsList((prev) => [...prev, forked])
+    setVariants((prev) =>
+      prev.map((v, idx) => (idx === selectedStageIndex ? { ...v, node_selector_id: newId } : v))
+    )
+  }
+
+  const handleAddSelectorPattern = (pat: { pattern: string; match_type: string; priority: number }) => {
+    if (!currentSelector) return
+    const newPat: NodeSelectorPattern = {
+      id: -Date.now(),
+      selector_id: currentSelector.id,
+      pattern: pat.pattern,
+      match_type: pat.match_type,
+      priority: pat.priority,
+    }
+    setNodeSelectorsList((prev) =>
+      prev.map((ns) => (ns.id === currentSelector.id ? { ...ns, patterns: [...ns.patterns, newPat] } : ns))
+    )
+  }
+
+  const handleRemoveSelectorPattern = (patternId: number) => {
+    if (!currentSelector) return
+    setNodeSelectorsList((prev) =>
+      prev.map((ns) => (ns.id === currentSelector.id ? { ...ns, patterns: ns.patterns.filter((p) => p.id !== patternId) } : ns))
+    )
+  }
+
+  const handleDeleteSelector = async () => {
+    if (!currentSelector) return
+    setSelectorDeleteError(null)
+    try {
+      await nodeSelectorsApi.delete(currentSelector.id)
+      setNodeSelectorsList((prev) => prev.filter((ns) => ns.id !== currentSelector.id))
+    } catch (err: unknown) {
+      const error = err as Error
+      let roles: string[] = currentSelector.referenced_roles || []
+      try {
+        const jsonMatch = error.message.match(/\{.*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
+          if (parsed.referenced_roles) roles = parsed.referenced_roles
+        }
+      } catch {}
+      setSelectorDeleteError(`他のロール（${roles.join(', ')}）で参照されているため削除できません。`)
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmedName = name.trim()
@@ -267,6 +880,9 @@ export function MappingMasterEditModal({
     const variantItems: MappingVariantUpdateItem[] = variants.map((v) => ({
       id: v.id,
       stage_id: v.stage_id,
+      role: v.role,
+      binding_rule_set_id: v.binding_rule_set_id,
+      node_selector_id: v.node_selector_id,
       custom_role_override: v.custom_role_override.trim() || null,
       extra_title_patterns: v.extra_title_patterns.length > 0 ? v.extra_title_patterns : null,
       is_enabled: v.is_enabled,
@@ -318,10 +934,59 @@ export function MappingMasterEditModal({
         </button>
       </div>
 
+      {/* 3-Section Tab Bar */}
+      <div
+        role="tablist"
+        aria-label="マスタ編集セクション"
+        className="flex items-center gap-2 px-4 md:px-6 pt-3 pb-2 border-b border-zinc-800 bg-surface/50 shrink-0"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'master'}
+          onClick={() => setActiveTab('master')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium touch-manipulation transition-colors ${
+            activeTab === 'master'
+              ? 'bg-[#7C6FDD] text-white shadow-sm'
+              : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+          }`}
+        >
+          Master属性
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'ruleset'}
+          onClick={() => setActiveTab('ruleset')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium touch-manipulation transition-colors ${
+            activeTab === 'ruleset'
+              ? 'bg-[#7C6FDD] text-white shadow-sm'
+              : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+          }`}
+        >
+          BindingRuleSet (入力判定)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'nodeselector'}
+          onClick={() => setActiveTab('nodeselector')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium touch-manipulation transition-colors ${
+            activeTab === 'nodeselector'
+              ? 'bg-[#7C6FDD] text-white shadow-sm'
+              : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+          }`}
+        >
+          NodeSelector (ノード特定)
+        </button>
+      </div>
+
       {/* Content Form */}
       <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 space-y-6 text-zinc-100">
-        {/* Section 1: 親共通設定 */}
-        <div className="space-y-4">
+        {activeTab === 'master' && (
+          <>
+            {/* Section 1: 親共通設定 */}
+            <div className="space-y-4">
           <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>親共通マスター設定</span>
             <span className="text-[11px] text-zinc-500 font-normal lowercase">(全バリアントへ継承)</span>
@@ -589,6 +1254,38 @@ export function MappingMasterEditModal({
           fallbackParams={fallbackParams}
           onOpenNodePicker={handleOpenNodePicker}
         />
+          </>
+        )}
+
+        {activeTab === 'ruleset' && (
+          <RuleSetEditor
+            ruleSet={currentRuleSet}
+            referencedRoles={currentRuleSetReferencedRoles}
+            onDuplicateAndEdit={handleDuplicateRuleSetAndEdit}
+            onAddEntry={handleAddRuleSetEntry}
+            onRemoveEntry={handleRemoveRuleSetEntry}
+            onDeleteRuleSet={handleDeleteRuleSet}
+            deleteError={ruleSetDeleteError}
+            variants={variants}
+            selectedStageIndex={selectedStageIndex}
+            onSelectStageIndex={setSelectedStageIndex}
+          />
+        )}
+
+        {activeTab === 'nodeselector' && (
+          <NodeSelectorEditor
+            selector={currentSelector}
+            referencedRoles={currentSelectorReferencedRoles}
+            onDuplicateAndEdit={handleDuplicateSelectorAndEdit}
+            onAddPattern={handleAddSelectorPattern}
+            onRemovePattern={handleRemoveSelectorPattern}
+            onDeleteSelector={handleDeleteSelector}
+            deleteError={selectorDeleteError}
+            variants={variants}
+            selectedStageIndex={selectedStageIndex}
+            onSelectStageIndex={setSelectedStageIndex}
+          />
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-800">

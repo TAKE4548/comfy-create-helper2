@@ -1,8 +1,11 @@
-from typing import Callable, List
+import json
 import logging
+from typing import Callable, List, Optional
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.reflection import Inspector
+
+from app.services.variant_keys import KeyKind, VariantIndex, normalize_params
 
 logger = logging.getLogger(__name__)
 
@@ -824,6 +827,386 @@ def step_032_generation_jobs_release_json(conn: Connection, inspector: Inspector
         logger.info("Migrated: Added 'release_json' column to 'generation_jobs' table.")
 
 
+def step_033_binding_rules_and_node_selectors(conn: Connection, inspector: Inspector) -> None:
+    table_names = {row[0] for row in conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+
+    # 1. Create binding_rule_sets table if not exists
+    if "binding_rule_sets" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE binding_rule_sets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE
+            )
+        """))
+        logger.info("Migrated: Created 'binding_rule_sets' table.")
+
+    # 2. Create binding_rule_entries table if not exists
+    if "binding_rule_entries" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE binding_rule_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_set_id INTEGER NOT NULL REFERENCES binding_rule_sets(id) ON DELETE CASCADE,
+                class_type VARCHAR NOT NULL,
+                param_name VARCHAR NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 1,
+                CONSTRAINT uq_rule_entry UNIQUE (rule_set_id, class_type, param_name)
+            )
+        """))
+        logger.info("Migrated: Created 'binding_rule_entries' table.")
+
+    # 3. Create node_selectors table if not exists
+    if "node_selectors" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE node_selectors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE
+            )
+        """))
+        logger.info("Migrated: Created 'node_selectors' table.")
+
+    # 4. Create node_selector_patterns table if not exists
+    if "node_selector_patterns" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE node_selector_patterns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                selector_id INTEGER NOT NULL REFERENCES node_selectors(id) ON DELETE CASCADE,
+                pattern VARCHAR NOT NULL,
+                match_type VARCHAR NOT NULL DEFAULT 'contains',
+                priority INTEGER NOT NULL DEFAULT 1,
+                CONSTRAINT uq_selector_pattern UNIQUE (selector_id, pattern)
+            )
+        """))
+        logger.info("Migrated: Created 'node_selector_patterns' table.")
+
+    # 5. Add columns to mapping_variants if missing
+    if "mapping_variants" in table_names:
+        cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(mapping_variants)")).fetchall()}
+        if "role" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_variants ADD COLUMN role VARCHAR"))
+            logger.info("Migrated: Added 'role' column to 'mapping_variants' table.")
+        if "binding_rule_set_id" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_variants ADD COLUMN binding_rule_set_id INTEGER REFERENCES binding_rule_sets(id) ON DELETE RESTRICT"))
+            logger.info("Migrated: Added 'binding_rule_set_id' column to 'mapping_variants' table.")
+        if "node_selector_id" not in cols:
+            conn.execute(sa.text("ALTER TABLE mapping_variants ADD COLUMN node_selector_id INTEGER REFERENCES node_selectors(id) ON DELETE SET NULL"))
+            logger.info("Migrated: Added 'node_selector_id' column to 'mapping_variants' table.")
+
+    # 6. Add input_name to workflow_mappings if missing
+    if "workflow_mappings" in table_names:
+        cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(workflow_mappings)")).fetchall()}
+        if "input_name" not in cols:
+            conn.execute(sa.text("ALTER TABLE workflow_mappings ADD COLUMN input_name VARCHAR NOT NULL DEFAULT ''"))
+            logger.info("Migrated: Added 'input_name' column to 'workflow_mappings' table.")
+
+    # 7. Convert existing mapping_masters and mapping_variants data
+    if "mapping_masters" in table_names and "mapping_variants" in table_names:
+        m_cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(mapping_masters)")).fetchall()}
+        if "fallback_param_names" not in m_cols:
+            conn.execute(sa.text("ALTER TABLE mapping_masters ADD COLUMN fallback_param_names TEXT"))
+            logger.info("Migrated: Added 'fallback_param_names' column to 'mapping_masters' table.")
+
+        stage_rows = conn.execute(sa.text("SELECT id, key, suffix, search_keywords FROM stage_masters")).fetchall() if "stage_masters" in table_names else []
+        stages_by_id = {r[0]: {"key": r[1], "suffix": r[2] or "", "search_keywords": r[3] or "[]"} for r in stage_rows}
+
+        master_rows = conn.execute(sa.text("""
+            SELECT id, base_key, name, param_name, input_type, expected_class_types, base_title_patterns, fallback_param_names, role, display_name, title_patterns
+            FROM mapping_masters
+        """)).fetchall()
+
+        for m in master_rows:
+            m_id, base_key, name, param_name, input_type, expected_class_types, base_title_patterns, fallback_param_names, role, display_name, title_patterns = m
+
+            # 7.1 BindingRuleSet for master
+            rs_name = (name or base_key or role or f"master_{m_id}").strip()
+            rs_row = conn.execute(sa.text("SELECT id FROM binding_rule_sets WHERE name = :name"), {"name": rs_name}).fetchone()
+            if rs_row:
+                rs_id = rs_row[0]
+            else:
+                conn.execute(sa.text("INSERT INTO binding_rule_sets (name) VALUES (:name)"), {"name": rs_name})
+                new_rs = conn.execute(sa.text("SELECT id FROM binding_rule_sets WHERE name = :name"), {"name": rs_name}).fetchone()
+                assert new_rs is not None
+                rs_id = new_rs[0]
+
+            # 7.2 BindingRuleEntries
+            classes: List[str] = []
+            if expected_class_types:
+                try:
+                    parsed_c = json.loads(expected_class_types)
+                    if isinstance(parsed_c, list):
+                        classes = [str(c).strip() for c in parsed_c if str(c).strip()]
+                except Exception:
+                    pass
+            if not classes:
+                classes = ["*"]
+
+            params: List[str] = [p.strip() for p in (param_name or "").split(",") if p.strip()]
+            fallbacks: List[str] = []
+            if fallback_param_names:
+                try:
+                    parsed_fb = json.loads(fallback_param_names)
+                    if isinstance(parsed_fb, list):
+                        fallbacks = [str(fb).strip() for fb in parsed_fb if str(fb).strip()]
+                    elif isinstance(parsed_fb, str):
+                        fallbacks = [p.strip() for p in parsed_fb.split(",") if p.strip()]
+                except Exception:
+                    fallbacks = [p.strip() for p in fallback_param_names.split(",") if p.strip()]
+
+            all_params: List[tuple[str, int]] = []
+            prio = 1
+            for p in params:
+                if p not in [x[0] for x in all_params]:
+                    all_params.append((p, prio))
+                    prio += 1
+            for fb in fallbacks:
+                if fb not in [x[0] for x in all_params]:
+                    all_params.append((fb, prio))
+                    prio += 1
+            if not all_params:
+                all_params.append(("", 1))
+
+            for c in classes:
+                for p, p_prio in all_params:
+                    entry_exists = conn.execute(sa.text("""
+                        SELECT id FROM binding_rule_entries
+                        WHERE rule_set_id = :rs_id AND class_type = :ct AND param_name = :pn
+                    """), {"rs_id": rs_id, "ct": c, "pn": p}).fetchone()
+                    if not entry_exists:
+                        conn.execute(sa.text("""
+                            INSERT INTO binding_rule_entries (rule_set_id, class_type, param_name, priority)
+                            VALUES (:rs_id, :ct, :pn, :prio)
+                        """), {"rs_id": rs_id, "ct": c, "pn": p, "prio": p_prio})
+
+            # 7.3 Variants of this master
+            variants = conn.execute(sa.text("""
+                SELECT id, stage_id, custom_role_override, extra_title_patterns, role
+                FROM mapping_variants
+                WHERE master_id = :mid
+            """), {"mid": m_id}).fetchall()
+
+            class_types_lower = {c.lower() for c in classes}
+
+            # Gather base title patterns
+            m_patterns: List[str] = []
+            for raw_pat in [base_title_patterns, title_patterns]:
+                if raw_pat:
+                    try:
+                        parsed_p = json.loads(raw_pat)
+                        if isinstance(parsed_p, list):
+                            for item in parsed_p:
+                                s = str(item).strip()
+                                if s and s not in m_patterns:
+                                    m_patterns.append(s)
+                    except Exception:
+                        pass
+
+            for var in variants:
+                v_id, v_stage_id, custom_override, extra_patterns_raw, curr_role = var
+                stg = stages_by_id.get(v_stage_id, {"key": "main", "suffix": "", "search_keywords": "[]"})
+
+                computed_role = custom_override or curr_role or f"{base_key or role}{stg['suffix']}"
+                if not computed_role:
+                    computed_role = f"role_{v_id}"
+
+                v_patterns: List[str] = []
+                if extra_patterns_raw:
+                    try:
+                        parsed_vp = json.loads(extra_patterns_raw)
+                        if isinstance(parsed_vp, list):
+                            for item in parsed_vp:
+                                s = str(item).strip()
+                                if s and s not in v_patterns:
+                                    v_patterns.append(s)
+                    except Exception:
+                        pass
+
+                # Exact patterns (excluding class types absorbed into entries)
+                exact_patterns: List[str] = []
+                for p in m_patterns + v_patterns:
+                    if p.lower() in class_types_lower:
+                        continue
+                    if p not in exact_patterns:
+                        exact_patterns.append(p)
+
+                # Contains patterns from stage search_keywords
+                contains_patterns: List[str] = []
+                if stg.get("search_keywords"):
+                    try:
+                        parsed_kws = json.loads(stg["search_keywords"])
+                        if isinstance(parsed_kws, list):
+                            for kw in parsed_kws:
+                                kw_str = str(kw).strip()
+                                if kw_str and kw_str not in exact_patterns and kw_str not in contains_patterns:
+                                    contains_patterns.append(kw_str)
+                    except Exception:
+                        pass
+
+                selector_id: Optional[int] = None
+                if exact_patterns or contains_patterns:
+                    sel_name = f"{computed_role}_selector"
+                    sel_row = conn.execute(sa.text("SELECT id FROM node_selectors WHERE name = :name"), {"name": sel_name}).fetchone()
+                    if sel_row:
+                        selector_id = sel_row[0]
+                    else:
+                        conn.execute(sa.text("INSERT INTO node_selectors (name) VALUES (:name)"), {"name": sel_name})
+                        new_sel = conn.execute(sa.text("SELECT id FROM node_selectors WHERE name = :name"), {"name": sel_name}).fetchone()
+                        assert new_sel is not None
+                        selector_id = new_sel[0]
+
+                    pat_prio = 1
+                    for ep in exact_patterns:
+                        exists = conn.execute(sa.text("SELECT id FROM node_selector_patterns WHERE selector_id = :sid AND pattern = :pat"), {"sid": selector_id, "pat": ep}).fetchone()
+                        if not exists:
+                            conn.execute(sa.text("""
+                                INSERT INTO node_selector_patterns (selector_id, pattern, match_type, priority)
+                                VALUES (:sid, :pat, 'exact', :prio)
+                            """), {"sid": selector_id, "pat": ep, "prio": pat_prio})
+                            pat_prio += 1
+
+                    for cp in contains_patterns:
+                        exists = conn.execute(sa.text("SELECT id FROM node_selector_patterns WHERE selector_id = :sid AND pattern = :pat"), {"sid": selector_id, "pat": cp}).fetchone()
+                        if not exists:
+                            conn.execute(sa.text("""
+                                INSERT INTO node_selector_patterns (selector_id, pattern, match_type, priority)
+                                VALUES (:sid, :pat, 'contains', :prio)
+                            """), {"sid": selector_id, "pat": cp, "prio": pat_prio})
+                            pat_prio += 1
+
+                conn.execute(sa.text("""
+                    UPDATE mapping_variants
+                    SET role = :role, binding_rule_set_id = :rs_id, node_selector_id = :sel_id
+                    WHERE id = :vid
+                """), {"role": computed_role, "rs_id": rs_id, "sel_id": selector_id, "vid": v_id})
+
+    # 8. Re-assign workflow_mappings.master_id and populate input_name
+    if "workflow_mappings" in table_names and "mapping_masters" in table_names:
+        unassigned = conn.execute(sa.text("""
+            SELECT id, master_id FROM workflow_mappings WHERE variant_id IS NULL OR variant_id = 0
+        """)).fetchall()
+        for wm_id, wm_m_id in unassigned:
+            def_var = conn.execute(sa.text("""
+                SELECT id FROM mapping_variants WHERE master_id = :m_id ORDER BY stage_id ASC LIMIT 1
+            """), {"m_id": wm_m_id}).fetchone()
+            if def_var:
+                conn.execute(sa.text("""
+                    UPDATE workflow_mappings SET variant_id = :vid WHERE id = :wmid
+                """), {"vid": def_var[0], "wmid": wm_id})
+
+        all_wms = conn.execute(sa.text("""
+            SELECT id, master_id, variant_id, input_name FROM workflow_mappings
+        """)).fetchall()
+        for wm_id, wm_m_id, wm_v_id, curr_inp in all_wms:
+            if not curr_inp:
+                first_param = ""
+                if wm_m_id:
+                    m_row = conn.execute(sa.text("SELECT param_name FROM mapping_masters WHERE id = :mid"), {"mid": wm_m_id}).fetchone()
+                    if m_row and m_row[0]:
+                        first_param = m_row[0].split(",")[0].strip()
+                if not first_param and wm_v_id:
+                    m_row = conn.execute(sa.text("""
+                        SELECT m.param_name FROM mapping_masters m
+                        JOIN mapping_variants v ON v.master_id = m.id
+                        WHERE v.id = :vid
+                    """), {"vid": wm_v_id}).fetchone()
+                    if m_row and m_row[0]:
+                        first_param = m_row[0].split(",")[0].strip()
+                conn.execute(sa.text("UPDATE workflow_mappings SET input_name = :inp WHERE id = :id"), {"inp": first_param, "id": wm_id})
+
+    # 9. Update mapping_slot_states in workflows and workflow_history
+    for tbl in ["workflows", "workflow_history"]:
+        if tbl in table_names:
+            cols = {c["name"] for c in inspector.get_columns(tbl)}
+            if "mapping_slot_states" in cols:
+                rows = conn.execute(sa.text(f"SELECT id, mapping_slot_states FROM {tbl}")).fetchall()
+                for r_id, slot_json in rows:
+                    if not slot_json:
+                        continue
+                    try:
+                        slots = json.loads(slot_json)
+                        if isinstance(slots, dict):
+                            updated = False
+                            new_slots = {}
+                            for k, val in slots.items():
+                                if k.startswith("m:"):
+                                    try:
+                                        mid = int(k[2:])
+                                        def_var = conn.execute(sa.text("SELECT id FROM mapping_variants WHERE master_id = :mid ORDER BY stage_id ASC LIMIT 1"), {"mid": mid}).fetchone()
+                                        if def_var:
+                                            new_slots[f"v:{def_var[0]}"] = val
+                                            updated = True
+                                        else:
+                                            new_slots[k] = val
+                                    except Exception:
+                                        new_slots[k] = val
+                                else:
+                                    new_slots[k] = val
+                            if updated:
+                                conn.execute(sa.text(f"UPDATE {tbl} SET mapping_slot_states = :val WHERE id = :id"), {"val": json.dumps(new_slots), "id": r_id})
+                    except Exception:
+                        pass
+
+    logger.info("Migrated: Step 033 binding rules and node selectors phase 2 migration completed.")
+
+
+def step_034_mapping_variants_phase5_constraints(conn: Connection, inspector: Inspector) -> None:
+    table_names = {row[0] for row in conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    if "mapping_variants" not in table_names:
+        return
+
+    # Fail-closed integrity check: ensure no duplicate or NULL roles exist
+    dup_roles = conn.execute(sa.text("""
+        SELECT role, COUNT(*) as cnt FROM mapping_variants GROUP BY role HAVING cnt > 1
+    """)).fetchall()
+    if dup_roles:
+        raise ValueError(f"Integrity check failed: duplicate roles found in mapping_variants: {dup_roles}")
+
+    null_roles = conn.execute(sa.text("""
+        SELECT COUNT(*) FROM mapping_variants WHERE role IS NULL
+    """)).scalar()
+    if null_roles and null_roles > 0:
+        raise ValueError("Integrity check failed: NULL role found in mapping_variants")
+
+    # Check if table already has physical UNIQUE constraint on role
+    indexes = conn.execute(sa.text("PRAGMA index_list(mapping_variants)")).fetchall()
+    idx_names = {r[1] for r in indexes}
+    if "uq_mapping_variant_role" in idx_names:
+        return
+
+    # Recreate mapping_variants table with physical constraints
+    conn.execute(sa.text("""
+        CREATE TABLE mapping_variants_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            master_id INTEGER NOT NULL REFERENCES mapping_masters(id) ON DELETE CASCADE,
+            stage_id INTEGER NOT NULL REFERENCES stage_masters(id) ON DELETE CASCADE,
+            role VARCHAR NOT NULL,
+            binding_rule_set_id INTEGER NOT NULL REFERENCES binding_rule_sets(id) ON DELETE RESTRICT,
+            node_selector_id INTEGER REFERENCES node_selectors(id) ON DELETE SET NULL,
+            custom_role_override VARCHAR,
+            extra_title_patterns TEXT,
+            is_enabled BOOLEAN NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            CONSTRAINT uq_mapping_variant_role UNIQUE (role),
+            CONSTRAINT uq_mapping_variant_master_stage UNIQUE (master_id, stage_id),
+            CONSTRAINT uq_mapping_variant_master_node_selector UNIQUE (master_id, node_selector_id)
+        )
+    """))
+
+    conn.execute(sa.text("""
+        INSERT INTO mapping_variants_new (id, master_id, stage_id, role, binding_rule_set_id, node_selector_id, custom_role_override, extra_title_patterns, is_enabled, sort_order)
+        SELECT id, master_id, stage_id, role, binding_rule_set_id, node_selector_id, custom_role_override, extra_title_patterns, is_enabled, sort_order
+        FROM mapping_variants
+    """))
+
+    conn.execute(sa.text("DROP TABLE mapping_variants"))
+    conn.execute(sa.text("ALTER TABLE mapping_variants_new RENAME TO mapping_variants"))
+    logger.info("Migrated: Recreated 'mapping_variants' with UNIQUE(role), UNIQUE(master_id, stage_id), UNIQUE(master_id, node_selector_id) constraints.")
+
+
+class MissingMappingVariantsError(ValueError, RuntimeError):
+    """Raised when mapping_variants prerequisite table or role column is missing."""
+    pass
+
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -845,4 +1228,8 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("030", "mapping_slot_states", step_030_mapping_slot_states),
     MigrationStep("031", "cleanup_orphaned_workflow_mappings", step_031_cleanup_orphaned_workflow_mappings),
     MigrationStep("032", "generation_jobs_release_json", step_032_generation_jobs_release_json),
+    MigrationStep("033", "binding_rules_and_node_selectors", step_033_binding_rules_and_node_selectors),
+    MigrationStep("034", "mapping_variants_phase5_constraints", step_034_mapping_variants_phase5_constraints),
 ]
+
+

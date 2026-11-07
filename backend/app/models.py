@@ -89,12 +89,67 @@ class MappingMaster(Base):
     )
 
 
+
+class BindingRuleSet(Base):
+    __tablename__ = "binding_rule_sets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    entries: Mapped[list["BindingRuleEntry"]] = relationship(back_populates="rule_set", cascade="all, delete-orphan")
+    variants: Mapped[list["MappingVariant"]] = relationship(back_populates="binding_rule_set")
+
+
+class BindingRuleEntry(Base):
+    __tablename__ = "binding_rule_entries"
+    __table_args__ = (UniqueConstraint("rule_set_id", "class_type", "param_name", name="uq_rule_entry"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_set_id: Mapped[int] = mapped_column(ForeignKey("binding_rule_sets.id", ondelete="CASCADE"), nullable=False)
+    class_type: Mapped[str] = mapped_column(String, nullable=False)
+    param_name: Mapped[str] = mapped_column(String, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    rule_set: Mapped["BindingRuleSet"] = relationship(back_populates="entries")
+
+
+class NodeSelector(Base):
+    __tablename__ = "node_selectors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    patterns: Mapped[list["NodeSelectorPattern"]] = relationship(back_populates="selector", cascade="all, delete-orphan")
+    variants: Mapped[list["MappingVariant"]] = relationship(back_populates="node_selector")
+
+
+class NodeSelectorPattern(Base):
+    __tablename__ = "node_selector_patterns"
+    __table_args__ = (UniqueConstraint("selector_id", "pattern", name="uq_selector_pattern"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    selector_id: Mapped[int] = mapped_column(ForeignKey("node_selectors.id", ondelete="CASCADE"), nullable=False)
+    pattern: Mapped[str] = mapped_column(String, nullable=False)
+    match_type: Mapped[str] = mapped_column(String, nullable=False, default="contains")  # exact / contains
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    selector: Mapped["NodeSelector"] = relationship(back_populates="patterns")
+
+
 class MappingVariant(Base):
     __tablename__ = "mapping_variants"
+    __table_args__ = (
+        UniqueConstraint("role", name="uq_mapping_variant_role"),
+        UniqueConstraint("master_id", "stage_id", name="uq_mapping_variant_master_stage"),
+        UniqueConstraint("master_id", "node_selector_id", name="uq_mapping_variant_master_node_selector"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("mapping_masters.id", ondelete="CASCADE"), nullable=False)
     stage_id: Mapped[int] = mapped_column(ForeignKey("stage_masters.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    binding_rule_set_id: Mapped[int] = mapped_column(ForeignKey("binding_rule_sets.id", ondelete="RESTRICT"), nullable=False)
+    node_selector_id: Mapped[Optional[int]] = mapped_column(ForeignKey("node_selectors.id", ondelete="SET NULL"), nullable=True)
     custom_role_override: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     extra_title_patterns: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -102,17 +157,22 @@ class MappingVariant(Base):
 
     master: Mapped["MappingMaster"] = relationship(back_populates="variants")
     stage: Mapped["StageMaster"] = relationship(back_populates="variants")
+    binding_rule_set: Mapped["BindingRuleSet"] = relationship(back_populates="variants")
+    node_selector: Mapped[Optional["NodeSelector"]] = relationship(back_populates="variants")
     workflow_mappings: Mapped[list["WorkflowMapping"]] = relationship(
         back_populates="variant", cascade="all, delete-orphan"
     )
 
     @property
     def computed_role(self) -> str:
+        if self.role:
+            return self.role
         if self.custom_role_override:
             return self.custom_role_override
         suf = self.stage.suffix if (self.stage and self.stage.suffix) else ""
         base = self.master.base_key if self.master else ""
         return f"{base}{suf}"
+
 
 
 lora_base_models = Table(
@@ -219,6 +279,8 @@ class WorkflowPreset(Base):
     workflow: Mapped["Workflow"] = relationship(back_populates="presets")
 
 
+
+
 class WorkflowMapping(Base):
     __tablename__ = "workflow_mappings"
 
@@ -227,6 +289,7 @@ class WorkflowMapping(Base):
     master_id: Mapped[int] = mapped_column(ForeignKey("mapping_masters.id", ondelete="CASCADE"), nullable=True, default=0)
     variant_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mapping_variants.id", ondelete="CASCADE"), nullable=True)
     node_id: Mapped[str] = mapped_column(String, nullable=False)
+    input_name: Mapped[str] = mapped_column(String, nullable=False, default="")
 
     workflow: Mapped["Workflow"] = relationship(back_populates="mappings")
     master: Mapped[Optional["MappingMaster"]] = relationship(back_populates="workflow_mappings")
@@ -469,6 +532,8 @@ class ParamSyncGroup(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="param_sync_groups")
+
+
 
 
 class SpeechBubblePreset(Base):

@@ -21,6 +21,9 @@ class MappingVariantRead(BaseModel):
     stage_key: str
     stage_name: str
     stage_suffix: str
+    role: Optional[str] = None
+    binding_rule_set_id: Optional[int] = None
+    node_selector_id: Optional[int] = None
     custom_role_override: Optional[str] = None
     computed_role: str
     extra_title_patterns: Optional[list[str]] = None
@@ -51,9 +54,13 @@ class MappingMasterV2Read(BaseModel):
 class MappingVariantUpdateItem(BaseModel):
     id: Optional[int] = None
     stage_id: Optional[int] = None
+    role: Optional[str] = None
+    binding_rule_set_id: Optional[int] = None
+    node_selector_id: Optional[int] = None
     custom_role_override: Optional[str] = None
     extra_title_patterns: Optional[list[str]] = None
     is_enabled: Optional[bool] = None
+
 
 
 class MappingMasterUpdate(BaseModel):
@@ -149,15 +156,46 @@ def create_master(payload: MappingMasterCreatePayload, db: Session = Depends(get
             if v_item.stage_id:
                 variant_dict[v_item.stage_id] = v_item
 
+    rule_set_name = f"{base_key} RuleSet"
+    rule_set = db.query(models.BindingRuleSet).filter(models.BindingRuleSet.name == rule_set_name).first()
+    if not rule_set:
+        rule_set = models.BindingRuleSet(name=rule_set_name)
+        db.add(rule_set)
+        db.flush()
+        if payload.expected_class_types:
+            for cls_type in payload.expected_class_types:
+                db.add(models.BindingRuleEntry(
+                    rule_set_id=rule_set.id,
+                    class_type=cls_type,
+                    param_name=payload.param_name,
+                    priority=1,
+                ))
+        else:
+            db.add(models.BindingRuleEntry(
+                rule_set_id=rule_set.id,
+                class_type="*",
+                param_name=payload.param_name,
+                priority=1,
+            ))
+        db.flush()
+
     for st in stages:
         v_opt: Optional[MappingVariantUpdateItem] = variant_dict.get(st.id)
         custom_override = v_opt.custom_role_override if v_opt else None
         extra_patterns = json.dumps(v_opt.extra_title_patterns) if (v_opt and v_opt.extra_title_patterns) else json.dumps([])
         is_enabled = v_opt.is_enabled if (v_opt and v_opt.is_enabled is not None) else True
 
+        computed_role = custom_override or (f"{base_key}{st.suffix}" if st.suffix else base_key)
+        var_role = (v_opt.role if v_opt and v_opt.role else None) or computed_role
+        rule_set_id = (v_opt.binding_rule_set_id if v_opt and v_opt.binding_rule_set_id else None) or rule_set.id
+        node_selector_id = v_opt.node_selector_id if v_opt else None
+
         db.add(models.MappingVariant(
             master_id=mm.id,
             stage_id=st.id,
+            role=var_role,
+            binding_rule_set_id=rule_set_id,
+            node_selector_id=node_selector_id,
             custom_role_override=custom_override,
             extra_title_patterns=extra_patterns,
             is_enabled=is_enabled,
@@ -166,6 +204,7 @@ def create_master(payload: MappingMasterCreatePayload, db: Session = Depends(get
     db.commit()
     db.refresh(mm)
     return _to_schema_v2(mm)
+
 
 
 @router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
@@ -258,6 +297,12 @@ def update_master(master_id: int, payload: MappingMasterUpdate, db: Session = De
             if v:
                 if item.is_enabled is not None:
                     v.is_enabled = item.is_enabled
+                if item.role is not None:
+                    v.role = item.role
+                if item.binding_rule_set_id is not None:
+                    v.binding_rule_set_id = item.binding_rule_set_id
+                if item.node_selector_id is not None:
+                    v.node_selector_id = item.node_selector_id
                 if item.custom_role_override is not None:
                     raw_override = item.custom_role_override.strip() if isinstance(item.custom_role_override, str) else item.custom_role_override
                     v.custom_role_override = raw_override if raw_override else None
@@ -266,9 +311,22 @@ def update_master(master_id: int, payload: MappingMasterUpdate, db: Session = De
             elif item.stage_id:
                 # Create if not exists for this stage
                 new_override = item.custom_role_override.strip() if isinstance(item.custom_role_override, str) else item.custom_role_override
+                st_obj = db.query(models.StageMaster).filter(models.StageMaster.id == item.stage_id).first()
+                computed_r = new_override or (f"{new_base_key}{st_obj.suffix}" if (st_obj and st_obj.suffix) else new_base_key)
+                var_r = item.role or computed_r
+                rs_id = item.binding_rule_set_id
+                if not rs_id:
+                    default_rs = db.query(models.BindingRuleSet).filter(models.BindingRuleSet.name == f"{new_base_key} RuleSet").first()
+                    if not default_rs:
+                        default_rs = db.query(models.BindingRuleSet).first()
+                    rs_id = default_rs.id if default_rs else 1
+
                 db.add(models.MappingVariant(
                     master_id=master_id,
                     stage_id=item.stage_id,
+                    role=var_r,
+                    binding_rule_set_id=rs_id,
+                    node_selector_id=item.node_selector_id,
                     custom_role_override=new_override if new_override else None,
                     extra_title_patterns=json.dumps(item.extra_title_patterns) if item.extra_title_patterns else json.dumps([]),
                     is_enabled=item.is_enabled if item.is_enabled is not None else True,
@@ -314,11 +372,15 @@ def _to_variant_schema(v: models.MappingVariant) -> MappingVariantRead:
         stage_key=stage.key if stage else "",
         stage_name=stage.name if stage else "",
         stage_suffix=stage.suffix if stage else "",
+        role=v.role or v.computed_role,
+        binding_rule_set_id=v.binding_rule_set_id,
+        node_selector_id=v.node_selector_id,
         custom_role_override=v.custom_role_override,
         computed_role=v.computed_role,
         extra_title_patterns=extra_patterns,
         is_enabled=v.is_enabled,
     )
+
 
 
 def _to_schema_v2(mm: models.MappingMaster) -> MappingMasterV2Read:

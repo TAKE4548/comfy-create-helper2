@@ -34,11 +34,13 @@ from app.routers import (
     speech_bubble_presets, speech_tone_presets,
     translate, speech_batch, speech_scene,
     prompt_metadata, system_logs,
+    binding_rules, node_selectors,
     settings as settings_router,
     dataset_router,
     benchmark_router,
     training_router,
 )
+
 from app.routers import ws as ws_router
 from app.routers import generation as generation_router
 from app.services.resource_monitor import resource_monitor
@@ -161,7 +163,10 @@ app.add_middleware(
 app.include_router(system_logs.router)
 app.include_router(workflows.router)
 app.include_router(mapping_masters.router)
+app.include_router(binding_rules.router)
+app.include_router(node_selectors.router)
 app.include_router(mapping_groups.router)
+
 app.include_router(stage_masters.router)
 app.include_router(snapshots.router)
 app.include_router(albums.router)

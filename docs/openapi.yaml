@@ -469,6 +469,798 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/binding-rules:
+    get:
+      tags:
+      - binding-rules
+      summary: List Binding Rule Sets
+      operationId: list_binding_rule_sets_api_binding_rules_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/BindingRuleSetRead'
+                type: array
+                title: Response List Binding Rule Sets Api Binding Rules Get
+    post:
+      tags:
+      - binding-rules
+      summary: Create Binding Rule Set
+      operationId: create_binding_rule_set_api_binding_rules_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingRuleSetCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingRuleSetRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/binding-rules/{rule_set_id}:
+    get:
+      tags:
+      - binding-rules
+      summary: Get Binding Rule Set
+      operationId: get_binding_rule_set_api_binding_rules__rule_set_id__get
+      parameters:
+      - name: rule_set_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Rule Set Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingRuleSetRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - binding-rules
+      summary: Update Binding Rule Set
+      operationId: update_binding_rule_set_api_binding_rules__rule_set_id__put
+      parameters:
+      - name: rule_set_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Rule Set Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingRuleSetUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingRuleSetRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - binding-rules
+      summary: Delete Binding Rule Set
+      operationId: delete_binding_rule_set_api_binding_rules__rule_set_id__delete
+      parameters:
+      - name: rule_set_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Rule Set Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/binding-rules/{rule_set_id}/entries:
+    post:
+      tags:
+      - binding-rules
+      summary: Add Binding Rule Entry
+      operationId: add_binding_rule_entry_api_binding_rules__rule_set_id__entries_post
+      parameters:
+      - name: rule_set_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Rule Set Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingRuleEntryCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingRuleEntryRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/binding-rules/{rule_set_id}/entries/{entry_id}:
+    delete:
+      tags:
+      - binding-rules
+      summary: Delete Binding Rule Entry
+      operationId: delete_binding_rule_entry_api_binding_rules__rule_set_id__entries__entry_id__delete
+      parameters:
+      - name: rule_set_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Rule Set Id
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Entry Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/node-selectors:
+    get:
+      tags:
+      - node-selectors
+      summary: List Node Selectors
+      operationId: list_node_selectors_api_node_selectors_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/NodeSelectorRead'
+                type: array
+                title: Response List Node Selectors Api Node Selectors Get
+    post:
+      tags:
+      - node-selectors
+      summary: Create Node Selector
+      operationId: create_node_selector_api_node_selectors_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeSelectorCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeSelectorRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/node-selectors/{selector_id}:
+    get:
+      tags:
+      - node-selectors
+      summary: Get Node Selector
+      operationId: get_node_selector_api_node_selectors__selector_id__get
+      parameters:
+      - name: selector_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Selector Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeSelectorRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - node-selectors
+      summary: Update Node Selector
+      operationId: update_node_selector_api_node_selectors__selector_id__put
+      parameters:
+      - name: selector_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Selector Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeSelectorUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeSelectorRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - node-selectors
+      summary: Delete Node Selector
+      operationId: delete_node_selector_api_node_selectors__selector_id__delete
+      parameters:
+      - name: selector_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Selector Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/node-selectors/{selector_id}/patterns:
+    post:
+      tags:
+      - node-selectors
+      summary: Add Node Selector Pattern
+      operationId: add_node_selector_pattern_api_node_selectors__selector_id__patterns_post
+      parameters:
+      - name: selector_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Selector Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeSelectorPatternCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeSelectorPatternRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/node-selectors/{selector_id}/patterns/{pattern_id}:
+    delete:
+      tags:
+      - node-selectors
+      summary: Delete Node Selector Pattern
+      operationId: delete_node_selector_pattern_api_node_selectors__selector_id__patterns__pattern_id__delete
+      parameters:
+      - name: selector_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Selector Id
+      - name: pattern_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Pattern Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/mapping-groups:
+    get:
+      tags:
+      - mapping-groups
+      summary: List Mapping Groups
+      operationId: list_mapping_groups_api_mapping_groups_get
+      parameters:
+      - name: include_inactive
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Include Inactive
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MappingGroupMasterRead'
+                title: Response List Mapping Groups Api Mapping Groups Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - mapping-groups
+      summary: Create Mapping Group
+      operationId: create_mapping_group_api_mapping_groups_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingGroupMasterCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingGroupMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/mapping-groups/reorder:
+    put:
+      tags:
+      - mapping-groups
+      summary: Reorder Mapping Groups
+      operationId: reorder_mapping_groups_api_mapping_groups_reorder_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingGroupReorder'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/mapping-groups/{group_id}:
+    get:
+      tags:
+      - mapping-groups
+      summary: Get Mapping Group
+      operationId: get_mapping_group_api_mapping_groups__group_id__get
+      parameters:
+      - name: group_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Group Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingGroupMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - mapping-groups
+      summary: Update Mapping Group
+      operationId: update_mapping_group_api_mapping_groups__group_id__put
+      parameters:
+      - name: group_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Group Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingGroupMasterUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingGroupMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - mapping-groups
+      summary: Delete Mapping Group
+      operationId: delete_mapping_group_api_mapping_groups__group_id__delete
+      parameters:
+      - name: group_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Group Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters:
+    get:
+      tags:
+      - stage-masters
+      summary: List Stage Masters
+      operationId: list_stage_masters_api_stage_masters_get
+      parameters:
+      - name: include_inactive
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: 非アクティブなステージも含めるか
+          default: true
+          title: Include Inactive
+        description: 非アクティブなステージも含めるか
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StageMasterRead'
+                title: Response List Stage Masters Api Stage Masters Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - stage-masters
+      summary: Create Stage Master
+      operationId: create_stage_master_api_stage_masters_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageMasterCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters/reorder:
+    put:
+      tags:
+      - stage-masters
+      summary: Reorder Stage Masters
+      operationId: reorder_stage_masters_api_stage_masters_reorder_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageMasterReorder'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters/{stage_id}:
+    get:
+      tags:
+      - stage-masters
+      summary: Get Stage Master
+      operationId: get_stage_master_api_stage_masters__stage_id__get
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - stage-masters
+      summary: Update Stage Master
+      operationId: update_stage_master_api_stage_masters__stage_id__put
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageMasterUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - stage-masters
+      summary: Delete Stage Master
+      operationId: delete_stage_master_api_stage_masters__stage_id__delete
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters/{stage_id}/usages:
+    get:
+      tags:
+      - stage-masters
+      summary: Get Stage Usages
+      operationId: get_stage_usages_api_stage_masters__stage_id__usages_get
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Get Stage Usages Api Stage Masters  Stage Id  Usages
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters/{stage_id}/cascade-preview:
+    get:
+      tags:
+      - stage-masters
+      summary: Get Cascade Preview
+      operationId: get_cascade_preview_api_stage_masters__stage_id__cascade_preview_get
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      - name: new_suffix
+        in: query
+        required: true
+        schema:
+          type: string
+          description: 新しい接尾辞
+          title: New Suffix
+        description: 新しい接尾辞
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CascadePreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - stage-masters
+      summary: Post Cascade Preview
+      operationId: post_cascade_preview_api_stage_masters__stage_id__cascade_preview_post
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CascadeRenameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CascadePreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/stage-masters/{stage_id}/cascade-rename:
+    post:
+      tags:
+      - stage-masters
+      summary: Execute Cascade Rename Endpoint
+      operationId: execute_cascade_rename_endpoint_api_stage_masters__stage_id__cascade_rename_post
+      parameters:
+      - name: stage_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Stage Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CascadeRenameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageMasterRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/snapshots:
     get:
       tags:
@@ -2521,7 +3313,8 @@ paths:
       tags:
       - comfy
       summary: Get Comfy View
-      description: Serve original bytes from the configured upstream; t is metadata-only.
+      description: Serve full-size WebP cached image (0ms on cache hit) or fetch from
+        upstream and cache.
       operationId: get_comfy_view_api_comfy_view_get
       parameters:
       - name: filename
@@ -3441,37 +4234,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/generation/history/residual:
-    post:
-      tags:
-      - generation
-      summary: Get Residual History
-      operationId: get_residual_history_api_generation_history_residual_post
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ResidualHistoryRequest'
-      responses:
-        '200':
-          description: Only new images with confirmed present originals
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResidualHistoryResponse'
-        '422':
-          description: Invalid identity or request bound
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '503':
-          description: Residual history could not be read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
   /api/generation/state:
     get:
       tags:
@@ -3581,17 +4343,16 @@ paths:
       tags:
       - generation
       summary: Release Generations
-      description: Release unconfirmed records only. No upstream cancel, interrupt, or resubmission is performed.
       operationId: release_generations_api_generation_release_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ReleaseRequest'
+        required: true
       responses:
         '200':
-          description: Per-item release results (items may be not_released or rejected)
+          description: Successful Response
           content:
             application/json:
               schema:
@@ -3601,13 +4362,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '503':
-          description: Release could not be completed (outcome=unconfirmed)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/generation/upstream-queue:
     get:
       tags:
@@ -3667,6 +4422,31 @@ paths:
                   $ref: '#/components/schemas/ImageView'
                 title: Response Get Image Availability Api Generation Images  Job
                   Id  Availability Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/generation/history/residual:
+    post:
+      tags:
+      - generation
+      summary: Get Residual Generation History
+      operationId: get_residual_generation_history_api_generation_history_residual_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResidualHistoryRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidualHistoryResponse'
         '422':
           description: Validation Error
           content:
@@ -4505,6 +5285,101 @@ components:
       - scope
       - project_id
       title: BatchView
+    BindingRuleEntryCreate:
+      properties:
+        class_type:
+          type: string
+          title: Class Type
+        param_name:
+          type: string
+          title: Param Name
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - class_type
+      - param_name
+      title: BindingRuleEntryCreate
+    BindingRuleEntryRead:
+      properties:
+        class_type:
+          type: string
+          title: Class Type
+        param_name:
+          type: string
+          title: Param Name
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+        id:
+          type: integer
+          title: Id
+        rule_set_id:
+          type: integer
+          title: Rule Set Id
+      type: object
+      required:
+      - class_type
+      - param_name
+      - id
+      - rule_set_id
+      title: BindingRuleEntryRead
+    BindingRuleSetCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        entries:
+          items:
+            $ref: '#/components/schemas/BindingRuleEntryCreate'
+          type: array
+          title: Entries
+      type: object
+      required:
+      - name
+      title: BindingRuleSetCreate
+    BindingRuleSetRead:
+      properties:
+        name:
+          type: string
+          title: Name
+        id:
+          type: integer
+          title: Id
+        entries:
+          items:
+            $ref: '#/components/schemas/BindingRuleEntryRead'
+          type: array
+          title: Entries
+        referenced_roles:
+          items:
+            type: string
+          type: array
+          title: Referenced Roles
+      type: object
+      required:
+      - name
+      - id
+      title: BindingRuleSetRead
+    BindingRuleSetUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        entries:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/BindingRuleEntryCreate'
+            type: array
+          - type: 'null'
+          title: Entries
+      type: object
+      title: BindingRuleSetUpdate
     Body_upload_snapshot_image_api_snapshots_upload_post:
       properties:
         file:
@@ -4841,6 +5716,59 @@ components:
       additionalProperties: false
       type: object
       title: CancelTarget
+    CascadePreviewResponse:
+      properties:
+        stage_id:
+          type: integer
+          title: Stage Id
+        old_suffix:
+          type: string
+          title: Old Suffix
+        new_suffix:
+          type: string
+          title: New Suffix
+        affected_variants_count:
+          type: integer
+          title: Affected Variants Count
+        affected_presets_count:
+          type: integer
+          title: Affected Presets Count
+        affected_snapshots_count:
+          type: integer
+          title: Affected Snapshots Count
+        role_diffs:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Role Diffs
+      type: object
+      required:
+      - stage_id
+      - old_suffix
+      - new_suffix
+      - affected_variants_count
+      - affected_presets_count
+      - affected_snapshots_count
+      - role_diffs
+      title: CascadePreviewResponse
+    CascadeRenameRequest:
+      properties:
+        new_suffix:
+          type: string
+          title: New Suffix
+        update_presets:
+          type: boolean
+          title: Update Presets
+          default: true
+        update_snapshots:
+          type: boolean
+          title: Update Snapshots
+          default: true
+      type: object
+      required:
+      - new_suffix
+      title: CascadeRenameRequest
     CategoryCreate:
       properties:
         name:
@@ -5389,37 +6317,6 @@ components:
       - position
       - style
       title: GeneratedSpeechBubbleRead
-    ErrorDetail:
-      type: object
-      required:
-      - code
-      - message
-      - outcome
-      - request_id
-      - job_id
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-        outcome:
-          anyOf:
-          - type: string
-            enum:
-            - failed
-            - unconfirmed
-          - type: 'null'
-        request_id:
-          type: [string, 'null']
-        job_id:
-          type: [string, 'null']
-    ErrorEnvelope:
-      type: object
-      required:
-      - detail
-      properties:
-        detail:
-          $ref: '#/components/schemas/ErrorDetail'
     HTTPValidationError:
       properties:
         detail:
@@ -5459,20 +6356,24 @@ components:
       - availability
       title: ImageAvailability
     ImageIdentity:
-      type: object
-      additionalProperties: false
-      required:
-      - filename
-      - subfolder
-      - type
       properties:
         filename:
           type: string
           minLength: 1
+          title: Filename
         subfolder:
           type: string
+          title: Subfolder
+          default: ''
         type:
           type: string
+          title: Type
+          default: output
+      additionalProperties: false
+      type: object
+      required:
+      - filename
+      title: ImageIdentity
     ImageView:
       properties:
         node_id:
@@ -5503,203 +6404,6 @@ components:
       - thumbnail_url
       - availability
       title: ImageView
-    ReleaseOperation:
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/ReleaseResult'
-          type: array
-          title: Items
-        epoch:
-          type: string
-          title: Epoch
-        revision:
-          type: integer
-          title: Revision
-      additionalProperties: false
-      type: object
-      required:
-      - items
-      - epoch
-      - revision
-      title: ReleaseOperation
-    ReleaseRequest:
-      properties:
-        job_ids:
-          items:
-            type: string
-          type: array
-          maxItems: 50
-          minItems: 1
-          uniqueItems: true
-          title: Job Ids
-        session_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Session Id
-      additionalProperties: false
-      type: object
-      required:
-      - job_ids
-      title: ReleaseRequest
-    ReleaseResult:
-      properties:
-        job_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Job Id
-        prompt_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Prompt Id
-        status:
-          anyOf:
-          - type: string
-            enum:
-            - queued
-            - submitting
-            - running
-            - succeeded
-            - failed
-            - cancelled
-            - unconfirmed
-            - released
-          - type: 'null'
-          title: Status
-        outcome:
-          type: string
-          enum:
-          - released
-          - already_released
-          - not_released
-          - rejected
-          title: Outcome
-        message:
-          type: string
-          title: Message
-        upstream_check:
-          anyOf:
-          - type: string
-            enum:
-            - skipped_no_identity
-            - not_found
-            - unavailable
-          - type: 'null'
-          title: Upstream Check
-      additionalProperties: false
-      type: object
-      required:
-      - job_id
-      - prompt_id
-      - status
-      - outcome
-      - message
-      title: ReleaseResult
-    ReleaseView:
-      properties:
-        released_at:
-          type: string
-          title: Released At
-        released_by_session:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Released By Session
-        reason:
-          type: string
-          enum:
-          - user_release
-          title: Reason
-        upstream_check:
-          type: string
-          enum:
-          - skipped_no_identity
-          - not_found
-          - unavailable
-          title: Upstream Check
-        late_prompt_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Late Prompt Id
-      additionalProperties: false
-      type: object
-      required:
-      - released_at
-      - released_by_session
-      - reason
-      - upstream_check
-      - late_prompt_id
-      title: ReleaseView
-    ResidualHistoryItem:
-      type: object
-      required:
-      - identity
-      - view_url
-      - session_id
-      - availability
-      properties:
-        identity:
-          $ref: '#/components/schemas/ImageIdentity'
-        view_url:
-          type: string
-        session_id:
-          type: [string, 'null']
-        availability:
-          type: string
-          const: present
-    ResidualHistoryRejected:
-      type: object
-      required:
-      - identity
-      - availability
-      properties:
-        identity:
-          $ref: '#/components/schemas/ImageIdentity'
-        availability:
-          type: string
-          enum:
-          - missing
-          - unknown
-    ResidualHistoryRequest:
-      type: object
-      additionalProperties: false
-      required:
-      - known
-      - examined
-      properties:
-        known:
-          type: array
-          maxItems: 1000
-          items:
-            $ref: '#/components/schemas/ImageIdentity'
-        examined:
-          type: array
-          maxItems: 1000
-          items:
-            $ref: '#/components/schemas/ImageIdentity'
-    ResidualHistoryResponse:
-      type: object
-      required:
-      - items
-      - rejected
-      - has_more
-      properties:
-        items:
-          type: array
-          maxItems: 10
-          items:
-            $ref: '#/components/schemas/ResidualHistoryItem'
-        rejected:
-          type: array
-          maxItems: 10
-          items:
-            $ref: '#/components/schemas/ResidualHistoryRejected'
-        has_more:
-          type: boolean
     InterferenceItem:
       properties:
         tag:
@@ -5802,7 +6506,6 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ReleaseView'
           - type: 'null'
-          title: Release
       additionalProperties: false
       type: object
       required:
@@ -6132,6 +6835,90 @@ components:
       - learning_rate
       - status
       title: LoraTrainingJobResponse
+    MappingGroupMasterCreate:
+      properties:
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        sort_order:
+          type: integer
+          title: Sort Order
+          default: 0
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+      type: object
+      required:
+      - key
+      - name
+      title: MappingGroupMasterCreate
+    MappingGroupMasterRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        sort_order:
+          type: integer
+          title: Sort Order
+        is_builtin:
+          type: boolean
+          title: Is Builtin
+        is_active:
+          type: boolean
+          title: Is Active
+        master_count:
+          type: integer
+          title: Master Count
+          default: 0
+      type: object
+      required:
+      - id
+      - key
+      - name
+      - sort_order
+      - is_builtin
+      - is_active
+      title: MappingGroupMasterRead
+    MappingGroupMasterUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        sort_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sort Order
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+      type: object
+      title: MappingGroupMasterUpdate
+    MappingGroupReorder:
+      properties:
+        ordered_ids:
+          items:
+            type: integer
+          type: array
+          title: Ordered Ids
+      type: object
+      required:
+      - ordered_ids
+      title: MappingGroupReorder
     MappingMasterCreatePayload:
       properties:
         role:
@@ -6411,6 +7198,21 @@ components:
         stage_suffix:
           type: string
           title: Stage Suffix
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+        binding_rule_set_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Binding Rule Set Id
+        node_selector_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Node Selector Id
         custom_role_override:
           anyOf:
           - type: string
@@ -6452,6 +7254,21 @@ components:
           - type: integer
           - type: 'null'
           title: Stage Id
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+        binding_rule_set_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Binding Rule Set Id
+        node_selector_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Node Selector Id
         custom_role_override:
           anyOf:
           - type: string
@@ -6471,6 +7288,101 @@ components:
           title: Is Enabled
       type: object
       title: MappingVariantUpdateItem
+    NodeSelectorCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        patterns:
+          items:
+            $ref: '#/components/schemas/NodeSelectorPatternCreate'
+          type: array
+          title: Patterns
+      type: object
+      required:
+      - name
+      title: NodeSelectorCreate
+    NodeSelectorPatternCreate:
+      properties:
+        pattern:
+          type: string
+          title: Pattern
+        match_type:
+          type: string
+          title: Match Type
+          default: contains
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - pattern
+      title: NodeSelectorPatternCreate
+    NodeSelectorPatternRead:
+      properties:
+        pattern:
+          type: string
+          title: Pattern
+        match_type:
+          type: string
+          title: Match Type
+          default: contains
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+        id:
+          type: integer
+          title: Id
+        selector_id:
+          type: integer
+          title: Selector Id
+      type: object
+      required:
+      - pattern
+      - id
+      - selector_id
+      title: NodeSelectorPatternRead
+    NodeSelectorRead:
+      properties:
+        name:
+          type: string
+          title: Name
+        id:
+          type: integer
+          title: Id
+        patterns:
+          items:
+            $ref: '#/components/schemas/NodeSelectorPatternRead'
+          type: array
+          title: Patterns
+        referenced_roles:
+          items:
+            type: string
+          type: array
+          title: Referenced Roles
+      type: object
+      required:
+      - name
+      - id
+      title: NodeSelectorRead
+    NodeSelectorUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        patterns:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/NodeSelectorPatternCreate'
+            type: array
+          - type: 'null'
+          title: Patterns
+      type: object
+      title: NodeSelectorUpdate
     NodeView:
       properties:
         id:
@@ -6889,6 +7801,133 @@ components:
       required:
       - roi
       title: ROIRequest
+    ReleaseOperation:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ReleaseResult'
+          type: array
+          title: Items
+        epoch:
+          type: string
+          title: Epoch
+        revision:
+          type: integer
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      - epoch
+      - revision
+      title: ReleaseOperation
+    ReleaseRequest:
+      properties:
+        job_ids:
+          items:
+            type: string
+          type: array
+          title: Job Ids
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+      additionalProperties: false
+      type: object
+      required:
+      - job_ids
+      title: ReleaseRequest
+    ReleaseResult:
+      properties:
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+        prompt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Id
+        status:
+          anyOf:
+          - type: string
+            enum:
+            - queued
+            - submitting
+            - running
+            - succeeded
+            - failed
+            - cancelled
+            - unconfirmed
+            - released
+          - type: 'null'
+          title: Status
+        outcome:
+          type: string
+          enum:
+          - released
+          - already_released
+          - not_released
+          - rejected
+          title: Outcome
+        message:
+          type: string
+          title: Message
+        upstream_check:
+          anyOf:
+          - type: string
+            enum:
+            - skipped_no_identity
+            - not_found
+            - unavailable
+          - type: 'null'
+          title: Upstream Check
+      additionalProperties: false
+      type: object
+      required:
+      - job_id
+      - prompt_id
+      - status
+      - outcome
+      - message
+      title: ReleaseResult
+    ReleaseView:
+      properties:
+        released_at:
+          type: string
+          title: Released At
+        released_by_session:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Released By Session
+        reason:
+          type: string
+          const: user_release
+          title: Reason
+        upstream_check:
+          type: string
+          enum:
+          - skipped_no_identity
+          - not_found
+          - unavailable
+          title: Upstream Check
+        late_prompt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Late Prompt Id
+      additionalProperties: false
+      type: object
+      required:
+      - released_at
+      - released_by_session
+      - reason
+      - upstream_check
+      - late_prompt_id
+      title: ReleaseView
     RequestLookup:
       properties:
         batch_id:
@@ -6905,6 +7944,85 @@ components:
       - batch_id
       - job_ids
       title: RequestLookup
+    ResidualHistoryItem:
+      properties:
+        identity:
+          $ref: '#/components/schemas/ImageIdentity'
+        view_url:
+          type: string
+          title: View Url
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+        availability:
+          type: string
+          const: present
+          title: Availability
+          default: present
+      type: object
+      required:
+      - identity
+      - view_url
+      - session_id
+      title: ResidualHistoryItem
+    ResidualHistoryRejected:
+      properties:
+        identity:
+          $ref: '#/components/schemas/ImageIdentity'
+        availability:
+          type: string
+          enum:
+          - missing
+          - unknown
+          title: Availability
+      type: object
+      required:
+      - identity
+      - availability
+      title: ResidualHistoryRejected
+    ResidualHistoryRequest:
+      properties:
+        known:
+          items:
+            $ref: '#/components/schemas/ImageIdentity'
+          type: array
+          maxItems: 1000
+          title: Known
+        examined:
+          items:
+            $ref: '#/components/schemas/ImageIdentity'
+          type: array
+          maxItems: 1000
+          title: Examined
+      additionalProperties: false
+      type: object
+      required:
+      - known
+      - examined
+      title: ResidualHistoryRequest
+    ResidualHistoryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ResidualHistoryItem'
+          type: array
+          title: Items
+        rejected:
+          items:
+            $ref: '#/components/schemas/ResidualHistoryRejected'
+          type: array
+          title: Rejected
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
+      required:
+      - items
+      - rejected
+      - has_more
+      title: ResidualHistoryResponse
     ScanMatchedItem:
       properties:
         master_id:
@@ -6919,6 +8037,10 @@ components:
         node_title:
           type: string
           title: Node Title
+        input_name:
+          type: string
+          title: Input Name
+          default: ''
         status:
           type: string
           title: Status
@@ -6930,6 +8052,21 @@ components:
             type: array
           - type: 'null'
           title: Node Ids
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
+        stage_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stage Id
+        stage_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage Key
       type: object
       required:
       - master_id
@@ -6992,6 +8129,21 @@ components:
           - type: string
           - type: 'null'
           title: Actual Class Type
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
+        stage_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stage Id
+        stage_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage Key
       type: object
       required:
       - master_id
@@ -8043,6 +9195,131 @@ components:
       required:
       - rewritten_text
       title: SpeechToneRewriteResponse
+    StageMasterCreate:
+      properties:
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        suffix:
+          type: string
+          title: Suffix
+          default: ''
+        search_keywords:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Search Keywords
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+        sort_order:
+          type: integer
+          title: Sort Order
+          default: 0
+        is_builtin:
+          type: boolean
+          title: Is Builtin
+          default: false
+      type: object
+      required:
+      - key
+      - name
+      title: StageMasterCreate
+    StageMasterRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        key:
+          type: string
+          title: Key
+        name:
+          type: string
+          title: Name
+        suffix:
+          type: string
+          title: Suffix
+        search_keywords:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Search Keywords
+        previous_suffixes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Previous Suffixes
+        is_builtin:
+          type: boolean
+          title: Is Builtin
+        is_active:
+          type: boolean
+          title: Is Active
+        sort_order:
+          type: integer
+          title: Sort Order
+      type: object
+      required:
+      - id
+      - key
+      - name
+      - suffix
+      - is_builtin
+      - is_active
+      - sort_order
+      title: StageMasterRead
+    StageMasterReorder:
+      properties:
+        ordered_ids:
+          items:
+            type: integer
+          type: array
+          title: Ordered Ids
+      type: object
+      required:
+      - ordered_ids
+      title: StageMasterReorder
+    StageMasterUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        suffix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suffix
+        search_keywords:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Search Keywords
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+        sort_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sort Order
+      type: object
+      title: StageMasterUpdate
     StateSnapshot:
       properties:
         version:
@@ -8604,6 +9881,10 @@ components:
           - type: integer
           - type: 'null'
           title: Variant Id
+        input_name:
+          type: string
+          title: Input Name
+          default: ''
       type: object
       required:
       - master_id
@@ -8620,6 +9901,10 @@ components:
         node_id:
           type: string
           title: Node Id
+        input_name:
+          type: string
+          title: Input Name
+          default: ''
         variant_id:
           anyOf:
           - type: integer

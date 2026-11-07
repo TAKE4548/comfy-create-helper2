@@ -272,8 +272,8 @@ describe('WorkflowModalMultiStage', () => {
           name: 'New MultiStage Workflow',
           json_body: mockWorkflowJson,
           mappings: [
-            { master_id: 1, variant_id: 101, node_id: '10' },
-            { master_id: 1, variant_id: 102, node_id: '20' },
+            { master_id: 1, variant_id: 101, node_id: '10', input_name: '' },
+            { master_id: 1, variant_id: 102, node_id: '20', input_name: '' },
           ],
           mapping_slot_states: { 'v:101': true, 'v:102': true },
         })
@@ -314,7 +314,7 @@ describe('WorkflowModalMultiStage', () => {
           name: 'Single Stage Mapped',
           json_body: mockWorkflowJson,
           mappings: [
-            { master_id: 1, variant_id: 101, node_id: '10' },
+            { master_id: 1, variant_id: 101, node_id: '10', input_name: '' },
           ],
           mapping_slot_states: { 'v:101': true, 'v:102': true },
         })
@@ -378,8 +378,8 @@ describe('WorkflowModalMultiStage', () => {
           name: 'Disabled Rough',
           json_body: mockWorkflowJson,
           mappings: [
-            { master_id: 1, variant_id: 101, node_id: '10' },
-            { master_id: 1, variant_id: 102, node_id: '20' },
+            { master_id: 1, variant_id: 101, node_id: '10', input_name: '' },
+            { master_id: 1, variant_id: 102, node_id: '20', input_name: '' },
           ],
           mapping_slot_states: { 'v:101': true, 'v:102': false },
         })

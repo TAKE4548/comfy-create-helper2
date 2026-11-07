@@ -70,3 +70,84 @@ class CascadeRenameRequest(BaseModel):
     new_suffix: str
     update_presets: bool = True
     update_snapshots: bool = True
+
+
+# ─── Binding Rules ───────────────────────────────────────────────
+
+class BindingRuleEntryBase(BaseModel):
+    class_type: str
+    param_name: str
+    priority: int = 1
+
+
+class BindingRuleEntryCreate(BindingRuleEntryBase):
+    pass
+
+
+class BindingRuleEntryRead(BindingRuleEntryBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    rule_set_id: int
+
+
+class BindingRuleSetBase(BaseModel):
+    name: str
+
+
+class BindingRuleSetCreate(BindingRuleSetBase):
+    entries: List[BindingRuleEntryCreate] = Field(default_factory=list)
+
+
+class BindingRuleSetUpdate(BaseModel):
+    name: Optional[str] = None
+    entries: Optional[List[BindingRuleEntryCreate]] = None
+
+
+class BindingRuleSetRead(BindingRuleSetBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    entries: List[BindingRuleEntryRead] = Field(default_factory=list)
+    referenced_roles: List[str] = Field(default_factory=list)
+
+
+# ─── Node Selectors ──────────────────────────────────────────────
+
+class NodeSelectorPatternBase(BaseModel):
+    pattern: str
+    match_type: str = "contains"
+    priority: int = 1
+
+
+class NodeSelectorPatternCreate(NodeSelectorPatternBase):
+    pass
+
+
+class NodeSelectorPatternRead(NodeSelectorPatternBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    selector_id: int
+
+
+class NodeSelectorBase(BaseModel):
+    name: str
+
+
+class NodeSelectorCreate(NodeSelectorBase):
+    patterns: List[NodeSelectorPatternCreate] = Field(default_factory=list)
+
+
+class NodeSelectorUpdate(BaseModel):
+    name: Optional[str] = None
+    patterns: Optional[List[NodeSelectorPatternCreate]] = None
+
+
+class NodeSelectorRead(NodeSelectorBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    patterns: List[NodeSelectorPatternRead] = Field(default_factory=list)
+    referenced_roles: List[str] = Field(default_factory=list)
+

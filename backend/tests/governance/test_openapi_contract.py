@@ -118,3 +118,35 @@ def test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31() -> N
     assert "default_enabled" not in update.get("required", [])
     assert backend_snapshot["components"]["schemas"]["MappingMasterUpdate"] == update
     assert docs_snapshot["components"]["schemas"]["MappingMasterUpdate"] == update
+
+
+def test_req417_openapi_binding_rules_and_node_selectors_contract_AC_5() -> None:
+    """[REQ-417/AC-5] Verify binding rules and node selectors routes and schemas in OpenAPI contract."""
+    runtime = app.openapi()
+    backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
+    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
+
+    # Check WorkflowMappingRead.input_name in schemas
+    wf_mapping = runtime["components"]["schemas"]["WorkflowMappingRead"]
+    assert "input_name" in wf_mapping["properties"]
+    assert wf_mapping["properties"]["input_name"]["type"] == "string"
+    assert backend_snapshot["components"]["schemas"]["WorkflowMappingRead"] == wf_mapping
+    assert docs_snapshot["components"]["schemas"]["WorkflowMappingRead"] == wf_mapping
+
+    # Check routes in paths
+    for route in ("/api/binding-rules", "/api/binding-rules/{rule_set_id}", "/api/node-selectors", "/api/node-selectors/{selector_id}"):
+        assert backend_snapshot["paths"][route] == runtime["paths"][route]
+        assert docs_snapshot["paths"][route] == runtime["paths"][route]
+
+    # Check new schemas
+    for schema_name in (
+        "BindingRuleSetRead",
+        "BindingRuleSetCreate",
+        "BindingRuleSetUpdate",
+        "NodeSelectorRead",
+        "NodeSelectorCreate",
+        "NodeSelectorUpdate",
+    ):
+        assert backend_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
+        assert docs_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
+

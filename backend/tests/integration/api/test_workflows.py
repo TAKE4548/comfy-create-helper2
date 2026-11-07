@@ -273,14 +273,21 @@ def test_workflow_save_filters_orphaned_master_and_variant_mappings(client: Test
     db_session.add(master)
     db_session.flush()
 
+    rs = models.BindingRuleSet(name="test_role RuleSet")
+    db_session.add(rs)
+    db_session.flush()
+
     variant = models.MappingVariant(
         master_id=master.id,
         stage_id=1,
+        role="test_role",
+        binding_rule_set_id=rs.id,
         is_enabled=True,
         sort_order=0,
     )
     db_session.add(variant)
     db_session.flush()
+
 
     # 2. POST /api/workflows with 1 valid mapping, 1 orphan master (9999), 1 mismatched variant (8888)
     res = client.post(
@@ -347,9 +354,15 @@ def test_step_031_cleanup_orphaned_workflow_mappings(db_session: Session) -> Non
     db_session.add(master)
     db_session.flush()
 
+    rs = models.BindingRuleSet(name="valid_master RuleSet")
+    db_session.add(rs)
+    db_session.flush()
+
     variant = models.MappingVariant(
         master_id=master.id,
         stage_id=1,
+        role="valid_master",
+        binding_rule_set_id=rs.id,
         is_enabled=True,
         sort_order=0,
     )
@@ -385,4 +398,109 @@ def test_step_031_cleanup_orphaned_workflow_mappings(db_session: Session) -> Non
 
     remaining_idempotent = db_session.query(models.WorkflowMapping).filter(models.WorkflowMapping.workflow_id == wf.id).all()
     assert len(remaining_idempotent) == 1
+
+
+def test_req417_ac5_binding_rules_crud_and_referencing_roles_guard(client: TestClient, db_session: Session):
+    """[REQ-417/AC-5] BindingRuleSet / NodeSelector CRUD and referencing roles deletion guard."""
+    # 1. Create rule set and node selector
+    rs_res = client.post("/api/binding-rules", json={
+        "name": "KSampler RuleSet",
+        "entries": [
+            {"class_type": "KSampler", "param_name": "seed", "priority": 1},
+            {"class_type": "KSamplerAdvanced", "param_name": "noise_seed", "priority": 2},
+        ]
+    })
+    assert rs_res.status_code == 201, rs_res.text
+    rs_data = rs_res.json()
+    rs_id = rs_data["id"]
+    assert rs_data["name"] == "KSampler RuleSet"
+    assert len(rs_data["entries"]) == 2
+    assert rs_data["referenced_roles"] == []
+
+    sel_res = client.post("/api/node-selectors", json={
+        "name": "Main KSampler Selector",
+        "patterns": [
+            {"pattern": "Main KSampler", "match_type": "exact", "priority": 1},
+            {"pattern": "KSampler", "match_type": "contains", "priority": 2},
+        ]
+    })
+    assert sel_res.status_code == 201, sel_res.text
+    sel_data = sel_res.json()
+    sel_id = sel_data["id"]
+    assert sel_data["name"] == "Main KSampler Selector"
+    assert len(sel_data["patterns"]) == 2
+    assert sel_data["referenced_roles"] == []
+
+    # 2. Verify GET list & GET by id
+    list_rs = client.get("/api/binding-rules")
+    assert list_rs.status_code == 200
+    assert any(r["id"] == rs_id for r in list_rs.json())
+
+    get_rs = client.get(f"/api/binding-rules/{rs_id}")
+    assert get_rs.status_code == 200
+    assert get_rs.json()["name"] == "KSampler RuleSet"
+
+    get_sel = client.get(f"/api/node-selectors/{sel_id}")
+    assert get_sel.status_code == 200
+    assert get_sel.json()["name"] == "Main KSampler Selector"
+
+    # 3. Create master and variant referencing this rule_set and selector
+    master = models.MappingMaster(
+        base_key="test_seed",
+        name="Test Seed",
+        param_name="seed",
+        input_type="seed",
+        role="test_seed",
+        sort_order=10,
+    )
+    db_session.add(master)
+    db_session.flush()
+
+    var = models.MappingVariant(
+        master_id=master.id,
+        stage_id=1,
+        role="seed_main",
+        binding_rule_set_id=rs_id,
+        node_selector_id=sel_id,
+        is_enabled=True,
+        sort_order=0,
+    )
+    db_session.add(var)
+    db_session.commit()
+
+    # 4. Check referenced_roles are now reported
+    get_rs_ref = client.get(f"/api/binding-rules/{rs_id}")
+    assert "seed_main" in get_rs_ref.json()["referenced_roles"]
+
+    get_sel_ref = client.get(f"/api/node-selectors/{sel_id}")
+    assert "seed_main" in get_sel_ref.json()["referenced_roles"]
+
+    # 5. Attempt deletion while in use -> Expect 400 Bad Request with referenced_roles
+    del_rs_fail = client.delete(f"/api/binding-rules/{rs_id}")
+    assert del_rs_fail.status_code == 400
+    detail_rs = del_rs_fail.json()["detail"]
+    assert "Cannot delete rule set currently in use" in detail_rs["error"]
+    assert "seed_main" in detail_rs["referenced_roles"]
+
+    del_sel_fail = client.delete(f"/api/node-selectors/{sel_id}")
+    assert del_sel_fail.status_code == 400
+    detail_sel = del_sel_fail.json()["detail"]
+    assert "Cannot delete node selector currently in use" in detail_sel["error"]
+    assert "seed_main" in detail_sel["referenced_roles"]
+
+    # 6. Delete variant / remove reference
+    db_session.delete(var)
+    db_session.commit()
+
+    # 7. Delete unreferenced rule set & selector -> Expect 204 No Content
+    del_rs_ok = client.delete(f"/api/binding-rules/{rs_id}")
+    assert del_rs_ok.status_code == 204
+
+    del_sel_ok = client.delete(f"/api/node-selectors/{sel_id}")
+    assert del_sel_ok.status_code == 204
+
+    # 8. Verify they are gone (404)
+    assert client.get(f"/api/binding-rules/{rs_id}").status_code == 404
+    assert client.get(f"/api/node-selectors/{sel_id}").status_code == 404
+
 

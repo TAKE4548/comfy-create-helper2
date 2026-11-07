@@ -454,5 +454,131 @@ describe('workflowParamInjector', () => {
       })
       expect((result['4'] as any).inputs.cfg).toBe(3.75)
     })
+
+    describe('[REQ-417/AC-4] direct injection with input_name', () => {
+      it('[REQ-417/AC-4] directly injects seed into node.inputs.noise_seed when input_name is noise_seed even if param_name is seed', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '1': {
+              inputs: {
+                noise_seed: 0,
+                seed: 999,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 1,
+              master_id: 1,
+              node_id: '1',
+              role: 'Sampler_Seed',
+              param_name: 'seed',
+              input_name: 'noise_seed',
+              input_type: 'seed',
+              display_name: 'Noise Seed',
+            },
+          ],
+        }
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: { Sampler_Seed: '12345' },
+          resolvedSeeds: { 'master:1:variant:legacy': 12345 },
+        })
+
+        expect((result['1'] as any).inputs.noise_seed).toBe(12345)
+        expect((result['1'] as any).inputs.seed).toBe(999)
+      })
+
+      it('[REQ-417/AC-4] directly injects general parameter using input_name over param_name', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '2': {
+              inputs: {
+                steps_count: 10,
+                steps: 20,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 2,
+              master_id: 2,
+              node_id: '2',
+              role: 'Steps',
+              param_name: 'steps',
+              input_name: 'steps_count',
+              input_type: 'int',
+              display_name: 'Steps',
+            },
+          ],
+        }
+
+        const initial = getInitialParams(workflow)
+        expect(initial.Steps).toBe('10')
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: { Steps: '30' },
+        })
+
+        expect((result['2'] as any).inputs.steps_count).toBe(30)
+        expect((result['2'] as any).inputs.steps).toBe(20)
+      })
+
+      it('[REQ-417/AC-4] gracefully falls back to legacy resolution when input_name is omitted or empty', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '1': {
+              inputs: {
+                seed: 100,
+              },
+            },
+            '2': {
+              inputs: {
+                cfg: 7.0,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 1,
+              master_id: 1,
+              node_id: '1',
+              role: 'Sampler_Seed',
+              param_name: 'seed',
+              input_name: '',
+              input_type: 'seed',
+              display_name: 'Seed',
+            },
+            {
+              id: 2,
+              master_id: 2,
+              node_id: '2',
+              role: 'CFG',
+              param_name: 'cfg',
+              input_type: 'float',
+              display_name: 'CFG',
+            },
+          ],
+        }
+
+        const initial = getInitialParams(workflow)
+        expect(initial.Sampler_Seed).toBe('100')
+        expect(initial.CFG).toBe('7')
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: { Sampler_Seed: '555', CFG: '8.5' },
+          resolvedSeeds: { 'master:1:variant:legacy': 555 },
+        })
+
+        expect((result['1'] as any).inputs.seed).toBe(555)
+        expect((result['2'] as any).inputs.cfg).toBe(8.5)
+      })
+    })
   })
 })

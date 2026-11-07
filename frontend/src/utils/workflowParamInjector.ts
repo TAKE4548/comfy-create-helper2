@@ -133,12 +133,17 @@ export function getInitialParams(workflow: Workflow, stages?: StageMaster[]): Re
         Object.assign(init, extractLoraStackParams(node, resolvedRole))
       } else if (m.input_type === 'seed') {
         const node = m.node_id ? wfJson[m.node_id] : null
-        const key = resolveSeedInputKey(m, node?.inputs)
+        const key = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+          ? m.input_name.trim()
+          : resolveSeedInputKey(m, node?.inputs)
         const value = key ? node?.inputs?.[key] : undefined
         init[resolvedRole] = value !== undefined && !Array.isArray(value) ? String(value) : ''
       } else {
         const node = m.node_id ? wfJson[m.node_id] : null
-        init[resolvedRole] = m.param_name ? extractGeneralParam(node, m.param_name) : ''
+        const targetParam = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+          ? m.input_name.trim()
+          : m.param_name
+        init[resolvedRole] = targetParam ? extractGeneralParam(node, targetParam) : ''
       }
     }
   })
@@ -298,7 +303,9 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
     if (!m.role || !m.node_id || !node || !node.inputs) {
       throw new Error(`${label}: seed用workflow node/inputsがありません (node ${m.node_id || '(なし)'})`)
     }
-    const key = resolveSeedInputKey(m, node.inputs)
+    const key = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+      ? m.input_name.trim()
+      : resolveSeedInputKey(m, node.inputs)
     if (!key) {
       const candidates = [m.param_name, ...(m.fallback_param_names ?? [])].filter(Boolean).join(', ') || '(なし)'
       throw new Error(`${label}: seed入力を解決できません (node ${m.node_id}, 候補: ${candidates})`)
@@ -326,7 +333,9 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
       if (!prepared) throw new Error(`${m.display_name || m.role}: seed入力の準備に失敗しました`)
       node.inputs[prepared.key] = prepared.seed
     } else if (m.role !== 'Sampler_Seed' || !seedOptions) {
-      const targetParam = m.param_name || 'value'
+      const targetParam = (typeof m.input_name === 'string' && m.input_name.trim().length > 0)
+        ? m.input_name.trim()
+        : (m.param_name || 'value')
       const rawVal = paramValues[m.role] !== undefined ? paramValues[m.role] : defaultParams[m.role]
       injectGeneralParam(node.inputs, targetParam, m.input_type, rawVal)
     }
@@ -339,12 +348,15 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
       if (node) {
         if (!node.inputs) node.inputs = {}
         let seedKey: string
-        if (seedNode.param_name !== null && seedNode.param_name !== undefined && node.inputs[seedNode.param_name] !== undefined) {
-          seedKey = seedNode.param_name
+        const configuredKey = (typeof seedNode.input_name === 'string' && seedNode.input_name.trim().length > 0)
+          ? seedNode.input_name.trim()
+          : seedNode.param_name
+        if (configuredKey !== null && configuredKey !== undefined && node.inputs[configuredKey] !== undefined) {
+          seedKey = configuredKey
         } else if (node.inputs['value'] !== undefined) {
           seedKey = 'value'
         } else {
-          seedKey = seedNode.param_name || 'seed'
+          seedKey = configuredKey || 'seed'
         }
         node.inputs[seedKey] =
           seedOptions.seedMode === 'random'

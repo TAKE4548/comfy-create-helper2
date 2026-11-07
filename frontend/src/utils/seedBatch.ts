@@ -18,7 +18,7 @@ export interface PrepareSeedBatchOptions {
 export const MAX_SEED_BATCH_SIZE = 8
 
 interface SeedTarget { mapping: WorkflowMapping; slot: string; input: Record<string, unknown>; key: string; label: string }
-const labelFor = (mapping: WorkflowMapping): string => mapping.display_name ?? mapping.param_name ?? mapping.role ?? 'Seed'
+const labelFor = (mapping: WorkflowMapping): string => mapping.display_name ?? mapping.input_name ?? mapping.param_name ?? mapping.role ?? 'Seed'
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 
 function collectTargets(workflow: Workflow): SeedTarget[] {
@@ -40,7 +40,9 @@ function collectTargets(workflow: Workflow): SeedTarget[] {
     const node = workflow.json_body[mapping.node_id]
     if (!isRecord(node) || !isRecord(node.inputs)) throw new Error(`${label}: workflow node ${mapping.node_id} or inputs are missing`)
     const inputs = node.inputs
-    const key = resolveSeedInputKey(mapping, inputs)
+    const key = (typeof mapping.input_name === 'string' && mapping.input_name.trim().length > 0)
+      ? mapping.input_name.trim()
+      : resolveSeedInputKey(mapping, inputs)
     if (!key) {
       const candidates = [mapping.param_name, ...(mapping.fallback_param_names ?? [])].filter(Boolean).join(', ') || '(なし)'
       throw new Error(`${label}: seed入力を解決できません (node ${mapping.node_id}, 候補: ${candidates})`)

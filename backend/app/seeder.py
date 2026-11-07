@@ -121,6 +121,43 @@ def _seed_mapping_masters(db) -> None:
             if not master.base_title_patterns:
                 master.base_title_patterns = json.dumps(m["title_patterns"])
 
+        # Seed or get BindingRuleSet & Entries
+        rs_name = f"{m['display_name']} Rules"
+        rule_set = db.query(models.BindingRuleSet).filter(models.BindingRuleSet.name == rs_name).first()
+        if not rule_set:
+            rule_set = models.BindingRuleSet(name=rs_name)
+            db.add(rule_set)
+            db.flush()
+            for c in m["expected_class_types"]:
+                db.add(models.BindingRuleEntry(
+                    rule_set_id=rule_set.id,
+                    class_type=c,
+                    param_name=m["param_name"],
+                    priority=1,
+                ))
+            db.flush()
+
+        # Seed or get NodeSelector & Patterns
+        class_types_lower = {c.lower() for c in m["expected_class_types"]}
+        raw_pats = m.get("title_patterns", [])
+        exact_pats = [p for p in raw_pats if p.lower() not in class_types_lower]
+        selector = None
+        if exact_pats:
+            sel_name = f"{role} Selector"
+            selector = db.query(models.NodeSelector).filter(models.NodeSelector.name == sel_name).first()
+            if not selector:
+                selector = models.NodeSelector(name=sel_name)
+                db.add(selector)
+                db.flush()
+                for p_idx, p in enumerate(exact_pats, start=1):
+                    db.add(models.NodeSelectorPattern(
+                        selector_id=selector.id,
+                        pattern=p,
+                        match_type="exact",
+                        priority=p_idx,
+                    ))
+                db.flush()
+
         if main_stage:
             variant = db.query(models.MappingVariant).filter(
                 models.MappingVariant.master_id == master.id,
@@ -130,12 +167,22 @@ def _seed_mapping_masters(db) -> None:
                 db.add(models.MappingVariant(
                     master_id=master.id,
                     stage_id=main_stage.id,
+                    role=role,
+                    binding_rule_set_id=rule_set.id,
+                    node_selector_id=selector.id if selector else None,
                     custom_role_override=None,
                     extra_title_patterns=json.dumps([]),
                     is_enabled=True,
                     sort_order=0,
                 ))
                 logger.info(f"Added default main variant for master: {master.base_key}")
+            else:
+                if not variant.role:
+                    variant.role = role
+                if not variant.binding_rule_set_id:
+                    variant.binding_rule_set_id = rule_set.id
+                if selector and not variant.node_selector_id:
+                    variant.node_selector_id = selector.id
 
 
 def _seed_llm_prompts(db) -> None:
@@ -183,11 +230,14 @@ def _apply_workflow_1_corrections(db) -> None:
             models.WorkflowMapping.workflow_id == 1,
             models.WorkflowMapping.node_id == node_id,
         ).first()
+        first_input = master.param_name.split(",")[0].strip() if master.param_name else ""
         if mapping:
             if mapping.master_id != master.id or (variant_id and mapping.variant_id != variant_id):
                 mapping.master_id = master.id
                 if variant_id:
                     mapping.variant_id = variant_id
+                if not mapping.input_name:
+                    mapping.input_name = first_input
                 logger.info(f"Updated mapping for node {node_id} to {role} (master_id: {master.id}, variant_id: {variant_id})")
         else:
             db.add(models.WorkflowMapping(
@@ -195,6 +245,7 @@ def _apply_workflow_1_corrections(db) -> None:
                 master_id=master.id,
                 variant_id=variant_id,
                 node_id=node_id,
+                input_name=first_input,
             ))
             logger.info(f"Created mapping for node {node_id} to {role} (master_id: {master.id}, variant_id: {variant_id})")
 

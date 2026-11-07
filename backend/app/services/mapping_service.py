@@ -29,7 +29,7 @@ class MappingService:
         affected_variants = 0
 
         for variant in stage.variants:
-            old_role = variant.computed_role
+            old_role = getattr(variant, "role", None) or variant.computed_role
             if variant.custom_role_override:
                 if stage.suffix and stage.suffix in variant.custom_role_override:
                     new_role = variant.custom_role_override.replace(stage.suffix, new_suffix)
@@ -97,7 +97,7 @@ class MappingService:
 
         role_map: dict[str, str] = {}
         for variant in stage.variants:
-            old_role = variant.computed_role
+            old_role = getattr(variant, "role", None) or variant.computed_role
             if variant.custom_role_override:
                 if stage.suffix and stage.suffix in variant.custom_role_override:
                     new_role = variant.custom_role_override.replace(stage.suffix, req.new_suffix)
@@ -110,6 +110,7 @@ class MappingService:
 
             if old_role != new_role:
                 role_map[old_role] = new_role
+                variant.role = new_role
 
         if req.update_presets and role_map:
             presets = db.query(models.WorkflowPreset).all()

@@ -146,6 +146,20 @@ from app.schemas.mapping import (
     StageMasterReorder,
     CascadePreviewResponse,
     CascadeRenameRequest,
+    BindingRuleEntryBase,
+    BindingRuleEntryCreate,
+    BindingRuleEntryRead,
+    BindingRuleSetBase,
+    BindingRuleSetCreate,
+    BindingRuleSetUpdate,
+    BindingRuleSetRead,
+    NodeSelectorPatternBase,
+    NodeSelectorPatternCreate,
+    NodeSelectorPatternRead,
+    NodeSelectorBase,
+    NodeSelectorCreate,
+    NodeSelectorUpdate,
+    NodeSelectorRead,
 )
 
 __all__ = [
@@ -193,7 +207,13 @@ __all__ = [
     # StageMaster / Cascade
     "StageMasterBase", "StageMasterCreate", "StageMasterUpdate", "StageMasterRead",
     "StageMasterReorder", "CascadePreviewResponse", "CascadeRenameRequest",
+    # Binding Rules & Node Selectors
+    "BindingRuleEntryBase", "BindingRuleEntryCreate", "BindingRuleEntryRead",
+    "BindingRuleSetBase", "BindingRuleSetCreate", "BindingRuleSetUpdate", "BindingRuleSetRead",
+    "NodeSelectorPatternBase", "NodeSelectorPatternCreate", "NodeSelectorPatternRead",
+    "NodeSelectorBase", "NodeSelectorCreate", "NodeSelectorUpdate", "NodeSelectorRead",
 ]
+
 
 
 
