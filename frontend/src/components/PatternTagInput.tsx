@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Copy, Check, Edit2, X } from 'lucide-react'
+import { Copy, Check, Edit2, X, Plus } from 'lucide-react'
 
 export interface PatternTagInputProps {
   patterns: string[]
@@ -29,10 +29,11 @@ export const PatternTagInput: React.FC<PatternTagInputProps> = ({
 
   const addTag = (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed) return
-    if (!patterns.includes(trimmed)) {
-      onChange([...patterns, trimmed])
+    if (!trimmed || patterns.includes(trimmed)) {
+      setInputValue('')
+      return
     }
+    onChange([...patterns, trimmed])
     setInputValue('')
   }
 
@@ -67,6 +68,8 @@ export const PatternTagInput: React.FC<PatternTagInputProps> = ({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault()
       addTag(inputValue)
@@ -192,17 +195,28 @@ export const PatternTagInput: React.FC<PatternTagInputProps> = ({
           )
         })}
 
-        <div className="flex-1 flex items-center min-w-[140px]">
+        <div className="flex-1 flex items-center gap-1.5 min-w-[140px]">
           <input
             type="text"
             placeholder={patterns.length === 0 ? placeholder : 'パターン追加...'}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={() => addTag(inputValue)}
             onPaste={handlePaste}
             disabled={disabled}
+            enterKeyHint="done"
             className="bg-transparent text-xs text-zinc-200 outline-none w-full"
           />
+          <button
+            type="button"
+            onClick={() => addTag(inputValue)}
+            disabled={disabled || !inputValue.trim() || patterns.includes(inputValue.trim())}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 disabled:opacity-40 transition-colors shrink-0 relative before:absolute before:-inset-2 touch-manipulation"
+          >
+            <Plus size={12} />
+            <span>追加</span>
+          </button>
         </div>
       </div>
     </div>
