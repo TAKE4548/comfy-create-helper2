@@ -1,19 +1,77 @@
 import io
 import json
-from typing import Optional
+from typing import Optional, Any
 from pathlib import Path
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from PIL import Image
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app import schemas
+from app import models, schemas
+from app.schemas.variant_ref import VariantRef
+from app.services.variant_keys import VariantIndex, expand_stored_params, decode_variant_key
 from app.services.snapshot_service import SnapshotService
 from app.config import settings
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
+
+
+def _expand_snapshots(
+    db: Session,
+    snapshots: list[models.Snapshot],
+) -> dict[int, tuple[dict[str, Any], dict[str, Any], list[VariantRef]]]:
+    if not snapshots:
+        return {}
+
+    index = VariantIndex.from_session(db)
+    expanded_map: dict[int, Any] = {}
+    all_variant_ids: set[int] = set()
+
+    for s in snapshots:
+        raw: dict[str, Any] = {}
+        if s.params:
+            try:
+                parsed = json.loads(s.params)
+                if isinstance(parsed, dict):
+                    raw = parsed
+            except Exception:
+                raw = {}
+        expanded = expand_stored_params(index, raw, owner_label=f"snapshot {s.id}", warn=True)
+        snap_vids: set[int] = set()
+        for k in expanded.variant_keyed:
+            if not k.startswith("__"):
+                dec = decode_variant_key(k)
+                if dec is not None:
+                    snap_vids.add(dec[0])
+        all_variant_ids.update(snap_vids)
+        expanded_map[s.id] = (expanded, snap_vids)
+
+    variants_by_id: dict[int, models.MappingVariant] = {}
+    if all_variant_ids:
+        rows = (
+            db.query(models.MappingVariant)
+            .options(joinedload(models.MappingVariant.master))
+            .filter(models.MappingVariant.id.in_(all_variant_ids))
+            .all()
+        )
+        variants_by_id = {v.id: v for v in rows}
+
+    result: dict[int, tuple[dict[str, Any], dict[str, Any], list[VariantRef]]] = {}
+    for s in snapshots:
+        expanded, snap_vids = expanded_map[s.id]
+        snap_variants: list[VariantRef] = []
+        for vid in sorted(snap_vids):
+            v = variants_by_id.get(vid)
+            if v is not None:
+                display_name = v.master.display_name if v.master else None
+                snap_variants.append(VariantRef(id=v.id, role=v.role, display_name=display_name))
+
+        variant_params = {k: v for k, v in expanded.variant_keyed.items() if not k.startswith("__")}
+        result[s.id] = (expanded.role_keyed, variant_params, snap_variants)
+
+    return result
 
 
 @router.get("", response_model=list[schemas.SnapshotSummary])
@@ -24,17 +82,24 @@ def list_snapshots(
     db: Session = Depends(get_db)
 ):
     snapshots = SnapshotService.list_snapshots(db, workflow_id, lora_id, tag_set_id)
-    return [
-        schemas.SnapshotSummary(
-            id=s.id,
-            workflow_id=s.workflow_id,
-            image_path=s.image_path,
-            thumbnail_path=s.thumbnail_path,
-            created_at=s.created_at,
-            params=json.loads(s.params) if s.params else None,
-            source_snapshot_id=s.source_snapshot_id
-        ) for s in snapshots
-    ]
+    expanded_info = _expand_snapshots(db, snapshots)
+    res = []
+    for s in snapshots:
+        role_keyed, variant_params, variants = expanded_info[s.id]
+        res.append(
+            schemas.SnapshotSummary(
+                id=s.id,
+                workflow_id=s.workflow_id,
+                image_path=s.image_path,
+                thumbnail_path=s.thumbnail_path,
+                created_at=s.created_at,
+                params=role_keyed if s.params else None,
+                variant_params=variant_params if s.params else {},
+                variants=variants if s.params else [],
+                source_snapshot_id=s.source_snapshot_id
+            )
+        )
+    return res
 
 
 @router.get("/{snapshot_id}", response_model=schemas.SnapshotRead)
@@ -42,10 +107,14 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
     s = SnapshotService.get_snapshot(db, snapshot_id)
     if not s:
         raise HTTPException(status_code=404, detail="Snapshot not found")
+    expanded_info = _expand_snapshots(db, [s])
+    role_keyed, variant_params, variants = expanded_info[s.id]
     return schemas.SnapshotRead(
         id=s.id,
         workflow_id=s.workflow_id,
-        params=json.loads(s.params),
+        params=role_keyed,
+        variant_params=variant_params,
+        variants=variants,
         image_path=s.image_path,
         thumbnail_path=s.thumbnail_path,
         created_at=s.created_at,
@@ -77,13 +146,17 @@ def create_snapshot(payload: schemas.SnapshotCreate, db: Session = Depends(get_d
         s.source_snapshot_id = payload.source_snapshot_id
         db.commit()
         db.refresh(s)
+    expanded_info = _expand_snapshots(db, [s])
+    role_keyed, variant_params, variants = expanded_info[s.id]
     return schemas.SnapshotSummary(
         id=s.id,
         workflow_id=s.workflow_id,
         image_path=s.image_path,
         thumbnail_path=s.thumbnail_path,
         created_at=s.created_at,
-        params=json.loads(s.params) if s.params else None,
+        params=role_keyed if s.params else None,
+        variant_params=variant_params if s.params else {},
+        variants=variants if s.params else [],
         source_snapshot_id=s.source_snapshot_id
     )
 

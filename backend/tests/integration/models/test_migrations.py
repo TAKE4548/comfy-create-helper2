@@ -729,3 +729,364 @@ def test_req417_seed_initial_data_creates_rulesets_and_variants():
 
 
 @pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_missing_mapping_variants_aborts_unchanged():
+    """[REQ-418/AC-1] step_035 aborts when mapping_variants table is missing."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE workflow_presets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                param_values TEXT NOT NULL
+            )
+        """))
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"prompt\": \"abc\"}')"))
+
+    with pytest.raises((ValueError, RuntimeError), match="mapping_variants"):
+        with engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "workflow_preset_values" not in inspector.get_table_names()
+        row = conn.execute(sa.text("SELECT param_values FROM workflow_presets WHERE id = 1")).scalar_one()
+        assert row == '{"prompt": "abc"}'
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_empty_tables_create_schema_only():
+    """[REQ-418/AC-1] step_035 on empty tables creates schema and commits without data."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "workflow_preset_values" in inspector.get_table_names()
+        assert "param_sync_group_members" in inspector.get_table_names()
+        sg_cols = [c["name"] for c in inspector.get_columns("param_sync_groups")]
+        assert "master_variant_id" in sg_cols
+
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM workflow_preset_values")).scalar_one() == 0
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM param_sync_group_members")).scalar_one() == 0
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_all_resolved_populates_values_and_clears_legacy_json():
+    """[REQ-418/AC-1] step_035 migrates resolved preset values and leaves reserved in param_values."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'sampler_seed'), (2, 'checkpoint')"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+
+        legacy_params = json.dumps({
+            "sampler_seed": "12345",
+            "sampler_seed_lora_count": 2,
+            "v:2": "model.safetensors",
+            "__ui_mode": "advanced"
+        })
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, :pv)"), {"pv": legacy_params})
+
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text(
+            "SELECT preset_id, variant_id, sub_key, value FROM workflow_preset_values ORDER BY variant_id, sub_key"
+        )).fetchall()
+        assert len(rows) == 3
+        assert (rows[0][0], rows[0][1], rows[0][2], rows[0][3]) == (1, 1, "", "12345")
+        assert (rows[1][0], rows[1][1], rows[1][2], rows[1][3]) == (1, 1, "lora_count", "2")
+        assert (rows[2][0], rows[2][1], rows[2][2], rows[2][3]) == (1, 2, "", "model.safetensors")
+
+        pv_after = conn.execute(sa.text("SELECT param_values FROM workflow_presets WHERE id = 1")).scalar_one()
+        parsed = json.loads(pv_after)
+        assert parsed == {"__ui_mode": "advanced"}
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_unresolved_row_rolls_back_all_unchanged():
+    """[REQ-418/AC-1] step_035 aborts without mutating DB when preset has unresolved key."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'sampler_seed')"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"ghost_role\": \"val\"}')"))
+
+    with pytest.raises(ValueError, match="ghost_role"):
+        with engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "workflow_preset_values" not in inspector.get_table_names()
+        pv = conn.execute(sa.text("SELECT param_values FROM workflow_presets WHERE id = 1")).scalar_one()
+        assert pv == '{"ghost_role": "val"}'
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_unresolved_error_lists_all_keys():
+    """[REQ-418/AC-1] step_035 error message lists all unresolvable keys."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"ghost_1\": \"a\", \"ghost_2\": \"b\"}')"))
+
+    with pytest.raises(ValueError) as exc_info:
+        with engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            step_035_variant_id_references(conn, inspector)
+
+    msg = str(exc_info.value)
+    assert "ghost_1" in msg
+    assert "ghost_2" in msg
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_step_is_idempotent_on_rerun():
+    """[REQ-418/AC-1] step_035 can be re-run safely without errors or data duplication."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'sampler_seed')"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"sampler_seed\": \"42\"}')"))
+        conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO param_sync_groups (id, master_role, slave_roles) VALUES (1, 'sampler_seed', '[\"sampler_seed\"]')"))
+
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+        # Second run
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        pv_count = conn.execute(sa.text("SELECT COUNT(*) FROM workflow_preset_values")).scalar_one()
+        assert pv_count == 1
+        sg_count = conn.execute(sa.text("SELECT COUNT(*) FROM param_sync_group_members")).scalar_one()
+        assert sg_count == 1
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_step_schema_matches_models():
+    """[REQ-418/AC-1] step_035 schema matches SQLAlchemy model column definitions."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine_migration = create_engine("sqlite:///:memory:")
+    with engine_migration.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+    engine_models = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine_models)
+
+    with engine_migration.connect() as conn_mig, engine_models.connect() as conn_mod:
+        insp_mig = sa.inspect(conn_mig)
+        insp_mod = sa.inspect(conn_mod)
+
+        # Check workflow_preset_values columns
+        mig_cols = {c["name"] for c in insp_mig.get_columns("workflow_preset_values")}
+        mod_cols = {c["name"] for c in insp_mod.get_columns("workflow_preset_values")}
+        assert {"id", "preset_id", "variant_id", "sub_key", "value"}.issubset(mig_cols)
+        assert mig_cols == mod_cols
+
+        # Check param_sync_group_members columns
+        mig_sg_cols = {c["name"] for c in insp_mig.get_columns("param_sync_group_members")}
+        mod_sg_cols = {c["name"] for c in insp_mod.get_columns("param_sync_group_members")}
+        assert {"id", "group_id", "variant_id"}.issubset(mig_sg_cols)
+        assert mig_sg_cols == mod_sg_cols
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac1_variant_delete_cascades_children():
+    """[REQ-418/AC-1] deleting a variant cascades to delete child preset values and sync members."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    run_migrations(target_engine=engine)
+
+    with Session(bind=engine) as session:
+        session.execute(sa.text("PRAGMA foreign_keys = ON;"))
+        seed_initial_data(session)
+
+        variant = session.query(models.MappingVariant).first()
+        assert variant is not None
+        v_id = variant.id
+
+        wf = models.Workflow(name="Cascade Test WF", json_body="{}")
+        session.add(wf)
+        session.flush()
+
+        preset = models.WorkflowPreset(
+            workflow_id=wf.id,
+            name="Preset 1",
+            param_values="{}",
+            applied_assets="{}",
+            batch_size=1,
+            seed_mode="random",
+            seed=0,
+        )
+        session.add(preset)
+        session.flush()
+
+        val = models.WorkflowPresetValue(
+            preset_id=preset.id,
+            variant_id=v_id,
+            sub_key="",
+            value="100",
+        )
+        session.add(val)
+
+        sg = models.ParamSyncGroup(
+            workflow_id=wf.id,
+            name="SyncGroup 1",
+            master_role=variant.role,
+            master_variant_id=v_id,
+            slave_roles="[]",
+            is_enabled=True,
+        )
+        session.add(sg)
+        session.flush()
+
+        member = models.ParamSyncGroupMember(
+            group_id=sg.id,
+            variant_id=v_id,
+        )
+        session.add(member)
+        session.commit()
+
+        # Delete the variant
+        session.delete(variant)
+        session.commit()
+
+        # Children should be deleted
+        remaining_vals = session.query(models.WorkflowPresetValue).filter_by(variant_id=v_id).all()
+        assert len(remaining_vals) == 0
+        remaining_mems = session.query(models.ParamSyncGroupMember).filter_by(variant_id=v_id).all()
+        assert len(remaining_mems) == 0
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-3")
+def test_variant_ref_ac3_sync_group_migration_sets_master_and_members():
+    """[REQ-418/AC-3] step_035 migrates sync group master_role and slave_roles to variant refs."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'master_role'), (2, 'slave_role_1'), (3, 'slave_role_2')"))
+        conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
+        conn.execute(sa.text("""
+            INSERT INTO param_sync_groups (id, master_role, slave_roles)
+            VALUES (1, 'master_role', '["slave_role_1", "slave_role_2", "slave_role_1"]')
+        """))
+        inspector = sa.inspect(conn)
+        step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        master_vid = conn.execute(sa.text("SELECT master_variant_id FROM param_sync_groups WHERE id = 1")).scalar_one()
+        assert master_vid == 1
+
+        members = conn.execute(sa.text("SELECT variant_id FROM param_sync_group_members WHERE group_id = 1 ORDER BY id")).fetchall()
+        assert [m[0] for m in members] == [2, 3]
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-3")
+def test_variant_ref_ac3_sync_group_unresolved_role_aborts_unchanged():
+    """[REQ-418/AC-3] step_035 aborts without mutating DB when sync group has unknown role."""
+    from app.migrations.steps import step_035_variant_id_references
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'master_role')"))
+        conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO param_sync_groups (id, master_role, slave_roles) VALUES (1, 'master_role', '[\"unknown_slave\"]')"))
+
+    with pytest.raises(ValueError, match="unknown_slave"):
+        with engine.begin() as conn:
+            inspector = sa.inspect(conn)
+            step_035_variant_id_references(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "param_sync_group_members" not in inspector.get_table_names()
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_step_035_aborts_when_mapping_variants_missing():
+    """[REQ-418/AC-1] Alias: test_step_035_aborts_when_mapping_variants_missing."""
+    test_variant_ref_ac1_missing_mapping_variants_aborts_unchanged()
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_step_035_empty_tables_commits_schema_only():
+    """[REQ-418/AC-1] Alias: test_step_035_empty_tables_commits_schema_only."""
+    test_variant_ref_ac1_empty_tables_create_schema_only()
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+@getattr(pytest.mark, "AC-3")
+def test_step_035_happy_path_migrates_preset_and_sync_group():
+    """[REQ-418/AC-1][REQ-418/AC-3] Alias: test_step_035_happy_path_migrates_preset_and_sync_group."""
+    test_variant_ref_ac1_all_resolved_populates_values_and_clears_legacy_json()
+    test_variant_ref_ac3_sync_group_migration_sets_master_and_members()
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_step_035_unresolved_role_aborts_without_mutation():
+    """[REQ-418/AC-1] Alias: test_step_035_unresolved_role_aborts_without_mutation."""
+    test_variant_ref_ac1_unresolved_row_rolls_back_all_unchanged()
+
+
+@pytest.mark.integration
+@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "AC-1")
+def test_step_035_idempotent():
+    """[REQ-418/AC-1] Alias: test_step_035_idempotent."""
+    test_variant_ref_ac1_step_is_idempotent_on_rerun()
+
+
+

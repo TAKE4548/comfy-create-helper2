@@ -1206,6 +1206,188 @@ class MissingMappingVariantsError(ValueError, RuntimeError):
     pass
 
 
+def audit_role_references(
+    conn: Connection, inspector: Optional[Inspector] = None
+) -> list[tuple[str, int, str]]:
+    """Audit role references in workflow_presets and param_sync_groups.
+
+    Returns a list of (entity_type, entity_id, unresolved_key) tuples.
+    """
+    table_names = {row[0] for row in conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    has_presets = "workflow_presets" in table_names
+    has_sync_groups = "param_sync_groups" in table_names
+
+    if not has_presets and not has_sync_groups:
+        return []
+
+    if "mapping_variants" not in table_names:
+        raise MissingMappingVariantsError("mapping_variants prerequisite table is missing")
+
+    mv_columns = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(mapping_variants)")).fetchall()}
+    if "role" not in mv_columns:
+        raise MissingMappingVariantsError("mapping_variants prerequisite table is missing")
+
+    variant_rows = conn.execute(sa.text("SELECT id, role FROM mapping_variants")).fetchall()
+    index = VariantIndex({row[0]: row[1] for row in variant_rows})
+
+    unresolved: list[tuple[str, int, str]] = []
+
+    if has_presets:
+        preset_rows = conn.execute(sa.text("SELECT id, param_values FROM workflow_presets")).fetchall()
+        for pid, pval_raw in preset_rows:
+            try:
+                data = json.loads(pval_raw) if pval_raw else {}
+                if not isinstance(data, dict):
+                    unresolved.append(("preset", pid, "<invalid json>"))
+                else:
+                    for k in sorted(data.keys()):
+                        ck = index.classify(k)
+                        if ck.kind == KeyKind.UNRESOLVED:
+                            unresolved.append(("preset", pid, k))
+            except Exception:
+                unresolved.append(("preset", pid, "<invalid json>"))
+
+    if has_sync_groups:
+        sg_columns = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(param_sync_groups)")).fetchall()}
+        if "master_variant_id" in sg_columns:
+            sg_rows = conn.execute(sa.text(
+                "SELECT id, master_role, slave_roles FROM param_sync_groups WHERE master_variant_id IS NULL"
+            )).fetchall()
+        else:
+            sg_rows = conn.execute(sa.text(
+                "SELECT id, master_role, slave_roles FROM param_sync_groups"
+            )).fetchall()
+
+        for gid, mrole, sroles_raw in sg_rows:
+            ck_master = index.classify(mrole) if mrole else None
+            if ck_master is None or ck_master.kind != KeyKind.ROLE:
+                unresolved.append(("sync_group", gid, mrole if mrole is not None else "<none>"))
+
+            try:
+                slaves = json.loads(sroles_raw) if sroles_raw else []
+                if not isinstance(slaves, list):
+                    unresolved.append(("sync_group", gid, "<invalid json>"))
+                else:
+                    for s in slaves:
+                        if not isinstance(s, str):
+                            unresolved.append(("sync_group", gid, str(s)))
+                        else:
+                            ck_slave = index.classify(s)
+                            if ck_slave.kind != KeyKind.ROLE:
+                                unresolved.append(("sync_group", gid, s))
+            except Exception:
+                unresolved.append(("sync_group", gid, "<invalid json>"))
+
+    return unresolved
+
+
+def step_035_variant_id_references(conn: Connection, inspector: Inspector) -> None:
+    table_names = {row[0] for row in conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    has_presets = "workflow_presets" in table_names
+    has_sync_groups = "param_sync_groups" in table_names
+
+    if not has_presets and not has_sync_groups:
+        return
+
+    if "mapping_variants" not in table_names:
+        raise MissingMappingVariantsError("mapping_variants prerequisite table is missing")
+
+    mv_columns = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(mapping_variants)")).fetchall()}
+    if "role" not in mv_columns:
+        raise MissingMappingVariantsError("mapping_variants prerequisite table is missing")
+
+    unresolved = audit_role_references(conn, inspector)
+    if unresolved:
+        unresolved_details = ", ".join(f"{item[0]} id={item[1]} key={item[2]}" for item in unresolved)
+        raise ValueError(f"Unresolved role references found: {unresolved_details}")
+
+    # Mutation phase: Create normalized reference tables
+    conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS workflow_preset_values (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            preset_id INTEGER NOT NULL REFERENCES workflow_presets(id) ON DELETE CASCADE,
+            variant_id INTEGER NOT NULL REFERENCES mapping_variants(id) ON DELETE CASCADE,
+            sub_key VARCHAR NOT NULL DEFAULT '',
+            value TEXT NOT NULL,
+            CONSTRAINT uq_workflow_preset_values_preset_variant_sub_key UNIQUE (preset_id, variant_id, sub_key)
+        )
+    """))
+
+    conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS param_sync_group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL REFERENCES param_sync_groups(id) ON DELETE CASCADE,
+            variant_id INTEGER NOT NULL REFERENCES mapping_variants(id) ON DELETE CASCADE,
+            CONSTRAINT uq_param_sync_group_members_group_variant UNIQUE (group_id, variant_id)
+        )
+    """))
+
+    if has_sync_groups:
+        sg_columns = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(param_sync_groups)")).fetchall()}
+        if "master_variant_id" not in sg_columns:
+            conn.execute(sa.text(
+                "ALTER TABLE param_sync_groups ADD COLUMN master_variant_id INTEGER REFERENCES mapping_variants(id) ON DELETE CASCADE"
+            ))
+
+
+    variant_rows = conn.execute(sa.text("SELECT id, role FROM mapping_variants")).fetchall()
+    index = VariantIndex({row[0]: row[1] for row in variant_rows})
+
+    if has_presets:
+        preset_rows = conn.execute(sa.text("SELECT id, param_values FROM workflow_presets")).fetchall()
+        for pid, pval_raw in preset_rows:
+            try:
+                data = json.loads(pval_raw) if pval_raw else {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+
+            norm = normalize_params(index, data)
+            for (vid, sub_key), val in norm.entries.items():
+                conn.execute(sa.text("""
+                    INSERT OR IGNORE INTO workflow_preset_values (preset_id, variant_id, sub_key, value)
+                    VALUES (:preset_id, :variant_id, :sub_key, :value)
+                """), {
+                    "preset_id": pid,
+                    "variant_id": vid,
+                    "sub_key": sub_key,
+                    "value": val,
+                })
+            new_pval = json.dumps(norm.reserved, ensure_ascii=False)
+            conn.execute(sa.text(
+                "UPDATE workflow_presets SET param_values = :new_pval WHERE id = :preset_id"
+            ), {"new_pval": new_pval, "preset_id": pid})
+
+    if has_sync_groups:
+        sg_rows = conn.execute(sa.text(
+            "SELECT id, master_role, slave_roles FROM param_sync_groups WHERE master_variant_id IS NULL"
+        )).fetchall()
+        for gid, mrole, sroles_raw in sg_rows:
+            cls_master = index.classify(mrole)
+            master_vid = cls_master.variant_id
+            conn.execute(sa.text(
+                "UPDATE param_sync_groups SET master_variant_id = :master_vid WHERE id = :group_id"
+            ), {"master_vid": master_vid, "group_id": gid})
+
+            try:
+                slaves = json.loads(sroles_raw) if sroles_raw else []
+            except Exception:
+                slaves = []
+            if isinstance(slaves, list):
+                seen_vids = set()
+                for s in slaves:
+                    if isinstance(s, str):
+                        cls_slave = index.classify(s)
+                        if cls_slave.variant_id is not None and cls_slave.variant_id not in seen_vids:
+                            seen_vids.add(cls_slave.variant_id)
+                            conn.execute(sa.text("""
+                                INSERT OR IGNORE INTO param_sync_group_members (group_id, variant_id)
+                                VALUES (:group_id, :variant_id)
+                            """), {"group_id": gid, "variant_id": cls_slave.variant_id})
+
+    logger.info("Migrated: Step 035 variant_id references normalization applied successfully.")
+
 
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
@@ -1230,6 +1412,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("032", "generation_jobs_release_json", step_032_generation_jobs_release_json),
     MigrationStep("033", "binding_rules_and_node_selectors", step_033_binding_rules_and_node_selectors),
     MigrationStep("034", "mapping_variants_phase5_constraints", step_034_mapping_variants_phase5_constraints),
+    MigrationStep("035", "variant_id_references", step_035_variant_id_references),
 ]
 
 

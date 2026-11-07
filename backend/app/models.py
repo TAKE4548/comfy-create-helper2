@@ -162,6 +162,18 @@ class MappingVariant(Base):
     workflow_mappings: Mapped[list["WorkflowMapping"]] = relationship(
         back_populates="variant", cascade="all, delete-orphan"
     )
+    preset_values: Mapped[list["WorkflowPresetValue"]] = relationship(
+        back_populates="variant", cascade="all, delete-orphan", passive_deletes=True
+    )
+    sync_memberships: Mapped[list["ParamSyncGroupMember"]] = relationship(
+        back_populates="variant", cascade="all, delete-orphan", passive_deletes=True
+    )
+    master_of_sync_groups: Mapped[list["ParamSyncGroup"]] = relationship(
+        foreign_keys="ParamSyncGroup.master_variant_id",
+        back_populates="master_variant",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     @property
     def computed_role(self) -> str:
@@ -277,7 +289,27 @@ class WorkflowPreset(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="presets")
+    values: Mapped[list["WorkflowPresetValue"]] = relationship(
+        back_populates="preset",
+        cascade="all, delete-orphan",
+        order_by="WorkflowPresetValue.id",
+    )
 
+
+class WorkflowPresetValue(Base):
+    __tablename__ = "workflow_preset_values"
+    __table_args__ = (
+        UniqueConstraint("preset_id", "variant_id", "sub_key", name="uq_workflow_preset_values_preset_variant_sub_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    preset_id: Mapped[int] = mapped_column(ForeignKey("workflow_presets.id", ondelete="CASCADE"), nullable=False)
+    variant_id: Mapped[int] = mapped_column(ForeignKey("mapping_variants.id", ondelete="CASCADE"), nullable=False)
+    sub_key: Mapped[str] = mapped_column(String, nullable=False, default="")
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+    preset: Mapped["WorkflowPreset"] = relationship(back_populates="values")
+    variant: Mapped["MappingVariant"] = relationship(back_populates="preset_values")
 
 
 
@@ -528,11 +560,44 @@ class ParamSyncGroup(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     master_role: Mapped[str] = mapped_column(String, nullable=False)
     slave_roles: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON string
+    master_variant_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("mapping_variants.id", ondelete="CASCADE"), nullable=True
+    )
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="param_sync_groups")
+    members: Mapped[list["ParamSyncGroupMember"]] = relationship(
+        back_populates="group",
+        cascade="all, delete-orphan",
+        order_by="ParamSyncGroupMember.id",
+    )
+    master_variant: Mapped[Optional["MappingVariant"]] = relationship(
+        foreign_keys=[master_variant_id],
+        back_populates="master_of_sync_groups",
+    )
 
+
+class ParamSyncGroupMember(Base):
+    __tablename__ = "param_sync_group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "variant_id", name="uq_param_sync_group_members_group_variant"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("param_sync_groups.id", ondelete="CASCADE"), nullable=False)
+    variant_id: Mapped[int] = mapped_column(ForeignKey("mapping_variants.id", ondelete="CASCADE"), nullable=False)
+
+    group: Mapped["ParamSyncGroup"] = relationship(back_populates="members")
+    variant: Mapped["MappingVariant"] = relationship(back_populates="sync_memberships")
+
+    @property
+    def sync_group_id(self) -> int:
+        return self.group_id
+
+    @sync_group_id.setter
+    def sync_group_id(self, value: int) -> None:
+        self.group_id = value
 
 
 

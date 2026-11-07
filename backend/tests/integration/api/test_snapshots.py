@@ -157,9 +157,46 @@ def test_snapshot_association_only_role_isolation(client: TestClient, db_session
     assert saved["loras"][0]["role"] == "positive"
 
 
+def _seed_variant(
+    db: Session,
+    role: str,
+    master_display_name: str | None = None,
+) -> models.MappingVariant:
+    rule_set = db.query(models.BindingRuleSet).first()
+    if not rule_set:
+        rule_set = models.BindingRuleSet(name="Default")
+        db.add(rule_set)
+        db.flush()
+    stage = db.query(models.StageMaster).first()
+    if not stage:
+        stage = models.StageMaster(key="main", name="Main", suffix="", is_builtin=True, is_active=True)
+        db.add(stage)
+        db.flush()
+    master = models.MappingMaster(
+        base_key=f"m_{role}",
+        name=role,
+        param_name=role,
+        input_type="textarea",
+        display_name=master_display_name or role,
+    )
+    db.add(master)
+    db.flush()
+    variant = models.MappingVariant(
+        master_id=master.id,
+        stage_id=stage.id,
+        role=role,
+        binding_rule_set_id=rule_set.id,
+    )
+    db.add(variant)
+    db.flush()
+    return variant
+
+
 def test_snapshot_record_remains_independent_after_prompt_metadata_deletion(client: TestClient, db_session: Session, snapshot_fixtures: dict) -> None:
     """[REQ-316/AC-1] Snapshot recorded metadata remains independent after prompt metadata deletion."""
     wf = snapshot_fixtures["workflow"]
+    _seed_variant(db_session, "Quality")
+    _seed_variant(db_session, "seed")
     text = "???(??:1.2)\n" * 10 + "??-REQ316"
     record = {
         "version": 1,
@@ -209,3 +246,133 @@ def test_snapshot_delete(client: TestClient, db_session: Session, snapshot_fixtu
     assert del_res.status_code == 204
 
     assert client.get(f"/api/snapshots/{snap_id}").status_code == 404
+
+
+# --- AC-2: VariantRef and Role Resolution Tests (REQ-418) ---
+
+def test_variant_ref_ac2_get_missing_variant_key_warns_and_leaves_field_unset(
+    client: TestClient, db_session: Session, snapshot_fixtures: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[REQ-418/AC-2] GET /api/snapshots/{id} resolves mapped keys, warns for unmapped keys, and omits them."""
+    wf = snapshot_fixtures["workflow"]
+    v = _seed_variant(db_session, "Prompt_pos", "Positive Prompt")
+
+    # Raw snapshot in DB with legacy role, unknown role, and deleted variant v:999
+    stored_params = {
+        "Prompt_pos": "cat",
+        "ghost_role": "dog",
+        "v:999": "deleted_variant_value",
+    }
+    s = models.Snapshot(
+        workflow_id=wf.id,
+        params=json.dumps(stored_params),
+    )
+    db_session.add(s)
+    db_session.flush()
+
+    with caplog.at_level("WARNING"):
+        res = client.get(f"/api/snapshots/{s.id}")
+    assert res.status_code == 200, res.text
+    data = res.json()
+
+    assert data["params"] == {"Prompt_pos": "cat"}
+    assert f"v:{v.id}" in data["variant_params"]
+    assert data["variant_params"][f"v:{v.id}"] == "cat"
+    assert "ghost_role" not in data["params"]
+    assert "v:999" not in data["params"]
+    assert str(s.id) in caplog.text
+    assert "ghost_role" in caplog.text
+    assert "v:999" in caplog.text
+
+
+def test_variant_ref_ac2_stored_variant_snapshot_follows_role_rename(
+    client: TestClient, db_session: Session, snapshot_fixtures: dict
+) -> None:
+    """[REQ-418/AC-2] Stored variant snapshot returns updated role and display_name after rename."""
+    wf = snapshot_fixtures["workflow"]
+    v = _seed_variant(db_session, "old_prompt_role", "Old Master Display")
+
+    s = models.Snapshot(
+        workflow_id=wf.id,
+        params=json.dumps({f"v:{v.id}": "hello world"}),
+    )
+    db_session.add(s)
+    db_session.flush()
+
+    # Rename variant role and master display_name in DB
+    v.role = "new_prompt_role"
+    v.master.display_name = "New Master Display"
+    db_session.flush()
+
+    res = client.get(f"/api/snapshots/{s.id}")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["params"] == {"new_prompt_role": "hello world"}
+    assert data["variant_params"] == {f"v:{v.id}": "hello world"}
+    assert len(data["variants"]) == 1
+    assert data["variants"][0]["id"] == v.id
+    assert data["variants"][0]["role"] == "new_prompt_role"
+    assert data["variants"][0]["display_name"] == "New Master Display"
+
+
+def test_variant_ref_ac2_list_uses_same_resolver(
+    client: TestClient, db_session: Session, snapshot_fixtures: dict
+) -> None:
+    """[REQ-418/AC-2] GET /api/snapshots populates params, variant_params, and variants using the same resolver."""
+    wf = snapshot_fixtures["workflow"]
+    v = _seed_variant(db_session, "Prompt_pos", "Positive Prompt")
+
+    s = models.Snapshot(
+        workflow_id=wf.id,
+        params=json.dumps({f"v:{v.id}": "scenery"}),
+    )
+    db_session.add(s)
+    db_session.flush()
+
+    res = client.get(f"/api/snapshots?workflow_id={wf.id}")
+    assert res.status_code == 200
+    items = res.json()
+    assert len(items) >= 1
+    matched = next(item for item in items if item["id"] == s.id)
+    assert matched["params"] == {"Prompt_pos": "scenery"}
+    assert matched["variant_params"] == {f"v:{v.id}": "scenery"}
+    assert len(matched["variants"]) == 1
+    assert matched["variants"][0]["id"] == v.id
+    assert matched["variants"][0]["role"] == "Prompt_pos"
+    assert matched["variants"][0]["display_name"] == "Positive Prompt"
+
+
+def test_variant_ref_ac2_patch_params_normalized(
+    client: TestClient, db_session: Session, snapshot_fixtures: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[REQ-418/AC-2] PATCH /api/snapshots/{id} stores v: keys and returns resolved role keys."""
+    wf = snapshot_fixtures["workflow"]
+    v = _seed_variant(db_session, "Prompt_pos", "Positive Prompt")
+
+    created = client.post("/api/snapshots", json={
+        "workflow_id": wf.id,
+        "params": {"Prompt_pos": "initial"},
+    })
+    assert created.status_code == 201
+    snap_id = created.json()["id"]
+
+    with caplog.at_level("WARNING"):
+        res = client.patch(f"/api/snapshots/{snap_id}", json={
+            "params": {"Prompt_pos": "updated", "unmapped_key": "val"},
+        })
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["params"] == {"Prompt_pos": "updated"}
+    assert data["variant_params"] == {f"v:{v.id}": "updated"}
+    assert len(data["variants"]) == 1
+    assert data["variants"][0]["id"] == v.id
+
+    # Verify raw DB record stores v: keys and omits unmapped_key
+    raw_s = db_session.query(models.Snapshot).filter(models.Snapshot.id == snap_id).first()
+    assert raw_s is not None
+    assert json.loads(raw_s.params) == {f"v:{v.id}": "updated"}
+    assert "unmapped_key" in caplog.text
+    assert str(snap_id) in caplog.text
+

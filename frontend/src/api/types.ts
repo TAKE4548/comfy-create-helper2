@@ -97,6 +97,9 @@ export interface MappingVariant {
   stage_key: string
   stage_name: string
   stage_suffix: string
+  role?: string
+  binding_rule_set_id?: number
+  node_selector_id?: number | null
   custom_role_override: string | null
   computed_role: string
   extra_title_patterns: string[] | null
@@ -106,10 +109,78 @@ export interface MappingVariant {
 export interface MappingVariantUpdateItem {
   id?: number
   stage_id?: number
+  role?: string
+  binding_rule_set_id?: number
+  node_selector_id?: number | null
   custom_role_override?: string | null
   extra_title_patterns?: string[] | null
   is_enabled?: boolean
 }
+
+// ─── REQ-417 3-Layer Binding Rules & Node Selectors ─────────────
+
+export interface BindingRuleEntry {
+  id: number
+  rule_set_id: number
+  class_type: string
+  param_name: string
+  priority: number
+}
+
+export interface BindingRuleEntryCreate {
+  class_type: string
+  param_name: string
+  priority?: number
+}
+
+export interface BindingRuleSet {
+  id: number
+  name: string
+  entries: BindingRuleEntry[]
+  referenced_roles?: string[]
+}
+
+export interface BindingRuleSetCreate {
+  name: string
+  entries?: BindingRuleEntryCreate[]
+}
+
+export interface BindingRuleSetUpdate {
+  name?: string
+  entries?: BindingRuleEntryCreate[]
+}
+
+export interface NodeSelectorPattern {
+  id: number
+  selector_id: number
+  pattern: string
+  match_type: string
+  priority: number
+}
+
+export interface NodeSelectorPatternCreate {
+  pattern: string
+  match_type?: string
+  priority?: number
+}
+
+export interface NodeSelector {
+  id: number
+  name: string
+  patterns: NodeSelectorPattern[]
+  referenced_roles?: string[]
+}
+
+export interface NodeSelectorCreate {
+  name: string
+  patterns?: NodeSelectorPatternCreate[]
+}
+
+export interface NodeSelectorUpdate {
+  name?: string
+  patterns?: NodeSelectorPatternCreate[]
+}
+
 
 export interface MappingMasterV2 {
   id: number
@@ -196,6 +267,7 @@ export interface WorkflowMapping {
   id: number
   master_id: number
   node_id: string
+  input_name?: string
   variant_id?: number | null
   role: string | null
   param_name: string | null
@@ -203,6 +275,7 @@ export interface WorkflowMapping {
   input_type: string | null
   display_name: string | null
 }
+
 
 export interface WorkflowSummary {
   id: number
@@ -224,7 +297,7 @@ export interface Workflow {
 export interface WorkflowCreate {
   name: string
   json_body: Record<string, unknown>
-  mappings: { master_id: number; node_id: string; variant_id?: number | null }[]
+  mappings: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[]
   target_base_model_id?: number | null
   mapping_slot_states?: Record<string, boolean>
 }
@@ -233,10 +306,11 @@ export interface WorkflowUpdate {
   name?: string
   json_body?: Record<string, unknown>
   default_applied_assets?: string | null
-  mappings?: { master_id: number; node_id: string; variant_id?: number | null }[]
+  mappings?: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[]
   target_base_model_id?: number | null
   mapping_slot_states?: Record<string, boolean>
 }
+
 
 
 // 笏笏笏 Workflow Scan 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -246,10 +320,12 @@ export interface ScanMatchedItem {
   role: string
   node_id: string
   node_title: string
+  input_name?: string
   status: string
   node_ids?: string[]
   variant_id?: number | null
 }
+
 
 export interface ScanWarningItem {
   master_id: number
@@ -377,9 +453,18 @@ export interface SnapshotTagSetRead {
   role: string
 }
 
+export interface VariantRef {
+  id: number
+  role: string
+  display_name?: string | null
+}
+
 export interface SnapshotSummary {
   id: number
   workflow_id: number
+  params?: Record<string, unknown> | null
+  variant_params?: Record<string, unknown>
+  variants?: VariantRef[]
   image_path: string | null
   thumbnail_path?: string | null
   created_at: string
@@ -390,6 +475,8 @@ export interface Snapshot {
   id: number
   workflow_id: number
   params: Record<string, unknown>
+  variant_params?: Record<string, unknown>
+  variants?: VariantRef[]
   image_path: string | null
   thumbnail_path?: string | null
   created_at: string
@@ -626,6 +713,8 @@ export interface WorkflowPreset {
   workflow_id: number
   name: string
   param_values: Record<string, string>
+  variant_param_values?: Record<string, string>
+  variants?: VariantRef[]
   applied_assets: Record<string, any[]>
   batch_size: number
   seed_mode: string
@@ -731,14 +820,19 @@ export interface ParamSyncGroup {
   name: string
   master_role: string
   slave_roles: string[]
+  master_variant_id?: number
+  slave_variant_ids?: number[]
+  variants?: VariantRef[]
   is_enabled: boolean
   created_at: string
 }
 
 export interface ParamSyncGroupCreate {
   name: string
-  master_role: string
-  slave_roles: string[]
+  master_role?: string
+  slave_roles?: string[]
+  master_variant_id?: number
+  slave_variant_ids?: number[]
   is_enabled?: boolean
 }
 
@@ -746,6 +840,8 @@ export interface ParamSyncGroupUpdate {
   name?: string
   master_role?: string
   slave_roles?: string[]
+  master_variant_id?: number
+  slave_variant_ids?: number[]
   is_enabled?: boolean
 }
 

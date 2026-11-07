@@ -1,4 +1,5 @@
 import io
+import json
 import urllib.parse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -349,3 +350,90 @@ def test_snapshot_service_zero_production_file_leak(db_session: Session):
     after_files = set(prod_snapshot_dir.glob("*")) if prod_snapshot_dir.exists() else set()
     # Zero new files written to production directory
     assert after_files == before_files
+
+
+# --- 3. VariantRef / AC-2 結合テスト (REQ-418) ---
+
+def _seed_variant(
+    db: Session,
+    role: str,
+    master_display_name: str | None = None,
+) -> models.MappingVariant:
+    rule_set = db.query(models.BindingRuleSet).first()
+    if not rule_set:
+        rule_set = models.BindingRuleSet(name="Default")
+        db.add(rule_set)
+        db.flush()
+    stage = db.query(models.StageMaster).first()
+    if not stage:
+        stage = models.StageMaster(key="main", name="Main", suffix="", is_builtin=True, is_active=True)
+        db.add(stage)
+        db.flush()
+    master = models.MappingMaster(
+        base_key=f"m_{role}",
+        name=role,
+        param_name=role,
+        input_type="textarea",
+        display_name=master_display_name or role,
+    )
+    db.add(master)
+    db.flush()
+    variant = models.MappingVariant(
+        master_id=master.id,
+        stage_id=stage.id,
+        role=role,
+        binding_rule_set_id=rule_set.id,
+    )
+    db.add(variant)
+    db.flush()
+    return variant
+
+
+def test_variant_ref_ac2_create_persists_variant_keys(db_session: Session, caplog: pytest.LogCaptureFixture):
+    """[REQ-418/AC-2] create_snapshot persists variant keys, derived keys, reserved keys, and omits unknown keys with warning."""
+    v = _seed_variant(db_session, "Prompt_pos", "Positive Prompt")
+    wf = models.Workflow(name="wf_test_ac2", json_body="{}")
+    db_session.add(wf)
+    db_session.flush()
+
+    payload = schemas.SnapshotCreate(
+        workflow_id=wf.id,
+        params={
+            "Prompt_pos": "1girl",
+            "Prompt_pos_lora_count": 2,
+            "__seed_modes_v1": "fixed",
+            "unknown_ghost_param": "val",
+        },
+    )
+    with caplog.at_level("WARNING"):
+        snapshot = SnapshotService.create_snapshot(db_session, payload)
+
+    assert "unknown_ghost_param" in caplog.text
+    assert "snapshot create" in caplog.text
+
+    stored_json = json.loads(snapshot.params)
+    assert stored_json == {
+        f"v:{v.id}": "1girl",
+        f"v:{v.id}:lora_count": 2,
+        "__seed_modes_v1": "fixed",
+    }
+    assert "unknown_ghost_param" not in stored_json
+
+
+def test_variant_ref_ac2_legacy_snapshot_expands_mapped_only(db_session: Session, caplog: pytest.LogCaptureFixture):
+    """[REQ-418/AC-2] expand_stored_params resolves legacy role keys to current role and warns for unknown keys."""
+    from app.services.variant_keys import VariantIndex, expand_stored_params
+
+    v = _seed_variant(db_session, "Prompt_pos", "Positive Prompt")
+    raw_params = {"Prompt_pos": "cat", "ghost_role": "dog"}
+
+    index = VariantIndex.from_session(db_session)
+    with caplog.at_level("WARNING"):
+        expanded = expand_stored_params(index, raw_params, owner_label="snapshot 42", warn=True)
+
+    assert expanded.role_keyed == {"Prompt_pos": "cat"}
+    assert expanded.variant_keyed == {f"v:{v.id}": "cat"}
+    assert expanded.missing == ["ghost_role"]
+    assert "snapshot 42" in caplog.text
+    assert "ghost_role" in caplog.text
+

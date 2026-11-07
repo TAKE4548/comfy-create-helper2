@@ -84,6 +84,13 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
             sort_order=p.sort_order,
         )
         db.add(new_preset)
+        for v in p.values:
+            new_preset.values.append(
+                models.WorkflowPresetValue(
+                    variant_id=v.variant_id,
+                    sub_key=v.sub_key,
+                    value=v.value,
+                )
             )
     for bp in src.bypass_profiles:
         db.add(models.BypassProfile(
@@ -98,9 +105,15 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
             name=sg.name,
             master_role=sg.master_role,
             slave_roles=sg.slave_roles,
+            master_variant_id=sg.master_variant_id,
             is_enabled=sg.is_enabled,
         )
         db.add(new_sg)
+        for member in sg.members:
+            new_sg.members.append(
+                models.ParamSyncGroupMember(
+                    variant_id=member.variant_id,
+                )
             )
     db.commit()
     db.refresh(new_wf)

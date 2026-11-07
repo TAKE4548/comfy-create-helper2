@@ -1,91 +1,115 @@
-# Implementation Plan - REQ-377: モバイルLoRA／Tag Set 詳細・編集シートの再構成とTag Set編集入口・Subsetsの統一
+# Implementation Plan: REQ-418 プリセット・スナップショット・同期グループの role 参照から variant_id 参照への移行
 
-## Proposed Changes
-
-### 1. 概要と背景
-本改修は、モバイル端末（幅767px以下）におけるLoRAおよびTag Set画面の詳細閲覧・編集体験を劇的に改善するものです。
-従来の課題（画面上部を占有する巨大画像、スクロール末尾に埋もれた確定ボタン、閲覧時と編集時のボタン配置不整合、Tag Set編集入口の二重分岐、Subsets一覧の独立スクロールによるスタック）を解消し、`SPEC_COMMON` §1-6 に定義されたモバイルUI共通規約（MUI-02, MUI-03, MUI-04, MUI-05, MUI-06, MUI-07, MUI-09）に完全準拠させます。なお、PC環境（幅768px以上）の表示および既存機能（トリガーワード、強度、コピー、タグ編集等）は100%維持します（Baseline-Preserving原則）。
-
-### 2. コンポーネント別の変更内容
-
-#### `TagSetFormFields.tsx` (Subsets スクロール統合) [REQ-377-T1]
-- Subsets（バリエーション）一覧のラッパー要素から `max-h-[160px] overflow-y-auto custom-scrollbar pr-1` を撤廃し、`<div className="space-y-2">` に変更。
-- Subsets が何件追加されても親モーダルの縦スクロール領域に自然展開され、入れ子スクロール障害を根絶。
-
-#### `TagSetDetailModal.tsx` & `TagsPage.tsx` (Tag Set ボトムシート・固定フッター・入口統一) [REQ-377-T2]
-- `TagSetDetailModal`:
-  - モバイル時は下端起点のボトムシート（`modal-backdrop items-end md:items-center p-0 md:p-4`, `rounded-t-2xl`, `max-h-[90dvh]`）として表示。
-  - 本文先頭に小型Coverサムネイル＋Snapshot件数行を配置。タップで同一モーダル内の画像ギャラリーサブビュー（スナップショット一覧・Cover選択）へスムーズに遷移。
-  - 最下部に固定アクションフッターを常駐（閲覧中: 左 `Close` / 右 `Edit`、編集中: 左 `Cancel` / 右 `Save`）。
-  - `initialEditing?: boolean` プロパティを追加。
-- `TagsPage.tsx`:
-  - カード右上の編集アイコン (`#tagset-edit-${id}`) クリック時、`TagSetDetailModal` を `initialEditing=true` で起動するよう接続を統一。カードクリック時の詳細表示と全く同じモーダル・フィールド・固定フッターを共有。
-
-#### `LoraDetailModal.tsx` & `LoRAsPage.tsx` (LoRA ボトムシート・固定フッター・小型Cover) [REQ-377-T3]
-- `LoraDetailModal`:
-  - モバイル時は下端起点のボトムシートとして再構成。
-  - 本文先頭に小型Coverサムネイル＋Snapshot件数行を配置し、タップで画像ギャラリーサブビュー（スナップショット一覧・Cover変更）へ展開。
-  - 最下部に固定アクションフッターを常駐（閲覧中: 左 `Close` / 右 `Edit`、編集中: 左 `Cancel` / 右 `Save`）。
-  - `initialEditing?: boolean` プロパティを追加。
-- `LoRAsPage.tsx`:
-  - カード右上の編集アイコンクリック時に `LoraDetailModal` の編集モードを直接開く導線へ統一。
-
-#### SSoT 仕様同期 (`SPEC_LORAS.md`, `SPEC_TAGS.md`, `SPEC_COMMON.md`) [REQ-377-T4]
-- 各仕様書に実装結果を正確に反映し、MUI-02/03/04/05/09 の適用状況を「導入済み」へ更新。
+## Overview
+現行のプリセット（`workflow_presets.param_values`）、スナップショット（`snapshots.params`）、およびパラメータ同期グループ（`param_sync_groups`）は、パラメータ参照キーとして文字列の `role` を使用しており、外部キー制約による整合性が保証されていません。
+本実装では、REQ-417 で確立された `MappingVariant` の永続 ID（`variant_id`）を基準として参照を正規化し、以下を実現します。
+1. **プリセット値の正規化とマイグレーション (`step_035`)**: `workflow_preset_values` テーブルを新設して `mapping_variants(id)` への外部キーを付与し、検証相→変更相の 2 相マイグレーションにより未解決行がある場合は DB を無変更で中断します（AC-1）。
+2. **スナップショットの `v:<variant_id>` 永続化と後方互換リゾルバ**: 保存時は `v:<id>[:sub]` 形式で保存し、復元（GET）時は旧 `role` キーも含めて現在の `role` へ展開します。対応する `variant_id` が存在しない欠落キーは `logger.warning` を出力した上でレスポンスから除外し、画面フォームの該当フィールドを初期値（未設定）のまま維持します（AC-2）。
+3. **同期グループの `variant_id` 永続化と UI 連携**: `param_sync_groups.master_variant_id` および `param_sync_group_members` テーブルにより `variant_id` の組として永続化し、`ParamSyncModal` から `variant_id` を送信します（AC-3）。
+4. **Variant 属性更新への即時追従**: プリセット一覧・同期グループ一覧・スナップショット取得 API が `variant_id` 外部キー参照を通じて最新の `role` / `display_name`（および `variants: list[VariantRef]`）を返却します（AC-4）。
 
 ---
 
-## Dependency Graph (DAG)
+## User Review Required
+> [!IMPORTANT]
+> **仕様と現行実装のギャップ解決方針（設計書 §1・§11）**
+> - **Q1（マイグレーション時のゴーストキー扱い）**: `step_035` は AC-1 どおり未解決キーが 1 件でもある場合にエラー中断（DB 無変更）とします。予約キー（`__*`）および LoRA スタック派生キー（`<role>_lora_count` 等）は解決済みとして扱います。また本番 DB 事前確認用に読み取り専用の `audit_role_references(conn)` を提供します。
+> - **Q2（フロントエンド変更範囲の境界）**: API レスポンスが `variant_id` から解決した最新の `role` キーを返す境界変換方式（トレードオフ T-A）を採用し、フロントエンド内部ストアは既存の `role` キーを維持して変更を API 型と `ParamSyncModal` に限定します。
+> - **Q3（プリセット値テーブルの新設）**: 現行 DB にはプリセット値テーブルが存在せず `workflow_presets.param_values` JSON 列のみであるため、正規化テーブル `workflow_preset_values` を新設します（旧 JSON 列は予約キー `__*` の退避先として維持）。
+> - **Q4（`applied_assets` の扱い）**: `workflow_presets.applied_assets` は本 PBI の対象外とし、既存のカスケードリネームによる追従を維持します。
+
+---
+
+## Proposed Changes
+
+### Backend Subsystem
+
+#### 1. 共有キー分類・正規化・展開ロジック (`REQ-418-T1`)
+- [variant_keys.py](backend/app/services/variant_keys.py) (新規):
+  - `KeyKind` (`RESERVED`, `VARIANT`, `ROLE`, `DERIVED_ROLE`, `UNRESOLVED`) の固定優先順判定。
+  - `VariantIndex`, `normalize_params`, `expand_stored_params`, `to_storage_params`, `encode_variant_key`, `decode_variant_key` の提供。
+- [variant_ref.py](backend/app/schemas/variant_ref.py) (新規):
+  - `VariantRef(id, role, display_name)` スキーマ定義。
+
+#### 2. DB モデル追加とマイグレーション `step_035` (`REQ-418-T2`)
+- [models.py](backend/app/models.py):
+  - `WorkflowPresetValue` (`workflow_preset_values`)、`ParamSyncGroupMember` (`param_sync_group_members`) の新設。
+  - `ParamSyncGroup.master_variant_id` 列および ORM リレーション（`cascade="all, delete-orphan"`）の追加。
+- [steps.py](backend/app/migrations/steps.py):
+  - `step_035_variant_id_references` と `audit_role_references(conn)` の実装（前提テーブル検査 → 検証相 → 変更相、冪等性保証）。
+
+#### 3. プリセット API と Workflow コピー (`REQ-418-T3`)
+- [preset.py](backend/app/schemas/preset.py) & [presets.py](backend/app/routers/presets.py):
+  - `WorkflowPresetRead` に `variant_param_values` と `variants` を追加。
+  - GET 時に値テーブルから現在の `role` キーへ展開、POST/PUT 時に `normalize_params` で値テーブルを更新し `updated_at` 競合判定（409）を維持。
+- [workflows.py](backend/app/routers/workflows.py):
+  - `copy_workflow` でプリセット値行および同期グループ（`master_variant_id` と `members`）を同一 `variant_id` で複製。
+
+#### 4. スナップショット保存・復元リゾルバ (`REQ-418-T4`)
+- [snapshot.py](backend/app/schemas/snapshot.py), [snapshot_service.py](backend/app/services/snapshot_service.py), [snapshots.py](backend/app/routers/snapshots.py):
+  - 保存・更新時に `to_storage_params` で `v:<id>` キー形式に変換。
+  - 取得・一覧時に `expand_stored_params` で最新 `role` キーへ展開し、未解決キーは `logger.warning` に記録して除外。
+
+#### 5. パラメータ同期グループ API (`REQ-418-T5`)
+- [param_sync_groups.py](backend/app/schemas/param_sync_groups.py) & [param_sync_groups.py](backend/app/routers/param_sync_groups.py):
+  - `master_variant_id` / `slave_variant_ids` 優先の受付（旧 `master_role` / `slave_roles` フォールバック対応、未知の指定は 422）。
+  - 一覧・応答で最新の `master_role`, `slave_roles`, `variants` を返却。
+
+---
+
+### Frontend Subsystem
+
+#### 6. API 型定義と同期グループ UI (`REQ-418-T6`)
+- [types.ts](frontend/src/api/types.ts):
+  - `VariantRef` 追加、`WorkflowPreset` / `Snapshot` / `SnapshotSummary` / `ParamSyncGroup*` の型拡張。
+- [ParamSyncModal.tsx](frontend/src/components/ParamSyncModal.tsx):
+  - `activeWorkflow.mappings` から `role -> variant_id` を解決し、グループ作成・更新時に `master_variant_id` / `slave_variant_ids` を送信（`variant_id` が無いマッピングのみ `role` にフォールバック）。UI クラス・レイアウトは不変。
+
+---
+
+## Dependency Graph (Mermaid DAG)
 
 ```mermaid
 graph TD
-  REQ-377-T1["REQ-377-T1: TagSetFormFields Subsetsスクロール統合"] --> REQ-377-T2["REQ-377-T2: TagSetDetailModal ボトムシート・固定フッター・入口統一"]
-  REQ-377-T3["REQ-377-T3: LoraDetailModal ボトムシート・固定フッター・小型Cover"]
-  REQ-377-T2 --> REQ-377-T4["REQ-377-T4: SSoT仕様同期 (SPEC_LORAS, SPEC_TAGS, SPEC_COMMON)"]
-  REQ-377-T3 --> REQ-377-T4
+  REQ-418-T1["REQ-418-T1: variant_keys 共有ロジック + VariantRef (backend)"] --> REQ-418-T2["REQ-418-T2: モデル追加 + step_035 マイグレーション (backend)"]
+  REQ-418-T1 --> REQ-418-T4["REQ-418-T4: スナップショット保存・復元リゾルバ (backend)"]
+  REQ-418-T1 --> REQ-418-T3["REQ-418-T3: プリセット API + workflow copy (backend)"]
+  REQ-418-T1 --> REQ-418-T5["REQ-418-T5: パラメータ同期グループ API (backend)"]
+  REQ-418-T2 --> REQ-418-T3
+  REQ-418-T2 --> REQ-418-T5
+  REQ-418-T6["REQ-418-T6: フロントエンド型 + ParamSyncModal (frontend)"]
 ```
 
 ---
 
-## Trade-off Disclosure and Technical Decisions
+## Trade-off Disclosures & Alternatives
 
-### 1. 画像ギャラリーサブビュー方式の採用（vs インライン展開）
-- **検討内容**: モバイル表示において、画像一覧を本文内でアコーディオン展開するか、同一シート内でサブビュー（画面切替）として表示するか。
-- **決定**: 同一シート内のサブビュー切替方式を採用。
-- **理由**: 本文内で画像カルーセルやグリッドを展開すると、縦スクロール量が突如増大して入力欄や確定フッターの位置を見失いやすいため。テキスト主体の情報確認と画像閲覧の目的を明確に分離し、モーダルの多重ネスト（アンチパターン 1-5-2 #8）を回避します。
-
-### 2. Tag Set 編集画面の一本化（vs 既存 TagSetEditModal の並行維持）
-- **検討内容**: カード編集用の `TagSetEditModal` と詳細内編集を別コンポーネントのまま維持するか、`TagSetDetailModal` に一本化するか。
-- **決定**: `TagSetDetailModal(initialEditing=true)` へ一本化。
-- **理由**: 入口によってモーダルのデザインやボタン位置が異なる不整合を恒久的に防ぎ、保守コストを削減するため。
-
-### 3. デスクトップ表示の厳格な分離（Baseline Preservation）
-- **検討内容**: モバイルボトムシートの構造変更がデスクトップ（幅768px以上）の表示に影響を与えないか。
-- **決定**: Tailwind のレスポンシブブレイクポイント (`hidden md:block`, `md:grid-cols-2` 等) を厳格に分離し、デスクトップ表示およびテストスイートに一切の回帰を生じさせない設計としました。
+1. **T-A: API 境界変換の採用 vs フロント内部ストアの全面 `variant_id` 化**:
+   - **採用**: DB 永続化を `variant_id` 化し、API レスポンスで最新の `role` キーに展開して返す（追加フィールドとして `variant_param_values` / `variant_params` / `variants` も提供）。同期グループ UI のみ `variant_id` を直接送受信する。
+   - **理由**: フロントの生成注入・LoRA スタック派生キー・自動保存に跨る大規模変更による回帰リスクを排除しつつ、AC-1〜AC-4（role 名・display_name 変更への自動追従を含む）を完全に満たせるため。
+2. **T-B: `workflow_preset_values` テーブル新設 vs JSON 列内での `v:<id>` 置換**:
+   - **採用**: プリセット値を正規化テーブル `workflow_preset_values` に切り出し、`mapping_variants(id)` への FK と `UNIQUE(preset_id, variant_id, sub_key)` を付与する。
+   - **理由**: JSON 文字列のままでは DB レベルの FK 参照整合性を宣言できないため。予約キー（`__*`）のみ旧 JSON 列に保持する。
+3. **T-C: 実行時 API 書き込みでの未解決キー破棄+警告 vs 422 エラー拒否**:
+   - **採用**: マイグレーション（`step_035`）は AC-1 どおり未解決キーで厳格に中断・ロールバックするが、実行時のプリセット/スナップショット保存では未解決キーを `logger.warning` で記録して破棄する。
+   - **理由**: フロントエンドの自動保存が旧綴りキー等を送信した場合に保存全体が 422 で失敗し続けることを防ぐため（同期グループ API は明示的な選択操作のため 422 とする）。
+4. **T-F: SQLite における検証相→変更相の 2 相マイグレーション**:
+   - **採用**: Python 3.12 `sqlite3` の DDL トランザクション挙動に依存せず、全行の解決可否を読み取り専用の検証相で検査し、通過後にのみ DDL とデータ移行を実行する。
+   - **理由**: 未解決行が存在する場合に DB が 1 バイトも変更されないこと（AC-1）を確実に保証するため。
 
 ---
 
 ## Verification Plan
 
-### Automated Baseline Verification
-1. **Gate 1 (静的型チェック)**:
-   ```bash
-   npm --prefix frontend run typecheck
-   ```
-2. **Gate 2 (単体・統合テスト)**:
-   ```bash
-   npm --prefix frontend test -- src/components/TagSetModals/__tests__/TagSetFormFields.test.tsx --run
-   npm --prefix frontend test -- src/components/__tests__/TagSetModals.test.tsx src/pages/__tests__/TagsPage.test.tsx --run
-   npm --prefix frontend test -- src/components/LoraModals/__tests__/LoraDetailModal.test.tsx src/components/__tests__/LoraModals.test.tsx --run
-   ```
-3. **Gate 3 (受入基準・異常系検証)**:
-   - AC-1〜AC-14 のタグ付きテストによる網羅的検証。
-   - 画像欠損、異常強度値（min > max）、Cover 取消整合性の Red Team 検証。
+- **リスク区分**: **high**（DB スキーマ・マイグレーション・公開 API 契約の変更を含むため、V1 ベースラインのフルスイート検証を必須とする）。
+- **Gate 1 (Static)**:
+  - `backend\.venv\Scripts\python scripts/verify_ui_invariants.py`
+  - `mypy backend`
+  - `cd frontend; npm run typecheck`
+  - `backend\.venv\Scripts\python scripts/verify_test_naming.py --strict`
+- **Gate 2 (Full Test Suite)**:
+  - `backend\.venv\Scripts\python -m pytest -n auto`
+  - `cd frontend; npm test`
+- **Gate 3 (Scenario & Red Team)**:
+  - `docs/design/REQ-418-test-plan.md` §5 の通しシナリオ（S-1〜S-3）および Playwright E2E 回帰テスト。
 
-### Manual / Browser Verification
-- モバイルビューポート（375px〜430px）およびデスクトップビューポート（1280px）での表示確認：
-  - ボトムシートが下端から開き、上端ハンドル・ヘッダー・固定フッターが正しく表示されること。
-  - 閲覧時（Close左/Edit右）および編集時（Cancel左/Save右）のボタン位置と操作性。
-  - 小型Coverタップでギャラリーサブビューへ遷移し、Cover選択と取消が正常に行えること。
-  - カード右上の編集ボタンから直接編集モードで開くこと。
-  - 多数のSubsetsがある場合に親コンテナのみが縦スクロールすること。

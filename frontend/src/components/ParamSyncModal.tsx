@@ -117,15 +117,53 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
     return type !== null && masterInputType !== null && type === masterInputType;
   });
 
+  const roleToVariantId = new Map<string, number>();
+  for (const m of activeWorkflow?.mappings ?? []) {
+    if (m.role && typeof m.variant_id === 'number') {
+      roleToVariantId.set(m.role, m.variant_id);
+    }
+  }
+  for (const v of activeGroup?.variants ?? []) {
+    if (v.role && typeof v.id === 'number') {
+      roleToVariantId.set(v.role, v.id);
+    }
+  }
+
+  const resolveSlaveIds = (roles: string[]): number[] | null => {
+    if (roles.length === 0) {
+      return roleToVariantId.size > 0 ? [] : null;
+    }
+    const ids: number[] = [];
+    for (const r of roles) {
+      const vid = roleToVariantId.get(r);
+      if (typeof vid !== 'number') {
+        return null;
+      }
+      ids.push(vid);
+    }
+    return ids;
+  };
+
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim() || !newMasterRole || selectedWorkflowId === null) return;
-    const created = await createParamSyncGroup(selectedWorkflowId, {
-      name: newGroupName.trim(),
-      master_role: newMasterRole,
-      slave_roles: [],
-      is_enabled: true,
-    });
+    const masterVid = roleToVariantId.get(newMasterRole);
+    const payload = masterVid !== undefined
+      ? {
+          name: newGroupName.trim(),
+          master_variant_id: masterVid,
+          slave_variant_ids: [],
+          master_role: newMasterRole,
+          slave_roles: [],
+          is_enabled: true,
+        }
+      : {
+          name: newGroupName.trim(),
+          master_role: newMasterRole,
+          slave_roles: [],
+          is_enabled: true,
+        };
+    const created = await createParamSyncGroup(selectedWorkflowId, payload);
     setNewGroupName('');
     setNewMasterRole('');
     setIsCreating(false);
@@ -160,7 +198,13 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
     const newSlaves = currentSlaves.includes(slaveRole)
       ? currentSlaves.filter((r) => r !== slaveRole)
       : [...currentSlaves, slaveRole];
-    await updateParamSyncGroup(activeGroup.id, { slave_roles: newSlaves });
+    const slaveIds = resolveSlaveIds(newSlaves);
+    await updateParamSyncGroup(
+      activeGroup.id,
+      slaveIds !== null
+        ? { slave_variant_ids: slaveIds, slave_roles: newSlaves }
+        : { slave_roles: newSlaves },
+    );
   };
 
   const handleMasterChange = async (newMaster: string) => {
@@ -170,10 +214,20 @@ export function ParamSyncModal({ onClose }: ParamSyncModalProps) {
     const validSlaves = activeGroup.slave_roles.filter(
       (r) => r !== newMaster && newType !== null && resolveType(r) === newType,
     );
-    await updateParamSyncGroup(activeGroup.id, {
-      master_role: newMaster,
-      slave_roles: validSlaves,
-    });
+    const masterVid = roleToVariantId.get(newMaster);
+    const slaveIds = resolveSlaveIds(validSlaves);
+    const payload = masterVid !== undefined && slaveIds !== null
+      ? {
+          master_variant_id: masterVid,
+          slave_variant_ids: slaveIds,
+          master_role: newMaster,
+          slave_roles: validSlaves,
+        }
+      : {
+          master_role: newMaster,
+          slave_roles: validSlaves,
+        };
+    await updateParamSyncGroup(activeGroup.id, payload);
   };
 
   return (

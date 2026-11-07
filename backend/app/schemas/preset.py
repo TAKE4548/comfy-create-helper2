@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.variant_ref import VariantRef
+
 
 class WorkflowPresetBase(BaseModel):
     workflow_id: int
@@ -35,6 +37,11 @@ class WorkflowPresetRead(WorkflowPresetBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    variant_param_values: dict[str, str] = Field(default_factory=dict)
+    variants: list[VariantRef] = Field(default_factory=list)
+
+
+WorkflowPreset = WorkflowPresetRead
 
 
 class WorkflowPresetReorder(BaseModel):

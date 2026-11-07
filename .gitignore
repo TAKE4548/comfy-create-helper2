@@ -144,6 +144,8 @@ db/full_cache/
 *.bak
 *.db.bak
 *.db-journal
+*.db-wal
+*.db-shm
 db/prompt_surgeon.db
 brain/
 scratch/
@@ -153,3 +155,10 @@ logs/
 *.db
 models/
 backend/models/
+!backend/tests/integration/models/
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+

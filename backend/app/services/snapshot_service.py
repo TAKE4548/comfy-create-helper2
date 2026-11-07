@@ -12,6 +12,7 @@ from sqlalchemy import func
 
 from app.config import settings
 from app import models, schemas
+from app.services.variant_keys import VariantIndex, to_storage_params
 
 logger = logging.getLogger(__name__)
 ASSOCIATIONS_KEY = "__metadata_associations_v1"
@@ -185,10 +186,15 @@ class SnapshotService:
                 else:
                     saved_thumbnail_path = f"/api/snapshots/images/{thumb_filename}"
 
+        index = VariantIndex.from_session(db)
+        storage_dict, unresolved = to_storage_params(index, payload.params or {})
+        if unresolved:
+            logger.warning("snapshot create: unresolvable parameter keys skipped: %s", unresolved)
+
         try:
             s = models.Snapshot(
                 workflow_id=payload.workflow_id,
-                params=json.dumps(payload.params),
+                params=json.dumps(storage_dict, ensure_ascii=False),
                 image_path=saved_image_path,
                 thumbnail_path=saved_thumbnail_path,
             )
@@ -351,14 +357,20 @@ class SnapshotService:
                 "version": 1,
                 "lora_trigger_sets": [item.model_dump() for item in payload.lora_trigger_sets],
             })
-            s.params = json.dumps(association_params)
+            s.params = json.dumps(association_params, ensure_ascii=False)
 
         if payload.image_path is not None:
             s.image_path = payload.image_path
         if payload.thumbnail_path is not None:
             s.thumbnail_path = payload.thumbnail_path
         if payload.params is not None:
-            s.params = json.dumps(payload.params)
+            index = VariantIndex.from_session(db)
+            storage_dict, unresolved = to_storage_params(index, payload.params)
+            if unresolved:
+                logger.warning("snapshot update %s: unresolvable parameter keys skipped: %s", snapshot_id, unresolved)
+            if payload.lora_trigger_sets is not None and association_params is not None and ASSOCIATIONS_KEY in association_params:
+                storage_dict[ASSOCIATIONS_KEY] = association_params[ASSOCIATIONS_KEY]
+            s.params = json.dumps(storage_dict, ensure_ascii=False)
 
         try:
             db.commit()

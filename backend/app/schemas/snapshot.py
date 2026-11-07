@@ -2,7 +2,9 @@
 
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.variant_ref import VariantRef
 
 
 # ─── Snapshot ────────────────────────────────────────────────────
@@ -64,6 +66,8 @@ class SnapshotRead(BaseModel):
     loras: list[SnapshotLoraRead] = []
     tag_sets: list[SnapshotTagSetRead] = []
     source_snapshot_id: Optional[int] = None
+    variant_params: dict[str, Any] = Field(default_factory=dict)
+    variants: list[VariantRef] = Field(default_factory=list)
 
 
 class SnapshotUpdate(BaseModel):
@@ -86,5 +90,7 @@ class SnapshotSummary(BaseModel):
     created_at: datetime
     params: Optional[dict[str, Any]] = None
     source_snapshot_id: Optional[int] = None
+    variant_params: dict[str, Any] = Field(default_factory=dict)
+    variants: list[VariantRef] = Field(default_factory=list)
 
 

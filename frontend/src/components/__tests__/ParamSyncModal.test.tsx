@@ -269,7 +269,10 @@ describe('REQ-351 stage-qualified candidates', () => {
     const target = (await screen.findByText('Rough / OtherSteps')).closest('label')!
     fireEvent.click(within(target).getByRole('checkbox'))
 
-    expect(updateMock).toHaveBeenCalledWith(201, { slave_roles: ['Other_Steps_Rough'] })
+    expect(updateMock).toHaveBeenCalledWith(201, {
+      slave_variant_ids: [302],
+      slave_roles: ['Other_Steps_Rough'],
+    })
   })
 
   it('[REQ-351/AC-1] keeps different input types out of sub candidates', async () => {
@@ -306,6 +309,8 @@ describe('REQ-351 stage-qualified candidates', () => {
 
     await waitFor(() => {
       expect(updateMock).toHaveBeenCalledWith(201, {
+        master_variant_id: 203,
+        slave_variant_ids: [202],
         master_role: 'Sampler_Steps_Detail',
         slave_roles: ['Sampler_Steps_Rough'],
       })
@@ -331,5 +336,218 @@ describe('REQ-351 stage-qualified candidates', () => {
     await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3))
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+})
+
+describe('REQ-418 variant_id transmission and fallback', () => {
+  const stage = (id: number, key: string, name: string) => ({
+    id, key, name, suffix: '', search_keywords: null, previous_suffixes: null,
+    is_builtin: true, is_active: true, sort_order: id,
+  })
+  const STAGES = [stage(1, 'main', 'Main'), stage(2, 'rough', 'Rough'), stage(3, 'detail', 'Detail')]
+  const variant = (id: number, master_id: number, stage_id: number, computed_role: string) => ({
+    id, master_id, stage_id, stage_key: STAGES[stage_id - 1].key, stage_name: STAGES[stage_id - 1].name,
+    stage_suffix: '', custom_role_override: null, computed_role, extra_title_patterns: null, is_enabled: true,
+  })
+  const master = (id: number, base_key: string, input_type: string, variants: ReturnType<typeof variant>[]) => ({
+    id, group_id: null, base_key, name: base_key, param_name: base_key, input_type,
+    expected_class_types: null, base_title_patterns: null, sort_order: id, variants,
+  })
+  const V2_MASTERS = [
+    master(10, 'Sampler_Steps', 'int', [variant(201, 10, 1, 'Sampler_Steps'), variant(202, 10, 2, 'Sampler_Steps_Rough'), variant(203, 10, 3, 'Sampler_Steps_Detail')]),
+    master(20, 'Other_Steps', 'int', [variant(301, 20, 1, 'Other_Steps'), variant(302, 20, 2, 'Other_Steps_Rough')]),
+  ]
+  const wm = (id: number, master_id: number, variant_id: number, role: string, input_type: string, display_name: string) => ({
+    id, master_id, node_id: `n${id}`, variant_id, role, param_name: 'x', input_type, display_name,
+  })
+  const WORKFLOW_WITH_VARIANTS = {
+    id: 1,
+    name: 'Workflow With Variants',
+    json_body: {},
+    created_at: '2026-01-01T00:00:00Z',
+    target_base_model_id: null,
+    mappings: [
+      wm(1, 10, 201, 'Sampler_Steps', 'int', 'Steps'),
+      wm(2, 10, 202, 'Sampler_Steps_Rough', 'int', 'Steps'),
+      wm(3, 10, 203, 'Sampler_Steps_Detail', 'int', 'Steps'),
+    ],
+  }
+  const WORKFLOW_WITHOUT_VARIANTS = {
+    id: 1,
+    name: 'Workflow Without Variants',
+    json_body: {},
+    created_at: '2026-01-01T00:00:00Z',
+    target_base_model_id: null,
+    mappings: [
+      { id: 1, master_id: 10, node_id: 'n1', role: 'seed', param_name: 'x', input_type: 'int', display_name: 'Seed' },
+      { id: 2, master_id: 10, node_id: 'n2', role: 'subseed', param_name: 'x', input_type: 'int', display_name: 'Subseed' },
+    ],
+  }
+
+  const createMock = vi.fn()
+  const updateMock = vi.fn()
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    createMock.mockResolvedValue({
+      id: 999,
+      workflow_id: 1,
+      name: 'Created Group',
+      master_role: 'Sampler_Steps',
+      slave_roles: [],
+      is_enabled: true,
+      created_at: '2026-01-01T00:00:00Z',
+    })
+    updateMock.mockResolvedValue(undefined)
+    vi.mocked(mappingMastersApi.list).mockResolvedValue(V2_MASTERS as never)
+    vi.mocked(stageMastersApi.list).mockResolvedValue(STAGES as never)
+  })
+
+  it('[REQ-418/AC-3] sends master_variant_id when creating a group', async () => {
+    vi.mocked(workflowsApi.get).mockResolvedValue(WORKFLOW_WITH_VARIANTS as never)
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      paramSyncGroups: [],
+      fetchParamSyncGroups: vi.fn(),
+      createParamSyncGroup: createMock,
+      updateParamSyncGroup: updateMock,
+      deleteParamSyncGroup: vi.fn(),
+      toggleParamSyncGroup: vi.fn(),
+    })
+
+    render(<ParamSyncModal onClose={vi.fn()} />)
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByText('Add Group'))
+    fireEvent.change(screen.getByPlaceholderText('Group name...'), { target: { value: 'New Staged Group' } })
+    fireEvent.click(screen.getByText('Create'))
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith(1, {
+        name: 'New Staged Group',
+        master_variant_id: 201,
+        slave_variant_ids: [],
+        master_role: 'Sampler_Steps',
+        slave_roles: [],
+        is_enabled: true,
+      })
+    })
+  })
+
+  it('[REQ-418/AC-3] slave toggle and master change send variant ids', async () => {
+    vi.mocked(workflowsApi.get).mockResolvedValue(WORKFLOW_WITH_VARIANTS as never)
+    const group1: ParamSyncGroup = {
+      id: 501,
+      workflow_id: 1,
+      name: 'Test Group 1',
+      master_role: 'Sampler_Steps',
+      slave_roles: [],
+      is_enabled: true,
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const group2: ParamSyncGroup = {
+      id: 502,
+      workflow_id: 1,
+      name: 'Test Group 2',
+      master_role: 'Sampler_Steps',
+      slave_roles: ['Sampler_Steps_Rough'],
+      is_enabled: true,
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      paramSyncGroups: [group1, group2],
+      fetchParamSyncGroups: vi.fn(),
+      createParamSyncGroup: createMock,
+      updateParamSyncGroup: updateMock,
+      deleteParamSyncGroup: vi.fn(),
+      toggleParamSyncGroup: vi.fn(),
+    })
+
+    render(<ParamSyncModal onClose={vi.fn()} />)
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalled())
+
+    // 1. Slave toggle on Group 1
+    fireEvent.click(screen.getByText('Test Group 1'))
+
+    const target = (await screen.findByText('Rough / Steps')).closest('label')!
+    fireEvent.click(within(target).getByRole('checkbox'))
+
+    expect(updateMock).toHaveBeenCalledWith(501, {
+      slave_variant_ids: [202],
+      slave_roles: ['Sampler_Steps_Rough'],
+    })
+
+    // 2. Master change on Group 2 (which already has Rough as slave)
+    fireEvent.click(screen.getByText('Test Group 2'))
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Sampler_Steps_Detail' } })
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith(502, {
+        master_variant_id: 203,
+        slave_variant_ids: [202],
+        master_role: 'Sampler_Steps_Detail',
+        slave_roles: ['Sampler_Steps_Rough'],
+      })
+    })
+  })
+
+  it('[REQ-418/AC-3] falls back to role fields when mapping has no variant_id', async () => {
+    vi.mocked(workflowsApi.get).mockResolvedValue(WORKFLOW_WITHOUT_VARIANTS as never)
+    const initialGroup: ParamSyncGroup = {
+      id: 601,
+      workflow_id: 1,
+      name: 'Legacy Group',
+      master_role: 'seed',
+      slave_roles: [],
+      is_enabled: true,
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    useGenerationStore.setState({
+      selectedWorkflowId: 1,
+      paramSyncGroups: [initialGroup],
+      fetchParamSyncGroups: vi.fn(),
+      createParamSyncGroup: createMock,
+      updateParamSyncGroup: updateMock,
+      deleteParamSyncGroup: vi.fn(),
+      toggleParamSyncGroup: vi.fn(),
+    })
+
+    render(<ParamSyncModal onClose={vi.fn()} />)
+    await waitFor(() => expect(workflowsApi.get).toHaveBeenCalled())
+
+    // 1. Create group fallback
+    fireEvent.click(screen.getByText('Add Group'))
+    fireEvent.change(screen.getByPlaceholderText('Group name...'), { target: { value: 'New Legacy Group' } })
+    fireEvent.click(screen.getByText('Create'))
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith(1, {
+        name: 'New Legacy Group',
+        master_role: 'seed',
+        slave_roles: [],
+        is_enabled: true,
+      })
+    })
+
+    // 2. Select group and toggle slave
+    fireEvent.click(screen.getByText('Legacy Group'))
+    const checkbox = screen.getByRole('checkbox')
+    fireEvent.click(checkbox)
+
+    expect(updateMock).toHaveBeenCalledWith(601, {
+      slave_roles: ['subseed'],
+    })
+
+    // 3. Change master fallback
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'subseed' } })
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith(601, {
+        master_role: 'subseed',
+        slave_roles: [],
+      })
+    })
   })
 })

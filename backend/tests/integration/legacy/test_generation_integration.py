@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 import io
 import urllib.parse
 
+from app import models
 from app.database import Base
 from app.models import AppSetting, GenerationJob, PromptMetadata, Snapshot, Workflow
 from app.routers.generation import router as generation_api_router
@@ -33,6 +34,7 @@ from app.services.comfy_generation_bridge import ComfyGenerationBridge
 from app.services.generation_repository import GenerationRepository
 from app.services.generation_service import GenerationService
 from app.services.snapshot_service import SnapshotService
+from app.services.variant_keys import VariantIndex, expand_stored_params
 from app.schemas.snapshot import SnapshotCreate
 from app.config import settings
 
@@ -350,6 +352,26 @@ def test_snapshot_service_saves_new_relative_and_legacy_absolute_view_urls_indep
         with sessions() as db:
             workflow = Workflow(name="Integration workflow", json_body="{}")
             db.add(workflow)
+            rule_set = models.BindingRuleSet(name="Default")
+            stage = models.StageMaster(key="main", name="Main", suffix="", is_builtin=True, is_active=True)
+            db.add_all([rule_set, stage])
+            db.flush()
+            for role in ("enabled", "seed", "empty", "nullable"):
+                master = models.MappingMaster(
+                    base_key=f"m_{role}",
+                    name=role,
+                    param_name=role,
+                    input_type="text",
+                )
+                db.add(master)
+                db.flush()
+                variant = models.MappingVariant(
+                    master_id=master.id,
+                    stage_id=stage.id,
+                    role=role,
+                    binding_rule_set_id=rule_set.id,
+                )
+                db.add(variant)
             db.commit()
             db.refresh(workflow)
             calls: list[str] = []
@@ -381,8 +403,9 @@ def test_snapshot_service_saves_new_relative_and_legacy_absolute_view_urls_indep
             assert urllib.parse.parse_qs(parsed_legacy.query, keep_blank_values=True) == {
                 "filename": ["legacy.png"], "subfolder": ["old"], "type": ["output"],
             }
-            assert relative_saved.params == json.dumps(preserved_params)
-            assert legacy_saved.params == json.dumps(preserved_params)
+            index = VariantIndex.from_session(db)
+            assert expand_stored_params(index, json.loads(relative_saved.params)).role_keyed == preserved_params
+            assert expand_stored_params(index, json.loads(legacy_saved.params)).role_keyed == preserved_params
             assert relative_saved.image_path != legacy_saved.image_path
             saved_rows = [db.get(Snapshot, relative_saved.id), db.get(Snapshot, legacy_saved.id)]
             saved_files = [images_dir / row.image_path.rsplit("/", 1)[-1] for row in saved_rows if row is not None and row.image_path]
