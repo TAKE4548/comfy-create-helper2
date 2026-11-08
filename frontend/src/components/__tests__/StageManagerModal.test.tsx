@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StageManagerModal } from '../StageManagerModal'
 import { stageMastersApi } from '../../api/domains/stageMasters'
@@ -107,5 +107,45 @@ describe('StageManagerModal', () => {
     renderModal(false)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByTestId('modal-sheet-handle')).toBeNull()
+  })
+
+  it('[REQ-419/AC-8] stage create and edit forms have no search keyword input', async () => {
+    vi.mocked(stageMastersApi.create).mockResolvedValue(stages[1])
+    vi.mocked(stageMastersApi.update).mockResolvedValue(stages[1])
+    renderModal()
+    const dialog = await screen.findByRole('dialog', { name: /ステージ管理/ })
+    const labelsOf = () =>
+      within(dialog)
+        .getAllByRole('textbox')
+        .map((el) => el.previousElementSibling?.textContent ?? '')
+    const forbidden = /検索|キーワード|keyword/i
+
+    // create form
+    fireEvent.click(screen.getByRole('button', { name: /新規ステージ追加/ }))
+    await screen.findByText('新規ステージ登録')
+    expect(new Set(labelsOf())).toEqual(new Set(['キー (ID)', 'ステージ名', '接尾辞 (Suffix)']))
+    expect(labelsOf()).toHaveLength(3)
+    expect(within(dialog).queryByText(forbidden)).toBeNull()
+    expect(within(dialog).queryByPlaceholderText(forbidden)).toBeNull()
+    const [keyEl, nameEl, suffixEl] = within(dialog).getAllByRole('textbox')
+    fireEvent.change(keyEl, { target: { value: 'upscale' } })
+    fireEvent.change(nameEl, { target: { value: '高解像度化' } })
+    fireEvent.change(suffixEl, { target: { value: '_up' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+    await waitFor(() => expect(stageMastersApi.create).toHaveBeenCalledTimes(1))
+    const createBody = vi.mocked(stageMastersApi.create).mock.calls[0][0]
+    expect(createBody).toEqual({ key: 'upscale', name: '高解像度化', suffix: '_up' })
+    expect(createBody).not.toHaveProperty('search_keywords')
+
+    // edit form (stage with existing search_keywords)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rough を編集' }))
+    await screen.findByText(/ステージ編集: Rough/)
+    expect(labelsOf()).toEqual(['ステージ名', '接尾辞 (Suffix)'])
+    expect(within(dialog).queryByText(forbidden)).toBeNull()
+    expect(within(dialog).queryByPlaceholderText(forbidden)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(stageMastersApi.update).toHaveBeenCalledTimes(1))
+    const updateBody = vi.mocked(stageMastersApi.update).mock.calls[0][1]
+    expect(updateBody).not.toHaveProperty('search_keywords')
   })
 })

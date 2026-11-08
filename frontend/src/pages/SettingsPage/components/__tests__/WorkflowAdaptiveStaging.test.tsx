@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import { detectActiveStages } from '../../../../utils/workflowAdaptiveStageDetector'
+import { detectActiveStages, buildStageSelectorPatterns } from '../../../../utils/workflowAdaptiveStageDetector'
 import { AdaptiveWorkflowWiring } from '../../../../components/AdaptiveWorkflowWiring'
 import type { StageMaster, MappingMasterV2, Workflow } from '../../../../api/types'
 import { rankWorkflowNodeCandidates } from '../../../../utils/workflowNodeUtils'
+import { candidateDefinitionForVariant } from '../../../../utils/variantCandidateDefinition'
 
 describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
   const stageMasters: StageMaster[] = [
@@ -42,6 +43,13 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
     },
   ]
 
+  // REQ-419: stage detection uses NodeSelector patterns only (search_keywords are ignored)
+  const stagePatterns = new Map([
+    [1, [{ pattern: 'main', match_type: 'contains' }]],
+    [2, [{ pattern: 'rough', match_type: 'contains' }]],
+    [3, [{ pattern: 'detail', match_type: 'contains' }, { pattern: 'refiner', match_type: 'contains' }]],
+  ])
+
   it('1段サンプラ構成: RoughやDetailが非表示となり、Main(is_builtin)のみ展開される', () => {
     const singleStageWorkflow = {
       nodes: {
@@ -56,7 +64,7 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
       },
     }
 
-    const activeStages = detectActiveStages(singleStageWorkflow, stageMasters)
+    const activeStages = detectActiveStages(singleStageWorkflow, stageMasters, stagePatterns)
     expect(activeStages).toHaveLength(1)
     expect(activeStages[0].stage.key).toBe('main')
     expect(activeStages[0].isAlwaysVisible).toBe(true)
@@ -94,7 +102,7 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
       },
     }
 
-    const activeStages = detectActiveStages(twoStageWorkflow, stageMasters)
+    const activeStages = detectActiveStages(twoStageWorkflow, stageMasters, stagePatterns)
     const stageKeys = activeStages.map((s) => s.stage.key)
     expect(stageKeys).toContain('main')
     expect(stageKeys).toContain('rough')
@@ -123,7 +131,7 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
       },
     }
 
-    const activeStages = detectActiveStages(threeStageWorkflow, stageMasters)
+    const activeStages = detectActiveStages(threeStageWorkflow, stageMasters, stagePatterns)
     const stageKeys = activeStages.map((s) => s.stage.key)
     expect(stageKeys).toEqual(['main', 'rough', 'detail'])
 
@@ -143,8 +151,8 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
       },
     }
 
-    expect(() => detectActiveStages(dirtyWorkflow as any, stageMasters)).not.toThrow()
-    const activeStages = detectActiveStages(dirtyWorkflow as any, stageMasters)
+    expect(() => detectActiveStages(dirtyWorkflow as any, stageMasters, stagePatterns)).not.toThrow()
+    const activeStages = detectActiveStages(dirtyWorkflow as any, stageMasters, stagePatterns)
     const roughStage = activeStages.find((s) => s.stage.key === 'rough')
     expect(roughStage).toBeDefined()
     expect(roughStage?.matchedNodeIds).toEqual(['5'])
@@ -153,6 +161,32 @@ describe('detectActiveStages (workflowAdaptiveStageDetector)', () => {
     expect(detectActiveStages(null, stageMasters)).toEqual([])
     expect(detectActiveStages(undefined, stageMasters)).toEqual([])
     expect(detectActiveStages({} as any, [])).toEqual([])
+  })
+})
+
+describe('settings wiring stage detection by selector patterns', () => {
+  const stages: StageMaster[] = [
+    { id: 1, key: 'main', name: 'Main Stage', suffix: '', search_keywords: ['main'], previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
+    { id: 2, key: 'rough', name: 'Rough Stage', suffix: '_rough', search_keywords: ['kwonly'], previous_suffixes: null, is_builtin: false, is_active: true, sort_order: 2 },
+    { id: 3, key: 'detail', name: 'Detail Stage', suffix: '_detail', search_keywords: ['detail'], previous_suffixes: null, is_builtin: false, is_active: true, sort_order: 3 },
+  ]
+  const variant = (id: number, stageId: number, patterns: Array<{ pattern: string; match_type?: string }>) => ({
+    id, master_id: 1, stage_id: stageId, stage_key: 's', stage_name: 'S', stage_suffix: '', custom_role_override: null,
+    computed_role: 'r', extra_title_patterns: null, is_enabled: true, selector_patterns: patterns,
+  })
+
+  it('[REQ-419/AC-13] settings wiring shows stages detected by selector patterns', () => {
+    const graph = {
+      '1': { class_type: 'KSampler', _meta: { title: 'Main KSampler' } },
+      '2': { class_type: 'KSampler', _meta: { title: 'kwonly sampler' } },
+      '3': { class_type: 'KSampler', _meta: { title: 'Detail Pass' } },
+      '4': { class_type: 'LegacyColumnOnly', _meta: { title: 'Legacy Column Match' } },
+    }
+    const masters = [{ variants: [variant(11, 1, [{ pattern: 'main' }]), variant(13, 3, [{ pattern: 'Detail Pass', match_type: 'exact' }])] }]
+    const result = detectActiveStages(graph, stages, buildStageSelectorPatterns(masters))
+    // selector match is shown; (b) search_keywords-only stage is hidden; (a) legacy-column-only node creates no stage
+    expect(result.map((r) => r.stage.key)).toEqual(['main', 'detail'])
+    expect(result.find((r) => r.stage.key === 'detail')!.matchedNodeIds).toEqual(['3'])
   })
 })
 
@@ -205,6 +239,8 @@ describe('AdaptiveWorkflowWiring Component', () => {
           computed_role: 'sampler_name',
           extra_title_patterns: null,
           is_enabled: true,
+          rule_entries: [{ class_type: 'KSampler', param_name: 'sampler_name' }],
+          selector_patterns: [{ pattern: 'main', match_type: 'contains' }],
         },
         {
           id: 1002,
@@ -217,6 +253,8 @@ describe('AdaptiveWorkflowWiring Component', () => {
           computed_role: 'sampler_name_rough',
           extra_title_patterns: null,
           is_enabled: true,
+          rule_entries: [{ class_type: 'KSampler', param_name: 'sampler_name' }],
+          selector_patterns: [{ pattern: 'rough', match_type: 'contains' }],
         },
       ],
     },
@@ -242,6 +280,8 @@ describe('AdaptiveWorkflowWiring Component', () => {
           computed_role: 'steps',
           extra_title_patterns: null,
           is_enabled: true,
+          rule_entries: [{ class_type: 'KSampler', param_name: 'steps' }],
+          selector_patterns: [{ pattern: 'main', match_type: 'contains' }],
         },
       ],
     },
@@ -271,7 +311,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
   }
 
   it('各ステージgroup内に該当ステージのバリアントスロットのみを表示する', () => {
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(
       <AdaptiveWorkflowWiring
         workflow={mockWorkflow}
@@ -292,7 +332,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
   })
 
   it('Settingsの工程groupだけを独立scroll rootに含め、保存操作をroot外に置く', () => {
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(
       <AdaptiveWorkflowWiring
         workflow={mockWorkflow}
@@ -312,7 +352,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
   })
 
   it('[REQ-358/WIRING] [REQ-358/AC-14] class候補と選択中node metadataを表示する', () => {
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(
       <AdaptiveWorkflowWiring
         workflow={mockWorkflow}
@@ -335,39 +375,77 @@ describe('AdaptiveWorkflowWiring Component', () => {
     expect(screen.queryByLabelText('sampler_name 選択中のノード')).not.toBeInTheDocument()
   })
 
-  it('uses the same full role definition and registered stages as Rescan for option order and scores', () => {
+  it('[REQ-419/AC-13] uses the same variant definition and registered stages as Rescan for option order and scores', () => {
+    const base = mappingMasters[0]
     const master: MappingMasterV2 = {
-      ...mappingMasters[0],
-      base_title_patterns: ['Main Stage Sampler'],
-      fallback_param_names: ['noise_seed'],
-      variants: mappingMasters[0].variants.map((variant, i) => ({
-        ...variant, extra_title_patterns: i === 0 ? [] : ['Rough Stage Sampler'],
+      ...base,
+      variants: base.variants.map((variant, i) => ({
+        ...variant,
+        rule_entries: [
+          { class_type: 'KSampler', param_name: 'sampler_name' },
+          { class_type: 'KSampler', param_name: 'noise_seed' },
+        ],
+        selector_patterns: i === 0
+          ? [{ pattern: 'Main Stage Sampler', match_type: 'exact' }, { pattern: 'Rough Stage Sampler', match_type: 'exact' }]
+          : [{ pattern: 'Rough Stage Sampler', match_type: 'exact' }],
       })),
     }
     const graph = {
-      a: { class_type: 'KSampler', title: 'Rough Stage Sampler' },
-      b: { class_type: 'KSampler', title: 'Main Stage Sampler' },
+      a: { class_type: 'KSampler', title: 'Rough Stage Sampler', inputs: { sampler_name: 'x' } },
+      b: { class_type: 'KSampler', title: 'Main Stage Sampler', inputs: { sampler_name: 'x' } },
       c: { class_type: 'Other', title: 'Fallback', inputs: { noise_seed: 1 } },
       d: { class_type: 'Other', title: 'Unrelated' },
     }
     const workflow = { ...mockWorkflow, json_body: graph, mappings: [] }
-    const activeStages = detectActiveStages(graph, stageMasters).filter((info) => info.stage.key === 'main')
+    const activeStages = detectActiveStages(graph, stageMasters, buildStageSelectorPatterns([master])).filter((info) => info.stage.key === 'main')
     render(<AdaptiveWorkflowWiring workflow={workflow} activeStages={activeStages} mappingMasters={[master]} />)
     const select = screen.getByRole('combobox') as HTMLSelectElement
-    const expected = rankWorkflowNodeCandidates(graph, {
-      expectedClassTypes: master.expected_class_types ?? [],
-      titlePatterns: [...master.base_title_patterns, ...master.variants.flatMap((variant) => variant.extra_title_patterns ?? [])],
-      paramNames: [master.param_name!, ...master.fallback_param_names!],
-    }, 'Main Stage', master.variants.map((variant) => variant.stage_name))
+    const expected = rankWorkflowNodeCandidates(graph, candidateDefinitionForVariant(master.variants[0]),
+      'Main Stage', master.variants.map((variant) => variant.stage_name))
     expect(Array.from(select.options).filter((option) => option.value).map((option) => [option.value, option.textContent?.match(/\d+%/)?.[0]]))
       .toEqual(expected.map((candidate) => [candidate.id, `${candidate.score}%`]))
     expect(expected.find((candidate) => candidate.id === 'a')!.recommended).toBe(true)
     expect(expected.find((candidate) => candidate.id === 'c')!.tier).toBe(3)
   })
 
+  it('[REQ-419/AC-13] wiring ignores legacy-only and keyword-only nodes', () => {
+    const base = mappingMasters[1]
+    const master: MappingMasterV2 = {
+      ...base,
+      expected_class_types: ['LegacyOnly'],
+      base_title_patterns: ['Legacy Title'],
+      variants: [{
+        ...base.variants[0],
+        extra_title_patterns: ['Extra Legacy'],
+        rule_entries: [{ class_type: 'KSampler', param_name: 'steps' }],
+        selector_patterns: null,
+      }],
+    }
+    const graph = {
+      legacy: { class_type: 'LegacyOnly', title: 'Legacy Title', inputs: { other: 1 } },
+      plain: { class_type: 'KSampler', title: 'Plain Sampler', inputs: { steps: 20 } },
+      kw: { class_type: 'KSampler', title: 'Extra Legacy keyword main', inputs: { steps: 20 } },
+    }
+    const workflow = { ...mockWorkflow, json_body: graph, mappings: [] }
+    const mainOnly = detectActiveStages(graph, stageMasters).filter((i) => i.stage.key === 'main')
+    render(<AdaptiveWorkflowWiring workflow={workflow} activeStages={mainOnly} mappingMasters={[master]} />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    const options = Array.from(select.options).filter((option) => option.value)
+    // (a) legacy-column-only node is not rendered as recommended in the wiring select
+    expect(options.find((option) => option.value === 'legacy')?.textContent ?? '').not.toMatch(/推奨/)
+    // (b) keyword / legacy-title-only match ranks in the same band as a plain entry-matched node
+    const expected = rankWorkflowNodeCandidates(graph, candidateDefinitionForVariant(master.variants[0]), 'Main Stage', ['Main Stage'])
+    const byId = new Map(expected.map((c) => [c.id, c]))
+    expect(byId.get('legacy')!.recommended).toBe(false)
+    expect(byId.get('legacy')!.tier).toBeGreaterThanOrEqual(3)
+    expect(byId.get('kw')!.tier).toBe(byId.get('plain')!.tier)
+    expect(byId.get('kw')!.tier).toBe(2)
+    expect(byId.get('kw')!.recommended).toBe(false)
+  })
+
   it('retains a missing saved node as the selected option inside the field', () => {
     const onSave = vi.fn()
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={[mappingMasters[1]]}
       currentMappings={[{ master_id: 102, variant_id: 1003, node_id: '999' }]} onSaveMappings={onSave} />)
     const select = screen.getByRole('combobox') as HTMLSelectElement
@@ -380,7 +458,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
   it('[REQ-358/AC-23] slot無効状態を保持し、保存時にstateを渡す', () => {
     const onSave = vi.fn()
     const onChangeSlotStates = vi.fn()
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={mappingMasters} currentSlotStates={{ 'v:1001': false }} onChangeSlotStates={onChangeSlotStates} onSaveMappings={onSave} />)
 
     const mainSelect = screen.getByLabelText(/Main Stage sampler_name → sampler_name のノード/) as HTMLSelectElement
@@ -393,7 +471,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
 
   it('[REQ-358/AC-23][REQ-358/AC-34] keeps a legacy single-variant ID while disabled and saves its canonical permission', () => {
     const onSave = vi.fn()
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(<AdaptiveWorkflowWiring workflow={mockWorkflow} activeStages={activeStages} mappingMasters={[mappingMasters[1]]}
       currentMappings={[{ master_id: 102, node_id: '10' }]} currentSlotStates={{ 'm:102': false, 'v:999': false }} onSaveMappings={onSave} />)
     const select = screen.getByLabelText(/Main Stage steps → steps のノード/)
@@ -405,7 +483,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
 
   it('物理配線は数値の variant_id でバインド・保存される', () => {
     const onSave = vi.fn()
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     render(
       <AdaptiveWorkflowWiring
         workflow={mockWorkflow}
@@ -442,7 +520,7 @@ describe('AdaptiveWorkflowWiring Component', () => {
 
   it('同じroleの異なるparamを個別に選択し、master別のpayloadを保存する', () => {
     const onSave = vi.fn()
-    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters)
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
     const stepsMaster = {
       ...mappingMasters[1],
       param_name: 'steps',

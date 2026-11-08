@@ -4,6 +4,7 @@ import { ActiveStageInfo } from '../utils/workflowAdaptiveStageDetector'
 import StageInputGroup from './StageInputGroup'
 import { buildWiringStageGroups } from '../utils/wiringStageGroups'
 import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { candidateDefinitionForVariant } from '../utils/variantCandidateDefinition'
 import { candidateConfidenceLabel } from '../utils/workflowCandidatePresentation'
 import { hydrateSlotStates, mappingSlotKey, type SlotDefinition } from '../utils/workflowMappingState'
 
@@ -86,17 +87,9 @@ export function AdaptiveWorkflowWiring({
     const stageNames = mappingMasters.flatMap((master) => 'variants' in master ? master.variants.map((variant) => variant.stage_name) : [])
     return new Map(stageGroups.flatMap((group) => group.slots.map((slot) => {
       const master = mappingMasters.find((item) => item.id === slot.masterId)
-      const expectedClassTypes = master?.expected_class_types ?? []
-      const patterns = 'base_title_patterns' in (master ?? {})
-        ? ((master as MappingMasterV2).base_title_patterns ?? [])
-        : ((master as MappingMaster).title_patterns ?? [])
       const variants = master && 'variants' in master ? master.variants : []
-      const fallbackParams = master && 'fallback_param_names' in master ? master.fallback_param_names ?? [] : []
-      return [slot.slotKey, rankWorkflowNodeCandidates(workflow?.json_body, {
-        expectedClassTypes,
-        titlePatterns: [...patterns, ...variants.flatMap((variant) => variant.extra_title_patterns ?? [])],
-        paramNames: [slot.paramName, ...fallbackParams].filter(Boolean),
-      }, group.info.stage.name, stageNames)] as const
+      const variant = slot.variantId !== undefined ? variants.find((item) => item.id === slot.variantId) : undefined
+      return [slot.slotKey, rankWorkflowNodeCandidates(workflow?.json_body, candidateDefinitionForVariant(variant ?? null), group.info.stage.name, stageNames)] as const
     })))
   }, [stageGroups, mappingMasters, workflow?.json_body])
 

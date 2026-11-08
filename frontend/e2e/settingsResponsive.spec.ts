@@ -1243,3 +1243,270 @@ test.describe('Settings responsive E2E', () => {
     await expect(page).toHaveURL(/\/history$/);
   });
 });
+
+test.describe('Settings master edit sheet E2E', () => {
+  type RecordedCall = { method: string; path: string; body: unknown };
+  type SavedOp = { ref: string; op: string; id: number | null; name: string; entries?: unknown[]; patterns?: unknown[] };
+  type SavedVariant = { row_key: string; id: number | null; stage_id: number; is_enabled: boolean;
+    rule_set: { id?: number; ref?: string }; selector: { id?: number; ref?: string } | null };
+  type SavedBody = { master: { name: string; input_type: string; group_id: number | null; default_enabled: boolean };
+    rule_sets: SavedOp[]; selectors: SavedOp[]; variants: SavedVariant[] };
+  type Definition = { id: number; name: string; referenced_roles: string[]; entries?: unknown[]; patterns?: unknown[] };
+
+  const STAGES = [
+    { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 },
+    { id: 2, key: 'rough', name: 'Rough', suffix: '_rough', search_keywords: null, previous_suffixes: null, is_builtin: false, is_active: true, sort_order: 2 },
+  ];
+
+  // Stateful mock for the master edit sheet. Registered after stubApi so it takes precedence; every
+  // request it does not own falls back to stubApi's generic handler.
+  async function stubMasterEditApi(page: Page): Promise<RecordedCall[]> {
+    const calls: RecordedCall[] = [];
+    let nextId = 100;
+    const ruleSets: Definition[] = [
+      { id: 5, name: 'Steps RuleSet', entries: [{ id: 51, rule_set_id: 5, class_type: 'KSampler', param_name: 'steps', priority: 1 }],
+        referenced_roles: ['steps', 'steps_rough', 'cfg_other'] },
+      { id: 6, name: 'Alt RuleSet', entries: [], referenced_roles: [] },
+    ];
+    const selectors: Definition[] = [
+      { id: 7, name: 'Rough Selector', patterns: [{ id: 71, selector_id: 7, pattern: 'rough', match_type: 'contains', priority: 1 }],
+        referenced_roles: ['steps_rough'] },
+    ];
+    const master = {
+      id: 2, group_id: null, base_key: 'steps', name: 'Steps', param_name: 'steps', input_type: 'int',
+      expected_class_types: ['KSampler'], base_title_patterns: null, sort_order: 2, default_enabled: true,
+      variants: [
+        { id: 21, master_id: 2, stage_id: 1, stage_key: 'main', stage_name: 'Main', stage_suffix: '', role: 'steps',
+          binding_rule_set_id: 5 as number | undefined, node_selector_id: null as number | null, custom_role_override: null,
+          computed_role: 'steps', extra_title_patterns: null, is_enabled: true },
+        { id: 22, master_id: 2, stage_id: 2, stage_key: 'rough', stage_name: 'Rough', stage_suffix: '_rough', role: 'steps_rough',
+          binding_rule_set_id: 5 as number | undefined, node_selector_id: 7 as number | null, custom_role_override: null,
+          computed_role: 'steps_rough', extra_title_patterns: null, is_enabled: true },
+      ],
+    };
+    const withDefinitions = () => ({
+      ...master,
+      variants: master.variants.map((v) => ({
+        ...v,
+        rule_entries: ruleSets.find((r) => r.id === v.binding_rule_set_id)?.entries ?? [],
+        selector_patterns: v.node_selector_id == null ? null : (selectors.find((s) => s.id === v.node_selector_id)?.patterns ?? null),
+      })),
+    });
+    const applyOps = (ops: SavedOp[], list: Definition[], kind: 'rule' | 'selector', refIds: Map<string, number>) => {
+      for (const op of ops) {
+        let target = op.op === 'update' ? list.find((x) => x.id === op.id) : undefined;
+        if (!target) {
+          target = { id: nextId++, name: op.name, referenced_roles: [] };
+          list.push(target);
+        }
+        target.name = op.name;
+        if (kind === 'rule') target.entries = op.entries ?? [];
+        else target.patterns = op.patterns ?? [];
+        refIds.set(op.ref, target.id);
+      }
+    };
+    await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname.replace(/^\/api/, '');
+      const method = req.method();
+      const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      if (method === 'GET') {
+        if (path === '/stage-masters') return json(STAGES);
+        if (path === '/mapping-masters') return json([withDefinitions()]);
+        if (path === '/binding-rules') return json(ruleSets);
+        if (path === '/node-selectors') return json(selectors);
+        if (path === '/workflows') return json([{ id: 1, name: 'wf-e2e', created_at: SETTINGS_STAMP }]);
+        return route.fallback();
+      }
+      const body = req.postDataJSON() as unknown;
+      calls.push({ method, path, body });
+      if (method === 'POST' && path === '/mapping-masters/2/atomic-save') {
+        const saved = body as SavedBody;
+        const refIds = new Map<string, number>();
+        applyOps(saved.rule_sets, ruleSets, 'rule', refIds);
+        applyOps(saved.selectors, selectors, 'selector', refIds);
+        master.name = saved.master.name;
+        for (const item of saved.variants) {
+          const variant = master.variants.find((v) => v.id === item.id);
+          if (!variant) continue;
+          variant.is_enabled = item.is_enabled;
+          variant.binding_rule_set_id = item.rule_set.id ?? refIds.get(item.rule_set.ref ?? '');
+          variant.node_selector_id = item.selector === null ? null : (item.selector.id ?? refIds.get(item.selector.ref ?? '') ?? null);
+        }
+        return json(withDefinitions());
+      }
+      if (method === 'POST' && path === '/mapping-masters/scan-preview') {
+        const preview = body as { workflow_id: number; variants: Array<{ client_key: string; stage_id: number; role: string; is_enabled: boolean }> };
+        const cand = (id: string, label: 'exact' | 'contains' | 'no_selector') => ({
+          node_id: id, node_title: `KSampler ${id}`, class_type: 'KSampler', input_name: 'steps',
+          stage_rank: label === 'exact' ? 1 : label === 'contains' ? 2 : 3, stage_label: label, entry_priority: 1, pattern_priority: 1,
+        });
+        return json({ workflow_id: preview.workflow_id, results: preview.variants.map((v) => {
+          const base = { client_key: v.client_key, variant_id: Number(v.client_key.replace(/^v:/, '')) || null, stage_id: v.stage_id,
+            stage_key: v.stage_id === 1 ? 'main' : 'rough', role: v.role, is_enabled: v.is_enabled };
+          if (v.client_key === 'v:21') return { ...base, status: 'ok', confirmed: cand('1', 'no_selector'), candidates: [cand('1', 'no_selector')] };
+          if (v.client_key === 'v:22') return { ...base, status: 'duplicated', confirmed: null, candidates: [cand('2', 'contains'), cand('3', 'contains')] };
+          return { ...base, status: 'not_found', confirmed: null, candidates: [] };
+        }) });
+      }
+      // Any other write (definition APIs, PUT master, ...) stays recorded; assertions treat it as a failure.
+      return json({});
+    });
+    return calls;
+  }
+
+  async function tapSize(loc: Locator): Promise<{ width: number; height: number }> {
+    await expect(loc).toBeVisible();
+    return loc.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el, '::before');
+      const px = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+      let width = r.width, height = r.height;
+      if (s.content !== 'none' && s.position === 'absolute') {
+        width -= Math.min(px(s.left), 0) + Math.min(px(s.right), 0);
+        height -= Math.min(px(s.top), 0) + Math.min(px(s.bottom), 0);
+      }
+      return { width, height };
+    });
+  }
+
+  async function expectNoHorizontalScroll(page: Page): Promise<void> {
+    const m = await page.evaluate(() => ({ s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth }));
+    expect(m.s).toBeLessThanOrEqual(m.c);
+  }
+
+  function normalizeCalls(calls: RecordedCall[]): string[] {
+    return calls.map((c) => {
+      let text = JSON.stringify(c.body);
+      const b = c.body as Partial<SavedBody> | null;
+      const refs = [...(b?.rule_sets ?? []), ...(b?.selectors ?? [])].map((op) => op.ref);
+      refs.forEach((ref, i) => { text = text.split(JSON.stringify(ref)).join(JSON.stringify(`<ref${i}>`)); });
+      return `${c.method} ${c.path} ${text}`;
+    });
+  }
+
+  // Runs the AC-3/4/5/9/12 operations and returns the normalized recorded call sequence.
+  async function runMasterEditFlow(page: Page, width: number, height: number): Promise<string[]> {
+    const mobile = width <= 400;
+    await stubApi(page);
+    const calls = await stubMasterEditApi(page);
+    await page.setViewportSize({ width, height });
+    await page.goto('/settings#workflows');
+    await expect(page.locator('#settings-panel-workflows')).toBeVisible();
+    const checkTap = async (loc: Locator) => {
+      if (!mobile) return;
+      const s = await tapSize(loc);
+      expect(s.width).toBeGreaterThanOrEqual(44);
+      expect(s.height).toBeGreaterThanOrEqual(44);
+    };
+    const openSheet = async () => {
+      const edit = mobile
+        ? page.locator(MASTER_CARD).getByRole('button', { name: /^Steps のマッピング設定を編集/ })
+        : page.getByTestId('settings-card-mapping').getByRole('button', { name: /^Steps のマッピング設定を編集/ }).first();
+      await checkTap(edit);
+      await edit.click();
+      const dialog = page.getByRole('dialog', { name: /マッピングマスター編集/ });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('group', { name: 'Rough のVariant' })).toBeVisible();
+      return dialog;
+    };
+    const checkLayout = async (dialog: Locator) => {
+      await expect.poll(async () => (await dialog.boundingBox())?.height ?? 0).toBeGreaterThan(0);
+      const b = await box(dialog);
+      if (mobile) {
+        expect(Math.abs(b.y + b.height - height)).toBeLessThanOrEqual(2);
+        expect(b.width).toBeGreaterThanOrEqual(width - 2);
+      } else {
+        expect(b.y).toBeGreaterThan(1);
+        expect(b.y + b.height).toBeLessThan(height - 2);
+        expect(b.x).toBeGreaterThan(1);
+        expect(b.width).toBeLessThan(width - 2);
+      }
+    };
+
+    let dialog = await openSheet();
+    await checkLayout(dialog);
+    await expectNoHorizontalScroll(page);
+    const rough = dialog.getByRole('group', { name: 'Rough のVariant' });
+
+    // AC-3: switch Rough's NodeSelector to none.
+    const selectorSelect = rough.getByLabel('Rough のNodeSelector', { exact: true });
+    await checkTap(selectorSelect);
+    await selectorSelect.selectOption({ label: 'セレクタなし' });
+    await expect(selectorSelect).toHaveValue('');
+    await expectNoHorizontalScroll(page);
+
+    // AC-4/5: add an entry to the shared RuleSet, then save -> shared choice.
+    const editRuleSet = rough.getByRole('button', { name: 'Rough のRuleSetを編集' });
+    await checkTap(editRuleSet);
+    await editRuleSet.click();
+    const addEntry = rough.getByRole('button', { name: 'Entryを追加' });
+    await checkTap(addEntry);
+    await addEntry.click();
+    await rough.getByLabel('Entry 2 のclass_type').fill('KSampler');
+    await rough.getByLabel('Entry 2 のparam_name').fill('cfg');
+    await expectNoHorizontalScroll(page);
+    await rough.getByRole('button', { name: '編集を閉じる' }).click();
+
+    const save = dialog.getByRole('button', { name: 'マスターを保存' });
+    await checkTap(save);
+    await save.click();
+    const choice = dialog.getByRole('alertdialog');
+    await expect(choice).toBeVisible();
+    await expect(choice.getByText('cfg_other', { exact: true })).toBeVisible();
+    await expect(choice.getByText('steps', { exact: true })).toBeVisible();
+    const update = choice.getByRole('button', { name: '共有定義を更新' });
+    const duplicate = choice.getByRole('button', { name: '複製してこのVariantだけ変更' });
+    await expect(update).toBeVisible();
+    await checkTap(update);
+    await checkTap(duplicate);
+    expect(calls).toHaveLength(0); // nothing sent before the choice is resolved
+    await expectNoHorizontalScroll(page);
+    await duplicate.click();
+    await expect.poll(() => calls.length).toBe(1);
+    await expect(dialog).toBeHidden();
+    await expectNoHorizontalScroll(page);
+
+    // AC-12: exactly one atomic-save, definition APIs untouched.
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /mapping-masters/2/atomic-save']);
+    const saved = calls[0].body as SavedBody;
+    expect(saved.rule_sets.some((op) => op.op === 'update' && op.id === 5)).toBe(false);
+    const created = saved.rule_sets.filter((op) => op.op === 'create');
+    expect(created.map((op) => op.name)).toEqual(['Steps RuleSet (steps_rough)']);
+    const v22 = saved.variants.find((v) => v.id === 22)!;
+    const v21 = saved.variants.find((v) => v.id === 21)!;
+    expect(v22.rule_set).toEqual({ ref: created[0].ref });
+    expect(v22.selector).toBeNull();
+    expect(v21.rule_set).toEqual({ id: 5 });
+
+    // AC-9: reopen the sheet and run the preview.
+    dialog = await openSheet();
+    const wfSelect = dialog.getByLabel('プレビュー対象ワークフロー', { exact: true });
+    await checkTap(wfSelect);
+    await wfSelect.selectOption({ label: 'wf-e2e' });
+    const run = dialog.getByRole('button', { name: 'プレビュー実行' });
+    await checkTap(run);
+    await run.click();
+    const mainResult = dialog.getByTestId('scan-preview-result-v:21');
+    const roughResult = dialog.getByTestId('scan-preview-result-v:22');
+    await expect(mainResult).toBeVisible();
+    await expect(mainResult.getByText('セレクタなし', { exact: true }).first()).toBeVisible();
+    await expect(roughResult.getByText(/^duplicated/)).toBeVisible();
+    await expect(roughResult.getByText('部分一致').first()).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    expect(calls.map((c) => c.path)).toEqual(['/mapping-masters/2/atomic-save', '/mapping-masters/scan-preview']);
+    return normalizeCalls(calls);
+  }
+
+  test('[REQ-419/AC-11] [REQ-419/AC-12] 375px: master edit sheet supports variant switch, shared choice and preview', async ({ page }) => {
+    const sequence = await runMasterEditFlow(page, 375, 667);
+    expect(sequence).toHaveLength(2);
+  });
+
+  test('[REQ-419/AC-11] 1280px: same operations send the same requests', async ({ page, browser }) => {
+    const desktop = await runMasterEditFlow(page, 1280, 900);
+    const mobilePage = await (await browser.newContext()).newPage();
+    const mobile = await runMasterEditFlow(mobilePage, 375, 667);
+    expect(desktop).toEqual(mobile);
+  });
+});

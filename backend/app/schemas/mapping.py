@@ -1,7 +1,7 @@
 """Pydantic schemas for StageMaster and mapping cascade operations."""
 import json
-from typing import Any, List, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 
 class StageMasterBase(BaseModel):
@@ -151,3 +151,104 @@ class NodeSelectorRead(NodeSelectorBase):
     patterns: List[NodeSelectorPatternRead] = Field(default_factory=list)
     referenced_roles: List[str] = Field(default_factory=list)
 
+
+# ─── Atomic master save (REQ-419) ────────────────────────────────
+
+class AtomicEntryInput(BaseModel):
+    class_type: str
+    param_name: str
+    priority: int = 1
+
+
+class AtomicPatternInput(BaseModel):
+    pattern: str
+    match_type: Literal["exact", "contains"]
+    priority: int = 1
+
+
+class DefinitionOp(BaseModel):
+    ref: str
+    op: Literal["create", "update"]
+    id: Optional[int] = None
+    name: str
+    entries: Optional[List[AtomicEntryInput]] = None
+    patterns: Optional[List[AtomicPatternInput]] = None
+
+
+class DefinitionRef(BaseModel):
+    id: Optional[int] = None
+    ref: Optional[str] = None
+
+    @model_validator(mode="after")
+    def exactly_one_of_id_and_ref(self) -> "DefinitionRef":
+        if (self.id is None) == (self.ref is None):
+            raise ValueError("exactly one of id and ref must be provided")
+        return self
+
+
+class AtomicVariantItem(BaseModel):
+    row_key: str
+    id: Optional[int] = None
+    stage_id: int
+    is_enabled: bool = True
+    rule_set: DefinitionRef
+    selector: Optional[DefinitionRef] = None
+
+
+class AtomicMasterFields(BaseModel):
+    name: str
+    input_type: str
+    group_id: Optional[int] = None
+    default_enabled: StrictBool
+
+
+class MasterAtomicSaveRequest(BaseModel):
+    master: AtomicMasterFields
+    rule_sets: List[DefinitionOp] = Field(default_factory=list)
+    selectors: List[DefinitionOp] = Field(default_factory=list)
+    variants: List[AtomicVariantItem] = Field(default_factory=list)
+
+
+# ─── Scan preview (REQ-419) ──────────────────────────────────────
+
+class ScanPreviewVariantInput(BaseModel):
+    client_key: str
+    variant_id: Optional[int] = None
+    stage_id: int
+    role: str
+    is_enabled: bool = True
+    entries: List[AtomicEntryInput] = Field(default_factory=list)
+    patterns: Optional[List[AtomicPatternInput]] = None
+
+
+class ScanPreviewRequest(BaseModel):
+    workflow_id: int
+    variants: List[ScanPreviewVariantInput] = Field(min_length=1)
+
+
+class ScanPreviewCandidate(BaseModel):
+    node_id: str
+    node_title: str
+    class_type: str
+    input_name: str
+    stage_rank: int
+    stage_label: Literal["exact", "contains", "no_selector"]
+    entry_priority: int
+    pattern_priority: int
+
+
+class ScanPreviewVariantResult(BaseModel):
+    client_key: str
+    variant_id: Optional[int] = None
+    stage_id: int
+    stage_key: str
+    role: str
+    is_enabled: bool
+    status: Literal["ok", "duplicated", "not_found", "disabled"]
+    confirmed: Optional[ScanPreviewCandidate] = None
+    candidates: List[ScanPreviewCandidate] = Field(default_factory=list)
+
+
+class ScanPreviewResponse(BaseModel):
+    workflow_id: int
+    results: List[ScanPreviewVariantResult]

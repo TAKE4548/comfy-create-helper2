@@ -5,6 +5,7 @@ import { workflowsApi, mappingMastersApi } from '../api/client'
 import type { MappingMaster, MappingMasterV2, ScanResult, Workflow, WorkflowMapping } from '../api/types'
 import { useMasterMappingRows, type StageSlotItem } from '../hooks/useMasterMappingRows'
 import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { candidateDefinitionForVariant } from '../utils/variantCandidateDefinition'
 import { WorkflowMappingEditor, type EditableSlot } from './WorkflowMappingEditor'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
@@ -49,14 +50,9 @@ function RescanModalSession({ workflowId, workflowJson, existingMappings, onClos
     for (const master of masters) {
       const v2 = 'base_key' in master ? master : undefined
       const variants = v2?.variants ?? []
-      const definition = {
-        expectedClassTypes: master.expected_class_types ?? [],
-        titlePatterns: [...(v2?.base_title_patterns ?? master.title_patterns ?? []), ...variants.flatMap(v => v.extra_title_patterns ?? [])],
-        paramNames: [master.param_name, ...(v2?.fallback_param_names ?? [])].filter((value): value is string => Boolean(value)),
-      }
       const activeVariants = variants.filter(v => v.is_enabled !== false)
-      const slots = activeVariants.length ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' })) : [{ key: `m_${master.id}`, stage: 'Main' }]
-      for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, definition, slot.stage, stages))
+      const slots = activeVariants.length ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main', variant: v })) : [{ key: `m_${master.id}`, stage: 'Main', variant: null }]
+      for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, candidateDefinitionForVariant(slot.variant), slot.stage, stages))
     }
     return cache
   }, [masters, workflowJson])

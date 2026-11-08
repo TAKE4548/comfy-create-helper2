@@ -214,40 +214,11 @@ def _match_binding_entries(node_data: dict, variant: Any) -> Optional[tuple[str,
 
     input_keys_map = {str(k).strip().lower(): str(k) for k in node_inputs.keys()}
 
-    # Gather entries: first try variant.binding_rule_set
+    # Entries come only from variant.binding_rule_set (no master-column fallback).
     rule_entries: list[Any] = []
     binding_rule_set = getattr(variant, "binding_rule_set", None)
     if binding_rule_set and getattr(binding_rule_set, "entries", None):
         rule_entries = list(binding_rule_set.entries)
-    else:
-        # Legacy fallback to master definitions
-        master = getattr(variant, "master", None)
-        if master:
-            master_id = getattr(master, "id", 0)
-            expected_class_types = _safe_parse_json_list(
-                getattr(master, "expected_class_types", None), master_id, "expected_class_types"
-            )
-            param_names: list[str] = []
-            if getattr(master, "param_name", None):
-                param_names.extend([p.strip() for p in master.param_name.split(",") if p.strip()])
-            fallbacks = _safe_parse_json_list(
-                getattr(master, "fallback_param_names", None), master_id, "fallback_param_names"
-            )
-            for fb in fallbacks:
-                if isinstance(fb, str) and fb.strip() and fb.strip() not in param_names:
-                    param_names.append(fb.strip())
-
-            class _DummyLegacyEntry:
-                def __init__(self, ct: str, pn: str, prio: int):
-                    self.class_type = ct
-                    self.param_name = pn
-                    self.priority = prio
-
-            prio = 1
-            for p_name in param_names:
-                for ct in expected_class_types:
-                    rule_entries.append(_DummyLegacyEntry(ct, p_name, prio))
-                prio += 1
 
     if not rule_entries:
         return None
@@ -285,38 +256,6 @@ def _get_variant_patterns(variant: Any) -> list[tuple[str, str, int]]:
                     m_type = "contains"
                 prio = getattr(p, "priority", 1)
                 patterns.append((pat_str.strip(), m_type, prio))
-    else:
-        # Legacy fallback
-        variant_id = getattr(variant, "id", 0)
-        extra = _safe_parse_json_list(
-            getattr(variant, "extra_title_patterns", None), variant_id, "extra_title_patterns"
-        )
-        for ep in extra:
-            if isinstance(ep, str) and ep.strip():
-                patterns.append((ep.strip(), "exact", 1))
-
-        stage = getattr(variant, "stage", None)
-        if stage:
-            stage_id = getattr(stage, "id", 0)
-            kws = _safe_parse_json_list(
-                getattr(stage, "search_keywords", None), stage_id, "search_keywords"
-            )
-            for kw in kws:
-                if isinstance(kw, str) and kw.strip():
-                    patterns.append((kw.strip(), "contains", 1))
-
-        if not patterns:
-            master = getattr(variant, "master", None)
-            if master:
-                master_id = getattr(master, "id", 0)
-                base_pats = _safe_parse_json_list(
-                    getattr(master, "base_title_patterns", getattr(master, "title_patterns", None)),
-                    master_id,
-                    "base_title_patterns",
-                )
-                for bp in base_pats:
-                    if isinstance(bp, str) and bp.strip():
-                        patterns.append((bp.strip(), "exact", 1))
 
     return patterns
 
@@ -457,113 +396,165 @@ def _evaluate_candidate_stages(workflow_json: dict, master_variants: list[Any]) 
     return candidates_by_var
 
 
+STATUS_DISABLED = "disabled"
+
+
+def _is_variant_enabled(variant: Any) -> bool:
+    return getattr(variant, "is_enabled", True) is not False
+
+
+def _master_group_key(var: Any) -> Any:
+    m_id = getattr(var, "master_id", None)
+    if m_id is None and getattr(var, "master", None):
+        m_id = getattr(var.master, "id", None)
+    if m_id is None:
+        m_id = id(getattr(var, "master", var))
+    return m_id
+
+
+def _variant_stage_sort_key(v: Any) -> tuple[int, int, int, int]:
+    st = getattr(v, "stage", None)
+    st_order = getattr(st, "sort_order", 0) if st else 0
+    st_id = getattr(st, "id", 0) if st else getattr(v, "stage_id", 0)
+    v_order = getattr(v, "sort_order", 0)
+    v_id = getattr(v, "id", 0)
+    return (st_order, v_order, st_id, v_id)
+
+
+def _resolve_variant_role(var: Any) -> Any:
+    """Resolve role: role -> computed_role -> custom_role_override -> base_key + suffix."""
+    stage = getattr(var, "stage", None)
+    master = getattr(var, "master", None)
+    role = getattr(var, "role", None) or getattr(var, "computed_role", None)
+    if not role:
+        if getattr(var, "custom_role_override", None):
+            role = var.custom_role_override
+        else:
+            suffix = getattr(stage, "suffix", "") if stage else ""
+            base = getattr(master, "base_key", getattr(master, "role", "")) if master else ""
+            role = f"{base}{suffix}"
+    return role
+
+
+def scan_master_variants_detailed(workflow_json: dict, mapping_variants: list) -> list[dict]:
+    """Return one result per input variant (including disabled ones).
+
+    Keys: variant (the input object), status ('ok'|'duplicated'|'not_found'|'disabled'),
+    confirmed (candidate dict or None), candidates (list of candidate dicts sorted by
+    _candidate_sort_key after excluding nodes confirmed by earlier variants of the same master).
+    Candidate dict keys: node_id, numeric_id, stage_rank, entry_priority, pattern_priority,
+    input_name, node_title, class_type. stage_rank 4 never appears.
+    Order: grouped by master in first-seen order; within a master by _variant_stage_sort_key;
+    disabled variants are placed by the same key with status 'disabled' and do not consume nodes.
+    """
+    master_groups: dict[Any, list[Any]] = {}
+    for var in mapping_variants:
+        master_groups.setdefault(_master_group_key(var), []).append(var)
+
+    workflow_ok = isinstance(workflow_json, dict)
+    results: list[dict] = []
+
+    for m_vars in master_groups.values():
+        m_vars = sorted(m_vars, key=_variant_stage_sort_key)
+        enabled_vars = [v for v in m_vars if _is_variant_enabled(v)]
+        candidates_by_var = (
+            _evaluate_candidate_stages(workflow_json, enabled_vars) if workflow_ok else {}
+        )
+
+        confirmed_nodes: set[str] = set()
+        confirmed_pairs: set[tuple[str, str]] = set()
+
+        for var in m_vars:
+            if not _is_variant_enabled(var):
+                results.append({
+                    "variant": var,
+                    "status": STATUS_DISABLED,
+                    "confirmed": None,
+                    "candidates": [],
+                })
+                continue
+
+            var_candidates = [
+                c for c in candidates_by_var.get(id(var), [])
+                if c["node_id"] not in confirmed_nodes and (c["node_id"], c["input_name"]) not in confirmed_pairs
+            ]
+            if not var_candidates:
+                results.append({
+                    "variant": var,
+                    "status": "not_found",
+                    "confirmed": None,
+                    "candidates": [],
+                })
+                continue
+
+            var_candidates.sort(key=_candidate_sort_key)
+            best = var_candidates[0]
+            top_stage_count = sum(1 for c in var_candidates if c["stage_rank"] == best["stage_rank"])
+            results.append({
+                "variant": var,
+                "status": "duplicated" if top_stage_count > 1 else "ok",
+                "confirmed": best,
+                "candidates": var_candidates,
+            })
+            confirmed_nodes.add(best["node_id"])
+            confirmed_pairs.add((best["node_id"], best["input_name"]))
+
+    return results
+
+
 def scan_workflow_variants(workflow_json: dict, mapping_variants: list) -> dict:
     """
     Scan a ComfyUI API-format workflow JSON against mapping variants using
     Entry-based candidate extraction, multi-stage conflict resolution, and lexicographical sorting.
     Returns: { matched: [...], warnings: [...] }
     """
-    matched = []
-    warnings = []
+    matched: list[dict] = []
+    warnings: list[dict] = []
 
-    # 1. Filter enabled variants
-    enabled_variants = [v for v in mapping_variants if getattr(v, "is_enabled", True) is not False]
+    enabled_variants = [v for v in mapping_variants if _is_variant_enabled(v)]
     if not enabled_variants or not isinstance(workflow_json, dict):
         return {"matched": [], "warnings": []}
 
-    # 2. Group variants by master
-    master_groups: dict[Any, list[Any]] = {}
+    # Master group output order: first appearance among enabled variants.
+    master_order: dict[Any, int] = {}
     for var in enabled_variants:
-        m_id = getattr(var, "master_id", None)
-        if m_id is None and getattr(var, "master", None):
-            m_id = getattr(var.master, "id", None)
-        if m_id is None:
-            m_id = id(getattr(var, "master", var))
-        master_groups.setdefault(m_id, []).append(var)
+        master_order.setdefault(_master_group_key(var), len(master_order))
 
-    def _variant_stage_sort_key(v: Any) -> tuple[int, int, int, int]:
-        st = getattr(v, "stage", None)
-        st_order = getattr(st, "sort_order", 0) if st else 0
-        st_id = getattr(st, "id", 0) if st else getattr(v, "stage_id", 0)
-        v_order = getattr(v, "sort_order", 0)
-        v_id = getattr(v, "id", 0)
-        return (st_order, v_order, st_id, v_id)
+    detailed = scan_master_variants_detailed(workflow_json, mapping_variants)
+    # Stable sort keeps the per-master variant order produced by the detailed scan.
+    ordered = sorted(
+        (r for r in detailed if r["status"] != STATUS_DISABLED),
+        key=lambda r: master_order[_master_group_key(r["variant"])],
+    )
 
-    # 3. Process each master group
-    for master_id, m_vars in master_groups.items():
-        m_vars.sort(key=_variant_stage_sort_key)
-        all_candidates_by_var = _evaluate_candidate_stages(workflow_json, m_vars)
+    for res in ordered:
+        var = res["variant"]
+        stage = getattr(var, "stage", None)
+        master = getattr(var, "master", None)
+        base = {
+            "master_id": getattr(var, "master_id", getattr(master, "id", 0) if master else 0),
+            "variant_id": getattr(var, "id", 0),
+            "stage_id": getattr(var, "stage_id", 0),
+            "stage_key": getattr(stage, "key", "") if stage else "",
+            "role": _resolve_variant_role(var),
+        }
 
-        confirmed_nodes: set[str] = set()
-        confirmed_pairs: set[tuple[str, str]] = set()
+        if res["status"] == "not_found":
+            warnings.append({**base, "status": "not_found"})
+            continue
 
-        for var in m_vars:
-            variant_id = getattr(var, "id", 0)
-            stage_id = getattr(var, "stage_id", 0)
-            stage = getattr(var, "stage", None)
-            master = getattr(var, "master", None)
-            real_master_id = getattr(var, "master_id", getattr(master, "id", 0) if master else 0)
-
-            role = getattr(var, "role", None) or getattr(var, "computed_role", None)
-            if not role:
-                if getattr(var, "custom_role_override", None):
-                    role = var.custom_role_override
-                else:
-                    suffix = getattr(stage, "suffix", "") if stage else ""
-                    base = getattr(master, "base_key", getattr(master, "role", "")) if master else ""
-                    role = f"{base}{suffix}"
-            stage_key = getattr(stage, "key", "") if stage else ""
-
-            # Filter out already confirmed node_ids / pairs
-            var_candidates = [
-                c for c in all_candidates_by_var.get(id(var), [])
-                if c["node_id"] not in confirmed_nodes and (c["node_id"], c["input_name"]) not in confirmed_pairs
-            ]
-
-            if not var_candidates:
-                warnings.append({
-                    "master_id": real_master_id,
-                    "variant_id": variant_id,
-                    "stage_id": stage_id,
-                    "stage_key": stage_key,
-                    "role": role,
-                    "status": "not_found",
-                })
-                continue
-
-            var_candidates.sort(key=_candidate_sort_key)
-            best_candidate = var_candidates[0]
-            all_candidate_ids = [c["node_id"] for c in var_candidates]
-
-            top_stage = best_candidate["stage_rank"]
-            top_stage_candidates = [c for c in var_candidates if c["stage_rank"] == top_stage]
-
-            if len(top_stage_candidates) > 1:
-                warnings.append({
-                    "master_id": real_master_id,
-                    "variant_id": variant_id,
-                    "stage_id": stage_id,
-                    "stage_key": stage_key,
-                    "role": role,
-                    "status": "duplicated",
-                    "node_ids": all_candidate_ids,
-                })
-
-            matched.append({
-                "master_id": real_master_id,
-                "variant_id": variant_id,
-                "stage_id": stage_id,
-                "stage_key": stage_key,
-                "role": role,
-                "node_id": best_candidate["node_id"],
-                "node_title": best_candidate["node_title"],
-                "input_name": best_candidate["input_name"],
-                "status": "ok",
-                "node_ids": all_candidate_ids,
-            })
-
-            confirmed_nodes.add(best_candidate["node_id"])
-            confirmed_pairs.add((best_candidate["node_id"], best_candidate["input_name"]))
+        best = res["confirmed"]
+        all_candidate_ids = [c["node_id"] for c in res["candidates"]]
+        if res["status"] == "duplicated":
+            warnings.append({**base, "status": "duplicated", "node_ids": all_candidate_ids})
+        matched.append({
+            **base,
+            "node_id": best["node_id"],
+            "node_title": best["node_title"],
+            "input_name": best["input_name"],
+            "status": "ok",
+            "node_ids": all_candidate_ids,
+        })
 
     return {"matched": matched, "warnings": warnings}
 

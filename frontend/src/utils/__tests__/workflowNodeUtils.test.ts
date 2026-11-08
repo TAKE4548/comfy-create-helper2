@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import { resolveNodeMetadata, getNodeLabel, rankWorkflowNodeCandidates } from '../workflowNodeUtils'
+import { candidateDefinitionForVariant } from '../variantCandidateDefinition'
 
 describe('workflowNodeUtils', () => {
   describe('resolveNodeMetadata', () => {
@@ -349,6 +350,65 @@ describe('workflowNodeUtils', () => {
         class_type: 'Sampler', _meta: { title: 'Main Upscaler Sampler' }, inputs: {},
       } }, { ...definition, titlePatterns: ['Main Upscaler Sampler'] }, 'Main', ['Upscaler'])
       expect(result[0].stageRank).toBe(0)
+    })
+  })
+  describe('REQ-419/RANK', () => {
+    const base = { expectedClassTypes: ['KSampler'], titlePatterns: ['Exact KS'], paramNames: [] as string[] }
+    const workflow = {
+      exact: { class_type: 'KSampler', _meta: { title: 'Exact KS' }, inputs: { steps: 20 } },
+      rough: { class_type: 'KSampler', _meta: { title: 'KSampler (Rough)' }, inputs: { steps: 20 } },
+      plain: { class_type: 'KSampler', _meta: { title: 'Plain' }, inputs: { steps: 20 } },
+      noparam: { class_type: 'KSampler', _meta: { title: 'KSampler (Rough)' }, inputs: { seed: 1 } },
+      stepsOnly: { class_type: 'Other', _meta: { title: 'Other' }, inputs: { steps: 5 } },
+    }
+    const byId = (r: ReturnType<typeof rankWorkflowNodeCandidates>, id: string) => r.find((x) => x.id === id)!
+
+    it('[REQ-419/AC-13] rankWorkflowNodeCandidates applies entry pairs and contains patterns', () => {
+      const result = rankWorkflowNodeCandidates(workflow, {
+        ...base,
+        entryPairs: [{ classType: 'KSampler', paramName: 'steps' }],
+        containsPatterns: ['rough'],
+      }, 'Zzz', ['Zzz'])
+      expect(byId(result, 'exact').tier).toBe(0)
+      expect(byId(result, 'rough').tier).toBe(1)
+      expect(byId(result, 'plain').tier).toBe(2)
+      expect(byId(result, 'noparam').tier).toBeGreaterThanOrEqual(3)
+      expect(byId(result, 'noparam').recommended).toBe(false)
+      expect(byId(result, 'stepsOnly').tier).toBe(3)
+    })
+
+    it('[REQ-419/AC-13] rankWorkflowNodeCandidates keeps legacy behavior when entryPairs is undefined', () => {
+      const result = rankWorkflowNodeCandidates(workflow, base, 'Zzz', ['Zzz'])
+      expect(byId(result, 'noparam').tier).toBe(2)
+      expect(byId(result, 'plain').tier).toBe(2)
+      expect(byId(result, 'rough').tier).toBe(2)
+      expect(byId(result, 'exact').tier).toBe(0)
+      expect(byId(result, 'stepsOnly').tier).toBe(4)
+    })
+
+    it('[REQ-419/AC-13] legacy-only and keyword-only nodes are not promoted', () => {
+      const definition = candidateDefinitionForVariant({
+        rule_entries: [{ class_type: 'KSampler', param_name: 'steps' }],
+        selector_patterns: [{ pattern: 'selector-only', match_type: 'contains' }],
+      })
+      const master = { expected_class_types: ['Legacy'], fallback_param_names: ['legacy_param'], title_patterns: ['Legacy Title'], search_keywords: ['kw-title'] }
+      const result = rankWorkflowNodeCandidates({
+        // (a) matches only the master legacy columns
+        legacyOnly: { class_type: master.expected_class_types[0], _meta: { title: 'Legacy Title' }, inputs: { legacy_param: 1 } },
+        // (b) Entry match; title matches only legacy title_patterns / search_keywords
+        kwTitle: { class_type: 'KSampler', _meta: { title: 'kw-title' }, inputs: { steps: 1 } },
+        oldPattern: { class_type: 'KSampler', _meta: { title: 'Legacy Title' }, inputs: { steps: 1 } },
+        clean: { class_type: 'KSampler', _meta: { title: 'Clean Node' }, inputs: { steps: 1 } },
+      }, definition, 'Zzz', ['Zzz'])
+      expect(byId(result, 'legacyOnly').recommended).toBe(false)
+      expect(byId(result, 'legacyOnly').tier).toBeGreaterThanOrEqual(3)
+      const clean = byId(result, 'clean')
+      expect(clean.tier).toBe(2)
+      for (const id of ['kwTitle', 'oldPattern']) {
+        expect(byId(result, id).tier).toBe(clean.tier)
+        expect(byId(result, id).score).toBe(clean.score)
+        expect(byId(result, id).recommended).toBe(false)
+      }
     })
   })
 })

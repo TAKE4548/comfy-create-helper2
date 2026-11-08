@@ -33,7 +33,7 @@ import { paramTypeMastersApi } from '../../../api/domains/workflows'
 import type {
   MappingMasterV2,
   MappingMasterV2Create,
-  MappingMasterV2Update,
+  MasterAtomicSaveRequest,
   ParamTypeMaster,
   ParamTypeMasterCreate,
 } from '../../../api/types'
@@ -80,7 +80,6 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
   }
 
   const displayName = master.name || master.display_name || ''
-  const classes = master.expected_class_types ?? []
   const variants = master.variants ?? []
 
   return (
@@ -103,16 +102,17 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
         <span className="min-w-0 flex-1 truncate font-medium text-zinc-100" title={displayName}>
           {displayName}
         </span>
-        <span className="settings-mobile-card__target-node text-xs font-mono text-zinc-400">
-          ({master.param_name})
-        </span>
+        <span
+          className="settings-mobile-card__target-node text-xs font-mono text-zinc-400"
+          aria-hidden="true"
+        />
       </div>
 
       <div className="settings-mobile-card__actions flex items-center gap-1">
         <button
           type="button"
           onClick={() => onEdit(master)}
-          aria-label={`${displayName} のマッピング設定を編集（対象ノード: ${master.param_name}${classes.length ? ' / ' + classes.join(', ') : ''}）`}
+          aria-label={`${displayName} のマッピング設定を編集（Variant ${variants.length}件）`}
           className={`${TOUCH_BUTTON_CLASS} text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800`}
           title="編集"
         >
@@ -133,11 +133,13 @@ function MasterRow({ master, onEdit, onDelete }: MasterRowProps) {
         <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono">
           {master.input_type}
         </span>
-        {classes.length > 1 && (
-          <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono">
-            +{classes.length - 1} classes
-          </span>
-        )}
+        <span
+          data-testid="master-variant-count"
+          aria-label={`Variant数 ${variants.length}`}
+          className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[11px] font-mono"
+        >
+          Variant {variants.length}
+        </span>
         {variants.length > 0 ? (
           <>
             {variants.map((v, i) => (
@@ -368,13 +370,15 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
   })
 
   const updateMaster = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: MappingMasterV2Update }) =>
-      mappingMastersApi.update(id, data),
+    mutationFn: ({ id, data }: { id: number; data: MasterAtomicSaveRequest }) =>
+      mappingMastersApi.atomicSave(id, data),
     onMutate: startDraftMutation,
     onError: failDraftMutation,
     onSettled: settleDraftMutation,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mapping-masters'] })
+      qc.invalidateQueries({ queryKey: ['binding-rules'] })
+      qc.invalidateQueries({ queryKey: ['node-selectors'] })
       if (draftMutationRef.current.session !== draftSessionRef.current) return
       clearDraftRisk()
       setShowEditModal(false)
@@ -477,9 +481,11 @@ export function MappingMasterSection({ isExpanded, onToggle }: MappingMasterSect
     setShowDeleteModal(true)
   }
 
-  const handleSaveMaster = (data: MappingMasterV2Create | MappingMasterV2Update) => {
+  const handleSaveMaster = async (
+    data: MappingMasterV2Create | MasterAtomicSaveRequest,
+  ): Promise<void> => {
     if (selectedMaster) {
-      updateMaster.mutate({ id: selectedMaster.id, data })
+      await updateMaster.mutateAsync({ id: selectedMaster.id, data: data as MasterAtomicSaveRequest })
     } else {
       createMaster.mutate(data as MappingMasterV2Create)
     }

@@ -28,6 +28,8 @@ related_paths:
   - frontend/src/components/ParamTypeMasterManagerModal.tsx
   - frontend/src/components/MappingMasterEditModal.tsx
   - frontend/src/components/StageManagerModal.tsx
+  - frontend/src/components/mappingMaster/
+  - backend/app/services/scan_preview.py
   - frontend/src/components/SettingsComponents.tsx
   - frontend/src/components/WorkflowManageModal.tsx
   - frontend/src/components/WorkflowNodePicker.tsx
@@ -147,7 +149,7 @@ workflowsタブは `xl`（>=1280px）で2カラムとし、左=ワークフロ�
 
 モバイル（<768px）ではタブバーを横スワイプ（snap）にし、操作対象は44×44px以上とする。ページ下部余白は `pb-[calc(6rem+env(safe-area-inset-bottom))]` とし、768px以上では解除する。
 
-MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジ（`+N classes` / `+N stages`）とする。Target Node情報は画面表示せず、編集ボタンの `aria-label`「<名称> のマッピング設定を編集（対象ノード: …）」に保持する。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal、WorkflowNodePicker）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
+MappingMaster行とチェックポイント表は超スリムカードで表示する。1行目は名称と右端固定のアクション、2行目はバッジとする。MappingMaster行のバッジは入力型、`Variant N`（そのMasterのVariant数）、ステージ名（モバイルは先頭のステージ＋`+N stages`）、基本無効（`default_enabled=false` のときのみ）とし、`+N classes` は表示しない。対象ノード情報は一覧にもボタンの `aria-label` にも含めず、編集ボタンの `aria-label` は「<名称> のマッピング設定を編集（Variant N件）」とする。Settingsの管理系・編集系モーダル（§3-2: カスタム型マスタ一覧/フォーム、BaseModelマスタ、MappingMasterEditModal、StageManagerModal、口調プリセット編集（SpeechTonePresetModal）、MappingMaster削除確認、ワークフロー削除確認、WorkflowManageModal）はすべて共通Modalによりモバイルでボトムシート（実ハンドル付き、上端角丸16px、最大高さ85dvh）、768px以上で中央配置として表示する。Settingsから到達する独自overlayは残っていない（grep確認 2026-10-15）。行内の `role="alertdialog"` 確認（サービス操作、口調プリセット削除）はオーバーレイではなく、`MappingMasterModal`（`SettingsComponents.tsx`）は本番コードから未参照である。詳細は [SPEC_COMMON.md](./SPEC_COMMON.md) §1-4 を参照。
 
 
 ### 3-1-2. モバイルSettingsの操作契約（REQ-381）
@@ -158,10 +160,11 @@ MappingMaster行とチェックポイント表は超スリムカードで表示�
 - 補足説明は必要な詳細説明だけを同一行のinfoへ移す。infoは全文を表示し、不透明な濃色背景と十分な文字コントラスト（本文と背景の比4.5:1以上）、画面内配置、長文時の内部scrollを備える。再タップ・外側タップ・Escape・祖先またはページのscrollで閉じるが、info本文自身の長文内部scrollでは閉じない。警告・error・未保存状態はinfoへ隠さず常時表示する。この契約はSettings固有であり、共通popover基盤へ広げない。
 - 本文の意図的な横swipeは隣接tabへ移動し、端で循環しない。縦scrollを優先し、入力・range・button等の操作対象、独立scroll、開いたoverlayを起点とするジェスチャーを除外する。直接tapを代替経路として残す。
 - Speech Toneの作成／編集シートは共通Modalを使い、左にCancel、右にSaveを置く。keyboard表示時の到達性、44×44px以上の有効領域、focusの視認性を保つ。
+- MappingMasterの編集シート（REQ-419）は共通Modalのボトムシート（最大高さ85dvh）で表示し、375px幅でもVariant行の定義切替、共有定義の選択（「共有定義を更新」「複製してこのVariantだけ変更」）、判定プレビューをデスクトップと同じ結果で行える。操作対象は44×44px以上とし、ページに横スクロールを生じさせない（REQ-419 AC-11）。
 
 ### 3-2. オンデマンド管理
 
-カスタム型マスタ（`ParamTypeMaster`）は常時展開せず、「カスタム型マスタ」ボタンから一覧モーダル（`ParamTypeMasterManagerModal`）を開き、作成/編集フォームモーダルへ**排他遷移**する（list→form→list、モーダルをネストしない）。ただし MappingMasterEditModal 内の WorkflowNodePicker は共通Modalのネスト例外で、Esc は内側のみを閉じる。BaseModelマスタ定義は「モデルマスタ管理」モーダルで行う。ワークフロー行のアクションは右端の「︙」メニューに集約する。これらの一時的UIの開閉状態は `prompt-surgeon-settings-details-expanded-v2` に含めない。API・DB契約は変更しない。
+カスタム型マスタ（`ParamTypeMaster`）は常時展開せず、「カスタム型マスタ」ボタンから一覧モーダル（`ParamTypeMasterManagerModal`）を開き、作成/編集フォームモーダルへ**排他遷移**する（list→form→list、モーダルをネストしない）。MappingMasterEditModal の共有定義の影響確認は、同モーダル内の行内パネル（`role="alertdialog"`）で行う。このパネルの表示中は Esc がパネルのみを閉じ、モーダル自身は Esc で閉じない。判定プレビューもモーダル内セクションであり、ネストしない。BaseModelマスタ定義は「モデルマスタ管理」モーダルで行う。ワークフロー行のアクションは右端の「︙」メニューに集約する。これらの一時的UIの開閉状態は `prompt-surgeon-settings-details-expanded-v2` に含めない。API・DB契約は変更しない。
 
 ### 3-3. 統合型プロンプトエディタ
 
@@ -179,19 +182,16 @@ MappingMaster行とチェックポイント表は超スリムカードで表示�
 
 `input_type` のうち `select_sampler` および `select_scheduler` は、ComfyUI の `/object_info` から最新のサンプラ・スケジューラ一覧を動的取得する（オフライン時は定数フォールバック）。
 
-```typescript
-interface MappingMaster {
-  id: number;
-  role: string;
-  expected_class_types: string[];
-  param_name: string;
-  input_type: 'textarea' | 'int' | 'float' | 'select' | 'lora_stack' | 'select_sampler' | 'select_scheduler' | 'boolean' | 'seed';
-  display_name: string;
-  title_patterns: string[];
-  default_enabled: boolean;
-  sort_order: number;
-}
+MappingMaster は3層で表す。Master は値の定義、Variant はステージ単位の参照、RuleSet と NodeSelector は判定定義である。
 
+- Master（`mapping_masters`）: 値の意味と型（`base_key`, `name`, `input_type`, `group_id`, `default_enabled`, `sort_order`）。`display_name` は `name` と同期する。旧列 `param_name`／`expected_class_types`／`base_title_patterns`／`title_patterns`／`fallback_param_names` は DB に残るが画面で編集せず、スキャン判定・フロントの候補ランク付け・ステージ検出にも使わない（作成時の `param_name` は初期 RuleSet の生成にのみ使う）。
+- Variant（`mapping_variants`）: ステージ単位の role（永続・一意、画面は読み取り専用。新規行の role は `base_key` とステージの suffix から生成する）、`is_enabled`、`binding_rule_set_id`（必須）、`node_selector_id`（NULL＝セレクタなし）。`UNIQUE(role)`、`UNIQUE(master_id, stage_id)`、`UNIQUE(master_id, node_selector_id)`（NULL は複数可）。
+- BindingRuleSet/Entry（どの入力か: `class_type` × `param_name`、priority）、NodeSelector/Pattern（どのノードか: `exact`／`contains`、priority）。複数 role で共有でき、参照中は削除不可（400 と `referenced_roles` を返す）。
+- 判定段階: 1=自セレクタ完全一致、2=部分一致、3=セレクタなし／どのセレクタにも不一致、4=同 Master の別 Variant のセレクタにのみ一致（除外）。順位は段階→Entry priority→パターン priority→ノードID。`StageMaster.search_keywords` は判定に使わない（DB 列・API フィールドは残存、画面に入力欄なし）。
+- 編集画面: Master 値定義のみ＋ステージ（`sort_order` 順）別の Variant 行。既存行のステージは変更できず、新規行でのみステージを選ぶ。共有定義の内容変更保存時は他の参照元 role を示し「共有定義を更新」または「複製してこのVariantだけ変更」を選ばせる。一意性違反は保存前に行エラーとし保存しない。1回の保存操作は原子的に適用し、途中で失敗した場合は一切反映しない（§6 の原子的保存）。既存 Variant の `id` に保存済みと異なる `stage_id` を送ると 422 `MASTER_SAVE_VALIDATION_FAILED`（scope `variant`、field `stage_id`）となり、DB は変更されない。
+- 作成画面: Master 値定義に加え、必須の「初期RuleSetのパラメータ名」と「初期RuleSetのクラス名」を入力する（どちらかが空の間は保存できない）。保存時は `POST /api/mapping-masters` に `param_name` と `expected_class_types: [クラス名]` を送り、バックエンドは `${base_key} RuleSet` の初期 RuleSet を class_type × param_name の Entry（priority 1）として作る。API で `expected_class_types` を省略した場合は class_type `*` の Entry を作る。作成後のVariant行は保存後に編集する。
+
+```typescript
 interface ParamTypeMaster {
   id: number;
   name: string;
@@ -209,15 +209,19 @@ Settingsのwire表示は、既存のworkflow stage定義、MappingMaster、お�
 
 ノード候補は全workflow nodeを表示する。tier 0〜1は同じ推奨グループ、tier 2〜4は選択可能な通常候補とする。候補には0〜100%の適合score badgeと一致根拠を表示する。順位更新は現在の対応付けを変更しない。
 
+候補の tier は、候補対象 Variant の RuleSet Entry（`class_type` × `param_name`）と NodeSelector パターン（exact／contains）だけで判定する。Master の旧列（`expected_class_types`／`title_patterns`／`base_title_patterns`／`fallback_param_names`）と Variant の `extra_title_patterns` は使わない。
+
 | Tier | 判定 | 推奨 |
 |---|---|---|
-| 0 | 登録classと登録titleの生文字完全一致 | はい |
-| 1 | 登録class一致とtitle表記ゆれ一致 | はい |
-| 2 | 登録class一致。title不一致 | いいえ |
-| 3 | class不一致だが登録parameter名を持つ | いいえ |
+| 0 | RuleSet Entry 一致（`class_type` 一致かつ `param_name` をノード入力に持つ）かつ NodeSelector の exact パターンとタイトル生文字一致 | はい |
+| 1 | Entry 一致かつ（exact パターンの表記ゆれ一致 または contains パターンを正規化タイトルが含む） | はい |
+| 2 | Entry 一致のみ | いいえ |
+| 3 | Entry の `param_name` をノード入力に持つ（class 不一致） | いいえ |
 | 4 | 上記以外。titleのみ一致も含む | いいえ |
 
-表記ゆれ比較ではASCII英字の大小、ASCII空白、`_`、ASCII `-`だけを正規化する。typo、翻訳、regex、Unicode記号の同一視はしない。推奨グループは75〜100点、class候補50〜74、parameter候補20〜49、その他0〜19とし、各group内はstageとtitleの近似score降順、同点ID文字列順にする。正規化stage全文包含は最大、共有文字bigramのDice近似は部分加点する。FaceDetailerに対するFace DetailerはHand Detailerより高い。登録/リマッピング/Settingsは全variantのtitle登録・fallback parameter・stage集合を共通判定へ渡す。scoreは規則による適合度を表示する。
+Settings配線のステージ表示は、各ステージの有効 Variant の NodeSelector パターンでノードを検出する（`detectActiveStages`）。exact は前後空白除去・英字小文字化後の完全一致、contains は部分一致とし、判定対象のタイトルは空の場合 `class_type` を用いる。無効 Variant のパターンは使わず、`search_keywords` も使わない。非活性（`is_active=false`）のステージは、ビルトインや `main` であっても表示しない。有効なビルトイン（`is_builtin`）と `main` のステージは、一致数によらず常時表示する。
+
+表記ゆれ比較ではASCII英字の大小、ASCII空白、`_`、ASCII `-`だけを正規化する。typo、翻訳、regex、Unicode記号の同一視はしない。推奨グループは75〜100点、class候補50〜74、parameter候補20〜49、その他0〜19とし、各group内はstageとtitleの近似score降順、同点ID文字列順にする。正規化stage全文包含は最大、共有文字bigramのDice近似は部分加点する。FaceDetailerに対するFace DetailerはHand Detailerより高い。登録・リマッピング・配線画面は、候補の対象 Variant ごとに RuleSet Entry と NodeSelector パターンから作る定義（`candidateDefinitionForVariant`）と、登録済みステージ名の集合を共通判定へ渡す。scoreは規則による適合度を表示する。
 
 登録・リマッピング画面では入力slotのDOMと位置を維持する。空欄は未割当としてその場で編集でき、未検出専用の別エリアへ移動しない。有効チェックOFFはrole/node欄を減光し、再有効化まで入力不可。表示・生成へ反映する際は未割当と同じ対象外として扱い、保存ID/文字列は保持する。空欄や入力値の存在でOFFを上書きしない。selectorは欄全体をクリックして候補を開け、IDを先頭に1回だけ表示し、title/class/scoreを同じ欄内へ置く。直接入力・選択後のfocus維持とreadonly操作拒否を保つ。ワークフロー単位の無効化はvariant slot key `v:<variant_id>`、legacy slot key `m:<master_id>`を持つ `mapping_slot_states` に保存する。key欠落またはtrueは有効、falseは明示無効。再スキャンは最新GET完了後に一度だけ状態を初期化し、保存中に編集へ戻さない。旧null variantは単一slotかrole完全一致の一意なslotへ解決し、旧と新の同じmappingを重複保存しない。slot state/候補scoreの重複再計算はcacheで避け、toggleからHTTPは送らず、保存は二重発火を防ぐ。
 
@@ -291,12 +295,16 @@ interface TranslationSettings {
 
 ## 6. API 呼び出し
 
-`docs/openapi.yaml`はバックエンドOpenAPIから生成される契約ファイルで、現行生成物は117 pathを持つ。この一覧はSettings画面が利用するAPIの抜粋であり、OpenAPI全体の代替ではない。
+`docs/openapi.yaml`はバックエンドOpenAPIから生成される契約ファイルで、現行生成物は139 pathを持つ。この一覧はSettings画面が利用するAPIの抜粋であり、OpenAPI全体の代替ではない。
 
 | 操作 | エンドポイント | ペイロード / パラメータ |
 |---|---|---|
-| マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters` | `{ "role": string, ... }` |
-| マッピングマスタ並び替え | `PUT /api/mapping-masters/reorder` | `{ "item_ids": number[] }` |
+| マッピングマスタ一覧・管理 | `GET/POST/PUT/DELETE /api/mapping-masters` | GET 応答: `MappingMasterV2Read[]`（Variant には参照定義の `rule_entries`・`selector_patterns`（読み取り専用）を含む）。POST 本文: `MappingMasterCreatePayload`（`name`, `base_key`, `input_type`, `group_id`, `default_enabled`, および必須の `param_name` と `expected_class_types`（初期 RuleSet の生成用。画面では初期 RuleSet のクラス名を必須入力））。PUT `/{id}` 本文: `MappingMasterUpdate`（部分更新） |
+| マッピングマスタ原子的保存 | `POST /api/mapping-masters/{id}/atomic-save` | `{ master, rule_sets[], selectors[], variants[] }`。1トランザクションで適用し、失敗時（422 `MASTER_SAVE_VALIDATION_FAILED`／409 `MASTER_SAVE_CONFLICT`）は全件ロールバック。既存 Variant の `id` に保存済みと異なる `stage_id` を送ると 422（scope `variant`、field `stage_id`）となり、DB は変更されない |
+| マッピング判定プレビュー（非永続） | `POST /api/mapping-masters/scan-preview` | `{ workflow_id, variants: [{ client_key, variant_id?, stage_id, role, is_enabled, entries, patterns\|null }] }`。保存データを変更しない |
+| 判定定義（RuleSet）一覧・管理 | `GET/POST/PUT/DELETE /api/binding-rules`、`POST/DELETE /api/binding-rules/{id}/entries` | `{ name, entries[] }`。参照中の定義は削除不可（400、`referenced_roles` を返す） |
+| 判定定義（NodeSelector）一覧・管理 | `GET/POST/PUT/DELETE /api/node-selectors`、`POST/DELETE /api/node-selectors/{id}/patterns` | `{ name, patterns[] }`。参照中の定義は削除不可（400、`referenced_roles` を返す） |
+| マッピングマスタ並び替え | `PUT /api/mapping-masters/reorder` | `{ "ordered_ids": number[] }` |
 | パラメータ型マスタ一覧・管理 | `GET/POST/PUT/DELETE /api/param-type-masters` | |
 | ベースモデル一覧・管理 | `GET/POST/PUT/DELETE /api/base-models` | |
 | チェックポイントマッピング一覧・管理 | `GET/POST/DELETE /api/checkpoint-mappings` | `GET /api/comfy/checkpoints` |

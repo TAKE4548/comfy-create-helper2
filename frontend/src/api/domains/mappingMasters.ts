@@ -4,6 +4,9 @@ import type {
   MappingMasterV2Create,
   MappingMasterV2Update,
   MappingMasterUsage,
+  MasterAtomicSaveRequest,
+  ScanPreviewRequest,
+  ScanPreviewResponse,
 } from '../types'
 
 export const mappingMastersApi = {
@@ -37,5 +40,17 @@ export const mappingMastersApi = {
     request<void>('/mapping-masters/reorder', {
       method: 'PUT',
       body: JSON.stringify({ ordered_ids }),
+    }),
+
+  atomicSave: (id: number, req: MasterAtomicSaveRequest): Promise<MappingMasterV2> =>
+    request<MappingMasterV2>(`/mapping-masters/${id}/atomic-save`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  scanPreview: (req: ScanPreviewRequest): Promise<ScanPreviewResponse> =>
+    request<ScanPreviewResponse>('/mapping-masters/scan-preview', {
+      method: 'POST',
+      body: JSON.stringify(req),
     }),
 }

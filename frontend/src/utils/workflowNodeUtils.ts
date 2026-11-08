@@ -8,6 +8,10 @@ export interface CandidateDefinition {
   expectedClassTypes: readonly string[]
   titlePatterns: readonly string[]
   paramNames: readonly string[]
+  /** When set: class match requires a pair whose classType matches and whose paramName exists in node inputs. */
+  entryPairs?: ReadonlyArray<{ classType: string; paramName: string }>
+  /** When set: a class match whose normalized title contains a normalized pattern is tier 1. */
+  containsPatterns?: readonly string[]
 }
 
 export interface RankedNodeCandidate {
@@ -71,6 +75,7 @@ export function rankWorkflowNodeCandidates(
 
   const expectedClasses = new Set(definition.expectedClassTypes)
   const normalizedPatterns = definition.titlePatterns.map(normalizeCandidateText).filter(Boolean)
+  const normalizedContains = (definition.containsPatterns ?? []).map(normalizeCandidateText).filter(Boolean)
   const registeredStages = [...new Set(allStageNames.map(normalizeCandidateText).filter(Boolean))]
   const normalizedStage = normalizeCandidateText(stageName)
   const stagePairs = characterPairs(normalizedStage)
@@ -79,14 +84,21 @@ export function rankWorkflowNodeCandidates(
     const rawTitle = String(node._meta?.title || node.title || '').trim()
     const normalizedRawTitle = normalizeCandidateText(rawTitle)
     const title = rawTitle || classType
-    const classMatch = expectedClasses.has(classType)
     const exactTitle = !!rawTitle && definition.titlePatterns.includes(rawTitle)
-    const normalizedTitle = !!rawTitle && normalizedPatterns.includes(normalizedRawTitle)
+    const normalizedTitle = !!rawTitle && (
+      normalizedPatterns.includes(normalizedRawTitle) ||
+      normalizedContains.some((pattern) => normalizedRawTitle.includes(pattern))
+    )
     const inputs = node.inputs
     const inputNames = Array.isArray(inputs)
       ? inputs.map((input: any) => input && typeof input.name === 'string' ? input.name : '')
       : inputs && typeof inputs === 'object' ? Object.keys(inputs) : []
-    const paramMatch = definition.paramNames.some((name) => inputNames.includes(name))
+    const pairs = definition.entryPairs
+    const classMatch = pairs
+      ? pairs.some((p) => p.classType === classType && inputNames.includes(p.paramName))
+      : expectedClasses.has(classType)
+    const paramMatch = (pairs ? pairs.some((p) => inputNames.includes(p.paramName)) : false) ||
+      definition.paramNames.some((name) => inputNames.includes(name))
     const tier: RankedNodeCandidate['tier'] = classMatch
       ? exactTitle ? 0 : normalizedTitle ? 1 : 2
       : paramMatch ? 3 : 4

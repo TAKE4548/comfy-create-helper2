@@ -121,6 +121,7 @@ function saveSeedMaster() {
   fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'seed' } })
   fireEvent.change(screen.getByPlaceholderText('例: Positive Prompt'), { target: { value: 'Main Seed' } })
   fireEvent.change(screen.getByPlaceholderText('例: text, steps, cfg'), { target: { value: 'seed' } })
+  fireEvent.change(screen.getByPlaceholderText('例: KSampler'), { target: { value: 'KSampler' } })
   fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
 }
 

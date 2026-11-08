@@ -171,6 +171,80 @@ describe('WorkflowModalMultiStage', () => {
     rank.mockRestore()
   })
 
+  describe('REQ-419 variant-based candidate definitions', () => {
+    const variantOf = (id: number, stageId: number, stageName: string, extra: Partial<MappingMasterV2['variants'][number]>): MappingMasterV2['variants'][number] => ({
+      id, master_id: 7, stage_id: stageId, stage_name: stageName, stage_key: stageName.toLowerCase(), stage_suffix: '',
+      custom_role_override: null, computed_role: `steps_${id}`, extra_title_patterns: null, is_enabled: true, ...extra,
+    })
+    const masterOf = (variants: MappingMasterV2['variants']): MappingMasterV2 => ({
+      id: 7, base_key: 'steps', name: 'Steps', role: 'steps', display_name: 'Steps', param_name: 'steps', input_type: 'int',
+      expected_class_types: ['MasterOnlyClass'], base_title_patterns: ['Master Only Title'], sort_order: 1, group_id: null, variants,
+    })
+    const rankedFor = (rank: ReturnType<typeof vi.spyOn>, stage: string) => {
+      const index = rank.mock.calls.map((call) => call[2]).lastIndexOf(stage)
+      expect(index).toBeGreaterThanOrEqual(0)
+      return (rank.mock.results[index].value as ReturnType<typeof nodeUtils.rankWorkflowNodeCandidates>)
+    }
+    const renderBoth = async (kind: 'upload' | 'rescan', json: Record<string, unknown>) => {
+      vi.mocked(workflowsApi.get).mockResolvedValue({ id: 1, name: 'W', json_body: json, mappings: [], mapping_slot_states: {}, created_at: '' })
+      vi.mocked(workflowsApi.scan).mockResolvedValue({ matched: [], warnings: [] })
+      if (kind === 'upload') {
+        renderWithClient(<UploadWorkflowModal initialName="N" workflowJson={json} onClose={vi.fn()} onSaved={vi.fn()} />)
+        await screen.findByRole('button', { name: '登録・保存' })
+      } else {
+        renderWithClient(<RescanModal workflowId={1} workflowJson={json} onClose={vi.fn()} onSaved={vi.fn()} />)
+        await screen.findByRole('button', { name: '適用・保存' })
+      }
+    }
+
+    it.each(['upload', 'rescan'] as const)('[REQ-419/AC-13] [REQ-419/AC-1] %s ranks candidates per variant from rule entries', async (kind) => {
+      const json = {
+        '10': { class_type: 'KSampler', _meta: { title: 'Alpha Sampler' }, inputs: { steps: 20 } },
+        '20': { class_type: 'KSampler', _meta: { title: 'Beta Sampler' }, inputs: { cfg: 7 } },
+        '30': { class_type: 'MasterOnlyClass', _meta: { title: 'Master Only Title' }, inputs: { steps: 1 } },
+      }
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([masterOf([
+        variantOf(701, 1, 'Main', { rule_entries: [{ class_type: 'KSampler', param_name: 'steps' }], selector_patterns: [{ pattern: 'Alpha Sampler', match_type: 'exact' }] }),
+        variantOf(702, 2, 'Rough', { rule_entries: [{ class_type: 'KSampler', param_name: 'cfg' }], selector_patterns: [{ pattern: 'beta', match_type: 'contains' }] }),
+      ])])
+      const rank = vi.spyOn(nodeUtils, 'rankWorkflowNodeCandidates')
+      await renderBoth(kind, json)
+      const recommended = (stage: string) => rankedFor(rank, stage).filter((c) => c.recommended).map((c) => c.id)
+      const main = rankedFor(rank, 'Main')
+      expect(recommended('Main')).toEqual(['10'])
+      expect(recommended('Rough')).toEqual(['20'])
+      expect(main.find((c) => c.id === '10')!.tier).toBe(0)
+      expect(rankedFor(rank, 'Rough').find((c) => c.id === '20')!.tier).toBe(1)
+      // nodes matching only the Master legacy columns are never recommended
+      expect(main.find((c) => c.id === '30')!.recommended).toBe(false)
+      expect(rankedFor(rank, 'Rough').find((c) => c.id === '30')!.recommended).toBe(false)
+      rank.mockRestore()
+    })
+
+    it.each(['upload', 'rescan'] as const)('[REQ-419/AC-13] %s ignores legacy-only and keyword-only nodes', async (kind) => {
+      const json = {
+        legacy: { class_type: 'MasterOnlyClass', _meta: { title: 'Master Only Title' }, inputs: { other: 1 } },
+        plain: { class_type: 'KSampler', _meta: { title: 'Plain Sampler' }, inputs: { steps: 20 } },
+        kw: { class_type: 'KSampler', _meta: { title: 'Master Only Title keyword-only' }, inputs: { steps: 20 } },
+      }
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([masterOf([
+        variantOf(701, 1, 'Main', { extra_title_patterns: ['keyword-only'], rule_entries: [{ class_type: 'KSampler', param_name: 'steps' }], selector_patterns: null }),
+      ])])
+      const rank = vi.spyOn(nodeUtils, 'rankWorkflowNodeCandidates')
+      await renderBoth(kind, json)
+      const ranked = rankedFor(rank, 'Main')
+      const byId = new Map(ranked.map((c) => [c.id, c]))
+      // (a) a node matching only legacy columns and no Entry is not recommended
+      expect(byId.get('legacy')!.recommended).toBe(false)
+      expect(byId.get('legacy')!.tier).toBeGreaterThanOrEqual(3)
+      // (b) an Entry-matched node whose title matches only legacy patterns ranks in the same band as one without
+      expect(byId.get('kw')!.tier).toBe(byId.get('plain')!.tier)
+      expect(byId.get('kw')!.tier).toBe(2)
+      expect(ranked.some((c) => c.recommended)).toBe(false)
+      rank.mockRestore()
+    })
+  })
+
   describe('REQ-358/EDITOR', () => {
     const candidates = [
       { id: '11', title: 'Main Sampler', classType: 'KSampler', tier: 0 as const, stageRank: 0 as const, recommended: true, reasons: ['タイトル完全一致'] },

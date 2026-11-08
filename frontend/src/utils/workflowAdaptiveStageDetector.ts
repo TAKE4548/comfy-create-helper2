@@ -1,4 +1,4 @@
-import type { StageMaster } from '../api/types'
+import type { MappingVariant, NodeSelectorPatternCreate, StageMaster } from '../api/types'
 
 export interface ActiveStageInfo {
   stage: StageMaster
@@ -83,9 +83,33 @@ export function extractWorkflowNodes(workflowJson: unknown): ExtractedWorkflowNo
   return result
 }
 
+export type StageSelectorPatterns = ReadonlyMap<number, ReadonlyArray<{ pattern: string; match_type: string }>>
+
+export function buildStageSelectorPatterns(
+  masters: ReadonlyArray<{ variants?: ReadonlyArray<Pick<MappingVariant, 'stage_id' | 'is_enabled'> & { selector_patterns?: NodeSelectorPatternCreate[] | null }> }>
+): Map<number, Array<{ pattern: string; match_type: string }>> {
+  const result = new Map<number, Array<{ pattern: string; match_type: string }>>()
+  for (const master of masters ?? []) {
+    for (const variant of master?.variants ?? []) {
+      if (!variant || variant.is_enabled === false) continue
+      for (const p of variant.selector_patterns ?? []) {
+        if (!p || typeof p.pattern !== 'string' || p.pattern.trim().length === 0) continue
+        const match_type = p.match_type ?? 'contains'
+        const list = result.get(variant.stage_id) ?? []
+        if (!list.some((q) => q.pattern === p.pattern && q.match_type === match_type)) {
+          list.push({ pattern: p.pattern, match_type })
+        }
+        result.set(variant.stage_id, list)
+      }
+    }
+  }
+  return result
+}
+
 export function detectActiveStages(
   workflowJson: Record<string, any> | null | undefined,
-  stages: StageMaster[]
+  stages: StageMaster[],
+  stagePatterns: StageSelectorPatterns = new Map()
 ): ActiveStageInfo[] {
   if (!workflowJson || typeof workflowJson !== 'object' || !Array.isArray(stages) || stages.length === 0) {
     return []
@@ -101,17 +125,15 @@ export function detectActiveStages(
     const isAlwaysVisible = Boolean(stage.is_builtin || stage.key?.toLowerCase() === 'main')
     const matchedNodeIdSet = new Set<string>()
 
-    const rawKeywords = Array.isArray(stage.search_keywords) ? stage.search_keywords : []
-    const validKeywords = rawKeywords
-      .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
-      .map((k) => k.trim().toLowerCase())
+    const patterns = (stagePatterns.get(stage.id) ?? [])
+      .filter((p) => typeof p.pattern === 'string' && p.pattern.trim().length > 0)
+      .map((p) => ({ pattern: p.pattern.trim().toLowerCase(), exact: p.match_type === 'exact' }))
 
-    if (validKeywords.length > 0) {
+    if (patterns.length > 0) {
       for (const node of nodes) {
         try {
-          const tLower = node.title.toLowerCase()
-          const cLower = node.classType.toLowerCase()
-          const isMatch = validKeywords.some((kw) => tLower.includes(kw) || cLower.includes(kw))
+          const text = (node.title.trim() || node.classType.trim()).toLowerCase()
+          const isMatch = patterns.some((p) => (p.exact ? text === p.pattern : text.includes(p.pattern)))
           if (isMatch) {
             matchedNodeIdSet.add(node.id)
           }

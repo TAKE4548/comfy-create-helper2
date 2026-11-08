@@ -1,6 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
+import { server } from '../../../../test/mocks/server'
 import { MappingMasterSection } from '../MappingMasterSection'
 import { MappingMasterEditModal } from '../../../../components/MappingMasterEditModal'
 import { StageManagerModal } from '../../../../components/StageManagerModal'
@@ -8,19 +10,48 @@ import { mappingMastersApi } from '../../../../api/domains/mappingMasters'
 import { mappingGroupsApi } from '../../../../api/domains/mappingGroups'
 import { stageMastersApi } from '../../../../api/domains/stageMasters'
 import { paramTypeMastersApi } from '../../../../api/domains/workflows'
-import type { MappingMasterV2, MappingGroupMaster, StageMaster } from '../../../../api/types'
+import type {
+  MappingMasterV2,
+  MappingGroupMaster,
+  StageMaster,
+  MasterAtomicSaveRequest,
+} from '../../../../api/types'
 
 // Mock APIs
-vi.mock('../../../../api/domains/mappingMasters', () => ({
-  mappingMastersApi: {
-    list: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    getUsages: vi.fn(),
-    reorder: vi.fn(),
+// atomicSave stays real so that REQ-419 cases exercise the HTTP layer through MSW.
+vi.mock('../../../../api/domains/mappingMasters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../api/domains/mappingMasters')>()
+  return {
+    mappingMastersApi: {
+      list: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      getUsages: vi.fn(),
+      reorder: vi.fn(),
+      atomicSave: actual.mappingMastersApi.atomicSave,
+    },
+  }
+})
+
+// Capture the props the section passes to the edit modal (real modal still renders).
+const modalProbe = vi.hoisted(() => ({
+  props: null as null | {
+    onSave: (data: unknown) => Promise<void> | void
+    isOpen?: boolean
   },
 }))
+vi.mock('../../../../components/MappingMasterEditModal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../components/MappingMasterEditModal')>()
+  const Actual = actual.MappingMasterEditModal
+  return {
+    ...actual,
+    MappingMasterEditModal: (props: React.ComponentProps<typeof Actual>) => {
+      modalProbe.props = props as never
+      return <Actual {...props} />
+    },
+  }
+})
 
 vi.mock('../../../../api/domains/mappingGroups', () => ({
   mappingGroupsApi: {
@@ -123,9 +154,9 @@ describe('MappingMasterSection & Modals', () => {
 
       // Both masters displayed initially under "すべて"
       expect(await screen.findByText('Positive Prompt')).toBeInTheDocument()
-      expect(screen.getByText('(text)')).toBeInTheDocument()
+      expect(screen.queryByText('(text)')).not.toBeInTheDocument()
       expect(screen.getByText('Sampler Steps')).toBeInTheDocument()
-      expect(screen.getByText('(steps)')).toBeInTheDocument()
+      expect(screen.queryByText('(steps)')).not.toBeInTheDocument()
 
       // Variants co-displayed in the same row
       expect(screen.getAllByText('通常').length).toBeGreaterThan(0)
@@ -173,17 +204,17 @@ describe('MappingMasterSection & Modals', () => {
       expect(card).not.toBeNull()
       expect(card.querySelector('.settings-mobile-card__actions')).not.toBeNull()
       expect(card.querySelector('.settings-mobile-card__badges')).not.toBeNull()
-      expect(card.querySelector('.settings-mobile-card__target-node')).toHaveTextContent('(text)')
+      expect(card.querySelector('.settings-mobile-card__target-node')).toBeEmptyDOMElement()
       expect(screen.getByText('Positive Prompt')).toHaveAttribute('title', 'Positive Prompt')
 
       const edit = screen.getByRole('button', {
-        name: 'Positive Prompt のマッピング設定を編集（対象ノード: text / CLIPTextEncode）',
+        name: 'Positive Prompt のマッピング設定を編集（Variant 3件）',
       })
       expect(edit).toHaveClass('min-h-11', 'min-w-11', 'touch-manipulation')
       expect(screen.getByRole('button', { name: 'Positive Prompt を削除' })).toHaveClass('min-h-11', 'min-w-11')
     })
 
-    it('[REQ-365/AC-3] shows +N classes and +N stages compact badges without duplicating variant names', async () => {
+    it('[REQ-365/AC-3] shows +N stages compact badge without duplicating variant names', async () => {
       const mk = (id: number, classes: string[] | null, nVariants: number): MappingMasterV2 => ({
         ...mockMasters[1],
         id,
@@ -204,8 +235,6 @@ describe('MappingMasterSection & Modals', () => {
       renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
       await screen.findByText('M3')
 
-      expect(screen.getAllByText(/^\+\d+ classes$/)).toHaveLength(1)
-      expect(screen.getByText('+9 classes')).toBeInTheDocument()
       expect(screen.getAllByText(/^\+\d+ stages$/)).toHaveLength(1)
       expect(screen.getByText('+19 stages')).toBeInTheDocument()
       expect(screen.getAllByText('S3_0')).toHaveLength(1)
@@ -213,6 +242,45 @@ describe('MappingMasterSection & Modals', () => {
       expect(screen.getByText('S3_19')).toHaveClass('hidden', 'md:inline-flex')
       expect(screen.getByText('S3_0')).not.toHaveClass('hidden')
       expect(screen.getAllByText('S2_0')).toHaveLength(1)
+    })
+
+    it('[REQ-419/AC-7] master card shows variant count badge without +N classes', async () => {
+      const mk = (id: number, nClasses: number, nVariants: number): MappingMasterV2 => ({
+        ...mockMasters[1],
+        id,
+        name: `M${id}`,
+        expected_class_types: Array.from({ length: nClasses }, (_, i) => `C${i}`),
+        variants: Array.from({ length: nVariants }, (_, i) => ({
+          ...mockMasters[0].variants[0],
+          id: id * 100 + i,
+          stage_id: id * 100 + i,
+          stage_name: `S${id}_${i}`,
+        })),
+      })
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([mk(1, 10, 20), mk(2, 3, 0)])
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('M1')
+
+      expect(screen.queryAllByText(/classes$/)).toHaveLength(0)
+      const badges = screen.getAllByTestId('master-variant-count')
+      expect(badges.map((b) => b.textContent)).toEqual(['Variant 20', 'Variant 0'])
+      expect(badges[0]).toHaveAttribute('aria-label', 'Variant数 20')
+      expect(badges[1]).toHaveAttribute('aria-label', 'Variant数 0')
+      expect(screen.getByRole('button', { name: 'M1 のマッピング設定を編集（Variant 20件）' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'M2 のマッピング設定を編集（Variant 0件）' })).toBeInTheDocument()
+    })
+
+    it('[REQ-419/AC-7] master card row does not show legacy param_name', async () => {
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await screen.findByText('Positive Prompt')
+
+      for (const [name, param] of [['Positive Prompt', 'text'], ['Sampler Steps', 'steps']]) {
+        const card = screen.getByText(name).closest('.settings-mobile-card') as HTMLElement
+        expect(card).not.toBeNull()
+        expect(card.textContent).not.toContain(`(${param})`)
+        expect(card.textContent).not.toContain(param === 'text' ? '(text' : '(steps')
+        expect(card.querySelector('.settings-mobile-card__target-node')).not.toBeNull()
+      }
     })
 
     it('[REQ-365/AC-4] opens ParamTypeMaster manager as a dialog from the カスタム型マスタ button and no longer renders the always-on bar', async () => {
@@ -284,6 +352,7 @@ describe('MappingMasterSection & Modals', () => {
       fireEvent.click(defaultEnabled)
       fireEvent.change(screen.getByPlaceholderText('例: Positive Prompt'), { target: { value: 'Denoise' } })
       fireEvent.change(screen.getByPlaceholderText('例: text, steps, cfg'), { target: { value: 'denoise' } })
+      fireEvent.change(screen.getByPlaceholderText('例: KSampler'), { target: { value: 'KSampler' } })
       fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
 
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ default_enabled: false }))
@@ -308,25 +377,6 @@ describe('MappingMasterSection & Modals', () => {
       expect(defaultEnabled).toBeDisabled()
     })
 
-    it('[REQ-358/AC-30] preserves an existing disabled default on save', () => {
-      const onSave = vi.fn()
-      renderWithClient(
-        <MappingMasterEditModal
-          isOpen={true}
-          onClose={vi.fn()}
-          master={{ ...mockMasters[0], default_enabled: false }}
-          groups={mockGroups}
-          stages={mockStages}
-          onSave={onSave}
-        />
-      )
-
-      expect(screen.getByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
-      fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
-
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ default_enabled: false }))
-    })
-
     it('[REQ-358/AC-28][REQ-365/AC-3] keeps disabled masters visible and editable', async () => {
       vi.mocked(mappingMastersApi.list).mockResolvedValue([
         { ...mockMasters[0], default_enabled: false },
@@ -338,67 +388,198 @@ describe('MappingMasterSection & Modals', () => {
       fireEvent.click(screen.getByRole('button', { name: /^Positive Prompt のマッピング設定を編集/ }))
       expect(await screen.findByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
     })
+  })
 
-    it('supports chip input, candidate palette click, variant toggles, and submit', async () => {
-      const onSave = vi.fn()
-      const onClose = vi.fn()
+  describe('MappingMasterSection atomic save (MSW)', () => {
+    const atomicReq: MasterAtomicSaveRequest = {
+      master: { name: 'Positive Prompt', input_type: 'textarea', group_id: 1, default_enabled: true },
+      rule_sets: [],
+      selectors: [],
+      variants: [],
+    }
+    let atomicCalls: unknown[] = []
+    let definitionWrites: string[] = []
+    let ruleGets = 0
+    let selectorGets = 0
 
+    beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+    afterEach(() => server.resetHandlers())
+    afterAll(() => server.close())
+
+    beforeEach(() => {
+      modalProbe.props = null
+      atomicCalls = []
+      definitionWrites = []
+      ruleGets = 0
+      selectorGets = 0
+    })
+
+    function useDefinitionHandlers(atomicStatus: number) {
+      server.use(
+        http.post('/api/mapping-masters/:id/atomic-save', async ({ request }) => {
+          atomicCalls.push(await request.json())
+          if (atomicStatus !== 200) {
+            return HttpResponse.json({ detail: 'invalid' }, { status: atomicStatus })
+          }
+          return HttpResponse.json(mockMasters[0])
+        }),
+        http.get('/api/binding-rules', () => {
+          ruleGets += 1
+          return HttpResponse.json([])
+        }),
+        http.get('/api/node-selectors', () => {
+          selectorGets += 1
+          return HttpResponse.json([])
+        }),
+        http.all('/api/binding-rules/*', ({ request }) => {
+          definitionWrites.push(`${request.method} binding-rules`)
+          return HttpResponse.json({})
+        }),
+        http.all('/api/node-selectors/*', ({ request }) => {
+          definitionWrites.push(`${request.method} node-selectors`)
+          return HttpResponse.json({})
+        }),
+      )
+    }
+
+    function Probe() {
+      useQuery({ queryKey: ['binding-rules'], queryFn: () => fetch('/api/binding-rules').then((r) => r.json()) })
+      useQuery({ queryKey: ['node-selectors'], queryFn: () => fetch('/api/node-selectors').then((r) => r.json()) })
+      return null
+    }
+
+    async function openEditModal() {
+      fireEvent.click(await screen.findByRole('button', { name: /Positive Prompt のマッピング設定を編集/ }))
+      await screen.findByRole('dialog', { name: /マッピング/ })
+      await waitFor(() => expect(modalProbe.props?.isOpen).toBe(true))
+    }
+
+    it('[REQ-419/AC-6] save failure is propagated to the modal', async () => {
+      useDefinitionHandlers(422)
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+      await openEditModal()
+
+      let caught: unknown = null
+      await act(async () => {
+        try {
+          await modalProbe.props!.onSave(atomicReq)
+        } catch (e) {
+          caught = e
+        }
+      })
+
+      expect(caught).toBeInstanceOf(Error)
+      expect(atomicCalls).toHaveLength(1)
+      // modal stays open after the failed save
+      expect(screen.getByRole('dialog', { name: /マッピング/ })).toBeInTheDocument()
+      expect(modalProbe.props?.isOpen).toBe(true)
+    })
+
+    it('[REQ-419/AC-12] [REQ-419/AC-5] section sends one atomic-save request and refreshes definitions', async () => {
+      useDefinitionHandlers(200)
       renderWithClient(
-        <MappingMasterEditModal
-          isOpen={true}
-          onClose={onClose}
-          master={null}
-          groups={mockGroups}
-          stages={mockStages}
-          onSave={onSave}
-        />
+        <>
+          <Probe />
+          <MappingMasterSection isExpanded={true} onToggle={vi.fn()} />
+        </>,
       )
+      await waitFor(() => {
+        expect(ruleGets).toBe(1)
+        expect(selectorGets).toBe(1)
+      })
+      await openEditModal()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const listCallsBefore = vi.mocked(mappingMastersApi.list).mock.calls.length
+      const rulesBefore = ruleGets
+      const selectorsBefore = selectorGets
 
-      expect(screen.getByRole('dialog', { name: /新規マッピングマスター作成/ })).toBeInTheDocument()
+      await act(async () => {
+        await modalProbe.props!.onSave(atomicReq)
+      })
 
-      // Fill basic inputs
-      const nameInput = screen.getByPlaceholderText('例: Positive Prompt')
-      const paramInput = screen.getByPlaceholderText('例: text, steps, cfg')
-      fireEvent.change(nameInput, { target: { value: 'Denoise Master' } })
-      fireEvent.change(paramInput, { target: { value: 'denoise' } })
+      expect(atomicCalls).toEqual([atomicReq])
+      expect(definitionWrites).toEqual([])
+      expect(vi.mocked(mappingMastersApi.update)).not.toHaveBeenCalled()
+      await waitFor(() => {
+        expect(vi.mocked(mappingMastersApi.list).mock.calls.length).toBeGreaterThan(listCallsBefore)
+        expect(ruleGets).toBeGreaterThan(rulesBefore)
+        expect(selectorGets).toBeGreaterThan(selectorsBefore)
+      })
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /マッピング/ })).not.toBeInTheDocument())
+    })
 
-      // Chip input for Expected Class Types via Enter
-      const classInput = screen.getByPlaceholderText('クラス名を入力してEnter...')
-      fireEvent.change(classInput, { target: { value: 'CustomSamplerNode' } })
-      fireEvent.keyDown(classInput, { key: 'Enter', code: 'Enter' })
-      expect(screen.getAllByText('CustomSamplerNode').length).toBeGreaterThanOrEqual(1)
+    const boundMaster = (overrides: Partial<MappingMasterV2> = {}): MappingMasterV2 => ({
+      ...mockMasters[0],
+      variants: mockMasters[0].variants.map((v) => ({ ...v, binding_rule_set_id: 7, node_selector_id: null })),
+      ...overrides,
+    })
 
-      // Candidate palette click
-      const ksamplerBtn = screen.getByRole('button', { name: '+ KSampler' })
-      fireEvent.click(ksamplerBtn)
-      expect(screen.getByText('KSampler')).toBeInTheDocument()
-
-      // Remove a chip via X button
-      const removeKSamplerBtn = screen.getByRole('button', { name: 'KSampler を削除' })
-      fireEvent.click(removeKSamplerBtn)
-      expect(screen.queryByText('KSampler')).not.toBeInTheDocument()
-
-      // Variant controls: all stages rendered
-      expect(screen.getByText('通常')).toBeInTheDocument()
-      expect(screen.getByText('Rough')).toBeInTheDocument()
-      expect(screen.getByText('Detail')).toBeInTheDocument()
-
-      // Submit form
-      const submitBtn = screen.getByRole('button', { name: 'マスターを保存' })
-      fireEvent.click(submitBtn)
-
-      expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'Denoise Master',
-          param_name: 'denoise',
-          expected_class_types: ['CustomSamplerNode'],
-          variants: expect.arrayContaining([
-            expect.objectContaining({ stage_id: 10, is_enabled: true }),
-            expect.objectContaining({ stage_id: 20, is_enabled: true }),
-            expect.objectContaining({ stage_id: 30, is_enabled: true }),
+    function useBoundDefinitionHandlers() {
+      server.use(
+        http.get('/api/binding-rules', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'text rules',
+              entries: [{ id: 1, rule_set_id: 7, class_type: 'CLIPTextEncode', param_name: 'text', priority: 0 }],
+              referenced_roles: ['text'],
+            },
           ]),
-        })
+        ),
+        http.get('/api/node-selectors', () => HttpResponse.json([])),
       )
+    }
+
+    it('[REQ-358/AC-30] preserves an existing disabled default on save', async () => {
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([boundMaster({ default_enabled: false })])
+      useDefinitionHandlers(200)
+      useBoundDefinitionHandlers()
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /^Positive Prompt のマッピング設定を編集/ }))
+      expect(await screen.findByRole('checkbox', { name: '新規マッピングで基本有効' })).not.toBeChecked()
+      await screen.findByRole('group', { name: '通常 のVariant' })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'マスターを保存' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
+
+      await waitFor(() => expect(atomicCalls).toHaveLength(1))
+      expect((atomicCalls[0] as MasterAtomicSaveRequest).master.default_enabled).toBe(false)
+      // the saved state stays disabled: the control is still unchecked and the card still shows the disabled badge
+      expect(screen.queryByRole('checkbox', { name: '新規マッピングで基本有効' })).toBeNull()
+      expect(await screen.findByText('新規マッピングで基本無効')).toBeInTheDocument()
+    })
+
+    it('[REQ-419/AC-3] variant enable toggle and submit send one atomic-save with the toggled is_enabled', async () => {
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([boundMaster()])
+      useDefinitionHandlers(200)
+      useBoundDefinitionHandlers()
+      renderWithClient(<MappingMasterSection isExpanded={true} onToggle={vi.fn()} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /^Positive Prompt のマッピング設定を編集/ }))
+      // all stage variants are rendered as rows; no chip input / candidate palette in the new UI
+      for (const stage of ['通常', 'Rough', 'Detail']) {
+        expect(await screen.findByRole('group', { name: `${stage} のVariant` })).toBeInTheDocument()
+      }
+      expect(screen.queryByPlaceholderText('クラス名を入力してEnter...')).toBeNull()
+
+      const rough = screen.getByRole('checkbox', { name: 'Rough を有効化' })
+      expect(rough).not.toBeChecked()
+      expect(screen.getByRole('checkbox', { name: '通常 を有効化' })).toBeChecked()
+      fireEvent.click(rough)
+      expect(rough).toBeChecked()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'マスターを保存' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
+
+      await waitFor(() => expect(atomicCalls).toHaveLength(1))
+      const req = atomicCalls[0] as MasterAtomicSaveRequest
+      expect(definitionWrites).toEqual([])
+      expect(vi.mocked(mappingMastersApi.update)).not.toHaveBeenCalled()
+      expect(req.master).toEqual(expect.objectContaining({ name: 'Positive Prompt', input_type: 'textarea' }))
+      expect(req.variants.map((v) => [v.stage_id, v.is_enabled])).toEqual([
+        [10, true],
+        [20, true],
+        [30, true],
+      ])
     })
   })
 

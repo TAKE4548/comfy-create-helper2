@@ -5,10 +5,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.services.mapping_master_save import apply_atomic_save, validate_atomic_save
+from app.services.scan_preview import run_scan_preview
 
 router = APIRouter(prefix="/api/mapping-masters", tags=["mapping-masters"])
 
@@ -28,6 +31,8 @@ class MappingVariantRead(BaseModel):
     computed_role: str
     extra_title_patterns: Optional[list[str]] = None
     is_enabled: bool = True
+    rule_entries: list[schemas.BindingRuleEntryBase] = []
+    selector_patterns: Optional[list[schemas.NodeSelectorPatternBase]] = None
 
 
 class MappingMasterV2Read(BaseModel):
@@ -216,6 +221,35 @@ def reorder_masters(payload: schemas.MappingMasterReorder, db: Session = Depends
     db.commit()
 
 
+@router.post("/scan-preview", response_model=schemas.ScanPreviewResponse)
+def scan_preview(payload: schemas.ScanPreviewRequest, db: Session = Depends(get_db)):
+    return run_scan_preview(db, payload)
+
+
+@router.post("/{master_id}/atomic-save", response_model=MappingMasterV2Read)
+def atomic_save_master(master_id: int, payload: schemas.MasterAtomicSaveRequest, db: Session = Depends(get_db)):
+    mm = db.query(models.MappingMaster).filter(models.MappingMaster.id == master_id).first()
+    if not mm:
+        raise HTTPException(status_code=404, detail="MappingMaster not found")
+    errors = validate_atomic_save(db, mm, payload)
+    if errors:
+        raise HTTPException(status_code=422, detail={"code": "MASTER_SAVE_VALIDATION_FAILED", "errors": errors})
+    try:
+        apply_atomic_save(db, mm, payload)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "MASTER_SAVE_CONFLICT", "message": "保存内容が既存データと競合しました。内容を確認して再度保存してください。"},
+        )
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(mm)
+    return _to_schema_v2(mm)
+
+
 @router.get("/{master_id}", response_model=MappingMasterV2Read)
 def get_master(master_id: int, db: Session = Depends(get_db)):
     mm = db.query(models.MappingMaster).filter(models.MappingMaster.id == master_id).first()
@@ -365,6 +399,24 @@ def get_master_usages(master_id: int, db: Session = Depends(get_db)):
 def _to_variant_schema(v: models.MappingVariant) -> MappingVariantRead:
     extra_patterns = json.loads(v.extra_title_patterns) if v.extra_title_patterns else None
     stage = v.stage
+    rule_set = v.binding_rule_set
+    rule_entries = (
+        [
+            schemas.BindingRuleEntryBase(class_type=e.class_type, param_name=e.param_name, priority=e.priority)
+            for e in sorted(rule_set.entries, key=lambda e: (e.priority, e.id))
+        ]
+        if rule_set is not None
+        else []
+    )
+    selector = v.node_selector
+    selector_patterns = (
+        [
+            schemas.NodeSelectorPatternBase(pattern=p.pattern, match_type=p.match_type, priority=p.priority)
+            for p in sorted(selector.patterns, key=lambda p: (p.priority, p.id))
+        ]
+        if selector is not None
+        else None
+    )
     return MappingVariantRead(
         id=v.id,
         master_id=v.master_id,
@@ -379,6 +431,8 @@ def _to_variant_schema(v: models.MappingVariant) -> MappingVariantRead:
         computed_role=v.computed_role,
         extra_title_patterns=extra_patterns,
         is_enabled=v.is_enabled,
+        rule_entries=rule_entries,
+        selector_patterns=selector_patterns,
     )
 
 

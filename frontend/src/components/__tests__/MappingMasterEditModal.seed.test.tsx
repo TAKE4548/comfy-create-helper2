@@ -44,6 +44,7 @@ describe('MappingMasterEditModal Seed input type', () => {
     fireEvent.change(inputType, { target: { value: 'seed' } })
     fireEvent.change(screen.getByPlaceholderText('例: Positive Prompt'), { target: { value: 'Seed' } })
     fireEvent.change(screen.getByPlaceholderText('例: text, steps, cfg'), { target: { value: 'seed' } })
+    fireEvent.change(screen.getByPlaceholderText('例: KSampler'), { target: { value: 'KSampler' } })
     fireEvent.click(screen.getByRole('button', { name: 'マスターを保存' }))
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ input_type: 'seed', param_name: 'seed' }))

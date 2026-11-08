@@ -160,6 +160,18 @@ from app.schemas.mapping import (
     NodeSelectorCreate,
     NodeSelectorUpdate,
     NodeSelectorRead,
+    AtomicEntryInput,
+    AtomicPatternInput,
+    DefinitionOp,
+    DefinitionRef,
+    AtomicVariantItem,
+    AtomicMasterFields,
+    MasterAtomicSaveRequest,
+    ScanPreviewVariantInput,
+    ScanPreviewRequest,
+    ScanPreviewCandidate,
+    ScanPreviewVariantResult,
+    ScanPreviewResponse,
 )
 
 __all__ = [
@@ -212,6 +224,7 @@ __all__ = [
     "BindingRuleSetBase", "BindingRuleSetCreate", "BindingRuleSetUpdate", "BindingRuleSetRead",
     "NodeSelectorPatternBase", "NodeSelectorPatternCreate", "NodeSelectorPatternRead",
     "NodeSelectorBase", "NodeSelectorCreate", "NodeSelectorUpdate", "NodeSelectorRead",
+    "AtomicEntryInput", "AtomicPatternInput", "DefinitionOp", "DefinitionRef", "AtomicVariantItem", "AtomicMasterFields", "MasterAtomicSaveRequest", "ScanPreviewVariantInput", "ScanPreviewRequest", "ScanPreviewCandidate", "ScanPreviewVariantResult", "ScanPreviewResponse",
 ]
 
 

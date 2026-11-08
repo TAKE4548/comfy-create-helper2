@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Sliders, Layers, Settings, ChevronDown, RefreshCw, Pencil, Copy, Wand2, Trash2, ArrowLeftRight, Undo2, Check, MoreVertical } from 'lucide-react'
 import { workflowsApi, workflowPresetsApi, snapshotsApi, mappingMastersApi, baseModelsApi } from '../../../api/client'
 import { stageMastersApi } from '../../../api/domains/stageMasters'
-import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, BaseModel, StageMaster } from '../../../api/types'
-import { detectActiveStages } from '../../../utils/workflowAdaptiveStageDetector'
+import type { WorkflowSummary, WorkflowPreset, DiffAnalyzeResponse, Workflow, MappingMaster, MappingVariant, BaseModel, StageMaster } from '../../../api/types'
+import { detectActiveStages, buildStageSelectorPatterns } from '../../../utils/workflowAdaptiveStageDetector'
 import { AdaptiveWorkflowWiring } from '../../../components/AdaptiveWorkflowWiring'
 import { useConfig } from '../../../hooks/useConfig'
 import { resolveComfyUrl } from '../../../hooks/useComfyWebSocket'
@@ -223,7 +223,7 @@ export function WorkflowConnectionSection({
     const masters = stageMasters.length > 0 ? stageMasters : [
       { id: 1, key: 'main', name: 'Main', suffix: '', search_keywords: null, previous_suffixes: null, is_builtin: true, is_active: true, sort_order: 1 } as StageMaster,
     ]
-    const detected = detectActiveStages(configWorkflow?.json_body, masters)
+    const detected = detectActiveStages(configWorkflow?.json_body, masters, buildStageSelectorPatterns(mappingMasters as Array<{ variants?: MappingVariant[] }>))
     const requiredStageIds = new Set<number>()
     for (const slot of slotDefinitions) {
       const key = slotKey(slot.masterId, slot.variantId)
@@ -236,7 +236,7 @@ export function WorkflowConnectionSection({
     const byId = new Map(detected.map((item) => [item.stage.id, item]))
     for (const stage of masters) if (requiredStageIds.has(stage.id) && !byId.has(stage.id)) byId.set(stage.id, { stage, matchingNodesCount: 0, matchedNodeIds: [], isAlwaysVisible: Boolean(stage.is_builtin || stage.key.toLowerCase() === 'main') })
     return Array.from(byId.values()).sort((a, b) => a.stage.sort_order - b.stage.sort_order)
-  }, [configWorkflow?.json_body, configWorkflow?.mappings, configSlotStates, stageMasters, slotDefinitions])
+  }, [configWorkflow?.json_body, configWorkflow?.mappings, configSlotStates, stageMasters, slotDefinitions, mappingMasters])
 
   useEffect(() => {
     const session = configDraftSession.current

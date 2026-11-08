@@ -360,6 +360,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/mapping-masters/scan-preview:
+    post:
+      tags:
+      - mapping-masters
+      summary: Scan Preview
+      operationId: scan_preview_api_mapping_masters_scan_preview_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanPreviewRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanPreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/mapping-masters/{master_id}/atomic-save:
+    post:
+      tags:
+      - mapping-masters
+      summary: Atomic Save Master
+      operationId: atomic_save_master_api_mapping_masters__master_id__atomic_save_post
+      parameters:
+      - name: master_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Master Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasterAtomicSaveRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingMasterV2Read'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/mapping-masters/{master_id}:
     get:
       tags:
@@ -5088,6 +5145,94 @@ components:
           title: Description
       type: object
       title: AlbumUpdate
+    AtomicEntryInput:
+      properties:
+        class_type:
+          type: string
+          title: Class Type
+        param_name:
+          type: string
+          title: Param Name
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - class_type
+      - param_name
+      title: AtomicEntryInput
+    AtomicMasterFields:
+      properties:
+        name:
+          type: string
+          title: Name
+        input_type:
+          type: string
+          title: Input Type
+        group_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Group Id
+        default_enabled:
+          type: boolean
+          title: Default Enabled
+      type: object
+      required:
+      - name
+      - input_type
+      - default_enabled
+      title: AtomicMasterFields
+    AtomicPatternInput:
+      properties:
+        pattern:
+          type: string
+          title: Pattern
+        match_type:
+          type: string
+          enum:
+          - exact
+          - contains
+          title: Match Type
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - pattern
+      - match_type
+      title: AtomicPatternInput
+    AtomicVariantItem:
+      properties:
+        row_key:
+          type: string
+          title: Row Key
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        stage_id:
+          type: integer
+          title: Stage Id
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          default: true
+        rule_set:
+          $ref: '#/components/schemas/DefinitionRef'
+        selector:
+          anyOf:
+          - $ref: '#/components/schemas/DefinitionRef'
+          - type: 'null'
+      type: object
+      required:
+      - row_key
+      - stage_id
+      - rule_set
+      title: AtomicVariantItem
     AuditRequest:
       properties:
         audit_types:
@@ -5285,6 +5430,23 @@ components:
       - scope
       - project_id
       title: BatchView
+    BindingRuleEntryBase:
+      properties:
+        class_type:
+          type: string
+          title: Class Type
+        param_name:
+          type: string
+          title: Param Name
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - class_type
+      - param_name
+      title: BindingRuleEntryBase
     BindingRuleEntryCreate:
       properties:
         class_type:
@@ -6145,6 +6307,59 @@ components:
           title: Selected Alt Outfits
       type: object
       title: DatasetProjectUpdate
+    DefinitionOp:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        op:
+          type: string
+          enum:
+          - create
+          - update
+          title: Op
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        name:
+          type: string
+          title: Name
+        entries:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AtomicEntryInput'
+            type: array
+          - type: 'null'
+          title: Entries
+        patterns:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AtomicPatternInput'
+            type: array
+          - type: 'null'
+          title: Patterns
+      type: object
+      required:
+      - ref
+      - op
+      - name
+      title: DefinitionOp
+    DefinitionRef:
+      properties:
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ref
+      type: object
+      title: DefinitionRef
     DictionaryResponse:
       properties:
         rules:
@@ -7232,6 +7447,19 @@ components:
           type: boolean
           title: Is Enabled
           default: true
+        rule_entries:
+          items:
+            $ref: '#/components/schemas/BindingRuleEntryBase'
+          type: array
+          title: Rule Entries
+          default: []
+        selector_patterns:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/NodeSelectorPatternBase'
+            type: array
+          - type: 'null'
+          title: Selector Patterns
       type: object
       required:
       - id
@@ -7288,6 +7516,29 @@ components:
           title: Is Enabled
       type: object
       title: MappingVariantUpdateItem
+    MasterAtomicSaveRequest:
+      properties:
+        master:
+          $ref: '#/components/schemas/AtomicMasterFields'
+        rule_sets:
+          items:
+            $ref: '#/components/schemas/DefinitionOp'
+          type: array
+          title: Rule Sets
+        selectors:
+          items:
+            $ref: '#/components/schemas/DefinitionOp'
+          type: array
+          title: Selectors
+        variants:
+          items:
+            $ref: '#/components/schemas/AtomicVariantItem'
+          type: array
+          title: Variants
+      type: object
+      required:
+      - master
+      title: MasterAtomicSaveRequest
     NodeSelectorCreate:
       properties:
         name:
@@ -7302,6 +7553,23 @@ components:
       required:
       - name
       title: NodeSelectorCreate
+    NodeSelectorPatternBase:
+      properties:
+        pattern:
+          type: string
+          title: Pattern
+        match_type:
+          type: string
+          title: Match Type
+          default: contains
+        priority:
+          type: integer
+          title: Priority
+          default: 1
+      type: object
+      required:
+      - pattern
+      title: NodeSelectorPatternBase
     NodeSelectorPatternCreate:
       properties:
         pattern:
@@ -8074,6 +8342,164 @@ components:
       - node_id
       - node_title
       title: ScanMatchedItem
+    ScanPreviewCandidate:
+      properties:
+        node_id:
+          type: string
+          title: Node Id
+        node_title:
+          type: string
+          title: Node Title
+        class_type:
+          type: string
+          title: Class Type
+        input_name:
+          type: string
+          title: Input Name
+        stage_rank:
+          type: integer
+          title: Stage Rank
+        stage_label:
+          type: string
+          enum:
+          - exact
+          - contains
+          - no_selector
+          title: Stage Label
+        entry_priority:
+          type: integer
+          title: Entry Priority
+        pattern_priority:
+          type: integer
+          title: Pattern Priority
+      type: object
+      required:
+      - node_id
+      - node_title
+      - class_type
+      - input_name
+      - stage_rank
+      - stage_label
+      - entry_priority
+      - pattern_priority
+      title: ScanPreviewCandidate
+    ScanPreviewRequest:
+      properties:
+        workflow_id:
+          type: integer
+          title: Workflow Id
+        variants:
+          items:
+            $ref: '#/components/schemas/ScanPreviewVariantInput'
+          type: array
+          minItems: 1
+          title: Variants
+      type: object
+      required:
+      - workflow_id
+      - variants
+      title: ScanPreviewRequest
+    ScanPreviewResponse:
+      properties:
+        workflow_id:
+          type: integer
+          title: Workflow Id
+        results:
+          items:
+            $ref: '#/components/schemas/ScanPreviewVariantResult'
+          type: array
+          title: Results
+      type: object
+      required:
+      - workflow_id
+      - results
+      title: ScanPreviewResponse
+    ScanPreviewVariantInput:
+      properties:
+        client_key:
+          type: string
+          title: Client Key
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
+        stage_id:
+          type: integer
+          title: Stage Id
+        role:
+          type: string
+          title: Role
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          default: true
+        entries:
+          items:
+            $ref: '#/components/schemas/AtomicEntryInput'
+          type: array
+          title: Entries
+        patterns:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/AtomicPatternInput'
+            type: array
+          - type: 'null'
+          title: Patterns
+      type: object
+      required:
+      - client_key
+      - stage_id
+      - role
+      title: ScanPreviewVariantInput
+    ScanPreviewVariantResult:
+      properties:
+        client_key:
+          type: string
+          title: Client Key
+        variant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Variant Id
+        stage_id:
+          type: integer
+          title: Stage Id
+        stage_key:
+          type: string
+          title: Stage Key
+        role:
+          type: string
+          title: Role
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+        status:
+          type: string
+          enum:
+          - ok
+          - duplicated
+          - not_found
+          - disabled
+          title: Status
+        confirmed:
+          anyOf:
+          - $ref: '#/components/schemas/ScanPreviewCandidate'
+          - type: 'null'
+        candidates:
+          items:
+            $ref: '#/components/schemas/ScanPreviewCandidate'
+          type: array
+          title: Candidates
+      type: object
+      required:
+      - client_key
+      - stage_id
+      - stage_key
+      - role
+      - is_enabled
+      - status
+      title: ScanPreviewVariantResult
     ScanResult:
       properties:
         matched:

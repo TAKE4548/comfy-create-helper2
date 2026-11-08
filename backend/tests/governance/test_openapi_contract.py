@@ -150,3 +150,35 @@ def test_req417_openapi_binding_rules_and_node_selectors_contract_AC_5() -> None
         assert backend_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
         assert docs_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
 
+
+
+def test_req419_ac9_openapi_new_contracts_match_runtime() -> None:
+    """[REQ-419/AC-9] New atomic-save / scan-preview paths and schemas, and MappingVariantRead, match runtime in both snapshots."""
+    runtime = app.openapi()
+    backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
+    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
+
+    routes = {
+        "/api/mapping-masters/{master_id}/atomic-save": "MasterAtomicSaveRequest",
+        "/api/mapping-masters/scan-preview": "ScanPreviewRequest",
+    }
+    for route, request_schema in routes.items():
+        assert list(runtime["paths"][route]) == ["post"]
+        body = runtime["paths"][route]["post"]["requestBody"]["content"]["application/json"]["schema"]
+        assert body["$ref"] == f"#/components/schemas/{request_schema}"
+        assert backend_snapshot["paths"][route] == runtime["paths"][route]
+        assert docs_snapshot["paths"][route] == runtime["paths"][route]
+
+    schema_names = (
+        "AtomicEntryInput", "AtomicPatternInput", "DefinitionOp", "DefinitionRef", "AtomicVariantItem",
+        "AtomicMasterFields", "MasterAtomicSaveRequest", "ScanPreviewVariantInput", "ScanPreviewRequest",
+        "ScanPreviewCandidate", "ScanPreviewVariantResult", "ScanPreviewResponse",
+        "MappingVariantRead", "BindingRuleEntryBase", "NodeSelectorPatternBase",
+    )
+    for name in schema_names:
+        assert backend_snapshot["components"]["schemas"][name] == runtime["components"]["schemas"][name], name
+        assert docs_snapshot["components"]["schemas"][name] == runtime["components"]["schemas"][name], name
+
+    variant_props = runtime["components"]["schemas"]["MappingVariantRead"]["properties"]
+    assert "rule_entries" in variant_props and "selector_patterns" in variant_props
+    assert "rule_entries" not in runtime["components"]["schemas"]["MappingVariantRead"].get("required", [])

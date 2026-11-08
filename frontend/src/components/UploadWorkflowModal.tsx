@@ -5,6 +5,7 @@ import { workflowsApi, mappingMastersApi } from '../api/client'
 import type { ScanResult, MappingMaster, MappingMasterV2 } from '../api/types'
 import { useMasterMappingRows } from '../hooks/useMasterMappingRows'
 import { rankWorkflowNodeCandidates } from '../utils/workflowNodeUtils'
+import { candidateDefinitionForVariant } from '../utils/variantCandidateDefinition'
 import { WorkflowMappingEditor, type EditableSlot } from './WorkflowMappingEditor'
 
 type Phase = 'scanning' | 'editing' | 'saving' | 'done'
@@ -40,18 +41,13 @@ export function UploadWorkflowModal({ initialName, workflowJson, onClose, onSave
     for (const master of masters) {
       const v2 = 'base_key' in master ? master : undefined
       const variants = v2?.variants ?? []
-      const definition = {
-        expectedClassTypes: master.expected_class_types ?? [],
-        titlePatterns: [...(v2?.base_title_patterns ?? master.title_patterns ?? []), ...variants.flatMap(v => v.extra_title_patterns ?? [])],
-        paramNames: [master.param_name, ...(v2?.fallback_param_names ?? [])].filter((value): value is string => Boolean(value)),
-      }
       const activeVariants = variants.filter(v => v.is_enabled !== false)
       const slots = activeVariants.length
-        ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' }))
+        ? activeVariants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main', variant: v }))
         : variants.length
-          ? variants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main' }))
-          : [{ key: `v_${master.id}`, stage: 'Main' }]
-      for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, definition, slot.stage, stages))
+          ? variants.map(v => ({ key: `v_${v.id}`, stage: v.stage_name || 'Main', variant: v }))
+          : [{ key: `v_${master.id}`, stage: 'Main', variant: null }]
+      for (const slot of slots) cache.set(slot.key, rankWorkflowNodeCandidates(workflowJson, candidateDefinitionForVariant(slot.variant), slot.stage, stages))
     }
     return cache
   }, [masters, workflowJson])

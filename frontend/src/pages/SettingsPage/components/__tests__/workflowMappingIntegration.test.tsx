@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MappingMasterSection } from '../MappingMasterSection'
 import { MappingMasterEditModal } from '../../../../components/MappingMasterEditModal'
@@ -88,6 +88,13 @@ const mockStages: StageMaster[] = [
     sort_order: 3,
   },
 ]
+
+// REQ-419: stage detection uses NodeSelector patterns (search_keywords are no longer read)
+const mockStagePatterns = new Map([
+  [1, [{ pattern: 'main', match_type: 'contains' }]],
+  [2, [{ pattern: 'rough', match_type: 'contains' }]],
+  [3, [{ pattern: 'detail', match_type: 'contains' }, { pattern: 'refiner', match_type: 'contains' }]],
+])
 
 const mockMasters: MappingMasterV2[] = [
   {
@@ -271,7 +278,7 @@ describe('REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite', () => {
           '2': { class_type: 'KSampler', _meta: { title: 'Detail Refiner' } },
         },
       }
-      const activeStages = detectActiveStages(multiStageWorkflow, mockStages)
+      const activeStages = detectActiveStages(multiStageWorkflow, mockStages, mockStagePatterns)
       expect(activeStages.length).toBeGreaterThanOrEqual(1)
       const stageKeys = activeStages.map((s) => s.stage.key)
       expect(stageKeys).toContain('main') // main is always active
@@ -286,7 +293,8 @@ describe('REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite', () => {
             '1': { class_type: 'KSampler', _meta: { title: 'Rough KSampler' } },
           },
         },
-        mockStages
+        mockStages,
+        mockStagePatterns
       )
 
       renderWithClient(
@@ -323,21 +331,32 @@ describe('REQ-336 E2E Workflow Mapping & Red Teaming Integration Suite', () => {
       expect(screen.getAllByText('Rough Stage').length).toBeGreaterThan(0)
     })
 
-    it('renders MappingMasterEditModal with chips for expected_class_types', () => {
+    it('[REQ-419/AC-1] renders MappingMasterEditModal variant rows with RuleSet entries and no Master-level class-types input', () => {
       const onSave = vi.fn()
+      const master: MappingMasterV2 = {
+        ...mockMasters[0],
+        variants: mockMasters[0].variants.map((v) => ({ ...v, binding_rule_set_id: 900 })),
+      }
       renderWithClient(
         <MappingMasterEditModal
           isOpen={true}
           onClose={vi.fn()}
-          master={mockMasters[0]}
+          master={master}
           groups={mockGroups}
           stages={mockStages}
+          bindingRuleSets={[{ id: 900, name: 'Prompt RuleSet', entries: [{ id: 1, rule_set_id: 900, class_type: 'CLIPTextEncode', param_name: 'text', priority: 0 }] }]}
+          nodeSelectors={[]}
           onSave={onSave}
         />
       )
 
       expect(screen.getByText(/マッピングマスター編集/)).toBeInTheDocument()
-      expect(screen.getAllByText('CLIPTextEncode').length).toBeGreaterThanOrEqual(1)
+      const mainRow = screen.getByLabelText('Main Stage のVariant')
+      expect(within(mainRow).getByText(/CLIPTextEncode × text/)).toBeInTheDocument()
+      expect(screen.getAllByTestId('variant-entry').length).toBe(2)
+      // the removed Master-level Class Types chip input does not exist
+      expect(screen.queryByPlaceholderText(/class type/i)).not.toBeInTheDocument()
+      expect(screen.queryByText('Class Types')).not.toBeInTheDocument()
     })
   })
 

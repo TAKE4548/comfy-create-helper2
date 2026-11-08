@@ -104,6 +104,8 @@ export interface MappingVariant {
   computed_role: string
   extra_title_patterns: string[] | null
   is_enabled: boolean
+  rule_entries?: BindingRuleEntryCreate[]
+  selector_patterns?: NodeSelectorPatternCreate[] | null
 }
 
 export interface MappingVariantUpdateItem {
@@ -1401,3 +1403,18 @@ export interface EvaluateBenchmarkResponse {
   sweet_spot: SweetSpotResult
   results: Record<string, unknown>[]
 }
+
+// ─── Master atomic save / scan preview ──────────────────────────
+
+export interface AtomicEntryInput { class_type: string; param_name: string; priority: number }
+export interface AtomicPatternInput { pattern: string; match_type: 'exact' | 'contains'; priority: number }
+export interface DefinitionOp { ref: string; op: 'create' | 'update'; id: number | null; name: string; entries?: AtomicEntryInput[]; patterns?: AtomicPatternInput[] }
+export type DefinitionRef = { id: number; ref?: undefined } | { ref: string; id?: undefined }
+export interface AtomicVariantItem { row_key: string; id: number | null; stage_id: number; is_enabled: boolean; rule_set: DefinitionRef; selector: DefinitionRef | null }
+export interface MasterAtomicSaveRequest { master: { name: string; input_type: string; group_id: number | null; default_enabled: boolean }; rule_sets: DefinitionOp[]; selectors: DefinitionOp[]; variants: AtomicVariantItem[] }
+export interface MasterSaveErrorItem { scope: 'master' | 'rule_set' | 'selector' | 'variant'; index: number; ref: string | null; row_key: string | null; field: string; message: string }
+export interface ScanPreviewVariantInput { client_key: string; variant_id?: number | null; stage_id: number; role: string; is_enabled: boolean; entries: AtomicEntryInput[]; patterns: AtomicPatternInput[] | null }
+export interface ScanPreviewRequest { workflow_id: number; variants: ScanPreviewVariantInput[] }
+export interface ScanPreviewCandidate { node_id: string; node_title: string; class_type: string; input_name: string; stage_rank: 1 | 2 | 3; stage_label: 'exact' | 'contains' | 'no_selector'; entry_priority: number; pattern_priority: number }
+export interface ScanPreviewVariantResult { client_key: string; variant_id: number | null; stage_id: number; stage_key: string; role: string; is_enabled: boolean; status: 'ok' | 'duplicated' | 'not_found' | 'disabled'; confirmed: ScanPreviewCandidate | null; candidates: ScanPreviewCandidate[] }
+export interface ScanPreviewResponse { workflow_id: number; results: ScanPreviewVariantResult[] }
