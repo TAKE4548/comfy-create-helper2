@@ -678,6 +678,73 @@ describe('useMasterMappingRows', () => {
       expect(result.current.rows[0].stageSlots?.[0]).toMatchObject({ node_id: 'lost', reference_missing: true })
       expect(result.current.getMappings(result.current.rows, [])).toContainEqual({ master_id: 10, variant_id: 101, node_id: 'lost' })
     })
+
+    it('[REQ-423/AC-1] getMappings includes input_name from scanResult when building mappings', () => {
+      const scanResult: ScanResult = {
+        matched: [
+          {
+            master_id: 10,
+            variant_id: 101,
+            role: 'prompt',
+            node_id: '6',
+            node_title: 'CLIP Text Encode',
+            input_name: 'noise_seed',
+            status: 'ok',
+          },
+        ],
+        warnings: [],
+      }
+
+      const { result } = renderHook(() => useMasterMappingRows(mockMultiStageMasters, scanResult))
+      act(() => {
+        result.current.initFromScan(scanResult)
+      })
+
+      const { mainRows } = result.current.buildRows()
+      expect(mainRows[0].stageSlots?.[0].input_name).toBe('noise_seed')
+
+      const mappings = result.current.getMappings(result.current.rows, [])
+      expect(mappings).toContainEqual({
+        master_id: 10,
+        variant_id: 101,
+        node_id: '6',
+        input_name: 'noise_seed',
+      })
+    })
+
+    it('[REQ-423/AC-1] getMappings heals existing mapping with empty input_name using scanResult', () => {
+      const scanResult: ScanResult = {
+        matched: [
+          {
+            master_id: 10,
+            variant_id: 101,
+            role: 'prompt',
+            node_id: '6',
+            node_title: 'CLIP Text Encode',
+            input_name: 'noise_seed',
+            status: 'ok',
+          },
+        ],
+        warnings: [],
+      }
+
+      const existingMappings = [
+        { master_id: 10, variant_id: 101, node_id: '6', input_name: '' },
+      ]
+
+      const { result } = renderHook(() => useMasterMappingRows(mockMultiStageMasters, scanResult, { existingMappings }))
+      act(() => {
+        result.current.initFromScan(scanResult, existingMappings)
+      })
+
+      const mappings = result.current.getMappings(result.current.rows, [])
+      expect(mappings).toContainEqual({
+        master_id: 10,
+        variant_id: 101,
+        node_id: '6',
+        input_name: 'noise_seed',
+      })
+    })
   })
 })
 

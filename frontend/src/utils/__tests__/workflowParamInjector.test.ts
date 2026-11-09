@@ -580,5 +580,115 @@ describe('workflowParamInjector', () => {
         expect((result['2'] as any).inputs.cfg).toBe(8.5)
       })
     })
+
+    describe('[REQ-423] Seed injection robustness with input_name and fallback candidates', () => {
+      it('[REQ-423/AC-3] injects seed into noise_seed when input_name is "noise_seed" and prevents injecting into inputs.seed', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '1': {
+              class_type: 'KSamplerAdvanced',
+              inputs: {
+                noise_seed: 0,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 1,
+              master_id: 1,
+              node_id: '1',
+              role: 'Sampler_Seed',
+              param_name: 'seed',
+              input_name: 'noise_seed',
+              input_type: 'int',
+              display_name: 'Seed',
+            },
+          ],
+        }
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: {},
+          seedOptions: { seed: 12345, seedMode: 'fixed' },
+        })
+
+        const nodeInputs = (result['1'] as any).inputs
+        expect(nodeInputs.noise_seed).toBe(12345)
+        expect(nodeInputs.seed).toBeUndefined()
+      })
+
+      it('[REQ-423/AC-4] falls back to node.inputs.noise_seed for legacy mapping (input_name: "") without creating inputs.seed', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '1': {
+              class_type: 'KSamplerAdvanced',
+              inputs: {
+                noise_seed: 0,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 1,
+              master_id: 1,
+              node_id: '1',
+              role: 'Sampler_Seed',
+              param_name: 'seed',
+              input_name: '',
+              input_type: 'int',
+              display_name: 'Seed',
+            },
+          ],
+        }
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: {},
+          seedOptions: { seed: 12345, seedMode: 'fixed' },
+        })
+
+        const nodeInputs = (result['1'] as any).inputs
+        expect(nodeInputs.noise_seed).toBe(12345)
+        expect(nodeInputs.seed).toBeUndefined()
+      })
+
+      it('[REQ-423/AC-4] falls back to value for legacy mapping (input_name: "") on PrimitiveNode (inputs: { value: 0 })', () => {
+        const workflow: Workflow = {
+          ...mockWorkflow,
+          json_body: {
+            '1': {
+              class_type: 'PrimitiveNode',
+              inputs: {
+                value: 0,
+              },
+            },
+          },
+          mappings: [
+            {
+              id: 1,
+              master_id: 1,
+              node_id: '1',
+              role: 'Sampler_Seed',
+              param_name: 'seed',
+              input_name: '',
+              input_type: 'int',
+              display_name: 'Seed',
+            },
+          ],
+        }
+
+        const result = injectWorkflowParams({
+          workflow,
+          paramValues: {},
+          seedOptions: { seed: 12345, seedMode: 'fixed' },
+        })
+
+        const nodeInputs = (result['1'] as any).inputs
+        expect(nodeInputs.value).toBe(12345)
+        expect(nodeInputs.seed).toBeUndefined()
+      })
+    })
   })
 })

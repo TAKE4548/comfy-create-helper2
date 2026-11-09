@@ -180,5 +180,62 @@ describe('NodeRemapModal & isStudioAllowedRole (REQ-331-T3)', () => {
         expect(onCloseMock).toHaveBeenCalled()
       })
     })
+
+    it('[REQ-423/AC-2] saves node remap preserving input_name and variant_id', async () => {
+      const onSavedMock = vi.fn()
+      const onCloseMock = vi.fn()
+      const workflowWithInputNames: Workflow = {
+        ...mockWorkflow,
+        mappings: [
+          {
+            ...mockWorkflow.mappings[0],
+            variant_id: 101,
+            input_name: 'custom_positive',
+          },
+          {
+            ...mockWorkflow.mappings[1],
+            variant_id: 102,
+            input_name: 'custom_negative',
+          },
+          {
+            ...mockWorkflow.mappings[2],
+            variant_id: 103,
+            input_name: 'steps_input',
+          },
+          {
+            ...mockWorkflow.mappings[3],
+            input_name: 'text_input',
+          },
+        ],
+      }
+      vi.mocked(workflowsApi.get).mockResolvedValueOnce(workflowWithInputNames)
+
+      render(
+        <NodeRemapModal
+          workflow={workflowWithInputNames}
+          onClose={onCloseMock}
+          onSaved={onSavedMock}
+        />
+      )
+
+      const stepsSelect = screen.getByTestId('remap-select-steps')
+      fireEvent.change(stepsSelect, { target: { value: '10' } })
+
+      const saveBtn = screen.getByTestId('save-remap-button')
+      fireEvent.click(saveBtn)
+
+      await waitFor(() => {
+        expect(workflowsApi.update).toHaveBeenCalledWith(1, {
+          mappings: [
+            { master_id: 101, node_id: '10', variant_id: 101, input_name: 'custom_positive' },
+            { master_id: 102, node_id: '11', variant_id: 102, input_name: 'custom_negative' },
+            { master_id: 103, node_id: '10', variant_id: 103, input_name: 'steps_input' },
+            { master_id: 104, node_id: '99', input_name: 'text_input' },
+          ],
+        })
+        expect(onSavedMock).toHaveBeenCalledWith(workflowWithInputNames)
+        expect(onCloseMock).toHaveBeenCalled()
+      })
+    })
   })
 })

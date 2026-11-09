@@ -80,4 +80,46 @@ describe('buildGenerationRecord', () => {
     const wf = workflow([mapping(1, 'textarea'), mapping(1, 'textarea')]); const graph = { '1': node('text') }
     expect(buildGenerationRecord(wf, graph, graph, {}).completeness).toBe('partial')
   })
+  it('[REQ-423/AC-3] records field key and value exactly matching noise_seed from injected graph', () => {
+    const seed = {
+      ...mapping(1, 'int', 'Sampler_Seed'),
+      input_name: 'noise_seed',
+      param_name: 'seed',
+      display_name: 'Noise Seed',
+    }
+    const injectedGraph = {
+      '1': {
+        class_type: 'KSamplerAdvanced',
+        inputs: { noise_seed: 54321 },
+      },
+    }
+    const record = buildGenerationRecord(workflow([seed]), injectedGraph, injectedGraph, {})
+    expect(record.parameters[0]).toMatchObject({
+      mapping_id: 1,
+      node_id: '1',
+      role: 'Sampler_Seed',
+      recorded: true,
+      value: 54321,
+      status: 'submitted',
+    })
+    expect(record.parameters[0].value).toBe(injectedGraph['1'].inputs.noise_seed)
+
+    // Legacy mapping (empty input_name) should also detect noise_seed in inputs
+    const legacySeed = {
+      ...mapping(2, 'int', 'Sampler_Seed'),
+      node_id: '1',
+      input_name: '',
+      param_name: 'seed',
+      display_name: 'Legacy Seed',
+    }
+    const recordLegacy = buildGenerationRecord(workflow([legacySeed]), injectedGraph, injectedGraph, {})
+    expect(recordLegacy.parameters[0]).toMatchObject({
+      mapping_id: 2,
+      node_id: '1',
+      role: 'Sampler_Seed',
+      recorded: true,
+      value: 54321,
+      status: 'submitted',
+    })
+  })
 })

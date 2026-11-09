@@ -75,6 +75,7 @@ export interface WiringMappingItem {
   master_id: number
   node_id: string
   variant_id?: number
+  input_name?: string
 }
 
 interface WiringStageSlot {

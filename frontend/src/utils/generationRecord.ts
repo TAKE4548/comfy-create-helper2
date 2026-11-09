@@ -36,9 +36,32 @@ function capture(mapping: WorkflowMapping, injected: Record<string, unknown>, su
   const raw = (prompt ? injected : submitted)[mapping.node_id]
   const node = object(raw) ? raw : undefined
   const inputs = node && object(node.inputs) ? node.inputs : undefined
+  const configuredKey = (typeof mapping.input_name === 'string' && mapping.input_name.trim().length > 0)
+    ? mapping.input_name.trim()
+    : null
   const resolvedSeedKey = mapping.input_type === 'seed' ? resolveSeedInputKey(mapping, inputs) : null
-  const key = resolvedSeedKey ?? (inputs && mapping.param_name != null && inputs[mapping.param_name] !== undefined
-    ? mapping.param_name : inputs && inputs.value !== undefined ? 'value' : mapping.param_name || (mapping.role === 'Sampler_Seed' ? 'seed' : 'value'))
+  let key: string
+  if (resolvedSeedKey) {
+    key = resolvedSeedKey
+  } else if (configuredKey) {
+    key = configuredKey
+  } else if (mapping.role === 'Sampler_Seed') {
+    const candidates = [
+      mapping.param_name,
+      ...(mapping.fallback_param_names ?? []),
+      'noise_seed',
+      'seed',
+      'value',
+    ].filter(Boolean) as string[]
+    const matched = inputs ? candidates.find((k) => inputs[k] !== undefined) : undefined
+    key = matched ?? (mapping.param_name || 'seed')
+  } else if (inputs && mapping.param_name != null && inputs[mapping.param_name] !== undefined) {
+    key = mapping.param_name
+  } else if (inputs && inputs.value !== undefined) {
+    key = 'value'
+  } else {
+    key = mapping.param_name || 'value'
+  }
   const value = mapping.input_type === 'lora_stack' ? inputs : mapping.input_type === 'seed' ? (resolvedSeedKey ? inputs?.[resolvedSeedKey] : undefined) : inputs?.[key]
   const recorded = prompt ? typeof value === 'string' : json(value)
   const wasBypassed = object(injected[mapping.node_id]) && !object(submitted[mapping.node_id])

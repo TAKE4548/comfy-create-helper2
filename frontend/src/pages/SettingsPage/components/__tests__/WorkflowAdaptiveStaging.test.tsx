@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { detectActiveStages, buildStageSelectorPatterns } from '../../../../utils/workflowAdaptiveStageDetector'
-import { AdaptiveWorkflowWiring } from '../../../../components/AdaptiveWorkflowWiring'
+import { AdaptiveWorkflowWiring, type WiringMappingItem } from '../../../../components/AdaptiveWorkflowWiring'
 import type { StageMaster, MappingMasterV2, Workflow } from '../../../../api/types'
 import { rankWorkflowNodeCandidates } from '../../../../utils/workflowNodeUtils'
 import { candidateDefinitionForVariant } from '../../../../utils/variantCandidateDefinition'
@@ -560,5 +560,63 @@ describe('AdaptiveWorkflowWiring Component', () => {
       { master_id: 102, node_id: '10', variant_id: 1003 },
       { master_id: 103, node_id: '20', variant_id: 1004 },
     ]))
+  })
+
+  it('[REQ-423/AC-1] preserves input_name on node selection change and save', () => {
+    const onSave = vi.fn()
+    const onChangeMappings = vi.fn()
+    const activeStages = detectActiveStages(mockWorkflow.json_body, stageMasters, buildStageSelectorPatterns(mappingMasters))
+    const stepsMaster = {
+      ...mappingMasters[1],
+      param_name: 'steps',
+      variants: [{ ...mappingMasters[1].variants[0], computed_role: 'sampling' }],
+    }
+
+    const currentMappings: WiringMappingItem[] = [
+      { master_id: 102, node_id: '3', variant_id: 1003, input_name: 'noise_seed' },
+    ]
+
+    render(
+      <AdaptiveWorkflowWiring
+        workflow={mockWorkflow}
+        activeStages={activeStages}
+        mappingMasters={[mappingMasters[0], stepsMaster]}
+        currentMappings={currentMappings}
+        onSaveMappings={onSave}
+        onChangeMappings={onChangeMappings}
+      />
+    )
+
+    const mainGroup = document.querySelector('[data-stage-key="main"]') as HTMLElement
+    const stepsSelect = within(mainGroup).getByRole('combobox', { name: 'Main Stage sampling → steps のノード' })
+
+    // Change node selection
+    fireEvent.change(stepsSelect, { target: { value: '10' } })
+
+    expect(onChangeMappings).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          master_id: 102,
+          node_id: '10',
+          variant_id: 1003,
+          input_name: 'noise_seed',
+        }),
+      ])
+    )
+
+    // Save mappings
+    fireEvent.click(screen.getByRole('button', { name: /対応付けを保存/ }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          master_id: 102,
+          node_id: '10',
+          variant_id: 1003,
+          input_name: 'noise_seed',
+        }),
+      ])
+    )
   })
 })

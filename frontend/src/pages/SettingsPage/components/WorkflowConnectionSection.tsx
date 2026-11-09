@@ -17,7 +17,7 @@ import { ConnectionStatus, WorkflowDeleteConfirmDialog } from '../../../componen
 import { ServiceConnectionCard } from './ServiceConnectionCard'
 import { useSettingsDraftRegistration } from '../context/SettingsDraftContext'
 
-export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null }[]; target_base_model_id: number | null; default_applied_assets: string | null; mapping_slot_states?: WorkflowSlotStates }
+export type ConfigDraft = { name: string; json_body: Record<string, unknown>; mappings: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[]; target_base_model_id: number | null; default_applied_assets: string | null; mapping_slot_states?: WorkflowSlotStates }
 interface ConfigDraftSession { epoch: number; workflowId: number | null; hydrated: boolean; acknowledgedRevision: number }
 export const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 export function graphNodeIds(graph: unknown): string[] {
@@ -38,6 +38,7 @@ export function validateConfig(value: unknown, masterIds: number[], modelIds: nu
       master_id: m.master_id,
       node_id: m.node_id,
       ...(m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
+      ...(typeof m.input_name === 'string' && m.input_name.trim().length > 0 ? { input_name: m.input_name.trim() } : {}),
     }
   })
   let mappingSlotStates: WorkflowSlotStates | undefined
@@ -138,7 +139,7 @@ export function WorkflowConnectionSection({
   const diffFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingDiffWorkflow, setPendingDiffWorkflow] = useState<WorkflowSummary | null>(null)
   const [configWorkflowId, setConfigWorkflowId] = useState<number | null>(null)
-  const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string; variant_id?: number }[]>([])
+  const [configMappings, setConfigMappings] = useState<{ master_id: number; node_id: string; variant_id?: number; input_name?: string }[]>([])
   const [configSlotStates, setConfigSlotStates] = useState<WorkflowSlotStates>({})
   const [configBaseModelId, setConfigBaseModelId] = useState('')
   const [configText, setConfigText] = useState('')
@@ -241,7 +242,7 @@ export function WorkflowConnectionSection({
   useEffect(() => {
     const session = configDraftSession.current
     if (!configWorkflow || isFetchingConfigWorkflow || configWorkflow.id !== configWorkflowId || session.workflowId !== configWorkflowId || session.hydrated) return
-    setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
+    setConfigMappings(configWorkflow.mappings.map(({ master_id, node_id, variant_id, input_name }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}), ...(input_name ? { input_name } : {}) })))
     setConfigSlotStates(hydrateSlotStates(configWorkflow.mapping_slot_states, configWorkflow.mappings, slotDefinitions))
     setConfigBaseModelId(configWorkflow.target_base_model_id ? String(configWorkflow.target_base_model_id) : '')
     configDraftSession.current = { ...session, hydrated: true, acknowledgedRevision: configDraftRevision.current }
@@ -253,7 +254,7 @@ export function WorkflowConnectionSection({
     const saveId = configWorkflowId
     const saveEpoch = configDraftSession.current.epoch
     const revision = configDraftRevision.current
-    const snapshot = { ...draft, mapping_slot_states: { ...(draft.mapping_slot_states ?? configSlotStates) }, mappings: draft.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })) }
+    const snapshot = { ...draft, mapping_slot_states: { ...(draft.mapping_slot_states ?? configSlotStates) }, mappings: draft.mappings.map(({ master_id, node_id, variant_id, input_name }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}), ...(input_name ? { input_name } : {}) })) }
     const sameSession = () => configDraftSession.current.epoch === saveEpoch && configDraftSession.current.workflowId === saveId
     const latestSnapshot = () => sameSession() && configDraftRevision.current === revision
     setConfigSaving(true)
@@ -276,7 +277,7 @@ export function WorkflowConnectionSection({
         configDraftSession.current = { ...configDraftSession.current, acknowledgedRevision: revision }
       }
       if (latestSnapshot()) {
-        setConfigMappings(snapshot.mappings.map(({ master_id, node_id, variant_id }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}) })))
+        setConfigMappings(snapshot.mappings.map(({ master_id, node_id, variant_id, input_name }) => ({ master_id, node_id, ...(variant_id != null ? { variant_id } : {}), ...(input_name ? { input_name } : {}) })))
         setConfigSlotStates(snapshot.mapping_slot_states)
         setConfigBaseModelId(snapshot.target_base_model_id ? String(snapshot.target_base_model_id) : '')
         setConfigPreview(null)
@@ -295,7 +296,7 @@ export function WorkflowConnectionSection({
     }
   }
 
-  const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number }>, updatedSlotStates?: WorkflowSlotStates) => {
+  const handleSaveLinks = (updatedMappings?: Array<{ master_id: number; node_id: string; variant_id?: number; input_name?: string }>, updatedSlotStates?: WorkflowSlotStates) => {
     if (!configWorkflow) return
     const mappingsToSave = updatedMappings || configMappings
     const hasVariants = mappingMasters.some((m) => Array.isArray((m as any).variants) && (m as any).variants.length > 0) || configWorkflow.mappings.some((m) => m.variant_id != null)
@@ -306,6 +307,7 @@ export function WorkflowConnectionSection({
         master_id: m.master_id,
         node_id: m.node_id,
         ...(hasVariants && m.variant_id !== undefined ? { variant_id: m.variant_id } : {}),
+        ...(m.input_name ? { input_name: m.input_name } : {}),
       })),
       mapping_slot_states: updatedSlotStates ?? configSlotStates,
       target_base_model_id: configBaseModelId ? Number(configBaseModelId) : null,
@@ -730,7 +732,7 @@ export function WorkflowConnectionSection({
                                 configDraftRevision.current += 1
                                 setSaved(null)
                                 setConfigError('')
-                                setConfigMappings(items.map((item) => ({ master_id: item.master_id, node_id: item.node_id, ...(item.variant_id != null ? { variant_id: item.variant_id } : {}) })))
+                                setConfigMappings(items.map((item) => ({ master_id: item.master_id, node_id: item.node_id, ...(item.variant_id != null ? { variant_id: item.variant_id } : {}), ...(item.input_name ? { input_name: item.input_name } : {}) })))
                               }}
                               isSaving={configSaving}
                             />

@@ -738,5 +738,75 @@ describe('WorkflowModalMultiStage', () => {
         expect(onSaved).toHaveBeenCalled()
       })
     })
+
+    it('[REQ-423/AC-1] RescanModal restores and saves input_name in update payload from scanner match and existing mappings', async () => {
+      vi.mocked(workflowsApi.update).mockResolvedValue({ id: 1 } as any)
+      const onSaved = vi.fn()
+      const onClose = vi.fn()
+
+      const scanResultWithInputName: ScanResult = {
+        matched: [
+          {
+            master_id: 1,
+            variant_id: 101,
+            stage_id: 1,
+            stage_key: 'main',
+            node_id: '10',
+            node_title: 'KSampler Main',
+            input_name: 'noise_seed',
+          },
+          {
+            master_id: 1,
+            variant_id: 102,
+            stage_id: 2,
+            stage_key: 'rough',
+            node_id: '20',
+            node_title: 'KSampler Rough',
+          },
+        ],
+        missing: [],
+        warnings: [],
+      }
+      vi.mocked(workflowsApi.scan).mockResolvedValueOnce(scanResultWithInputName)
+      vi.mocked(workflowsApi.get).mockResolvedValue({
+        id: 1,
+        name: 'Workflow',
+        json_body: mockWorkflowJson,
+        mappings: [
+          { id: 10, workflow_id: 1, master_id: 1, variant_id: 101, node_id: '10' },
+          { id: 11, workflow_id: 1, master_id: 1, variant_id: 102, node_id: '20', input_name: 'old_seed' },
+        ] as any,
+        mapping_slot_states: {},
+        created_at: '',
+      })
+
+      renderWithClient(
+        <RescanModal
+          workflowId={1}
+          workflowJson={mockWorkflowJson}
+          existingMappings={[
+            { master_id: 1, variant_id: 101, node_id: '10' },
+            { master_id: 1, variant_id: 102, node_id: '20', input_name: 'old_seed' },
+          ]}
+          onClose={onClose}
+          onSaved={onSaved}
+        />
+      )
+
+      await screen.findAllByRole('textbox', { name: 'ノードID' })
+      const confirmBtn = screen.getByRole('button', { name: /適用・保存/i })
+      fireEvent.click(confirmBtn)
+
+      await waitFor(() => {
+        expect(workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+          mappings: [
+            { master_id: 1, variant_id: 101, node_id: '10', input_name: 'noise_seed' },
+            { master_id: 1, variant_id: 102, node_id: '20', input_name: 'old_seed' },
+          ],
+        }))
+      })
+    })
   })
 })
+
+

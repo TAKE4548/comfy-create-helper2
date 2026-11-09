@@ -12,6 +12,7 @@ export interface WiringMappingItem {
   master_id: number
   node_id: string
   variant_id?: number
+  input_name?: string
 }
 
 export interface AdaptiveWorkflowWiringProps {
@@ -46,9 +47,12 @@ export function AdaptiveWorkflowWiring({
     const map = new Map<string, WiringMappingItem>()
     const initial = currentMappings || workflow?.mappings || []
     for (const m of initial) {
-      const item: WiringMappingItem = m.variant_id == null
-        ? { master_id: m.master_id, node_id: m.node_id }
-        : { master_id: m.master_id, node_id: m.node_id, variant_id: m.variant_id }
+      const item: WiringMappingItem = {
+        master_id: m.master_id,
+        node_id: m.node_id,
+        ...(m.variant_id != null ? { variant_id: m.variant_id } : {}),
+        ...(m.input_name ? { input_name: m.input_name } : {}),
+      }
       const key = mappingSlotKey(m, definitions)
       map.set(key, {
         ...item,
@@ -63,9 +67,12 @@ export function AdaptiveWorkflowWiring({
     const nextList = currentMappings || workflow?.mappings || []
     const nextMap = new Map<string, WiringMappingItem>()
     for (const m of nextList) {
-      const item: WiringMappingItem = m.variant_id == null
-        ? { master_id: m.master_id, node_id: m.node_id }
-        : { master_id: m.master_id, node_id: m.node_id, variant_id: m.variant_id }
+      const item: WiringMappingItem = {
+        master_id: m.master_id,
+        node_id: m.node_id,
+        ...(m.variant_id != null ? { variant_id: m.variant_id } : {}),
+        ...(m.input_name ? { input_name: m.input_name } : {}),
+      }
       const key = mappingSlotKey(m, definitions)
       nextMap.set(key, {
         ...item,
@@ -98,10 +105,12 @@ export function AdaptiveWorkflowWiring({
     if (!newNodeId) {
       updatedMap.delete(slot.slotKey)
     } else {
+      const prev = mappingsMap.get(slot.slotKey)
       updatedMap.set(slot.slotKey, {
         master_id: slot.masterId,
         node_id: newNodeId,
         ...(slot.variantId !== undefined ? { variant_id: slot.variantId } : {}),
+        ...(prev?.input_name ? { input_name: prev.input_name } : {}),
       })
     }
     setMappingsMap(updatedMap)

@@ -205,6 +205,26 @@ describe('WorkflowConnectionSection groups', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('設定を保存しました')
   })
 
+  it('[REQ-423/AC-2] saves workflow config and links while preserving input_name', async () => {
+    api.workflowsApi.get.mockResolvedValue({
+      id: 1,
+      name: 'Example workflow',
+      json_body: { nodes: { '2': { class_type: 'KSampler', inputs: { steps: 20 } } } },
+      mappings: [{ id: 4, master_id: 1, node_id: '2', role: 'sampling', param_name: 'steps', input_name: 'custom_steps' }],
+      target_base_model_id: 1,
+      default_applied_assets: null,
+    })
+    renderSection({ group: 'workflows', isExpandedConnections: false })
+    await screen.findByText('Example workflow')
+    fireEvent.click(screen.getByRole('button', { name: '対応付け・設定' }))
+    await screen.findByText((_, node) => node?.textContent === 'sampling → steps')
+    fireEvent.click(screen.getByRole('button', { name: '対応付けを保存' }))
+    await waitFor(() => expect(api.workflowsApi.update).toHaveBeenCalledWith(1, expect.objectContaining({
+      mappings: [{ master_id: 1, node_id: '2', input_name: 'custom_steps' }],
+    })))
+  })
+
+
   it('reports workflow save failure without losing the current mapping draft', async () => {
     api.workflowsApi.update.mockRejectedValueOnce(new Error('workflow storage unavailable'))
     renderSection({ group: 'workflows', isExpandedConnections: false })

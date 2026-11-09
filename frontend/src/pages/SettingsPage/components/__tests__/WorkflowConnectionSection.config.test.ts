@@ -123,4 +123,21 @@ describe('WorkflowConnectionSection - validateConfig REQ-358/CONFIG', () => {
       expect(() => validateConfig({ ...validBaseWorkflowJson, mapping_slot_states: states }, masterIds, modelIds)).toThrow('対応付け状態が不正です')
     }
   })
+
+  it('[REQ-423/AC-2] input_nameが定義されている場合は設定JSONから保持する', () => {
+    const config = {
+      ...validBaseWorkflowJson,
+      mappings: [
+        { master_id: 1, node_id: '10', variant_id: 101, input_name: 'noise_seed' },
+        { master_id: 2, node_id: '20', input_name: 'seed' },
+      ],
+    }
+
+    const result = validateConfig(config, masterIds, modelIds)
+    expect(result.mappings).toEqual([
+      { master_id: 1, node_id: '10', variant_id: 101, input_name: 'noise_seed' },
+      { master_id: 2, node_id: '20', input_name: 'seed' },
+    ])
+  })
 })
+

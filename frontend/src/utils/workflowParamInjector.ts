@@ -347,18 +347,25 @@ export function injectWorkflowParams(options: InjectWorkflowParamsOptions): Reco
       const node = wfJson[seedNode.node_id] as WorkflowNode | undefined
       if (node) {
         if (!node.inputs) node.inputs = {}
+        const inputs = node.inputs
         let seedKey: string
-        const configuredKey = (typeof seedNode.input_name === 'string' && seedNode.input_name.trim().length > 0)
+        const explicitKey = (typeof seedNode.input_name === 'string' && seedNode.input_name.trim().length > 0)
           ? seedNode.input_name.trim()
-          : seedNode.param_name
-        if (configuredKey !== null && configuredKey !== undefined && node.inputs[configuredKey] !== undefined) {
-          seedKey = configuredKey
-        } else if (node.inputs['value'] !== undefined) {
-          seedKey = 'value'
+          : null
+        if (explicitKey) {
+          seedKey = explicitKey
         } else {
-          seedKey = configuredKey || 'seed'
+          const candidates = [
+            seedNode.param_name,
+            ...(seedNode.fallback_param_names ?? []),
+            'noise_seed',
+            'seed',
+            'value',
+          ].filter(Boolean) as string[]
+          const matched = candidates.find((k) => inputs[k] !== undefined)
+          seedKey = matched ?? (seedNode.param_name || 'seed')
         }
-        node.inputs[seedKey] =
+        inputs[seedKey] =
           seedOptions.seedMode === 'random'
             ? Math.floor(Math.random() * 2 ** 32)
             : seedOptions.seed + (seedOptions.index || 0)

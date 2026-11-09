@@ -129,34 +129,48 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
     setIsSaving(true)
     setError(null)
     try {
-      const updatedMappingsList: { master_id: number; node_id: string }[] = []
+      const updatedMappingsList: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[] = []
       let posHandled = false
       let negHandled = false
 
       for (const m of existingMappings) {
+        const extra = {
+          ...(m.variant_id != null ? { variant_id: m.variant_id } : {}),
+          ...(m.input_name ? { input_name: m.input_name } : {}),
+        }
         if (positiveMapping && m.master_id === positiveMapping.master_id) {
-          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedPositiveNodeId })
+          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedPositiveNodeId, ...extra })
           posHandled = true
         } else if (negativeMapping && m.master_id === negativeMapping.master_id) {
-          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNegativeNodeId })
+          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNegativeNodeId, ...extra })
           negHandled = true
         } else if (selectedNodeIds[m.master_id] !== undefined) {
-          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNodeIds[m.master_id] })
+          updatedMappingsList.push({ master_id: m.master_id, node_id: selectedNodeIds[m.master_id], ...extra })
         } else {
-          updatedMappingsList.push({ master_id: m.master_id, node_id: m.node_id })
+          updatedMappingsList.push({ master_id: m.master_id, node_id: m.node_id, ...extra })
         }
       }
 
       if (!posHandled) {
         const posMasterId = positiveMapping?.master_id ?? positiveMaster?.id
         if (posMasterId !== undefined) {
-          updatedMappingsList.push({ master_id: posMasterId, node_id: selectedPositiveNodeId })
+          updatedMappingsList.push({
+            master_id: posMasterId,
+            node_id: selectedPositiveNodeId,
+            ...(positiveMapping?.variant_id != null ? { variant_id: positiveMapping.variant_id } : {}),
+            ...(positiveMapping?.input_name ? { input_name: positiveMapping.input_name } : {}),
+          })
         }
       }
       if (!negHandled) {
         const negMasterId = negativeMapping?.master_id ?? negativeMaster?.id
         if (negMasterId !== undefined) {
-          updatedMappingsList.push({ master_id: negMasterId, node_id: selectedNegativeNodeId })
+          updatedMappingsList.push({
+            master_id: negMasterId,
+            node_id: selectedNegativeNodeId,
+            ...(negativeMapping?.variant_id != null ? { variant_id: negativeMapping.variant_id } : {}),
+            ...(negativeMapping?.input_name ? { input_name: negativeMapping.input_name } : {}),
+          })
         }
       }
 

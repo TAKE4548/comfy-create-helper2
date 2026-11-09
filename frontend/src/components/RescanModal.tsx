@@ -13,7 +13,7 @@ type Phase = 'scanning' | 'editing' | 'saving' | 'done'
 interface RescanModalProps {
   workflowId: number
   workflowJson: Record<string, unknown>
-  existingMappings?: { master_id: number; node_id: string; variant_id?: number | null }[] | WorkflowMapping[]
+  existingMappings?: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[] | WorkflowMapping[]
   onClose: () => void
   onSaved: () => void
 }
@@ -99,6 +99,7 @@ function RescanModalSession({ workflowId, workflowJson, existingMappings, onClos
       node_id: mapping.node_id,
       ...('role' in mapping && typeof mapping.role === 'string' ? { role: mapping.role } : {}),
       ...(mapping.variant_id != null ? { variant_id: mapping.variant_id } : {}),
+      ...('input_name' in mapping && mapping.input_name ? { input_name: mapping.input_name } : {}),
     })), workflowJson)
     setPhase('editing')
   }, [mastersFetched, mastersFetching, workflowFetched, workflowFetching, scanResult, workflowId, workflowJson, savedMappings, initFromScan])

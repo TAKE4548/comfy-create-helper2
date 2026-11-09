@@ -237,4 +237,133 @@ describe('useGenerateAction dedicated seed submission', () => {
     resolveSubmission({ batch_id: 'batch', job_ids: [] })
     await pending
   })
+
+  it('[REQ-423/AC-3] generation action builds batch payload with noise_seed injected and no bogus seed key', async () => {
+    const noiseSeedMapping = {
+      ...seedMapping,
+      node_id: 'sampler_node_id',
+      input_name: 'noise_seed',
+    }
+    const noiseSeedWorkflow: Workflow = {
+      id: 101,
+      name: 'KSamplerAdvanced workflow',
+      created_at: '',
+      json_body: {
+        sampler_node_id: {
+          class_type: 'KSamplerAdvanced',
+          inputs: {
+            noise_seed: 0,
+            steps: 20,
+          },
+        },
+      },
+      mappings: [noiseSeedMapping],
+    }
+
+    store.batchSize = 1
+    store.seed = 777888
+    store.seedMode = 'fixed'
+    store.paramValues = setSeedModeForMapping(noiseSeedMapping, { Sampler_Seed: '777888' }, 'fixed')
+
+    await useGenerateAction(noiseSeedWorkflow).handleGenerate()
+
+    expect(store.setErrorToast).not.toHaveBeenCalled()
+    expect(store.submitGenerationBatch).toHaveBeenCalledTimes(1)
+    const request = store.submitGenerationBatch.mock.calls[0][0]
+    const samplerInputs = request.items[0].graph.sampler_node_id.inputs
+    expect(samplerInputs.noise_seed).toBe(777888)
+    expect(samplerInputs.seed).toBeUndefined()
+    const promptRecord = JSON.parse(request.items[0].param_values[PROMPT_RECORD_KEY])
+    expect(promptRecord.parameters[0].value).toBe(777888)
+    expect(promptRecord.parameters[0].node_id).toBe('sampler_node_id')
+    expect(promptRecord.parameters[0].role).toBe('Sampler_Seed')
+  })
+
+  it('[REQ-423/AC-4] legacy workflow with empty input_name successfully injects seed into noise_seed during generation', async () => {
+    const legacyMapping = {
+      id: 2,
+      master_id: 1,
+      variant_id: 2,
+      node_id: 'sampler_node_id',
+      role: 'Sampler_Seed',
+      param_name: 'seed',
+      input_name: '',
+      input_type: 'int',
+      display_name: 'Sampler Seed',
+    }
+    const legacyWorkflow: Workflow = {
+      id: 102,
+      name: 'Legacy Sampler workflow',
+      created_at: '',
+      json_body: {
+        sampler_node_id: {
+          class_type: 'KSamplerAdvanced',
+          inputs: {
+            noise_seed: 0,
+            steps: 20,
+          },
+        },
+      },
+      mappings: [legacyMapping],
+    }
+
+    store.batchSize = 1
+    store.seed = 777888
+    store.seedMode = 'fixed'
+    store.paramValues = { Sampler_Seed: '777888' }
+
+    await useGenerateAction(legacyWorkflow).handleGenerate()
+
+    expect(store.setErrorToast).not.toHaveBeenCalled()
+    expect(store.submitGenerationBatch).toHaveBeenCalledTimes(1)
+    const request = store.submitGenerationBatch.mock.calls[0][0]
+    const samplerInputs = request.items[0].graph.sampler_node_id.inputs
+    expect(samplerInputs.noise_seed).toBe(777888)
+    expect(samplerInputs.seed).toBeUndefined()
+    const promptRecord = JSON.parse(request.items[0].param_values[PROMPT_RECORD_KEY])
+    expect(promptRecord.parameters[0].value).toBe(777888)
+    expect(promptRecord.parameters[0].node_id).toBe('sampler_node_id')
+    expect(promptRecord.parameters[0].role).toBe('Sampler_Seed')
+  })
+
+  it('[REQ-423/AC-4] legacy workflow with empty input_name falls back via fallback_param_names during generation', async () => {
+    const legacyFallbackMapping = {
+      ...seedMapping,
+      node_id: 'sampler_node_id',
+      input_name: '',
+      fallback_param_names: ['noise_seed'],
+    }
+    const legacyFallbackWorkflow: Workflow = {
+      id: 103,
+      name: 'Legacy Fallback Seed workflow',
+      created_at: '',
+      json_body: {
+        sampler_node_id: {
+          class_type: 'KSamplerAdvanced',
+          inputs: {
+            noise_seed: 0,
+            steps: 20,
+          },
+        },
+      },
+      mappings: [legacyFallbackMapping],
+    }
+
+    store.batchSize = 1
+    store.seed = 777888
+    store.seedMode = 'fixed'
+    store.paramValues = setSeedModeForMapping(legacyFallbackMapping, { Sampler_Seed: '777888' }, 'fixed')
+
+    await useGenerateAction(legacyFallbackWorkflow).handleGenerate()
+
+    expect(store.setErrorToast).not.toHaveBeenCalled()
+    expect(store.submitGenerationBatch).toHaveBeenCalledTimes(1)
+    const request = store.submitGenerationBatch.mock.calls[0][0]
+    const samplerInputs = request.items[0].graph.sampler_node_id.inputs
+    expect(samplerInputs.noise_seed).toBe(777888)
+    expect(samplerInputs.seed).toBeUndefined()
+    const promptRecord = JSON.parse(request.items[0].param_values[PROMPT_RECORD_KEY])
+    expect(promptRecord.parameters[0].value).toBe(777888)
+    expect(promptRecord.parameters[0].node_id).toBe('sampler_node_id')
+  })
 })

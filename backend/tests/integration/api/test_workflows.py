@@ -1104,3 +1104,138 @@ def test_req419_ac10_scan_preview_does_not_persist(client: TestClient, db_sessio
     assert res.status_code == 200, res.text
     assert _db_snapshot(db_session) == before
     assert not db_session.new and not db_session.dirty and not db_session.deleted
+
+
+@getattr(pytest.mark, "REQ-423")
+@getattr(pytest.mark, "AC-2")
+def test_req423_ac2_workflow_mappings_persist_and_roundtrip_input_name(client: TestClient, db_session: Session) -> None:
+    """[REQ-423/AC-2] Workflow mappings persist and roundtrip input_name across POST, GET, and PUT."""
+    master = models.MappingMaster(
+        role="seed",
+        display_name="Seed",
+        input_type="int",
+        param_name="seed",
+        sort_order=1,
+    )
+    db_session.add(master)
+    db_session.commit()
+
+    # 1. POST /api/workflows with input_name="noise_seed"
+    post_res = client.post(
+        "/api/workflows",
+        json={
+            "name": "REQ-423 Input Name Roundtrip WF",
+            "json_body": {"3": {"class_type": "KSamplerAdvanced", "inputs": {"noise_seed": 12345}}},
+            "mappings": [
+                {
+                    "master_id": master.id,
+                    "node_id": "3",
+                    "input_name": "noise_seed",
+                }
+            ],
+        },
+    )
+    assert post_res.status_code == 201, post_res.text
+    wf_id = post_res.json()["id"]
+
+    # Direct DB verification of persisted input_name
+    db_mapping = db_session.query(models.WorkflowMapping).filter_by(workflow_id=wf_id).first()
+    assert db_mapping is not None
+    assert db_mapping.input_name == "noise_seed"
+
+    # 2. GET /api/workflows/{id} roundtrip verification
+    get_res = client.get(f"/api/workflows/{wf_id}")
+    assert get_res.status_code == 200, get_res.text
+    mappings = get_res.json()["mappings"]
+    assert len(mappings) == 1
+    assert mappings[0]["master_id"] == master.id
+    assert mappings[0]["node_id"] == "3"
+    assert mappings[0]["input_name"] == "noise_seed"
+
+    # 3. PUT /api/workflows/{id} update input_name to "seed"
+    put_res = client.put(
+        f"/api/workflows/{wf_id}",
+        json={
+            "mappings": [
+                {
+                    "master_id": master.id,
+                    "node_id": "3",
+                    "input_name": "seed",
+                }
+            ]
+        },
+    )
+    assert put_res.status_code == 200, put_res.text
+
+    # Re-fetch via GET to verify updated input_name persisted
+    get_after_put = client.get(f"/api/workflows/{wf_id}")
+    assert get_after_put.status_code == 200, get_after_put.text
+    updated_mappings = get_after_put.json()["mappings"]
+    assert len(updated_mappings) == 1
+    assert updated_mappings[0]["input_name"] == "seed"
+
+    # Direct DB verification after PUT
+    db_session.expire_all()
+    updated_db_mapping = db_session.query(models.WorkflowMapping).filter_by(workflow_id=wf_id).first()
+    assert updated_db_mapping is not None
+    assert updated_db_mapping.input_name == "seed"
+
+
+@getattr(pytest.mark, "REQ-423")
+@getattr(pytest.mark, "AC-2")
+def test_req423_ac2_workflow_duplicate_preserves_mapping_input_names(client: TestClient, db_session: Session) -> None:
+    """[REQ-423/AC-2] Workflow copy/duplicate preserves mapping input_names."""
+    master_seed = models.MappingMaster(
+        role="seed",
+        display_name="Seed",
+        input_type="int",
+        param_name="seed",
+        sort_order=1,
+    )
+    master_prompt = models.MappingMaster(
+        role="prompt",
+        display_name="Prompt",
+        input_type="textarea",
+        param_name="text",
+        sort_order=2,
+    )
+    db_session.add_all([master_seed, master_prompt])
+    db_session.commit()
+
+    # Create source workflow with mappings
+    src_res = client.post(
+        "/api/workflows",
+        json={
+            "name": "REQ-423 Source WF for Duplicate",
+            "json_body": {
+                "3": {"class_type": "KSamplerAdvanced", "inputs": {"noise_seed": 42}},
+                "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "cat"}},
+            },
+            "mappings": [
+                {"master_id": master_seed.id, "node_id": "3", "input_name": "noise_seed"},
+                {"master_id": master_prompt.id, "node_id": "6", "input_name": "text"},
+            ],
+        },
+    )
+    assert src_res.status_code == 201, src_res.text
+    src_wf_id = src_res.json()["id"]
+
+    # Duplicate via copy endpoint (POST /api/workflows/{id}/copy)
+    dup_res = client.post(f"/api/workflows/{src_wf_id}/copy", json={"name": "REQ-423 Duplicated WF"})
+    assert dup_res.status_code == 201, dup_res.text
+    dup_wf_id = dup_res.json()["id"]
+
+    # Verify duplicated workflow mappings via GET
+    dup_get = client.get(f"/api/workflows/{dup_wf_id}")
+    assert dup_get.status_code == 200, dup_get.text
+    dup_mappings = {m["master_id"]: m["input_name"] for m in dup_get.json()["mappings"]}
+    assert dup_mappings[master_seed.id] == "noise_seed"
+    assert dup_mappings[master_prompt.id] == "text"
+
+    # Direct DB verification on copied records
+    dup_db_mappings = {
+        m.master_id: m.input_name
+        for m in db_session.query(models.WorkflowMapping).filter_by(workflow_id=dup_wf_id).all()
+    }
+    assert dup_db_mappings[master_seed.id] == "noise_seed"
+    assert dup_db_mappings[master_prompt.id] == "text"

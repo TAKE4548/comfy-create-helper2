@@ -27,6 +27,7 @@ export interface StageSlotItem extends RowPresentation {
   stageName: string
   stageKey: string
   node_id: string
+  input_name?: string
   candidates: string[]
   recommendedNodeIds: string[]
   status: 'ok' | 'duplicated' | 'class_type_mismatch' | 'not_found' | 'unassigned'
@@ -38,6 +39,7 @@ export interface MasterMappingRow extends RowPresentation {
   slotKey?: string
   master: MappingMaster | MappingMasterV2
   node_id: string // primary slot node_id (互換性用)
+  input_name?: string
   candidates: string[]
   status: 'ok' | 'duplicated' | 'class_type_mismatch' | 'not_found'
   node_title?: string
@@ -166,6 +168,11 @@ export function useMasterMappingRows(
             status = status === 'not_found' ? 'not_found' : 'unassigned'
           }
 
+          const savedSlot = savedByKey.get(canonicalSlotKey(master.id, variant.id))
+          const slotInputName = (slotMatched?.input_name && slotMatched.input_name.trim() !== '')
+            ? slotMatched.input_name.trim()
+            : (savedSlot?.input_name && savedSlot.input_name.trim() !== '' ? savedSlot.input_name.trim() : undefined)
+
           stageSlots.push({
             slotKey,
             variantId: variant.id,
@@ -174,6 +181,7 @@ export function useMasterMappingRows(
             stageName: variant.stage_name,
             stageKey: variant.stage_key,
             node_id,
+            ...(slotInputName ? { input_name: slotInputName } : {}),
             candidates,
             recommendedNodeIds,
             status,
@@ -201,6 +209,7 @@ export function useMasterMappingRows(
           rowKey: `m_${master.id}`, slotKey: primarySlot?.slotKey,
           master,
           node_id: primarySlot ? primarySlot.node_id : '',
+          ...(primarySlot?.input_name ? { input_name: primarySlot.input_name } : {}),
           candidates: primarySlot ? primarySlot.candidates : [],
           status: masterStatus,
           node_title: primarySlot?.node_title,
@@ -250,11 +259,16 @@ export function useMasterMappingRows(
         }
 
         const isExistingMismatch = mismatchState[String(master.id)] ?? mismatchState[`m_${master.id}`] ?? false
+        const savedSlot = savedByKey.get(canonicalSlotKey(master.id))
+        const legacyInputName = (matched?.input_name && matched.input_name.trim() !== '')
+          ? matched.input_name.trim()
+          : (savedSlot?.input_name && savedSlot.input_name.trim() !== '' ? savedSlot.input_name.trim() : undefined)
 
         const row: MasterMappingRow = {
           rowKey: `m_${master.id}`, slotKey: `m_${master.id}`,
           master,
           node_id,
+          ...(legacyInputName ? { input_name: legacyInputName } : {}),
           candidates,
           status,
           node_title,
@@ -485,15 +499,29 @@ export function useMasterMappingRows(
   }, [masters, allDefinitions, activeDefinitions, options.existingMappings, options.mappingSlotStates])
 
   const getMappings = (mainRows: MasterMappingRow[], notFoundRows: MasterMappingRow[]) => {
-    const results: { master_id: number; node_id: string; variant_id?: number }[] = []
+    const results: { master_id: number; node_id: string; variant_id?: number; input_name?: string }[] = []
     const inputRows = [...mainRows, ...notFoundRows]
     const knownKeys = new Set(inputRows.flatMap(r => r.stageSlots?.length
       ? r.stageSlots.map(s => canonicalSlotKey(s.masterId, s.variantId))
       : [canonicalSlotKey(r.master.id)]))
     for (const saved of storedMappings.current) {
       if (isValidSavedMapping(saved, allDefinitions) && !knownKeys.has(mappingSlotKey(saved, slotDefinitions(true)))) {
-        const { variant_id, ...legacy } = saved
-        results.push(variant_id == null ? legacy : { ...saved, variant_id })
+        const scanMatch = latestScan.current?.matched.find(m =>
+          (saved.variant_id != null
+            ? m.variant_id === saved.variant_id
+            : (m.master_id === saved.master_id && (m.variant_id == null || !m.variant_id)))
+          || (m.node_id === saved.node_id && m.master_id === saved.master_id)
+        )
+        const resolvedInputName = (scanMatch?.input_name && scanMatch.input_name.trim() !== '')
+          ? scanMatch.input_name.trim()
+          : (saved.input_name && saved.input_name.trim() !== '' ? saved.input_name.trim() : undefined)
+
+        results.push({
+          master_id: saved.master_id,
+          node_id: saved.node_id,
+          ...(saved.variant_id != null ? { variant_id: saved.variant_id } : {}),
+          ...(resolvedInputName ? { input_name: resolvedInputName } : {}),
+        })
       }
     }
     for (const r of inputRows) {
@@ -501,16 +529,55 @@ export function useMasterMappingRows(
         for (const slot of r.stageSlots) {
           if (slot.node_id && slot.node_id.trim() !== '') {
             const saved = savedByKey.get(canonicalSlotKey(slot.masterId, slot.variantId))
+            const scanMatch = latestScan.current?.matched.find(m =>
+              (slot.variantId != null
+                ? m.variant_id === slot.variantId
+                : (m.master_id === slot.masterId && (m.variant_id == null || !m.variant_id)))
+              && (!slot.node_id || m.node_id === slot.node_id)
+            ) ?? latestScan.current?.matched.find(m =>
+              m.node_id === slot.node_id && m.master_id === slot.masterId
+            ) ?? latestScan.current?.matched.find(m =>
+              slot.variantId != null
+                ? m.variant_id === slot.variantId
+                : (m.master_id === slot.masterId && (m.variant_id == null || !m.variant_id))
+            )
+            const resolvedInputName = (scanMatch?.input_name && scanMatch.input_name.trim() !== '')
+              ? scanMatch.input_name.trim()
+              : ((saved?.input_name && saved.input_name.trim() !== '')
+                ? saved.input_name.trim()
+                : ((slot.input_name && slot.input_name.trim() !== '')
+                  ? slot.input_name.trim()
+                  : undefined))
+
             results.push({
               master_id: slot.masterId,
               node_id: saved?.node_id === slot.node_id ? saved.node_id : slot.node_id.trim(),
               ...(slot.variantId !== undefined ? { variant_id: slot.variantId } : {}),
+              ...(resolvedInputName ? { input_name: resolvedInputName } : {}),
             })
           }
         }
       } else if (r.node_id && r.node_id.trim() !== '') {
         const saved = storedMappings.current.find(m => m.master_id === r.master.id && m.variant_id == null)
-        results.push({ master_id: r.master.id, node_id: saved?.node_id === r.node_id ? saved.node_id : r.node_id.trim() })
+        const scanMatch = latestScan.current?.matched.find(m =>
+          (m.master_id === r.master.id && (m.variant_id == null || !m.variant_id) && (!r.node_id || m.node_id === r.node_id))
+          || (m.node_id === r.node_id && m.master_id === r.master.id)
+        ) ?? latestScan.current?.matched.find(m =>
+          m.master_id === r.master.id && (m.variant_id == null || !m.variant_id)
+        )
+        const resolvedInputName = (scanMatch?.input_name && scanMatch.input_name.trim() !== '')
+          ? scanMatch.input_name.trim()
+          : ((saved?.input_name && saved.input_name.trim() !== '')
+            ? saved.input_name.trim()
+            : ((r.input_name && r.input_name.trim() !== '')
+              ? r.input_name.trim()
+              : undefined))
+
+        results.push({
+          master_id: r.master.id,
+          node_id: saved?.node_id === r.node_id ? saved.node_id : r.node_id.trim(),
+          ...(resolvedInputName ? { input_name: resolvedInputName } : {}),
+        })
       }
     }
     return results

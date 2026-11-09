@@ -140,7 +140,7 @@ export function useWorkflowManagement({
     },
   })
   const updateWorkflowMutation = useMutation({
-    mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string; variant_id?: number | null }[] }) =>
+    mutationFn: async ({ workflowId, mappings }: { workflowId: number; mappings: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[] }) =>
       workflowsApi.update(workflowId, { mappings }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workflow', selectedWorkflowId] })
@@ -161,8 +161,8 @@ export function useWorkflowManagement({
     if (!rawWorkflow || !selectedWorkflowId) return
     const updatedMappings = rawWorkflow.mappings.map((m) =>
       m.id === mappingId
-        ? { master_id: newMasterId, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}) }
-        : { master_id: m.master_id, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}) }
+        ? { master_id: newMasterId, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}), ...(m.input_name ? { input_name: m.input_name } : {}) }
+        : { master_id: m.master_id, node_id: m.node_id, ...(m.variant_id != null ? { variant_id: m.variant_id } : {}), ...(m.input_name ? { input_name: m.input_name } : {}) }
     )
     await updateWorkflowMutation.mutateAsync({ workflowId: selectedWorkflowId, mappings: updatedMappings })
   }

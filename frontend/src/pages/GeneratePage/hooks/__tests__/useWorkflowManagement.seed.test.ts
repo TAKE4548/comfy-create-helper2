@@ -218,6 +218,40 @@ describe('useWorkflowManagement seed mappings', () => {
     queryClient.clear()
   })
 
+  it('[REQ-423/AC-2] preserves input_name across mapping updates when master changes', async () => {
+    const fetchStub = installFetchStub()
+    const wfWithInputName: Workflow = {
+      ...workflow,
+      mappings: [
+        { ...mapping(1, 'Sampler_Steps', 'number'), input_name: 'steps' },
+        { ...mapping(2, 'Rough_Sampler_Seed', 'seed'), input_name: 'noise_seed' },
+      ],
+    }
+    const originalFetch = fetchStub.getMockImplementation()!
+    fetchStub.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/workflows/7' && init?.method === 'PUT') return jsonResponse({})
+      if (String(input) === '/api/workflows/7') return jsonResponse(wfWithInputName)
+      return originalFetch(input, init)
+    })
+    const { queryClient, wrapper } = createWrapper()
+    const { result } = renderHook(
+      () => useWorkflowManagement({ selectedWorkflowId: 7, setSelectedWorkflowId: vi.fn() }),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.rawWorkflow?.mappings).toHaveLength(2))
+    await act(async () => result.current.handleUpdateMapping(1, 101))
+    expect(fetchStub).toHaveBeenCalledWith('/api/workflows/7', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({
+        mappings: [
+          { master_id: 101, node_id: 'node-1', input_name: 'steps' },
+          { master_id: 2, node_id: 'node-2', input_name: 'noise_seed' },
+        ],
+      }),
+    }))
+    queryClient.clear()
+  })
+
   it('[REQ-358/AC-25][REQ-359/AC-2] resolves a legacy disabled slot after delayed master loading while preserving raw data and stable references', async () => {
     const fetchStub = installFetchStub()
     const originalFetch = fetchStub.getMockImplementation()!
