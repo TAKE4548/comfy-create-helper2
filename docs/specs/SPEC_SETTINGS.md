@@ -227,6 +227,8 @@ Settings配線のステージ表示は、各ステージの有効 Variant の No
 
 既存マッピングが存在するワークフローのリマッピング（`RescanModal` 等）では、保存済みマッピングが存在しない未割当スロットにスキャン結果を自動入力せず空欄（未割当）のまま維持し、候補リスト（推奨・通常候補）のみを提示する。新規ワークフロー登録（`UploadWorkflowModal` 等）ではスキャン一致候補を自動初期化する。また、保存・リマッピング時に保持する非表示マッピングは、現行の `mapping_masters` / `mapping_variants`（非活性バリアントや `default_enabled=false` を含む実在定義）に属するものに限る。削除済み `master_id` や存在しない `variant_id` を参照する孤立マッピング（Orphaned Mappings）はフロントエンドの保存ペイロードおよびバックエンドのワークフロー作成・更新・コピー・ロールバック時に除外し、マイグレーション `Step 031` で既存 DB から浄化する（REQ-369）。
 
+マスタ側で無効化されたステージバリアント（`MappingVariant.is_enabled === false`）は、リマッピング画面（`RescanModal`）でのスロット非表示に加え、ステージグループ分類（`groupMappingsByStage`）および ParamSync 候補生成（`buildParamSyncCandidates`）からも除外される（REQ-413）。この除外処理においても、DB 上の `workflow_mappings` レコード自体は削除せず保持され、マスタ側でバリアントが再有効化された場合には即座にリマッピング画面、ステージグループ、および ParamSync 候補へ復元・再表示される。これは REQ-419 の 3層モデル（Variant/RuleSet/NodeSelector）判定契約および REQ-369 の未割当スロット保持・孤立マッピング浄化規定と整合し、一時的なバリアント無効化によって保存済みノード ID やマッピング情報が失われることを防止する。
+
 現状のStage ManagerはActive=falseで配下variantを一括falseへ変更し、false→trueで一括trueへ復帰する。以前の個別OFFまでONになる既知の制約は、利用者指示でREQ-360へ分離して扱う。既にActive=trueのname編集やtrue→true更新では各variantの個別状態を変更しない。workflow mappingやworkflow固有slot stateは保持する。
 
 `MappingMaster.default_enabled` は新規workflowへの初回取込既定で、省略時はtrue。falseのmaster/variantは新規slotとして表示・取込しない。保存stateまたは既存mappingがあるworkflow slotは、masterを後からfalseにしても残す。MappingMaster一覧/APIは基本無効を含む全件を保持する。

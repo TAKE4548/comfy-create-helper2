@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import { buildWiringStageGroups } from '../wiringStageGroups'
 import { generationWorkflow, hydrateSlotStates, isSlotEnabled, setStageEnabled, slotKey } from '../workflowMappingState'
+import type { SlotDefinition, SlotMapping } from '../workflowMappingState'
 
 describe('REQ-358/STATE', () => {
   it('[REQ-358/AC-20] hydrates explicit states, saved mappings, then defaults', () => {
@@ -260,3 +261,87 @@ describe('buildWiringStageGroups', () => {
     expect(groups[0].slots[0]).toMatchObject({ slotKey: 'v:8', masterId: 1, variantId: 8, stageId: 10 })
   })
 })
+
+describe('REQ-413/STATE', () => {
+  it('[REQ-413/AC-1] excludes mappings whose slot variantEnabled is false from generationWorkflow', () => {
+    const slots: SlotDefinition[] = [
+      { masterId: 1, variantId: 10, defaultEnabled: true, variantEnabled: false },
+      { masterId: 1, variantId: 11, defaultEnabled: true, variantEnabled: true },
+    ]
+    const mappings: SlotMapping[] = [
+      { master_id: 1, variant_id: 10, node_id: 'node-disabled' },
+      { master_id: 1, variant_id: 11, node_id: 'node-enabled' },
+    ]
+    const raw = { mappings }
+    const generated = generationWorkflow(raw, slots)
+
+    expect(generated.mappings).toEqual([mappings[1]])
+  })
+
+  it('[REQ-413/AC-2] ensures excluded disabled variant mappings are omitted from the generated mappings array', () => {
+    const slots: SlotDefinition[] = [
+      { masterId: 1, variantId: 101, defaultEnabled: true, variantEnabled: false },
+      { masterId: 2, variantId: 201, defaultEnabled: true, variantEnabled: false },
+    ]
+    const mappings: SlotMapping[] = [
+      { master_id: 1, variant_id: 101, node_id: 'prompt-1', input_name: 'text' },
+      { master_id: 2, variant_id: 201, node_id: 'sampler-1', input_name: 'seed' },
+    ]
+    const raw = { mappings }
+    const generated = generationWorkflow(raw, slots)
+
+    expect(generated.mappings).toEqual([])
+  })
+
+  it('[REQ-413/AC-3] keeps mappings when variantEnabled is true or undefined, unless explicitly disabled by mapping_slot_states', () => {
+    const slots: SlotDefinition[] = [
+      { masterId: 1, variantId: 10, defaultEnabled: true, variantEnabled: true },
+      { masterId: 2, variantId: 20, defaultEnabled: true },
+      { masterId: 3, variantId: 30, defaultEnabled: true, variantEnabled: true },
+    ]
+    const mappings: SlotMapping[] = [
+      { master_id: 1, variant_id: 10, node_id: 'node-1' },
+      { master_id: 2, variant_id: 20, node_id: 'node-2' },
+      { master_id: 3, variant_id: 30, node_id: 'node-3' },
+    ]
+    const raw = {
+      mappings,
+      mapping_slot_states: {
+        'v:30': false,
+      },
+    }
+    const generated = generationWorkflow(raw, slots)
+
+    expect(generated.mappings).toEqual([mappings[0], mappings[1]])
+  })
+
+  it('[REQ-413/AC-4] excludes legacy mapping (variant_id == null) when all master slots or resolved slot are variantEnabled: false', () => {
+    const slotsSingleDisabled: SlotDefinition[] = [
+      { masterId: 1, variantId: 11, defaultEnabled: true, variantEnabled: false },
+    ]
+    const legacyMapping: SlotMapping = { master_id: 1, node_id: 'legacy-node' }
+    expect(generationWorkflow({ mappings: [legacyMapping] }, slotsSingleDisabled).mappings).toEqual([])
+
+    const slotsAllDisabled: SlotDefinition[] = [
+      { masterId: 1, variantId: 11, role: 'rough', defaultEnabled: true, variantEnabled: false },
+      { masterId: 1, variantId: 12, role: 'detail', defaultEnabled: true, variantEnabled: false },
+    ]
+    expect(generationWorkflow({ mappings: [legacyMapping] }, slotsAllDisabled).mappings).toEqual([])
+
+    const slotsRoleResolved: SlotDefinition[] = [
+      { masterId: 1, variantId: 11, role: 'rough', defaultEnabled: true, variantEnabled: false },
+      { masterId: 1, variantId: 12, role: 'detail', defaultEnabled: true, variantEnabled: true },
+    ]
+    const legacyRoleMapping: SlotMapping = { master_id: 1, role: 'rough', node_id: 'legacy-rough-node' }
+    const legacyDetailMapping: SlotMapping = { master_id: 1, role: 'detail', node_id: 'legacy-detail-node' }
+    expect(generationWorkflow({ mappings: [legacyRoleMapping, legacyDetailMapping] }, slotsRoleResolved).mappings)
+      .toEqual([legacyDetailMapping])
+
+    const slotsNoVariantDisabled: SlotDefinition[] = [
+      { masterId: 2, defaultEnabled: false, variantEnabled: false },
+    ]
+    expect(generationWorkflow({ mappings: [{ master_id: 2, node_id: 'no-variant' }] }, slotsNoVariantDisabled).mappings)
+      .toEqual([])
+  })
+})
+

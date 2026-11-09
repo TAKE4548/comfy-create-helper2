@@ -307,8 +307,12 @@ describe('useWorkflowManagement seed mappings', () => {
     expect(result.current.paramMappings).toEqual([])
     expect(result.current.rawWorkflow?.mappings).toEqual([seed])
     act(() => queryClient.setQueryData(['workflow', 7], { ...raw, mapping_slot_states: { ...raw.mapping_slot_states, 'v:44': true } }))
-    await waitFor(() => expect(result.current.paramMappings).toEqual([seed]))
+    expect(result.current.paramMappings).toEqual([])
     expect(result.current.rawWorkflow?.mapping_slot_states?.['v:999']).toBe(false)
+    act(() => queryClient.setQueryData(['mapping-masters'], [
+      { id: 4, variants: [{ id: 44, computed_role: 'Sampler_Seed', is_enabled: true }, { id: 45, computed_role: 'Sampler_Seed_rough', is_enabled: true }] },
+    ]))
+    await waitFor(() => expect(result.current.paramMappings).toEqual([seed]))
     queryClient.clear()
   })
 })

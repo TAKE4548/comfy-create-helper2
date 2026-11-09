@@ -11,7 +11,7 @@
 - **期待値**: 全テスト PASS (Exit code 0)。AC-1〜AC-5 の全受入基準を網羅。
 
 ### Gate 3: シナリオ・境界値・Red Team 検証
-- **コマンド**: `cd frontend; npx vitest run src/utils/__tests__/wiringStageGroups.test.ts -t "REQ-413"`
+- **コマンド**: `cd frontend; npx vitest run src/utils/__tests__/wiringStageGroups.test.ts src/utils/__tests__/mappingStageGroups.test.ts -t "REQ-413"`
 - **期待値**: 境界値ケース（全バリアント無効、スロット定義未指定、未知のvariant_id、レガシーマッピングfallback）および PBT 特性テストが PASS。
 
 ---

@@ -48,8 +48,20 @@ export function useWorkflowManagement({
     const variants = 'variants' in master && Array.isArray(master.variants)
       ? (master as MappingMaster & Pick<MappingMasterV2, 'variants'>).variants
       : []
-    return variants.length ? variants.map((variant) => ({ masterId: master.id, variantId: variant.id, stageId: variant.stage_id, role: variant.computed_role, legacyRole: master.role, defaultEnabled: master.default_enabled !== false }))
-      : [{ masterId: master.id, defaultEnabled: master.default_enabled !== false }]
+    return variants.length ? variants.map((variant) => ({
+      masterId: master.id,
+      variantId: variant.id,
+      stageId: variant.stage_id,
+      role: variant.computed_role,
+      legacyRole: master.role,
+      defaultEnabled: master.default_enabled !== false,
+      variantEnabled: variant.is_enabled !== false,
+    }))
+      : [{
+        masterId: master.id,
+        defaultEnabled: master.default_enabled !== false,
+        variantEnabled: master.default_enabled !== false,
+      }]
   }), [mappingMasters])
   const workflow = useMemo(
     () => rawWorkflow ? generationWorkflow(rawWorkflow, slotDefinitions) : undefined,

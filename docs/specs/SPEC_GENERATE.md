@@ -115,7 +115,9 @@ stage groupは入力欄の表示だけを整理する。role、`promptChips`、P
 
 workflowのMapping設定で無効にしたstage slotは、生成要求に使うworkflow cloneからだけ除外する。対象state keyはvariant slotの `v:<variant_id>` またはlegacy slotの `m:<master_id>`。`mapping_slot_states` の値が明示 `false` のmappingだけを、生成用 `mappings` 配列から元の順序を保って除外する。state省略、key欠落、trueは有効として保持する。`null`またはvariant未指定は、masterのslotが1つ、または保存role/既知master legacy roleとcomputed_roleが一意に完全一致する場合にそのvariant keyを参照し、なければlegacy keyへfallbackする。identity用定義には非活性variantも含める。複数slotへnode title/stage名から推定しない。これにより保存前の旧mappingにもv:falseが効き、Seedを含む無効slotの生成入力を表示しない。
 
-無効slotのmappingはworkflowの保存データ、履歴、rollback、copy、exportに保持し、画面からの再有効化に備える。保持対象は実在する `mapping_masters` / `mapping_variants` に紐づく無効スロットであり、削除済み旧マスタや存在しないバリアントを参照する孤立マッピング（Orphaned Mappings）は保存時およびマイグレーション `Step 031` で除外・浄化される（REQ-369）。生成用cloneのfilterは元workflow、元mapping配列、record、state objectを変更しない。全件有効の場合も生成用workflowと配列は独立したcloneとする。無効mappingの除外はComfyUI graph自体のnodeやexecutionを停止せず、既存のparam/prompt/seed注入経路へ値を渡さないためのworkflow mapping選別である。
+さらに、`generationWorkflow` による生成用マッピング選別において、ワークフロー個別の `mapping_slot_states`（明示 `false` の除外）の評価に加え、マスタ側のステージバリアント有効フラグ（`variant.is_enabled !== false`、`SlotDefinition.variantEnabled` 経由）を評価する。マスタ側で無効化されたバリアント（`variantEnabled === false`）および全バリアントが無効なマスタのレガシーマッピング（`variant_id == null`）を生成用 `workflow.mappings` 配列から除外する。これにより、パラメータ入力枠（ParamPanel）・プロンプト枠への表示および ComfyUI ワークフロー JSON へのパラメータ/プロンプト注入を遮断する。マスタ側で有効なバリアント（`variantEnabled !== false`）かつワークフロー個別で無効化されていない（`mapping_slot_states` が `false` でない）マッピングは正常に保持される（REQ-413）。
+
+無効slotのmappingはworkflowの保存データ、履歴、rollback、copy、exportに保持し、画面からの再有効化に備える。DB 上の `workflow_mappings` レコード自体は削除せず保持し、マスタ側でバリアントが再有効化された場合に即時復旧する（REQ-413）。保持対象は実在する `mapping_masters` / `mapping_variants` に紐づく無効スロットであり、削除済み旧マスタや存在しないバリアントを参照する孤立マッピング（Orphaned Mappings）は保存時およびマイグレーション `Step 031` で除外・浄化される（REQ-369）。生成用cloneのfilterは元workflow、元mapping配列、record、state objectを変更しない。全件有効の場合も生成用workflowと配列は独立したcloneとする。無効mappingの除外はComfyUI graph自体のnodeやexecutionを停止せず、既存のparam/prompt/seed注入経路へ値を渡さないためのworkflow mapping選別である。
 
 ### 2-6. ワークフロープリセット (`PresetManagerPanel.tsx`, `usePresetState.ts`)
 
@@ -189,6 +191,7 @@ workflowのMapping設定で無効にしたstage slotは、生成要求に使うw
 - 表示名は、mapping の `display_name`、マスター一覧の `display_name`、role の順に採用する。
 - 同期は生成時に、送信する実効値へ適用する（`applyParamSync`）。ストアの入力値（`paramValues`）は書き換えない。同期先に選んでいない項目、および解除した同期先は代表の変更に追従せず、自身の入力値（ストアの値）を使う。無効グループ（`is_enabled: false`）は適用しない。`input_type` が seed の role を含むグループは本経路では適用せず、REQ-353 の専用経路で扱う。
 - 保存した代表と同期先は、同じワークフローで ParamSync を再表示したときに復元される。ステージ付き role は保存・再取得で往復し、API・スキーマは変更しない。
+- 代表および同期先の候補生成（`buildParamSyncCandidates`）は `groupMappingsByStage` に基づき、マスタ側で `is_enabled === false` となっているステージバリアントのマッピングを同期先・代表候補から除外する（REQ-413）。
 - 自己参照の禁止以外の競合・循環規則は従来どおりとし、本変更では追加しない。
 
 ### 2-9. メインプレビュー & キュー管理

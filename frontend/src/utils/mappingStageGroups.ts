@@ -134,6 +134,7 @@ export function groupMappingsByStage(
       }
       if (candidates.length === 1) match = candidates[0]
     }
+    if (match && match.variant.is_enabled === false) return
     addMapping(index, mapping, match)
   })
 

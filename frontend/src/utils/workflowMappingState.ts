@@ -13,6 +13,7 @@ export type SlotDefinition = {
   defaultEnabled: boolean
   role?: string | null
   legacyRole?: string | null
+  variantEnabled?: boolean
 }
 
 export type WorkflowSlotStates = Record<string, boolean>
@@ -80,9 +81,23 @@ export type MappingWorkflow = {
 export function generationWorkflow<T extends MappingWorkflow>(raw: T, slots: readonly SlotDefinition[] = []): Omit<T, 'mappings'> & {
   mappings: T['mappings'][number][]
 } {
-  const mappings = raw.mappings.filter((mapping) => (
-    (raw.mapping_slot_states?.[mappingSlotKey(mapping, slots)]
-      ?? raw.mapping_slot_states?.[slotKey(mapping.master_id, mapping.variant_id)]) !== false
-  )) as T['mappings'][number][]
+  const mappings = raw.mappings.filter((mapping) => {
+    if (slots.length > 0) {
+      if (mapping.variant_id != null) {
+        const slot = slots.find((s) => s.masterId === mapping.master_id && s.variantId === mapping.variant_id)
+        if (slot?.variantEnabled === false) return false
+      } else {
+        const masterSlots = slots.filter((s) => s.masterId === mapping.master_id)
+        if (masterSlots.length > 0 && masterSlots.every((s) => s.variantEnabled === false)) return false
+        const resolvedKey = mappingSlotKey(mapping, slots)
+        const resolvedSlot = masterSlots.find((s) => slotKey(s.masterId, s.variantId) === resolvedKey)
+        if (resolvedSlot?.variantEnabled === false) return false
+      }
+    }
+    return (
+      raw.mapping_slot_states?.[mappingSlotKey(mapping, slots)]
+      ?? raw.mapping_slot_states?.[slotKey(mapping.master_id, mapping.variant_id)]
+    ) !== false
+  }) as T['mappings'][number][]
   return { ...raw, mappings }
 }

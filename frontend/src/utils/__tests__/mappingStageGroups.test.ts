@@ -83,6 +83,27 @@ describe('groupMappingsByStage', () => {
     expect(groups.map(group => group.stageId)).toEqual([1, 2])
     expect(groups.map(group => group.stageName)).toEqual(['Stage', 'Stage'])
   })
+
+  it('[REQ-413/AC-5] excludes mappings whose resolved variant is disabled (is_enabled: false)', () => {
+    const disabledMaster = {
+      ...master,
+      variants: [
+        { ...master.variants[0], id: 101, is_enabled: true },
+        { ...master.variants[1], id: 102, is_enabled: false },
+      ],
+    }
+    const enabledMapping = mapping(1, 101)
+    const disabledMapping = mapping(2, 102)
+    const legacyDisabledMapping = mapping(3, null, 'rough_prompt')
+
+    const groups = groupMappingsByStage([enabledMapping, disabledMapping, legacyDisabledMapping], [disabledMaster], stages)
+
+    const allMapped = groups.flatMap(g => g.mappings)
+    expect(allMapped).toContain(enabledMapping)
+    expect(allMapped).not.toContain(disabledMapping)
+    expect(allMapped).not.toContain(legacyDisabledMapping)
+    expect(groups.map(g => g.key)).toEqual(['main'])
+  })
 })
 
 describe('buildParamSyncCandidates', () => {
@@ -153,5 +174,24 @@ describe('buildParamSyncCandidates', () => {
     expect(result.find(c => c.role === 'Legacy_Role')).toEqual({ role: 'Legacy_Role', stageName: null, displayName: 'Legacy', inputType: 'int' })
     expect(result.find(c => c.role === 'Ghost_Role')?.stageName).toBeNull()
     expect(result.find(c => c.role === 'Sampler_Steps')?.stageName).toBe('Main')
+  })
+
+  it('[REQ-413/AC-5] excludes mappings with disabled variants from candidate list', () => {
+    const disabledSyncMasters = syncMasters.map(m => {
+      if (m.id !== 10) return m
+      return {
+        ...m,
+        variants: m.variants.map(v => (v.id === 202 ? { ...v, is_enabled: false } : v)),
+      }
+    })
+    const result = buildParamSyncCandidates([detailSteps, mainCfg, roughOther, roughSteps, mainSteps], disabledSyncMasters, syncStages)
+
+    expect(result.find(c => c.role === 'Sampler_Steps_Rough')).toBeUndefined()
+    expect(result.map(c => c.role)).toEqual([
+      'Sampler_CFG',
+      'Sampler_Steps',
+      'Other_Steps_Rough',
+      'Sampler_Steps_Detail',
+    ])
   })
 })
