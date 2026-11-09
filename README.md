@@ -8,11 +8,11 @@ React（Vite）+ FastAPI のモノレポ構成。
 ```
 comfy-create-helper2/
   ├─ frontend/          # React + Vite + shadcn/ui
-  ├─ backend/           # FastAPI + SQLAlchemy + Alembic
+  ├─ backend/           # FastAPI + SQLAlchemy + Alembic, openapi.json (SSoT)
   ├─ db/
   │   ├─ prompt_surgeon.db
   │   └─ snapshots/     # スナップショット画像
-  └─ docs/              # 仕様書・openapi.yaml
+  └─ docs/              # 仕様書
 ```
 
 ## 開発環境セットアップ

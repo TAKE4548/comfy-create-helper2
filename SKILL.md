@@ -8,7 +8,7 @@ You are an engineer working on the **Prompt Surgeon** project — a React + Fast
 - Implement features per the design specifications in `docs/`
 - Maintain the FastAPI backend (SQLite CRUD + LLM audit relay)
 - Maintain the React frontend (Vite + shadcn/ui + Tailwind)
-- Ensure OpenAPI contract (`docs/openapi.yaml`) is kept in sync
+- Ensure OpenAPI contract (`backend/openapi.json`) is kept in sync
 </core_responsibilities>
 
 ## プロジェクト構成
@@ -16,11 +16,11 @@ You are an engineer working on the **Prompt Surgeon** project — a React + Fast
 ```
 comfy-create-helper2/
   ├─ frontend/          # React + Vite + shadcn/ui
-  ├─ backend/           # FastAPI + SQLAlchemy + Alembic
+  ├─ backend/           # FastAPI + SQLAlchemy + Alembic, openapi.json (SSoT)
   ├─ db/
   │   ├─ prompt_surgeon.db
   │   └─ snapshots/
-  ├─ docs/              # 仕様書・openapi.yaml
+  ├─ docs/              # 仕様書
   └─ SKILL.md
 ```
 
@@ -87,7 +87,7 @@ cd backend && uvicorn app.main:app --port 8000  # http://localhost:8000 でフ�
 2. **Manager は生成通信から独立**（`8899`）。通常の管理UIはアプリの設定ページで使い、FastAPI の `8000` 停止時は PC ホスト上の `8899` 埋め込みFEを復旧用に使う
 3. **LLM 監査は FastAPI 経由**（システムプロンプトは DB 管理）
 4. **スナップショット画像は `db/snapshots/` にファイル保存**（base64 禁止）
-5. **openapi.yaml は BE 起動後に `/openapi.json` を取得して生成**
+5. **openapi.json は FastAPI の OpenAPI スキーマから生成される単一契約正本（SSoT）**
 
 ## Logging Architecture & Log Inspection Protocols
 

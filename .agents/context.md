@@ -14,6 +14,7 @@ This file defines repository-specific variables used by the AntiGravity agent sy
 ## Subsystems & Verification Commands (3-Gate Architecture)
 ### Gate 1: Static Typecheck & Unit Logic (高速即時検出 / 3〜5秒)
 - UI Invariant Check: `backend\.venv\Scripts\python scripts/verify_ui_invariants.py`
+- OpenAPI Contract Sync Check: `backend\.venv\Scripts\python scripts/verify_openapi_sync.py`
 - Frontend Typecheck: `cd frontend; npm run typecheck`
 - Backend Typecheck: `mypy backend`
 - Backend Unit Tests: `backend\.venv\Scripts\python -m pytest backend/tests/unit`

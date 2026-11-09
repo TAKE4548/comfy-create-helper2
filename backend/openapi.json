@@ -12298,15 +12298,54 @@
             "type": "string",
             "title": "Name"
           },
+          "master_variant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Variant Id"
+          },
+          "slave_variant_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slave Variant Ids"
+          },
           "master_role": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Master Role"
           },
           "slave_roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Slave Roles"
           },
           "is_enabled": {
@@ -12317,34 +12356,12 @@
         },
         "type": "object",
         "required": [
-          "name",
-          "master_role",
-          "slave_roles"
+          "name"
         ],
         "title": "ParamSyncGroupCreate"
       },
       "ParamSyncGroupRead": {
         "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "master_role": {
-            "type": "string",
-            "title": "Master Role"
-          },
-          "slave_roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Slave Roles"
-          },
-          "is_enabled": {
-            "type": "boolean",
-            "title": "Is Enabled",
-            "default": false
-          },
           "id": {
             "type": "integer",
             "title": "Id"
@@ -12353,19 +12370,63 @@
             "type": "integer",
             "title": "Workflow Id"
           },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "master_variant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Variant Id"
+          },
+          "slave_variant_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Slave Variant Ids"
+          },
+          "master_role": {
+            "type": "string",
+            "title": "Master Role",
+            "default": ""
+          },
+          "slave_roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Slave Roles"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/VariantRef"
+            },
+            "type": "array",
+            "title": "Variants"
           }
         },
         "type": "object",
         "required": [
-          "name",
-          "master_role",
-          "slave_roles",
           "id",
           "workflow_id",
+          "name",
           "created_at"
         ],
         "title": "ParamSyncGroupRead"
@@ -12382,6 +12443,31 @@
               }
             ],
             "title": "Name"
+          },
+          "master_variant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Variant Id"
+          },
+          "slave_variant_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slave Variant Ids"
           },
           "master_role": {
             "anyOf": [
@@ -14132,6 +14218,18 @@
               }
             ],
             "title": "Source Snapshot Id"
+          },
+          "variant_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Variant Params"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/VariantRef"
+            },
+            "type": "array",
+            "title": "Variants"
           }
         },
         "type": "object",
@@ -14202,6 +14300,18 @@
               }
             ],
             "title": "Source Snapshot Id"
+          },
+          "variant_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Variant Params"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/VariantRef"
+            },
+            "type": "array",
+            "title": "Variants"
           }
         },
         "type": "object",
@@ -16341,6 +16451,35 @@
         ],
         "title": "ValidationError"
       },
+      "VariantRef": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role"
+        ],
+        "title": "VariantRef"
+      },
       "VocabularyItem": {
         "properties": {
           "suggestion": {
@@ -16760,6 +16899,20 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "variant_param_values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variant Param Values"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/VariantRef"
+            },
+            "type": "array",
+            "title": "Variants"
           }
         },
         "type": "object",

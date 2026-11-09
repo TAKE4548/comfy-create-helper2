@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml  # type: ignore[import-untyped]
 
 from app.main import app
 from app.schemas.workflow import WorkflowCreate, WorkflowRead, WorkflowUpdate
@@ -69,16 +68,14 @@ def test_req358_openapi_workflow_slot_states_defaults_and_update_null_rejection(
         WorkflowUpdate.model_validate({"mapping_slot_states": None})
 
 
-def test_req358_openapi_master_routes_match_runtime_and_both_snapshots_AC_26() -> None:
-    """[REQ-358/AC-26] Mapping master routes expose the runtime V2 request and response schemas."""
+def test_req358_openapi_master_routes_match_runtime_and_snapshot_AC_26() -> None:
+    """[REQ-358/AC-26] Mapping master routes expose runtime V2 schemas matching openapi.json snapshot."""
     runtime = app.openapi()
     backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
-    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
     routes = ("/api/mapping-masters", "/api/mapping-masters/{master_id}")
 
     for route in routes:
         assert backend_snapshot["paths"][route] == runtime["paths"][route]
-        assert docs_snapshot["paths"][route] == runtime["paths"][route]
 
     expected_refs = {
         ("/api/mapping-masters", "get", "200"): "MappingMasterV2Read",
@@ -105,38 +102,32 @@ def test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31() -> N
     """[REQ-358/AC-28][REQ-358/AC-30][REQ-358/AC-31] Verify mapping master default_enabled OpenAPI contract."""
     runtime = app.openapi()
     backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
-    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
     master_schemas = runtime["components"]["schemas"]
     for name in ("MappingMasterCreatePayload", "MappingMasterV2Read"):
         prop = master_schemas[name]["properties"]["default_enabled"]
         assert prop == {"type": "boolean", "title": "Default Enabled", "default": True}
         assert backend_snapshot["components"]["schemas"][name] == master_schemas[name]
-        assert docs_snapshot["components"]["schemas"][name] == master_schemas[name]
 
     update = master_schemas["MappingMasterUpdate"]
     assert "default_enabled" in update["properties"]
     assert "default_enabled" not in update.get("required", [])
     assert backend_snapshot["components"]["schemas"]["MappingMasterUpdate"] == update
-    assert docs_snapshot["components"]["schemas"]["MappingMasterUpdate"] == update
 
 
 def test_req417_openapi_binding_rules_and_node_selectors_contract_AC_5() -> None:
     """[REQ-417/AC-5] Verify binding rules and node selectors routes and schemas in OpenAPI contract."""
     runtime = app.openapi()
     backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
-    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
 
     # Check WorkflowMappingRead.input_name in schemas
     wf_mapping = runtime["components"]["schemas"]["WorkflowMappingRead"]
     assert "input_name" in wf_mapping["properties"]
     assert wf_mapping["properties"]["input_name"]["type"] == "string"
     assert backend_snapshot["components"]["schemas"]["WorkflowMappingRead"] == wf_mapping
-    assert docs_snapshot["components"]["schemas"]["WorkflowMappingRead"] == wf_mapping
 
     # Check routes in paths
     for route in ("/api/binding-rules", "/api/binding-rules/{rule_set_id}", "/api/node-selectors", "/api/node-selectors/{selector_id}"):
         assert backend_snapshot["paths"][route] == runtime["paths"][route]
-        assert docs_snapshot["paths"][route] == runtime["paths"][route]
 
     # Check new schemas
     for schema_name in (
@@ -148,15 +139,12 @@ def test_req417_openapi_binding_rules_and_node_selectors_contract_AC_5() -> None
         "NodeSelectorUpdate",
     ):
         assert backend_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
-        assert docs_snapshot["components"]["schemas"][schema_name] == runtime["components"]["schemas"][schema_name]
-
 
 
 def test_req419_ac9_openapi_new_contracts_match_runtime() -> None:
-    """[REQ-419/AC-9] New atomic-save / scan-preview paths and schemas, and MappingVariantRead, match runtime in both snapshots."""
+    """[REQ-419/AC-9] New atomic-save / scan-preview paths and schemas, and MappingVariantRead, match runtime in openapi.json snapshot."""
     runtime = app.openapi()
     backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
-    docs_snapshot = yaml.safe_load((Path(__file__).resolve().parents[3] / "docs/openapi.yaml").read_text(encoding="utf-8"))
 
     routes = {
         "/api/mapping-masters/{master_id}/atomic-save": "MasterAtomicSaveRequest",
@@ -167,7 +155,6 @@ def test_req419_ac9_openapi_new_contracts_match_runtime() -> None:
         body = runtime["paths"][route]["post"]["requestBody"]["content"]["application/json"]["schema"]
         assert body["$ref"] == f"#/components/schemas/{request_schema}"
         assert backend_snapshot["paths"][route] == runtime["paths"][route]
-        assert docs_snapshot["paths"][route] == runtime["paths"][route]
 
     schema_names = (
         "AtomicEntryInput", "AtomicPatternInput", "DefinitionOp", "DefinitionRef", "AtomicVariantItem",
@@ -177,7 +164,6 @@ def test_req419_ac9_openapi_new_contracts_match_runtime() -> None:
     )
     for name in schema_names:
         assert backend_snapshot["components"]["schemas"][name] == runtime["components"]["schemas"][name], name
-        assert docs_snapshot["components"]["schemas"][name] == runtime["components"]["schemas"][name], name
 
     variant_props = runtime["components"]["schemas"]["MappingVariantRead"]["properties"]
     assert "rule_entries" in variant_props and "selector_patterns" in variant_props

@@ -1,4 +1,7 @@
 import { BASE_URL } from '../core/base'
+import type { components } from '../schema'
+
+type GenerationSchemas = components['schemas']
 
 export type Scope = 'normal' | 'studio'
 export type JobStatus = 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unconfirmed' | 'released'
@@ -39,7 +42,8 @@ export interface BatchRequest {
   items: GenerationItem[]
 }
 
-export interface JobView {
+// Align with generated OpenAPI JobView if available, preserving client fields
+export type JobView = GenerationSchemas extends { JobView: infer T } ? T : {
   job_id: string
   request_id: string
   prompt_id: string | null

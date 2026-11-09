@@ -297,7 +297,7 @@ interface TranslationSettings {
 
 ## 6. API 呼び出し
 
-`docs/openapi.yaml`はバックエンドOpenAPIから生成される契約ファイルで、現行生成物は139 pathを持つ。この一覧はSettings画面が利用するAPIの抜粋であり、OpenAPI全体の代替ではない。
+`backend/openapi.json`はバックエンドOpenAPIから生成される契約ファイルで、現行生成物は139 pathを持つ。この一覧はSettings画面が利用するAPIの抜粋であり、OpenAPI全体の代替ではない。
 
 | 操作 | エンドポイント | ペイロード / パラメータ |
 |---|---|---|

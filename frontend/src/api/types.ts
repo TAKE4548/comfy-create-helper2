@@ -3,7 +3,28 @@
  * Auto-generated shape: matches FastAPI schemas.py
  */
 
+import type { components } from './schema'
 import type { BubbleShapeType, MangaTextEffectConfig, TextOrientation } from '../types/speechBubble'
+
+export type Schema<T extends keyof components['schemas']> = components['schemas'][T]
+
+// --- MappingMaster API Types ---
+export type MappingMasterV2 = Omit<
+  Schema<'MappingMasterV2Read'>,
+  'group_id' | 'default_enabled' | 'expected_class_types' | 'base_title_patterns' | 'variants' | 'role' | 'display_name'
+> & {
+  group_id: number | null
+  expected_class_types: string[] | null
+  base_title_patterns: string[] | null
+  variants: MappingVariant[]
+  role?: string
+  display_name?: string
+  default_enabled?: boolean
+}
+export type MappingMasterCreate = Omit<Schema<'MappingMasterCreatePayload'>, 'default_enabled'> & {
+  default_enabled?: boolean
+}
+export type MappingMasterUpdate = Schema<'MappingMasterUpdate'>
 
 // 笏笏笏 MappingMaster 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
@@ -19,16 +40,7 @@ export interface MappingMaster {
   default_enabled?: boolean
 }
 
-export interface MappingMasterCreate {
-  role: string
-  expected_class_types?: string[]
-  param_name: string
-  input_type: string
-  display_name: string
-  title_patterns?: string[]
-  default_enabled?: boolean
-}
-
+// [UI-Only Type]: Not part of OpenAPI contract (Component-specific state)
 export interface MappingMasterUsage {
   workflow_id: number
   workflow_name: string
@@ -184,58 +196,8 @@ export interface NodeSelectorUpdate {
 }
 
 
-export interface MappingMasterV2 {
-  id: number
-  group_id: number | null
-  base_key: string
-  name: string
-  param_name: string
-  input_type: string
-  expected_class_types: string[] | null
-  base_title_patterns: string[] | null
-  fallback_param_names?: string[] | null
-  sort_order: number
-  variants: MappingVariant[]
-  // Legacy compatibility fields
-  role?: string
-  display_name?: string
-  title_patterns?: string[] | null
-  default_enabled?: boolean
-}
-
-export interface MappingMasterV2Create {
-  role?: string
-  base_key?: string
-  display_name?: string
-  name?: string
-  param_name: string
-  input_type: string
-  group_id?: number | null
-  expected_class_types?: string[] | null
-  title_patterns?: string[] | null
-  base_title_patterns?: string[] | null
-  fallback_param_names?: string[] | null
-  sort_order?: number
-  variants?: MappingVariantUpdateItem[]
-  default_enabled?: boolean
-}
-
-export interface MappingMasterV2Update {
-  group_id?: number | null
-  base_key?: string
-  name?: string
-  param_name?: string
-  input_type?: string
-  expected_class_types?: string[] | null
-  base_title_patterns?: string[] | null
-  fallback_param_names?: string[] | null
-  sort_order?: number
-  variants?: MappingVariantUpdateItem[]
-  role?: string
-  display_name?: string
-  title_patterns?: string[] | null
-  default_enabled?: boolean
-}
+export type MappingMasterV2Create = MappingMasterCreate
+export type MappingMasterV2Update = MappingMasterUpdate
 
 export interface CascadePreviewResult {
   stage_id: number
@@ -285,33 +247,12 @@ export interface WorkflowSummary {
   created_at: string
 }
 
-export interface Workflow {
-  id: number
-  name: string
-  json_body: Record<string, unknown>
+// --- Workflow API Types ---
+export type Workflow = Omit<Schema<'WorkflowRead'>, 'mappings'> & {
   mappings: WorkflowMapping[]
-  default_applied_assets?: string | null
-  target_base_model_id?: number | null
-  created_at: string
-  mapping_slot_states?: Record<string, boolean>
 }
-
-export interface WorkflowCreate {
-  name: string
-  json_body: Record<string, unknown>
-  mappings: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[]
-  target_base_model_id?: number | null
-  mapping_slot_states?: Record<string, boolean>
-}
-
-export interface WorkflowUpdate {
-  name?: string
-  json_body?: Record<string, unknown>
-  default_applied_assets?: string | null
-  mappings?: { master_id: number; node_id: string; variant_id?: number | null; input_name?: string }[]
-  target_base_model_id?: number | null
-  mapping_slot_states?: Record<string, boolean>
-}
+export type WorkflowCreate = Schema<'WorkflowCreate'>
+export type WorkflowUpdate = Schema<'WorkflowUpdate'>
 
 
 
