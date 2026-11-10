@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Trash2, Play, Clock } from 'lucide-react'
 import { useGenerationStore } from '../store/useGenerationStore'
-import { generationApi } from '../api/domains/generation'
 import type { CancelOperation, CancelResult, CancelScope } from '../api/domains/generation'
 import { Modal } from './common/Modal'
 import { selectReleasedJobs, selectUnconfirmedJobs } from '../utils/generationSelectors'
@@ -21,8 +20,11 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     clearPendingQueue,
     cancelAllJobs,
     generationSnapshot,
-    fetchQueue,
     releaseUnconfirmed,
+    queuedCancelUndo,
+    cancelQueuedJobWithUndo,
+    restoreCancelledJob,
+    dismissQueuedCancelUndo,
   } = useGenerationStore()
   const [bulkScope, setBulkScope] = useState<CancelScope>('all')
   const [busy, setBusy] = useState(false)
@@ -30,9 +32,8 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   const [confirmation, setConfirmation] = useState<{ mode: 'queued' | 'all'; scope: CancelScope } | null>(null)
   const [confirmationCounts, setConfirmationCounts] = useState<{ pending: number; running: number } | null>(null)
   const [runningConfirmation, setRunningConfirmation] = useState<string | null>(null)
-  const [queuedReservation, setQueuedReservation] = useState<string | null>(null)
+  const [undoRemainingMs, setUndoRemainingMs] = useState(3000)
   const busyRef = useRef(false)
-  const cancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // [FIX REQ-049] useMemo を早期リターンより前に移動（React Rules of Hooks 準拠）
   const visibleRunning = useMemo(
@@ -40,8 +41,15 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     [queueRunning, filterOwnSession, clientId]
   )
   const visiblePending = useMemo(
-    () => queuePending.filter((job: any) => !filterOwnSession || job[3]?.client_id === clientId),
-    [queuePending, filterOwnSession, clientId]
+    () =>
+      queuePending
+        .filter((job: any) => !filterOwnSession || job[3]?.client_id === clientId)
+        .filter(
+          (job: any) =>
+            !queuedCancelUndo ||
+            (job[1] !== queuedCancelUndo.promptId && job[1] !== queuedCancelUndo.jobId)
+        ),
+    [queuePending, filterOwnSession, clientId, queuedCancelUndo]
   )
   const [releaseConfirmation, setReleaseConfirmation] = useState<string[] | null>(null)
   const sessionFilter = filterOwnSession ? clientId : null
@@ -54,29 +62,31 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     [generationSnapshot, sessionFilter]
   )
 
-
-  const clearReservation = () => {
-    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
-    cancelTimer.current = null
-    setQueuedReservation(null)
-  }
-
   const closeModal = () => {
     if (busyRef.current) return
-    clearReservation()
     setConfirmation(null)
     setRunningConfirmation(null)
     setReleaseConfirmation(null)
     onClose()
   }
 
-  useEffect(() => () => {
-    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
-  }, [])
-
   useEffect(() => {
-    if (!isOpen) clearReservation()
-  }, [isOpen])
+    if (!queuedCancelUndo) {
+      setUndoRemainingMs(3000)
+      return
+    }
+    const updateRemaining = () => {
+      const elapsed = Date.now() - queuedCancelUndo.cancelledAt
+      const remaining = Math.max(0, 3000 - elapsed)
+      setUndoRemainingMs(remaining)
+      if (remaining <= 0) {
+        dismissQueuedCancelUndo?.()
+      }
+    }
+    updateRemaining()
+    const timer = setInterval(updateRemaining, 100)
+    return () => clearInterval(timer)
+  }, [queuedCancelUndo, dismissQueuedCancelUndo])
 
   if (!isOpen) return null
 
@@ -87,6 +97,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
 
   const confirmRunningCancel = async (promptId: string) => {
     if (busyRef.current) return
+    dismissQueuedCancelUndo?.()
     busyRef.current = true
     setBusy(true)
     setResultMessage(null)
@@ -133,32 +144,28 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
     } finally { busyRef.current = false; setBusy(false) }
   }
 
-  const reserveQueuedCancel = (promptId: string, e: React.MouseEvent) => {
+  const handleQueuedCancel = async (promptId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (busyRef.current) return
-    if (cancelTimer.current !== null) clearTimeout(cancelTimer.current)
     setResultMessage(null)
-    setQueuedReservation(promptId)
-    cancelTimer.current = setTimeout(async () => {
-      cancelTimer.current = null
-      setQueuedReservation(null)
-      busyRef.current = true
-      setBusy(true)
-      try {
-        const result = await generationApi.cancelJob(promptId, false, true)
-        if (result.outcome === 'cancelled' || result.outcome === 'already_terminal') {
-          setResultMessage(`取消結果を確認しました: ${result.prompt_id || result.job_id || promptId}`)
-        } else {
-          setResultMessage(`取消できません: ${result.prompt_id || result.job_id || promptId}（${result.message}）`)
-        }
-        await fetchQueue()
-      } catch (error) {
-        setResultMessage(`取消できません: ${promptId}（${error instanceof Error ? error.message : '状態を確認できません'}）`)
-      } finally {
-        busyRef.current = false
-        setBusy(false)
+    try {
+      const result = await cancelQueuedJobWithUndo(promptId)
+      if (result && result.outcome !== 'cancelled' && result.outcome !== 'already_terminal') {
+        setResultMessage(`取消できません: ${result.prompt_id || result.job_id || promptId}（${result.message}）`)
       }
-    }, 3000)
+    } catch (error) {
+      setResultMessage(error instanceof Error ? error.message : 'キューの取消に失敗しました')
+    }
+  }
+
+  const handleRestore = async () => {
+    if (busyRef.current) return
+    setResultMessage(null)
+    try {
+      await restoreCancelledJob()
+    } catch (error) {
+      setResultMessage(error instanceof Error ? error.message : 'ジョブの復元に失敗しました')
+    }
   }
 
   const hasConfirmedAllEffects = (operation: CancelOperation) => {
@@ -199,6 +206,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   const handleClearQueueOnly = async () => {
     const scope = confirmation?.scope
     if (!confirmation || confirmation.mode !== 'queued' || !scope) return
+    dismissQueuedCancelUndo?.()
     setConfirmation(null)
     if (busyRef.current) return
     busyRef.current = true
@@ -217,6 +225,7 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
   const handleCancelAll = async () => {
     const scope = confirmation?.scope
     if (!confirmation || confirmation.mode !== 'all' || !scope) return
+    dismissQueuedCancelUndo?.()
     setConfirmation(null)
     if (busyRef.current) return
     busyRef.current = true
@@ -323,16 +332,63 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
 
           {/* Pending Jobs Queue */}
           <div>
-            <h3 className="text-xs font-semibold text-zinc-350 mb-3 flex items-center gap-1.5">
-              <Clock size={12} className="text-[#a99ef7]" />
-              待機中のキュー ({visiblePending.length})
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-zinc-350 flex items-center gap-1.5">
+                <Clock size={12} className="text-[#a99ef7]" />
+                待機中のキュー ({visiblePending.length})
+              </h3>
+            </div>
+
+            {queuedCancelUndo && (
+              <div
+                role="status"
+                aria-label="キャンセル取り消し通知"
+                className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex flex-col gap-2 transition-all"
+              >
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-xs text-amber-300 font-medium truncate">
+                      ジョブをキャンセルしました（{Math.max(1, Math.ceil(undoRemainingMs / 1000))}秒以内なら取り消せます）
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleRestore}
+                      disabled={busy}
+                      className="relative min-h-11 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 border border-amber-500/40 text-xs font-semibold flex items-center gap-1 transition-all before:absolute before:-inset-2 before:content-['']"
+                    >
+                      取り消し
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="通知を閉じる"
+                      onClick={() => dismissQueuedCancelUndo?.()}
+                      disabled={busy}
+                      className="relative min-h-11 min-w-11 flex items-center justify-center p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors before:absolute before:-inset-2 before:content-['']"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1 w-full bg-zinc-700/40 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400/80 rounded-full transition-all duration-100 ease-linear"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, (undoRemainingMs / 3000) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
             {visiblePending.length === 0 ? (
               <div className="bg-surface border border-[rgba(255,255,255,0.04)] rounded-lg p-4 text-center text-xs text-zinc-450 italic">
                 待機中のジョブはありません
               </div>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto overscroll-contain custom-scrollbar">
                 {visiblePending.map((job, index) => {
                   const promptId = job[1]
                   const jobClientId = job[3]?.client_id
@@ -355,14 +411,15 @@ export const JobManagementModal: React.FC<JobManagementModalProps> = ({ isOpen, 
                           Client: {jobClientId || 'unknown'}
                         </div>
                       </div>
-                      {queuedReservation === promptId ? <div className="flex items-center gap-2"><span role="status" className="text-[11px] text-amber-300">取消予約（3秒後）</span><button type="button" onClick={clearReservation} className="min-h-11 px-2 text-[11px] text-accent-green">Undo</button></div> : <button
-                        onClick={(e) => reserveQueuedCancel(promptId, e)}
+                      <button
+                        type="button"
+                        onClick={(e) => handleQueuedCancel(promptId, e)}
                         disabled={busy}
-                        className="min-h-11 min-w-11 p-1.5 rounded bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-[rgba(255,255,255,0.04)] hover:border-red-500/20 transition-all"
+                        className="relative min-h-11 min-w-11 p-1.5 rounded bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-[rgba(255,255,255,0.04)] hover:border-red-500/20 transition-all flex items-center justify-center before:absolute before:-inset-2 before:content-['']"
                         title="キューから削除"
                       >
                         <Trash2 size={13} />
-                      </button>}
+                      </button>
                     </div>
                   )
                 })}

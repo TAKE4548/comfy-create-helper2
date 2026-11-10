@@ -17,6 +17,10 @@ const mocks = vi.hoisted(() => ({
     generationSnapshot: { jobs: [] as any[] },
     fetchQueue: vi.fn(),
     releaseUnconfirmed: vi.fn(),
+    queuedCancelUndo: null as any,
+    cancelQueuedJobWithUndo: vi.fn(),
+    restoreCancelledJob: vi.fn(),
+    dismissQueuedCancelUndo: vi.fn(),
   },
 }))
 
@@ -65,6 +69,10 @@ describe('JobManagementModal', () => {
     mocks.state.clientId = 'session-a'
     mocks.state.filterOwnSession = false
     vi.stubGlobal('confirm', vi.fn(() => true))
+    mocks.state.queuedCancelUndo = null
+    mocks.state.cancelQueuedJobWithUndo.mockResolvedValue({ job_id: 'job-1', prompt_id: 'prompt-pending', status: 'cancelled', outcome: 'cancelled', message: 'cancelled' })
+    mocks.state.restoreCancelledJob.mockResolvedValue('restored-prompt-id')
+    mocks.state.dismissQueuedCancelUndo.mockReturnValue(undefined)
     mocks.state.clearPendingQueue.mockResolvedValue(confirmedOperation('all', 'queued'))
     mocks.state.cancelAllJobs.mockResolvedValue(confirmedOperation('all'))
     mocks.state.cancelJob.mockResolvedValue({ job_id: 'job-1', prompt_id: 'prompt-running', status: 'cancelled', outcome: 'cancelled', message: 'cancelled' })
@@ -144,18 +152,14 @@ describe('JobManagementModal', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('single cancellation sends only the selected row identifier and does not show a failure notice on success', async () => {
-    vi.useFakeTimers()
+  it('[REQ-424/AC-1] immediately executes queued cancel on button click without pre-delay', async () => {
     mocks.state.queuePending = [['pending', 'selected-prompt', 0, { client_id: 'session-b' }]]
     render(<JobManagementModal isOpen onClose={onClose} />)
     const buttons = screen.getAllByTitle('キューから削除')
     fireEvent.click(buttons[0])
 
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
-    expect(screen.getByText(/取消予約/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-    await vi.advanceTimersByTimeAsync(3000)
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
+    expect(mocks.state.cancelQueuedJobWithUndo).toHaveBeenCalledWith('selected-prompt')
+    expect(screen.queryByText(/取消予約/)).not.toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -262,57 +266,169 @@ describe('JobManagementModal', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('commits a queued-only cancellation once after 3000ms and refreshes the queue', async () => {
-    vi.useFakeTimers()
-    mocks.state.queuePending = [['pending', 'queued-prompt', 0, { client_id: 'session-b' }]]
-    render(<JobManagementModal isOpen onClose={onClose} />)
-    fireEvent.click(screen.getByTitle('キューから削除'))
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(2999) })
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
-    await vi.waitFor(() => expect(generationApi.cancelJob).toHaveBeenCalledWith('queued-prompt', false, true))
-    expect(generationApi.cancelJob).toHaveBeenCalledTimes(1)
-    expect(mocks.state.fetchQueue).toHaveBeenCalledTimes(1)
-  })
-
-  it('undoes the reservation at 2999ms without changing the queue, then permits one new reservation', async () => {
-    vi.useFakeTimers()
-    const queuedRecord = ['pending', 'queued-prompt', 0, { client_id: 'session-b' }]
-    mocks.state.queuePending = [queuedRecord]
+  it('[REQ-424/AC-2] displays undo notification banner with 3-second timer on cancel', () => {
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-1',
+      promptId: 'prompt-1',
+      workflow: null,
+      metadata: null,
+      cancelledAt: Date.now(),
+    }
     render(<JobManagementModal isOpen onClose={onClose} />)
 
-    fireEvent.click(screen.getByTitle('キューから削除'))
-    expect(screen.getByRole('status')).toHaveTextContent('取消予約（3秒後）')
-    await act(async () => { await vi.advanceTimersByTimeAsync(2999) })
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1001) })
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
-    expect(mocks.state.cancelJob).not.toHaveBeenCalled()
-    expect(mocks.state.queuePending).toEqual([queuedRecord])
-
-    fireEvent.click(screen.getByTitle('キューから削除'))
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
-    await vi.waitFor(() => expect(generationApi.cancelJob).toHaveBeenCalledWith('queued-prompt', false, true))
-    expect(generationApi.cancelJob).toHaveBeenCalledTimes(1)
+    const banner = screen.getByRole('status', { name: 'キャンセル取り消し通知' })
+    expect(banner).toBeInTheDocument()
+    expect(banner).toHaveTextContent(/3秒以内なら取り消せます/)
+    expect(within(banner).getByRole('button', { name: '取り消し' })).toBeInTheDocument()
+    expect(within(banner).getByRole('button', { name: '通知を閉じる' })).toBeInTheDocument()
   })
 
-  it.each(['close', 'backdrop', 'escape', 'unmount'] as const)('clears the queued cancellation timer on %s', async (action) => {
+  it('[REQ-424/AC-3] restores cancelled job to queue when undo clicked within 3s', async () => {
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-1',
+      promptId: 'prompt-1',
+      workflow: { 3: { class_type: 'KSampler' } },
+      metadata: { workflowId: 10 },
+      cancelledAt: Date.now(),
+    }
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    const banner = screen.getByRole('status', { name: 'キャンセル取り消し通知' })
+    const undoBtn = within(banner).getByRole('button', { name: '取り消し' })
+    fireEvent.click(undoBtn)
+
+    await waitFor(() => expect(mocks.state.restoreCancelledJob).toHaveBeenCalledTimes(1))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('[REQ-424/AC-4] dismisses undo notification and finalizes cancel after 3000ms or on explicit close', async () => {
     vi.useFakeTimers()
-    mocks.state.queuePending = [['pending', 'queued-prompt', 0, { client_id: 'session-b' }]]
-    const view = render(<JobManagementModal isOpen onClose={onClose} />)
-    fireEvent.click(screen.getByTitle('キューから削除'))
-    if (action === 'close') fireEvent.click(document.getElementById('close-job-management-modal-btn')!)
-    else if (action === 'backdrop') fireEvent.click(screen.getByRole('dialog', { name: 'ジョブ管理' }).parentElement!)
-    else if (action === 'escape') fireEvent.keyDown(document.getElementById('close-job-management-modal-btn')!, { key: 'Escape' })
-    else view.unmount()
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
-    expect(generationApi.cancelJob).not.toHaveBeenCalled()
+    const now = 100000
+    vi.setSystemTime(now)
+
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-1',
+      promptId: 'prompt-1',
+      workflow: null,
+      metadata: null,
+      cancelledAt: now,
+    }
+
+    const { rerender } = render(<JobManagementModal isOpen onClose={onClose} />)
+
+    // Test explicit close button click
+    const banner = screen.getByRole('status', { name: 'キャンセル取り消し通知' })
+    const closeBtn = within(banner).getByRole('button', { name: '通知を閉じる' })
+    fireEvent.click(closeBtn)
+    expect(mocks.state.dismissQueuedCancelUndo).toHaveBeenCalledTimes(1)
+
+    // Reset and test natural 3000ms expiration
+    mocks.state.dismissQueuedCancelUndo.mockClear()
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-2',
+      promptId: 'prompt-2',
+      workflow: null,
+      metadata: null,
+      cancelledAt: now,
+    }
+    rerender(<JobManagementModal isOpen onClose={onClose} />)
+
+    expect(mocks.state.dismissQueuedCancelUndo).not.toHaveBeenCalled()
+    await act(async () => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(mocks.state.dismissQueuedCancelUndo).toHaveBeenCalled()
+  })
+
+  it('[REQ-424/AC-5] preserves existing bulk cancel and running job abort behaviors without interference', async () => {
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-1',
+      promptId: 'prompt-1',
+      workflow: null,
+      metadata: null,
+      cancelledAt: Date.now(),
+    }
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    // Bulk queue clear dismisses undo slot and triggers confirmation
+    fireEvent.click(screen.getByRole('button', { name: 'キューのみクリア' }))
+    expect(screen.getByRole('dialog', { name: '取消確認' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '確認してキューのみクリア' }))
+    await waitFor(() => expect(mocks.state.clearPendingQueue).toHaveBeenCalledWith('all'))
+    expect(mocks.state.dismissQueuedCancelUndo).toHaveBeenCalled()
+
+    // Emergency stop for running job dismisses undo slot and runs uninterrupted
+    mocks.state.dismissQueuedCancelUndo.mockClear()
+    fireEvent.click(screen.getByTitle('中断（生成を停止）'))
+    expect(screen.getByRole('button', { name: '実行中ジョブを中断する' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '実行中ジョブを中断する' }))
+    await waitFor(() => expect(mocks.state.cancelJob).toHaveBeenCalledWith('prompt-running'))
+    expect(mocks.state.dismissQueuedCancelUndo).toHaveBeenCalled()
+  })
+
+  it('[RedTeam] timer boundary check: undo succeeds at 2999ms but expires at 3001ms', async () => {
+    vi.useFakeTimers()
+    const now = 200000
+    vi.setSystemTime(now)
+
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-boundary',
+      promptId: 'prompt-boundary',
+      workflow: null,
+      metadata: null,
+      cancelledAt: now,
+    }
+
+    render(<JobManagementModal isOpen onClose={onClose} />)
+
+    // Advance to 2999ms - should still be undoable, dismiss not called yet
+    await act(async () => {
+      vi.advanceTimersByTime(2999)
+    })
+    expect(mocks.state.dismissQueuedCancelUndo).not.toHaveBeenCalled()
+    const banner = screen.getByRole('status', { name: 'キャンセル取り消し通知' })
+    fireEvent.click(within(banner).getByRole('button', { name: '取り消し' }))
+    expect(mocks.state.restoreCancelledJob).toHaveBeenCalledTimes(1)
+
+    // Advance past 3000ms (3001ms) - dismiss should now be called
+    await act(async () => {
+      vi.advanceTimersByTime(2)
+    })
+    expect(mocks.state.dismissQueuedCancelUndo).toHaveBeenCalled()
+  })
+
+  it('[RedTeam] cancel API failure handles error cleanly without orphan state', async () => {
+    mocks.state.cancelQueuedJobWithUndo.mockRejectedValue(new Error('Cancel 503 Service Unavailable'))
+    mocks.state.queuePending = [['pending', 'prompt-failed', 0, { client_id: 'session-b' }]]
+
+    render(<JobManagementModal isOpen onClose={onClose} />)
+    const button = screen.getByTitle('キューから削除')
+    fireEvent.click(button)
+
+    await waitFor(() => {
+      expect(screen.getByText('Cancel 503 Service Unavailable')).toBeInTheDocument()
+    })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('[RedTeam] restore failure handles API error cleanly', async () => {
+    mocks.state.restoreCancelledJob.mockRejectedValue(new Error('Restore queue full'))
+    mocks.state.queuedCancelUndo = {
+      jobId: 'job-1',
+      promptId: 'prompt-1',
+      workflow: null,
+      metadata: null,
+      cancelledAt: Date.now(),
+    }
+
+    render(<JobManagementModal isOpen onClose={onClose} />)
+    const banner = screen.getByRole('status', { name: 'キャンセル取り消し通知' })
+    fireEvent.click(within(banner).getByRole('button', { name: '取り消し' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Restore queue full')).toBeInTheDocument()
+    })
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('blocks backdrop and Escape dismissal while a committed queue operation is busy', async () => {
@@ -348,15 +464,21 @@ describe('JobManagementModal', () => {
     await waitFor(() => expect(mocks.state.cancelJob).toHaveBeenCalledWith('prompt-running'))
   })
 
-  it('reports a queued job that started before the queued-only timer expired', async () => {
-    vi.useFakeTimers()
+  it('reports a queued job that fails cancellation when rejected by server', async () => {
     mocks.state.queuePending = [['pending', 'started-prompt', 0, { client_id: 'session-b' }]]
-    vi.mocked(generationApi.cancelJob).mockRejectedValue(new Error('already running'))
+    mocks.state.cancelQueuedJobWithUndo.mockResolvedValue({
+      job_id: null,
+      prompt_id: 'started-prompt',
+      status: 'running',
+      outcome: 'rejected',
+      message: 'already running',
+    })
     render(<JobManagementModal isOpen onClose={onClose} />)
     fireEvent.click(screen.getByTitle('キューから削除'))
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
-    expect(generationApi.cancelJob).toHaveBeenCalledWith('started-prompt', false, true)
-    expect(screen.getByText(/取消できません: started-prompt/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(mocks.state.cancelQueuedJobWithUndo).toHaveBeenCalledWith('started-prompt')
+      expect(screen.getByText(/取消できません: started-prompt/)).toBeInTheDocument()
+    })
     expect(mocks.state.cancelJob).not.toHaveBeenCalled()
   })
 

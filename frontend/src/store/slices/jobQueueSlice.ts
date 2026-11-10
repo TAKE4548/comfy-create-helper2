@@ -4,7 +4,7 @@ import { generationApi } from '../../api/domains/generation'
 import { GenerationApiError } from '../../api/domains/generation'
 import type { BatchAccepted, BatchRequest, CancelResult, GenerationSnapshot, UpstreamQueueView, CancelScope, ReleaseOperation } from '../../api/domains/generation'
 import { LS_KEYS } from '../../utils/localStorageKeys'
-import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions, BatchJob } from '../types'
+import type { GenerationState, JobQueueState, JobQueueActions, ComfyHistoryItem, QueuePromptOptions, BatchJob, CancelledJobSnapshot } from '../types'
 import { comfyWsService } from '../services/comfyWebSocketService'
 import { parseQueueSubmissionFailure } from '../../utils/queueSubmissionFailure'
 import { prunePromptMetadataCache } from '../../utils/promptMetadataCache'
@@ -103,6 +103,7 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
     isBatchSubmitting: false,
     activeBatch: null,
     vramWaitStatus: null,
+    queuedCancelUndo: null,
 
     setFilterOwnSession: (filter) => {
       set({ filterOwnSession: filter })
@@ -383,7 +384,99 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
       return result
     },
 
+    cancelQueuedJobWithUndo: async (promptId: string) => {
+      const existing = get().queuedCancelUndo
+      if (existing?.timerId) {
+        clearTimeout(existing.timerId)
+      }
+      set({ queuedCancelUndo: null })
+
+      const snapshotJobs = get().generationSnapshot?.jobs ?? []
+      const job = snapshotJobs.find((item) => item.prompt_id === promptId || item.job_id === promptId)
+      const jobId = job?.job_id ?? promptId
+
+      let metadata: CancelledJobSnapshot['metadata'] = null
+      try {
+        const rawMeta = localStorage.getItem(`prompt-surgeon-meta-${promptId}`) ??
+          (jobId !== promptId ? localStorage.getItem(`prompt-surgeon-meta-${jobId}`) : null)
+        if (rawMeta) {
+          const parsed = JSON.parse(rawMeta)
+          metadata = {
+            paramValues: parsed.paramValues,
+            appliedAssets: parsed.appliedAssets,
+            workflowId: parsed.workflowId,
+          }
+        }
+      } catch (e) {
+        console.warn('[cancelQueuedJobWithUndo] Failed to retrieve cached metadata:', e)
+      }
+
+      const workflow = (get().currentWorkflow ? JSON.parse(JSON.stringify(get().currentWorkflow)) : null) as Record<string, unknown> | null
+
+      try {
+        const result = await generationApi.cancelJob(promptId, false, true)
+        if (result.outcome === 'cancelled' || result.outcome === 'already_terminal') {
+          const timerId = setTimeout(() => {
+            get().dismissQueuedCancelUndo()
+          }, 3000)
+
+          const snapshot: CancelledJobSnapshot = {
+            jobId,
+            promptId,
+            workflow,
+            metadata,
+            cancelledAt: Date.now(),
+            timerId,
+          }
+
+          set({ queuedCancelUndo: snapshot })
+        } else {
+          set({ queuedCancelUndo: null })
+        }
+        await get().fetchQueue()
+        return result
+      } catch (error) {
+        set({ queuedCancelUndo: null })
+        throw error
+      }
+    },
+
+    restoreCancelledJob: async () => {
+      const snapshot = get().queuedCancelUndo
+      if (!snapshot) return null
+
+      if (snapshot.timerId) {
+        clearTimeout(snapshot.timerId)
+      }
+      set({ queuedCancelUndo: null })
+
+      try {
+        const workflow = snapshot.workflow ?? get().currentWorkflow ?? {}
+        const restoredId = await get().queuePrompt(workflow, snapshot.metadata ?? undefined)
+        return restoredId
+      } catch (error) {
+        console.error('Failed to restore cancelled job:', error)
+        get().setErrorToast({
+          message: error instanceof Error ? error.message : 'ジョブの復元に失敗しました',
+          type: 'error',
+        })
+        await get().fetchQueue()
+        return null
+      }
+    },
+
+    dismissQueuedCancelUndo: () => {
+      const existing = get().queuedCancelUndo
+      if (existing?.timerId) {
+        clearTimeout(existing.timerId)
+      }
+      set({ queuedCancelUndo: null })
+    },
+
     clearPendingQueue: async (scope: CancelScope = 'all') => {
+      if (get().queuedCancelUndo) {
+        get().dismissQueuedCancelUndo()
+      }
       get().abortSubmission()
       const active = comfyWsService.getActiveSubmissionPromise()
       if (active) { try { await active } catch {} }
@@ -408,6 +501,9 @@ export const createJobQueueSlice: StateCreator<GenerationState, [], [], JobQueue
     },
 
     cancelAllJobs: async (scope: CancelScope = 'all') => {
+      if (get().queuedCancelUndo) {
+        get().dismissQueuedCancelUndo()
+      }
       get().cancelVramWait()
       get().abortSubmission()
       const active = comfyWsService.getActiveSubmissionPromise()

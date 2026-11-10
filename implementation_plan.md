@@ -1,68 +1,49 @@
-# Implementation Plan: REQ-248 OpenAPI JSONへの一本化とopenapi-typescriptによるFE型生成・同期チェック
+# Implementation Plan: REQ-424 生成キューの単一キャンセル即時実行と3秒間アンドゥ機能
 
 ## Overview
-バックエンド（FastAPI）のAPI定義、`backend/openapi.json`、`docs/openapi.yaml`、およびフロントエンドの型定義（`frontend/src/api/types.ts` 等）の間で生じていた多重管理とスキーマ乖離（Contract Drift）を解消し、OpenAPI 正本を `backend/openapi.json` に一本化します。
-
-サーバー起動や HTTP 通信を介さず静的に再現可能な OpenAPI JSON を出力する CLI スクリプト `scripts/export_openapi.py` を整備し、公式ツール `openapi-typescript` によるフロントエンド型生成を導入します。API層の手書き型を生成型への参照・互換エイリアスへ移行して通信ロジックの互換性を維持し、非更新で乖離を検出する同期検査スクリプトを Gate 1 / CI に組み込みます。また `docs/openapi.yaml` を完全廃止し、契約テストおよび仕様書の参照を JSON 正本へ統一します。
+生成キュー（`queuePending`）内の特定待機ジョブをキャンセルする際、誤操作防止ガードとして存在していた固定の3秒事前ディレイ（待機カウントダウン）を廃止し、操作と同時に即座にキューから除外・キャンセルを実行する即応型インタラクションへと刷新します。
+同時に、誤操作によるジョブ喪失を防ぐ安全策として、キャンセル実行直後から3秒間「取り消し（Undo）」アクションを伴う通知UIを表示し、3秒以内の取り消し操作により元のワークフロー・パラメータ設定を保持した状態でキューに即座に復帰できる事後救済機構を提供します。
 
 ---
 
 ## User Review Required
 > [!IMPORTANT]
-> **主要な設計判断と方針（設計書 `docs/design/REQ-248.md` 参照）**
-> - **サーバーレス・副作用ゼロの静的出力 (AC-1)**: `scripts/export_openapi.py` は `from app.main import app` から直接 `app.openapi()` を取得し、ASGI lifespan を起動しません。実DBアクセス、マイグレーション、シーディング、ComfyUI bridge / worker は一切動作せず、完全に決定論的・安全に出力されます。
-> - **公式ツール `openapi-typescript` の採用 (AC-2)**: 独自ジェネレータは作成せず、デファクトスタンダードである `openapi-typescript` (`^7.13.0`) を採用します。`npm run openapi:generate` で `frontend/src/api/schema.ts` を生成し、手編集は厳禁とします。
-> - **API層の型互換性維持 (AC-3)**: `types.ts` および `domains/generation.ts` の手書き型を `components['schemas']` の型参照・エイリアスへ移行しますが、既存の通信ロジック、応答不明照合（`reconcile` / `unconfirmed`）、再送防止、キャンセル、エラーハンドリングは一切変更せず、コンポーネント側の公開シグネチャとの型互換性を100%維持します。UI専用型は契約外として明示的に分離します。
-> - **Contract Drift 防御チェックの Gate 1 統合 (AC-4)**: BE の差分検知（`export_openapi.py --check`）と FE の差分検知（`npm run openapi:check`）を統合した `scripts/verify_openapi_sync.py` を整備し、ファイルを書き換えることなく非ゼロ終了で乖離を検出します。`.agents/context.md` の Gate 1 に登録します。
-> - **YAML の完全廃止 (AC-5)**: `docs/openapi.yaml` は物理削除し、`test_openapi_contract.py` および仕様書（`SPEC_SETTINGS.md` 等）の参照先を `backend/openapi.json` に統一します。
+> **主要な設計判断と方針（設計書 `docs/design/REQ-424.md` 参照）**
+> - **事前ディレイから事後救済（Undo）への転換 (AC-1, AC-2)**: 従来の「ボタンを押してから3秒待たされる」仕様を撤廃し、即座にキャンセル処理を実行（`generationApi.cancelJob(promptId, false, true)`）して待機キューから除外します。直後に3秒間の有効期限タイマーを持つUndo通知を表示します。
+> - **完全なパラメータ・ワークフロー復元 (AC-3)**: キャンセル直前のジョブ構成情報（ワークフローJSON、パラメータ値、プロンプト、適用アセット、ワークフローID）をスナップショットとして退避し、3秒以内に「取り消し」が押下された際は `queuePrompt` 経由で元の設定のまま確実にキューへ復帰させます。
+> - **自然確定と手動消去 (AC-4)**: 3秒が経過した場合、またはユーザーが通知の「×」ボタンを押した場合はUndoスナップショットを破棄し、キャンセルの確定状態を決定論的に維持します。
+> - **一括キャンセルおよび実行中ジョブ中断の保護 (AC-5)**: 全件キャンセル（`cancelAllJobs`）や待機中一括クリア（`clearPendingQueue`）、および実行中ジョブの緊急停止（Abort/Interrupt）はUndoの対象外とし、既存の確認モーダル・即時停止動作を一切変更しません。
 
 ---
 
 ## Proposed Changes
 
-### Backend & Tooling Subsystem
-#### [REQ-248-T1] FastAPI OpenAPI JSON 静的出力・同期検査スクリプト整備
-- `scripts/export_openapi.py`:
-  - Uvicorn/HTTP不要で `app.openapi()` を取得し、決定的フォーマット（`indent=2`, `ensure_ascii=False`, LF改行）で `backend/openapi.json` を出力・検査する CLI スクリプトを新規作成。
-  - `--check` フラグで現在の保存ファイルと生成内容を比較し、差分があれば差分を出力して非ゼロ終了（ファイル書き換えなし）。
-- `backend/openapi.json`:
-  - 現行 139 paths の完全なスキーマで初回同期更新。
-- `backend/tests/unit/test_export_openapi.py`:
-  - 副作用なし出力、再現性、および `--check` 差分検出（異常系含む）の単体テストを新規作成。
-
-#### [REQ-248-T2] 契約テストのJSON一本化とdocs/openapi.yaml廃止・仕様同期
-- `backend/tests/governance/test_openapi_contract.py`:
-  - `docs/openapi.yaml` 読み込みおよびアサーションを削除し、`backend/openapi.json` 単一正本での契約検証へ統一。
-- `docs/openapi.yaml`:
-  - ファイルを物理削除。
-- `docs/specs/SPEC_SETTINGS.md`, `README.md`, `SKILL.md`:
-  - 現行の `docs/openapi.yaml` 参照を `backend/openapi.json` に更新。
+### Frontend Subsystem: Store & Undo State Management
+#### [REQ-424-T1] 生成キューの即時キャンセルとUndoスナップショット管理の実装
+- `frontend/src/store/types.ts`:
+  - `CancelledJobSnapshot` インターフェースを新設。
+  - `JobQueueState` に `queuedCancelUndo: CancelledJobSnapshot | null` を追加。
+  - `JobQueueActions` に `cancelQueuedJobWithUndo`, `restoreCancelledJob`, `dismissQueuedCancelUndo` を追加。
+- `frontend/src/store/slices/jobQueueSlice.ts`:
+  - `cancelQueuedJobWithUndo(promptId)`: 対象ジョブのワークフロー・メタデータを退避し、即座に `generationApi.cancelJob` を実行、3秒タイマーを起動。
+  - `restoreCancelledJob()`: 退避データから `queuePrompt` を呼び出してキューへ復元再投入。
+  - `dismissQueuedCancelUndo()`: タイマー解除とスナップショット破棄。
+- `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts`:
+  - 即時キャンセル実行、スナップショット退避、タイマー動作、復元再投入、確定破棄の各ユニットテストを追加。
 
 ---
 
-### Frontend Subsystem
-#### [REQ-248-T3] openapi-typescript導入と型生成・同期チェックnpmスクリプト追加
-- `frontend/package.json`:
-  - `devDependencies` に `openapi-typescript` (`^7.13.0`) を追加。
-  - スクリプト `"openapi:generate"` および `"openapi:check"` を追加。
-- `frontend/src/api/schema.ts`:
-  - `openapi-typescript` による完全自動生成型定義ファイルを生成。
-
-#### [REQ-248-T4] FE API層の手書き型の生成型参照への移行と互換性検証
-- `frontend/src/api/types.ts`:
-  - `schema.ts` の `components['schemas']` を参照する型エイリアス・互換型へリファクタリング。
-  - UI専用型を明示的に区別して手書き二重管理を解消。
-- `frontend/src/api/domains/generation.ts`:
-  - `components['schemas']['JobView']` 等との整合性を確保し、既存通信・照合フローの互換性を完全維持。
-
----
-
-### System & Verification Subsystem
-#### [REQ-248-T5] 統合同期チェックコマンド整備とGate 1/CI検証経路組み込み
-- `scripts/verify_openapi_sync.py`:
-  - BE差分チェックとFE差分チェックを一括実行し、乖離時に exit 1 で終了する統合同期チェックスクリプトを新規作成。
-- `.agents/context.md`:
-  - Gate 1 コマンド一覧に `scripts/verify_openapi_sync.py` を登録。
+### Frontend Subsystem: UI Integration & Modal Components
+#### [REQ-424-T2] JobManagementModalの単一キャンセル即時実行と3秒間アンドゥUI統合
+- `frontend/src/components/JobManagementModal.tsx`:
+  - 旧3秒ディレイ（`reserveQueuedCancel` によるカウントダウン待機）を完全撤廃。
+  - 待機ジョブのごみ箱ボタン押下ハンドラを `cancelQueuedJobWithUndo` の即時呼び出しに置換。
+  - キャンセル直後のUndo通知UI（バナー/トースト: 「ジョブをキャンセルしました」、「取り消し」ボタン、閉じるボタン、「3秒以内」インジケーター）を配置。
+  - 「取り消し」押下時に `restoreCancelledJob()` を呼び出し、閉じる押下時に `dismissQueuedCancelUndo()` を呼び出す。
+  - 実行中ジョブ中断モーダルおよび一括キャンセル動作は既存仕様を維持。
+- `frontend/src/components/__tests__/JobManagementModal.test.tsx`:
+  - 旧「3000ms待機キャンセル」テストを「即時キャンセル実行」テストへ更新。
+  - Undo通知の表示、2999msでのUndo成功、3001msでの失効、閉じる操作による確定、一括キャンセルの保護を網羅するテストケースを追加。
 
 ---
 
@@ -70,51 +51,50 @@
 
 ```mermaid
 graph TD
-  REQ-248-T1["REQ-248-T1: BE OpenAPI JSON 出力・検査スクリプト整備 (AC-1, AC-4)"]
-  REQ-248-T2["REQ-248-T2: 契約テスト JSON 一本化 & YAML 廃止 (AC-5)"]
-  REQ-248-T3["REQ-248-T3: openapi-typescript 導入 & 型生成スクリプト (AC-2, AC-4)"]
-  REQ-248-T4["REQ-248-T4: FE API 型の生成型移行 & 互換性維持 (AC-3)"]
-  REQ-248-T5["REQ-248-T5: 統合同期検査整備 & Gate 1 登録 (AC-4)"]
+  REQ-424-T1["REQ-424-T1: Store層 即時キャンセル & Undoスナップショット管理 (AC-1, AC-2, AC-3, AC-4, AC-5)"]
+  REQ-424-T2["REQ-424-T2: UI層 JobManagementModal 即時実行 & 3秒間Undo通知統合 (AC-1, AC-2, AC-3, AC-4, AC-5)"]
 
-  REQ-248-T1 --> REQ-248-T2
-  REQ-248-T1 --> REQ-248-T3
-  REQ-248-T3 --> REQ-248-T4
-  REQ-248-T1 --> REQ-248-T5
-  REQ-248-T3 --> REQ-248-T5
-  REQ-248-T4 --> REQ-248-T5
+  REQ-424-T1 --> REQ-424-T2
 ```
 
 ---
 
 ## Trade-offs & Risks Disclosure
 
-1. **HTTP クライアント・React Query フックの全面自動生成の見送り**:
-   - 代替案: Orval 等を用いて API クライアント、React Query フック、MSW モックまで全面自動生成する案。
-   - 採用理由とトレードオフ: 本システムでは通信制御、応答不明照合（`reconcile` / `unconfirmed`）、再送防止、キャンセル制御などの繊細なステートマシンが手作業でチューニングされており、全面自動生成への置換はリグレッションリスクが極めて高い。本PBIでは「OpenAPI JSON正本化」と「TypeScript型生成（`openapi-typescript`）」にスコープを限定し、手書き型を生成型エイリアスへ安全にブリッジすることで既存ロジックを100%保護する。
-2. **`openapi-typescript` のバージョン固定**:
-   - `^7.13.0` を固定採用。Node 22 環境で高速（~300ms）に動作し、標準で `--check` による差分検知をサポートしていることを確認済み。
-3. **高リスク分類と Mandatory Full-Suite Fallback**:
-   - 本PBIは公開API契約・フロントエンド共通型・ビルドツールチェーンを変更するため `High Risk` に分類される。V2 Opt-In の適用は厳禁とし、V1 Baseline（Gate 1 静的型チェック、Gate 2 ファイルフィルタなしの全件テストスイート、Gate 3 Red Team 異常系検証）の完走を必須とする。
+1. **復元ジョブのキュー投入位置**:
+   - 上流 ComfyUI/バックエンドのキューAPIは任意インデックスへの割り込み挿入をサポートしていないため、Undo時の再投入はキューの末尾に追加されます。ただし、「誤って消去したジョブの設定を失わず即座に復旧する」という事後救済の主目的は完全に満たされます。
+2. **ブラウザリロード時のUndo寿命**:
+   - 3秒間という極めて短い有効期間のため、Undo状態はインメモリ管理（Zustand Store）とします。キャンセル直後にリロードや別ページへの離脱が発生した場合はキャンセル確定となります。過剰なストレージ永続化による複雑性を排除し、安全でクリーンなライフサイクルを維持します。
+3. **他セッション待機ジョブの保護**:
+   - `filterOwnSession` 有効時は自端末セッション以外の待機ジョブに対してキャンセルボタンが無効化または非表示となる既存ガードを厳格に維持します。
 
 ---
 
 ## Verification Plan
 
-### Gate 1: Static Typecheck & Unit Logic (高速即時検出 / Zero-GPU)
-- `backend\.venv\Scripts\python scripts/verify_ui_invariants.py`
-- `backend\.venv\Scripts\python scripts/verify_test_naming.py --strict`
-- `backend\.venv\Scripts\python scripts/verify_openapi_sync.py`
-- `cd frontend; npm run typecheck`
-- `mypy backend`
-- `backend\.venv\Scripts\python -m pytest backend/tests/unit/test_export_openapi.py`
-- `cd frontend; npx vitest run src/api/__tests__/client.test.ts`
+### Gate 1: 静的型チェック (Typecheck Baseline)
+- `cd frontend && npm run typecheck`
+  - 期待値: 型エラー 0 件 (Exit code 0)
 
-### Gate 2: Full Integration Test Suite (Zero-GPU)
-- `backend\.venv\Scripts\python -m pytest backend/tests/governance/test_openapi_contract.py`
-- `backend\.venv\Scripts\python -m pytest`
-- `cd frontend; npm test`
+### Gate 2: ユニット＆結合テスト (Unit / Full Suite Baseline)
+- `cd frontend && npm test src/store/__tests__/slices/jobQueueSlice.test.ts`
+  - 期待値: 全テスト PASS (Exit code 0)
+- `cd frontend && npm test src/components/__tests__/JobManagementModal.test.tsx`
+  - 期待値: 全テスト PASS (Exit code 0)
+- `cd frontend && npm test`
+  - 期待値: フロントエンド全テスト PASS (Exit code 0)
 
-### Gate 3: End-to-End & Red Team Scenarios (Zero-GPU)
-- BE 差分強制注入テスト: `scripts/export_openapi.py --check` が exit 1 で終了すること。
-- FE 型差分強制注入テスト: `npm run openapi:check` が exit 1 で終了すること。
-- YAML 参照スキャン: `git grep "docs/openapi.yaml"` で現行契約に残存ゼロであること。
+### Gate 3: シナリオ・境界値・Red Teaming検証
+- `cd frontend && npm test src/components/__tests__/JobManagementModal.test.tsx -t "REQ-424"`
+- `cd frontend && npm test src/store/__tests__/slices/jobQueueSlice.test.ts -t "REQ-424"`
+  - 境界値: 2999msでのUndo成功 vs 3001msでのUndo失効確定
+  - 異常系: キャンセルAPI障害時のエラー通知、復元時再投入失敗時のフォールバック、連続キャンセル時のタイマー安全競合処理
+
+---
+
+## BA Design Audit
+- **Audit Tool**: `local_model_adapter.py ba-audit --audit-kind design`
+- **Model**: `qwen/qwen3.5-9b` (Context: 32768, Reasoning: none)
+- **Status**: **PASS_NO_FINDINGS** (AC-1〜AC-5の全受入基準カバレッジ確認済み、全ユニット整合性検証完了)
+- **GPU Cleanup**: `local_model_adapter.py unload` 実行確認済み（LM Studio reports no models loaded）
+

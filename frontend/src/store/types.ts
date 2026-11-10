@@ -147,6 +147,19 @@ export interface GenerationServerState {
   generationSyncIssue?: { kind: 'unsupported' | 'error'; message: string } | null
 }
 
+export interface CancelledJobSnapshot {
+  jobId: string;
+  promptId: string | null;
+  workflow: Record<string, unknown> | null;
+  metadata: {
+    paramValues?: Record<string, string>;
+    appliedAssets?: Record<string, any>;
+    workflowId?: number;
+  } | null;
+  cancelledAt: number;
+  timerId?: ReturnType<typeof setTimeout> | null;
+}
+
 export interface JobQueueState extends GenerationServerState {
   filterOwnSession: boolean;
   batchImages: string[];
@@ -158,6 +171,7 @@ export interface JobQueueState extends GenerationServerState {
   activeBatch: BatchJob[] | null;
   previewAutoFollow: boolean;
   vramWaitStatus: VramWaitStatus | null;
+  queuedCancelUndo: CancelledJobSnapshot | null;
 }
 
 export interface JobQueueActions {
@@ -182,6 +196,9 @@ export interface JobQueueActions {
   submitGenerationBatch: (payload: BatchRequest) => Promise<{ batch_id: string; job_ids: string[] }>;
   cancelGeneration: () => Promise<void>;
   cancelJob: (id: string) => Promise<CancelResult>;
+  cancelQueuedJobWithUndo: (promptId: string) => Promise<CancelResult>;
+  restoreCancelledJob: () => Promise<string | null>;
+  dismissQueuedCancelUndo: () => void;
   clearPendingQueue: (scope?: CancelScope) => Promise<CancelOperation>;
   cancelAllJobs: (scope?: CancelScope) => Promise<CancelOperation>;
   releaseUnconfirmed: (jobIds: string[]) => Promise<ReleaseOperation>;

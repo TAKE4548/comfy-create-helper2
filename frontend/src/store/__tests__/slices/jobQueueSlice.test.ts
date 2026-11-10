@@ -1696,3 +1696,291 @@ describe('REQ-335 unconfirmed projection and release', () => {
     expect(state.queuePending).toEqual([]);
   });
 });
+
+describe('useGenerationStore REQ-424 queued cancel with undo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetGenerationApiMocks();
+    localStorage.clear();
+    useGenerationStore.setState({
+      clientId: 'client-1',
+      generationSnapshot: null,
+      currentWorkflow: { 1: { class_type: 'KSampler' } },
+      queuedCancelUndo: null,
+    });
+  });
+
+  afterEach(() => {
+    const state = useGenerationStore.getState();
+    if (state.queuedCancelUndo?.timerId) {
+      clearTimeout(state.queuedCancelUndo.timerId);
+    }
+    vi.useRealTimers();
+  });
+
+  it('[REQ-424/AC-1] cancelQueuedJobWithUndo immediately calls generationApi.cancelJob without pre-delay', async () => {
+    useGenerationStore.setState({
+      generationSnapshot: {
+        version: 1,
+        epoch: 'epoch-1',
+        revision: 1,
+        normal_group_id: null,
+        batches: [],
+        upstream: { http_ready: true, ws_connected: true, failure_since: null },
+        jobs: [
+          {
+            job_id: 'job-pending-1',
+            request_id: 'req-1',
+            prompt_id: 'prompt-pending-1',
+            session_id: 'client-1',
+            scope: 'normal',
+            batch_id: 'b-1',
+            normal_group_id: null,
+            project_id: null,
+            status: 'queued',
+            started_at: null,
+            finished_at: null,
+            node: null,
+            outputs: [],
+            failure: null,
+          },
+        ],
+      },
+    });
+
+    vi.mocked(generationApi.cancelJob).mockResolvedValueOnce({
+      job_id: 'job-pending-1',
+      prompt_id: 'prompt-pending-1',
+      status: 'cancelled',
+      outcome: 'cancelled',
+      message: 'cancelled',
+    });
+
+    const result = await useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-pending-1');
+    expect(generationApi.cancelJob).toHaveBeenCalledWith('prompt-pending-1', false, true);
+    expect(result.outcome).toBe('cancelled');
+  });
+
+  it('[REQ-424/AC-1][RedTeam] cancel API failure handles error cleanly without orphan state', async () => {
+    vi.mocked(generationApi.cancelJob).mockRejectedValueOnce(new Error('503 Service Unavailable'));
+
+    await expect(
+      useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-fail')
+    ).rejects.toThrow('503 Service Unavailable');
+
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+  });
+
+  it('[REQ-424/AC-2] cancelQueuedJobWithUndo arms undo snapshot and starts 3-second timer', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem(
+      'prompt-surgeon-meta-prompt-pending-2',
+      JSON.stringify({
+        paramValues: { steps: '20' },
+        appliedAssets: { lora: [] },
+        workflowId: 42,
+      })
+    );
+
+    vi.mocked(generationApi.cancelJob).mockResolvedValueOnce({
+      job_id: 'job-2',
+      prompt_id: 'prompt-pending-2',
+      status: 'cancelled',
+      outcome: 'cancelled',
+      message: 'cancelled',
+    });
+
+    await useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-pending-2');
+
+    const state = useGenerationStore.getState();
+    expect(state.queuedCancelUndo).not.toBeNull();
+    expect(state.queuedCancelUndo?.promptId).toBe('prompt-pending-2');
+    expect(state.queuedCancelUndo?.metadata).toEqual({
+      paramValues: { steps: '20' },
+      appliedAssets: { lora: [] },
+      workflowId: 42,
+    });
+    expect(state.queuedCancelUndo?.workflow).toEqual({ 1: { class_type: 'KSampler' } });
+    expect(state.queuedCancelUndo?.timerId).toBeDefined();
+
+    // Advance 3000ms -> timer expires and snapshot is dismissed
+    vi.advanceTimersByTime(3000);
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+  });
+
+  it('[REQ-424/AC-2][RedTeam] timer boundary check: undo succeeds at 2999ms but expires at 3000ms/3001ms', async () => {
+    vi.useFakeTimers();
+    vi.mocked(generationApi.cancelJob).mockResolvedValueOnce({
+      job_id: 'job-boundary',
+      prompt_id: 'prompt-boundary',
+      status: 'cancelled',
+      outcome: 'cancelled',
+      message: 'cancelled',
+    });
+
+    await useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-boundary');
+    expect(useGenerationStore.getState().queuedCancelUndo).not.toBeNull();
+
+    // At 2999ms, snapshot is still available
+    vi.advanceTimersByTime(2999);
+    expect(useGenerationStore.getState().queuedCancelUndo).not.toBeNull();
+
+    // At 3000ms (1ms later), timer expires and snapshot is null
+    vi.advanceTimersByTime(1);
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+  });
+
+  it('[REQ-424/AC-2][RedTeam] successive cancellations overwrite undo slot safely clearing previous timer', async () => {
+    vi.useFakeTimers();
+    vi.mocked(generationApi.cancelJob)
+      .mockResolvedValueOnce({
+        job_id: 'job-A',
+        prompt_id: 'prompt-A',
+        status: 'cancelled',
+        outcome: 'cancelled',
+        message: 'cancelled',
+      })
+      .mockResolvedValueOnce({
+        job_id: 'job-B',
+        prompt_id: 'prompt-B',
+        status: 'cancelled',
+        outcome: 'cancelled',
+        message: 'cancelled',
+      });
+
+    await useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-A');
+    const firstTimer = useGenerationStore.getState().queuedCancelUndo?.timerId;
+    expect(useGenerationStore.getState().queuedCancelUndo?.promptId).toBe('prompt-A');
+
+    // 1000ms later, cancel job B
+    vi.advanceTimersByTime(1000);
+    await useGenerationStore.getState().cancelQueuedJobWithUndo('prompt-B');
+    const secondTimer = useGenerationStore.getState().queuedCancelUndo?.timerId;
+    expect(useGenerationStore.getState().queuedCancelUndo?.promptId).toBe('prompt-B');
+    expect(secondTimer).not.toBe(firstTimer);
+
+    // 2500ms after job B (3500ms after job A): Job A's original 3000ms would have expired, but Job B is still active
+    vi.advanceTimersByTime(2500);
+    expect(useGenerationStore.getState().queuedCancelUndo?.promptId).toBe('prompt-B');
+
+    // 500ms later (3000ms after job B): Job B expires
+    vi.advanceTimersByTime(500);
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+  });
+
+  it('[REQ-424/AC-3] restoreCancelledJob re-queues original workflow and metadata to queue', async () => {
+    const queuePromptSpy = vi.spyOn(useGenerationStore.getState(), 'queuePrompt').mockResolvedValueOnce('restored-job-id');
+
+    useGenerationStore.setState({
+      queuedCancelUndo: {
+        jobId: 'job-orig',
+        promptId: 'prompt-orig',
+        workflow: { 2: { class_type: 'VAEDecode' } },
+        metadata: {
+          paramValues: { cfg: '8.0' },
+          appliedAssets: {},
+          workflowId: 99,
+        },
+        cancelledAt: Date.now(),
+        timerId: setTimeout(() => {}, 5000),
+      },
+    });
+
+    const restoredId = await useGenerationStore.getState().restoreCancelledJob();
+    expect(restoredId).toBe('restored-job-id');
+    expect(queuePromptSpy).toHaveBeenCalledWith(
+      { 2: { class_type: 'VAEDecode' } },
+      {
+        paramValues: { cfg: '8.0' },
+        appliedAssets: {},
+        workflowId: 99,
+      }
+    );
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+  });
+
+  it('[REQ-424/AC-3][RedTeam] restore failure handles API error cleanly', async () => {
+    vi.spyOn(useGenerationStore.getState(), 'queuePrompt').mockRejectedValueOnce(new Error('Queue submission rejected'));
+    const toastSpy = vi.spyOn(useGenerationStore.getState(), 'setErrorToast');
+
+    useGenerationStore.setState({
+      queuedCancelUndo: {
+        jobId: 'job-fail',
+        promptId: 'prompt-fail',
+        workflow: {},
+        metadata: null,
+        cancelledAt: Date.now(),
+        timerId: null,
+      },
+    });
+
+    const restoredId = await useGenerationStore.getState().restoreCancelledJob();
+    expect(restoredId).toBeNull();
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+    expect(toastSpy).toHaveBeenCalledWith({
+      message: 'Queue submission rejected',
+      type: 'error',
+    });
+  });
+
+  it('[REQ-424/AC-4] dismissQueuedCancelUndo clears undo state and timer leaving cancellation finalized', () => {
+    vi.useFakeTimers();
+    const timeoutFn = vi.fn();
+    const timerId = setTimeout(timeoutFn, 3000);
+
+    useGenerationStore.setState({
+      queuedCancelUndo: {
+        jobId: 'job-dismiss',
+        promptId: 'prompt-dismiss',
+        workflow: null,
+        metadata: null,
+        cancelledAt: Date.now(),
+        timerId,
+      },
+    });
+
+    useGenerationStore.getState().dismissQueuedCancelUndo();
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+
+    vi.advanceTimersByTime(3500);
+    expect(timeoutFn).not.toHaveBeenCalled();
+  });
+
+  it('[REQ-424/AC-5] clearPendingQueue and cancelAllJobs clear pending undo slot and execute without interference', async () => {
+    const timeoutFn1 = vi.fn();
+    const timerId1 = setTimeout(timeoutFn1, 3000);
+
+    useGenerationStore.setState({
+      queuedCancelUndo: {
+        jobId: 'job-bulk-1',
+        promptId: 'prompt-bulk-1',
+        workflow: null,
+        metadata: null,
+        cancelledAt: Date.now(),
+        timerId: timerId1,
+      },
+    });
+
+    await useGenerationStore.getState().clearPendingQueue('pending');
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'queued', scope: 'pending' });
+
+    // Arm again and test cancelAllJobs
+    const timeoutFn2 = vi.fn();
+    const timerId2 = setTimeout(timeoutFn2, 3000);
+    useGenerationStore.setState({
+      queuedCancelUndo: {
+        jobId: 'job-bulk-2',
+        promptId: 'prompt-bulk-2',
+        workflow: null,
+        metadata: null,
+        cancelledAt: Date.now(),
+        timerId: timerId2,
+      },
+    });
+
+    await useGenerationStore.getState().cancelAllJobs('all');
+    expect(useGenerationStore.getState().queuedCancelUndo).toBeNull();
+    expect(generationApi.cancel).toHaveBeenCalledWith({ mode: 'all', scope: 'all' });
+  });
+});
