@@ -98,7 +98,25 @@ cd backend
 
 ### Gate 3: ブラウザ E2E テスト (~1.2秒)
 Playwright による実ブラウザでの描画・物理スクロール・sticky追従の検証を行います。
+
+**正式な実行方法**:
+リポジトリルートからラッパースクリプトを実行します。Vite dev server（ポート 5173）を自律起動し、テスト完了後に自動終了します（dev server 事前起動不要）。
 ```bash
+# Windows
+backend\.venv\Scripts\python scripts/run_e2e.py
+
+# または仮想環境有効化時
+python scripts/run_e2e.py
+```
+局所実行（特定 spec のみ）:
+```bash
+backend\.venv\Scripts\python scripts/run_e2e.py e2e/stickyHeader.spec.ts
+```
+
+**直接実行する場合（非推奨・前提条件）**:
+`npx playwright test` を直接実行する場合は、**事前に Vite dev server（ポート 5173: `cd frontend && npm run dev`）が起動していること**が必須前提となります。dev server が未起動の状態で直接実行すると、接続拒否（`net::ERR_CONNECTION_REFUSED`）によりテストが失敗します。
+```bash
+# 前提: 別ターミナル等で dev server (http://localhost:5173) が起動済みであること
 cd frontend
 npx playwright test
 ```

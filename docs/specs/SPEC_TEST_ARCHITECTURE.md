@@ -125,13 +125,17 @@ pytest 設定は `backend/pytest.ini`（Backend 配下での実行用）とリ�
 |---|---|---|---|
 | Gate 1: 静的検証 + 単体 | `npm run typecheck && mypy backend && pytest backend/tests/unit` | ~4.5秒 (FE型: 3.5s, BE型: 0.4s, BE単体: 0.55s) | 型エラー・純粋ロジックの即時検出 |
 | Gate 2: 統合テストスイート | FE: `npm test` (または局所 `vitest run src/pages`)<br>BE: `pytest -n auto` (並列) | BE並列: 中央値 29.4秒 (逐次: 80.2秒)<br>FE全体: 中央値 111.7秒 (局所: 3〜15秒)<br>予算は §8.2 | Store・API・DB状態遷移の検証 (SAVEPOINT Rollback) |
-| Gate 3: 最小限ブラウザE2E | `npx playwright test` | ~1.2秒 (Headless 2 workers) | 物理スクロール・sticky追従・実ブラウザ描画の検証 (Desktop/Mobile) |
+| Gate 3: 最小限ブラウザE2E | `backend\.venv\Scripts\python scripts/run_e2e.py`（または `python scripts/run_e2e.py`）※1 | ~1.2秒 (Headless 2 workers) | 物理スクロール・sticky追従・実ブラウザ描画の検証 (Desktop/Mobile) |
+
+※1: `scripts/run_e2e.py` は Vite dev server（ポート 5173）を自律起動・終了する正式な Gate 3 ラッパーである。`npx playwright test` を直接実行することは正式な Gate 3 ではなく、前提として dev server（`http://localhost:5173`）が事前に起動されている必要がある。dev server 未起動の状態で直接実行した場合、接続拒否（`net::ERR_CONNECTION_REFUSED`）によりテストが失敗する。
 
 局所実行の例:
 - Backend 単体: `pytest backend/tests/unit`
 - Backend API統合: `pytest backend/tests/integration/api/test_workflows.py`
 - Frontend 単体: `vitest run src/utils src/components/**/__tests__`
 - Frontend 画面統合: `vitest run src/pages/GeneratePage`
+- E2E 局所実行（正式）: `backend\.venv\Scripts\python scripts/run_e2e.py <spec_path>` (例: `e2e/stickyHeader.spec.ts`)
+- E2E 局所実行（直接実行・dev server 5173 起動前提）: `cd frontend; npx playwright test <spec_path>`
 
 ---
 

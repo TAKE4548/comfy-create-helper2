@@ -26,7 +26,8 @@ This file defines repository-specific variables used by the AntiGravity agent sy
 - Single Backend Test (TDD): `backend\.venv\Scripts\python -m pytest <path_to_test>`
 
 ### Gate 3: End-to-End Browser Verification (実ブラウザ描画・スクロール / ~1.2秒)
-- Playwright E2E Suite: `cd frontend; npx playwright test`
+- Playwright E2E Suite (正式): `backend\.venv\Scripts\python scripts/run_e2e.py`（dev server 5173 自律起動・実行・終了。局所実行: `backend\.venv\Scripts\python scripts/run_e2e.py <spec_path>`）
+- 直接実行 (非推奨・前提要): `cd frontend; npx playwright test`（前提: Vite dev server `http://localhost:5173` の事前起動が必須。未起動時は接続拒否 `net::ERR_CONNECTION_REFUSED` で失敗する）
 
 ## Test Architecture & Governance Conventions (SPEC-TESTING v2.1 / REQ-356)
 - **禁止事項**: テストファイル名・ディレクトリパスにチケット番号（`req\d+` や `REQ-\d+`）を含めることは厳禁（MUST [REQ-356/AC-1], [REQ-356/AC-2]）。

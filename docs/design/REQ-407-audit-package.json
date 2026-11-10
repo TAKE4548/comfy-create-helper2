@@ -1,0 +1,50 @@
+{
+  "ac_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7"
+  ],
+  "audit_kind": "design",
+  "authorities": [
+    {
+      "path": "docs/backlog/pbi/active/REQ-407.md",
+      "priority": 1,
+      "role": "pbi",
+      "sha256": "7b612ab01f8917362b648c9ca5328bfe99cf2623e8551a98843b13c102978037"
+    }
+  ],
+  "missing_inputs": [],
+  "out_of_scope": [
+    "scripts/run_e2e.py のコード変更",
+    "playwright.config.ts の設定変更",
+    "テストコードの修正",
+    ".agents/verification.json の変更"
+  ],
+  "pbi_id": "REQ-407",
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "docs/design/REQ-407.md",
+      "sha256": "c9d9d3d2f769314fd739ba301b2396714b072914bbf2282bce76cb7b904b5b58",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/design/REQ-407-test-plan.md",
+      "sha256": "cf0bcdff43c2f2883753ddb7b0a3c00e64165d4771ecab1d2945ede0e8e49702",
+      "unit": "design-section"
+    },
+    {
+      "path": "docs/backlog/task/active/REQ-407-T1.md",
+      "sha256": "ff45a3dc8a6656fe0fea2ec07b7ce60f23b25e5d7ce3af133eb5d466a073dbaf",
+      "unit": "task-card"
+    }
+  ],
+  "versions": {
+    "output_schema": 2,
+    "package_builder": 1
+  }
+}
