@@ -1,4 +1,6 @@
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { Modal } from '../Modal'
@@ -334,5 +336,65 @@ describe('Common Modal component', () => {
     expect(dialog.hasAttribute('data-sheet-max-height')).toBe(false)
     expect(dialog.style.getPropertyValue('--modal-sheet-max-height')).toBe('')
     expect(dialog.className).toContain('max-h-[calc(100dvh-env(safe-area-inset-top))]')
+  })
+
+  it('[REQ-302/AC-2] eliminates mobile-nav-height offset from backdrop padding-bottom at all breakpoints', () => {
+    const cssPath = resolve(__dirname, '../../../index.css')
+    const css = readFileSync(cssPath, 'utf-8')
+
+    // Find the .modal-backdrop base rule block
+    const backdropMatch = css.match(/\.modal-backdrop\s*\{([^}]+)\}/)
+    expect(backdropMatch).not.toBeNull()
+    const backdropBody = backdropMatch![1]
+
+    // Must not contain --mobile-nav-height
+    expect(backdropBody).not.toContain('--mobile-nav-height')
+    // Base rule must set padding-bottom with 1rem + env(safe-area-inset-bottom, 0px)
+    expect(backdropBody).toMatch(/padding-bottom:\s*calc\(\s*1rem\s*\+\s*env\(safe-area-inset-bottom,\s*0px\)\s*\);/)
+
+    // Ensure no media query block re-introduces --mobile-nav-height into .modal-backdrop
+    const mobileNavMatches = css.match(/\.modal-backdrop[^{]*\{[^}]*--mobile-nav-height[^}]*\}/g)
+    expect(mobileNavMatches).toBeNull()
+  })
+
+  it('[REQ-302/AC-2] applies uniform 1rem padding-bottom in 768-1023px tablet range without nav margin', () => {
+    const cssPath = resolve(__dirname, '../../../index.css')
+    const css = readFileSync(cssPath, 'utf-8')
+
+    // Obsolete selector excluding dialogs or flex-col must be removed
+    expect(css).not.toContain('.modal-backdrop:not(.flex-col):not(:fullscreen):not(:has(> [role=\'dialog\']))')
+
+    // Under @media (min-width: 768px), .modal-backdrop has uniform padding-bottom: 1rem;
+    const media768Match = css.match(/@media\s*\(\s*min-width:\s*768px\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}/)
+    expect(media768Match).not.toBeNull()
+    expect(media768Match![0]).toMatch(/\.modal-backdrop\s*\{[^}]*padding-bottom:\s*1rem;/)
+  })
+
+  it('[REQ-302/AC-5] incorporates env(safe-area-inset-bottom) with 0px fallback and avoids double padding', () => {
+    const cssPath = resolve(__dirname, '../../../index.css')
+    const css = readFileSync(cssPath, 'utf-8')
+
+    // Verify safe-area-inset-bottom has 0px fallback in .modal-backdrop
+    expect(css).toContain('env(safe-area-inset-bottom, 0px)')
+
+    // Render Modal and verify backdrop and dialog classes
+    const { container } = render(
+      <Modal isOpen onClose={vi.fn()}>
+        <div>Modal Content</div>
+      </Modal>,
+    )
+    const backdrop = container.querySelector('.modal-backdrop') as HTMLElement
+    expect(backdrop).not.toBeNull()
+    expect(backdrop.className).toContain('modal-backdrop')
+
+    // Dialog has safe-area inset at mobile and resets at md:pb-0
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.className).toContain('pb-[env(safe-area-inset-bottom)]')
+    expect(dialog.className).toContain('md:pb-0')
+
+    // Neither backdrop nor dialog introduces --mobile-nav-height inline or utility
+    expect(backdrop.className).not.toContain('mobile-nav')
+    expect(dialog.className).not.toContain('mobile-nav')
+    expect(backdrop.style.paddingBottom).toBe('')
   })
 })

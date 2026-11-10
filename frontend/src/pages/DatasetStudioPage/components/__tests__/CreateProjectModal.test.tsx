@@ -205,6 +205,46 @@ describe('CreateProjectModal', () => {
     fireEvent.click(screen.getByTestId('cancel-create-project-btn'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('[REQ-302/AC-3] closes when Escape key is pressed or backdrop is clicked, and traps keyboard focus within dialog', () => {
+    const onClose = vi.fn()
+    const { container } = render(
+      <CreateProjectModal
+        isOpen={true}
+        onClose={onClose}
+        onCreated={vi.fn()}
+        workflows={mockWorkflows}
+      />
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '新規プロジェクト作成' })
+    expect(dialog).toBeInTheDocument()
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    // Backdrop click closes modal
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop).not.toBeNull()
+    if (backdrop) {
+      fireEvent.click(backdrop)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    }
+
+    // Escape key closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(2)
+
+    // Focus trap verification
+    const closeBtn = screen.getByTestId('close-create-project-modal')
+    const submitBtn = screen.getByTestId('submit-create-project-btn')
+
+    // Shift+Tab on first element wraps to last focusable element
+    fireEvent.keyDown(closeBtn, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(submitBtn)
+
+    // Tab on last element wraps to first focusable element
+    fireEvent.keyDown(submitBtn, { key: 'Tab' })
+    expect(document.activeElement).toBe(closeBtn)
+  })
 })
 
 describe('useStudioStore additions (REQ-323-T2)', () => {

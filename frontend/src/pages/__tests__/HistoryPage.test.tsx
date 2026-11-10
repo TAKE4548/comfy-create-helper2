@@ -323,6 +323,49 @@ describe('HistoryPage - Album Detail Speech Edit', () => {
     })
   })
 
+  it('[REQ-302/AC-4] opens bulk delete confirmation in common Modal with role dialog, and closes on cancel or Escape', async () => {
+    vi.mocked(snapshotsApi.list).mockResolvedValue([
+      { id: 1, workflow_id: 1, image_path: '/images/snap1.png', created_at: '2026-08-18T00:00:00Z' },
+      { id: 2, workflow_id: 1, image_path: '/images/snap2.png', created_at: '2026-08-18T01:00:00Z' },
+    ])
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <HistoryPage />
+      </QueryClientProvider>
+    )
+
+    const addAlbumBtn = await screen.findByRole('button', { name: /add to album/i })
+    fireEvent.click(addAlbumBtn)
+
+    const selectAllBtn = screen.getByRole('button', { name: /すべて選択/i })
+    fireEvent.click(selectAllBtn)
+
+    const bulkDeleteBtn = screen.getByRole('button', { name: /一括削除/i })
+    fireEvent.click(bulkDeleteBtn)
+
+    // Modal dialog is present with accessible label
+    const dialog = screen.getByRole('dialog', { name: 'スナップショットの一括削除' })
+    expect(dialog).toBeInTheDocument()
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    // Escape closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'スナップショットの一括削除' })).not.toBeInTheDocument()
+    })
+
+    // Re-open and cancel via cancel button
+    fireEvent.click(bulkDeleteBtn)
+    expect(screen.getByRole('dialog', { name: 'スナップショットの一括削除' })).toBeInTheDocument()
+
+    const cancelBtn = screen.getByRole('button', { name: 'キャンセル' })
+    fireEvent.click(cancelBtn)
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'スナップショットの一括削除' })).not.toBeInTheDocument()
+    })
+  })
+
   it('keeps the add-to-album dialog and snapshot selection until the async save succeeds', async () => {
     vi.mocked(snapshotsApi.list).mockResolvedValue([
       { id: 1, workflow_id: 1, image_path: '/images/snap1.png', created_at: '2026-08-18T00:00:00Z' },

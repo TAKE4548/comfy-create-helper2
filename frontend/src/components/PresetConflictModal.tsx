@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, Server, Smartphone, Copy, X } from 'lucide-react'
 import type { WorkflowPreset } from '../api/types'
+import { Modal } from './common/Modal'
 
 export interface PresetConflictData {
   serverPreset: WorkflowPreset
@@ -35,7 +36,7 @@ export function PresetConflictModal({
   const [saveAsNewName, setSaveAsNewName] = useState('')
   const [isNamingNew, setIsNamingNew] = useState(false)
 
-  if (!isOpen || !conflictData) return null
+  if (!conflictData) return null
 
   const { serverPreset, localDraft } = conflictData
   const defaultForkName = `${localDraft.name || serverPreset.name} (別端末の編集)`
@@ -70,8 +71,15 @@ export function PresetConflictModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#1A1A22] border border-[#2E2E3A] rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-zinc-200">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="4xl"
+      sheetMaxHeightClass="max-h-[90dvh]"
+      ariaLabel="プリセットの競合を検知しました"
+      dialogClassName="bg-[#1A1A22] border-[#2E2E3A] text-zinc-200 p-0 overflow-hidden"
+    >
+      <div className="w-full flex flex-col max-h-[90dvh] overflow-hidden text-zinc-200">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[#2E2E3A] bg-[#14141B]">
           <div className="flex items-center gap-3">
@@ -367,6 +375,6 @@ export function PresetConflictModal({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

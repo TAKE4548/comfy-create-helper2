@@ -28,7 +28,7 @@ describe('MobileImageSheet REQ-372', () => {
 
     const sheetContainer = screen.getByTestId('mobile-image-sheet')
     expect(sheetContainer).toBeInTheDocument()
-    expect(sheetContainer.className).toContain('fixed inset-0 z-50')
+    expect(sheetContainer.className).toContain('fixed inset-0 z-[var(--z-modal)]')
 
     const sheetContent = screen.getByTestId('mobile-image-sheet-content')
     expect(sheetContent.className).toContain('max-h-[88dvh]')
@@ -246,6 +246,98 @@ describe('MobileImageSheet REQ-372', () => {
       const fsViewer = screen.getByTestId('mobile-fullscreen-viewer')
       expect(fsViewer).toBeInTheDocument()
       expect(fsViewer.className).toContain('h-[100dvh]')
+    })
+  })
+
+  describe('REQ-302 Modal Elevation and Viewer Exception Preservation', () => {
+    let mockRelease: ReturnType<typeof vi.fn>
+    let mockRequest: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      mockRelease = vi.fn().mockResolvedValue(undefined)
+      mockRequest = vi.fn().mockResolvedValue({
+        released: false,
+        release: mockRelease,
+        addEventListener: vi.fn(),
+      })
+
+      Object.defineProperty(navigator, 'wakeLock', {
+        value: {
+          request: mockRequest,
+        },
+        writable: true,
+        configurable: true,
+      })
+    })
+
+    it('[REQ-302/AC-1] mobile image sheet and fullscreen viewer render with elevated modal z-index', async () => {
+      render(
+        <MobileImageSheet
+          isOpen={true}
+          onClose={onClose}
+          image={dummyImageUrl}
+          onSaveSnapshot={onSaveSnapshot}
+        />
+      )
+
+      const sheetContainer = screen.getByTestId('mobile-image-sheet')
+      expect(sheetContainer).toBeInTheDocument()
+      expect(sheetContainer.className).toContain('z-[var(--z-modal)]')
+      expect(sheetContainer.className).not.toContain('z-50')
+
+      // Transition to fullscreen
+      await act(async () => {
+        fireEvent.click(screen.getByAltText('プレビュー画像'))
+      })
+
+      const fsViewer = screen.getByTestId('mobile-fullscreen-viewer')
+      expect(fsViewer).toBeInTheDocument()
+      expect(fsViewer.className).toContain('z-[var(--z-modal)]')
+      expect(fsViewer.className).not.toContain('z-50')
+    })
+
+    it('[REQ-302/AC-6] preserves fullscreen viewer zoom, aspect ratio, and wake lock exception without regression', async () => {
+      render(
+        <MobileImageSheet
+          isOpen={true}
+          onClose={onClose}
+          image={dummyImageUrl}
+          onSaveSnapshot={onSaveSnapshot}
+        />
+      )
+
+      // Sheet preview preserves original aspect ratio styling
+      const sheetImg = screen.getByAltText('プレビュー画像')
+      expect(sheetImg.className).toContain('object-contain')
+      expect(sheetImg.className).toContain('max-h-[60dvh]')
+
+      // Preserves image viewer exception structure (not converted to generic role="dialog" Modal)
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      // Transition to fullscreen
+      await act(async () => {
+        fireEvent.click(sheetImg)
+      })
+
+      const fsViewer = screen.getByTestId('mobile-fullscreen-viewer')
+      expect(fsViewer).toBeInTheDocument()
+      // Universal safety and mobile viewer constraints
+      expect(fsViewer.className).toContain('h-[100dvh]')
+      expect(fsViewer.className).toContain('touch-manipulation')
+      expect(fsViewer.className).toContain('select-none')
+
+      const fsImg = screen.getByAltText('全画面画像')
+      expect(fsImg.className).toContain('object-contain')
+
+      // Wake lock requested on fullscreen
+      expect(mockRequest).toHaveBeenCalledWith('screen')
+
+      // Exiting fullscreen releases wake lock
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('mobile-fullscreen-close-btn'))
+      })
+      expect(mockRelease).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('mobile-image-sheet')).toBeInTheDocument()
     })
   })
 })

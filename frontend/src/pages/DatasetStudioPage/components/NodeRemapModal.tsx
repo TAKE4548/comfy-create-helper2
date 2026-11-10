@@ -3,6 +3,7 @@ import { X, Check } from 'lucide-react'
 import { workflowsApi, mappingMastersApi } from '../../../api/client'
 import type { Workflow, MappingMaster } from '../../../api/types'
 import { getNodeLabel } from '../../../utils/workflowNodeUtils'
+import { Modal } from '../../../components/common/Modal'
 export { getNodeLabel } from '../../../utils/workflowNodeUtils'
 
 export interface TextCandidateNode {
@@ -43,9 +44,10 @@ export interface NodeRemapModalProps {
   workflow: Workflow
   onClose: () => void
   onSaved: (updatedWorkflow: Workflow) => void
+  isOpen?: boolean
 }
 
-export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalProps) {
+export function NodeRemapModal({ workflow, onClose, onSaved, isOpen = true }: NodeRemapModalProps) {
   const textCandidates = extractTextNodes(workflow.json_body as Record<string, any>)
   const allNodeIds = Object.keys(workflow.json_body || {})
 
@@ -193,11 +195,18 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      data-testid="node-remap-modal"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="xl"
+      sheetMaxHeightClass="max-h-[90dvh]"
+      ariaLabel="ノードマッピング再割当"
+      dialogClassName="bg-zinc-900 border-zinc-800 p-0 overflow-hidden"
     >
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+      <div
+        data-testid="node-remap-modal"
+        className="w-full max-h-[90dvh] overflow-hidden flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
           <div>
@@ -360,6 +369,6 @@ export function NodeRemapModal({ workflow, onClose, onSaved }: NodeRemapModalPro
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

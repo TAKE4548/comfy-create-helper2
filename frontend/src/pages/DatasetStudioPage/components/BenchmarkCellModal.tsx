@@ -1,5 +1,6 @@
 import React from 'react'
 import { X } from 'lucide-react'
+import { Modal } from '../../../components/common/Modal'
 
 export interface BenchmarkCell {
   axisId: 'decoupling' | 'bake_in' | 'pose' | 'angle'
@@ -35,16 +36,17 @@ export const BenchmarkCellModal: React.FC<BenchmarkCellModalProps> = ({ cell, on
   const statusInfo = STATUS_BADGES[cell.status] ?? STATUS_BADGES.PENDING
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      data-testid="benchmark-cell-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-      onClick={onClose}
+    <Modal
+      isOpen={!!cell}
+      onClose={onClose}
+      size="lg"
+      sheetMaxHeightClass="max-h-[90dvh]"
+      ariaLabel="評価セル詳細"
+      dialogClassName="bg-zinc-900 border-zinc-700/80 p-0 overflow-hidden"
     >
       <div
-        className="relative w-full max-w-2xl bg-zinc-900 border border-zinc-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
+        data-testid="benchmark-cell-modal"
+        className="relative w-full overflow-hidden flex flex-col max-h-[90dvh]"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950/60">
@@ -118,6 +120,6 @@ export const BenchmarkCellModal: React.FC<BenchmarkCellModalProps> = ({ cell, on
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

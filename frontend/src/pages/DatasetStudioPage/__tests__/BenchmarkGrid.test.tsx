@@ -62,6 +62,43 @@ describe('BenchmarkCellModal', () => {
     rerender(<BenchmarkCellModal cell={null} onClose={handleClose} />)
     expect(screen.queryByTestId('benchmark-cell-modal')).not.toBeInTheDocument()
   })
+
+  it('[REQ-302/AC-1] renders within common Modal with modal-backdrop, safe-area handling, and 90dvh sheet constraint', () => {
+    const handleClose = vi.fn()
+    const mockCell = {
+      axisId: 'decoupling' as const,
+      weight: 0.8 as const,
+      imageUrl: '/outputs/benchmark_decoupling_0.8.png',
+      status: 'PASS' as const,
+      prompt: '<lora:my_model:0.8>, mychara, wearing red hoodie, blue denim jeans, standing',
+      seed: 12345678,
+    }
+
+    const { container } = render(<BenchmarkCellModal cell={mockCell} onClose={handleClose} />)
+
+    // Backdrop with modal-backdrop class
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop).not.toBeNull()
+    expect(backdrop?.className).toContain('overscroll-contain')
+
+    // Dialog with accessible name and 90dvh constraint
+    const dialog = screen.getByRole('dialog', { name: '評価セル詳細' })
+    expect(dialog).toBeInTheDocument()
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog.className).toContain('max-h-[90dvh]')
+
+    // Sheet handle for mobile safe-area sheet
+    const sheetHandle = screen.getByTestId('modal-sheet-handle')
+    expect(sheetHandle).toBeInTheDocument()
+    expect(sheetHandle).toHaveAttribute('aria-hidden', 'true')
+
+    // Inner benchmark cell modal container
+    expect(screen.getByTestId('benchmark-cell-modal')).toBeInTheDocument()
+
+    // Escape closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(handleClose).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('BenchmarkGrid', () => {

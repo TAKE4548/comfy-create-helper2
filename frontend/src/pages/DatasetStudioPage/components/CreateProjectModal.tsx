@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { DatasetProject, DatasetProjectCreate, Workflow } from '../../../api/types'
 import { datasetApi } from '../../../api/client'
 import { X, Loader2, FolderPlus, AlertCircle } from 'lucide-react'
+import { Modal } from '../../../components/common/Modal'
 
 export interface CreateProjectModalProps {
   isOpen: boolean
@@ -64,17 +65,20 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   }
 
   return (
-    <div
-      data-testid="create-project-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onClose}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="lg"
+      ariaLabel="新規プロジェクト作成"
+      sheetMaxHeightClass="max-h-[90dvh]"
+      dialogClassName="bg-zinc-900 border-zinc-800 p-0 overflow-hidden"
     >
-      <div
-        data-testid="create-project-modal"
-        className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+      <div data-testid="create-project-modal-backdrop" className="contents">
+        <div
+          data-testid="create-project-modal"
+          className="w-full overflow-hidden flex flex-col"
+        >
+          {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
@@ -205,6 +209,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+      </div>
+    </Modal>
   )
 }

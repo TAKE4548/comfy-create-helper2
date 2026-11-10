@@ -500,48 +500,50 @@ export function HistoryPage() {
       />
 
       {/* 履歴スナップショット一括削除確認モーダル */}
-      {isDeleteSnapshotsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="bg-surface border border-[rgba(255,255,255,0.1)] rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 animate-scale-in">
-            <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2">
-              <Trash2 size={16} />
-              スナップショットの一括削除
-            </h3>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              選択した{' '}
-              <span className="font-bold text-white">
-                {snapshotMultiSelect.selectedIds.size}
-              </span>{' '}
-              件のスナップショットおよび画像ファイルを完全に削除します。<br />
-              この操作は取り消せません。本当によろしいですか？
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsDeleteSnapshotsModalOpen(false)}
-                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                id="confirm-bulk-delete-btn"
-                onClick={async () => {
-                  const ids = [...snapshotMultiSelect.selectedIds]
-                  await Promise.all(ids.map((id) => snapshotsApi.delete(id)))
-                  qc.invalidateQueries({ queryKey: ['snapshots'] })
-                  qc.invalidateQueries({ queryKey: ['albums'] })
-                  setIsDeleteSnapshotsModalOpen(false)
-                  snapshotMultiSelect.exitMultiSelectMode()
-                }}
-                className="px-3.5 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-lg transition-all"
-              >
-                削除する
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={isDeleteSnapshotsModalOpen}
+        onClose={() => setIsDeleteSnapshotsModalOpen(false)}
+        size="sm"
+        ariaLabel="スナップショットの一括削除"
+        dialogClassName="p-5 space-y-4 animate-scale-in"
+      >
+        <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2">
+          <Trash2 size={16} />
+          スナップショットの一括削除
+        </h3>
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          選択した{' '}
+          <span className="font-bold text-white">
+            {snapshotMultiSelect.selectedIds.size}
+          </span>{' '}
+          件のスナップショットおよび画像ファイルを完全に削除します。<br />
+          この操作は取り消せません。本当によろしいですか？
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setIsDeleteSnapshotsModalOpen(false)}
+            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            id="confirm-bulk-delete-btn"
+            onClick={async () => {
+              const ids = [...snapshotMultiSelect.selectedIds]
+              await Promise.all(ids.map((id) => snapshotsApi.delete(id)))
+              qc.invalidateQueries({ queryKey: ['snapshots'] })
+              qc.invalidateQueries({ queryKey: ['albums'] })
+              setIsDeleteSnapshotsModalOpen(false)
+              snapshotMultiSelect.exitMultiSelectMode()
+            }}
+            className="px-3.5 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-lg transition-all"
+          >
+            削除する
+          </button>
         </div>
-      )}
+      </Modal>
 
       {/* アルバム削除スコープ選択モーダル */}
       {albumDeleteTarget.isOpen && (

@@ -237,5 +237,36 @@ describe('NodeRemapModal & isStudioAllowedRole (REQ-331-T3)', () => {
         expect(onCloseMock).toHaveBeenCalled()
       })
     })
+
+    it('[REQ-302/AC-5] applies 90dvh constraint and preserves reachability of action buttons in reduced viewport', async () => {
+      const onCloseMock = vi.fn()
+      const onSavedMock = vi.fn()
+      vi.mocked(workflowsApi.get).mockResolvedValueOnce(mockWorkflow)
+
+      render(
+        <NodeRemapModal
+          workflow={mockWorkflow}
+          onClose={onCloseMock}
+          onSaved={onSavedMock}
+        />
+      )
+
+      const dialog = screen.getByRole('dialog', { name: 'ノードマッピング再割当' })
+      expect(dialog).toBeInTheDocument()
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog.className).toContain('max-h-[90dvh]')
+
+      const modalContainer = screen.getByTestId('node-remap-modal')
+      expect(modalContainer.className).toContain('max-h-[90dvh]')
+
+      // Ensure footer actions remain reachable
+      const cancelBtn = screen.getByRole('button', { name: 'キャンセル' })
+      const saveBtn = screen.getByTestId('save-remap-button')
+      expect(cancelBtn).toBeVisible()
+      expect(saveBtn).toBeVisible()
+
+      fireEvent.click(cancelBtn)
+      expect(onCloseMock).toHaveBeenCalledTimes(1)
+    })
   })
 })

@@ -1,49 +1,85 @@
-# Implementation Plan: REQ-424 生成キューの単一キャンセル即時実行と3秒間アンドゥ機能
+# Implementation Plan: REQ-302 未統一オーバーレイの前面化と不要なナビ回避余白の解消
 
 ## Overview
-生成キュー（`queuePending`）内の特定待機ジョブをキャンセルする際、誤操作防止ガードとして存在していた固定の3秒事前ディレイ（待機カウントダウン）を廃止し、操作と同時に即座にキューから除外・キャンセルを実行する即応型インタラクションへと刷新します。
-同時に、誤操作によるジョブ喪失を防ぐ安全策として、キャンセル実行直後から3秒間「取り消し（Undo）」アクションを伴う通知UIを表示し、3秒以内の取り消し操作により元のワークフロー・パラメータ設定を保持した状態でキューに即座に復帰できる事後救済機構を提供します。
+本改修では、モバイルおよびレスポンシブ表示時にボトムナビゲーション（`--z-mobile-nav: 50`）と同順位または未統一（`z-50`）となっていた各画面の独自モーダル・画像確認シートを棚卸しし、共通設計トークン `--z-modal: 100` および共通Modal（`Modal.tsx`）契約へ統一します。
+また、`frontend/src/index.css` の `.modal-backdrop` に残存していた `--mobile-nav-height`（4rem / 64px）の不要なナビ回避余白を一掃し、768〜1023px タブレット幅（ボトムナビ非表示時）での不整合を解消します。
+明示的に承認されたネスト例外（`MappingMasterEditModal` 内の `WorkflowNodePicker`）および画像閲覧例外（`MobileImageSheet` / `HistoryModalPreview`）の既存機能を保護し、背面ナビへの操作・フォーカス漏れを完全に遮断します。
 
 ---
 
 ## User Review Required
 > [!IMPORTANT]
-> **主要な設計判断と方針（設計書 `docs/design/REQ-424.md` 参照）**
-> - **事前ディレイから事後救済（Undo）への転換 (AC-1, AC-2)**: 従来の「ボタンを押してから3秒待たされる」仕様を撤廃し、即座にキャンセル処理を実行（`generationApi.cancelJob(promptId, false, true)`）して待機キューから除外します。直後に3秒間の有効期限タイマーを持つUndo通知を表示します。
-> - **完全なパラメータ・ワークフロー復元 (AC-3)**: キャンセル直前のジョブ構成情報（ワークフローJSON、パラメータ値、プロンプト、適用アセット、ワークフローID）をスナップショットとして退避し、3秒以内に「取り消し」が押下された際は `queuePrompt` 経由で元の設定のまま確実にキューへ復帰させます。
-> - **自然確定と手動消去 (AC-4)**: 3秒が経過した場合、またはユーザーが通知の「×」ボタンを押した場合はUndoスナップショットを破棄し、キャンセルの確定状態を決定論的に維持します。
-> - **一括キャンセルおよび実行中ジョブ中断の保護 (AC-5)**: 全件キャンセル（`cancelAllJobs`）や待機中一括クリア（`clearPendingQueue`）、および実行中ジョブの緊急停止（Abort/Interrupt）はUndoの対象外とし、既存の確認モーダル・即時停止動作を一切変更しません。
+> **主要な設計判断と方針（設計書 `docs/design/REQ-302.md` 参照）**
+> - **重なり順の統一 (AC-1)**: ボトムナビ（50）＜ 共通Modal（100）の絶対階層を確立。ハードコード `z-50` の独自overlayを一掃し、背面ナビへのタップ・キーボード抜けを完全に遮断します。
+> - **不要ナビ回避余白の解消 (AC-2)**: `.modal-backdrop` から `--mobile-nav-height` の加算を撤廃し、`calc(1rem + env(safe-area-inset-bottom, 0px))` に統一。特に 768〜1023px でナビ非表示時にも余白が残っていた条件（`:not(:has(> [role='dialog']))` や `.flex-col` 除外）を撤廃し、画面高さを有効活用します。
+> - **共通Modalへの統合 (AC-3)**: 独自モーダルを共通 `Modal.tsx` に統合することで、Focus Trap、Escapeキー、Backdropクリック、スクロール遮断、フォーカス復帰を一元保証します。
+> - **排他モーダル切替と明示的ネスト例外の維持 (AC-4)**: モーダルは原則排他。`SPEC_COMMON.md` §1-4 で承認された `MappingMasterEditModal` 内の `WorkflowNodePicker` の例外（外側 `closeOnEsc={!isNodePickerOpen}`、内側Escape単独クローズ）のみを保護し、二次モーダルの一般化を防止します。
+> - **safe-area・キーボード対応と画像閲覧例外維持 (AC-5, AC-6)**: raw `100vh` を禁止し `100dvh` を徹底。`MobileImageSheet`（WakeLock・全画面切り替え・アスペクト比）と `HistoryModalPreview` の画像閲覧例外を維持します。
 
 ---
 
 ## Proposed Changes
 
-### Frontend Subsystem: Store & Undo State Management
-#### [REQ-424-T1] 生成キューの即時キャンセルとUndoスナップショット管理の実装
-- `frontend/src/store/types.ts`:
-  - `CancelledJobSnapshot` インターフェースを新設。
-  - `JobQueueState` に `queuedCancelUndo: CancelledJobSnapshot | null` を追加。
-  - `JobQueueActions` に `cancelQueuedJobWithUndo`, `restoreCancelledJob`, `dismissQueuedCancelUndo` を追加。
-- `frontend/src/store/slices/jobQueueSlice.ts`:
-  - `cancelQueuedJobWithUndo(promptId)`: 対象ジョブのワークフロー・メタデータを退避し、即座に `generationApi.cancelJob` を実行、3秒タイマーを起動。
-  - `restoreCancelledJob()`: 退避データから `queuePrompt` を呼び出してキューへ復元再投入。
-  - `dismissQueuedCancelUndo()`: タイマー解除とスナップショット破棄。
-- `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts`:
-  - 即時キャンセル実行、スナップショット退避、タイマー動作、復元再投入、確定破棄の各ユニットテストを追加。
+### Frontend Subsystem: CSS & Design Tokens
+#### [REQ-302-T1] 基底モーダルバックドロップの不要ナビ回避余白撤廃とレスポンシブ余白改修
+- `frontend/src/index.css`:
+  - `.modal-backdrop` 基底の `padding-bottom` から `--mobile-nav-height` の加算を撤廃し、`calc(1rem + env(safe-area-inset-bottom, 0px))` に統一。
+  - `@media (min-width: 768px)` において `.modal-backdrop` の `padding-bottom: 1rem;` を無条件適用（旧除外条件の撤廃）。
+- `frontend/src/components/common/__tests__/Modal.test.tsx`:
+  - ナビ回避余白の撤廃（AC-2）、タブレット幅での 1rem 適用（AC-2）、safe-area 処理（AC-5）のユニットテストを追加。
 
 ---
 
-### Frontend Subsystem: UI Integration & Modal Components
-#### [REQ-424-T2] JobManagementModalの単一キャンセル即時実行と3秒間アンドゥUI統合
-- `frontend/src/components/JobManagementModal.tsx`:
-  - 旧3秒ディレイ（`reserveQueuedCancel` によるカウントダウン待機）を完全撤廃。
-  - 待機ジョブのごみ箱ボタン押下ハンドラを `cancelQueuedJobWithUndo` の即時呼び出しに置換。
-  - キャンセル直後のUndo通知UI（バナー/トースト: 「ジョブをキャンセルしました」、「取り消し」ボタン、閉じるボタン、「3秒以内」インジケーター）を配置。
-  - 「取り消し」押下時に `restoreCancelledJob()` を呼び出し、閉じる押下時に `dismissQueuedCancelUndo()` を呼び出す。
-  - 実行中ジョブ中断モーダルおよび一括キャンセル動作は既存仕様を維持。
-- `frontend/src/components/__tests__/JobManagementModal.test.tsx`:
-  - 旧「3000ms待機キャンセル」テストを「即時キャンセル実行」テストへ更新。
-  - Undo通知の表示、2999msでのUndo成功、3001msでの失効、閉じる操作による確定、一括キャンセルの保護を網羅するテストケースを追加。
+### Frontend Subsystem: Generate Page & Preset Modals
+#### [REQ-302-T2] Generate画面モーダル群およびPresetConflictModalの共通Modal統一
+- `frontend/src/pages/GeneratePage.tsx`:
+  - `selectedLoraForModal`: `<Modal size="sm">` へ移行。
+  - `isPresetManagerOpen`: `<Modal size="sm" sheetMaxHeightClass="max-h-[75dvh]">` へ移行。既存 testid を維持。
+  - `isBulkDeleteConfirmOpen`: `<Modal size="sm">` へ移行し排他切替。
+- `frontend/src/pages/GeneratePage/sections/GenerateModalsOverlay.tsx`:
+  - `showCopyModal`: `<Modal size="sm">` へ移行。
+- `frontend/src/components/PresetConflictModal.tsx`:
+  - 外枠を `<Modal size="4xl" sheetMaxHeightClass="max-h-[90dvh]">` へ移行。raw `90vh` を `90dvh` に変更。
+- `frontend/src/components/__tests__/PresetConflictModal.test.tsx`:
+  - Escape、Focus Trap、Backdropクリックのテスト（AC-3）を追加。
+
+---
+
+### Frontend Subsystem: Image Viewers & Sheet Exceptions
+#### [REQ-302-T3] MobileImageSheetおよびHistoryModalPreviewの前面化と画像閲覧例外維持
+- `frontend/src/pages/GeneratePage/components/MobileImageSheet.tsx`:
+  - 全画面ビューアおよび下部シートの `z-50` を `z-[var(--z-modal)]`（100）へ引き上げ。
+  - 画像閲覧例外（WakeLock、アスペクト比、100dvh、fullscreen）を完全維持。
+- `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx`:
+  - 前面化 z-modal アサーション（AC-1）および画像閲覧例外維持（AC-6）のテストを追加。
+- `frontend/src/components/HistoryModalPreview.tsx`:
+  - `.modal-backdrop flex flex-col` 構造を維持し、T1のCSS改修との適合性を確認。
+- `frontend/src/components/__tests__/HistoryModalPreview.test.tsx`:
+  - タブレット幅でのナビ回避余白撤廃テスト（AC-2）を追加。
+
+---
+
+### Frontend Subsystem: Studio & History Delete Modals
+#### [REQ-302-T4] DatasetStudioモーダル群およびHistoryPage一括削除確認の共通Modal統一
+- `frontend/src/pages/DatasetStudioPage/components/CreateProjectModal.tsx`:
+  - `<Modal size="lg">` へ移行。testid（`create-project-modal-backdrop`, `create-project-modal`）を維持。
+- `frontend/src/pages/DatasetStudioPage/components/NodeRemapModal.tsx`:
+  - `<Modal size="xl" sheetMaxHeightClass="max-h-[90dvh]">` へ移行。testid を維持。
+- `frontend/src/pages/DatasetStudioPage/components/BenchmarkCellModal.tsx`:
+  - `<Modal size="lg" sheetMaxHeightClass="max-h-[90dvh]">` へ移行。testid を維持。
+- `frontend/src/pages/HistoryPage/index.tsx`:
+  - `isDeleteSnapshotsModalOpen`: `<Modal size="sm">` へ移行。
+- 各テストファイル（`CreateProjectModal.test.tsx`, `NodeRemapModal.test.tsx`, `BenchmarkGrid.test.tsx`, `HistoryPage.test.tsx`）:
+  - 前面化（AC-1）、Escape/Focus Trap（AC-3）、排他切替（AC-4）、90dvh到達性（AC-5）のテストケースを追加。
+
+---
+
+### Frontend Subsystem: Integration & Navigation Occlusion
+#### [REQ-302-T5] ネスト例外保護とAppShell背面ナビ遮蔽の統合検証
+- `frontend/src/components/__tests__/WorkflowNodePicker.test.tsx`:
+  - `MappingMasterEditModal` 内 `WorkflowNodePicker` のネスト例外（外側 `closeOnEsc={!isNodePickerOpen}`、内側単独クローズ）の保護テスト（AC-4）を追加。
+- `frontend/src/components/layout/__tests__/AppShell.test.tsx`:
+  - モーダル表示中のボトムナビへのタップ遮断・ルーティング非遷移テスト（AC-1）および Red Teaming RT-1（高速連続タップ）テストを追加。
 
 ---
 
@@ -51,24 +87,43 @@
 
 ```mermaid
 graph TD
-  REQ-424-T1["REQ-424-T1: Store層 即時キャンセル & Undoスナップショット管理 (AC-1, AC-2, AC-3, AC-4, AC-5)"]
-  REQ-424-T2["REQ-424-T2: UI層 JobManagementModal 即時実行 & 3秒間Undo通知統合 (AC-1, AC-2, AC-3, AC-4, AC-5)"]
+  REQ-302-T1["REQ-302-T1: 基底モーダルバックドロップの不要ナビ回避余白撤廃 (AC-1, AC-2, AC-5, AC-6)"]
+  REQ-302-T2["REQ-302-T2: Generate画面モーダル群 & PresetConflictModal 共通Modal統一 (AC-1, AC-3, AC-4, AC-5)"]
+  REQ-302-T3["REQ-302-T3: MobileImageSheet & HistoryModalPreview 前面化・画像例外維持 (AC-1, AC-2, AC-6)"]
+  REQ-302-T4["REQ-302-T4: DatasetStudio & HistoryPage 一括削除確認 共通Modal統一 (AC-1, AC-3, AC-4, AC-5)"]
+  REQ-302-T5["REQ-302-T5: ネスト例外保護 & AppShell 背面ナビ遮蔽 統合検証 (AC-1, AC-3, AC-4)"]
 
-  REQ-424-T1 --> REQ-424-T2
+  REQ-302-T1 --> REQ-302-T2
+  REQ-302-T1 --> REQ-302-T3
+  REQ-302-T1 --> REQ-302-T4
+  REQ-302-T2 --> REQ-302-T5
+  REQ-302-T3 --> REQ-302-T5
+  REQ-302-T4 --> REQ-302-T5
 ```
 
 ---
 
-## Trade-offs & Risks Disclosure
+## Trade-off Disclosures & Risk Mitigation
 
-1. **復元ジョブのキュー投入位置**:
-   - 上流 ComfyUI/バックエンドのキューAPIは任意インデックスへの割り込み挿入をサポートしていないため、Undo時の再投入はキューの末尾に追加されます。ただし、「誤って消去したジョブの設定を失わず即座に復旧する」という事後救済の主目的は完全に満たされます。
-2. **ブラウザリロード時のUndo寿命**:
-   - 3秒間という極めて短い有効期間のため、Undo状態はインメモリ管理（Zustand Store）とします。キャンセル直後にリロードや別ページへの離脱が発生した場合はキャンセル確定となります。過剰なストレージ永続化による複雑性を排除し、安全でクリーンなライフサイクルを維持します。
-3. **他セッション待機ジョブの保護**:
-   - `filterOwnSession` 有効時は自端末セッション以外の待機ジョブに対してキャンセルボタンが無効化または非表示となる既存ガードを厳格に維持します。
+1. **独自オーバーレイの共通Modal置換 vs 独自CSSでの前面化のみ**:
+   - *判断*: `Modal.tsx` を再利用することで、Escape制御、Focus Trap、Body Scroll Lock、モバイル下部シート化（16px角丸、スワイプハンドル、safe-area処理）が一元的に適用され、各画面での重複実装を排除できます。
+2. **画像ビューア（`MobileImageSheet`, `HistoryModalPreview`）の通常Modal置換の不採用**:
+   - *判断*: 画像確認シート・全画面ビューアはアスペクト比維持、WakeLock、全画面切り替えなどの特殊要件があるため、機械的に通常Modalへ置換せず、画像閲覧例外として維持しつつ z-index のみを統一します（AC-6遵守）。
+3. **768〜1023px での余白解消リスクと対策**:
+   - *対策*: 768px以上では一律 `padding-bottom: 1rem;` を維持し、安全なクリアランス（16px）を確保するため、コンテンツの見切れは発生しません。
 
 ---
+
+## Verification Plan
+
+### Automated Baseline Gates
+- **Gate 1**: `cd frontend; npm run typecheck` (エラー 0 件)
+- **Gate 2**: `cd frontend; npm test` (全 120+ テストスイート 100% PASS)
+- **Gate 3**: シナリオ・境界値・Red Teaming 検証
+  - RT-1: モーダル表示中のボトムナビへの高速重複タップ遮断
+  - RT-2: 多重 Escape キー押下の伝播耐性
+  - RT-3: セーフエリア極端値注入耐性
+
 
 ## Verification Plan
 

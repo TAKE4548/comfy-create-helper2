@@ -4,6 +4,7 @@ import { useGeneratePageState } from './GeneratePage/hooks/useGeneratePageState'
 import { DesktopLayout } from './GeneratePage/components/DesktopLayout'
 import { MobileLayout } from './GeneratePage/components/MobileLayout'
 import { LazyModalHost } from '../components/common/LazyBoundary'
+import { Modal } from '../components/common/Modal'
 import { LS_KEYS } from '../utils/localStorageKeys'
 
 // [REQ-309] Modal/panel chunks are loaded through LazyModalHost on first open (or on first mount for latch modals).
@@ -158,9 +159,15 @@ export function GeneratePage() {
           storageKey: LS_KEYS.LAST_SAVE_ALBUM_ID_GENERATE,
         }}
       />
-      {selectedLoraForModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 space-y-5 shadow-2xl relative animate-scale-up" onClick={(e) => e.stopPropagation()}>
+      <Modal
+        isOpen={!!selectedLoraForModal}
+        onClose={() => setSelectedLoraForModal(null)}
+        size="sm"
+        ariaLabel="LoRA設定"
+        dialogClassName="bg-surface-2 border border-[rgba(255,255,255,0.08)] p-6 space-y-5 shadow-2xl relative"
+      >
+        {selectedLoraForModal && (
+          <>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-semibold text-zinc-200">LoRA設定</h3>
@@ -209,9 +216,9 @@ export function GeneratePage() {
               <button id="confirm-lora-modal-btn" onClick={() => { handleAddLoraAsset(selectedLoraForModal.role, selectedLoraForModal.lora, loraStrength, selectedTriggerSetId); setSelectedLoraForModal(null) }}
                 className="px-5 py-2.5 rounded-xl bg-accent-green text-background font-bold text-sm hover:brightness-110 transition-all glow-green flex items-center gap-2">適用</button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
       <LazyModalHost
         mode="while-open"
         isOpen={!!workflowManageMode && !!selectedWorkflowId}
@@ -233,63 +240,67 @@ export function GeneratePage() {
         }}
       />
       {isPresetManagerOpen && selectedWorkflowId && (
-        <div 
-          data-testid="preset-manager-overlay"
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
-          onClick={() => setIsPresetManagerOpen(false)}
+        <Modal
+          isOpen={isPresetManagerOpen && !!selectedWorkflowId}
+          onClose={() => setIsPresetManagerOpen(false)}
+          size="sm"
+          sheetMaxHeightClass="max-h-[75dvh]"
+          ariaLabel="プリセット管理"
+          dialogClassName="bg-surface-2 border border-[rgba(255,255,255,0.08)] p-4 md:p-6 shadow-2xl relative"
         >
-          <div 
-            data-testid="preset-manager-modal"
-            className="w-full max-w-md bg-surface-2 border border-[rgba(255,255,255,0.08)] rounded-t-2xl md:rounded-xl max-h-[75dvh] flex flex-col p-4 md:p-6 shadow-2xl relative animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button 
-              onClick={() => setIsPresetManagerOpen(false)}
-              className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+          <div data-testid="preset-manager-overlay" className="fixed inset-0 z-50 items-end md:items-center contents">
+            <div 
+              data-testid="preset-manager-modal"
+              className="w-full max-h-[75dvh] rounded-t-2xl md:rounded-xl flex flex-col"
             >
-              <X size={18} />
-            </button>
-            <h3 className="text-base font-semibold text-zinc-100 mb-3 shrink-0">プリセット管理</h3>
-            <LazyModalHost
-              mode="while-open"
-              isOpen={true}
-              load={loadPresetManagerPanel}
-              label="プリセット管理"
-              onClose={() => setIsPresetManagerOpen(false)}
-              modalProps={{
-                presets: presets || [],
-                onRename: async (id: number, name: string) => {
-                  await renamePresetMutation.mutateAsync({ id, name })
-                },
-                onReorder: async (ordered_ids: number[]) => {
-                  await reorderPresetsMutation.mutateAsync(ordered_ids)
-                },
-                isPending: renamePresetMutation.isPending || reorderPresetsMutation.isPending,
-                sets,
-                activeSetId,
-                openPresetIds,
-                onToggleCheck: (id) => toggleSetChecked(id),
-                onDelete: (id) => handleDeletePreset(id),
-                onOpenAsTab: (id) => {
-                  handleSelectPresetTab(id)
-                },
-                onCloseTab: (id) => removeSet(id),
-                onSaveOverwrite: (id: number, name: string) => handleUpdatePreset(id, name),
-                onSaveAsNew: (name: string) => handleCreatePreset(name),
-                onOpenSceneGenerator: () => {
-                  setIsPresetManagerOpen(false)
-                  setIsSceneGeneratorOpen(true)
-                },
-                onBulkDelete: (selectedIds: number[]) => {
-                  handleBulkDeleteRequest(selectedIds)
-                },
-                onBulkEdit: (selectedIds: number[]) => {
-                  handleBulkEditRequest(selectedIds)
-                },
-              }}
-            />
+              <button 
+                onClick={() => setIsPresetManagerOpen(false)}
+                className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-white/5 transition-all"
+              >
+                <X size={18} />
+              </button>
+              <h3 className="text-base font-semibold text-zinc-100 mb-3 shrink-0">プリセット管理</h3>
+              <LazyModalHost
+                mode="while-open"
+                isOpen={true}
+                load={loadPresetManagerPanel}
+                label="プリセット管理"
+                onClose={() => setIsPresetManagerOpen(false)}
+                modalProps={{
+                  presets: presets || [],
+                  onRename: async (id: number, name: string) => {
+                    await renamePresetMutation.mutateAsync({ id, name })
+                  },
+                  onReorder: async (ordered_ids: number[]) => {
+                    await reorderPresetsMutation.mutateAsync(ordered_ids)
+                  },
+                  isPending: renamePresetMutation.isPending || reorderPresetsMutation.isPending,
+                  sets,
+                  activeSetId,
+                  openPresetIds,
+                  onToggleCheck: (id) => toggleSetChecked(id),
+                  onDelete: (id) => handleDeletePreset(id),
+                  onOpenAsTab: (id) => {
+                    handleSelectPresetTab(id)
+                  },
+                  onCloseTab: (id) => removeSet(id),
+                  onSaveOverwrite: (id: number, name: string) => handleUpdatePreset(id, name),
+                  onSaveAsNew: (name: string) => handleCreatePreset(name),
+                  onOpenSceneGenerator: () => {
+                    setIsPresetManagerOpen(false)
+                    setIsSceneGeneratorOpen(true)
+                  },
+                  onBulkDelete: (selectedIds: number[]) => {
+                    handleBulkDeleteRequest(selectedIds)
+                  },
+                  onBulkEdit: (selectedIds: number[]) => {
+                    handleBulkEditRequest(selectedIds)
+                  },
+                }}
+              />
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
       <LazyModalHost
         mode="latch"
@@ -338,37 +349,39 @@ export function GeneratePage() {
       />
 
       {/* Bulk Delete Confirmation Dialog */}
-      {isBulkDeleteConfirmOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl p-6 space-y-4 animate-scale-up">
-            <div className="flex items-center gap-3">
-              <AlertTriangle size={20} className="text-red-400 flex-shrink-0" />
-              <h3 className="text-base font-semibold text-white">一括削除の確認</h3>
-            </div>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              選択した <span className="text-white font-semibold">{bulkTargetIds.length} 件</span>
-              のプリセットを削除します。<br />
-              <span className="text-red-400 font-medium">この操作は取り消せません。</span>
-            </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setIsBulkDeleteConfirmOpen(false)}
-                className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-white/5 transition-all"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={handleBulkDeleteConfirm}
-                disabled={bulkDeletePresetsMutation.isPending}
-                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition-all disabled:opacity-50"
-              >
-                {bulkDeletePresetsMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-                削除する
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={isBulkDeleteConfirmOpen}
+        onClose={() => setIsBulkDeleteConfirmOpen(false)}
+        size="sm"
+        ariaLabel="一括削除の確認"
+        dialogClassName="bg-[#18181C] border border-[rgba(255,255,255,0.08)] rounded-xl shadow-2xl p-6 space-y-4"
+      >
+        <div className="flex items-center gap-3">
+          <AlertTriangle size={20} className="text-red-400 flex-shrink-0" />
+          <h3 className="text-base font-semibold text-white">一括削除の確認</h3>
         </div>
-      )}
+        <p className="text-sm text-gray-400 leading-relaxed">
+          選択した <span className="text-white font-semibold">{bulkTargetIds.length} 件</span>
+          のプリセットを削除します。<br />
+          <span className="text-red-400 font-medium">この操作は取り消せません。</span>
+        </p>
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => setIsBulkDeleteConfirmOpen(false)}
+            className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-white/5 transition-all"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={handleBulkDeleteConfirm}
+            disabled={bulkDeletePresetsMutation.isPending}
+            className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition-all disabled:opacity-50"
+          >
+            {bulkDeletePresetsMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+            削除する
+          </button>
+        </div>
+      </Modal>
 
       {/* Bulk Edit Modal */}
       <LazyModalHost

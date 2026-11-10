@@ -116,6 +116,81 @@ describe('WorkflowNodePicker', () => {
     expect(outerClose).not.toHaveBeenCalled()
   })
 
+  it('[REQ-302/AC-4] preserves nested exception: Escape closes picker only and does not bubble to outer modal', () => {
+    const outerClose = vi.fn()
+    const outerAction = vi.fn()
+
+    function NestedHarness() {
+      const [pickerOpen, setPickerOpen] = React.useState(false)
+      return (
+        <Modal isOpen onClose={outerClose} closeOnEsc={!pickerOpen} ariaLabel="Master Edit Modal">
+          <div>
+            <button type="button" onClick={() => setPickerOpen(true)} aria-label="open-picker-button">
+              Open Picker
+            </button>
+            <button type="button" onClick={outerAction} aria-label="outer-action-button">
+              Outer Action
+            </button>
+            <WorkflowNodePicker
+              isOpen={pickerOpen}
+              onClose={() => setPickerOpen(false)}
+              workflowJson={dummyWorkflow}
+              hasExistingValues={false}
+              onSelectNode={vi.fn()}
+            />
+          </div>
+        </Modal>
+      )
+    }
+
+    render(<NestedHarness />)
+
+    // Initially only outer dialog is open
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'open-picker-button' })).toBeInTheDocument()
+
+    // Open nested picker
+    fireEvent.click(screen.getByRole('button', { name: 'open-picker-button' }))
+
+    // Now both dialogs are present in DOM
+    const dialogs = screen.getAllByRole('dialog')
+    expect(dialogs).toHaveLength(2)
+    const [outerDialog, innerDialog] = dialogs
+    expect(outerDialog).toHaveAttribute('aria-label', 'Master Edit Modal')
+    expect(innerDialog).toHaveAttribute('aria-label', TITLE)
+
+    // Inner modal captures active focus
+    expect(innerDialog).toContainElement(document.activeElement)
+
+    // Focus trap maintains focus within inner dialog when pressing Tab
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(innerDialog).toContainElement(document.activeElement)
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'outer-action-button' }))
+
+    // Backdrop click on inner picker does not bubble or close outer modal
+    const pickerBackdrop = screen.getByLabelText(TITLE).closest('.modal-backdrop') as HTMLElement
+    fireEvent.click(pickerBackdrop)
+    expect(screen.getAllByRole('dialog')).toHaveLength(2)
+    expect(outerClose).not.toHaveBeenCalled()
+
+    // Escape closes ONLY the inner picker; outer modal remains open
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(outerClose).not.toHaveBeenCalled()
+
+    // Inner picker is closed; outer dialog remains
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.queryByLabelText(TITLE)).toBeNull()
+
+    // Outer modal controls are interactive again
+    const outerBtn = screen.getByRole('button', { name: 'outer-action-button' })
+    fireEvent.click(outerBtn)
+    expect(outerAction).toHaveBeenCalledTimes(1)
+
+    // Once picker is closed, Escape closes outer modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(outerClose).toHaveBeenCalledTimes(1)
+  })
+
   it('[REQ-365/AC-9] picker close button and cancel call onClose; touch targets expose min-h-[44px]', () => {
     const onClose = vi.fn()
     render(

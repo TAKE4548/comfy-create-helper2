@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -407,5 +409,33 @@ describe('HistoryModalPreview', () => {
     expect(comparisonLayer).toHaveStyle({ clipPath: 'inset(0 0% 0 0)' })
     fireEvent.keyUp(window, { code: 'Space', key: ' ' })
     expect(comparisonLayer).toHaveStyle({ clipPath: 'inset(0 30% 0 0)' })
+  })
+
+  it('[REQ-302/AC-2] flex-col preview backdrop does not retain obsolete nav avoidance margin in tablet width', () => {
+    const { container } = renderComponent()
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop).not.toBeNull()
+    expect(backdrop?.className).toContain('modal-backdrop flex flex-col')
+    expect(backdrop?.className).not.toContain('pb-[var(--mobile-nav-height)]')
+    expect(backdrop?.className).not.toContain('mb-[var(--mobile-nav-height)]')
+
+    // Preserves image viewer exception structure (not converted to generic role="dialog" bottom sheet)
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+
+    const cssPath = resolve(__dirname, '../../index.css')
+    const css = readFileSync(cssPath, 'utf-8')
+
+    // Obsolete selector excluding flex-col from uniform padding must be removed
+    expect(css).not.toContain('.modal-backdrop:not(.flex-col):not(:fullscreen):not(:has(> [role=\'dialog\']))')
+
+    // In tablet range (min-width: 768px), uniform padding-bottom: 1rem is applied without nav offset
+    const media768Match = css.match(/@media\s*\(\s*min-width:\s*768px\s*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}/)
+    expect(media768Match).not.toBeNull()
+    expect(media768Match![0]).toMatch(/\.modal-backdrop\s*\{[^}]*padding-bottom:\s*1rem;/)
+    expect(media768Match![0]).not.toContain('--mobile-nav-height')
+
+    // Ensure no selector applies --mobile-nav-height to .modal-backdrop.flex-col
+    const flexColMatches = css.match(/\.modal-backdrop\.flex-col[^{]*\{[^}]*--mobile-nav-height[^}]*\}/g)
+    expect(flexColMatches).toBeNull()
   })
 })

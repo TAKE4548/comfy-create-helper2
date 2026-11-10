@@ -101,4 +101,60 @@ describe('PresetConflictModal', () => {
     fireEvent.click(screen.getByRole('button', { name: '別名で保存' }))
     expect(onSaveAsNew).toHaveBeenCalledWith('Set 1 (別端末の編集)')
   })
+
+  it('[REQ-302/AC-3] traps Tab focus, closes on Escape or backdrop click, and restores focus', () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+
+    const onClose = vi.fn()
+    const { container, rerender } = render(
+      <PresetConflictModal
+        isOpen={true}
+        conflictData={mockConflictData}
+        onClose={onClose}
+        onUseServer={vi.fn()}
+        onOverwriteServer={vi.fn()}
+        onSaveAsNew={vi.fn()}
+      />
+    )
+
+    // Escape closes
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    // Backdrop click closes
+    const backdrop = container.querySelector('.modal-backdrop')
+    expect(backdrop).not.toBeNull()
+    if (backdrop) {
+      fireEvent.click(backdrop)
+    }
+    expect(onClose).toHaveBeenCalledTimes(2)
+
+    // Focus trap
+    const dialog = screen.getByRole('dialog')
+    const dialogButtons = Array.from(dialog.querySelectorAll('button'))
+    const first = dialogButtons[0]
+    const last = dialogButtons[dialogButtons.length - 1]
+    last.focus()
+    fireEvent.keyDown(last, { key: 'Tab' })
+    expect(document.activeElement).toBe(first)
+
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+
+    // Focus restoration on close
+    rerender(
+      <PresetConflictModal
+        isOpen={false}
+        conflictData={mockConflictData}
+        onClose={onClose}
+        onUseServer={vi.fn()}
+        onOverwriteServer={vi.fn()}
+        onSaveAsNew={vi.fn()}
+      />
+    )
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
 })

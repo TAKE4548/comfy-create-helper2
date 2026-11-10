@@ -166,7 +166,7 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
       <div
         ref={containerRef}
         data-testid="mobile-fullscreen-viewer"
-        className="fixed inset-0 z-50 bg-black flex items-center justify-center w-full h-[100dvh] touch-manipulation select-none"
+        className="fixed inset-0 z-[var(--z-modal)] bg-black flex items-center justify-center w-full h-[100dvh] touch-manipulation select-none"
       >
         <button
           type="button"
@@ -202,7 +202,7 @@ export const MobileImageSheet: React.FC<MobileImageSheetProps> = ({
   return (
     <div
       data-testid="mobile-image-sheet"
-      className="fixed inset-0 z-50 bg-black/65 flex flex-col justify-end backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[var(--z-modal)] bg-black/65 flex flex-col justify-end backdrop-blur-sm animate-fade-in"
     >
       <div
         data-testid="mobile-image-sheet-backdrop"
