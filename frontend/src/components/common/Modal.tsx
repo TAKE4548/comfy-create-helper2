@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from 'react'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '4xl' | '5xl' | '7xl' | 'full'
 
@@ -14,9 +14,14 @@ export interface ModalProps {
   ariaLabel?: string
   /** Mobile bottom-sheet max-height utility class. Empty/undefined falls back to the default. */
   sheetMaxHeightClass?: string
+  /** Optional opt-out for mobile swipe down to close gesture (e.g. forms with unsaved changes). Defaults to false. */
+  disableSwipeToClose?: boolean
 }
 
 const DEFAULT_SHEET_MAX_HEIGHT_CLASS = 'max-h-[calc(100dvh-env(safe-area-inset-top))]'
+const SWIPE_THRESHOLD = 80
+const FLICK_VELOCITY = 0.5
+const FLICK_MIN_DISTANCE = 30
 
 const sizeClasses: Record<ModalSize, string> = {
   sm: 'max-w-full md:max-w-[min(90vw,36.25rem)] lg:max-w-[36.25rem]',
@@ -61,10 +66,101 @@ export function Modal({
   closeOnEsc = true,
   ariaLabel = 'Dialog',
   sheetMaxHeightClass,
+  disableSwipeToClose = false,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+
+  const [translateY, setTranslateY] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const startYRef = useRef<number | null>(null)
+  const startXRef = useRef<number | null>(null)
+  const startTimeRef = useRef<number>(0)
+  const canDragRef = useRef(false)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setTranslateY(0)
+      setIsDragging(false)
+      canDragRef.current = false
+      startYRef.current = null
+      startXRef.current = null
+    }
+  }, [isOpen])
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (disableSwipeToClose) return
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) return
+    if (event.touches.length !== 1) return
+
+    if (isScrolledDown(event.target as HTMLElement | null, dialogRef.current)) {
+      canDragRef.current = false
+      return
+    }
+
+    const touch = event.touches[0]
+    startYRef.current = touch.clientY
+    startXRef.current = touch.clientX
+    startTimeRef.current = Date.now()
+    canDragRef.current = true
+    setIsDragging(true)
+  }
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (!canDragRef.current || startYRef.current === null || startXRef.current === null) return
+    if (event.touches.length !== 1) return
+
+    const touch = event.touches[0]
+    const deltaY = touch.clientY - startYRef.current
+    const deltaX = touch.clientX - startXRef.current
+
+    // Horizontal swipe priority: cancel drag if horizontal movement is dominant
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 5) {
+      canDragRef.current = false
+      setIsDragging(false)
+      setTranslateY(0)
+      return
+    }
+
+    // Clamp upward drag to 0
+    const currentTranslateY = Math.max(0, deltaY)
+    setTranslateY(currentTranslateY)
+  }
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (!canDragRef.current) {
+      setIsDragging(false)
+      setTranslateY(0)
+      return
+    }
+
+    const touch = event.changedTouches?.[0]
+    const currentY = touch ? touch.clientY : (startYRef.current ?? 0) + translateY
+    const deltaY = startYRef.current !== null ? Math.max(0, currentY - startYRef.current) : translateY
+    const elapsed = Math.max(1, Date.now() - startTimeRef.current)
+    const velocity = deltaY / elapsed
+
+    const shouldClose = deltaY >= SWIPE_THRESHOLD || (velocity > FLICK_VELOCITY && deltaY > FLICK_MIN_DISTANCE)
+
+    canDragRef.current = false
+    setIsDragging(false)
+    setTranslateY(0)
+    startYRef.current = null
+    startXRef.current = null
+
+    if (shouldClose) {
+      onCloseRef.current()
+    }
+  }
+
+  const handleTouchCancel = () => {
+    canDragRef.current = false
+    setIsDragging(false)
+    setTranslateY(0)
+    startYRef.current = null
+    startXRef.current = null
+  }
 
   useLayoutEffect(() => {
     if (!isOpen) return
@@ -142,7 +238,11 @@ export function Modal({
         aria-label={ariaLabel}
         data-radius-exempt
         data-sheet-max-height={sheetMaxHeightValue ? '' : undefined}
-        style={sheetMaxHeightValue ? ({ '--modal-sheet-max-height': sheetMaxHeightValue } as CSSProperties) : undefined}
+        style={{
+          ...(sheetMaxHeightValue ? ({ '--modal-sheet-max-height': sheetMaxHeightValue } as CSSProperties) : {}),
+          transform: translateY > 0 ? `translateY(${translateY}px)` : undefined,
+          transition: isDragging ? 'none' : translateY === 0 ? undefined : 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
         tabIndex={-1}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === 'Escape' && closeOnEsc && !event.defaultPrevented) {
@@ -150,10 +250,14 @@ export function Modal({
             event.stopPropagation()
           }
         }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
         className={`bg-surface-3 border border-[rgba(255,255,255,0.1)] rounded-t-2xl rounded-b-none md:rounded-2xl w-full ${sizeClass} ${maxHeightClass} md:max-h-[90dvh] lg:max-h-full flex flex-col shadow-2xl overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:pb-0 ${dialogClassName}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div aria-hidden="true" data-testid="modal-sheet-handle" className="mx-auto mt-2 mb-1 h-1 w-10 flex-shrink-0 rounded-full bg-white/30 md:hidden" />
+        <div aria-hidden="true" data-testid="modal-sheet-handle" className="mx-auto mt-2 mb-1 h-1 w-10 flex-shrink-0 rounded-full bg-white/30 md:hidden touch-none" />
         {children}
       </div>
     </div>
@@ -186,4 +290,14 @@ function getFocusableElements(dialog: HTMLDivElement | null): HTMLElement[] {
 
     return true
   })
+}
+
+function isScrolledDown(target: HTMLElement | null, boundary: HTMLElement | null): boolean {
+  let el = target
+  while (el && boundary && (boundary === el || boundary.contains(el))) {
+    if (el.scrollTop > 0) return true
+    if (el === boundary) break
+    el = el.parentElement
+  }
+  return false
 }

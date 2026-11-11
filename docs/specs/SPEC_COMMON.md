@@ -4,7 +4,7 @@
 **最終更新**: 2026-10-20
 **ステータス**: 現行実装と承認済み契約を記載（全体QA状況は検証計画を参照）。§1-6・§5-6のモバイルUI共通規約は採用済みだが、導入状況が「導入前」の規則は現行の挙動を表さない
 
-> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md)
+> 関連仕様書: [SPEC_SUMMARY.md](./SPEC_SUMMARY.md) / [REQ-332設計](../design/REQ-332.md) / [REQ-332検証計画](../design/REQ-332-test-plan.md) / [REQ-334設計](../design/REQ-334.md) / [REQ-334検証計画](../design/REQ-334-test-plan.md) / [REQ-334-T10正本同期](../backlog/task/archive/REQ-334-T10.md) / [REQ-365設計](../design/REQ-365.md) / [REQ-346設計](../design/REQ-346.md) / [REQ-378設計](../design/REQ-378.md) / [REQ-408設計](../design/REQ-408.md)
 
 ---
 
@@ -54,6 +54,13 @@
   - Settingsに独自overlay（`fixed inset-0` + `role="dialog"`）として残るものはない。`SettingsComponents.tsx` の `MappingMasterModal`（`fixed inset-0`）は本番コードから未参照（テストのみ）で、Settingsから到達しない。`ServiceConnectionCard` / `SpeechToneSection` の `role="alertdialog"` は行内の確認ブロックでオーバーレイではない。
   - `.modal-backdrop` を直接使うレガシーdialog（非テスト、2026-10-15 grep）: BulkEditModal、BypassSettingsModal、CategoryManagerModal、HistoryModalPreview、LoraDetailModal、LoraRegisterModal、ParamSyncModal、ProfileBulkEditModal（本体と BulkEditConfirmView）、RescanModal、SceneGeneratorModal、SpeechBubbleEditorModal、TagSetCreateModal / TagSetDetailModal / TagSetEditModal、UploadWorkflowModal、DatasetStudioPage の OutfitMasterModal / CreateProjectModal、GeneratePage の AddAssetModal。これらにはレガシーsheet規則（下部寄せ・疑似要素ハンドル・角丸12px）が適用され、Settingsからは到達しない（UploadWorkflowModal は GeneratePage から使用）。共通Modal自身も `.modal-backdrop` 要素を用いるが、`data-radius-exempt` により疑似ハンドル・12px補正の対象外である。
 - モーダルは相互に排他とし、ネスト表示しない（list→form は一覧を閉じてからフォームを開く）。唯一の例外は MappingMasterEditModal 内の WorkflowNodePicker で、共通Modalの中に共通Modalをネストして開く。このとき外側は `closeOnEsc={!isNodePickerOpen}` により Esc を無視し、Esc は内側（WorkflowNodePicker）のみを閉じる。
+- **ボトムシートのスワイプダウン閉じるジェスチャー (REQ-408)**:
+  - モバイル表示時（幅768px未満）のボトムシートにおいて、上部ハンドルまたはコンテンツ領域からの下方向スワイプ／ドラッグによる閉じるジェスチャー操作に対応する（REQ-408）。
+  - 下方向移動量が規定閾値（80px以上）またはフリック速度（> 0.5px/ms かつ移動量 > 30px）に達した際に `onClose` を発火してシートを閉じる。
+  - 閾値未満で離された場合は閉じる処理を行わず、元の表示位置（translateY: 0）に滑らかにスナップ復帰する。上方向ドラッグは移動量0にクランプする。
+  - 内部コンテンツが縦スクロール中（`scrollTop > 0`）の場合はコンテンツスクロールを最優先とし、スワイプダウンによるクローズは起動しない。最上部（`scrollTop === 0`）からのみスワイプダウン操作が有効となる。
+  - 未保存データ保護等の目的でオプトアウトが必要なモーダルのため、`disableSwipeToClose?: boolean` プロパティを提供する。
+  - デスクトップ表示（幅768px以上）ではスワイプダウンによる閉じる操作を無効化し、既存の閉じるボタン、キャンセルボタン、バックドロップクリック、Escキーによる離脱経路を完全維持する（MUI-10準拠）。
 - **モバイル画像確認シートと全画面ビューア (REQ-372)**:
   - 画像閲覧・確認を目的とするモバイル下端起点シート（`MobileImageSheet`）は、上部セーフエリア侵食防止のため最大高さ `max-h-[88dvh]`（角丸 `rounded-t-2xl`）とし、`overscroll-contain` を適用する。操作ボタン（閉じる、ダウンロード、スナップショット保存）は最小44×44pxのHit-Slopを確保する。
   - シート内タップから移行する全画面ビューアは、シートクロームを隠蔽して画面全面（`fixed inset-0 z-50 bg-black`）に画像を展開する没入表示契約とする。Fullscreen API非対応環境（iOS Safari等）や拒否時は CSS 100dvh 全画面へ安全に縮退フォールバックする。全画面表示中はScreen Wake Lock APIで画面消灯を抑止し、全画面解除時またはタブ切替時に直ちに解放する。

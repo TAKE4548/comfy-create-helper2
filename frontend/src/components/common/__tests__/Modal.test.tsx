@@ -2,7 +2,7 @@ import React from 'react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { Modal } from '../Modal'
 
 describe('Common Modal component', () => {
@@ -396,5 +396,203 @@ describe('Common Modal component', () => {
     expect(backdrop.className).not.toContain('mobile-nav')
     expect(dialog.className).not.toContain('mobile-nav')
     expect(backdrop.style.paddingBottom).toBe('')
+  })
+
+  describe('REQ-408: Mobile bottom sheet swipe-down to close gesture', () => {
+    const originalInnerWidth = window.innerWidth
+
+    const setViewportWidth = (width: number) => {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: width,
+      })
+    }
+
+    afterEach(() => {
+      setViewportWidth(originalInnerWidth)
+      vi.restoreAllMocks()
+    })
+
+    it('[REQ-408/AC-1] closes bottom sheet and calls onClose when dragged down beyond threshold on mobile', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div>Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      // 1. Drag down 90px (>= 80px SWIPE_THRESHOLD)
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 190 }] })
+      expect(dialog.style.transform).toBe('translateY(90px)')
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 190 }] })
+      expect(handleClose).toHaveBeenCalledTimes(1)
+
+      // 2. Flick gesture: move 40px (> 30px FLICK_MIN_DISTANCE) in 50ms (velocity 0.8 > 0.5px/ms)
+      handleClose.mockClear()
+      const nowSpy = vi.spyOn(Date, 'now')
+      nowSpy.mockReturnValue(1000)
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 140 }] })
+      nowSpy.mockReturnValue(1050)
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 140 }] })
+      expect(handleClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('[REQ-408/AC-2] snaps back to original position without calling onClose when dragged below threshold', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div>Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      // Drag down only 50px (< 80px threshold) with slow speed
+      const nowSpy = vi.spyOn(Date, 'now')
+      nowSpy.mockReturnValue(1000)
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 150 }] })
+      expect(dialog.style.transform).toBe('translateY(50px)')
+      nowSpy.mockReturnValue(2000) // 1000ms elapsed, velocity = 0.05 < 0.5
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 150 }] })
+
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
+
+    it('[REQ-408/AC-3] prioritizes content scrolling and suppresses swipe-down close when scrollTop > 0', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div data-testid="scrollable-content" style={{ overflowY: 'auto', height: 200 }}>
+            <div style={{ height: 1000 }}>Long Inner Content</div>
+          </div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+      const scrollContent = screen.getByTestId('scrollable-content')
+
+      // Simulate inner content is scrolled down (scrollTop > 0)
+      Object.defineProperty(scrollContent, 'scrollTop', { value: 60, configurable: true, writable: true })
+
+      fireEvent.touchStart(scrollContent, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(scrollContent, { touches: [{ clientX: 100, clientY: 220 }] })
+      expect(dialog.style.transform).toBe('')
+      fireEvent.touchEnd(scrollContent, { changedTouches: [{ clientX: 100, clientY: 220 }] })
+
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
+
+    it('[REQ-408/AC-4] preserves backdrop click and explicit close actions without gesture on mobile', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      const { container } = render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <button data-testid="explicit-close-btn" onClick={handleClose}>
+            Close
+          </button>
+        </Modal>,
+      )
+
+      // Explicit close button click
+      fireEvent.click(screen.getByTestId('explicit-close-btn'))
+      expect(handleClose).toHaveBeenCalledTimes(1)
+
+      // Backdrop click
+      handleClose.mockClear()
+      const backdrop = container.querySelector('.modal-backdrop') as HTMLElement
+      expect(backdrop).not.toBeNull()
+      fireEvent.click(backdrop)
+      expect(handleClose).toHaveBeenCalledTimes(1)
+
+      // Escape key
+      handleClose.mockClear()
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(handleClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('[REQ-408/AC-5] disables swipe-down close on desktop viewports (>= 768px)', () => {
+      setViewportWidth(1024)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div>Desktop Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 250 }] })
+      expect(dialog.style.transform).toBe('')
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 250 }] })
+
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
+
+    it('[REQ-408/RT-1] clamps negative deltaY to 0 when dragged upwards', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div>Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      // Drag up 60px (150 -> 90)
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 150 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 90 }] })
+      expect(dialog.style.transform).toBe('')
+
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 90 }] })
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
+
+    it('[REQ-408/RT-2] safely resets position on touchCancel without triggering onClose', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose}>
+          <div>Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 220 }] })
+      expect(dialog.style.transform).toBe('translateY(120px)')
+
+      fireEvent.touchCancel(dialog)
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
+
+    it('[REQ-408/RT-3] respects disableSwipeToClose prop even on mobile viewports', () => {
+      setViewportWidth(375)
+      const handleClose = vi.fn()
+      render(
+        <Modal isOpen={true} onClose={handleClose} disableSwipeToClose={true}>
+          <div>Modal Content</div>
+        </Modal>,
+      )
+      const dialog = screen.getByRole('dialog')
+
+      fireEvent.touchStart(dialog, { touches: [{ clientX: 100, clientY: 100 }] })
+      fireEvent.touchMove(dialog, { touches: [{ clientX: 100, clientY: 250 }] })
+      expect(dialog.style.transform).toBe('')
+
+      fireEvent.touchEnd(dialog, { changedTouches: [{ clientX: 100, clientY: 250 }] })
+      expect(handleClose).not.toHaveBeenCalled()
+      expect(dialog.style.transform).toBe('')
+    })
   })
 })
