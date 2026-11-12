@@ -7,13 +7,13 @@
 
 | 項目 | 件数 | 備考 |
 |---|---|---|
-| Backend テストファイル数 | 77 | `backend/tests/**/*.py` |
-| Frontend テストファイル数 | 263 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 3427 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 1118 | `REQ-xxx` 関連 |
-| PBI 紐づけなしテスト数 | 2309 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
+| Backend テストファイル数 | 78 | `backend/tests/**/*.py` |
+| Frontend テストファイル数 | 265 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
+| 抽出テストケース総数 | 3572 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 1273 | `REQ-xxx` 関連 |
+| PBI 紐づけなしテスト数 | 2299 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
-| テスト名規約違反数 (AC-15) | 19 | `[REQ-xxx/AC-n]` 未準拠 |
+| テスト名規約違反数 (AC-15) | 22 | `[REQ-xxx/AC-n]` 未準拠 |
 
 ## 2. ファイル名規約違反一覧 (移行対象: AC-1)
 
@@ -127,6 +127,14 @@
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-218/AC-1] should correctly prepend prefix with normalized comma delimiter in handleBulkEditApply | AC-1 | PASS |
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useGeneratePageState.test.tsx` | [REQ-218/AC-2] should correctly append suffix with normalized comma delimiter in handleBulkEditApply | AC-2 | PASS |
 
+### REQ-248 (計 3 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/unit/test_export_openapi.py` | test_req248_ac1_export_openapi_no_side_effects: [REQ-248/AC-1] export_openapi.py exports valid OpenAPI JSON without starting lifespan/DB/workers. | AC-1 | PASS |
+| `backend/tests/unit/test_export_openapi.py` | test_req248_ac1_export_openapi_idempotent: [REQ-248/AC-1] Running export twice on identical codebase produces identical bytes. | AC-1 | PASS |
+| `backend/tests/unit/test_export_openapi.py` | test_req248_ac4_export_openapi_check_drift_detection: [REQ-248/AC-4] export_openapi.py --check exits 1 on schema drift without modifying file. | AC-4 | PASS |
+
 ### REQ-260 (計 5 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
@@ -203,6 +211,25 @@
 | `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-3] closing progress cancels the stream and discards its late result | AC-3 | PASS |
 | `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-4] 生成結果の選択分だけをキャンバスへ反映する | AC-4 | PASS |
 | `frontend/src/components/__tests__/SpeechBubbleEditorModal.test.tsx` | [REQ-294/AC-5] 結果を閉じた場合は生成バブルを反映しない | AC-5 | PASS |
+
+### REQ-302 (計 14 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/__tests__/HistoryModalPreview.test.tsx` | [REQ-302/AC-2] flex-col preview backdrop does not retain obsolete nav avoidance margin in tablet width | AC-2 | PASS |
+| `frontend/src/components/__tests__/PresetConflictModal.test.tsx` | [REQ-302/AC-3] traps Tab focus, closes on Escape or backdrop click, and restores focus | AC-3 | PASS |
+| `frontend/src/components/__tests__/WorkflowNodePicker.test.tsx` | [REQ-302/AC-4] preserves nested exception: Escape closes picker only and does not bubble to outer modal | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-302/AC-2] eliminates mobile-nav-height offset from backdrop padding-bottom at all breakpoints | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-302/AC-2] applies uniform 1rem padding-bottom in 768-1023px tablet range without nav margin | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-302/AC-5] incorporates env(safe-area-inset-bottom) with 0px fallback and avoids double padding | AC-5 | PASS |
+| `frontend/src/components/layout/__tests__/AppShell.test.tsx` | [REQ-302/AC-1] mobile navigation is not clickable or accessible when modal overlay is present | AC-1 | PASS |
+| `frontend/src/components/layout/__tests__/AppShell.test.tsx` | [REQ-302/AC-1] [RedTeam] RT-1: rapid sequential clicks on bottom nav are fully trapped by modal backdrop | AC-1 | PASS |
+| `frontend/src/pages/__tests__/HistoryPage.test.tsx` | [REQ-302/AC-4] opens bulk delete confirmation in common Modal with role dialog, and closes on cancel or Escape | AC-4 | PASS |
+| `frontend/src/pages/DatasetStudioPage/__tests__/BenchmarkGrid.test.tsx` | [REQ-302/AC-1] renders within common Modal with modal-backdrop, safe-area handling, and 90dvh sheet constraint | AC-1 | PASS |
+| `frontend/src/pages/DatasetStudioPage/components/__tests__/CreateProjectModal.test.tsx` | [REQ-302/AC-3] closes when Escape key is pressed or backdrop is clicked, and traps keyboard focus within dialog | AC-3 | PASS |
+| `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` | [REQ-302/AC-5] applies 90dvh constraint and preserves reachability of action buttons in reduced viewport | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-302/AC-1] mobile image sheet and fullscreen viewer render with elevated modal z-index | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileImageSheet.test.tsx` | [REQ-302/AC-6] preserves fullscreen viewer zoom, aspect ratio, and wake lock exception without regression | AC-6 | PASS |
 
 ### REQ-304 (計 4 件)
 
@@ -682,7 +709,7 @@
 |---|---|---|---|
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_workflow_mapping_slot_states_matches_runtime_and_snapshot: [REQ-358/AC-19] Workflow slot state schemas stay aligned with the runtime OpenAPI contract. | AC-19 | PASS |
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_workflow_slot_states_defaults_and_update_null_rejection: [REQ-358/AC-31] Read defaults to empty, update omission is distinguishable, and null is rejected. | AC-31 | PASS |
-| `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_routes_match_runtime_and_both_snapshots_AC_26: [REQ-358/AC-26] Mapping master routes expose the runtime V2 request and response schemas. | AC-26 | PASS |
+| `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_routes_match_runtime_and_snapshot_AC_26: [REQ-358/AC-26] Mapping master routes expose runtime V2 schemas matching openapi.json snapshot. | AC-26 | PASS |
 | `backend/tests/governance/test_openapi_contract.py` | test_req358_openapi_master_default_enabled_contract_AC_28_AC_30_AC_31: [REQ-358/AC-28][REQ-358/AC-30][REQ-358/AC-31] Verify mapping master default_enabled OpenAPI contract. | AC-28 | PASS |
 | `backend/tests/integration/api/test_workflows.py` | test_workflow_state_create_get_and_update_roundtrip: [REQ-358/AC-19] Workflow slot state persists across POST, GET, and omitted PUT. | AC-19 | PASS |
 | `backend/tests/integration/api/test_workflows.py` | test_workflow_state_rollback: [REQ-358/AC-28] Rollback restores prior workflow slot states. | AC-28 | PASS |
@@ -737,8 +764,8 @@
 | `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-358/AC-25] resolves a multistage legacy seed only by exact persisted role, including inactive variants | AC-25 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-26] saves the new mapping default-enabled choice | AC-26 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-27] treats legacy defaults as enabled and locks the control while saving | AC-27 | PASS |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-30] preserves an existing disabled default on save | AC-30 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-28][REQ-365/AC-3] keeps disabled masters visible and editable | AC-28 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-358/AC-30] preserves an existing disabled default on save | AC-30 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/WIRING] [REQ-358/AC-14] class候補と選択中node metadataを表示する | AC-14 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23] slot無効状態を保持し、保存時にstateを渡す | AC-23 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-358/AC-23][REQ-358/AC-34] keeps a legacy single-variant ID while disabled and saves its canonical permission | AC-23 | PASS |
@@ -828,7 +855,7 @@
 | `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-364/AC-3] closes the dropdown when Escape key is pressed | AC-3 | PASS |
 | `frontend/src/components/common/header/__tests__/HeaderDropdown.test.tsx` | [REQ-364/AC-3] does not close on Escape if closeOnEsc is false | AC-3 | PASS |
 
-### REQ-365 (計 113 件)
+### REQ-365 (計 112 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -849,10 +876,9 @@
 | `frontend/e2e/settingsResponsive.spec.ts` | [REQ-365/AC-2] 375px: content bottom padding clears the bottom nav | AC-2 | PASS |
 | `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] renders in the common bottom-sheet Modal (single handle, max-h-[85dvh], exactly one dialog) | AC-9 | PASS |
 | `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] closes via Escape, backdrop click and close/cancel buttons | AC-9 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] does not close on Escape while the workflow node picker is open | AC-9 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] nested node picker backdrop is not inside the space-y form (no sibling margin) | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] does not close on Escape while the shared definition choice panel is open | AC-9 | PASS |
 | `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] form submit and validation are unchanged inside the sheet | AC-9 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] touch targets: close/cancel/save expose min-h-[44px]; chip delete and candidate buttons have hit-slop | AC-9 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] touch targets: close/cancel/save and variant controls expose min-h-[44px]; icon delete has hit-slop | AC-9 | PASS |
 | `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-365/AC-9] renders nothing when isOpen is false | AC-9 | PASS |
 | `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] renders as a single dialog listing param types with create/edit/delete callbacks | AC-4 | PASS |
 | `frontend/src/components/__tests__/ParamTypeMasterManagerModal.test.tsx` | [REQ-365/AC-4] shows empty message and still offers create | AC-4 | PASS |
@@ -910,7 +936,7 @@
 | `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] still routes the details toggle through onTogglePrompts | AC-5 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/LlmSettingsSection.test.tsx` | [REQ-365/AC-5] disables the textarea when the selected prompt record is not fetched | AC-5 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-3] renders each master as a settings-mobile-card with pinned actions, hidden target node and contextual aria-label | AC-3 | PASS |
-| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-3] shows +N classes and +N stages compact badges without duplicating variant names | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-3] shows +N stages compact badge without duplicating variant names | AC-3 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-4] opens ParamTypeMaster manager as a dialog from the カスタム型マスタ button and no longer renders the always-on bar | AC-4 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-4] transitions list -> create form -> back to list with exactly one dialog at a time | AC-4 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-365/AC-9] param type dialogs use the bottom-sheet Modal | AC-9 | PASS |
@@ -932,7 +958,8 @@
 | `frontend/src/pages/SettingsPage/components/__tests__/ThumbnailSettingsSection.test.tsx` | [REQ-365/AC-2] shows persistence error without crashing when localStorage throws; keeps the session choice and reports that it is unsaved | AC-2 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/VramGuardSection.test.tsx` | [REQ-365/AC-8] moves the threshold line and tag immediately while dragging, without calling updateVram | AC-8 | PASS |
 | `frontend/src/pages/SettingsPage/components/__tests__/VramGuardSection.test.tsx` | [REQ-365/AC-8] switches meter state: safe(green) / approaching(amber) / below(red) | AC-8 | PASS |
-| ... | *(他 13 件割愛)* | - | - |
+| `frontend/src/pages/SettingsPage/components/__tests__/VramGuardSection.test.tsx` | [REQ-365/AC-8] number input and slider stay in sync | AC-8 | PASS |
+| ... | *(他 12 件割愛)* | - | - |
 
 ### REQ-366 (計 7 件)
 
@@ -1342,6 +1369,30 @@
 | `frontend/src/store/__tests__/slices/multiSetSlice.test.ts` | [REQ-402/AC-6] plan-properties | AC-6 | PASS |
 | `frontend/src/store/__tests__/slices/multiSetSlice.test.ts` | [REQ-402/AC-5] no-target-disabled | AC-5 | PASS |
 
+### REQ-408 (計 8 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/AC-1] closes bottom sheet and calls onClose when dragged down beyond threshold on mobile | AC-1 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/AC-2] snaps back to original position without calling onClose when dragged below threshold | AC-2 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/AC-3] prioritizes content scrolling and suppresses swipe-down close when scrollTop > 0 | AC-3 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/AC-4] preserves backdrop click and explicit close actions without gesture on mobile | AC-4 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/AC-5] disables swipe-down close on desktop viewports (>= 768px) | AC-5 | PASS |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/RT-1] clamps negative deltaY to 0 when dragged upwards | - | VIOLATION |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/RT-2] safely resets position on touchCancel without triggering onClose | - | VIOLATION |
+| `frontend/src/components/common/__tests__/Modal.test.tsx` | [REQ-408/RT-3] respects disableSwipeToClose prop even on mobile viewports | - | VIOLATION |
+
+### REQ-413 (計 6 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/utils/__tests__/mappingStageGroups.test.ts` | [REQ-413/AC-5] excludes mappings whose resolved variant is disabled (is_enabled: false) | AC-5 | PASS |
+| `frontend/src/utils/__tests__/mappingStageGroups.test.ts` | [REQ-413/AC-5] excludes mappings with disabled variants from candidate list | AC-5 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-413/AC-1] excludes mappings whose slot variantEnabled is false from generationWorkflow | AC-1 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-413/AC-2] ensures excluded disabled variant mappings are omitted from the generated mappings array | AC-2 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-413/AC-3] keeps mappings when variantEnabled is true or undefined, unless explicitly disabled by mapping_slot_states | AC-3 | PASS |
+| `frontend/src/utils/__tests__/wiringStageGroups.test.ts` | [REQ-413/AC-4] excludes legacy mapping (variant_id == null) when all master slots or resolved slot are variantEnabled: false | AC-4 | PASS |
+
 ### REQ-414 (計 6 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
@@ -1363,7 +1414,7 @@
 | `frontend/src/components/__tests__/PatternTagInput.test.tsx` | [REQ-415/AC-4] guards against IME composition when pressing Enter | AC-4 | PASS |
 | `frontend/src/components/__tests__/PatternTagInput.test.tsx` | [REQ-415/AC-5] disables "追加" button and suppresses add on empty or duplicate text | AC-5 | PASS |
 
-### REQ-417 (計 15 件)
+### REQ-417 (計 11 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -1375,10 +1426,6 @@
 | `backend/tests/integration/models/test_migrations.py` | test_req417_ac1_phase2_migration_lossless_conversion: [REQ-417/AC-1] Phase 2 migration losslessly converts legacy master data into rule sets, entries, and selectors. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_req417_ac6_phase5_unique_role_physical_constraint: [REQ-417/AC-6] Physical UNIQUE(role) constraint rejects duplicate role insertions. | AC-6 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_req417_ac7_phase5_composite_unique_constraints_and_null_selector: [REQ-417/AC-7] Composite constraints UNIQUE(master_id, stage_id), UNIQUE(master_id, node_selector_id) and NULL coexistence. | AC-7 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-417/AC-5] renders 3 sections (Master属性, BindingRuleSet, and NodeSelector) via tabs and switches content | AC-5 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-417/AC-5] displays referencing roles and duplicate-and-edit button when referenced_roles.length > 1 | AC-5 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-417/AC-5] duplicate-and-edit forks shared definition into a dedicated stage copy | AC-5 | PASS |
-| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-417/AC-5] displays in-use error guidance with referenced_roles when deletion fails | AC-5 | PASS |
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-417/AC-4] directly injects seed into node.inputs.noise_seed when input_name is noise_seed even if param_name is seed | AC-4 | PASS |
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-417/AC-4] directly injects general parameter using input_name over param_name | AC-4 | PASS |
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-417/AC-4] gracefully falls back to legacy resolution when input_name is omitted or empty | AC-4 | PASS |
@@ -1440,7 +1487,156 @@
 | `frontend/src/components/__tests__/ParamSyncModal.test.tsx` | [REQ-418/AC-3] slave toggle and master change send variant ids | AC-3 | PASS |
 | `frontend/src/components/__tests__/ParamSyncModal.test.tsx` | [REQ-418/AC-3] falls back to role fields when mapping has no variant_id | AC-3 | PASS |
 
-### PBI紐づけなし (汎用/ガバナンス) (計 2309 件)
+### REQ-419 (計 69 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/governance/test_openapi_contract.py` | test_req419_ac9_openapi_new_contracts_match_runtime: [REQ-419/AC-9] New atomic-save / scan-preview paths and schemas, and MappingVariantRead, match runtime in openapi.json snapshot. | AC-9 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac2_variant_read_includes_inline_definitions: [REQ-419/AC-2] Variant read includes rule entries (priority order) and selector patterns (None without selector). | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac3_atomic_save_repoints_and_clears_selector: [REQ-419/AC-3] One request switches a rule set (new ref) and clears the selector; omitted variants stay. | AC-3 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac3_atomic_save_swaps_selectors: [REQ-419/AC-3] Swapping selectors between two variants (A=s1,B=s2 to A=s2,B=s1) succeeds in one request. | AC-3 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac5_atomic_save_duplicate_keeps_original: [REQ-419/AC-5] Duplicate (create copy, repoint only the edited variant) leaves the original rule set intact. | AC-5 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac5_atomic_save_update_shared_changes_all_referrers: [REQ-419/AC-5] Updating a shared rule set in place changes the entries seen by every referring variant. | AC-5 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac6_atomic_save_rejects_invalid_requests: [REQ-419/AC-6] Invalid atomic-save requests return 422 with row errors and leave the DB untouched. | AC-6 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac6_atomic_save_allows_multiple_null_selectors: [REQ-419/AC-6] Several variants without a selector are allowed (NULL is excluded from uniqueness). | AC-6 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac12_atomic_save_applies_all_changes_in_one_request: [REQ-419/AC-12] A single request applies master rename, switches, shared update and duplicate with one commit. | AC-12 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac12_atomic_save_rolls_back_on_injected_db_failure: [REQ-419/AC-12] A DB failure injected mid-save leaves no partial change (full rollback). | AC-12 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac12_atomic_save_integrity_error_returns_409_and_rolls_back: [REQ-419/AC-12] An IntegrityError during apply maps to 409 MASTER_SAVE_CONFLICT with full rollback. | AC-12 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac12_atomic_save_all_or_nothing_property: [REQ-419/AC-12] Random requests are either fully applied (200) or leave every table unchanged. | AC-12 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac9_scan_preview_uses_unsaved_definitions: [REQ-419/AC-9] Preview ranks nodes by the unsaved draft definitions and excludes rank-4 nodes. | AC-9 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac9_scan_preview_error_responses: [REQ-419/AC-9] Preview rejects a missing workflow (404) and invalid stage/variants/match_type (422). | AC-9 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac13_scan_preview_ignores_legacy_fields: [REQ-419/AC-13] (a) legacy columns never add nodes; (b) legacy keywords/title patterns never change rank or order. | AC-13 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req419_ac10_scan_preview_does_not_persist: [REQ-419/AC-10] Preview with drafts (incl. an existing variant_id with different content) writes nothing. | AC-10 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner.py` | test_req419_ac13_scanner_ignores_stage_search_keywords: [REQ-419/AC-13] Stage search_keywords never influence scan stage ranking. | AC-13 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner.py` | test_req419_ac13_scanner_ignores_master_legacy_fields: [REQ-419/AC-13] Master legacy columns and extra_title_patterns do not produce candidates or stages. | AC-13 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner.py` | test_req419_ac13_scanner_legacy_only_and_keyword_only_nodes: [REQ-419/AC-13] (a) nodes matched only by legacy columns and (b) nodes matched only by legacy keywords/titles get no preference. | AC-13 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner.py` | test_req419_ac9_detailed_scan_reports_stage_and_candidates: [REQ-419/AC-9] Detailed scan reports stage rank, duplicates, not_found, disabled and exclusion. | AC-9 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner.py` | test_req419_ac9_detailed_scan_excludes_other_variant_selector_nodes: [REQ-419/AC-9] A node claimed by another variant's selector is not a candidate of a selector-less variant. | AC-9 | PASS |
+| `backend/tests/integration/legacy/test_workflow_scanner_property.py` | test_req419_ac9_detailed_scan_consistent_with_scan_workflow_variants: [REQ-419/AC-9] Detailed scan and scan_workflow_variants agree; no stage 4; confirmed is first; order independent. | AC-9 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-419/AC-11] [REQ-419/AC-12] 375px: master edit sheet supports variant switch, shared choice and preview | AC-11 | PASS |
+| `frontend/e2e/settingsResponsive.spec.ts` | [REQ-419/AC-11] 1280px: same operations send the same requests | AC-11 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-3] create mode requires initial rule set class name and sends it | AC-3 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-3] create mode rejects comma separated class names | AC-3 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-1] edit mode shows only master value fields | AC-1 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-2] variant rows show role, enabled, entries and patterns by priority | AC-2 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-3] switching definitions persists and reopen shows new names | AC-3 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-4] shared edit shows referrer roles and blocks save until chosen | AC-4 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-5] both choices are reflected after reopen for every referrer: duplicate for this variant | AC-5 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-5] both choices are reflected after reopen for every referrer: update shared | AC-5 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-6] uniqueness error is shown on the row and nothing is sent | AC-6 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-6] server 422 is mapped to the variant row | AC-6 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-12] save failure keeps the draft and shows an error | AC-12 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-8] title conditions are editable only in the selector editor | AC-8 | PASS |
+| `frontend/src/components/__tests__/MappingMasterEditModal.test.tsx` | [REQ-419/AC-9] preview panel receives the unsaved draft | AC-9 | PASS |
+| `frontend/src/components/__tests__/StageManagerModal.test.tsx` | [REQ-419/AC-8] stage create and edit forms have no search keyword input | AC-8 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/ScanPreviewPanel.test.tsx` | [REQ-419/AC-9] preview renders per-variant result with stage labels and warnings | AC-9 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/ScanPreviewPanel.test.tsx` | [REQ-419/AC-9] preview sends the unsaved draft | AC-9 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/ScanPreviewPanel.test.tsx` | [REQ-419/AC-9] preview failure keeps draft and ignores stale responses | AC-9 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/ScanPreviewPanel.test.tsx` | [REQ-419/AC-9] preview is disabled when no workflow is registered | AC-9 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/ScanPreviewPanel.test.tsx` | [REQ-419/AC-10] preview never calls persistence endpoints | AC-10 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-2] buildMasterDraft orders variants by stage sort_order | AC-2 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-3] buildAtomicSaveRequest assigns new definitions only to the edited row | AC-3 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-4] findOtherReferrers combines server and draft references | AC-4 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-4] pendingSharedChoices lists only dirty persisted shared definitions | AC-4 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-5] duplicate choice builds a copy op and keeps the original | AC-5 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-5] update-shared choice builds an update op | AC-5 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-6] validateVariantDrafts flags duplicate stage and selector | AC-6 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-6] mapServerValidationErrors maps 422 rows | AC-6 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-9] buildScanPreviewRequest serializes unsaved draft | AC-9 | PASS |
+| `frontend/src/components/mappingMaster/__tests__/variantDraft.test.ts` | [REQ-419/AC-12] [REQ-419/AC-5] api client posts atomic-save and scan-preview bodies | AC-12 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-419/AC-7] master card shows variant count badge without +N classes | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-419/AC-7] master card row does not show legacy param_name | AC-7 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-419/AC-6] save failure is propagated to the modal | AC-6 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-419/AC-12] [REQ-419/AC-5] section sends one atomic-save request and refreshes definitions | AC-12 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/MappingMasterSection.modals.test.tsx` | [REQ-419/AC-3] variant enable toggle and submit send one atomic-save with the toggled is_enabled | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-419/AC-13] settings wiring shows stages detected by selector patterns | AC-13 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-419/AC-13] uses the same variant definition and registered stages as Rescan for option order and scores | AC-13 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-419/AC-13] wiring ignores legacy-only and keyword-only nodes | AC-13 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/workflowMappingIntegration.test.tsx` | [REQ-419/AC-1] renders MappingMasterEditModal variant rows with RuleSet entries and no Master-level class-types input | AC-1 | PASS |
+| `frontend/src/utils/__tests__/variantCandidateDefinition.test.ts` | [REQ-419/AC-13] [REQ-419/AC-1] candidateDefinitionForVariant ignores master legacy columns | AC-13 | PASS |
+| `frontend/src/utils/__tests__/variantCandidateDefinition.test.ts` | [REQ-419/AC-13] candidateDefinitionForVariant orders entries and splits patterns by match type | AC-13 | PASS |
+| `frontend/src/utils/__tests__/workflowAdaptiveStageDetector.test.ts` | [REQ-419/AC-13] detectActiveStages uses selector patterns and ignores search_keywords | AC-13 | PASS |
+| `frontend/src/utils/__tests__/workflowAdaptiveStageDetector.test.ts` | [REQ-419/AC-13] buildStageSelectorPatterns aggregates enabled variants by stage | AC-13 | PASS |
+| `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-419/AC-13] rankWorkflowNodeCandidates applies entry pairs and contains patterns | AC-13 | PASS |
+| `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-419/AC-13] rankWorkflowNodeCandidates keeps legacy behavior when entryPairs is undefined | AC-13 | PASS |
+| `frontend/src/utils/__tests__/workflowNodeUtils.test.ts` | [REQ-419/AC-13] legacy-only and keyword-only nodes are not promoted | AC-13 | PASS |
+
+### REQ-423 (計 17 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/api/test_workflows.py` | test_req423_ac2_workflow_mappings_persist_and_roundtrip_input_name: [REQ-423/AC-2] Workflow mappings persist and roundtrip input_name across POST, GET, and PUT. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_req423_ac2_workflow_duplicate_preserves_mapping_input_names: [REQ-423/AC-2] Workflow copy/duplicate preserves mapping input_names. | AC-2 | PASS |
+| `frontend/src/components/__tests__/WorkflowModalMultiStage.test.tsx` | [REQ-423/AC-1] RescanModal restores and saves input_name in update payload from scanner match and existing mappings | AC-1 | PASS |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-423/AC-1] getMappings includes input_name from scanResult when building mappings | AC-1 | PASS |
+| `frontend/src/hooks/__tests__/useMasterMappingRows.test.ts` | [REQ-423/AC-1] getMappings heals existing mapping with empty input_name using scanResult | AC-1 | PASS |
+| `frontend/src/pages/DatasetStudioPage/components/__tests__/NodeRemapModal.test.tsx` | [REQ-423/AC-2] saves node remap preserving input_name and variant_id | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts` | [REQ-423/AC-3] generation action builds batch payload with noise_seed injected and no bogus seed key | AC-3 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts` | [REQ-423/AC-4] legacy workflow with empty input_name successfully injects seed into noise_seed during generation | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.seed.test.ts` | [REQ-423/AC-4] legacy workflow with empty input_name falls back via fallback_param_names during generation | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowManagement.seed.test.ts` | [REQ-423/AC-2] preserves input_name across mapping updates when master changes | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowAdaptiveStaging.test.tsx` | [REQ-423/AC-1] preserves input_name on node selection change and save | AC-1 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.config.test.ts` | [REQ-423/AC-2] input_nameが定義されている場合は設定JSONから保持する | AC-2 | PASS |
+| `frontend/src/pages/SettingsPage/components/__tests__/WorkflowConnectionSection.test.tsx` | [REQ-423/AC-2] saves workflow config and links while preserving input_name | AC-2 | PASS |
+| `frontend/src/utils/__tests__/generationRecord.test.ts` | [REQ-423/AC-3] records field key and value exactly matching noise_seed from injected graph | AC-3 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-423/AC-3] injects seed into noise_seed when input_name is "noise_seed" and prevents injecting into inputs.seed | AC-3 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-423/AC-4] falls back to node.inputs.noise_seed for legacy mapping (input_name: "") without creating inputs.seed | AC-4 | PASS |
+| `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-423/AC-4] falls back to value for legacy mapping (input_name: "") on PrimitiveNode (inputs: { value: 0 }) | AC-4 | PASS |
+
+### REQ-424 (計 14 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/__tests__/JobManagementModal.test.tsx` | [REQ-424/AC-1] immediately executes queued cancel on button click without pre-delay | AC-1 | PASS |
+| `frontend/src/components/__tests__/JobManagementModal.test.tsx` | [REQ-424/AC-2] displays undo notification banner with 3-second timer on cancel | AC-2 | PASS |
+| `frontend/src/components/__tests__/JobManagementModal.test.tsx` | [REQ-424/AC-3] restores cancelled job to queue when undo clicked within 3s | AC-3 | PASS |
+| `frontend/src/components/__tests__/JobManagementModal.test.tsx` | [REQ-424/AC-4] dismisses undo notification and finalizes cancel after 3000ms or on explicit close | AC-4 | PASS |
+| `frontend/src/components/__tests__/JobManagementModal.test.tsx` | [REQ-424/AC-5] preserves existing bulk cancel and running job abort behaviors without interference | AC-5 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-1] cancelQueuedJobWithUndo immediately calls generationApi.cancelJob without pre-delay | AC-1 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-1][RedTeam] cancel API failure handles error cleanly without orphan state | AC-1 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-2] cancelQueuedJobWithUndo arms undo snapshot and starts 3-second timer | AC-2 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-2][RedTeam] timer boundary check: undo succeeds at 2999ms but expires at 3000ms/3001ms | AC-2 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-2][RedTeam] successive cancellations overwrite undo slot safely clearing previous timer | AC-2 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-3] restoreCancelledJob re-queues original workflow and metadata to queue | AC-3 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-3][RedTeam] restore failure handles API error cleanly | AC-3 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-4] dismissQueuedCancelUndo clears undo state and timer leaving cancellation finalized | AC-4 | PASS |
+| `frontend/src/store/__tests__/slices/jobQueueSlice.test.ts` | [REQ-424/AC-5] clearPendingQueue and cancelAllJobs clear pending undo slot and execute without interference | AC-5 | PASS |
+
+### REQ-425 (計 29 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/governance/test_openapi_contract.py` | test_prompt_template_openapi_contracts_match_runtime: [REQ-425/AC-1][REQ-425/AC-3] PromptTemplate and WorkflowPromptTemplateConfig schemas and paths match runtime in openapi.json snapshot. | AC-1 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_prompt_structure_templates_anima_seed: [REQ-425/AC-2] Anima standard template is seeded with 19 character blocks and 17 global blocks in exact order. | AC-2 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_prompt_structure_template_crud: [REQ-425/AC-1] Custom prompt structure template creation, duplicate conflict, update, and deletion. | AC-1 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_workflow_prompt_template_config_lifecycle: [REQ-425/AC-3] Workflow prompt_template_config is persisted, updated, duplicated via copy, and restored via rollback. | AC-3 | PASS |
+| `backend/tests/integration/api/test_workflows.py` | test_workflow_without_prompt_template_config_backward_compatibility: [REQ-425/AC-9] Workflow created without prompt_template_config returns default empty config object. | AC-9 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_step_036_prompt_structure_templates_migration: [REQ-425/AC-1][REQ-425/AC-3] Step 036 creates prompt_structure_templates and adds prompt_template_config columns. | AC-1 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_step_036_migration_idempotent: [REQ-425/AC-1][REQ-425/AC-3] Step 036 is idempotent when re-run. | AC-1 | PASS |
+| `backend/tests/unit/test_schemas.py` | test_workflow_prompt_template_config_defaults_and_null_rejection: [REQ-425/AC-3][REQ-425/AC-9] WorkflowCreate and WorkflowRead default to empty config, WorkflowUpdate rejects null. | AC-3 | PASS |
+| `backend/tests/unit/test_schemas.py` | test_workflow_read_parses_prompt_template_config_json_and_empty: [REQ-425/AC-3][REQ-425/AC-9] WorkflowRead parses string JSON prompt_template_config. | AC-3 | PASS |
+| `backend/tests/unit/test_schemas.py` | test_prompt_template_schemas_validation_and_from_attributes: [REQ-425/AC-1] PromptTemplateCreate, Update and Read schema validation and ORM attributes parsing. | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx` | [REQ-425/AC-4] renders split editor for assigned roles and single TagChipEditor for unassigned roles | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx` | [REQ-425/AC-5] allows adding repeat instance and removing it without leaving empty gap | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/DesktopLayout.test.tsx` | [REQ-425/AC-9] renders all mappings as conventional inputs when prompt template is inactive | AC-9 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-425/AC-4] renders prompt template split editor and filters out assigned roles from mobile prompt tabs | AC-4 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` | [REQ-425/AC-6] independently evaluates output groups, joins enabled chips, skips empty/disabled blocks, and strips PROMPT_TEMPLATE_STATE_KEY | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` | [REQ-425/AC-9] preserves conventional generation when prompt template is not configured | AC-9 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useGenerateAction.test.ts` | [REQ-425/AC-10] skips nonexistent repeat index safely on 1 instance and joins correctly when 2nd instance is added | AC-10 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts` | [REQ-425/AC-7] preserves 2-instance repeat structure, block values, and disabled chips in preset state | AC-7 | PASS |
+| `frontend/src/pages/GeneratePage/hooks/__tests__/useWorkflowParams.test.ts` | [REQ-425/AC-8] restores valid split inputs from snapshot record and excludes disabled chips | AC-8 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-425/AC-1] creates, edits, duplicates, and deletes prompt structure templates | AC-1 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-425/AC-3] configures workflow prompt output groups, repeat filter, and saves to workflow | AC-3 | PASS |
+| `frontend/src/pages/SettingsPage/__tests__/SettingsPage.test.tsx` | [REQ-425/AC-3] exports and validates workflow config containing prompt_template_config | AC-3 | PASS |
+| `frontend/src/utils/__tests__/generationRecord.test.ts` | [REQ-425/AC-8] records only enabled chip values in prompt_template metadata and strips disabled chips | AC-8 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-9] isWorkflowTemplateActive correctly detects active/inactive template configurations | AC-9 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-5] scopes asset tag addition to a single repeat instance block and compacts remaining instances on removal | AC-5 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-6] evaluates overlapping output groups independently in instance order while skipping disabled chips and empty blocks | AC-6 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-7] preserves disabled chips and multi-instance structure in preset state JSON | AC-7 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-10] skips non-existent repeat instance index without error or extra commas and joins 1st and 2nd instances when added | AC-10 | PASS |
+| `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-10] RT-1: joins prompt blocks without leading, trailing, or double commas even with empty or all-disabled blocks | AC-10 | PASS |
+
+### PBI紐づけなし (汎用/ガバナンス) (計 2299 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -1544,7 +1740,7 @@
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_special_tokens_preservation | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_translate_batch_chunking_over_max_batch_size | - | PASS |
 | `backend/tests/integration/legacy/test_fugumt_service.py` | test_initialize_non_existent_directory | - | PASS |
-| ... | *(他 2209 件割愛)* | - | - |
+| ... | *(他 2199 件割愛)* | - | - |
 
 ### UNKNOWN (計 1 件)
 

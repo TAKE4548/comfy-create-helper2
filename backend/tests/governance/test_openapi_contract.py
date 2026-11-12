@@ -168,3 +168,39 @@ def test_req419_ac9_openapi_new_contracts_match_runtime() -> None:
     variant_props = runtime["components"]["schemas"]["MappingVariantRead"]["properties"]
     assert "rule_entries" in variant_props and "selector_patterns" in variant_props
     assert "rule_entries" not in runtime["components"]["schemas"]["MappingVariantRead"].get("required", [])
+
+
+def test_prompt_template_openapi_contracts_match_runtime() -> None:
+    """[REQ-425/AC-1][REQ-425/AC-3] PromptTemplate and WorkflowPromptTemplateConfig schemas and paths match runtime in openapi.json snapshot."""
+    runtime = app.openapi()
+    backend_snapshot = json.loads((Path(__file__).resolve().parents[2] / "openapi.json").read_text(encoding="utf-8"))
+
+    # Verify routes
+    routes = {
+        "/api/prompt-templates": {"get", "post"},
+        "/api/prompt-templates/{template_id}": {"put", "delete"},
+    }
+    for route, methods in routes.items():
+        assert set(runtime["paths"][route].keys()) == methods
+        assert backend_snapshot["paths"][route] == runtime["paths"][route]
+
+    # Verify schemas
+    schema_names = (
+        "PromptTemplateBlockSchema",
+        "PromptTemplateSectionSchema",
+        "PromptTemplateStructureSchema",
+        "PromptRepeatFilterSchema",
+        "PromptOutputGroupSchema",
+        "WorkflowPromptTemplateConfigSchema",
+        "PromptTemplateCreate",
+        "PromptTemplateUpdate",
+        "PromptTemplateRead",
+    )
+    for name in schema_names:
+        assert backend_snapshot["components"]["schemas"][name] == runtime["components"]["schemas"][name], name
+
+    # Verify Workflow schemas have prompt_template_config property
+    for wf_schema in ("WorkflowCreate", "WorkflowRead", "WorkflowUpdate"):
+        assert "prompt_template_config" in runtime["components"]["schemas"][wf_schema]["properties"]
+        assert backend_snapshot["components"]["schemas"][wf_schema] == runtime["components"]["schemas"][wf_schema]
+

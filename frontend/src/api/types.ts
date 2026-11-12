@@ -248,11 +248,76 @@ export interface WorkflowSummary {
 }
 
 // --- Workflow API Types ---
-export type Workflow = Omit<Schema<'WorkflowRead'>, 'mappings'> & {
+export type Workflow = Omit<Schema<'WorkflowRead'>, 'mappings' | 'prompt_template_config'> & {
   mappings: WorkflowMapping[]
+  prompt_template_config?: WorkflowPromptTemplateConfig | null
 }
 export type WorkflowCreate = Schema<'WorkflowCreate'>
 export type WorkflowUpdate = Schema<'WorkflowUpdate'>
+
+// ─── Prompt Template API Types ────────────────────────────────────
+
+export interface PromptTemplateBlock {
+  id: string
+  label: string
+  description?: string
+  default_value?: string
+}
+
+export interface PromptTemplateSection {
+  id: string
+  name: string
+  is_repeatable: boolean
+  blocks: PromptTemplateBlock[]
+}
+
+export interface PromptTemplateStructure {
+  sections: PromptTemplateSection[]
+}
+
+export interface PromptRepeatFilter {
+  mode: 'all' | 'index'
+  index?: number | null
+}
+
+export interface PromptOutputGroup {
+  id: string
+  name: string
+  target_role: string
+  block_ids: string[]
+  repeat_filter: PromptRepeatFilter
+}
+
+export interface WorkflowPromptTemplateConfig {
+  template_id?: number | null
+  template_snapshot?: PromptTemplateStructure | null
+  output_groups: PromptOutputGroup[]
+}
+
+export interface PromptTemplate {
+  id: number
+  name: string
+  description: string
+  structure: PromptTemplateStructure
+  is_builtin: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PromptTemplateCreate {
+  name: string
+  description?: string
+  structure: PromptTemplateStructure
+  sort_order?: number
+}
+
+export interface PromptTemplateUpdate {
+  name?: string
+  description?: string
+  structure?: PromptTemplateStructure
+  sort_order?: number
+}
 
 
 

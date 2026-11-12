@@ -1389,6 +1389,37 @@ def step_035_variant_id_references(conn: Connection, inspector: Inspector) -> No
     logger.info("Migrated: Step 035 variant_id references normalization applied successfully.")
 
 
+def step_036_prompt_structure_templates(conn: Connection, inspector: Inspector) -> None:
+    table_names = set(inspector.get_table_names())
+
+    if "prompt_structure_templates" not in table_names:
+        conn.execute(sa.text("""
+            CREATE TABLE prompt_structure_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                structure_json TEXT NOT NULL DEFAULT '{"sections":[]}',
+                is_builtin BOOLEAN NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        logger.info("Migrated: Created 'prompt_structure_templates' table.")
+
+    if "workflows" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("workflows")}
+        if "prompt_template_config" not in columns:
+            conn.execute(sa.text("ALTER TABLE workflows ADD COLUMN prompt_template_config TEXT NOT NULL DEFAULT '{}'"))
+            logger.info("Migrated: Added 'prompt_template_config' column to 'workflows' table.")
+
+    if "workflow_history" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("workflow_history")}
+        if "prompt_template_config" not in columns:
+            conn.execute(sa.text("ALTER TABLE workflow_history ADD COLUMN prompt_template_config TEXT NOT NULL DEFAULT '{}'"))
+            logger.info("Migrated: Added 'prompt_template_config' column to 'workflow_history' table.")
+
+
 ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("001", "workflows_columns", step_001_workflows_columns),
     MigrationStep("002", "snapshot_loras_and_tag_sets_roles", step_002_snapshot_loras_and_tag_sets_roles),
@@ -1413,6 +1444,7 @@ ALL_MIGRATION_STEPS: List[MigrationStep] = [
     MigrationStep("033", "binding_rules_and_node_selectors", step_033_binding_rules_and_node_selectors),
     MigrationStep("034", "mapping_variants_phase5_constraints", step_034_mapping_variants_phase5_constraints),
     MigrationStep("035", "variant_id_references", step_035_variant_id_references),
+    MigrationStep("036", "prompt_structure_templates", step_036_prompt_structure_templates),
 ]
 
 

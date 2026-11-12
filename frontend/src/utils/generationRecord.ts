@@ -1,6 +1,13 @@
 import type { Workflow, WorkflowMapping } from '../api/types'
 import type { AppliedAsset } from '../store/types'
 import { resolveSeedInputKey } from './seedInputResolver'
+import {
+  PROMPT_TEMPLATE_STATE_KEY,
+  isWorkflowTemplateActive,
+  parsePresetState,
+  buildSanitizedTemplateRecord,
+  type SanitizedPromptTemplateRecord,
+} from './promptTemplateEngine'
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 export interface CapturedField {
@@ -18,6 +25,7 @@ export interface GenerationRecord {
   version: 1; workflow_id: number; workflow_name: string; completeness: 'complete' | 'partial' | 'unknown'
   fields: CapturedField[]; parameters: CapturedField[]; assets: CapturedAsset[]; queued_at: string | null
   completed_at?: string | null; prompt_id?: string
+  prompt_template?: SanitizedPromptTemplateRecord
 }
 export type CaptureAssetInput = AppliedAsset & { triggerSetId?: number | null; triggerSetName?: string | null }
 export const PROMPT_RECORD_KEY = '__prompt_surgeon_metadata_v1'
@@ -75,14 +83,20 @@ function capture(mapping: WorkflowMapping, injected: Record<string, unknown>, su
   }
 }
 
-export function buildGenerationRecord(workflow: Workflow, injectedGraph: Record<string, unknown>, submittedGraph: Record<string, unknown>, assets: Record<string, CaptureAssetInput[]>): GenerationRecord {
+export function buildGenerationRecord(
+  workflow: Workflow,
+  injectedGraph: Record<string, unknown>,
+  submittedGraph: Record<string, unknown>,
+  assets: Record<string, CaptureAssetInput[]>,
+  paramValues?: Record<string, unknown>
+): GenerationRecord {
   if (workflow.mappings.some(m => m.role === PROMPT_RECORD_KEY || m.role === ASSOCIATIONS_KEY)) {
     throw new Error('記録用の予約キーとプロンプト欄のroleが重複しています')
   }
   const captured = workflow.mappings.map(m => capture(m, injectedGraph, submittedGraph))
   const fields = captured.filter(f => f.input_type === 'textarea')
   const validIds = new Set(captured.map(f => f.mapping_id)).size === captured.length && captured.every(f => Number.isInteger(f.mapping_id) && !!f.node_id)
-  return {
+  const record: GenerationRecord = {
     version: 1, workflow_id: workflow.id, workflow_name: workflow.name, queued_at: null,
     completeness: validIds && fields.every(f => f.recorded && typeof f.value === 'string') ? 'complete' : 'partial',
     fields, parameters: captured.filter(f => f.input_type !== 'textarea'),
@@ -95,4 +109,19 @@ export function buildGenerationRecord(workflow: Workflow, injectedGraph: Record<
       }
     })),
   }
+
+  const templateConfig = workflow.prompt_template_config
+  const rawState = paramValues?.[PROMPT_TEMPLATE_STATE_KEY]
+  if (
+    isWorkflowTemplateActive(templateConfig) &&
+    typeof rawState === 'string' &&
+    rawState.trim().length > 0 &&
+    templateConfig?.template_snapshot?.sections
+  ) {
+    const structure = templateConfig.template_snapshot
+    const parsedState = parsePresetState(rawState, structure)
+    record.prompt_template = buildSanitizedTemplateRecord(structure, parsedState, templateConfig.template_id)
+  }
+
+  return record
 }

@@ -19,6 +19,15 @@ from app.schemas import (
     LoraRead,
     TagSetCreate,
     TagSetRead,
+    PromptTemplateBlockSchema,
+    PromptTemplateSectionSchema,
+    PromptTemplateStructureSchema,
+    PromptRepeatFilterSchema,
+    PromptOutputGroupSchema,
+    WorkflowPromptTemplateConfigSchema,
+    PromptTemplateCreate,
+    PromptTemplateUpdate,
+    PromptTemplateRead,
 )
 
 
@@ -312,3 +321,93 @@ def test_tag_set_read_from_attributes() -> None:
     assert obj.tags == ["tag_a", "tag_b"]
     assert obj.snapshot_paths == ["/snap1.png"]
     assert obj.created_at == now
+
+
+def test_workflow_prompt_template_config_defaults_and_null_rejection() -> None:
+    """[REQ-425/AC-3][REQ-425/AC-9] WorkflowCreate and WorkflowRead default to empty config, WorkflowUpdate rejects null."""
+    create = WorkflowCreate(name="wf", json_body={})
+    assert create.prompt_template_config.template_id is None
+    assert create.prompt_template_config.output_groups == []
+
+    # Update omission is preserved
+    assert "prompt_template_config" not in WorkflowUpdate().model_fields_set
+    update = WorkflowUpdate(prompt_template_config=WorkflowPromptTemplateConfigSchema(template_id=10))
+    assert update.prompt_template_config is not None
+    assert update.prompt_template_config.template_id == 10
+
+    # Explicit null is rejected
+    with pytest.raises(ValidationError, match="prompt_template_config cannot be null"):
+        WorkflowUpdate.model_validate({"prompt_template_config": None})
+
+
+def test_workflow_read_parses_prompt_template_config_json_and_empty() -> None:
+    """[REQ-425/AC-3][REQ-425/AC-9] WorkflowRead parses string JSON prompt_template_config."""
+    now = datetime.now()
+    read = WorkflowRead.model_validate(
+        {
+            "id": 1,
+            "name": "wf",
+            "json_body": {},
+            "created_at": now,
+            "prompt_template_config": '{"template_id": 5, "output_groups": [{"id": "g1", "name": "Main", "target_role": "positive", "block_ids": ["b1"], "repeat_filter": {"mode": "all"}}]}',
+        }
+    )
+    assert read.prompt_template_config.template_id == 5
+    assert len(read.prompt_template_config.output_groups) == 1
+    assert read.prompt_template_config.output_groups[0].id == "g1"
+    assert read.prompt_template_config.output_groups[0].repeat_filter.mode == "all"
+
+    # Empty string or empty object backwards compatibility (AC-9)
+    read_empty = WorkflowRead.model_validate(
+        {
+            "id": 2,
+            "name": "wf_empty",
+            "json_body": {},
+            "created_at": now,
+            "prompt_template_config": "{}",
+        }
+    )
+    assert read_empty.prompt_template_config.template_id is None
+    assert read_empty.prompt_template_config.output_groups == []
+
+
+def test_prompt_template_schemas_validation_and_from_attributes() -> None:
+    """[REQ-425/AC-1] PromptTemplateCreate, Update and Read schema validation and ORM attributes parsing."""
+    create = PromptTemplateCreate(
+        name="Custom Template",
+        description="test desc",
+        structure=PromptTemplateStructureSchema(
+            sections=[
+                PromptTemplateSectionSchema(
+                    id="sec1",
+                    name="Section 1",
+                    is_repeatable=True,
+                    blocks=[
+                        PromptTemplateBlockSchema(id="b1", label="Block 1", default_value="val1")
+                    ],
+                )
+            ]
+        ),
+    )
+    assert create.name == "Custom Template"
+    assert len(create.structure.sections) == 1
+    assert create.structure.sections[0].is_repeatable is True
+
+    # Test PromptTemplateRead from mock ORM instance
+    now = datetime.now()
+    mock_orm = SimpleNamespace(
+        id=42,
+        name="Custom Template",
+        description="test desc",
+        structure_json='{"sections": [{"id": "sec1", "name": "Section 1", "is_repeatable": true, "blocks": [{"id": "b1", "label": "Block 1"}]}]}',
+        is_builtin=False,
+        sort_order=5,
+        created_at=now,
+        updated_at=now,
+    )
+    read = PromptTemplateRead.model_validate(mock_orm)
+    assert read.id == 42
+    assert read.name == "Custom Template"
+    assert len(read.structure.sections) == 1
+    assert read.structure.sections[0].blocks[0].id == "b1"
+

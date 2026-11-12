@@ -19,6 +19,25 @@ def _decode_mapping_slot_states(value: str | dict[str, bool] | None) -> dict[str
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _decode_prompt_template_config(value: str | dict | None) -> schemas.WorkflowPromptTemplateConfigSchema:
+    if not value:
+        return schemas.WorkflowPromptTemplateConfigSchema()
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return schemas.WorkflowPromptTemplateConfigSchema.model_validate(parsed)
+        except Exception:
+            return schemas.WorkflowPromptTemplateConfigSchema()
+    if isinstance(value, dict):
+        try:
+            return schemas.WorkflowPromptTemplateConfigSchema.model_validate(value)
+        except Exception:
+            return schemas.WorkflowPromptTemplateConfigSchema()
+    if isinstance(value, schemas.WorkflowPromptTemplateConfigSchema):
+        return value
+    return schemas.WorkflowPromptTemplateConfigSchema()
+
+
 def _load_valid_mapping_refs(db: Session) -> tuple[set[int], set[tuple[int, int]]]:
     valid_masters = {row[0] for row in db.query(models.MappingMaster.id).all()}
     valid_variants = {
@@ -59,6 +78,7 @@ def copy_workflow(workflow_id: int, payload: schemas.WorkflowCopyRequest, db: Se
         json_body=src.json_body,
         default_applied_assets=src.default_applied_assets,
         mapping_slot_states=src.mapping_slot_states or "{}",
+        prompt_template_config=src.prompt_template_config or "{}",
     )
     db.add(new_wf)
     db.flush()
@@ -134,6 +154,7 @@ def get_workflow(workflow_id: int, db: Session = Depends(get_db)):
         default_applied_assets=wf.default_applied_assets,
         target_base_model_id=wf.target_base_model_id,
         mapping_slot_states=_decode_mapping_slot_states(wf.mapping_slot_states),
+        prompt_template_config=_decode_prompt_template_config(wf.prompt_template_config),
         mappings=[
             schemas.WorkflowMappingRead(
                 id=m.id,
@@ -182,6 +203,7 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
             json_body=wf.json_body,
             mappings=json.dumps(current_mappings),
             mapping_slot_states=wf.mapping_slot_states or "{}",
+            prompt_template_config=wf.prompt_template_config or "{}",
         )
         db.add(history)
 
@@ -200,6 +222,12 @@ def update_workflow(workflow_id: int, payload: schemas.WorkflowUpdate, db: Sessi
 
     if "mapping_slot_states" in payload.model_fields_set:
         wf.mapping_slot_states = json.dumps(payload.mapping_slot_states)
+
+    if "prompt_template_config" in payload.model_fields_set and payload.prompt_template_config is not None:
+        wf.prompt_template_config = json.dumps(
+            payload.prompt_template_config.model_dump(mode="json"),
+            ensure_ascii=False,
+        )
 
     if payload.mappings is not None:
         db.query(models.WorkflowMapping).filter(
@@ -285,6 +313,7 @@ def rollback_workflow(workflow_id: int, db: Session = Depends(get_db)):
                 input_name=m.get("input_name", ""),
             ))
     wf.mapping_slot_states = history.mapping_slot_states or "{}"
+    wf.prompt_template_config = history.prompt_template_config or "{}"
     db.delete(history)
     db.commit()
     return schemas.WorkflowRollbackResponse(
@@ -308,11 +337,19 @@ def create_workflow(payload: schemas.WorkflowCreate, db: Session = Depends(get_d
         mappings = db.query(models.CheckpointMapping).all()
         target_base_model_id = estimate_base_model_from_checkpoints(ckpt_names, mappings)
 
+    prompt_template_config = "{}"
+    if getattr(payload, "prompt_template_config", None) is not None:
+        prompt_template_config = json.dumps(
+            payload.prompt_template_config.model_dump(mode="json"),
+            ensure_ascii=False,
+        )
+
     wf = models.Workflow(
         name=payload.name,
         json_body=json.dumps(payload.json_body),
         target_base_model_id=target_base_model_id,
         mapping_slot_states=json.dumps(payload.mapping_slot_states or {}),
+        prompt_template_config=prompt_template_config,
     )
     db.add(wf)
     db.flush()

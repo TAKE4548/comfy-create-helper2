@@ -1850,4 +1850,226 @@ describe('useGenerateAction', () => {
       expect(stepsOf(0)).toEqual([50, 30, 40, 10]);
     });
   });
+
+  describe('REQ-425 Prompt Template Integration in useGenerateAction', () => {
+    const templateWorkflow: Workflow = {
+      id: 425,
+      name: 'Template WF',
+      created_at: '',
+      json_body: {
+        '10': { inputs: { text: '' } },
+        '20': { inputs: { text: '' } },
+        '30': { inputs: { text: '' } },
+      },
+      mappings: [
+        { id: 10, master_id: 10, node_id: '10', variant_id: 1, role: 'Node_A', param_name: 'text', input_type: 'textarea', display_name: 'Node A' },
+        { id: 20, master_id: 20, node_id: '20', variant_id: 1, role: 'Node_B', param_name: 'text', input_type: 'textarea', display_name: 'Node B' },
+        { id: 30, master_id: 30, node_id: '30', variant_id: 1, role: 'Node_C', param_name: 'text', input_type: 'textarea', display_name: 'Node C' },
+      ],
+      prompt_template_config: {
+        template_id: 1,
+        output_groups: [
+          {
+            id: 'grp-a',
+            name: 'All Blocks',
+            target_role: 'Node_A',
+            block_ids: ['blk-char-name', 'blk-expression', 'blk-clothes', 'blk-lighting'],
+            repeat_filter: { mode: 'all' },
+          },
+          {
+            id: 'grp-b',
+            name: 'Char Name & Expression',
+            target_role: 'Node_B',
+            block_ids: ['blk-char-name', 'blk-expression'],
+            repeat_filter: { mode: 'all' },
+          },
+          {
+            id: 'grp-c',
+            name: 'Char 2 Only',
+            target_role: 'Node_C',
+            block_ids: ['blk-char-name', 'blk-clothes'],
+            repeat_filter: { mode: 'index', index: 2 },
+          },
+        ],
+        template_snapshot: {
+          sections: [
+            {
+              id: 'sec-char',
+              name: 'Character',
+              is_repeatable: true,
+              blocks: [
+                { id: 'blk-char-name', label: 'Character Name', default_value: '' },
+                { id: 'blk-expression', label: 'Expression', default_value: '' },
+                { id: 'blk-clothes', label: 'Upper Clothes', default_value: '' },
+              ],
+            },
+            {
+              id: 'sec-overall',
+              name: 'Overall',
+              is_repeatable: false,
+              blocks: [
+                { id: 'blk-lighting', label: 'Lighting', default_value: '' },
+              ],
+            },
+          ],
+        },
+      },
+    }
+
+    it('[REQ-425/AC-6] independently evaluates output groups, joins enabled chips, skips empty/disabled blocks, and strips PROMPT_TEMPLATE_STATE_KEY', async () => {
+      const presetState = {
+        version: 1,
+        templateId: 1,
+        sections: {
+          'sec-char': {
+            instances: [
+              {
+                instanceId: 'char-1',
+                blocks: {
+                  'blk-char-name': [{ id: '1', text: 'alice', enabled: true }],
+                  'blk-expression': [{ id: '2', text: 'smile', enabled: true }],
+                  'blk-clothes': [{ id: '3', text: 'hat', enabled: false }],
+                },
+              },
+              {
+                instanceId: 'char-2',
+                blocks: {
+                  'blk-char-name': [{ id: '4', text: 'bob', enabled: true }],
+                  'blk-expression': [],
+                  'blk-clothes': [{ id: '5', text: 'coat', enabled: true }],
+                },
+              },
+            ],
+          },
+          'sec-overall': {
+            instances: [
+              {
+                instanceId: 'overall-1',
+                blocks: {
+                  'blk-lighting': [{ id: '6', text: 'rim light', enabled: true }],
+                },
+              },
+            ],
+          },
+        },
+      }
+
+      mockStore.paramValues = {
+        __prompt_template_state_v1: JSON.stringify(presetState),
+      }
+
+      await useGenerateAction(templateWorkflow).handleGenerate()
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1)
+      const graph = mockStore.queuePrompt.mock.calls[0][0]
+      const submittedParams = mockStore.queuePrompt.mock.calls[0][1].paramValues
+
+      // Node_A should be: alice, smile, bob, coat, rim light
+      expect(graph['10'].inputs.text).toBe('alice, smile, bob, coat, rim light')
+      // Node_B should be: alice, smile, bob
+      expect(graph['20'].inputs.text).toBe('alice, smile, bob')
+
+      // PROMPT_TEMPLATE_STATE_KEY must NOT be in submitted paramValues
+      expect(submittedParams.__prompt_template_state_v1).toBeUndefined()
+
+      // PROMPT_RECORD_KEY must contain sanitized prompt_template record
+      const record = JSON.parse(submittedParams[PROMPT_RECORD_KEY])
+      expect(record.prompt_template).toBeDefined()
+      expect(record.prompt_template.sections[0].instances[0].blocks.find((b: any) => b.block_id === 'blk-clothes').value).toBe('')
+      expect(record.prompt_template.sections[0].instances[1].blocks.find((b: any) => b.block_id === 'blk-clothes').value).toBe('coat')
+    })
+
+    it('[REQ-425/AC-9] preserves conventional generation when prompt template is not configured', async () => {
+      const conventionalWorkflow: Workflow = {
+        id: 426,
+        name: 'Conventional WF',
+        created_at: '',
+        json_body: {
+          '10': { inputs: { text: '' } },
+        },
+        mappings: [
+          { id: 10, master_id: 10, node_id: '10', variant_id: 1, role: 'Positive', param_name: 'text', input_type: 'textarea', display_name: 'Positive' },
+        ],
+      }
+
+      mockStore.paramValues = {
+        Positive: 'masterpiece, high quality',
+      }
+
+      await useGenerateAction(conventionalWorkflow).handleGenerate()
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1)
+      const graph = mockStore.queuePrompt.mock.calls[0][0]
+      expect(graph['10'].inputs.text).toBe('masterpiece, high quality')
+    })
+
+    it('[REQ-425/AC-10] skips nonexistent repeat index safely on 1 instance and joins correctly when 2nd instance is added', async () => {
+      const singleCharState = {
+        version: 1,
+        templateId: 1,
+        sections: {
+          'sec-char': {
+            instances: [
+              {
+                instanceId: 'char-1',
+                blocks: {
+                  'blk-char-name': [{ id: '1', text: 'alice', enabled: true }],
+                  'blk-clothes': [{ id: '2', text: 'dress', enabled: true }],
+                },
+              },
+            ],
+          },
+          'sec-overall': {
+            instances: [{ instanceId: 'overall-1', blocks: {} }],
+          },
+        },
+      }
+
+      mockStore.paramValues = {
+        __prompt_template_state_v1: JSON.stringify(singleCharState),
+      }
+
+      await useGenerateAction(templateWorkflow).handleGenerate()
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(1)
+      const graph1 = mockStore.queuePrompt.mock.calls[0][0]
+      // Node_A (all) -> alice, dress
+      expect(graph1['10'].inputs.text).toBe('alice, dress')
+      // Node_C (index 2) -> empty string (safely skipped)
+      expect(graph1['30'].inputs.text).toBe('')
+
+      // Now add 2nd instance (char 2: bob, suit)
+      const twoCharState = {
+        ...singleCharState,
+        sections: {
+          ...singleCharState.sections,
+          'sec-char': {
+            instances: [
+              ...singleCharState.sections['sec-char'].instances,
+              {
+                instanceId: 'char-2',
+                blocks: {
+                  'blk-char-name': [{ id: '3', text: 'bob', enabled: true }],
+                  'blk-clothes': [{ id: '4', text: 'suit', enabled: true }],
+                },
+              },
+            ],
+          },
+        },
+      }
+
+      mockStore.paramValues = {
+        __prompt_template_state_v1: JSON.stringify(twoCharState),
+      }
+
+      await useGenerateAction(templateWorkflow).handleGenerate()
+
+      expect(mockStore.queuePrompt).toHaveBeenCalledTimes(2)
+      const graph2 = mockStore.queuePrompt.mock.calls[1][0]
+      // Node_A (all) -> alice, dress, bob, suit
+      expect(graph2['10'].inputs.text).toBe('alice, dress, bob, suit')
+      // Node_C (index 2) -> bob, suit
+      expect(graph2['30'].inputs.text).toBe('bob, suit')
+    })
+  });
 });

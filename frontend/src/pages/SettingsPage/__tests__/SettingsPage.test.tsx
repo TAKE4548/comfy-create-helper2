@@ -6,7 +6,8 @@ import { SettingsPage } from '../../SettingsPage'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { VramGuardSection } from '../components/VramGuardSection'
-import { WorkflowConnectionSection } from '../components/WorkflowConnectionSection'
+import { WorkflowConnectionSection, validateConfig } from '../components/WorkflowConnectionSection'
+import { PromptTemplateManagerSection } from '../components/PromptTemplateManagerSection'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   llmPromptsApi,
@@ -20,6 +21,7 @@ import {
   speechTonePresetsApi,
   translateApi,
   baseModelsApi,
+  promptTemplatesApi,
 } from '../../../api/client'
 import { stageMastersApi } from '../../../api/domains/stageMasters'
 import type { SpeechTonePreset, LlmPrompt } from '../../../api/types'
@@ -104,6 +106,12 @@ vi.mock('../../../api/client', () => ({
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn(),
     reorder: vi.fn().mockResolvedValue([]),
+  },
+  promptTemplatesApi: {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockResolvedValue({}),
+    delete: vi.fn().mockResolvedValue(undefined),
   },
   snapshotsApi: {
     list: vi.fn().mockResolvedValue([]),
@@ -848,6 +856,203 @@ describe('SettingsPage Integration', () => {
       fireEvent.click(screen.getAllByRole('button', { name: '対応付け・設定' })[1])
       await waitFor(() => expect(vi.mocked(workflowsApi.get).mock.calls.filter(([id]) => id === 8)).toHaveLength(2))
       await waitFor(() => expect(screen.getByRole('combobox', { name: 'ベースモデル関連' })).toHaveValue('1'))
+    })
+  })
+
+  describe('Prompt Template & Output Group Management (REQ-425)', () => {
+    let queryClient: QueryClient
+
+    beforeEach(() => {
+      queryClient = createTestQueryClient()
+    })
+
+    it('[REQ-425/AC-1] creates, edits, duplicates, and deletes prompt structure templates', async () => {
+      const mockTemplates = [
+        {
+          id: 1,
+          name: 'Anima 標準テンプレート',
+          description: '標準構造',
+          is_builtin: true,
+          sort_order: 1,
+          created_at: '2026-01-01',
+          updated_at: '2026-01-01',
+          structure: {
+            sections: [
+              {
+                id: 'sec_style',
+                name: '画質・スタイル',
+                is_repeatable: false,
+                blocks: [
+                  { id: 'blk_quality', label: '画質' },
+                  { id: 'blk_style', label: 'アートスタイル' },
+                ],
+              },
+            ],
+          },
+        },
+      ]
+      vi.mocked(promptTemplatesApi.list).mockResolvedValue(mockTemplates as any)
+      vi.mocked(promptTemplatesApi.create).mockResolvedValue({ id: 2, name: '新規テンプレート' } as any)
+      vi.mocked(promptTemplatesApi.update).mockResolvedValue({ id: 1, name: '更新テンプレート' } as any)
+      vi.mocked(promptTemplatesApi.delete).mockResolvedValue(undefined)
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <PromptTemplateManagerSection />
+        </QueryClientProvider>
+      )
+
+      // AC-2: Anima 標準テンプレート displays with 組込 badge
+      expect(await screen.findByText('Anima 標準テンプレート')).toBeTruthy()
+      expect(screen.getByText('組込')).toBeTruthy()
+      expect(screen.getByText(/1 セクション \/ 2 ブロック/)).toBeTruthy()
+
+      // AC-1: Create template
+      fireEvent.click(screen.getByRole('button', { name: '新規テンプレート作成' }))
+      expect(await screen.findByRole('dialog', { name: 'プロンプト構造テンプレート編集' })).toBeTruthy()
+
+      const nameInput = screen.getByRole('textbox', { name: 'テンプレート名' })
+      fireEvent.change(nameInput, { target: { value: 'カスタムテンプレート' } })
+      fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+      await waitFor(() => expect(promptTemplatesApi.create).toHaveBeenCalledTimes(1))
+      expect(vi.mocked(promptTemplatesApi.create).mock.calls[0][0].name).toBe('カスタムテンプレート')
+
+      // AC-1: Duplicate template
+      fireEvent.click(screen.getByRole('button', { name: 'テンプレート複製 Anima 標準テンプレート' }))
+      await waitFor(() => expect(promptTemplatesApi.create).toHaveBeenCalledTimes(2))
+      expect(vi.mocked(promptTemplatesApi.create).mock.calls[1][0].name).toBe('Anima 標準テンプレート (コピー)')
+
+      // AC-1: Delete template
+      window.confirm = vi.fn(() => true)
+      fireEvent.click(screen.getByRole('button', { name: 'テンプレート削除 Anima 標準テンプレート' }))
+      expect(window.confirm).toHaveBeenCalled()
+      await waitFor(() => expect(promptTemplatesApi.delete).toHaveBeenCalledWith(1))
+    })
+
+    it('[REQ-425/AC-3] configures workflow prompt output groups, repeat filter, and saves to workflow', async () => {
+      const mockTemplates = [
+        {
+          id: 10,
+          name: 'Anima 標準テンプレート',
+          description: '標準構造',
+          is_builtin: true,
+          sort_order: 1,
+          created_at: '2026-01-01',
+          updated_at: '2026-01-01',
+          structure: {
+            sections: [
+              {
+                id: 'sec_char',
+                name: 'キャラクター',
+                is_repeatable: true,
+                blocks: [
+                  { id: 'blk_name', label: 'キャラ名' },
+                  { id: 'blk_costume', label: '衣装' },
+                ],
+              },
+            ],
+          },
+        },
+      ]
+      vi.mocked(promptTemplatesApi.list).mockResolvedValue(mockTemplates as any)
+
+      const testWorkflow = {
+        id: 77,
+        name: 'Prompt Template Workflow',
+        json_body: { nodes: { '10': { class_type: 'CLIPTextEncode' }, '20': { class_type: 'CLIPTextEncode' } } },
+        mappings: [
+          { id: 1, master_id: 1, node_id: '10', role: 'positive', display_name: 'メインプロンプト', input_type: 'textarea' },
+          { id: 2, master_id: 2, node_id: '20', role: 'negative', display_name: 'ネガティブプロンプト', input_type: 'textarea' },
+        ],
+        created_at: '2026-01-01',
+        prompt_template_config: {
+          template_id: null,
+          template_snapshot: null,
+          output_groups: [],
+        },
+      }
+
+      vi.mocked(workflowsApi.list).mockResolvedValue([{ id: 77, name: 'Prompt Template Workflow', created_at: '2026-01-01' } as any])
+      vi.mocked(workflowsApi.get).mockResolvedValue(testWorkflow as any)
+      vi.mocked(workflowsApi.update).mockResolvedValue(testWorkflow as any)
+      vi.mocked(mappingMastersApi.list).mockResolvedValue([
+        { id: 1, role: 'positive', display_name: 'メインプロンプト', input_type: 'textarea' },
+        { id: 2, role: 'negative', display_name: 'ネガティブプロンプト', input_type: 'textarea' },
+      ] as any)
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <WorkflowConnectionSection
+            group="workflows"
+            isExpandedLongPress={false}
+            onToggleLongPress={() => {}}
+            isExpandedWorkflows={true}
+            onToggleWorkflows={() => {}}
+            isExpandedConnections={true}
+            onToggleConnections={() => {}}
+          />
+        </QueryClientProvider>
+      )
+
+      fireEvent.click(await screen.findByRole('button', { name: '対応付け・設定' }))
+      await screen.findByRole('heading', { name: 'Prompt Template Workflow の対応付け' })
+
+      // 1. Select template
+      const templateSelect = await screen.findByRole('combobox', { name: '適用プロンプト構造テンプレート' })
+      expect(templateSelect).toHaveValue('')
+      fireEvent.change(templateSelect, { target: { value: '10' } })
+
+      // 2. Output group editor is displayed
+      const groupNameInput = await screen.findByRole('textbox', { name: '出力グループ名' })
+      expect(groupNameInput).toHaveValue('メインプロンプト')
+
+      // Edit group name
+      fireEvent.change(groupNameInput, { target: { value: '全体プロンプト' } })
+
+      // Set repeat filter to index mode
+      const repeatSelect = screen.getByRole('combobox', { name: 'Repeat対象モード' })
+      fireEvent.change(repeatSelect, { target: { value: 'index' } })
+      const repeatIndexInput = screen.getByRole('spinbutton', { name: 'Repeatインスタンス番号' })
+      fireEvent.change(repeatIndexInput, { target: { value: '2' } })
+
+      // 3. AC-4: Unassigned negative prompt displayed as badge
+      expect(screen.getByText('出力グループ未割り当てプロンプトノード (AC-4)')).toBeTruthy()
+      expect(screen.getByText('ネガティブプロンプト')).toBeTruthy()
+
+      // 4. Save workflow config
+      fireEvent.click(screen.getByRole('button', { name: '対応付けを保存' }))
+      await waitFor(() => expect(workflowsApi.update).toHaveBeenCalledTimes(1))
+
+      const updatePayload = vi.mocked(workflowsApi.update).mock.calls[0][1]
+      expect(updatePayload.prompt_template_config).toBeDefined()
+      expect(updatePayload.prompt_template_config?.template_id).toBe(10)
+      expect(updatePayload.prompt_template_config?.output_groups[0].name).toBe('全体プロンプト')
+      expect(updatePayload.prompt_template_config?.output_groups[0].repeat_filter).toEqual({
+        mode: 'index',
+        index: 2,
+      })
+    })
+
+    it('[REQ-425/AC-3] exports and validates workflow config containing prompt_template_config', () => {
+      const configWithTemplate = {
+        format: 'prompt-surgeon-workflow-config',
+        version: 1,
+        name: 'WF',
+        json_body: { nodes: { '1': {} } },
+        mappings: [{ master_id: 1, node_id: '1' }],
+        target_base_model_id: null,
+        default_applied_assets: null,
+        prompt_template_config: {
+          template_id: 5,
+          output_groups: [
+            { id: 'g1', name: 'Main', target_role: 'pos', block_ids: ['b1'], repeat_filter: { mode: 'all' } },
+          ],
+        },
+      }
+      const validated = validateConfig(configWithTemplate, [1], [])
+      expect(validated.prompt_template_config?.template_id).toBe(5)
+      expect(validated.prompt_template_config?.output_groups).toHaveLength(1)
     })
   })
 })

@@ -11,6 +11,11 @@ import type { Workflow } from '../../../api/types'
 import { PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
 import { SEED_MODES_KEY, setSeedModeForMapping } from '../../../utils/seedModel'
 import {
+  PROMPT_TEMPLATE_STATE_KEY,
+  restorePresetStateFromSanitizedRecord,
+  serializePresetState,
+} from '../../../utils/promptTemplateEngine'
+import {
   extractGeneralParam,
   extractLoraStackParams,
   getInitialParams,
@@ -90,6 +95,19 @@ export function useWorkflowParams(workflow: Workflow | undefined, selectedWorkfl
     // seed controls restore those values as fixed, independently of metadata
     // that may have been present in the snapshot's source workflow.
     const restoredParams = healLegacyParamKeys(newParams)
+    if (snapshotParams[PROMPT_RECORD_KEY]) {
+      try {
+        const parsedRecord = typeof snapshotParams[PROMPT_RECORD_KEY] === 'string'
+          ? JSON.parse(snapshotParams[PROMPT_RECORD_KEY])
+          : snapshotParams[PROMPT_RECORD_KEY]
+        if (parsedRecord && parsedRecord.prompt_template) {
+          const restoredState = restorePresetStateFromSanitizedRecord(parsedRecord.prompt_template)
+          restoredParams[PROMPT_TEMPLATE_STATE_KEY] = serializePresetState(restoredState)
+        }
+      } catch (e) {
+        console.error('Failed to restore prompt template from snapshot record:', e)
+      }
+    }
     if (workflow) {
       for (const mapping of workflow.mappings.filter((item) => item.input_type === 'seed')) {
         if (!mapping.role) continue

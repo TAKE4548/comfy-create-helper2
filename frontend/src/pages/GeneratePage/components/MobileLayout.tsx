@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import type { WorkflowMapping } from '../../../api/types'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import { useAppLifecycleSync } from '../../../hooks/useAppLifecycleSync'
 import {
@@ -15,6 +16,8 @@ import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
+import { PromptTemplateSplitEditor } from './PromptTemplateSplitEditor'
+import { isWorkflowTemplateActive } from '../../../utils/promptTemplateEngine'
 import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { MobileImageSheet } from './MobileImageSheet'
@@ -385,8 +388,27 @@ export const MobileLayout = ({
     </div>
   )
 
+  const isTemplateActive = isWorkflowTemplateActive(workflow?.prompt_template_config)
+  const assignedTargetRoles = useMemo(() => {
+    if (!isTemplateActive || !workflow?.prompt_template_config?.output_groups) return new Set<string>()
+    return new Set(workflow.prompt_template_config.output_groups.map((g) => g.target_role).filter(Boolean))
+  }, [isTemplateActive, workflow?.prompt_template_config?.output_groups])
+
+  const displayPromptMappings: WorkflowMapping[] = useMemo(() => {
+    if (!isTemplateActive) return (textMappings as WorkflowMapping[]) || []
+    return ((textMappings as WorkflowMapping[]) || []).filter((m: WorkflowMapping) => !m.role || !assignedTargetRoles.has(m.role))
+  }, [isTemplateActive, textMappings, assignedTargetRoles])
+
+  useEffect(() => {
+    if (isTemplateActive && displayPromptMappings.length > 0) {
+      if (!displayPromptMappings.some((m: WorkflowMapping) => m.role === activePromptTab)) {
+        setActivePromptTab(displayPromptMappings[0]?.role || '')
+      }
+    }
+  }, [isTemplateActive, displayPromptMappings, activePromptTab, setActivePromptTab])
+
   const activeSet = sets.find((s) => String(s.id) === String(activeSetId))
-  const activePromptTabMapping = textMappings.find((m) => m.role === activePromptTab)
+  const activePromptTabMapping = displayPromptMappings.find((m: WorkflowMapping) => m.role === activePromptTab)
   const isCollapsed = activePromptTabMapping ? getIsRoleCollapsed(activePromptTabMapping.role!) : true
   const isNegative = activePromptTabMapping?.role?.toLowerCase().includes('negative')
 
@@ -692,11 +714,29 @@ export const MobileLayout = ({
       )}
       <PresetTabCloseMenu triggerId={menu?.id ?? ''} triggerName={menu?.name ?? ''} anchor={menu?.anchor ?? null} counts={menuCounts} pending={isPresetTabsClosing} isOpen={!!menu} onClose={() => setMenu(null)} onAction={closeTabsFromMenu} restoreFocus={menuRestore} ignoreOpenReleaseClick={menu?.ignoreReleaseClick ?? false} />
 
+      {/* Prompt Template Split Editor (Mobile) */}
+      {isTemplateActive && workflow?.prompt_template_config?.template_snapshot && (
+        <div className="p-3 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
+          <PromptTemplateSplitEditor
+            config={workflow.prompt_template_config}
+            structure={workflow.prompt_template_config.template_snapshot}
+            paramValues={paramValues}
+            setParamValues={setParamValues}
+            loras={loras}
+            tagSets={tagSets}
+            activeBaseModelId={workflow?.target_base_model_id}
+            addAppliedAsset={addAppliedAsset}
+            onOpenTranslation={promptTranslation?.openTranslation}
+            onOpenSaveAsTagSet={setSaveAsTagSetRole}
+          />
+        </div>
+      )}
+
       {/* Mobile Prompt Tabs */}
-      {textMappings.length > 0 && (
+      {displayPromptMappings.length > 0 && (
         <div className="px-3 py-2.5 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/40">
           <div className="flex overflow-x-auto whitespace-nowrap gap-2 py-1 no-scrollbar">
-            {textMappings.map((m) => (
+            {displayPromptMappings.map((m: WorkflowMapping) => (
               <button key={m.id} type="button" onClick={() => setActivePromptTab(m.role || '')}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all shrink-0 whitespace-nowrap ${activePromptTab === m.role ? 'border-accent-green bg-accent-green/10 text-accent-green font-medium' : 'border-[rgba(255,255,255,0.08)] bg-surface-2 text-zinc-400 hover:text-zinc-200'}`}>
                 {m.display_name}
@@ -706,10 +746,10 @@ export const MobileLayout = ({
         </div>
       )}
 
-      {textMappings.length === 0 && !selectedWorkflowId && <div className="px-3 py-4">{renderUploadZone()}</div>}
+      {displayPromptMappings.length === 0 && !selectedWorkflowId && <div className="px-3 py-4">{renderUploadZone()}</div>}
 
       {/* Active Prompt Textarea (Mobile) */}
-      {textMappings.length > 0 && activePromptTab && activePromptTabMapping && (
+      {displayPromptMappings.length > 0 && activePromptTab && activePromptTabMapping && (
         <div className="px-3 py-2.5 space-y-2 border-b border-[rgba(255,255,255,0.06)] bg-surface-2/10">
           <div className="flex items-center justify-between">
             <button

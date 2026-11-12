@@ -10,6 +10,7 @@ import { SpeechToneSection, SpeechTonePresetModal } from './SettingsPage/compone
 import { BubbleDetectionSection } from './SettingsPage/components/BubbleDetectionSection'
 import { MappingMasterSection } from './SettingsPage/components/MappingMasterSection'
 import { WorkflowConnectionSection } from './SettingsPage/components/WorkflowConnectionSection'
+import { PromptTemplateManagerSection } from './SettingsPage/components/PromptTemplateManagerSection'
 import { ServiceConnectionCard } from './SettingsPage/components/ServiceConnectionCard'
 import { VramGuardSection } from './SettingsPage/components/VramGuardSection'
 import { SettingsTabBar } from './SettingsPage/components/SettingsTabBar'
@@ -35,6 +36,7 @@ export interface ExpandedSectionsState {
   bubbleDetection: boolean
   speechTones: boolean
   vramGuard: boolean
+  promptTemplates: boolean
 }
 
 type DetailsState = { prompt: boolean; dialogue: boolean }
@@ -53,6 +55,7 @@ const DEFAULT_SECTIONS: ExpandedSectionsState = {
   bubbleDetection: false,
   speechTones: true,
   vramGuard: true,
+  promptTemplates: true,
 }
 
 function readObject(key: string): Record<string, unknown> | null {
@@ -117,6 +120,12 @@ export function SettingsPage() {
           </button>
           {expandedSections.baseModels && <div className="border-t border-[rgba(255,255,255,0.06)] bg-surface/30 p-3 md:p-5"><BaseModelSection /></div>}
         </section>
+        </div>
+        <div data-testid="settings-card-prompt-templates" className="order-4 min-w-0 xl:col-start-2 xl:row-start-3">
+          <PromptTemplateManagerSection
+            isExpanded={expandedSections.promptTemplates}
+            onToggle={() => toggleSection('promptTemplates')}
+          />
         </div>
       </div>,
     },

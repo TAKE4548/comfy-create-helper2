@@ -24,6 +24,7 @@ def seed_initial_data(db) -> None:
     _seed_base_models(db)
     _migrate_existing_loras(db)
     _apply_workflow_1_corrections(db)
+    seed_prompt_structure_templates(db)
     db.commit()
 
 
@@ -274,4 +275,76 @@ def _migrate_existing_loras(db) -> None:
     if migrated_count > 0:
         db.commit()
         logger.info(f"Migrated {migrated_count} existing loras to 'Illus' base model.")
+
+
+def seed_prompt_structure_templates(db) -> None:
+    existing = db.query(models.PromptStructureTemplate).filter(
+        models.PromptStructureTemplate.name == "Anima 標準テンプレート"
+    ).first()
+    if not existing:
+        structure = {
+            "sections": [
+                {
+                    "id": "character",
+                    "name": "キャラクター",
+                    "is_repeatable": True,
+                    "blocks": [
+                        {"id": "character_name", "label": "character name", "description": "", "default_value": ""},
+                        {"id": "series_name", "label": "series name", "description": "", "default_value": ""},
+                        {"id": "artist_name", "label": "@artist name if needed", "description": "", "default_value": ""},
+                        {"id": "skin_ears_horns_halo_wings", "label": "skin / ears / horns / halo / wings", "description": "", "default_value": ""},
+                        {"id": "hair_color", "label": "hair color", "description": "", "default_value": ""},
+                        {"id": "hair_length", "label": "hair length", "description": "", "default_value": ""},
+                        {"id": "hair_style", "label": "hair style", "description": "", "default_value": ""},
+                        {"id": "eye_color", "label": "eye color", "description": "", "default_value": ""},
+                        {"id": "eye_shape", "label": "eye shape", "description": "", "default_value": ""},
+                        {"id": "pupils", "label": "pupils", "description": "", "default_value": ""},
+                        {"id": "expression", "label": "expression", "description": "", "default_value": ""},
+                        {"id": "body_features", "label": "body features", "description": "", "default_value": ""},
+                        {"id": "headwear_eyewear", "label": "headwear / eyewear", "description": "", "default_value": ""},
+                        {"id": "neckwear", "label": "neckwear", "description": "", "default_value": ""},
+                        {"id": "upper_clothes", "label": "upper clothes", "description": "", "default_value": ""},
+                        {"id": "lower_clothes", "label": "lower clothes", "description": "", "default_value": ""},
+                        {"id": "legwear", "label": "legwear", "description": "", "default_value": ""},
+                        {"id": "shoes", "label": "shoes", "description": "", "default_value": ""},
+                        {"id": "accessories_tail_wings", "label": "accessories / tail / wings", "description": "", "default_value": ""},
+                    ],
+                },
+                {
+                    "id": "global",
+                    "name": "全体",
+                    "is_repeatable": False,
+                    "blocks": [
+                        {"id": "pose", "label": "pose", "description": "", "default_value": ""},
+                        {"id": "hand_position", "label": "hand position", "description": "", "default_value": ""},
+                        {"id": "leg_position", "label": "leg position", "description": "", "default_value": ""},
+                        {"id": "action", "label": "action", "description": "", "default_value": ""},
+                        {"id": "camera_distance", "label": "camera distance", "description": "", "default_value": ""},
+                        {"id": "camera_angle", "label": "camera angle", "description": "", "default_value": ""},
+                        {"id": "lens", "label": "lens", "description": "", "default_value": ""},
+                        {"id": "focus", "label": "focus", "description": "", "default_value": ""},
+                        {"id": "composition", "label": "composition", "description": "", "default_value": ""},
+                        {"id": "background", "label": "background", "description": "", "default_value": ""},
+                        {"id": "time", "label": "time", "description": "", "default_value": ""},
+                        {"id": "weather", "label": "weather", "description": "", "default_value": ""},
+                        {"id": "scene_objects", "label": "scene objects", "description": "", "default_value": ""},
+                        {"id": "lighting", "label": "lighting", "description": "", "default_value": ""},
+                        {"id": "depth", "label": "depth", "description": "", "default_value": ""},
+                        {"id": "effects", "label": "effects", "description": "", "default_value": ""},
+                        {"id": "after_details", "label": "after details", "description": "", "default_value": ""},
+                    ],
+                },
+            ]
+        }
+        tpl = models.PromptStructureTemplate(
+            name="Anima 標準テンプレート",
+            description="Anima 推奨のキャラクター（19項目・Repeat可）および全体（17項目）プロンプト構造テンプレート",
+            structure_json=json.dumps(structure, ensure_ascii=False),
+            is_builtin=True,
+            sort_order=1,
+        )
+        db.add(tpl)
+        db.commit()
+        logger.info("Seeded default prompt structure template: Anima 標準テンプレート")
+
 

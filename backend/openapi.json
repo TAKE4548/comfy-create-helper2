@@ -458,6 +458,159 @@
         }
       }
     },
+    "/api/prompt-templates": {
+      "get": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "List Prompt Templates",
+        "description": "List all prompt structure templates sorted by sort_order asc, id asc.",
+        "operationId": "list_prompt_templates_api_prompt_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptTemplateRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Prompt Templates Api Prompt Templates Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Create Prompt Template",
+        "description": "Create a new prompt structure template.",
+        "operationId": "create_prompt_template_api_prompt_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompt-templates/{template_id}": {
+      "put": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Update Prompt Template",
+        "description": "Update an existing prompt structure template.",
+        "operationId": "update_prompt_template_api_prompt_templates__template_id__put",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptTemplateUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplateRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Delete Prompt Template",
+        "description": "Delete a prompt structure template.",
+        "operationId": "delete_prompt_template_api_prompt_templates__template_id__delete",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mapping-masters": {
       "get": {
         "tags": [
@@ -12849,6 +13002,69 @@
         ],
         "title": "PromptMetadataResponse"
       },
+      "PromptOutputGroupSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "target_role": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Target Role"
+          },
+          "block_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Block Ids"
+          },
+          "repeat_filter": {
+            "$ref": "#/components/schemas/PromptRepeatFilterSchema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "target_role"
+        ],
+        "title": "PromptOutputGroupSchema"
+      },
+      "PromptRepeatFilterSchema": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "index"
+            ],
+            "title": "Mode",
+            "default": "all"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          }
+        },
+        "type": "object",
+        "title": "PromptRepeatFilterSchema"
+      },
       "PromptRequest": {
         "properties": {
           "prompt": {
@@ -12873,6 +13089,206 @@
           "prompt"
         ],
         "title": "PromptRequest"
+      },
+      "PromptTemplateBlockSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "default_value": {
+            "type": "string",
+            "title": "Default Value",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "PromptTemplateBlockSchema"
+      },
+      "PromptTemplateCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "structure": {
+            "$ref": "#/components/schemas/PromptTemplateStructureSchema"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "PromptTemplateCreate"
+      },
+      "PromptTemplateRead": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "structure": {
+            "$ref": "#/components/schemas/PromptTemplateStructureSchema"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "title": "Is Builtin",
+            "default": false
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PromptTemplateRead"
+      },
+      "PromptTemplateSectionSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "is_repeatable": {
+            "type": "boolean",
+            "title": "Is Repeatable",
+            "default": false
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTemplateBlockSchema"
+            },
+            "type": "array",
+            "title": "Blocks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "PromptTemplateSectionSchema"
+      },
+      "PromptTemplateStructureSchema": {
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTemplateSectionSchema"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "title": "PromptTemplateStructureSchema"
+      },
+      "PromptTemplateUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptTemplateStructureSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "title": "PromptTemplateUpdate"
       },
       "PromptTranslateRequest": {
         "properties": {
@@ -16605,6 +17021,9 @@
             },
             "type": "object",
             "title": "Mapping Slot States"
+          },
+          "prompt_template_config": {
+            "$ref": "#/components/schemas/WorkflowPromptTemplateConfigSchema"
           }
         },
         "type": "object",
@@ -17035,6 +17454,40 @@
         "type": "object",
         "title": "WorkflowPresetUpdate"
       },
+      "WorkflowPromptTemplateConfigSchema": {
+        "properties": {
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "template_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptTemplateStructureSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_groups": {
+            "items": {
+              "$ref": "#/components/schemas/PromptOutputGroupSchema"
+            },
+            "type": "array",
+            "title": "Output Groups"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowPromptTemplateConfigSchema"
+      },
       "WorkflowRead": {
         "properties": {
           "id": {
@@ -17091,6 +17544,9 @@
             },
             "type": "object",
             "title": "Mapping Slot States"
+          },
+          "prompt_template_config": {
+            "$ref": "#/components/schemas/WorkflowPromptTemplateConfigSchema"
           }
         },
         "type": "object",
@@ -17249,6 +17705,16 @@
               }
             ],
             "title": "Mapping Slot States"
+          },
+          "prompt_template_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowPromptTemplateConfigSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

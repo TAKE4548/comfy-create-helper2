@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from app.main import app
+from app.seeder import seed_prompt_structure_templates
 
 
 @pytest.fixture
@@ -1239,3 +1240,237 @@ def test_req423_ac2_workflow_duplicate_preserves_mapping_input_names(client: Tes
     }
     assert dup_db_mappings[master_seed.id] == "noise_seed"
     assert dup_db_mappings[master_prompt.id] == "text"
+
+
+def test_prompt_structure_templates_anima_seed(client: TestClient, db_session: Session):
+    """[REQ-425/AC-2] Anima standard template is seeded with 19 character blocks and 17 global blocks in exact order."""
+    seed_prompt_structure_templates(db_session)
+    res = client.get("/api/prompt-templates")
+    assert res.status_code == 200, res.text
+    templates = res.json()
+    anima = next((t for t in templates if t["name"] == "Anima 標準テンプレート"), None)
+    assert anima is not None
+    assert anima["is_builtin"] is True
+
+    sections = anima["structure"]["sections"]
+    assert len(sections) == 2
+
+    # Section 1: character (19 blocks, repeatable)
+    char_sec = sections[0]
+    assert char_sec["id"] == "character"
+    assert char_sec["name"] == "キャラクター"
+    assert char_sec["is_repeatable"] is True
+    expected_char_blocks = [
+        "character_name",
+        "series_name",
+        "artist_name",
+        "skin_ears_horns_halo_wings",
+        "hair_color",
+        "hair_length",
+        "hair_style",
+        "eye_color",
+        "eye_shape",
+        "pupils",
+        "expression",
+        "body_features",
+        "headwear_eyewear",
+        "neckwear",
+        "upper_clothes",
+        "lower_clothes",
+        "legwear",
+        "shoes",
+        "accessories_tail_wings",
+    ]
+    assert [b["id"] for b in char_sec["blocks"]] == expected_char_blocks
+    assert char_sec["blocks"][2]["label"] == "@artist name if needed"
+
+    # Section 2: global (17 blocks, non-repeatable)
+    global_sec = sections[1]
+    assert global_sec["id"] == "global"
+    assert global_sec["name"] == "全体"
+    assert global_sec["is_repeatable"] is False
+    expected_global_blocks = [
+        "pose",
+        "hand_position",
+        "leg_position",
+        "action",
+        "camera_distance",
+        "camera_angle",
+        "lens",
+        "focus",
+        "composition",
+        "background",
+        "time",
+        "weather",
+        "scene_objects",
+        "lighting",
+        "depth",
+        "effects",
+        "after_details",
+    ]
+    assert [b["id"] for b in global_sec["blocks"]] == expected_global_blocks
+
+
+def test_prompt_structure_template_crud(client: TestClient, db_session: Session):
+    """[REQ-425/AC-1] Custom prompt structure template creation, duplicate conflict, update, and deletion."""
+    create_payload = {
+        "name": "Custom Test Template",
+        "description": "Custom template description",
+        "structure": {
+            "sections": [
+                {
+                    "id": "char",
+                    "name": "Char",
+                    "is_repeatable": True,
+                    "blocks": [
+                        {"id": "name", "label": "Name", "description": "", "default_value": ""},
+                        {"id": "outfit", "label": "Outfit", "description": "", "default_value": ""},
+                    ],
+                }
+            ]
+        },
+        "sort_order": 10,
+    }
+    create_res = client.post("/api/prompt-templates", json=create_payload)
+    assert create_res.status_code == 201, create_res.text
+    created = create_res.json()
+    tpl_id = created["id"]
+    assert created["name"] == "Custom Test Template"
+    assert len(created["structure"]["sections"]) == 1
+
+    # Conflict on duplicate name
+    dup_res = client.post("/api/prompt-templates", json=create_payload)
+    assert dup_res.status_code == 409
+
+    # Update template
+    update_res = client.put(
+        f"/api/prompt-templates/{tpl_id}",
+        json={"description": "Updated description", "sort_order": 20},
+    )
+    assert update_res.status_code == 200, update_res.text
+    assert update_res.json()["description"] == "Updated description"
+    assert update_res.json()["sort_order"] == 20
+
+    # Delete template
+    del_res = client.delete(f"/api/prompt-templates/{tpl_id}")
+    assert del_res.status_code == 204
+
+    # Verify deleted
+    get_res = client.get("/api/prompt-templates")
+    assert all(t["id"] != tpl_id for t in get_res.json())
+
+
+def test_workflow_prompt_template_config_lifecycle(client: TestClient, db_session: Session):
+    """[REQ-425/AC-3] Workflow prompt_template_config is persisted, updated, duplicated via copy, and restored via rollback."""
+    initial_config = {
+        "template_id": 1,
+        "template_snapshot": {
+            "sections": [
+                {
+                    "id": "sec1",
+                    "name": "Sec 1",
+                    "is_repeatable": True,
+                    "blocks": [{"id": "b1", "label": "B1", "description": "", "default_value": ""}],
+                }
+            ]
+        },
+        "output_groups": [
+            {
+                "id": "grp1",
+                "name": "Positive Main",
+                "target_role": "positive",
+                "block_ids": ["b1"],
+                "repeat_filter": {"mode": "all"},
+            },
+            {
+                "id": "grp2",
+                "name": "Positive Upscale",
+                "target_role": "positive_upscale",
+                "block_ids": ["b1"],
+                "repeat_filter": {"mode": "index", "index": 1},
+            },
+        ],
+    }
+
+    # 1. Create workflow with prompt_template_config
+    wf_res = client.post(
+        "/api/workflows",
+        json={
+            "name": "Workflow with Template Config",
+            "json_body": {"6": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}},
+            "prompt_template_config": initial_config,
+        },
+    )
+    assert wf_res.status_code == 201, wf_res.text
+    wf_id = wf_res.json()["id"]
+
+    # 2. Get workflow and verify prompt_template_config
+    get_res = client.get(f"/api/workflows/{wf_id}")
+    assert get_res.status_code == 200, get_res.text
+    wf_data = get_res.json()
+    assert wf_data["prompt_template_config"]["template_id"] == 1
+    assert len(wf_data["prompt_template_config"]["output_groups"]) == 2
+    assert wf_data["prompt_template_config"]["output_groups"][1]["repeat_filter"]["mode"] == "index"
+    assert wf_data["prompt_template_config"]["output_groups"][1]["repeat_filter"]["index"] == 1
+
+    # 3. Duplicate workflow via copy
+    copy_res = client.post(f"/api/workflows/{wf_id}/copy", json={"name": "Copied Workflow with Config"})
+    assert copy_res.status_code == 201, copy_res.text
+    copy_id = copy_res.json()["id"]
+    copy_get = client.get(f"/api/workflows/{copy_id}")
+    assert copy_get.json()["prompt_template_config"]["template_id"] == 1
+    assert len(copy_get.json()["prompt_template_config"]["output_groups"]) == 2
+
+    # 4. Update workflow with new json_body and modified output_groups (creates history entry)
+    updated_config = {
+        "template_id": 1,
+        "template_snapshot": initial_config["template_snapshot"],
+        "output_groups": [
+            {
+                "id": "grp1",
+                "name": "Positive Main",
+                "target_role": "positive",
+                "block_ids": ["b1"],
+                "repeat_filter": {"mode": "all"},
+            }
+        ],
+    }
+    update_res = client.put(
+        f"/api/workflows/{wf_id}",
+        json={
+            "json_body": {"6": {"class_type": "CLIPTextEncode", "inputs": {"text": "new"}}},
+            "prompt_template_config": updated_config,
+        },
+    )
+    assert update_res.status_code == 200, update_res.text
+
+    # Verify updated
+    get_res_updated = client.get(f"/api/workflows/{wf_id}")
+    assert len(get_res_updated.json()["prompt_template_config"]["output_groups"]) == 1
+
+    # 5. Rollback workflow and verify previous prompt_template_config is restored
+    rollback_res = client.post(f"/api/workflows/{wf_id}/rollback")
+    assert rollback_res.status_code == 200, rollback_res.text
+    get_res_restored = client.get(f"/api/workflows/{wf_id}")
+    assert len(get_res_restored.json()["prompt_template_config"]["output_groups"]) == 2
+
+
+def test_workflow_without_prompt_template_config_backward_compatibility(client: TestClient, db_session: Session):
+    """[REQ-425/AC-9] Workflow created without prompt_template_config returns default empty config object."""
+    wf_res = client.post(
+        "/api/workflows",
+        json={
+            "name": "Legacy Compatibility Workflow",
+            "json_body": {"6": {"class_type": "CLIPTextEncode", "inputs": {"text": "legacy"}}},
+        },
+    )
+    assert wf_res.status_code == 201, wf_res.text
+    wf_id = wf_res.json()["id"]
+
+    get_res = client.get(f"/api/workflows/{wf_id}")
+    assert get_res.status_code == 200, get_res.text
+    config = get_res.json()["prompt_template_config"]
+    assert config["template_id"] is None
+    assert config["template_snapshot"] is None
+    assert config["output_groups"] == []
+

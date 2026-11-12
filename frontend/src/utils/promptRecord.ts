@@ -1,6 +1,7 @@
 import { promptMetadataApi } from '../api/client'
 import type { AppliedAsset } from '../store/types'
 import { ASSOCIATIONS_KEY, PROMPT_RECORD_KEY, type CapturedField, type GenerationRecord, type JsonValue } from './generationRecord'
+import type { SanitizedPromptTemplateRecord } from './promptTemplateEngine'
 
 export interface PromptFieldView { key: string; name: string; role: string | null; nodeId: string; recorded: boolean; value: string | null; status: 'submitted' | 'bypassed' | 'missing' }
 export interface MetadataItemView { key: string; name: string; recorded: boolean; value: JsonValue; role?: string | null; status?: string }
@@ -9,6 +10,7 @@ export interface MetadataView {
   record: GenerationRecord | null; fields: PromptFieldView[]; parameters: MetadataItemView[]; extras: MetadataItemView[]
   assets: MetadataItemView[]; workflowId: number | null; workflowName: string | null; queuedAt: string | null
   completedAt?: string | null; warning: string | null; actualSeed: string | null; loraRows: LoraRow[]
+  promptTemplate: SanitizedPromptTemplateRecord | null
 }
 export interface ResolvedMetadata {
   paramValues: Record<string, unknown>; appliedAssets: Record<string, AppliedAsset[]>; workflowId: number | null
@@ -79,6 +81,7 @@ export function getMetadataView(params: Record<string, unknown> | null): Metadat
     completedAt: record?.completed_at ?? null,
     warning: complete ? null : record ? '未記録の項目があります' : '未記録の項目がある可能性があります',
     actualSeed: seed ? text(seed.value) : null, loraRows: loraRows(record?.parameters ?? []),
+    promptTemplate: record?.prompt_template ?? null,
   }
 }
 function resolved(params: unknown, assets: unknown, workflowId: unknown, queuedAt: string | null, metadataSavedAt: string | null): ResolvedMetadata | null {

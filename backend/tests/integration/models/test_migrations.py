@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app import models
 from app.migrations import run_migrations, MigrationRunner
-from app.migrations.steps import MigrationStep
+from app.migrations.steps import MigrationStep, step_036_prompt_structure_templates
 from app.seeder import seed_initial_data, _seed_base_models, _migrate_existing_loras
 
 
@@ -1087,6 +1087,68 @@ def test_step_035_unresolved_role_aborts_without_mutation():
 def test_step_035_idempotent():
     """[REQ-418/AC-1] Alias: test_step_035_idempotent."""
     test_variant_ref_ac1_step_is_idempotent_on_rerun()
+
+
+def test_step_036_prompt_structure_templates_migration():
+    """[REQ-425/AC-1][REQ-425/AC-3] Step 036 creates prompt_structure_templates and adds prompt_template_config columns."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    with engine.begin() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE,
+                json_body TEXT NOT NULL
+            );
+        """))
+        conn.execute(sa.text("""
+            CREATE TABLE workflow_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id INTEGER NOT NULL,
+                json_body TEXT NOT NULL,
+                mappings TEXT NOT NULL
+            );
+        """))
+        inspector = sa.inspect(conn)
+        step_036_prompt_structure_templates(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "prompt_structure_templates" in inspector.get_table_names()
+        table_cols = {c["name"] for c in inspector.get_columns("prompt_structure_templates")}
+        assert {"id", "name", "description", "structure_json", "is_builtin", "sort_order", "created_at", "updated_at"}.issubset(table_cols)
+
+        wf_cols = {c["name"] for c in inspector.get_columns("workflows")}
+        assert "prompt_template_config" in wf_cols
+
+        wfh_cols = {c["name"] for c in inspector.get_columns("workflow_history")}
+        assert "prompt_template_config" in wfh_cols
+
+
+def test_step_036_migration_idempotent():
+    """[REQ-425/AC-1][REQ-425/AC-3] Step 036 is idempotent when re-run."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    with engine.begin() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR NOT NULL UNIQUE,
+                json_body TEXT NOT NULL
+            );
+        """))
+        inspector = sa.inspect(conn)
+        step_036_prompt_structure_templates(conn, inspector)
+
+    # Run a second time
+    with engine.begin() as conn:
+        inspector = sa.inspect(conn)
+        step_036_prompt_structure_templates(conn, inspector)
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "prompt_structure_templates" in inspector.get_table_names()
+        wf_cols = {c["name"] for c in inspector.get_columns("workflows")}
+        assert "prompt_template_config" in wf_cols
+
 
 
 

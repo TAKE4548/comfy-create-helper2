@@ -374,4 +374,125 @@ describe('DesktopLayout - REQ-339 Resource Monitor Relocation', () => {
     fireEvent.click(saveBtn)
     expect(state.setIsSaveModalOpen).toHaveBeenCalledWith(true)
   })
+
+  describe('REQ-425 Prompt Template Split Editor Integration', () => {
+    const templateConfig = {
+      template_id: 1,
+      output_groups: [
+        {
+          id: 'grp-positive',
+          name: 'Main Positive',
+          target_role: 'Main_Positive_Prompt',
+          block_ids: ['blk-name', 'blk-clothes'],
+          repeat_filter: { mode: 'all' as const },
+        },
+      ],
+      template_snapshot: {
+        sections: [
+          {
+            id: 'sec-char',
+            name: 'Character',
+            is_repeatable: true,
+            blocks: [
+              { id: 'blk-name', label: 'Character Name', default_value: 'alice' },
+              { id: 'blk-clothes', label: 'Upper Clothes', default_value: 'shirt' },
+            ],
+          },
+        ],
+      },
+    }
+
+    const templateMappings = [
+      { id: 1, master_id: 1, node_id: '1', role: 'Main_Positive_Prompt', display_name: 'Positive Prompt', input_type: 'textarea' as const },
+      { id: 2, master_id: 2, node_id: '2', role: 'Main_Negative_Prompt', display_name: 'Negative Prompt', input_type: 'textarea' as const },
+    ]
+
+    it('[REQ-425/AC-4] renders split editor for assigned roles and single TagChipEditor for unassigned roles', () => {
+      const state = createMockState()
+      state.workflow = {
+        ...state.workflow,
+        prompt_template_config: templateConfig,
+        mappings: templateMappings,
+      } as any
+      state.textMappings = templateMappings as any
+
+      renderWithQueryClient(<DesktopLayout state={state as any} />)
+
+      // Split editor should be present
+      expect(screen.getByTestId('prompt-template-split-editor')).toBeInTheDocument()
+
+      // Positive prompt mapping was assigned to grp-positive so it should NOT be in conventional mappings
+      expect(screen.queryByRole('button', { name: 'Positive Prompt' })).toBeNull()
+
+      // Negative prompt mapping was unassigned so it MUST be present as conventional mapping
+      expect(screen.getByRole('button', { name: 'Negative Prompt' })).toBeInTheDocument()
+      expect(document.getElementById('prompt-Main_Negative_Prompt')).toBeInTheDocument()
+    })
+
+    it('[REQ-425/AC-5] allows adding repeat instance and removing it without leaving empty gap', () => {
+      const state = createMockState()
+      state.workflow = {
+        ...state.workflow,
+        prompt_template_config: templateConfig,
+        mappings: templateMappings,
+      } as any
+      state.textMappings = templateMappings as any
+
+      const { rerender } = renderWithQueryClient(<DesktopLayout state={state as any} />)
+
+      // Initial instance #1 should be present
+      expect(screen.getByTestId('section-instance-sec-char-0')).toBeInTheDocument()
+      expect(screen.queryByTestId('section-instance-sec-char-1')).toBeNull()
+
+      // Click add instance button
+      const addBtn = screen.getByTestId('add-instance-sec-char')
+      fireEvent.click(addBtn)
+
+      // setParamValues was called with new serialized state containing 2 instances
+      expect(state.setParamValues).toHaveBeenCalled()
+      const callArg = state.setParamValues.mock.calls[0][0]
+      expect(callArg.__prompt_template_state_v1).toBeDefined()
+      const parsed = JSON.parse(callArg.__prompt_template_state_v1)
+      expect(parsed.sections['sec-char'].instances.length).toBe(2)
+
+      // Simulate re-render with updated paramValues
+      state.paramValues = callArg
+      rerender(
+        <QueryClientProvider client={new QueryClient()}>
+          <DesktopLayout state={state as any} />
+        </QueryClientProvider>
+      )
+
+      expect(screen.getByTestId('section-instance-sec-char-0')).toBeInTheDocument()
+      expect(screen.getByTestId('section-instance-sec-char-1')).toBeInTheDocument()
+
+      // Click remove button on instance 1 (the 2nd instance)
+      const removeBtn = screen.getByTestId('remove-instance-sec-char-1')
+      fireEvent.click(removeBtn)
+
+      expect(state.setParamValues).toHaveBeenCalledTimes(2)
+      const callArg2 = state.setParamValues.mock.calls[1][0]
+      const parsed2 = JSON.parse(callArg2.__prompt_template_state_v1)
+      expect(parsed2.sections['sec-char'].instances.length).toBe(1)
+    })
+
+    it('[REQ-425/AC-9] renders all mappings as conventional inputs when prompt template is inactive', () => {
+      const state = createMockState()
+      state.workflow = {
+        ...state.workflow,
+        prompt_template_config: null,
+        mappings: templateMappings,
+      } as any
+      state.textMappings = templateMappings as any
+
+      renderWithQueryClient(<DesktopLayout state={state as any} />)
+
+      // Split editor should NOT be rendered
+      expect(screen.queryByTestId('prompt-template-split-editor')).toBeNull()
+
+      // Both Positive and Negative prompts rendered as conventional inputs
+      expect(screen.getByRole('button', { name: 'Positive Prompt' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Negative Prompt' })).toBeInTheDocument()
+    })
+  })
 })

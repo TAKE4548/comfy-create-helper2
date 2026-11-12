@@ -738,5 +738,59 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       fireEvent.click(screen.getByTestId('mobile-sheet-close-btn'))
       expect(screen.queryByTestId('mobile-image-sheet')).not.toBeInTheDocument()
     })
+
+    it('[REQ-425/AC-4] renders prompt template split editor and filters out assigned roles from mobile prompt tabs', () => {
+      const templateConfig = {
+        template_id: 1,
+        output_groups: [
+          {
+            id: 'grp-positive',
+            name: 'Main Positive',
+            target_role: 'Main_Positive_Prompt',
+            block_ids: ['blk-name'],
+            repeat_filter: { mode: 'all' as const },
+          },
+        ],
+        template_snapshot: {
+          sections: [
+            {
+              id: 'sec-char',
+              name: 'Character',
+              is_repeatable: false,
+              blocks: [
+                { id: 'blk-name', label: 'Character Name', default_value: 'alice' },
+              ],
+            },
+          ],
+        },
+      }
+
+      const templateMappings = [
+        { id: 1, master_id: 1, node_id: '1', role: 'Main_Positive_Prompt', display_name: 'Positive Prompt', input_type: 'textarea' },
+        { id: 2, master_id: 2, node_id: '2', role: 'Main_Negative_Prompt', display_name: 'Negative Prompt', input_type: 'textarea' },
+      ]
+
+      const state = createMockState({
+        workflow: {
+          id: 1,
+          name: 'Template Workflow',
+          prompt_template_config: templateConfig,
+          mappings: templateMappings,
+        },
+        textMappings: templateMappings,
+        activePromptTab: 'Main_Negative_Prompt',
+      })
+
+      render(<MobileLayout state={state} />)
+
+      // Split editor should be present on mobile
+      expect(screen.getByTestId('prompt-template-split-editor')).toBeInTheDocument()
+
+      // In mobile prompt tabs, assigned 'Positive Prompt' should NOT be present
+      expect(screen.queryByRole('button', { name: 'Positive Prompt' })).toBeNull()
+
+      // Unassigned 'Negative Prompt' MUST be present as a prompt tab
+      expect(screen.getByRole('button', { name: 'Negative Prompt' })).toBeInTheDocument()
+    })
   })
 })

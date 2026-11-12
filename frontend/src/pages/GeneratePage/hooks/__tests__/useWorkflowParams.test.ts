@@ -373,4 +373,125 @@ describe('useWorkflowParams hook - remapping backfill', () => {
       expect(result['Resolution Selector']).toBe('16:9 (Landscape)');
     });
   });
+
+  describe('REQ-425 Prompt Template Preset and Snapshot Restoration', () => {
+    it('[REQ-425/AC-7] preserves 2-instance repeat structure, block values, and disabled chips in preset state', () => {
+      const stateWithDisabledChips = {
+        version: 1,
+        templateId: 1,
+        sections: {
+          'sec-char': {
+            instances: [
+              {
+                instanceId: 'char-1',
+                blocks: {
+                  'blk-name': [{ id: '1', text: 'alice', enabled: true }],
+                  'blk-clothes': [{ id: '2', text: 'bikini', enabled: false }],
+                },
+              },
+              {
+                instanceId: 'char-2',
+                blocks: {
+                  'blk-name': [{ id: '3', text: 'bob', enabled: true }],
+                  'blk-clothes': [{ id: '4', text: 'coat', enabled: true }],
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const serialized = JSON.stringify(stateWithDisabledChips);
+      useGenerationStore.setState({
+        paramValues: {
+          __prompt_template_state_v1: serialized,
+        },
+      });
+
+      const params = useGenerationStore.getState().paramValues;
+      expect(params.__prompt_template_state_v1).toBe(serialized);
+      const restored = JSON.parse(params.__prompt_template_state_v1);
+      expect(restored.sections['sec-char'].instances.length).toBe(2);
+      expect(restored.sections['sec-char'].instances[0].blocks['blk-clothes'][0].enabled).toBe(false);
+      expect(restored.sections['sec-char'].instances[1].blocks['blk-clothes'][0].enabled).toBe(true);
+    });
+
+    it('[REQ-425/AC-8] restores valid split inputs from snapshot record and excludes disabled chips', () => {
+      const sanitizedRecord = {
+        version: 1,
+        template_id: 1,
+        template_snapshot: {
+          sections: [
+            {
+              id: 'sec-char',
+              name: 'Character',
+              is_repeatable: true,
+              blocks: [
+                { id: 'blk-name', label: 'Name' },
+                { id: 'blk-clothes', label: 'Clothes' },
+              ],
+            },
+          ],
+        },
+        sections: [
+          {
+            section_id: 'sec-char',
+            section_name: 'Character',
+            is_repeatable: true,
+            instances: [
+              {
+                instance_index: 1,
+                blocks: [
+                  { block_id: 'blk-name', block_label: 'Name', value: 'alice' },
+                  { block_id: 'blk-clothes', block_label: 'Clothes', value: '' },
+                ],
+              },
+              {
+                instance_index: 2,
+                blocks: [
+                  { block_id: 'blk-name', block_label: 'Name', value: 'bob' },
+                  { block_id: 'blk-clothes', block_label: 'Clothes', value: 'coat' },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      const snapshotSource = {
+        Quality: 'high',
+        [PROMPT_RECORD_KEY]: JSON.stringify({
+          version: 1,
+          workflow_id: 1,
+          workflow_name: 'Test',
+          completeness: 'complete',
+          fields: [],
+          parameters: [],
+          assets: [],
+          queued_at: null,
+          prompt_template: sanitizedRecord,
+        }),
+      };
+
+      const { result } = renderHook(() => useWorkflowParams(undefined, null), { wrapper: createWrapper() });
+      act(() => result.current.loadSnapshotParams(snapshotSource));
+
+      const paramValues = useGenerationStore.getState().paramValues;
+      expect(paramValues.__prompt_template_state_v1).toBeDefined();
+
+      const restoredState = JSON.parse(paramValues.__prompt_template_state_v1);
+      expect(restoredState.sections['sec-char'].instances.length).toBe(2);
+
+      // Char 1: clothes was empty (disabled chip was excluded from record), restored chips is empty
+      expect(restoredState.sections['sec-char'].instances[0].blocks['blk-name'][0]).toEqual(
+        expect.objectContaining({ text: 'alice', enabled: true })
+      );
+      expect(restoredState.sections['sec-char'].instances[0].blocks['blk-clothes']).toEqual([]);
+
+      // Char 2: coat was valid, restored as enabled: true
+      expect(restoredState.sections['sec-char'].instances[1].blocks['blk-clothes'][0]).toEqual(
+        expect.objectContaining({ text: 'coat', enabled: true })
+      );
+    });
+  });
 });

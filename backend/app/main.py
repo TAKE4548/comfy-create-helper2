@@ -25,7 +25,7 @@ from app.middleware.request_logging import RequestLoggingMiddleware
 from app.database import engine, SessionLocal
 from app import models
 from app.migrations import run_migrations
-from app.seeder import seed_initial_data
+from app.seeder import seed_initial_data, seed_prompt_structure_templates
 from app.routers import (
     workflows, mapping_masters, mapping_groups, stage_masters, snapshots, albums,
     loras, tag_sets, categories, audit, llm_prompts,
@@ -39,6 +39,7 @@ from app.routers import (
     dataset_router,
     benchmark_router,
     training_router,
+    prompt_templates,
 )
 
 from app.routers import ws as ws_router
@@ -66,6 +67,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_initial_data(db)
+        seed_prompt_structure_templates(db)
     finally:
         db.close()
     logger.info("Prompt Surgeon API started.")
@@ -162,6 +164,7 @@ app.add_middleware(
 # Routers
 app.include_router(system_logs.router)
 app.include_router(workflows.router)
+app.include_router(prompt_templates.router)
 app.include_router(mapping_masters.router)
 app.include_router(binding_rules.router)
 app.include_router(node_selectors.router)

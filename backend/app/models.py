@@ -236,6 +236,9 @@ class Workflow(Base):
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     default_applied_assets: Mapped[Optional[str]] = mapped_column(Text)
     mapping_slot_states: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default=text("'{}'"))
+    prompt_template_config: Mapped[str] = mapped_column(
+        Text, nullable=False, default="{}", server_default=text("'{}'")
+    )
     target_base_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("base_models.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
@@ -352,6 +355,9 @@ class WorkflowHistory(Base):
     json_body: Mapped[str] = mapped_column(Text, nullable=False)
     mappings: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array: [{"master_id": 1, "node_id": "6"}]
     mapping_slot_states: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default=text("'{}'"))
+    prompt_template_config: Mapped[str] = mapped_column(
+        Text, nullable=False, default="{}", server_default=text("'{}'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="history_entries")
@@ -755,3 +761,22 @@ class LoraTrainingJob(Base):
     status: Mapped[str] = mapped_column(String(50), default="IDLE")
     final_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+
+class PromptStructureTemplate(Base):
+    __tablename__ = "prompt_structure_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
+    structure_json: Mapped[str] = mapped_column(Text, nullable=False, default='{"sections":[]}', server_default=text("'{\"sections\":[]}'"))
+    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { GenerationPromptFields, type PromptFieldView } from './GenerationPromptFields'
+import type { SanitizedPromptTemplateRecord } from '../utils/promptTemplateEngine'
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 export interface MetadataItemView { key: string; name: string; recorded: boolean; value: JsonValue; role?: string | null; status?: string }
@@ -10,6 +11,7 @@ export interface GenerationMetadataPanelProps {
   actualSeed: string | null
   loraRows: { key: string; model: string; role: string; weight: string | null; modelStrength: string | null; clipStrength: string | null }[]
   assets: MetadataItemView[]; warning: string | null; associationPanel?: ReactNode
+  promptTemplate?: SanitizedPromptTemplateRecord | null
 }
 
 function displayValue(value: JsonValue): string {
@@ -84,6 +86,48 @@ export function GenerationMetadataPanel(props: GenerationMetadataPanelProps): Re
     </div>
     <div id="metadata-details" role="tabpanel" hidden={tab !== 'details'} className="space-y-4">
       <GenerationPromptFields fields={props.fields} warning={props.warning} />
+      {props.promptTemplate && (
+        <section className="space-y-3 rounded-lg border border-white/10 bg-surface-2 p-3 text-left" aria-label="分割プロンプト構造（テンプレート記録）">
+          <h4 className="font-semibold text-zinc-200">分割プロンプト構造（テンプレート記録）</h4>
+          <div className="space-y-3">
+            {props.promptTemplate.sections.map((sec) => (
+              <div key={sec.section_id} className="space-y-2 border-t border-white/5 pt-2 first:border-t-0 first:pt-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-zinc-200 text-xs">{sec.section_name}</span>
+                  {sec.is_repeatable && (
+                    <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-xs font-medium text-sky-300">
+                      Repeatable
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2 pl-2">
+                  {sec.instances.map((inst) => {
+                    const nonEmptyBlocks = inst.blocks.filter((b) => b.value && b.value.trim().length > 0)
+                    if (nonEmptyBlocks.length === 0) return null
+                    return (
+                      <div key={inst.instance_index} className="space-y-1 rounded bg-black/20 p-2">
+                        {sec.is_repeatable && (
+                          <span className="inline-block rounded bg-zinc-700/60 px-1.5 py-0.5 text-xs font-semibold text-zinc-300">
+                            #{inst.instance_index}
+                          </span>
+                        )}
+                        <div className="space-y-1">
+                          {nonEmptyBlocks.map((blk) => (
+                            <div key={blk.block_id} className="text-xs">
+                              <span className="text-zinc-400 font-medium">{blk.block_label}: </span>
+                              <span className="text-zinc-200 break-words">{blk.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
     <div id="metadata-assets" role="tabpanel" hidden={tab !== 'assets'} className="space-y-4"><Items title="生成時アセット" items={props.assets} />
       <Items title="パラメータ" items={props.parameters} /><Items title="その他" items={props.extras} />

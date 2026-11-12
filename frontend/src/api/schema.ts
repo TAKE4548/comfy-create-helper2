@@ -143,6 +143,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prompt-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Prompt Templates
+         * @description List all prompt structure templates sorted by sort_order asc, id asc.
+         */
+        get: operations["list_prompt_templates_api_prompt_templates_get"];
+        put?: never;
+        /**
+         * Create Prompt Template
+         * @description Create a new prompt structure template.
+         */
+        post: operations["create_prompt_template_api_prompt_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Prompt Template
+         * @description Update an existing prompt structure template.
+         */
+        put: operations["update_prompt_template_api_prompt_templates__template_id__put"];
+        post?: never;
+        /**
+         * Delete Prompt Template
+         * @description Delete a prompt structure template.
+         */
+        delete: operations["delete_prompt_template_api_prompt_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mapping-masters": {
         parameters: {
             query?: never;
@@ -4164,6 +4212,29 @@ export interface components {
             /** Created At */
             created_at: string;
         };
+        /** PromptOutputGroupSchema */
+        PromptOutputGroupSchema: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Target Role */
+            target_role: string;
+            /** Block Ids */
+            block_ids?: string[];
+            repeat_filter?: components["schemas"]["PromptRepeatFilterSchema"];
+        };
+        /** PromptRepeatFilterSchema */
+        PromptRepeatFilterSchema: {
+            /**
+             * Mode
+             * @default all
+             * @enum {string}
+             */
+            mode: "all" | "index";
+            /** Index */
+            index?: number | null;
+        };
         /** PromptRequest */
         PromptRequest: {
             /** Prompt */
@@ -4172,6 +4243,101 @@ export interface components {
             };
             /** Client Id */
             client_id?: string | null;
+        };
+        /** PromptTemplateBlockSchema */
+        PromptTemplateBlockSchema: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Default Value
+             * @default
+             */
+            default_value: string;
+        };
+        /** PromptTemplateCreate */
+        PromptTemplateCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            structure?: components["schemas"]["PromptTemplateStructureSchema"];
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** PromptTemplateRead */
+        PromptTemplateRead: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            structure?: components["schemas"]["PromptTemplateStructureSchema"];
+            /**
+             * Is Builtin
+             * @default false
+             */
+            is_builtin: boolean;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PromptTemplateSectionSchema */
+        PromptTemplateSectionSchema: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Is Repeatable
+             * @default false
+             */
+            is_repeatable: boolean;
+            /** Blocks */
+            blocks?: components["schemas"]["PromptTemplateBlockSchema"][];
+        };
+        /** PromptTemplateStructureSchema */
+        PromptTemplateStructureSchema: {
+            /** Sections */
+            sections?: components["schemas"]["PromptTemplateSectionSchema"][];
+        };
+        /** PromptTemplateUpdate */
+        PromptTemplateUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            structure?: components["schemas"]["PromptTemplateStructureSchema"] | null;
+            /** Sort Order */
+            sort_order?: number | null;
         };
         /** PromptTranslateRequest */
         PromptTranslateRequest: {
@@ -5438,6 +5604,7 @@ export interface components {
             mapping_slot_states?: {
                 [key: string]: boolean;
             };
+            prompt_template_config?: components["schemas"]["WorkflowPromptTemplateConfigSchema"];
         };
         /** WorkflowHistoryStatusResponse */
         WorkflowHistoryStatusResponse: {
@@ -5589,6 +5756,14 @@ export interface components {
             /** Base Updated At */
             base_updated_at?: string | null;
         };
+        /** WorkflowPromptTemplateConfigSchema */
+        WorkflowPromptTemplateConfigSchema: {
+            /** Template Id */
+            template_id?: number | null;
+            template_snapshot?: components["schemas"]["PromptTemplateStructureSchema"] | null;
+            /** Output Groups */
+            output_groups?: components["schemas"]["PromptOutputGroupSchema"][];
+        };
         /** WorkflowRead */
         WorkflowRead: {
             /** Id */
@@ -5617,6 +5792,7 @@ export interface components {
             mapping_slot_states?: {
                 [key: string]: boolean;
             };
+            prompt_template_config?: components["schemas"]["WorkflowPromptTemplateConfigSchema"];
         };
         /** WorkflowRollbackResponse */
         WorkflowRollbackResponse: {
@@ -5669,6 +5845,7 @@ export interface components {
             mapping_slot_states?: {
                 [key: string]: boolean;
             } | null;
+            prompt_template_config?: components["schemas"]["WorkflowPromptTemplateConfigSchema"] | null;
         };
     };
     responses: never;
@@ -6011,6 +6188,123 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScanResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_templates_api_prompt_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateRead"][];
+                };
+            };
+        };
+    };
+    create_prompt_template_api_prompt_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_prompt_template_api_prompt_templates__template_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_prompt_template_api_prompt_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

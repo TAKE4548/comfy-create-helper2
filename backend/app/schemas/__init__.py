@@ -174,6 +174,18 @@ from app.schemas.mapping import (
     ScanPreviewResponse,
 )
 
+from app.schemas.prompt_template import (
+    PromptTemplateBlockSchema,
+    PromptTemplateSectionSchema,
+    PromptTemplateStructureSchema,
+    PromptRepeatFilterSchema,
+    PromptOutputGroupSchema,
+    WorkflowPromptTemplateConfigSchema,
+    PromptTemplateCreate,
+    PromptTemplateUpdate,
+    PromptTemplateRead,
+)
+
 __all__ = [
     # Workflow
     "MappingMasterBase", "MappingMasterCreate", "MappingMasterRead", "MappingMasterReorder",
@@ -181,6 +193,10 @@ __all__ = [
     "WorkflowCreate", "WorkflowSummary", "WorkflowRead", "WorkflowUpdate", "WorkflowCopyRequest",
     "WorkflowScanRequest", "ScanMatchedItem", "ScanWarningItem", "ScanResult",
     "DiffAnalyzeRequest", "DiffAnalyzeResponse", "WorkflowRollbackResponse", "WorkflowHistoryStatusResponse",
+    # Prompt Template
+    "PromptTemplateBlockSchema", "PromptTemplateSectionSchema", "PromptTemplateStructureSchema",
+    "PromptRepeatFilterSchema", "PromptOutputGroupSchema", "WorkflowPromptTemplateConfigSchema",
+    "PromptTemplateCreate", "PromptTemplateUpdate", "PromptTemplateRead",
     # Snapshot / Album
     "SnapshotLoraCreate", "SnapshotLoraRead",
     "SnapshotTagSetCreate", "SnapshotTagSetRead",

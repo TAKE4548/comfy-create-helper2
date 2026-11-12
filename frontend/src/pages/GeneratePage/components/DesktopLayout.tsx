@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useGenerationStore } from '../../../store/useGenerationStore'
 import {
   Zap, Plus, ChevronRight, ChevronDown, Undo2, Redo2, Library,
@@ -17,6 +17,8 @@ import { MappingErrorPanel } from './MappingErrorPanel'
 import { ParamPanel } from './ParamPanel'
 import { TagChipEditor } from '../../../components/TagChipEditor'
 import { PromptSectionClipboardMenu } from './PromptSectionClipboardMenu'
+import { PromptTemplateSplitEditor } from './PromptTemplateSplitEditor'
+import { isWorkflowTemplateActive } from '../../../utils/promptTemplateEngine'
 import { GenerateModalsOverlay } from '../sections/GenerateModalsOverlay'
 import { GenerationGallerySection } from '../sections/GenerationGallerySection'
 import { generateNextProfileName } from '../../../utils/profileUtils'
@@ -113,7 +115,18 @@ export const DesktopLayout = ({
     promptTranslation,
   } = state
 
-  const textStageGroups = useMappingStageGroups(textMappings, mappingMasters, true)
+  const isTemplateActive = isWorkflowTemplateActive(workflow?.prompt_template_config)
+  const assignedTargetRoles = useMemo(() => {
+    if (!isTemplateActive || !workflow?.prompt_template_config?.output_groups) return new Set<string>()
+    return new Set(workflow.prompt_template_config.output_groups.map((g) => g.target_role).filter(Boolean))
+  }, [isTemplateActive, workflow?.prompt_template_config?.output_groups])
+
+  const displayPromptMappings = useMemo(() => {
+    if (!isTemplateActive) return textMappings
+    return textMappings.filter((m) => !m.role || !assignedTargetRoles.has(m.role))
+  }, [isTemplateActive, textMappings, assignedTargetRoles])
+
+  const textStageGroups = useMappingStageGroups(displayPromptMappings, mappingMasters, true)
 
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [newSetName, setNewSetName] = useState('')
@@ -497,8 +510,24 @@ export const DesktopLayout = ({
         minSize={120}
         first={(
           <div id="desktop-prompt-scroll" data-stage-scroll-root="" className="stage-input-scroll-root w-full h-full min-h-0 overflow-y-auto px-5 custom-scrollbar">
-        <div className="space-y-0">
-        {textStageGroups.map((group) => (
+            {isTemplateActive && workflow?.prompt_template_config?.template_snapshot && (
+              <div className="mb-4 pt-2">
+                <PromptTemplateSplitEditor
+                  config={workflow.prompt_template_config}
+                  structure={workflow.prompt_template_config.template_snapshot}
+                  paramValues={paramValues}
+                  setParamValues={setParamValues}
+                  loras={loras}
+                  tagSets={tagSets}
+                  activeBaseModelId={workflow?.target_base_model_id}
+                  addAppliedAsset={addAppliedAsset}
+                  onOpenTranslation={promptTranslation.openTranslation}
+                  onOpenSaveAsTagSet={setSaveAsTagSetRole}
+                />
+              </div>
+            )}
+            <div className="space-y-0">
+            {textStageGroups.map((group) => (
           <StageInputGroup key={group.key} groupKey={group.key} stageName={group.stageName} stageKey={group.stageKey}>
             <div className="space-y-0">
         {group.mappings.map((m) => {

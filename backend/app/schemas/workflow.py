@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from typing import Optional, Any
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from app.schemas.prompt_template import WorkflowPromptTemplateConfigSchema
 
 
 def _validate_mapping_slot_state_keys(value: Any) -> Any:
@@ -93,6 +94,7 @@ class WorkflowCreate(BaseModel):
     mappings: list[WorkflowMappingCreate] = []
     target_base_model_id: Optional[int] = None
     mapping_slot_states: dict[str, StrictBool] = Field(default_factory=dict)
+    prompt_template_config: WorkflowPromptTemplateConfigSchema = Field(default_factory=WorkflowPromptTemplateConfigSchema)
 
     @field_validator("mapping_slot_states")
     @classmethod
@@ -118,6 +120,7 @@ class WorkflowRead(BaseModel):
     target_base_model_id: Optional[int] = None
     created_at: datetime
     mapping_slot_states: dict[str, StrictBool] = Field(default_factory=dict)
+    prompt_template_config: WorkflowPromptTemplateConfigSchema = Field(default_factory=WorkflowPromptTemplateConfigSchema)
 
     @field_validator("mapping_slot_states", mode="before")
     @classmethod
@@ -129,6 +132,18 @@ class WorkflowRead(BaseModel):
                 raise ValueError("mapping_slot_states must be valid JSON") from exc
         return _validate_mapping_slot_state_keys(value)
 
+    @field_validator("prompt_template_config", mode="before")
+    @classmethod
+    def parse_prompt_template_config(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            if not value.strip():
+                return {}
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("prompt_template_config must be valid JSON") from exc
+        return value
+
 
 class WorkflowUpdate(BaseModel):
     name: Optional[str] = None
@@ -137,12 +152,15 @@ class WorkflowUpdate(BaseModel):
     default_applied_assets: Optional[str] = None
     target_base_model_id: Optional[int] = None
     mapping_slot_states: dict[str, StrictBool] | None = None
+    prompt_template_config: Optional[WorkflowPromptTemplateConfigSchema] = None
 
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_null_mapping_slot_states(cls, value: Any) -> Any:
         if isinstance(value, dict) and "mapping_slot_states" in value and value["mapping_slot_states"] is None:
             raise ValueError("mapping_slot_states cannot be null")
+        if isinstance(value, dict) and "prompt_template_config" in value and value["prompt_template_config"] is None:
+            raise ValueError("prompt_template_config cannot be null")
         return value
 
     @field_validator("mapping_slot_states")

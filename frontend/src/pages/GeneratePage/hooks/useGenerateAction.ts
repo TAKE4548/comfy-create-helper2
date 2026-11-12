@@ -14,13 +14,27 @@ import type { QueueSubmissionFailure } from '../../../store/types'
 import { parseQueueSubmissionFailure } from '../../../utils/queueSubmissionFailure'
 import { buildGenerationRecord, PROMPT_RECORD_KEY, ASSOCIATIONS_KEY } from '../../../utils/generationRecord'
 import type { CaptureAssetInput } from '../../../utils/generationRecord'
+import {
+  PROMPT_TEMPLATE_STATE_KEY,
+  isWorkflowTemplateActive,
+  parsePresetState,
+  computeAllOutputGroupValues,
+} from '../../../utils/promptTemplateEngine'
 import type { PrepareSeedBatchOptions, ResolvedSeedItem } from '../../../utils/seedBatch'
 import { generationApi } from '../../../api/domains/generation'
 import type { BatchRequest, GenerationItem } from '../../../api/domains/generation'
 import { prepareSeedBatch, validateSeedBatch } from '../../../utils/seedBatch'
 
 const freeze = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
-const cleanParams = (values: Record<string, string>) => Object.fromEntries(Object.entries(values).filter(([key]) => key !== PROMPT_RECORD_KEY && key !== ASSOCIATIONS_KEY))
+const cleanParams = (values: Record<string, string>) =>
+  Object.fromEntries(
+    Object.entries(values).filter(
+      ([key]) =>
+        key !== PROMPT_RECORD_KEY &&
+        key !== ASSOCIATIONS_KEY &&
+        key !== PROMPT_TEMPLATE_STATE_KEY
+    )
+  )
 
 function createRequestId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
@@ -220,6 +234,17 @@ export function useGenerateAction(
       return
     }
 
+    const rawTemplateState = state.paramValues?.[PROMPT_TEMPLATE_STATE_KEY]
+    if (isWorkflowTemplateActive(capturedWorkflow.prompt_template_config)) {
+      const templateConfig = capturedWorkflow.prompt_template_config!
+      const structure = templateConfig.template_snapshot
+      if (structure && templateConfig.output_groups) {
+        const parsedState = parsePresetState(rawTemplateState, structure, currentParamValues, templateConfig.output_groups)
+        const joinedValues = computeAllOutputGroupValues(structure, parsedState, templateConfig.output_groups)
+        Object.assign(currentParamValues, joinedValues)
+      }
+    }
+
     const effectiveParamValues = applyParamSync(
       getEffectiveParamValues(currentParamValues, currentPromptChips, isAnimaMode, promptRoleAllowlist),
       currentParamSyncGroups,
@@ -246,13 +271,24 @@ export function useGenerateAction(
       })
       let finalGraph = injectedGraph
       if (activeBypassNodeIds.length > 0) finalGraph = applyBypass(finalGraph, activeBypassNodeIds, comfyObjectInfo)
+      const rawParamsForRecord = {
+        ...resolved.actualParamValues,
+        ...(rawTemplateState ? { [PROMPT_TEMPLATE_STATE_KEY]: rawTemplateState } : {}),
+      }
+      const record = buildGenerationRecord(
+        capturedWorkflow,
+        injectedGraph,
+        finalGraph,
+        currentAppliedAssets,
+        rawParamsForRecord
+      )
+      const cleanItemParams = cleanParams(resolved.actualParamValues)
+      cleanItemParams[PROMPT_RECORD_KEY] = JSON.stringify(record)
+
       items.push({
         graph: finalGraph,
         workflow_id: capturedWorkflow.id,
-        param_values: {
-          ...resolved.actualParamValues,
-          [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, currentAppliedAssets)),
-        },
+        param_values: cleanItemParams,
         applied_assets: currentAppliedAssets,
         ...(activeSet ? { set_name: activeSetName } : {}),
       })
@@ -324,7 +360,7 @@ export function useGenerateAction(
       return
     }
 
-    const plans: Array<{ setItem: (typeof checkedSets)[number]; itemAssets: Record<string, CaptureAssetInput[]>; effectiveBatchSize: number; effectiveSeedMode: 'fixed' | 'random'; effectiveSeed: number; seedOptions: PrepareSeedBatchOptions; resolvedSeeds?: ResolvedSeedItem[] }> = []
+    const plans: Array<{ setItem: (typeof checkedSets)[number]; itemAssets: Record<string, CaptureAssetInput[]>; effectiveBatchSize: number; effectiveSeedMode: 'fixed' | 'random'; effectiveSeed: number; seedOptions: PrepareSeedBatchOptions; resolvedSeeds?: ResolvedSeedItem[]; rawTemplateState?: string }> = []
     let validatingSetName = checkedSets[0]?.name ?? 'セット'
     try {
       for (const setItem of checkedSets) {
@@ -333,6 +369,18 @@ export function useGenerateAction(
         const itemParams = isActive
           ? { ...cleanParams(setItem.paramValues || {}), ...currentParamValues }
           : cleanParams(setItem.paramValues || {})
+        const rawTemplateState = isActive
+          ? state.paramValues?.[PROMPT_TEMPLATE_STATE_KEY]
+          : setItem.paramValues?.[PROMPT_TEMPLATE_STATE_KEY]
+        if (isWorkflowTemplateActive(capturedWorkflow.prompt_template_config)) {
+          const templateConfig = capturedWorkflow.prompt_template_config!
+          const structure = templateConfig.template_snapshot
+          if (structure && templateConfig.output_groups) {
+            const parsedState = parsePresetState(rawTemplateState, structure, itemParams, templateConfig.output_groups)
+            const joinedValues = computeAllOutputGroupValues(structure, parsedState, templateConfig.output_groups)
+            Object.assign(itemParams, joinedValues)
+          }
+        }
         const itemAssets = freeze((isActive ? currentAppliedAssets : setItem.appliedAssets) || {})
         const itemChips = isActive
           ? (Object.keys(currentPromptChips).length > 0 ? currentPromptChips : (setItem.promptChips || {}))
@@ -350,7 +398,7 @@ export function useGenerateAction(
         const effectiveSeed = isActive ? (state.seed ?? setItem.seed) : setItem.seed
         const seedOptions: PrepareSeedBatchOptions = freeze({ workflow: currentWorkflow, paramValues: syncedParamValues, batchSize: effectiveBatchSize, paramSyncGroups: currentParamSyncGroups })
         validateSeedBatch(seedOptions)
-        plans.push({ setItem, itemAssets, effectiveBatchSize, effectiveSeedMode, effectiveSeed, seedOptions })
+        plans.push({ setItem, itemAssets, effectiveBatchSize, effectiveSeedMode, effectiveSeed, seedOptions, rawTemplateState })
       }
       for (const plan of plans) {
         validatingSetName = plan.setItem.name
@@ -381,14 +429,23 @@ export function useGenerateAction(
         })
         let finalGraph = injectedGraph
         if (activeBypassNodeIds.length > 0) finalGraph = applyBypass(finalGraph, activeBypassNodeIds, comfyObjectInfo)
-        const paramValues = {
+        const rawParamsForRecord = {
           ...resolved.actualParamValues,
-          [PROMPT_RECORD_KEY]: JSON.stringify(buildGenerationRecord(capturedWorkflow, injectedGraph, finalGraph, itemAssets)),
+          ...(plan.rawTemplateState ? { [PROMPT_TEMPLATE_STATE_KEY]: plan.rawTemplateState } : {}),
         }
+        const record = buildGenerationRecord(
+          capturedWorkflow,
+          injectedGraph,
+          finalGraph,
+          itemAssets,
+          rawParamsForRecord
+        )
+        const cleanItemParams = cleanParams(resolved.actualParamValues)
+        cleanItemParams[PROMPT_RECORD_KEY] = JSON.stringify(record)
         items.push({
           graph: finalGraph,
           workflow_id: capturedWorkflow.id,
-          param_values: paramValues,
+          param_values: cleanItemParams,
           applied_assets: itemAssets,
           set_name: setItem.name,
         })
