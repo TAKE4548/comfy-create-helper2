@@ -30,11 +30,22 @@ export const TagChip: React.FC<TagChipProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(text);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [isTranslationOpen, setIsTranslationOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyText = usePromptClipboardStore((s) => s.copyText);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const chipRef = useRef<HTMLDivElement | null>(null);
+
+  const updateFlipState = () => {
+    if (!chipRef.current || typeof window === 'undefined') return;
+    const rect = chipRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || 0;
+    if (viewportHeight <= 0) return;
+    const shouldFlip = rect.bottom + 220 > viewportHeight - 126 || viewportHeight - rect.bottom < 220;
+    setIsFlipped(shouldFlip);
+  };
 
   const handleCopyTag = async () => {
     await copyText(text);
@@ -88,6 +99,17 @@ export const TagChip: React.FC<TagChipProps> = ({
     };
   }, [isMenuOpen]);
 
+  // サブメニュー開閉時の Flip 判定およびリサイズ追従
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    updateFlipState();
+    const handleResize = () => updateFlipState();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isMenuOpen]);
+
   // ドラッグ時のインラインスタイル
   const style: React.CSSProperties = {
     transform: isDragging
@@ -97,7 +119,7 @@ export const TagChip: React.FC<TagChipProps> = ({
       : CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.6 : 1,
-    zIndex: isDragging ? 50 : undefined,
+    zIndex: isDragging ? 30 : undefined,
     boxShadow: isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.3)' : undefined,
   };
 
@@ -118,6 +140,9 @@ export const TagChip: React.FC<TagChipProps> = ({
     e.stopPropagation();
     if (isEditing || isDragging) return;
     const next = !isMenuOpen;
+    if (next) {
+      updateFlipState();
+    }
     setIsMenuOpen(next);
     setIsTranslationOpen(next);
   };
@@ -229,9 +254,14 @@ export const TagChip: React.FC<TagChipProps> = ({
 
   const dragProps = isEditing ? {} : { ...attributes, ...listeners };
 
+  const setCombinedRef = (node: HTMLDivElement | null) => {
+    chipRef.current = node;
+    setNodeRef(node);
+  };
+
   return (
     <div
-      ref={setNodeRef}
+      ref={setCombinedRef}
       data-ux-tag-chip="true"
       data-ux-neutral-hover={!isEditing && enabled ? 'true' : undefined}
       style={style}
@@ -302,7 +332,9 @@ export const TagChip: React.FC<TagChipProps> = ({
       {isMenuOpen && !isEditing && (
         <div
           ref={menuRef}
-          className="absolute top-full left-0 mt-1.5 z-50 w-[360px] max-w-[calc(100vw-24px)] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none"
+          className={`absolute ${
+            isFlipped ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } left-0 z-50 w-[360px] max-w-[calc(100vw-24px)] p-2.5 bg-[#18181C] border border-[rgba(255,255,255,0.15)] rounded-lg shadow-2xl flex flex-col gap-2.5 text-xs select-none`}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             e.stopPropagation();

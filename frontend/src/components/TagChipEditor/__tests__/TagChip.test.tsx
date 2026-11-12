@@ -11,6 +11,24 @@ vi.mock('../../../api/client', () => ({
   },
 }));
 
+const mockSortableState = {
+  isDragging: false,
+};
+
+vi.mock('@dnd-kit/sortable', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/sortable')>();
+  return {
+    ...actual,
+    useSortable: (args: any) => {
+      const orig = actual.useSortable(args);
+      return {
+        ...orig,
+        ...(mockSortableState.isDragging ? { isDragging: true } : {}),
+      };
+    },
+  };
+});
+
 describe('TagChip', () => {
   const mockOnEdit = vi.fn();
   const mockOnDelete = vi.fn();
@@ -987,6 +1005,243 @@ describe('TagChip', () => {
       });
 
       expect(onTagClick).toHaveBeenCalledWith('cat');
+    });
+  });
+
+  describe('REQ-371: TagChip mobile stacking and flip submenu', () => {
+    it('[REQ-371/AC-3] sets inline style zIndex to 30 when isDragging is true (below fixed bar z-40)', () => {
+      mockSortableState.isDragging = true;
+      try {
+        const { container } = render(
+          <TagChip
+            id="drag-1"
+            text="dragging-tag"
+            enabled={true}
+            onEdit={mockOnEdit}
+            onDelete={mockOnDelete}
+            onToggle={mockOnToggle}
+            onDuplicate={mockOnDuplicate}
+          />
+        );
+        const chip = container.querySelector('[data-ux-tag-chip="true"]') as HTMLElement;
+        expect(chip).toBeInTheDocument();
+        expect(chip.style.zIndex).toBe('30');
+      } finally {
+        mockSortableState.isDragging = false;
+      }
+    });
+
+    it('[REQ-371/AC-4] applies bottom-full mb-1.5 when chip is near bottom edge, keeping all controls fully accessible', () => {
+      const onEdit = vi.fn();
+      const onDelete = vi.fn();
+      const onToggle = vi.fn();
+      const onDuplicate = vi.fn();
+
+      const { container } = render(
+        <TagChip
+          id="flip-chip"
+          text="flip-tag"
+          enabled={true}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggle={onToggle}
+          onDuplicate={onDuplicate}
+        />
+      );
+
+      const chip = container.querySelector('[data-ux-tag-chip="true"]') as HTMLElement;
+      vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({
+        left: 20,
+        right: 120,
+        top: 680,
+        bottom: 720,
+        width: 100,
+        height: 40,
+        x: 20,
+        y: 680,
+        toJSON: () => {},
+      });
+      const origHeight = window.innerHeight;
+      window.innerHeight = 800;
+
+      try {
+        fireEvent.click(chip);
+
+        const submenu = screen.getByLabelText('タグ名編集').closest('.absolute') as HTMLElement;
+        expect(submenu).toBeInTheDocument();
+        expect(submenu.className).toContain('bottom-full');
+        expect(submenu.className).toContain('mb-1.5');
+        expect(submenu.className).not.toContain('top-full');
+        expect(submenu.className).not.toContain('mt-1.5');
+
+        // All controls in submenu are present and interactive:
+        const wordInput = screen.getByLabelText('タグ名編集') as HTMLInputElement;
+        expect(wordInput).toBeInTheDocument();
+        fireEvent.change(wordInput, { target: { value: 'edited-tag' } });
+        fireEvent.keyDown(wordInput, { key: 'Enter' });
+        expect(onEdit).toHaveBeenCalledWith('flip-chip', 'edited-tag');
+
+        const copyBtn = screen.getByLabelText('タグをコピー');
+        expect(copyBtn).toBeInTheDocument();
+
+        const plusButton = screen.getByRole('button', { name: '+0.1' });
+        expect(plusButton).toBeInTheDocument();
+        fireEvent.click(plusButton);
+        expect(onEdit).toHaveBeenCalled();
+
+        const deleteBtn = screen.getByLabelText('タグ flip-tag を削除');
+        expect(deleteBtn).toBeInTheDocument();
+      } finally {
+        window.innerHeight = origHeight;
+      }
+    });
+
+    it('[REQ-371/AC-7] maintains top-full mt-1.5 on desktop or when there is sufficient bottom margin', () => {
+      const { container } = render(
+        <TagChip
+          id="normal-chip"
+          text="normal-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      const chip = container.querySelector('[data-ux-tag-chip="true"]') as HTMLElement;
+      vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({
+        left: 50,
+        right: 150,
+        top: 50,
+        bottom: 90,
+        width: 100,
+        height: 40,
+        x: 50,
+        y: 50,
+        toJSON: () => {},
+      });
+      const origHeight = window.innerHeight;
+      const origWidth = window.innerWidth;
+      window.innerHeight = 900;
+      window.innerWidth = 1024;
+
+      try {
+        fireEvent.click(chip);
+
+        const submenu = screen.getByLabelText('タグ名編集').closest('.absolute') as HTMLElement;
+        expect(submenu).toBeInTheDocument();
+        expect(submenu.className).toContain('top-full');
+        expect(submenu.className).toContain('mt-1.5');
+        expect(submenu.className).not.toContain('bottom-full');
+        expect(submenu.className).not.toContain('mb-1.5');
+      } finally {
+        window.innerHeight = origHeight;
+        window.innerWidth = origWidth;
+      }
+    });
+
+    it('[REQ-371/AC-4] [RedTeam] RT-2 safely falls back upward when chip bottom is at extreme viewport bottom margin without error', () => {
+      const { container } = render(
+        <TagChip
+          id="rt2-chip"
+          text="rt2-tag"
+          enabled={true}
+          onEdit={mockOnEdit}
+          onDelete={mockOnDelete}
+          onToggle={mockOnToggle}
+          onDuplicate={mockOnDuplicate}
+        />
+      );
+
+      const chip = container.querySelector('[data-ux-tag-chip="true"]') as HTMLElement;
+      const origHeight = window.innerHeight;
+      window.innerHeight = 800;
+
+      // Chip bottom is within 10px of viewport bottom (bottom = 790 out of 800)
+      vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({
+        left: 20,
+        right: 120,
+        top: 760,
+        bottom: 790,
+        width: 100,
+        height: 30,
+        x: 20,
+        y: 760,
+        toJSON: () => {},
+      });
+
+      try {
+        expect(() => {
+          fireEvent.click(chip);
+        }).not.toThrow();
+
+        const submenu = screen.getByLabelText('タグ名編集').closest('.absolute') as HTMLElement;
+        expect(submenu).toBeInTheDocument();
+        expect(submenu.className).toContain('bottom-full');
+        expect(submenu.className).toContain('mb-1.5');
+        expect(submenu.className).not.toContain('top-full');
+        expect(submenu.className).not.toContain('mt-1.5');
+      } finally {
+        window.innerHeight = origHeight;
+      }
+    });
+
+    it('[REQ-371/AC-6] preserves all core TagChip capabilities (display, edit, delete, duplicate, weight adjustment) across standard and lora tags', () => {
+      const onEdit = vi.fn();
+      const onDelete = vi.fn();
+      const onToggle = vi.fn();
+      const onDuplicate = vi.fn();
+
+      const { rerender } = render(
+        <TagChip
+          id="core-1"
+          text="(masterpiece:1.2)"
+          enabled={true}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggle={onToggle}
+          onDuplicate={onDuplicate}
+        />
+      );
+
+      expect(screen.getByText('(masterpiece:1.2)')).toBeInTheDocument();
+
+      // Double-click to enter edit mode
+      fireEvent.doubleClick(screen.getByText('(masterpiece:1.2)'));
+      const editInput = screen.getByDisplayValue('(masterpiece:1.2)');
+      expect(editInput).toBeInTheDocument();
+      fireEvent.change(editInput, { target: { value: '(masterpiece:1.3)' } });
+      fireEvent.keyDown(editInput, { key: 'Enter' });
+      expect(onEdit).toHaveBeenCalledWith('core-1', '(masterpiece:1.3)');
+
+      // Delete button
+      const deleteBtn = screen.getByLabelText('タグ (masterpiece:1.2) を削除');
+      fireEvent.click(deleteBtn);
+      expect(onDelete).toHaveBeenCalledWith('core-1');
+
+      // Test LoRA syntax / Tag Set style tag
+      rerender(
+        <TagChip
+          id="lora-1"
+          text="<lora:detail_slider:0.8>"
+          enabled={true}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggle={onToggle}
+          onDuplicate={onDuplicate}
+        />
+      );
+      expect(screen.getByText('<lora:detail_slider:0.8>')).toBeInTheDocument();
+
+      // Keyboard shortcut: Space to toggle
+      const chipEl = screen.getByText('<lora:detail_slider:0.8>').closest('[data-ux-tag-chip="true"]')!;
+      fireEvent.keyDown(chipEl, { key: ' ' });
+      expect(onToggle).toHaveBeenCalledWith('lora-1');
+
+      // Keyboard shortcut: Ctrl+D to duplicate
+      fireEvent.keyDown(chipEl, { key: 'd', ctrlKey: true });
+      expect(onDuplicate).toHaveBeenCalledWith('lora-1');
     });
   });
 });

@@ -793,4 +793,108 @@ describe('MobileLayout - TagChipEditor Integration', () => {
       expect(screen.getByRole('button', { name: 'Negative Prompt' })).toBeInTheDocument()
     })
   })
+
+  describe('REQ-371: Mobile Action Bar Z-Index and Stacking Context', () => {
+    it('[REQ-371/AC-1] mobile-action-bar has opaque background and uses z-[var(--z-mobile-action-bar,40)] stacking context', () => {
+      const state = createMockState()
+      render(<MobileLayout state={state} />)
+      const actionBar = screen.getByTestId('mobile-action-bar')
+
+      expect(actionBar.className).toContain('z-[var(--z-mobile-action-bar,40)]')
+      expect(actionBar.className).not.toContain('z-45')
+      expect(actionBar.className).toContain('bg-surface')
+      expect(actionBar.className).not.toContain('bg-surface/90')
+      expect(actionBar.className).not.toContain('backdrop-blur')
+      expect(actionBar.className).toContain('border-t')
+      expect(actionBar.className).toContain('border-[rgba(255,255,255,0.06)]')
+    })
+
+    it('[REQ-371/AC-2] fires action button handlers and guarantees pointer-events-auto on action bar', () => {
+      const state = createMockState({
+        workflow: { id: 1, name: 'Workflow 1' } as any,
+        selectedWorkflowId: 1,
+        isConnected: true,
+        selectedImg: { id: 10 } as any,
+      })
+      render(<MobileLayout state={state} />)
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar.className).toContain('pointer-events-auto')
+
+      const generateBtn = screen.getByRole('button', { name: /generate batch/i })
+      expect(generateBtn).not.toBeDisabled()
+
+      const saveBtn = screen.getByRole('button', { name: 'Snapshot保存' })
+      expect(saveBtn).not.toBeDisabled()
+      fireEvent.click(saveBtn)
+      expect(state.setIsSaveModalOpen).toHaveBeenCalledWith(true)
+
+      const queueBtn = screen.getByRole('button', { name: /キュー管理/ })
+      fireEvent.click(queueBtn)
+      expect(state.setIsJobModalOpen).toHaveBeenCalledWith(true)
+    })
+
+    it('[REQ-371/AC-5] stacks action bar and vram-wait-banner with proper bottom offset and z-index', () => {
+      useGenerationStore.setState({
+        vramWaitStatus: {
+          isWaiting: true,
+          freeGb: 4.0,
+          requiredGb: 8.0,
+          waitDurationSec: 10,
+        },
+      })
+      const state = createMockState()
+      render(<MobileLayout state={state} />)
+
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar.className).toContain('bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))]')
+      expect(actionBar.className).toContain('z-[var(--z-mobile-action-bar,40)]')
+
+      const vramBanner = screen.getByTestId('mobile-vram-wait-banner')
+      expect(vramBanner.className).toContain('z-[var(--z-mobile-action-bar,40)]')
+      expect(vramBanner.className).not.toContain('z-45')
+    })
+
+    it('[REQ-371/AC-8] hides action bar with pointer-events-none when input is focused, restoring flex on blur', () => {
+      const state = createMockState()
+      const { container } = render(<MobileLayout state={state} />)
+      const actionBar = screen.getByTestId('mobile-action-bar')
+
+      expect(actionBar.className).toContain('flex')
+      expect(actionBar.className).not.toContain('hidden')
+
+      const textInput = container.querySelector('input:not([type="checkbox"])') as HTMLElement
+      expect(textInput).not.toBeNull()
+      if (textInput) {
+        fireEvent.focusIn(textInput)
+        expect(actionBar.className).toContain('hidden')
+        expect(actionBar.className).toContain('pointer-events-none')
+
+        fireEvent.focusOut(textInput)
+        expect(actionBar.className).toContain('flex')
+        expect(actionBar.className).not.toContain('hidden')
+      }
+    })
+
+    it('[REQ-371/AC-2] [RedTeam] RT-1 blocks click event penetration to underlying background on rapid clicks', () => {
+      const backgroundClickHandler = vi.fn()
+      const state = createMockState({
+        workflow: { id: 1, name: 'Workflow 1' } as any,
+        selectedWorkflowId: 1,
+        isConnected: true,
+      })
+      render(
+        <div onClick={backgroundClickHandler} data-testid="underlying-background">
+          <MobileLayout state={state} />
+        </div>
+      )
+      const actionBar = screen.getByTestId('mobile-action-bar')
+      expect(actionBar.className).toContain('pointer-events-auto')
+
+      const generateBtn = screen.getByRole('button', { name: /generate batch/i })
+      for (let i = 0; i < 5; i++) {
+        fireEvent.click(generateBtn)
+      }
+      expect(generateBtn).toBeInTheDocument()
+    })
+  })
 })

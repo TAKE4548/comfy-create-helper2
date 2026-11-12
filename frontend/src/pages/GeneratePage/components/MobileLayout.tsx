@@ -883,7 +883,7 @@ export const MobileLayout = ({
       {vramWaitStatus?.isWaiting && (
         <div
           data-testid="mobile-vram-wait-banner"
-          className="fixed bottom-[136px] left-0 right-0 z-45 mx-3 px-3.5 py-2.5 rounded-xl bg-yellow-500/15 border border-yellow-500/30 backdrop-blur-md flex items-center justify-between shadow-lg"
+          className="fixed bottom-[136px] left-0 right-0 z-[var(--z-mobile-action-bar,40)] mx-3 px-3.5 py-2.5 rounded-xl bg-yellow-500/15 border border-yellow-500/30 backdrop-blur-md flex items-center justify-between shadow-lg"
         >
           <div className="flex items-center gap-2 min-w-0 pr-2">
             <AlertTriangle size={16} className="text-yellow-400 animate-pulse flex-shrink-0" />
@@ -907,7 +907,7 @@ export const MobileLayout = ({
       )}
       <div
         data-testid="mobile-action-bar"
-        className={`fixed bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))] left-0 right-0 z-45 bg-surface/90 backdrop-blur border-t border-[rgba(255,255,255,0.06)] px-3 py-2.5 items-center gap-2 ${
+        className={`fixed bottom-[calc(54px+env(safe-area-inset-bottom)+env(keyboard-inset-height,0px))] left-0 right-0 z-[var(--z-mobile-action-bar,40)] pointer-events-auto bg-surface border-t border-[rgba(255,255,255,0.06)] px-3 py-2.5 items-center gap-2 ${
           isInputFocused ? 'hidden pointer-events-none' : 'flex'
         }`}
         style={{ maxHeight: '40vh' }}
