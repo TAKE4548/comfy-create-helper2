@@ -108,6 +108,14 @@ export default defineConfig({
   base: process.env.PROTOTYPE_PAGES === '1' ? '/comfy-create-helper2/' : '/',
   plugins: [pagesRouterBasename(), offlineFixtureGalleryInteraction(), studioEvaluationFixtures(), studioCaptionProposal(), react()],
   resolve: { dedupe: ['react', 'react-dom'] },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        req425: path.resolve(__dirname, 'req425.html'),
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 5391,
