@@ -2,12 +2,12 @@
 
 - 実施日: 2026-10-05（Asia/Tokyo）
 - 対象: `docs/design/REQ-317-test-plan.md`
-- コマンド: `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py qa-audit docs/design/REQ-317-test-plan.md`
+- コマンド: `python <GLOBAL_HELPERS>/local_model_adapter.py qa-audit docs/design/REQ-317-test-plan.md`
 - 実行環境: ソケット制限回避のためsandbox外で実行。
 - 実行結果: exit 0、モデル回答取得済み。**指摘あり（ISSUES_DETECTED）**。コード実装全体の監査PASSを意味しない。
 - モデル: qwen3.5-9b-claude-4.6-highiq-thinking-heretic-uncensored、9.0B / Q6_K / reasoning。
 - ComfyUIジョブ完了・VRAM解放待ちを経て監査を実行。生成ジョブを中断していない。
-- 終了直後に `python C:/Users/audih/.gemini/antigravity/scripts/local_model_adapter.py unload` を実行、exit 0。全モデル解放・VRAM解放をツールが報告。GPU全体の使用量を別途計測した結果ではない。
+- 終了直後に `python <GLOBAL_HELPERS>/local_model_adapter.py unload` を実行、exit 0。全モデル解放・VRAM解放をツールが報告。GPU全体の使用量を別途計測した結果ではない。
 
 ## モデル回答（原文）
 
