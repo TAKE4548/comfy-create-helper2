@@ -1296,11 +1296,6 @@ def step_035_variant_id_references(conn: Connection, inspector: Inspector) -> No
     if "role" not in mv_columns:
         raise MissingMappingVariantsError("mapping_variants prerequisite table is missing")
 
-    unresolved = audit_role_references(conn, inspector)
-    if unresolved:
-        unresolved_details = ", ".join(f"{item[0]} id={item[1]} key={item[2]}" for item in unresolved)
-        raise ValueError(f"Unresolved role references found: {unresolved_details}")
-
     # Mutation phase: Create normalized reference tables
     conn.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS workflow_preset_values (
@@ -1339,11 +1334,19 @@ def step_035_variant_id_references(conn: Connection, inspector: Inspector) -> No
             try:
                 data = json.loads(pval_raw) if pval_raw else {}
             except Exception:
+                logger.warning("step_035: skipping preset id=%s due to invalid param_values JSON", pid)
                 continue
             if not isinstance(data, dict):
+                logger.warning("step_035: skipping preset id=%s because param_values is not a JSON object", pid)
                 continue
 
             norm = normalize_params(index, data)
+            if norm.unresolved:
+                logger.warning(
+                    "step_035: preset id=%s skipped unresolved keys: %s",
+                    pid,
+                    sorted(norm.unresolved),
+                )
             for (vid, sub_key), val in norm.entries.items():
                 conn.execute(sa.text("""
                     INSERT OR IGNORE INTO workflow_preset_values (preset_id, variant_id, sub_key, value)
@@ -1364,27 +1367,50 @@ def step_035_variant_id_references(conn: Connection, inspector: Inspector) -> No
             "SELECT id, master_role, slave_roles FROM param_sync_groups WHERE master_variant_id IS NULL"
         )).fetchall()
         for gid, mrole, sroles_raw in sg_rows:
-            cls_master = index.classify(mrole)
-            master_vid = cls_master.variant_id
-            conn.execute(sa.text(
-                "UPDATE param_sync_groups SET master_variant_id = :master_vid WHERE id = :group_id"
-            ), {"master_vid": master_vid, "group_id": gid})
+            cls_master = index.classify(mrole) if mrole else None
+            master_vid = cls_master.variant_id if cls_master is not None else None
+            if master_vid is not None:
+                conn.execute(sa.text(
+                    "UPDATE param_sync_groups SET master_variant_id = :master_vid WHERE id = :group_id"
+                ), {"master_vid": master_vid, "group_id": gid})
+            else:
+                logger.warning(
+                    "step_035: sync_group id=%s skipped unresolved master_role=%r",
+                    gid,
+                    mrole,
+                )
 
             try:
                 slaves = json.loads(sroles_raw) if sroles_raw else []
+                if not isinstance(slaves, list):
+                    logger.warning("step_035: sync_group id=%s has non-list slave_roles JSON", gid)
+                    slaves = []
             except Exception:
+                logger.warning("step_035: sync_group id=%s has invalid slave_roles JSON", gid)
                 slaves = []
-            if isinstance(slaves, list):
-                seen_vids = set()
-                for s in slaves:
-                    if isinstance(s, str):
-                        cls_slave = index.classify(s)
-                        if cls_slave.variant_id is not None and cls_slave.variant_id not in seen_vids:
+            seen_vids = set()
+            for s in slaves:
+                if isinstance(s, str):
+                    cls_slave = index.classify(s)
+                    if cls_slave.variant_id is not None:
+                        if cls_slave.variant_id not in seen_vids:
                             seen_vids.add(cls_slave.variant_id)
                             conn.execute(sa.text("""
                                 INSERT OR IGNORE INTO param_sync_group_members (group_id, variant_id)
                                 VALUES (:group_id, :variant_id)
                             """), {"group_id": gid, "variant_id": cls_slave.variant_id})
+                    else:
+                        logger.warning(
+                            "step_035: sync_group id=%s skipped unresolved slave_role=%r",
+                            gid,
+                            s,
+                        )
+                else:
+                    logger.warning(
+                        "step_035: sync_group id=%s skipped non-string slave_role=%r",
+                        gid,
+                        s,
+                    )
 
     logger.info("Migrated: Step 035 variant_id references normalization applied successfully.")
 

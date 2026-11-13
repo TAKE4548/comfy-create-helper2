@@ -1474,3 +1474,61 @@ def test_workflow_without_prompt_template_config_backward_compatibility(client: 
     assert config["template_snapshot"] is None
     assert config["output_groups"] == []
 
+
+@getattr(pytest.mark, "REQ-426")
+@getattr(pytest.mark, "AC-2")
+def test_copy_workflow_with_resolved_and_null_master_sync_groups(
+    client: TestClient, db_session: Session
+):
+    """[REQ-426/AC-2] copy_workflow succeeds (201) with both resolved and master_variant_id=None sync groups."""
+    from app.seeder import seed_initial_data
+    seed_initial_data(db_session)
+
+    wf = models.Workflow(name="Sync Group Copy Source", json_body="{}")
+    db_session.add(wf)
+    db_session.flush()
+
+    variants = db_session.query(models.MappingVariant).order_by(models.MappingVariant.id).limit(2).all()
+    assert len(variants) >= 2
+    v_master, v_slave = variants[0], variants[1]
+
+    sg_resolved = models.ParamSyncGroup(
+        workflow_id=wf.id,
+        name="Resolved Group",
+        master_role=v_master.role,
+        slave_roles=f'["{v_slave.role}"]',
+        master_variant_id=v_master.id,
+        is_enabled=True,
+    )
+    db_session.add(sg_resolved)
+    db_session.flush()
+    db_session.add(models.ParamSyncGroupMember(group_id=sg_resolved.id, variant_id=v_slave.id))
+
+    sg_legacy = models.ParamSyncGroup(
+        workflow_id=wf.id,
+        name="Legacy Ghost Group",
+        master_role="SamplerName",
+        slave_roles='["FDetailer_sampler"]',
+        master_variant_id=None,
+        is_enabled=False,
+    )
+    db_session.add(sg_legacy)
+    db_session.commit()
+
+    copy_res = client.post(f"/api/workflows/{wf.id}/copy", json={"name": "Sync Group Copy Target"})
+    assert copy_res.status_code == 201, copy_res.text
+    copied_id = copy_res.json()["id"]
+
+    copied_groups = (
+        db_session.query(models.ParamSyncGroup)
+        .filter(models.ParamSyncGroup.workflow_id == copied_id)
+        .order_by(models.ParamSyncGroup.name)
+        .all()
+    )
+    assert len(copied_groups) == 2
+    assert copied_groups[0].name == "Legacy Ghost Group"
+    assert copied_groups[0].master_variant_id is None
+    assert copied_groups[1].name == "Resolved Group"
+    assert copied_groups[1].master_variant_id == v_master.id
+    assert [m.variant_id for m in copied_groups[1].members] == [v_slave.id]
+

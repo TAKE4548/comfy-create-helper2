@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
         run_migrations()
     except Exception as e:
         logger.error(f"Failed to run migration: {e}")
+        raise
     db = SessionLocal()
     try:
         seed_initial_data(db)

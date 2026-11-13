@@ -819,50 +819,106 @@ def test_variant_ref_ac1_all_resolved_populates_values_and_clears_legacy_json():
 
 
 @pytest.mark.integration
-@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "REQ-426")
 @getattr(pytest.mark, "AC-1")
-def test_variant_ref_ac1_unresolved_row_rolls_back_all_unchanged():
-    """[REQ-418/AC-1] step_035 aborts without mutating DB when preset has unresolved key."""
+def test_variant_ref_ac1_unresolved_keys_warn_and_migrate_resolved(caplog):
+    """[REQ-426/AC-1] step_035 logs warnings for unresolved keys, migrates resolved data, and is idempotent."""
+    import logging
     from app.migrations.steps import step_035_variant_id_references
+
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
         conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'sampler_seed')"))
         conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
-        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"ghost_role\": \"val\"}')"))
+        conn.execute(sa.text(
+            "INSERT INTO workflow_presets (id, param_values) VALUES (1, :pv)"
+        ), {"pv": json.dumps({"sampler_seed": "99", "ghost_role": "val", "__ui_mode": "basic"})})
+        conn.execute(sa.text(
+            "CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO param_sync_groups (id, master_role, slave_roles) VALUES "
+            "(1, 'sampler_seed', '[\"sampler_seed\", \"ghost_slave\"]'), "
+            "(2, 'ghost_master', '[\"sampler_seed\"]')"
+        ))
 
-    with pytest.raises(ValueError, match="ghost_role"):
+    with caplog.at_level(logging.WARNING, logger="app.migrations.steps"):
         with engine.begin() as conn:
             inspector = sa.inspect(conn)
             step_035_variant_id_references(conn, inspector)
+            # Re-run to verify idempotency
+            inspector = sa.inspect(conn)
+            step_035_variant_id_references(conn, inspector)
+
+    warn_text = "\n".join(r.message for r in caplog.records if r.levelno == logging.WARNING)
+    assert "ghost_role" in warn_text
+    assert "ghost_slave" in warn_text
+    assert "ghost_master" in warn_text
 
     with engine.connect() as conn:
         inspector = sa.inspect(conn)
-        assert "workflow_preset_values" not in inspector.get_table_names()
-        pv = conn.execute(sa.text("SELECT param_values FROM workflow_presets WHERE id = 1")).scalar_one()
-        assert pv == '{"ghost_role": "val"}'
+        sg_cols = [c["name"] for c in inspector.get_columns("param_sync_groups")]
+        assert "master_variant_id" in sg_cols
+
+        pv_rows = conn.execute(sa.text(
+            "SELECT preset_id, variant_id, sub_key, value FROM workflow_preset_values"
+        )).fetchall()
+        assert pv_rows == [(1, 1, "", "99")]
+
+        pv_after = json.loads(
+            conn.execute(sa.text("SELECT param_values FROM workflow_presets WHERE id = 1")).scalar_one()
+        )
+        assert pv_after == {"__ui_mode": "basic"}
+
+        sg_rows = conn.execute(sa.text(
+            "SELECT id, master_variant_id FROM param_sync_groups ORDER BY id"
+        )).fetchall()
+        assert sg_rows == [(1, 1), (2, None)]
+
+        sg_members = conn.execute(sa.text(
+            "SELECT group_id, variant_id FROM param_sync_group_members ORDER BY group_id, variant_id"
+        )).fetchall()
+        assert sg_members == [(1, 1), (2, 1)]
 
 
 @pytest.mark.integration
-@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "REQ-426")
 @getattr(pytest.mark, "AC-1")
-def test_variant_ref_ac1_unresolved_error_lists_all_keys():
-    """[REQ-418/AC-1] step_035 error message lists all unresolvable keys."""
+def test_variant_ref_ac1_invalid_json_warns_and_continues(caplog):
+    """[REQ-426/AC-1] step_035 logs warning on invalid JSON and continues migrating valid rows."""
+    import logging
     from app.migrations.steps import step_035_variant_id_references
+
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE mapping_variants (id INTEGER PRIMARY KEY, role VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO mapping_variants (id, role) VALUES (1, 'sampler_seed')"))
         conn.execute(sa.text("CREATE TABLE workflow_presets (id INTEGER PRIMARY KEY, param_values TEXT NOT NULL)"))
-        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{\"ghost_1\": \"a\", \"ghost_2\": \"b\"}')"))
+        conn.execute(sa.text("INSERT INTO workflow_presets (id, param_values) VALUES (1, '{bad json'), (2, '{\"sampler_seed\": \"7\"}')"))
+        conn.execute(sa.text(
+            "CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO param_sync_groups (id, master_role, slave_roles) VALUES (1, 'sampler_seed', '{bad json')"
+        ))
 
-    with pytest.raises(ValueError) as exc_info:
+    with caplog.at_level(logging.WARNING, logger="app.migrations.steps"):
         with engine.begin() as conn:
             inspector = sa.inspect(conn)
             step_035_variant_id_references(conn, inspector)
 
-    msg = str(exc_info.value)
-    assert "ghost_1" in msg
-    assert "ghost_2" in msg
+    warn_text = "\n".join(r.message for r in caplog.records if r.levelno == logging.WARNING)
+    assert "preset id=1" in warn_text
+    assert "sync_group id=1" in warn_text
+
+    with engine.connect() as conn:
+        pv_rows = conn.execute(sa.text(
+            "SELECT preset_id, variant_id, value FROM workflow_preset_values"
+        )).fetchall()
+        assert pv_rows == [(2, 1, "7")]
+        sg_master = conn.execute(sa.text("SELECT master_variant_id FROM param_sync_groups WHERE id = 1")).scalar_one()
+        assert sg_master == 1
 
 
 @pytest.mark.integration
@@ -1025,10 +1081,11 @@ def test_variant_ref_ac3_sync_group_migration_sets_master_and_members():
 
 
 @pytest.mark.integration
-@getattr(pytest.mark, "REQ-418")
-@getattr(pytest.mark, "AC-3")
-def test_variant_ref_ac3_sync_group_unresolved_role_aborts_unchanged():
-    """[REQ-418/AC-3] step_035 aborts without mutating DB when sync group has unknown role."""
+@getattr(pytest.mark, "REQ-426")
+@getattr(pytest.mark, "AC-1")
+def test_variant_ref_ac3_sync_group_unresolved_role_warns_and_migrates(caplog):
+    """[REQ-426/AC-1] step_035 logs warning and completes schema migration when sync group has unknown slave role."""
+    import logging
     from app.migrations.steps import step_035_variant_id_references
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
@@ -1037,14 +1094,20 @@ def test_variant_ref_ac3_sync_group_unresolved_role_aborts_unchanged():
         conn.execute(sa.text("CREATE TABLE param_sync_groups (id INTEGER PRIMARY KEY, master_role VARCHAR NOT NULL, slave_roles TEXT NOT NULL)"))
         conn.execute(sa.text("INSERT INTO param_sync_groups (id, master_role, slave_roles) VALUES (1, 'master_role', '[\"unknown_slave\"]')"))
 
-    with pytest.raises(ValueError, match="unknown_slave"):
+    with caplog.at_level(logging.WARNING, logger="app.migrations.steps"):
         with engine.begin() as conn:
             inspector = sa.inspect(conn)
             step_035_variant_id_references(conn, inspector)
 
+    warn_text = "\n".join(r.message for r in caplog.records if r.levelno == logging.WARNING)
+    assert "unknown_slave" in warn_text
+
     with engine.connect() as conn:
         inspector = sa.inspect(conn)
-        assert "param_sync_group_members" not in inspector.get_table_names()
+        assert "param_sync_group_members" in inspector.get_table_names()
+        master_vid = conn.execute(sa.text("SELECT master_variant_id FROM param_sync_groups WHERE id = 1")).scalar_one()
+        assert master_vid == 1
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM param_sync_group_members")).scalar_one() == 0
 
 
 @pytest.mark.integration
@@ -1074,11 +1137,11 @@ def test_step_035_happy_path_migrates_preset_and_sync_group():
 
 
 @pytest.mark.integration
-@getattr(pytest.mark, "REQ-418")
+@getattr(pytest.mark, "REQ-426")
 @getattr(pytest.mark, "AC-1")
-def test_step_035_unresolved_role_aborts_without_mutation():
-    """[REQ-418/AC-1] Alias: test_step_035_unresolved_role_aborts_without_mutation."""
-    test_variant_ref_ac1_unresolved_row_rolls_back_all_unchanged()
+def test_step_035_unresolved_role_warns_and_migrates(caplog):
+    """[REQ-426/AC-1] Alias: test_step_035_unresolved_role_warns_and_migrates."""
+    test_variant_ref_ac1_unresolved_keys_warn_and_migrate_resolved(caplog)
 
 
 @pytest.mark.integration

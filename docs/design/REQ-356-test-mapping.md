@@ -9,8 +9,8 @@
 |---|---|---|
 | Backend テストファイル数 | 78 | `backend/tests/**/*.py` |
 | Frontend テストファイル数 | 265 | `frontend/src/**/*.{test,spec}.{ts,tsx}` |
-| 抽出テストケース総数 | 3572 | Python 関数 + TS it/test |
-| PBI 紐づけありテスト数 | 1273 | `REQ-xxx` 関連 |
+| 抽出テストケース総数 | 3584 | Python 関数 + TS it/test |
+| PBI 紐づけありテスト数 | 1285 | `REQ-xxx` 関連 |
 | PBI 紐づけなしテスト数 | 2299 | 汎用ユニット・ガバナンステスト (AC-15準拠) |
 | ファイル名規約違反数 (AC-1) | 0 | `req\d+` をパスに含むファイル |
 | テスト名規約違反数 (AC-15) | 22 | `[REQ-xxx/AC-n]` 未準拠 |
@@ -993,6 +993,21 @@
 | `frontend/src/services/__tests__/residualHistory.test.ts` | [REQ-370/AC-2] accepts new candidates via FIFO up to 200 items even when already holding 200 items | AC-2 | PASS |
 | `frontend/src/store/__tests__/slices/connectionSlice.test.ts` | [REQ-370/AC-1] merges historical succeeded jobs from a snapshot even on initial load or epoch change | AC-1 | PASS |
 
+### REQ-371 (計 10 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx` | [REQ-371/AC-3] sets inline style zIndex to 30 when isDragging is true (below fixed bar z-40) | AC-3 | PASS |
+| `frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx` | [REQ-371/AC-4] applies bottom-full mb-1.5 when chip is near bottom edge, keeping all controls fully accessible | AC-4 | PASS |
+| `frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx` | [REQ-371/AC-7] maintains top-full mt-1.5 on desktop or when there is sufficient bottom margin | AC-7 | PASS |
+| `frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx` | [REQ-371/AC-4] [RedTeam] RT-2 safely falls back upward when chip bottom is at extreme viewport bottom margin without error | AC-4 | PASS |
+| `frontend/src/components/TagChipEditor/__tests__/TagChip.test.tsx` | [REQ-371/AC-6] preserves all core TagChip capabilities (display, edit, delete, duplicate, weight adjustment) across standard and lora tags | AC-6 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-371/AC-1] mobile-action-bar has opaque background and uses z-[var(--z-mobile-action-bar,40)] stacking context | AC-1 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-371/AC-2] fires action button handlers and guarantees pointer-events-auto on action bar | AC-2 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-371/AC-5] stacks action bar and vram-wait-banner with proper bottom offset and z-index | AC-5 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-371/AC-8] hides action bar with pointer-events-none when input is focused, restoring flex on blur | AC-8 | PASS |
+| `frontend/src/pages/GeneratePage/components/__tests__/MobileLayout.test.tsx` | [REQ-371/AC-2] [RedTeam] RT-1 blocks click event penetration to underlying background on rapid clicks | AC-2 | PASS |
+
 ### REQ-372 (計 24 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
@@ -1430,7 +1445,7 @@
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-417/AC-4] directly injects general parameter using input_name over param_name | AC-4 | PASS |
 | `frontend/src/utils/__tests__/workflowParamInjector.test.ts` | [REQ-417/AC-4] gracefully falls back to legacy resolution when input_name is omitted or empty | AC-4 | PASS |
 
-### REQ-418 (計 52 件)
+### REQ-418 (計 48 件)
 
 | ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
 |---|---|---|---|
@@ -1460,17 +1475,13 @@
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_missing_mapping_variants_aborts_unchanged: [REQ-418/AC-1] step_035 aborts when mapping_variants table is missing. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_empty_tables_create_schema_only: [REQ-418/AC-1] step_035 on empty tables creates schema and commits without data. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_all_resolved_populates_values_and_clears_legacy_json: [REQ-418/AC-1] step_035 migrates resolved preset values and leaves reserved in param_values. | AC-1 | PASS |
-| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_unresolved_row_rolls_back_all_unchanged: [REQ-418/AC-1] step_035 aborts without mutating DB when preset has unresolved key. | AC-1 | PASS |
-| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_unresolved_error_lists_all_keys: [REQ-418/AC-1] step_035 error message lists all unresolvable keys. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_step_is_idempotent_on_rerun: [REQ-418/AC-1] step_035 can be re-run safely without errors or data duplication. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_step_schema_matches_models: [REQ-418/AC-1] step_035 schema matches SQLAlchemy model column definitions. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_variant_delete_cascades_children: [REQ-418/AC-1] deleting a variant cascades to delete child preset values and sync members. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac3_sync_group_migration_sets_master_and_members: [REQ-418/AC-3] step_035 migrates sync group master_role and slave_roles to variant refs. | AC-3 | PASS |
-| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac3_sync_group_unresolved_role_aborts_unchanged: [REQ-418/AC-3] step_035 aborts without mutating DB when sync group has unknown role. | AC-3 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_step_035_aborts_when_mapping_variants_missing: [REQ-418/AC-1] Alias: test_step_035_aborts_when_mapping_variants_missing. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_step_035_empty_tables_commits_schema_only: [REQ-418/AC-1] Alias: test_step_035_empty_tables_commits_schema_only. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_step_035_happy_path_migrates_preset_and_sync_group: [REQ-418/AC-1][REQ-418/AC-3] Alias: test_step_035_happy_path_migrates_preset_and_sync_group. | AC-1 | PASS |
-| `backend/tests/integration/models/test_migrations.py` | test_step_035_unresolved_role_aborts_without_mutation: [REQ-418/AC-1] Alias: test_step_035_unresolved_role_aborts_without_mutation. | AC-1 | PASS |
 | `backend/tests/integration/models/test_migrations.py` | test_step_035_idempotent: [REQ-418/AC-1] Alias: test_step_035_idempotent. | AC-1 | PASS |
 | `backend/tests/integration/services/test_snapshot_service.py` | test_variant_ref_ac2_create_persists_variant_keys: [REQ-418/AC-2] create_snapshot persists variant keys, derived keys, reserved keys, and omits unknown keys with warning. | AC-2 | PASS |
 | `backend/tests/integration/services/test_snapshot_service.py` | test_variant_ref_ac2_legacy_snapshot_expands_mapped_only: [REQ-418/AC-2] expand_stored_params resolves legacy role keys to current role and warns for unknown keys. | AC-2 | PASS |
@@ -1635,6 +1646,17 @@
 | `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-7] preserves disabled chips and multi-instance structure in preset state JSON | AC-7 | PASS |
 | `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-10] skips non-existent repeat instance index without error or extra commas and joins 1st and 2nd instances when added | AC-10 | PASS |
 | `frontend/src/utils/__tests__/promptUtils.test.ts` | [REQ-425/AC-10] RT-1: joins prompt blocks without leading, trailing, or double commas even with empty or all-disabled blocks | AC-10 | PASS |
+
+### REQ-426 (計 6 件)
+
+| ファイルパス | テストケース名 / 検証項目 | AC ID | 規約適合 |
+|---|---|---|---|
+| `backend/tests/integration/api/test_workflows.py` | test_copy_workflow_with_resolved_and_null_master_sync_groups: [REQ-426/AC-2] copy_workflow succeeds (201) with both resolved and master_variant_id=None sync groups. | AC-2 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_unresolved_keys_warn_and_migrate_resolved: [REQ-426/AC-1] step_035 logs warnings for unresolved keys, migrates resolved data, and is idempotent. | AC-1 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac1_invalid_json_warns_and_continues: [REQ-426/AC-1] step_035 logs warning on invalid JSON and continues migrating valid rows. | AC-1 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_variant_ref_ac3_sync_group_unresolved_role_warns_and_migrates: [REQ-426/AC-1] step_035 logs warning and completes schema migration when sync group has unknown slave role. | AC-1 | PASS |
+| `backend/tests/integration/models/test_migrations.py` | test_step_035_unresolved_role_warns_and_migrates: [REQ-426/AC-1] Alias: test_step_035_unresolved_role_warns_and_migrates. | AC-1 | PASS |
+| `backend/tests/unit/test_helpers.py` | test_lifespan_reraises_migration_failure: [REQ-426/AC-3] lifespan logs error and re-raises when run_migrations fails. | AC-3 | PASS |
 
 ### PBI紐づけなし (汎用/ガバナンス) (計 2299 件)
 

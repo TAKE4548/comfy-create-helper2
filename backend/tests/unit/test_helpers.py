@@ -142,3 +142,29 @@ def test_llm_parser_extracts_physical_evaluation() -> None:
     assert result["status"] == "warning"
     assert result["note"] == "手の構造に矛盾が生じる可能性があります"
     assert result["alternatives"] == ["gloves", "hands in pockets"]
+
+
+@getattr(pytest.mark, "REQ-426")
+@getattr(pytest.mark, "AC-3")
+def test_lifespan_reraises_migration_failure(monkeypatch, caplog):
+    """[REQ-426/AC-3] lifespan logs error and re-raises when run_migrations fails."""
+    import asyncio
+    import logging
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main.models.Base.metadata, "create_all", lambda **kwargs: None)
+
+    def _boom():
+        raise RuntimeError("migration boom")
+
+    monkeypatch.setattr(app_main, "run_migrations", _boom)
+
+    async def _enter_lifespan():
+        async with app_main.lifespan(app_main.app):
+            pass
+
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        with pytest.raises(RuntimeError, match="migration boom"):
+            asyncio.run(_enter_lifespan())
+
+    assert "Failed to run migration: migration boom" in caplog.text
